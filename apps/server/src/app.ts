@@ -18,6 +18,8 @@ export interface Deps {
   db?: Db;
   /** Injected clock (ADR-0006); defaults to the system time. */
   now?: () => Date;
+  /** Deadline for the health probe's database query; defaults to PROBE_TIMEOUT_MS. */
+  probeTimeoutMs?: number;
 }
 
 const NOT_FOUND = { error: 'not found' };
