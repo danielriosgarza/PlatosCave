@@ -13,7 +13,13 @@
     "format": "biome check --write .",
     "typecheck": "pnpm -r typecheck",
     "test": "vitest run --project unit --project component",
-    "check": "pnpm lint && pnpm typecheck && pnpm test"
+    "test:integration": "vitest run --project integration",
+    "check": "pnpm lint && pnpm typecheck && pnpm test",
+    "db:migrate": "pnpm --filter @parallax/server db:migrate",
+    "db:generate": "pnpm --filter @parallax/server db:generate",
+    "db:reset": "pnpm --filter @parallax/server db:reset",
+    "db:local": "bash scripts/pg-local.sh",
+    "compose": "docker compose -f infra/compose.yml"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.14",
