@@ -3,5 +3,17 @@
     "allow": [
       "mcp__github__merge_pull_request"
     ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash \"$CLAUDE_PROJECT_DIR/scripts/session-start.sh\""
+          }
+        ]
+      }
+    ]
   }
 }
