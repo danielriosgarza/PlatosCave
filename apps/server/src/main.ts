@@ -13,11 +13,20 @@ const database = config.DATABASE_URL ? createDb(config.DATABASE_URL) : undefined
 const app = await buildApp(config, database ? { db: database.db } : {});
 await app.listen({ port: config.PORT, host: config.HOST });
 
+let stopping = false;
 const stop = () => {
+  if (stopping) return;
+  stopping = true;
   app
     .close()
     .then(() => database?.pool.end())
-    .then(() => process.exit(0));
+    .then(
+      () => process.exit(0),
+      (err) => {
+        app.log.error({ err }, 'shutdown failed');
+        process.exit(1);
+      },
+    );
 };
 process.on('SIGTERM', stop);
 process.on('SIGINT', stop);

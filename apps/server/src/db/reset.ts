@@ -1,5 +1,6 @@
 import { pathToFileURL } from 'node:url';
 import pg from 'pg';
+import { withAdminClient } from './admin';
 import { runMigrations } from './migrate';
 
 /** Creates the database if missing, recreates schema `public`, and migrates. Dev and e2e only. */
@@ -7,21 +8,13 @@ export async function resetDatabase(url: string): Promise<void> {
   if (process.env.NODE_ENV === 'production') {
     throw new Error('db:reset refuses to run when NODE_ENV=production');
   }
-  const target = new URL(url);
-  const name = decodeURIComponent(target.pathname.slice(1));
-  const admin = new URL(url);
-  admin.pathname = '/postgres';
-
-  const adminClient = new pg.Client({ connectionString: admin.toString() });
-  await adminClient.connect();
-  try {
-    const exists = await adminClient.query('select 1 from pg_database where datname = $1', [name]);
+  const name = decodeURIComponent(new URL(url).pathname.slice(1));
+  await withAdminClient(url, async (admin) => {
+    const exists = await admin.query('select 1 from pg_database where datname = $1', [name]);
     if (exists.rowCount === 0) {
-      await adminClient.query(`create database ${pg.escapeIdentifier(name)}`);
+      await admin.query(`create database ${pg.escapeIdentifier(name)}`);
     }
-  } finally {
-    await adminClient.end();
-  }
+  });
 
   const client = new pg.Client({ connectionString: url });
   await client.connect();
