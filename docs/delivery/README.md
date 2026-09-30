@@ -9,7 +9,7 @@ Parallax is built by Claude sessions with minimal human involvement. This page i
 | Orchestrator | Hourly routine, new session each run, Opus 5.5 | Reads GitHub state, merges ready PRs, unblocks issues, launches implementer / reviewer / audit sessions, restarts stuck work, escalates, updates the dashboard issue | Write product code; merge anything that fails the merge rule |
 | Implementer | One cloud session per issue; model from the issue's `model:` label | Tests and code for exactly one issue, opens the PR, fixes CI and review findings | Merge, approve, widen scope, disable tests |
 | Reviewer | One cloud session per review round; a different model from the implementer | Reviews the PR head against issue, spec and ADRs; runs the checks; posts findings and a verdict label | Push code |
-| Phase auditor | Fable 5.1 session when every issue of a phase is closed | Compares `main` with the spec for that phase, files fix-up issues, writes the phase summary for the human | Change product scope |
+| Phase auditor | Fable 5.1 session when every issue of phase 1, 2, 3 or 4 is closed | Compares `main` with the spec for that phase, files fix-up issues, writes the phase summary for the human | Change product scope |
 
 Procedures live in `.claude/skills/` (`orchestrate`, `implement-issue`, `review-pr`, `phase-audit`), so every session loads the same rules from the repository.
 
@@ -17,7 +17,7 @@ Procedures live in `.claude/skills/` (`orchestrate`, `implement-issue`, `review-
 
 Nothing depends on a chat transcript. Any session can reconstruct the state from issues, pull requests and labels.
 
-**Work items** are issues titled `[P2-04] Title`, labelled `plan`, one phase label (`phase:1` … `phase:4`), one model label, optionally `security`, and exactly one status label:
+**Work items** are issues titled `[P2-04] Title`, labelled `plan`, one phase label (`phase:0` … `phase:4`), one model label, optionally `security`, and exactly one status label:
 
 ```
 status:blocked ──(all dependencies closed)──► status:ready ──(orchestrator launches implementer)──► status:in-progress
@@ -26,7 +26,7 @@ status:blocked ──(all dependencies closed)──► status:ready ──(orch
  needs-human ◄──(3 failed attempts / product decision)──────────────────────────────────────── status:in-review ──(PR merged)──► closed
 ```
 
-The issue body contains one line `Depends on: P1-01, P1-03` (plan IDs, or `none`). Work discovered later gets a suffixed ID (`P2-04a`); audit findings get `P2-AUD1`, `P2-AUD2`, ….
+The issue body contains one line `Depends on: P1-01, P1-03` (plan IDs, or `none`) and, when the plan names them, one line `Touches: path, path` (files the item is likely to edit; the orchestrator avoids running two items that touch the same file). Work discovered later gets a suffixed ID (`P2-04a`); audit findings get `P2-AUD1`, `P2-AUD2`, ….
 
 **Pull requests** are titled like their issue, say `Closes #<issue>`, and carry one review label:
 

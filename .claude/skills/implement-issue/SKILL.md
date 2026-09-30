@@ -25,6 +25,7 @@ Read, in order:
 ## 3. Tests first, then code
 
 - Every scenario ID listed on the issue gets at least one automated test whose name contains the ID (for example `A05 instructor sees only the shared question`), following `docs/adr/0006-testing-strategy.md`. The test must assert the observable result the spec describes, and fail without your change.
+- Add `docs/delivery/done/<ID>.txt` listing the scenario IDs whose tests this PR adds, one per line (empty file if none).
 - Implement until those tests and the whole existing suite pass.
 - Run locally, and paste the summary lines into the PR: lint, typecheck, unit, integration, and the e2e tests your change touches (commands are in `CLAUDE.md`).
 - Never skip, delete, loosen or quarantine an existing test to get green. If an existing test is wrong per the spec, fix it and explain why in the PR.

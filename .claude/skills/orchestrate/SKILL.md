@@ -88,7 +88,7 @@ Replace `review:pending` with `review:in-progress` and post the launch comment o
 
 Capacity = 3 − (number of issues in `status:in-progress`). If 5 or more open issues are `needs-human`, capacity = 0 (say so on the dashboard).
 
-**New work:** take `status:ready` issues ordered by phase, then plan ID. For each, up to capacity:
+**New work:** take `status:ready` issues ordered by phase, then plan ID. Skip (for this run) an issue whose `Touches:` line shares a file with an issue currently `status:in-progress` or `status:in-review`, since parallel edits of one file cause merge conflicts. For each remaining issue, up to capacity:
 
 - Model: from the `model:` label on attempt 1–2; one step up on attempt 3 (Sonnet → Opus → Fable; Fable stays Fable).
 - Branch: `claude/<id-lowercase>-<short-slug>` (for example `claude/p2-04-slide-viewer`), fresh from `main`. On a retry after a failed attempt, append `-a<attempt>`.
@@ -104,7 +104,7 @@ Replace `status:ready` with `status:in-progress` and post the launch comment on 
 
 ## Step 7 — Phase audits
 
-For each phase N whose `plan` issues (including earlier audit issues) are all closed, and for which no issue titled `Phase N summary` exists and no auditor launch record for phase N is younger than 6 hours on the dashboard issue: launch a Fable session with `title: "Phase N audit"`, `source_revision: main`, tags `["parallax","auditor","phase-N"]`, prompt `/phase-audit N` (with the same fallback sentence pointing at `.claude/skills/phase-audit/SKILL.md`). Record the launch comment on the dashboard issue.
+For each phase N from 1 to 4 whose `plan` issues (including earlier audit issues) are all closed, and for which no issue titled `Phase N summary` exists and no auditor launch record for phase N is younger than 6 hours on the dashboard issue: launch a Fable session with `title: "Phase N audit"`, `source_revision: main`, tags `["parallax","auditor","phase-N"]`, prompt `/phase-audit N` (with the same fallback sentence pointing at `.claude/skills/phase-audit/SKILL.md`). Record the launch comment on the dashboard issue.
 
 If every phase through 4 is audited and no `plan` issue is open, report "Delivery plan complete" on the dashboard and in your final message.
 
