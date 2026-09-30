@@ -6,7 +6,7 @@ Parallax is built by Claude sessions with minimal human involvement. This page i
 
 | Role | Runs as | Does | Never does |
 | --- | --- | --- | --- |
-| Orchestrator | Hourly routine, new session each run, Opus 5.5 | Reads GitHub state, merges ready PRs, unblocks issues, launches implementer / reviewer / audit sessions, restarts stuck work, escalates, updates the dashboard issue | Write product code; merge anything that fails the merge rule |
+| Orchestrator | Hourly routine firing into one persistent Opus 5.5 session that has the repository checked out | Reads GitHub state, merges ready PRs, unblocks issues, launches implementer / reviewer / audit sessions, restarts stuck work, escalates, updates the dashboard issue | Write product code; merge anything that fails the merge rule |
 | Implementer | One cloud session per issue; model from the issue's `model:` label | Tests and code for exactly one issue, opens the PR, fixes CI and review findings | Merge, approve, widen scope, disable tests |
 | Reviewer | One cloud session per review round; a different model from the implementer | Reviews the PR head against issue, spec and ADRs; runs the checks; posts findings and a verdict label | Push code |
 | Phase auditor | Fable 5.1 session when every issue of phase 1, 2, 3 or 4 is closed | Compares `main` with the spec for that phase, files fix-up issues, writes the phase summary for the human | Change product scope |
@@ -54,6 +54,8 @@ The reviewer is never the implementer's model: when a rule above would pick the 
 A failed implementation attempt is retried once with the same model, then once with the next model up (Sonnet → Opus → Fable). A third failure becomes `needs-human`. Review verdicts are PR issue comments starting `Review verdict:`; implementers never push while a review is running.
 
 ## Merge rule
+
+The owner allowed Claude sessions in this repository to merge (`.claude/settings.json` permits `mcp__github__merge_pull_request`). Only the orchestrator uses that permission; implementer and reviewer skills forbid merging, and any PR that changes `.claude/` is reviewed by Fable. If the permission system still refuses a merge, the orchestrator escalates instead of working around it.
 
 The orchestrator squash-merges at most one pull request per hourly run, and only when all of these hold:
 

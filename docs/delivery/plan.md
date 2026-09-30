@@ -24,7 +24,7 @@ Goal: a repository that installs, lints, type-checks, runs a web page backed by 
 ```
 .
 ├── .github/workflows/ci.yml  image.yml   .github/pull_request_template.md (exists)
-├── .claude/settings.json  scripts/session-start.sh   (SessionStart hook; .claude/skills exists)
+├── .claude/settings.json (exists with the owner's merge permission; P0-01 adds `hooks`)  scripts/session-start.sh
 ├── CLAUDE.md (exists; P0 items keep its Commands section accurate)
 ├── .editorconfig  .dockerignore  .node-version (22)  .env.example  .gitignore (extended)
 ├── package.json (parallax, root scripts)  pnpm-workspace.yaml  pnpm-lock.yaml
@@ -257,7 +257,7 @@ The PR template already exists (`.github/pull_request_template.md`); do not repl
 
 ### 1.10 Phase 0 items
 
-**P0-01 · Workspace, contracts, server and web skeleton, unit/component tests, CI check** — Scope: everything in §1.1 except `apps/server/src/db/*`, `drizzle/`, `test/integration`, `e2e/`, `connector/`, `infra/`, `image.yml`; `GET /api/health` returns `db: 'skipped'`; CI job `check` (lint, typecheck, unit + component) green. Also a SessionStart hook (use the `session-start-hook` skill): `.claude/settings.json` runs `scripts/session-start.sh`, which in remote sessions (`CLAUDE_CODE_REMOTE=true`) enables corepack and runs `pnpm install --frozen-lockfile`, idempotently and quietly. Fill in the Commands section of `CLAUDE.md`. Spec: §6, §5 (global bar). Scenarios: none. Depends on: —. Model: sonnet. Security: no. Size: M (config-heavy; lockfile and `routeTree.gen.ts` excluded).
+**P0-01 · Workspace, contracts, server and web skeleton, unit/component tests, CI check** — Scope: everything in §1.1 except `apps/server/src/db/*`, `drizzle/`, `test/integration`, `e2e/`, `connector/`, `infra/`, `image.yml`; `GET /api/health` returns `db: 'skipped'`; CI job `check` (lint, typecheck, unit + component) green. Also a SessionStart hook (use the `session-start-hook` skill): `.claude/settings.json` (which already exists: add a `hooks` key and keep its `permissions` unchanged) runs `scripts/session-start.sh`, which in remote sessions (`CLAUDE_CODE_REMOTE=true`) enables corepack and runs `pnpm install --frozen-lockfile`, idempotently and quietly. Fill in the Commands section of `CLAUDE.md`. Spec: §6, §5 (global bar). Scenarios: none. Depends on: —. Model: sonnet. Security: no. Size: M (config-heavy; lockfile and `routeTree.gen.ts` excluded).
 
 **P0-02 · Postgres, migrations, integration harness, compose, pg-local, CI integration** — Scope: `db/*`, `app_settings` migration, health reports `db: 'ok'`, template-clone integration harness with `health.itest.ts`, `infra/compose.yml`, `scripts/pg-local.sh`, `.env.example`, CI job `integration`. Extend `scripts/session-start.sh` to start the local Postgres (`pnpm db:local start`, skipped if already running) and export `DATABASE_URL` through `$CLAUDE_ENV_FILE`, so every session can run integration tests. Spec: §13. Scenarios: none. Depends on: P0-01. Model: sonnet. Security: no. Size: M.
 
