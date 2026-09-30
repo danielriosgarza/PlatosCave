@@ -9,10 +9,13 @@ if (mode !== 'api') {
 }
 
 const config = loadConfig();
+// The pool is created before the app (and its logger); errors go to the app logger once it exists.
+let logPoolError = (err: Error) => console.error('pg pool error', err);
 const database = config.DATABASE_URL
-  ? createDb(config.DATABASE_URL, { onError: (err) => app.log.error({ err }, 'pg pool error') })
+  ? createDb(config.DATABASE_URL, { onError: (err) => logPoolError(err) })
   : undefined;
 const app = await buildApp(config, database ? { db: database.db } : {});
+logPoolError = (err) => app.log.error({ err }, 'pg pool error');
 await app.listen({ port: config.PORT, host: config.HOST });
 
 let stopping = false;

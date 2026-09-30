@@ -1,7 +1,7 @@
 import { health } from '@parallax/contracts/routes/health';
-import { sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import type { Deps } from '../../app';
+import { probe } from '../../db/client';
 import { registerRoute } from '../register';
 
 export default function healthRoutes(app: FastifyInstance, deps: Deps): void {
@@ -9,7 +9,7 @@ export default function healthRoutes(app: FastifyInstance, deps: Deps): void {
     let db: 'ok' | 'unavailable' | 'skipped' = 'skipped';
     if (deps.db) {
       try {
-        await deps.db.execute(sql`select 1`);
+        await probe(deps.db, deps.probeTimeoutMs);
         db = 'ok';
       } catch (err) {
         app.log.warn({ err }, 'health: database unavailable');
