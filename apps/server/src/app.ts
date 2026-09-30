@@ -15,6 +15,8 @@ import { isApiPath, registerStatic } from './http/static';
 
 export interface Deps {
   db?: Db;
+  /** Deadline for the health probe's database query; defaults to PROBE_TIMEOUT_MS. */
+  probeTimeoutMs?: number;
 }
 
 export async function buildApp(config: Config, deps: Deps = {}): Promise<FastifyInstance> {

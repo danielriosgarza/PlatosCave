@@ -11,8 +11,6 @@ export function createDb(url: string, { onError }: CreateDbOptions = {}) {
   const pool = new pg.Pool({
     connectionString: url,
     connectionTimeoutMillis: 5000,
-    // Client-side deadline: a server-side statement_timeout cannot help on a silent link.
-    query_timeout: 5000,
   });
   // Idle clients dropped by the server surface here; without a listener the process crashes.
   // The pool discards the dead client and reconnects on the next query.
@@ -22,3 +20,16 @@ export function createDb(url: string, { onError }: CreateDbOptions = {}) {
 }
 
 export type Db = ReturnType<typeof createDb>['db'];
+
+/** Client-side deadline for the health probe; application queries have none. */
+export const PROBE_TIMEOUT_MS = 5000;
+
+/**
+ * `select 1` with its own client-side deadline: a server-side statement_timeout cannot help
+ * on a silent link. The deadline applies to this query only, so long-running application
+ * queries (snapshots, exports, grading batches) are not capped.
+ */
+export async function probe(db: Db, timeoutMs: number = PROBE_TIMEOUT_MS): Promise<void> {
+  // node-postgres honours query_timeout per query, but @types/pg omits it from QueryConfig.
+  await db.$client.query({ text: 'select 1', query_timeout: timeoutMs } as pg.QueryConfig);
+}
