@@ -43,8 +43,11 @@ test('health survives the server dropping an idle pooled connection', async () =
   const quiet = await buildApp(loadConfig({ NODE_ENV: 'test', LOG_LEVEL: 'silent' }), { db });
   try {
     const pid = (await db.execute(sql`select pg_backend_pid() as pid`)).rows[0]?.pid;
-    await testDb.db.execute(sql`select pg_terminate_backend(${pid})`);
-    await new Promise((r) => setTimeout(r, 200));
+    expect(pid).toBeTypeOf('number');
+    const gone = new Promise((resolve) => pool.once('error', resolve));
+    const term = await testDb.db.execute(sql`select pg_terminate_backend(${pid}) as ok`);
+    expect(term.rows[0]).toEqual({ ok: true });
+    await gone;
     const res = await quiet.inject({ method: 'GET', url: '/api/health' });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toMatchObject({ status: 'ok', db: 'ok' });

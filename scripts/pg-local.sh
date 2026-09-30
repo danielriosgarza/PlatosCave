@@ -26,8 +26,12 @@ case "${1:-}" in
         if [ "$(id -u)" = "0" ]; then chown postgres "$PGDIR"; fi
         run initdb -D "$PGDIR" -U "$USER_NAME" --auth=trust >/dev/null
       fi
-      run pg_ctl -D "$PGDIR" -o "-p $PORT -k /tmp -c listen_addresses=127.0.0.1" \
-        -l "$PGDIR/postgres.log" -w start >/dev/null
+      if ! run pg_ctl -D "$PGDIR" -o "-p $PORT -k /tmp -c listen_addresses=127.0.0.1" \
+        -l "$PGDIR/postgres.log" -w start >/dev/null; then
+        echo "pg_ctl start failed; last lines of $PGDIR/postgres.log:" >&2
+        tail -20 "$PGDIR/postgres.log" >&2 || true
+        exit 1
+      fi
     fi
     run psql -h 127.0.0.1 -p "$PORT" -U "$USER_NAME" -d postgres -Atc \
       "select 1 from pg_database where datname='parallax'" | grep -q 1 \

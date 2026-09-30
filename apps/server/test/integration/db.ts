@@ -1,8 +1,8 @@
 import { randomBytes } from 'node:crypto';
 import pg from 'pg';
+import { inject } from 'vitest';
 import { withAdminClient } from '../../src/db/admin';
 import { createDb, type Db } from '../../src/db/client';
-import { TEMPLATE_DB } from './global-setup';
 
 export interface TestDatabase {
   url: string;
@@ -14,11 +14,12 @@ export interface TestDatabase {
 export async function createTestDatabase(): Promise<TestDatabase> {
   const base = process.env.DATABASE_URL;
   if (!base) throw new Error('DATABASE_URL is required for integration tests');
-  const name = `test_${randomBytes(6).toString('hex')}`;
+  const prefix = inject('itestPrefix');
+  const name = `${prefix}${randomBytes(6).toString('hex')}`;
 
   await withAdminClient(base, (client) =>
     client.query(
-      `create database ${pg.escapeIdentifier(name)} template ${pg.escapeIdentifier(TEMPLATE_DB)}`,
+      `create database ${pg.escapeIdentifier(name)} template ${pg.escapeIdentifier(`${prefix}template`)}`,
     ),
   );
 

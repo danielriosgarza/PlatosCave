@@ -9,13 +9,15 @@ if (mode !== 'api') {
 }
 
 const config = loadConfig();
-const database = config.DATABASE_URL ? createDb(config.DATABASE_URL) : undefined;
+const database = config.DATABASE_URL
+  ? createDb(config.DATABASE_URL, { onError: (err) => app.log.error({ err }, 'pg pool error') })
+  : undefined;
 const app = await buildApp(config, database ? { db: database.db } : {});
 await app.listen({ port: config.PORT, host: config.HOST });
 
 let stopping = false;
 const stop = () => {
-  if (stopping) return;
+  if (stopping) process.exit(1); // second signal forces exit if close() hangs
   stopping = true;
   app
     .close()
