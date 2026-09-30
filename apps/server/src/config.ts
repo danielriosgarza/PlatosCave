@@ -6,7 +6,7 @@ const Env = z.object({
   HOST: z.string().default('127.0.0.1'),
   DATABASE_URL: z.string().optional(),
   STATIC_DIR: z.string().optional(),
-  LOG_LEVEL: z.string().default('info'),
+  LOG_LEVEL: z.enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent']).default('info'),
 });
 
 export type Config = z.infer<typeof Env>;

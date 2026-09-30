@@ -30,6 +30,7 @@ describe('registerRoute and the scope guard', () => {
   it('refuses an /api route registered without a scope', async () => {
     const app = await buildApp(config);
     expect(() => app.get('/api/x', async () => ({}))).toThrow(/has no scope/);
+    expect(() => app.get('/api', async () => ({}))).toThrow(/has no scope/);
     await app.close();
   });
 

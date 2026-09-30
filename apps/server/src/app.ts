@@ -10,7 +10,7 @@ import {
   validatorCompiler,
 } from 'fastify-type-provider-zod';
 import type { Config } from './config';
-import { registerStatic } from './http/static';
+import { isApiPath, registerStatic } from './http/static';
 
 export type Deps = Record<string, never>;
 
@@ -26,8 +26,8 @@ export async function buildApp(config: Config, deps: Deps = {}): Promise<Fastify
 
   // Structural guard (ADR-0002): every /api route must declare a scope via registerRoute().
   app.addHook('onRoute', (route) => {
-    const config = route.config as { scope?: unknown } | undefined;
-    if (route.url.startsWith('/api/') && !config?.scope) {
+    const routeConfig = route.config as { scope?: unknown } | undefined;
+    if (isApiPath(route.url) && !routeConfig?.scope) {
       throw new Error(`${route.method} ${route.url} has no scope; use registerRoute()`);
     }
   });

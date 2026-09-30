@@ -21,10 +21,11 @@ export async function call<C extends RouteContract>(
   contract: C,
   { params, query, body }: CallArgs = {},
 ): Promise<z.output<C['response']>> {
-  let path: string = contract.path;
-  for (const [k, v] of Object.entries(params ?? {})) {
-    path = path.replace(`:${k}`, encodeURIComponent(String(v)));
-  }
+  const path = contract.path.replace(/:([A-Za-z0-9_]+)/g, (_, k: string) => {
+    const v = params?.[k];
+    if (v === undefined) throw new Error(`missing route param ${k} for ${contract.path}`);
+    return encodeURIComponent(String(v));
+  });
   const qs = new URLSearchParams();
   for (const [k, v] of Object.entries(query ?? {})) {
     if (v !== undefined) qs.set(k, String(v));
@@ -36,12 +37,17 @@ export async function call<C extends RouteContract>(
     headers: body === undefined ? undefined : { 'content-type': 'application/json' },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
-  const json: unknown = await res.json().catch(() => null);
+  const isJson = res.headers.get('content-type')?.includes('json') ?? false;
+  const json: unknown = isJson ? await res.json().catch(() => null) : null;
   if (!res.ok) throw new ApiError(res.status, json);
+  if (!isJson) throw new ApiError(res.status, 'response is not JSON');
   const parsed = import.meta.env.DEV ? contract.response.parse(json) : json;
   return parsed as z.output<C['response']>;
 }
 
 export function useApi<C extends RouteContract>(contract: C, args: CallArgs = {}) {
-  return useQuery({ queryKey: [contract.path, args], queryFn: () => call(contract, args) });
+  return useQuery({
+    queryKey: [contract.method, contract.path, args],
+    queryFn: () => call(contract, args),
+  });
 }

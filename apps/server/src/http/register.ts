@@ -14,6 +14,8 @@ export interface RouteArgs<C extends RouteContract> {
  * The only way to register an `/api/*` route (ADR-0002). The contract carries the scope;
  * the onRoute guard in app.ts rejects any /api route registered without one.
  * Phase 0: every scope other than `public` answers 401 until the resolver lands in P1-01.
+ * This check runs in the handler, after validation, only as a placeholder: P1-01 must put the
+ * scope resolver in a hook that runs before validation (ADR-0002), not extend this branch.
  */
 export function registerRoute<C extends RouteContract>(
   app: FastifyInstance,
