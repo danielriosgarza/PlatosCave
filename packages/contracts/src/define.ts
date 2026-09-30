@@ -9,32 +9,42 @@ export type Scope =
 
 export type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
+/** A contract part that may be absent: `undefined` when the contract omits it. */
+type Part = z.ZodType | undefined;
+type InputOf<T extends Part> = T extends z.ZodType ? z.input<T> : never;
+
 export interface RouteContract<
-  P extends z.ZodType = z.ZodType,
-  Q extends z.ZodType = z.ZodType,
-  B extends z.ZodType = z.ZodType,
+  P extends Part = Part,
+  Q extends Part = Part,
+  B extends Part = Part,
   R extends z.ZodType = z.ZodType,
+  S extends Scope = Scope,
 > {
   method: Method;
   path: `/api/${string}`;
-  scope: Scope;
+  scope: S;
   summary: string;
   params?: P;
   query?: Q;
   body?: B;
   response: R;
-  /** Valid example inputs; the isolation matrix (ADR-0002, P1-01) replays every contract with them. */
-  examples: { params?: z.input<P>; query?: z.input<Q>; body?: z.input<B> };
+  /**
+   * Valid example inputs; the isolation matrix (ADR-0002) replays every contract with them,
+   * substituting the fixture world's ids for `classId` and `courseId`.
+   */
+  examples: { params?: InputOf<P>; query?: InputOf<Q>; body?: InputOf<B> };
 }
 
+/** Omitted parts default to `undefined`, so handlers see `params: undefined` rather than `unknown`. */
 export function defineRoute<
-  P extends z.ZodType,
-  Q extends z.ZodType,
-  B extends z.ZodType,
   R extends z.ZodType,
->(c: RouteContract<P, Q, B, R>): RouteContract<P, Q, B, R> {
+  S extends Scope,
+  P extends Part = undefined,
+  Q extends Part = undefined,
+  B extends Part = undefined,
+>(c: RouteContract<P, Q, B, R, S>): RouteContract<P, Q, B, R, S> {
   return c;
 }
 
 export type ResponseOf<C> =
-  C extends RouteContract<z.ZodType, z.ZodType, z.ZodType, infer R> ? z.output<R> : never;
+  C extends RouteContract<Part, Part, Part, infer R> ? z.output<R> : never;

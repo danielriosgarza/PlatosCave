@@ -3,6 +3,7 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import sensible from '@fastify/sensible';
 import swagger from '@fastify/swagger';
+import type { RouteContract } from '@parallax/contracts';
 import Fastify, { type FastifyInstance } from 'fastify';
 import {
   jsonSchemaTransform,
@@ -15,7 +16,11 @@ import { isApiPath, registerStatic } from './http/static';
 
 export interface Deps {
   db?: Db;
+  /** Injected clock (ADR-0006); defaults to the system time. */
+  now?: () => Date;
 }
+
+const NOT_FOUND = { error: 'not found' };
 
 export async function buildApp(config: Config, deps: Deps = {}): Promise<FastifyInstance> {
   const app = Fastify({
@@ -27,12 +32,17 @@ export async function buildApp(config: Config, deps: Deps = {}): Promise<Fastify
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
 
+  app.decorate('resolverDeps', { db: deps.db, now: deps.now ?? (() => new Date()) });
+  app.decorate('contracts', [] as RouteContract[]);
+  app.decorateRequest('parallaxScope', undefined);
+
   // Structural guard (ADR-0002): every /api route must declare a scope via registerRoute().
   app.addHook('onRoute', (route) => {
-    const routeConfig = route.config as { scope?: unknown } | undefined;
+    const routeConfig = route.config as { scope?: unknown; contract?: RouteContract } | undefined;
     if (isApiPath(route.url) && !routeConfig?.scope) {
       throw new Error(`${route.method} ${route.url} has no scope; use registerRoute()`);
     }
+    if (routeConfig?.contract && route.method !== 'HEAD') app.contracts.push(routeConfig.contract);
   });
 
   await app.register(sensible);
@@ -52,6 +62,8 @@ export async function buildApp(config: Config, deps: Deps = {}): Promise<Fastify
     });
   }
 
-  if (config.STATIC_DIR) await registerStatic(app, config.STATIC_DIR);
+  const spa = config.STATIC_DIR ? await registerStatic(app, config.STATIC_DIR) : undefined;
+  // One JSON 404 shape for unknown /api paths and non-members, in dev, tests and production.
+  app.setNotFoundHandler((req, reply) => spa?.(req, reply) ?? reply.code(404).send(NOT_FOUND));
   return app;
 }

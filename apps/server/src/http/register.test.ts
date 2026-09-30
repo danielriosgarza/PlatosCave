@@ -1,9 +1,10 @@
 import { defineRoute } from '@parallax/contracts';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, expectTypeOf, it } from 'vitest';
 import { z } from 'zod';
 import { buildApp } from '../app';
+import type { ClassScope, UserScope } from '../auth/scope';
 import { loadConfig } from '../config';
-import { registerRoute } from './register';
+import { type RouteArgs, registerRoute } from './register';
 
 const config = loadConfig({ NODE_ENV: 'test', LOG_LEVEL: 'silent' });
 
@@ -26,6 +27,16 @@ const secret = defineRoute({
   examples: {},
 });
 
+const classEcho = defineRoute({
+  method: 'GET',
+  path: '/api/classes/:classId/echo/:n',
+  scope: { kind: 'class', role: 'student' },
+  summary: 'class echo',
+  params: z.object({ classId: z.uuid(), n: z.coerce.number() }),
+  response: z.object({ n: z.number() }),
+  examples: { params: { classId: '00000000-0000-4000-8000-000000000000', n: 1 } },
+});
+
 describe('registerRoute and the scope guard', () => {
   it('refuses an /api route registered without a scope', async () => {
     const app = await buildApp(config);
@@ -44,12 +55,43 @@ describe('registerRoute and the scope guard', () => {
     await app.close();
   });
 
-  it('answers 401 for non-public scopes in Phase 0', async () => {
+  it('answers 401 before validation for a non-public scope without a session', async () => {
     const app = await buildApp(config);
     registerRoute(app, secret, () => ({}));
+    registerRoute(app, classEcho, ({ params }) => ({ n: params.n }));
     const res = await app.inject({ method: 'GET', url: '/api/secret' });
     expect(res.statusCode).toBe(401);
+    expect(res.json()).toEqual({ error: 'unauthenticated' });
+    const invalid = await app.inject({ method: 'GET', url: '/api/classes/nope/echo/abc' });
+    expect(invalid.statusCode).toBe(401);
     await app.close();
+  });
+
+  it('refuses a route whose scope does not resolve the ids in its path', async () => {
+    const app = await buildApp(config);
+    const raw = { ...classEcho, scope: { kind: 'user' as const } };
+    expect(() => registerRoute(app, raw, () => ({ n: 1 }))).toThrow(/names :classId/);
+    const noId = { ...secret, scope: { kind: 'class' as const, role: 'any' as const } };
+    expect(() => registerRoute(app, noId, () => ({}))).toThrow(/no :classId/);
+    await app.close();
+  });
+
+  it('answers unknown /api paths with the JSON 404 body without STATIC_DIR', async () => {
+    const app = await buildApp(config);
+    const res = await app.inject({ method: 'GET', url: '/api/nope' });
+    expect(res.statusCode).toBe(404);
+    expect(res.json()).toEqual({ error: 'not found' });
+    await app.close();
+  });
+
+  it('types omitted parts as undefined and the scope by its kind', () => {
+    type Health = RouteArgs<typeof secret>;
+    expectTypeOf<Health['params']>().toEqualTypeOf<undefined>();
+    expectTypeOf<Health['body']>().toEqualTypeOf<undefined>();
+    expectTypeOf<Health['scope']>().toEqualTypeOf<UserScope>();
+    type Cls = RouteArgs<typeof classEcho>;
+    expectTypeOf<Cls['params']>().toEqualTypeOf<{ classId: string; n: number }>();
+    expectTypeOf<Cls['scope']>().toEqualTypeOf<ClassScope>();
   });
 
   it('serves health with db skipped and lists it in openapi', async () => {
