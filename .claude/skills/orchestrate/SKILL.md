@@ -130,9 +130,11 @@ Launched this run: …
 Notes: long-running sessions, capacity limits, CI status
 ```
 
-## Final message
+## Notification and final message
 
-The routine notifies the owner when a run finishes with something noteworthy. Start with `NEEDS HUMAN:` if anything was escalated in this run, `PHASE SUMMARY:` if a `Phase N summary` issue appeared since the last run, otherwise `Routine run:` in at most two lines.
+The routine that wakes this session cannot notify the owner itself. If anything was escalated in this run, or a `Phase N summary` issue appeared since the last run, send exactly one `PushNotification` (`status: proactive`, one line under 200 characters, leading with what the owner should act on, e.g. `Parallax: #12 [P1-07] needs your decision (see issue)` or `Parallax: Phase 1 summary ready (#80)`). Otherwise send none.
+
+End with a message that starts `NEEDS HUMAN:` if anything was escalated in this run, `PHASE SUMMARY:` if a `Phase N summary` issue appeared since the last run, otherwise `Routine run:`, in at most two lines.
 
 ## Never
 
