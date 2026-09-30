@@ -31,7 +31,7 @@ Available once Phase 0 (P0-01…P0-03) has merged; Phase 0 items keep this list 
 | Migrations | `pnpm db:migrate`, `pnpm db:generate` (chain items only) |
 | Integration tests | `pnpm test:integration` (needs `DATABASE_URL`) |
 | E2E tests | `pnpm build && pnpm test:e2e` |
-| Everything fast | `pnpm check` (lint, typecheck, unit) |
+| Everything fast | `pnpm check` (lint, typecheck, unit, scenario records) |
 | Scenario coverage | `pnpm scenarios` |
 | Connector | `cd connector && gofmt -l . && go vet ./... && go test ./...` |
 

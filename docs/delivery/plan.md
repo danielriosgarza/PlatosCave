@@ -79,7 +79,7 @@ Root `package.json` (`"name": "parallax"`, `"private": true`, `"type": "module"`
 | `test` | `vitest run --project unit --project component` |
 | `test:integration` | `vitest run --project integration` (needs `DATABASE_URL`) |
 | `test:e2e` | `pnpm --filter @parallax/e2e test` (Playwright; needs `DATABASE_URL` reachable and a built web app) |
-| `check` | `pnpm lint && pnpm typecheck && pnpm test` |
+| `check` | `pnpm lint && pnpm typecheck && pnpm test && pnpm scenarios` (P0-01 and P0-02 omit `pnpm scenarios`; P0-03 adds it with the script) |
 | `db:migrate` / `db:generate` / `db:reset` | `pnpm --filter @parallax/server db:migrate` etc. |
 | `db:local` | `bash scripts/pg-local.sh` (`start` \| `stop` \| `status`) |
 | `compose` | `docker compose -f infra/compose.yml` (e.g. `pnpm compose up -d --wait`) |
@@ -243,11 +243,13 @@ The repository is private, so Actions minutes are metered per job: keep the job 
 
 | job | after setup |
 | --- | --- |
-| `check` | `pnpm lint`, `pnpm typecheck`, `pnpm test` (unit + component); from P0-03 also `actions/setup-go@v6` with `go-version-file: connector/go.mod`, `cache-dependency-path: connector/go.sum`, and in `connector/`: `test -z "$(gofmt -l .)"`, `go vet ./...`, `go test ./...`, and a build loop over the five GOOS/GOARCH pairs |
+| `check` | `pnpm lint`, `pnpm typecheck`, `pnpm test` (unit + component); from P0-03 also `pnpm scenarios`, `actions/setup-go@v6` with `go-version-file: connector/go.mod`, `cache-dependency-path: connector/go.sum`, and in `connector/`: `test -z "$(gofmt -l .)"`, `go vet ./...`, `go test ./...`, and a build loop over the five GOOS/GOARCH pairs |
 | `integration` | service `postgres:16.15` (env as compose, port `54329:5432`, `pg_isready` health options); `DATABASE_URL=postgres://parallax:parallax@127.0.0.1:54329/parallax`; `pnpm db:migrate`; `pnpm test:integration` |
 | `e2e` | same service; `pnpm build`; `actions/cache@v4` on `~/.cache/ms-playwright` keyed by the Playwright version; `pnpm exec playwright install --with-deps chromium`; `pnpm test:e2e`; `actions/upload-artifact@v4` of `e2e/playwright-report` when failed |
 
 `.github/workflows/image.yml` (separate workflow so it runs only when needed): triggers `pull_request` and `workflow_dispatch` with `paths: [infra/docker/**, .dockerignore, package.json, pnpm-lock.yaml, pnpm-workspace.yaml, apps/*/package.json, packages/*/package.json]`; one job `image`: `docker/setup-buildx-action@v3`, `docker/build-push-action@v6` with `push: false`, `file: infra/docker/server.Dockerfile`, `cache-from/to: type=gha`.
+
+`ci.yml` never uses `paths`/`paths-ignore`: the merge rule needs at least one check run on every PR head, including documentation-only PRs. Pushes cost minutes: implementers push once per review round, after `pnpm check` and the touched integration/e2e tests pass locally.
 
 Scheduled workflows added by later items (load test, backup/restore, full connector matrix) run **weekly**, not nightly, to stay within the Actions allowance.
 

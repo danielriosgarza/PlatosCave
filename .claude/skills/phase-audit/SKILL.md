@@ -21,7 +21,7 @@ Argument: phase number N. Repository `danielriosgarza/PlatosCave`, on `main`. Si
 
 ## 2. File fix-up issues
 
-One small issue per problem, title `[PN-AUD<k>] …`, labels `plan`, `phase:N`, `audit`, a `model:` label per `docs/delivery/README.md`, `security` when relevant, and `status:ready` (or `status:blocked` with `Depends on:`). Body: problem, evidence (file:line or failing test), expected behaviour with spec/ADR reference, and the scenario IDs involved. Do not fix code yourself.
+Before filing, list open and closed issues whose title starts with `[PN-AUD`; skip problems an existing one covers, and number new ones after the highest existing k. One small issue per problem, title `[PN-AUD<k>] …`, labels `plan`, `phase:N`, `audit`, a `model:` label per `docs/delivery/README.md`, `security` when relevant, and `status:ready` with `Depends on: none` (or `status:blocked` with the IDs). Body: problem, evidence (file:line or failing test), expected behaviour with spec/ADR reference, and the scenario IDs involved. Do not fix code yourself.
 
 If the next phase's plan items need refinement based on what was learned, edit those open issues' bodies directly and note the change in a comment.
 
