@@ -1,0 +1,15 @@
+{
+  "name": "@parallax/contracts",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./routes/*": "./src/routes/*.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "zod": "4.6.5"
+  }
+}

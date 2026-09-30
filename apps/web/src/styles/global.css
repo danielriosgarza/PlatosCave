@@ -1,0 +1,64 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  background: var(--pc-paper);
+  color: var(--pc-ink);
+  font: var(--pc-text-ui);
+  overflow-wrap: break-word;
+}
+::selection {
+  background: var(--pc-highlight);
+  color: var(--pc-ink);
+}
+button,
+input,
+textarea,
+select {
+  font: inherit;
+  color: inherit;
+  caret-color: var(--pc-ink);
+}
+h1,
+h2,
+h3,
+p {
+  margin: 0;
+}
+h1,
+h2,
+h3 {
+  font: var(--pc-text-title);
+  letter-spacing: var(--pc-tracking-title);
+  text-wrap: balance;
+}
+h2 {
+  font: var(--pc-text-section);
+}
+h3 {
+  font: var(--pc-text-subsection);
+  letter-spacing: var(--pc-tracking-subsection);
+}
+[hidden] {
+  display: none !important;
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+@media (pointer: coarse) {
+  button,
+  select {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}

@@ -1,0 +1,38 @@
+import { defineConfig } from 'vitest/config';
+
+export default defineConfig({
+  test: {
+    projects: [
+      {
+        test: {
+          name: 'unit',
+          environment: 'node',
+          include: [
+            'packages/**/*.test.ts',
+            'apps/server/src/**/*.test.ts',
+            'scripts/**/*.test.ts',
+          ],
+        },
+      },
+      {
+        extends: 'apps/web/vite.config.ts',
+        root: 'apps/web',
+        test: {
+          name: 'component',
+          environment: 'jsdom',
+          include: ['src/**/*.test.tsx'],
+          setupFiles: ['src/test/setup.ts'],
+        },
+      },
+      {
+        test: {
+          name: 'integration',
+          environment: 'node',
+          include: ['apps/server/test/integration/**/*.itest.ts'],
+          testTimeout: 15000,
+          hookTimeout: 60000,
+        },
+      },
+    ],
+  },
+});

@@ -1,0 +1,60 @@
+/* Parallax design tokens. Source of truth: DESIGN.md frontmatter. tokens.test.ts fails on drift. */
+:root {
+  color-scheme: light dark;
+  /* colors — light first, dark second */
+  --pc-paper: light-dark(#ffffff, #15171a);
+  --pc-sheet: light-dark(#ffffff, #1b1e23);
+  --pc-ink: light-dark(#202124, #eef0f3);
+  --pc-muted: light-dark(#60646c, #afb5bf);
+  --pc-rule: light-dark(#d9dce1, #3b4048);
+  --pc-accent-ink: light-dark(#ffffff, #202124);
+  --pc-highlight: light-dark(#f7edb1, #534a20);
+  --pc-soft: light-dark(#f1f2f4, #292d34);
+  --pc-secondary: light-dark(#f6f7f8, #1b1e23);
+  --pc-success: light-dark(#315747, #a9cebc);
+  --pc-accent: var(--pc-ink); /* alias by rule; never a second colour */
+  /* typography */
+  --pc-font-sans: "Segoe UI", Arial, Helvetica, sans-serif;
+  --pc-font-mono: ui-monospace, Consolas, monospace;
+  --pc-font-math: Georgia, "Times New Roman", serif;
+  --pc-text-title: 600 28px / 1.25 var(--pc-font-sans);
+  --pc-text-section: 600 26px / 1.25 var(--pc-font-sans);
+  --pc-text-subsection: 600 20px / 1.25 var(--pc-font-sans);
+  --pc-text-body: 400 18px / 1.65 var(--pc-font-sans);
+  --pc-text-ui: 400 14px / 1.5 var(--pc-font-sans);
+  --pc-text-field: 400 16px / 1.5 var(--pc-font-sans);
+  --pc-text-label: 400 12px / 1.5 var(--pc-font-sans);
+  --pc-text-code: 400 14px / 1.75 var(--pc-font-mono);
+  --pc-text-code-editor: 400 16px / 1.75 var(--pc-font-mono);
+  --pc-tracking-title: -0.02em;
+  --pc-tracking-subsection: -0.01em;
+  /* rounded */
+  --pc-radius-control: 4px;
+  --pc-radius-passage-tools: 5px;
+  --pc-radius-note: 6px;
+  --pc-radius-card: 8px;
+  --pc-radius-filter: 18px;
+  --pc-radius-search: 20px;
+  --pc-radius-primary: 24px;
+  --pc-radius-choice: 28px;
+  --pc-radius-square: 0;
+  /* spacing */
+  --pc-space-4: 4px;
+  --pc-space-8: 8px;
+  --pc-space-12: 12px;
+  --pc-space-16: 16px;
+  --pc-space-20: 20px;
+  --pc-space-24: 24px;
+  --pc-space-28: 28px;
+  --pc-space-32: 32px;
+  --pc-space-40: 40px;
+  --pc-space-48: 48px;
+  --pc-space-56: 56px;
+  /* layout measures, spec §5 */
+  --pc-reading-width: 720px;
+  --pc-reading-size: 18px;
+  --pc-notes-width: 280px;
+  --pc-notes-gap: 56px;
+  --pc-stage-inset: 40px;
+  --pc-shell-max: 1600px;
+}
