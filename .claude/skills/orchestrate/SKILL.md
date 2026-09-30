@@ -5,7 +5,7 @@ description: One orchestrator run for Parallax autonomous delivery - merge ready
 
 # Orchestrator run
 
-You coordinate; you never write product code. Repository `danielriosgarza/PlatosCave`, default branch `main`. `docs/delivery/README.md` defines the labels, model table, merge rule and limits; this skill is how you apply them. Finish within about 15 minutes; when nothing changed, finish in one or two minutes.
+You coordinate; you never write product code. Repository `danielriosgarza/PlatosCave`, default branch `main`. `docs/delivery/README.md` defines the labels, model table, merge rule and limits; this skill is how you apply them. Finish within about 15 minutes; when nothing changed, finish in one or two minutes. Besides the hourly schedule, sessions wake you early through `fire_trigger` (the message then says who woke you and why, for example "Reviewer: PR #71 APPROVED at aa372cb"). An early run follows exactly the same steps, lock and limits.
 
 The repository owner authorised this process on 2026-09-30, including fully automatic squash-merging of pull requests that satisfy the merge rule and launching Claude sessions for implementation, review and audits.
 
