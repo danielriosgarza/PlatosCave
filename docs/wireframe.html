@@ -1,0 +1,610 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Parallax · unified wireframe</title>
+<!-- Unified design study. See design-reconciliation.md for decisions. -->
+<style>body{margin:0;background:light-dark(#ffffff,#15171a)}</style>
+</head>
+<body>
+<!-- WIREFRAME-FRAGMENT-START -->
+<div id="parallax-study" aria-label="Parallax course workspace design">
+<style>
+#parallax-study{
+  --pc-paper:light-dark(#ffffff,#15171a);--pc-sheet:light-dark(#ffffff,#1b1e23);
+  --pc-ink:light-dark(#202124,#eef0f3);--pc-muted:light-dark(#60646c,#afb5bf);
+  --pc-rule:light-dark(#d9dce1,#3b4048);--pc-accent:var(--pc-ink);
+  --pc-accent-ink:light-dark(#ffffff,#202124);--pc-highlight:light-dark(#f7edb1,#534a20);
+  --pc-soft:light-dark(#f1f2f4,#292d34);--pc-secondary:light-dark(#f6f7f8,#1b1e23);
+  --pc-success:light-dark(#315747,#a9cebc);
+  --pc-reading-width:720px;--pc-reading-size:18px;
+  color:var(--pc-ink);background:var(--pc-paper);font-family:"Segoe UI",Arial,Helvetica,sans-serif;
+  font-size:14px;line-height:1.5;color-scheme:light dark;isolation:isolate;width:100%;box-sizing:border-box;overflow-wrap:break-word
+}
+#parallax-study *{box-sizing:border-box}
+#parallax-study [hidden]{display:none!important}
+#parallax-study ::selection{background:var(--pc-highlight);color:var(--pc-ink)}
+#parallax-study button,#parallax-study input,#parallax-study textarea,#parallax-study select{font:inherit;color:inherit;caret-color:var(--pc-ink)}
+#parallax-study button{background:transparent;border:0;min-height:36px;padding:7px 11px;border-radius:4px;text-align:left;cursor:pointer}
+#parallax-study button:hover{background:var(--pc-soft)}
+#parallax-study button:disabled{opacity:.55;cursor:default}
+#parallax-study button.pc-primary{color:var(--pc-accent-ink);background:var(--pc-accent);padding:9px 22px;font-weight:600;border-radius:24px}
+#parallax-study button.pc-primary:hover{filter:brightness(.9)}
+#parallax-study button.pc-outline{border:1px solid var(--pc-muted);padding:8px 14px;background:var(--pc-sheet)}
+#parallax-study button.pc-outline:hover{background:var(--pc-sheet)}
+#parallax-study button.pc-link{padding:2px 0;color:var(--pc-ink);text-decoration:underline;text-underline-offset:4px}
+#parallax-study button.pc-text{padding-left:0;padding-right:0}
+#parallax-study input,#parallax-study textarea,#parallax-study select{border:1px solid var(--pc-muted);background:var(--pc-sheet);border-radius:4px;max-width:100%;padding:8px 10px}
+#parallax-study input:not([type=range]):not([type=radio]):not([type=checkbox]),#parallax-study textarea{font-size:16px}
+#parallax-study textarea{width:100%;resize:vertical;line-height:1.6}
+#parallax-study h1,#parallax-study h2,#parallax-study h3,#parallax-study p{margin:0}
+#parallax-study h1,#parallax-study h2,#parallax-study h3{font:600 28px/1.25 "Segoe UI",Arial,Helvetica,sans-serif;letter-spacing:-.02em;text-wrap:balance}
+#parallax-study h2{font-size:26px}
+#parallax-study h3{font-size:20px;letter-spacing:-.01em}
+#parallax-study a{color:var(--pc-ink)}
+#parallax-study .pc-context{font-size:12px;font-weight:400;color:var(--pc-muted)}
+#parallax-study .pc-muted{color:var(--pc-muted)}
+#parallax-study .pc-small{font-size:12px;line-height:1.5}
+#parallax-study .pc-success{color:var(--pc-success)}
+#parallax-study .pc-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+#parallax-study .pc-between{justify-content:space-between}
+#parallax-study .pc-stack{display:grid;gap:16px}
+#parallax-study .pc-rule{border:0;border-top:1px solid var(--pc-rule);margin:24px 0}
+
+/* Global bar */
+#parallax-study .pc-top{min-height:56px;display:flex;align-items:center;justify-content:space-between;padding:8px 28px;border-bottom:1px solid var(--pc-rule);gap:16px;background:var(--pc-sheet)}
+#parallax-study .pc-brand{font-size:19px;font-weight:650;white-space:nowrap;letter-spacing:-.03em;line-height:1.25}
+#parallax-study .pc-top-left{display:flex;align-items:center;gap:20px;flex-wrap:wrap}
+#parallax-study .pc-top-left>span{height:18px;border-left:1px solid var(--pc-rule)}
+#parallax-study .pc-topic-nav{display:flex;gap:4px;align-items:center;font-size:12px}
+#parallax-study .pc-topic-nav button{font-size:12px;color:var(--pc-muted);min-height:32px;padding:5px 9px}
+#parallax-study .pc-topic-nav button:hover{color:var(--pc-ink)}
+
+/* Topic shell */
+#parallax-study .pc-shell{max-width:1600px;margin:auto;min-height:660px}
+#parallax-study .pc-heading{min-height:100px;padding:22px 40px 14px;display:flex;justify-content:space-between;gap:16px;align-items:flex-start}
+#parallax-study .pc-heading h1{font-size:28px}
+#parallax-study .pc-objective{font-size:15px;line-height:1.4;margin-top:6px}
+#parallax-study .pc-heading .pc-context{margin-top:5px}
+#parallax-study .pc-tabs{display:flex;align-items:stretch;gap:32px;padding:0 40px;border-bottom:1px solid var(--pc-rule);min-height:44px;flex-wrap:wrap}
+#parallax-study .pc-tabs>button{border-radius:0;position:relative;padding:10px 0;color:var(--pc-muted);white-space:nowrap;font-size:14px;min-height:44px}
+#parallax-study .pc-tabs>button:hover{background:none;color:var(--pc-ink)}
+#parallax-study .pc-tabs>button[aria-selected=true]{color:var(--pc-ink);font-weight:600}
+#parallax-study .pc-tabs>button[aria-selected=true]:after{content:"";position:absolute;bottom:-1px;left:0;right:0;height:2px;background:var(--pc-ink)}
+#parallax-study .pc-toolbar{padding:6px 40px;border-bottom:1px solid var(--pc-rule);min-height:44px;display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;background:var(--pc-sheet)}
+#parallax-study .pc-tools{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+#parallax-study .pc-tools button{font-size:12px;min-height:32px}
+#parallax-study .pc-tools button[aria-pressed=true]{background:var(--pc-soft);font-weight:600}
+#parallax-study .pc-stage{padding:32px 40px;min-height:550px}
+
+/* Reading and notes */
+#parallax-study .pc-reading-grid{max-width:1080px;margin:auto;display:grid;grid-template-columns:minmax(0,var(--pc-reading-width)) 280px;gap:56px;justify-content:center;align-items:start}
+#parallax-study .pc-reading-grid.pc-no-margin{grid-template-columns:minmax(0,var(--pc-reading-width))}
+#parallax-study .pc-reading{max-width:var(--pc-reading-width);margin:0 auto;width:100%;min-width:0;position:relative}
+#parallax-study .pc-reading .pc-body{font-size:var(--pc-reading-size);line-height:1.65;margin-top:18px}
+#parallax-study .pc-reading h2{font-size:28px;margin:0 0 10px;letter-spacing:-.02em}
+#parallax-study .pc-reading h3{margin-top:26px;font-size:21px}
+#parallax-study .pc-anchor{display:inline!important;font:inherit!important;padding:0!important;min-height:0!important;color:var(--pc-ink);background:var(--pc-highlight);border-radius:0!important;text-decoration:none;border-bottom:1px solid var(--pc-muted)}
+#parallax-study .pc-anchor.pc-plain{background:none}
+#parallax-study .pc-note-num{color:var(--pc-ink);font:600 12px "Segoe UI",sans-serif;vertical-align:super;margin-left:4px}
+#parallax-study .pc-inline-tools{position:relative;display:flex;width:max-content;max-width:100%;flex-wrap:wrap;margin-top:10px;gap:2px;padding:3px 6px;background:var(--pc-ink);color:var(--pc-accent-ink);border-radius:5px;z-index:2}
+#parallax-study .pc-inline-tools button{color:inherit;min-height:30px;font-size:12px;padding:5px 9px}
+#parallax-study .pc-inline-tools button:hover,#parallax-study .pc-inline-tools button[aria-pressed=true]{background:var(--pc-muted);color:var(--pc-accent-ink)}
+#parallax-study .pc-figure{margin:22px 0 0;border-top:1px solid var(--pc-rule);padding-top:16px}
+#parallax-study .pc-figure figcaption{font-size:12px;color:var(--pc-muted);margin-top:8px}
+#parallax-study .pc-figure-head{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}
+#parallax-study .pc-figure-head button{font-size:12px;min-height:30px;padding:4px 8px}
+#parallax-study .pc-distribution{width:100%;min-width:0;color:var(--pc-ink)}
+#parallax-study .pc-distribution svg{display:block;width:100%;height:auto}
+#parallax-study .pc-drawing{margin-top:12px;border-top:1px solid var(--pc-rule);padding-top:12px}
+#parallax-study canvas{display:block;width:100%;height:180px;background:var(--pc-sheet);border:1px solid var(--pc-muted);margin:12px 0;touch-action:none}
+#parallax-study .pc-margin{min-width:0}
+#parallax-study .pc-margin-tabs{display:flex;gap:20px;border-bottom:1px solid var(--pc-rule);margin-bottom:16px}
+#parallax-study .pc-margin-tabs button{border-radius:0;font-size:13px;padding:0 0 10px}
+#parallax-study .pc-margin-tabs button[aria-pressed=true]{border-bottom:2px solid var(--pc-ink);font-weight:600}
+#parallax-study .pc-margin blockquote{margin:12px 0;padding:14px;border:1px solid var(--pc-rule);background:var(--pc-sheet);font-size:14px;line-height:1.55;border-radius:6px}
+#parallax-study .pc-margin textarea{margin:8px 0;font-size:16px;min-height:140px;border:1px solid var(--pc-rule);background:var(--pc-soft);padding:12px;border-radius:6px}
+#parallax-study .pc-margin textarea:focus{border-color:var(--pc-muted)}
+#parallax-study .pc-margin h3{font-size:17px}
+#parallax-study .pc-save-line{font-size:12px;color:var(--pc-muted);margin:4px 0 16px}
+#parallax-study .pc-thread{padding:16px 0;border-top:1px solid var(--pc-rule)}
+#parallax-study .pc-thread p{margin:9px 0;font-size:14px;line-height:1.55}
+
+/* Slides */
+#parallax-study .pc-slide-stage{padding:16px 40px 20px;background:var(--pc-sheet)}
+#parallax-study .pc-deck-grid{display:grid;grid-template-columns:minmax(0,1fr);gap:32px;align-items:start}
+#parallax-study .pc-deck-grid.has-notes{grid-template-columns:minmax(0,1fr) 280px}
+#parallax-study .pc-deck-grid>div{min-width:0}
+#parallax-study .pc-deck-grid.has-notes .pc-slide{padding:28px}
+#parallax-study .pc-deck-grid.has-notes .pc-slide h2{font-size:30px}
+#parallax-study .pc-deck-grid.has-notes .pc-slide-sub{font-size:18px}
+#parallax-study .pc-deck-grid.has-notes .pc-slide-mat{padding:0}
+#parallax-study .pc-step-label{font-size:12px;color:var(--pc-muted);text-align:center;margin-bottom:8px}
+#parallax-study .pc-inline-error{margin-top:12px;color:var(--pc-ink);font-weight:600}
+#parallax-study .pc-slide-stage:focus-visible{outline:2px solid var(--pc-ink);outline-offset:-2px}
+#parallax-study .pc-slide-mat{background:var(--pc-soft);padding:0 6%;display:flex;justify-content:center}
+#parallax-study .pc-slide{background:var(--pc-sheet);width:100%;max-width:1240px;aspect-ratio:16/9;padding:40px 48px;display:flex;flex-direction:column;justify-content:space-between}
+#parallax-study .pc-slide h2{font-size:38px;letter-spacing:-.03em;max-width:850px;margin:8px 0 16px}
+#parallax-study .pc-slide p.pc-slide-sub{font-size:22px;line-height:1.5;max-width:720px}
+#parallax-study .pc-slide-foot{display:flex;justify-content:space-between;gap:16px;font-size:12px;margin-top:24px;color:var(--pc-muted)}
+#parallax-study .pc-progress{height:2px;background:var(--pc-rule);margin-top:18px;overflow:hidden}
+#parallax-study .pc-progress>span{display:block;height:100%;background:var(--pc-ink)}
+#parallax-study .pc-slide-controls{display:flex;align-items:center;justify-content:space-between;margin-top:12px;gap:12px;flex-wrap:wrap}
+#parallax-study .pc-slide-controls>.pc-row>button:first-child{padding-left:0}
+#parallax-study .pc-slide-index{margin:12px 0 0;padding:12px 0 0;border-top:1px solid var(--pc-rule);display:flex;gap:8px;flex-wrap:wrap;list-style:none}
+#parallax-study .pc-slide-index button{font-size:12px;color:var(--pc-muted);min-height:32px}
+#parallax-study .pc-slide-index button[aria-current=true]{color:var(--pc-ink);font-weight:600}
+#parallax-study .pc-sampling{display:flex;align-items:center;justify-content:space-evenly;gap:16px;margin:24px 0}
+#parallax-study .pc-sample{display:grid;grid-template-columns:repeat(5,8px);gap:7px;padding:20px;background:var(--pc-soft);width:max-content}
+#parallax-study .pc-sample span{width:8px;height:8px;background:var(--pc-ink);border-radius:50%}
+#parallax-study .pc-sample-box{display:grid;gap:12px;justify-items:center}
+#parallax-study .pc-sample-box em{font-size:20px;font-style:normal}
+#parallax-study .pc-equation{font-family:Georgia,"Times New Roman",serif;font-size:48px;margin:28px 0;letter-spacing:1px}
+
+/* Exercise */
+#parallax-study .pc-exercise{max-width:880px;margin:0 auto}
+#parallax-study .pc-step-track{display:flex;gap:5px;margin:0 auto 28px;max-width:340px}
+#parallax-study .pc-step-track span{height:3px;flex:1;background:var(--pc-rule)}
+#parallax-study .pc-step-track span.is-done{background:var(--pc-ink)}
+#parallax-study .pc-exercise-head{text-align:center;margin-bottom:24px}
+#parallax-study .pc-exercise-head p{margin-top:10px}
+#parallax-study .pc-lab{display:grid;grid-template-columns:minmax(0,1fr) 260px;gap:48px;padding:8px 0 22px;margin:18px 0}
+#parallax-study .pc-range{display:grid;gap:16px;align-content:center}
+#parallax-study input[type=range]{width:100%;accent-color:var(--pc-ink);padding:0;min-height:32px}
+#parallax-study .pc-readout{font-size:20px;font-variant-numeric:tabular-nums}
+#parallax-study .pc-options{display:flex;gap:12px;flex-wrap:wrap;margin:18px 0;justify-content:center}
+#parallax-study .pc-option{display:flex;align-items:center;gap:8px;border:1px solid var(--pc-rule);padding:10px 18px;border-radius:28px;min-height:48px}
+#parallax-study .pc-option input{accent-color:var(--pc-ink)}
+#parallax-study .pc-option:has(input:checked){background:var(--pc-soft);border-color:var(--pc-ink)}
+#parallax-study .pc-feedback{padding:16px;background:var(--pc-soft);border:1px solid var(--pc-rule);border-radius:4px;margin-top:20px}
+#parallax-study .pc-exercise>h3{text-align:center;font-size:18px}
+#parallax-study .pc-exercise .pc-actions{justify-content:center;margin-top:24px}
+#parallax-study .pc-explain{max-width:640px;margin:18px auto 0}
+
+/* Notebook */
+#parallax-study .pc-notebook{max-width:1160px;margin:0 auto}
+#parallax-study .pc-notebook-intro{max-width:720px;padding:0 0 24px 44px}
+#parallax-study .pc-notebook-intro p{font-size:18px;line-height:1.65;margin-top:14px}
+#parallax-study .pc-cell{display:grid;grid-template-columns:36px minmax(0,1fr);gap:8px;margin:16px 0;align-items:start}
+#parallax-study .pc-cell-num{font-size:12px;color:var(--pc-muted);padding-top:12px;font-family:ui-monospace,Consolas,monospace}
+#parallax-study pre{margin:0;padding:16px 20px;background:var(--pc-secondary);border:1px solid var(--pc-rule);border-radius:4px;font:14px/1.75 ui-monospace,Consolas,monospace;overflow:auto;max-width:100%;white-space:pre-wrap;overflow-wrap:anywhere}
+#parallax-study .pc-code-comment{color:var(--pc-muted)}
+#parallax-study .pc-code-key{color:var(--pc-ink);font-weight:600}
+#parallax-study .pc-output{padding:16px 20px;border-bottom:1px solid var(--pc-rule)}
+#parallax-study .pc-output .pc-distribution{max-width:640px}
+#parallax-study .pc-mode-select{padding:4px 6px;font-size:12px;max-width:240px}
+#parallax-study .pc-shiny{border:1px solid var(--pc-rule);background:var(--pc-sheet);min-height:460px}
+#parallax-study .pc-shiny-head{padding:18px 24px;border-bottom:1px solid var(--pc-rule);font-size:22px;font-weight:600}
+#parallax-study .pc-shiny-body{padding:28px;display:grid;grid-template-columns:220px minmax(0,1fr);gap:36px}
+#parallax-study .pc-shiny-body h3{margin-bottom:20px}
+
+/* Test */
+#parallax-study .pc-test-top{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid var(--pc-rule);padding-bottom:18px;margin-bottom:24px;gap:16px;flex-wrap:wrap}
+#parallax-study .pc-test-grid{display:grid;grid-template-columns:minmax(0,.85fr) minmax(0,1.15fr);gap:48px}
+#parallax-study .pc-test-grid>div:last-child{border-left:1px solid var(--pc-rule);padding-left:32px}
+#parallax-study .pc-prompt p{font-size:18px;line-height:1.6;margin:18px 0}
+#parallax-study .pc-prompt code{font:14px ui-monospace,Consolas,monospace;overflow-wrap:anywhere}
+#parallax-study .pc-terms{display:grid;grid-template-columns:auto 1fr;gap:6px 16px;font-size:13px;margin:0}
+#parallax-study .pc-terms dt{color:var(--pc-muted)}
+#parallax-study .pc-terms dd{margin:0}
+#parallax-study .pc-editor-head{background:var(--pc-soft);padding:10px 14px;display:flex;align-items:center;justify-content:space-between;font-size:12px;gap:12px;border:1px solid var(--pc-rule);border-bottom:0}
+#parallax-study textarea.pc-editor{min-height:260px;font:16px/1.75 ui-monospace,Consolas,monospace;border-radius:0;border:1px solid var(--pc-muted);resize:vertical;padding:20px;background:var(--pc-sheet);tab-size:4;margin:0}
+#parallax-study .pc-run-output{background:var(--pc-sheet);padding:16px;border:1px solid var(--pc-rule);margin-top:16px;border-radius:4px}
+#parallax-study .pc-submit-review{border-top:1px solid var(--pc-rule);padding-top:24px;margin-top:24px}
+#parallax-study .pc-receipt{max-width:700px;margin:32px auto;padding:32px 0;border-top:1px solid var(--pc-ink);border-bottom:1px solid var(--pc-rule)}
+#parallax-study .pc-receipt h2{margin:18px 0}
+#parallax-study .pc-receipt dl{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:24px 0}
+#parallax-study .pc-receipt dd{margin:0}
+
+/* Course index and syllabus */
+#parallax-study .pc-index{max-width:1200px;padding:44px 40px 64px;margin:auto;min-height:720px}
+#parallax-study .pc-index h1{font-size:28px}
+#parallax-study .pc-index-intro{font-size:15px;line-height:1.5;max-width:700px;margin-top:10px;color:var(--pc-muted)}
+#parallax-study .pc-catalog-tools{display:flex;align-items:center;justify-content:space-between;gap:20px;flex-wrap:wrap;margin:26px 0 24px}
+#parallax-study .pc-filters{display:flex;gap:6px;flex-wrap:wrap}
+#parallax-study .pc-filters button{color:var(--pc-muted);border-radius:18px;padding:7px 14px;font-size:13px}
+#parallax-study .pc-filters button[aria-pressed=true]{background:var(--pc-soft);color:var(--pc-ink);font-weight:600}
+#parallax-study .pc-search{display:flex;gap:10px;align-items:center;color:var(--pc-muted);font-size:12px}
+#parallax-study .pc-search input{width:230px;border-color:var(--pc-rule);border-radius:20px;font-size:14px;padding:8px 14px}
+#parallax-study .pc-course-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px}
+#parallax-study .pc-course-card{border:1px solid var(--pc-rule);border-radius:8px;min-width:0;padding:22px 22px 18px;display:flex;flex-direction:column;align-items:flex-start;min-height:232px;transition:border-color .15s ease}
+#parallax-study .pc-course-card:hover{border-color:var(--pc-muted)}
+#parallax-study .pc-card-open{display:block;width:100%;padding:0;min-height:0;border-radius:0}
+#parallax-study .pc-card-open:hover{background:none}
+#parallax-study .pc-course-card h2{font-size:18px;line-height:1.3;margin:12px 0 8px;letter-spacing:-.01em}
+#parallax-study .pc-course-card .pc-card-meta{font-size:12px;color:var(--pc-muted);line-height:1.55}
+#parallax-study .pc-card-status{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;font-size:12px;color:var(--pc-muted);margin:15px 0 12px;min-height:24px}
+#parallax-study .pc-card-status button{font-size:12px;min-height:24px}
+#parallax-study .pc-course-card .pc-progress{width:100%;margin-top:auto}
+#parallax-study .pc-course-mark{width:76px;height:54px;display:block;color:var(--pc-muted)}
+#parallax-study .pc-course-mark svg{width:100%;height:100%;overflow:visible}
+#parallax-study .pc-catalog-empty{padding:48px 0;grid-column:1/-1}
+#parallax-study .pc-catalog-foot{margin-top:28px;display:flex;justify-content:space-between;align-items:center;gap:20px}
+#parallax-study .pc-topic-table-wrap{margin-top:34px;overflow-x:auto}
+#parallax-study .pc-topic-table{width:100%;min-width:660px;border-collapse:collapse;font-variant-numeric:tabular-nums}
+#parallax-study .pc-topic-table th{text-align:left;font-size:12px;font-weight:400;padding:12px 10px;color:var(--pc-muted);border-bottom:1px solid var(--pc-rule)}
+#parallax-study .pc-topic-table td{padding:14px 10px;border-bottom:1px solid var(--pc-rule);font-size:14px;vertical-align:middle}
+#parallax-study .pc-topic-table td:first-child{font-size:12px;width:36px;color:var(--pc-muted)}
+#parallax-study .pc-topic-table .pc-current-row{background:var(--pc-soft)}
+#parallax-study .pc-topic-table button{padding:4px 0}
+#parallax-study .pc-topic-table .pc-current-row td:nth-child(2)>button{font-weight:600}
+#parallax-study .pc-material-dot{display:inline-block;width:7px;height:7px;border:1px solid var(--pc-rule);border-radius:1px}
+#parallax-study .pc-material-dot.is-available{background:var(--pc-ink);border-color:var(--pc-ink)}
+#parallax-study .pc-resource-presence{text-align:center;width:36px}
+#parallax-study .pc-syllabus-legend{display:flex;gap:18px;align-items:center;margin-top:20px;flex-wrap:wrap;color:var(--pc-muted);font-size:12px}
+
+/* Instructor */
+#parallax-study .pc-wide-page{padding:32px 40px;min-height:650px}
+#parallax-study .pc-review-filters{display:flex;gap:24px;align-items:end;flex-wrap:wrap;margin-bottom:24px}
+#parallax-study .pc-review-filters label{display:grid;gap:6px;font-size:12px}
+#parallax-study .pc-table-wrap{overflow-x:auto;max-width:100%}
+#parallax-study table.pc-review-table{width:100%;border-collapse:collapse;font-size:13px;min-width:580px;font-variant-numeric:tabular-nums}
+#parallax-study .pc-review-table th{text-align:left;font-size:12px;color:var(--pc-muted);font-weight:600;padding:12px;border-bottom:1px solid var(--pc-rule);background:var(--pc-secondary)}
+#parallax-study .pc-review-table td{padding:14px 12px;border-bottom:1px solid var(--pc-rule);vertical-align:top}
+#parallax-study tr.pc-selected td{background:var(--pc-soft)}
+#parallax-study .pc-student-work{margin-top:32px;padding-top:24px;border-top:1px solid var(--pc-ink)}
+#parallax-study .pc-student-nav{display:flex;gap:4px;align-items:center}
+#parallax-study .pc-student-nav button{font-size:12px;color:var(--pc-muted)}
+#parallax-study .pc-review-grid{display:grid;grid-template-columns:minmax(0,1fr) 310px;gap:32px;margin-top:24px}
+#parallax-study .pc-rubric{border-left:1px solid var(--pc-rule);padding-left:24px}
+#parallax-study .pc-rubric label{display:block;margin:12px 0 5px;font-size:12px}
+#parallax-study .pc-rubric input{width:80px}
+#parallax-study .pc-edit-grid{display:grid;grid-template-columns:minmax(0,1fr) 280px;gap:40px}
+#parallax-study .pc-edit-grid label{display:grid;gap:8px;margin:20px 0 0}
+#parallax-study .pc-edit-grid input{width:100%}
+#parallax-study .pc-resource-row{display:flex;justify-content:space-between;gap:16px;align-items:center;padding:14px 0;border-top:1px solid var(--pc-rule)}
+#parallax-study .pc-edit-side{border-left:1px solid var(--pc-rule);padding-left:24px}
+
+/* Demo chrome */
+#parallax-study .pc-demo{min-height:42px;padding:10px 28px;display:flex;align-items:center;justify-content:space-between;border-top:1px solid var(--pc-rule);gap:16px;font-size:12px;color:var(--pc-muted);flex-wrap:wrap;background:var(--pc-sheet)}
+#parallax-study .pc-demo button{font-size:12px;min-height:24px;padding:0;text-decoration:underline;text-underline-offset:3px}
+#parallax-study .pc-demo button:hover{background:none}
+#parallax-study .pc-role{display:flex;align-items:center;gap:8px;font-size:12px}
+#parallax-study .pc-role select{padding:3px 6px;min-height:26px;font-size:12px;border-color:var(--pc-rule)}
+#parallax-study .pc-notice{padding:12px 28px;background:var(--pc-soft);border-bottom:1px solid var(--pc-rule);font-size:13px;display:flex;gap:20px;justify-content:space-between;align-items:center}
+#parallax-study .pc-panel{padding:24px 40px;border-bottom:1px solid var(--pc-rule);background:var(--pc-sheet)}
+#parallax-study .pc-measure-grid{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(220px,1fr);gap:32px;margin-top:18px}
+#parallax-study .pc-blueprint{border:1px solid var(--pc-muted);font-size:12px}
+#parallax-study .pc-blueprint>div{padding:8px 12px;border-bottom:1px solid var(--pc-rule)}
+#parallax-study .pc-blueprint>div:last-child{border-bottom:0;display:grid;grid-template-columns:1fr 90px;min-height:100px;gap:10px}
+#parallax-study .pc-swatch{display:flex;gap:12px;align-items:center;margin:7px 0;font-size:12px}
+#parallax-study .pc-swatch i{width:22px;height:22px;display:inline-block;border:1px solid var(--pc-muted)}
+
+/* Focus, full screen, diagram */
+#parallax-study.pc-focus .pc-top,#parallax-study.pc-focus .pc-heading,#parallax-study.pc-focus .pc-tabs,#parallax-study.pc-focus .pc-demo,#parallax-study.pc-focus .pc-panel{display:none}
+#parallax-study.pc-focus .pc-stage{padding-top:36px;min-height:740px}
+#parallax-study.pc-focus .pc-slide-stage{padding:16px 24px}
+#parallax-study.pc-focus .pc-slide-mat{padding:0}
+#parallax-study.pc-focus .pc-slide{max-width:1440px;margin:auto}
+#parallax-study.pc-focus .pc-reading-grid{max-width:1152px}
+#parallax-study:fullscreen{overflow:auto;background:var(--pc-paper)}
+#parallax-study.pc-diagram .pc-heading,#parallax-study.pc-diagram .pc-tabs,#parallax-study.pc-diagram .pc-toolbar,#parallax-study.pc-diagram .pc-margin{outline:1px dashed var(--pc-muted);outline-offset:-3px}
+
+@media(min-width:1200px) and (min-height:800px){
+  body>#parallax-study .pc-slide{max-width:min(100%,calc((100dvh - 350px)*16/9));padding:28px 40px}
+  body>#parallax-study.pc-focus .pc-slide{max-width:min(100%,calc((100dvh - 160px)*16/9));padding:40px}
+}
+@media(max-width:1199px){
+  #parallax-study .pc-reading-grid{grid-template-columns:minmax(0,1fr) 260px;gap:32px}
+  #parallax-study .pc-heading,#parallax-study .pc-tabs,#parallax-study .pc-toolbar{padding-left:32px;padding-right:32px}
+  #parallax-study .pc-stage,#parallax-study .pc-wide-page{padding:28px 32px}
+}
+@media(max-width:800px){
+  #parallax-study .pc-topic-nav{flex-wrap:wrap}
+  #parallax-study .pc-top{flex-wrap:wrap}
+  #parallax-study .pc-heading{padding:16px 24px}
+  #parallax-study .pc-tabs{padding:0 24px;gap:22px}
+  #parallax-study .pc-toolbar{padding-left:24px;padding-right:24px}
+  #parallax-study .pc-stage,#parallax-study .pc-wide-page{padding:24px}
+  #parallax-study .pc-deck-grid.has-notes,#parallax-study .pc-reading-grid,#parallax-study .pc-reading-grid.pc-no-margin,#parallax-study .pc-lab,#parallax-study .pc-review-grid,#parallax-study .pc-test-grid,#parallax-study .pc-edit-grid,#parallax-study .pc-shiny-body,#parallax-study .pc-measure-grid{grid-template-columns:minmax(0,1fr)}
+  #parallax-study .pc-test-grid>div:last-child{border:0;padding:0}
+  #parallax-study .pc-margin{padding:24px 0 0;border-top:1px solid var(--pc-rule)}
+  #parallax-study .pc-rubric,#parallax-study .pc-edit-side{border-left:0;border-top:1px solid var(--pc-rule);padding:24px 0 0}
+  #parallax-study .pc-course-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  #parallax-study .pc-slide-stage{padding:16px 24px}
+  #parallax-study .pc-slide-mat{padding:0}
+  #parallax-study .pc-slide{padding:28px}
+  #parallax-study .pc-slide h2{font-size:32px}
+  #parallax-study .pc-slide .pc-slide-sub{font-size:20px}
+  #parallax-study .pc-index{padding:32px 24px}
+  #parallax-study .pc-catalog-tools{align-items:flex-start}
+}
+@media(max-width:540px){
+  #parallax-study .pc-top{padding:8px 16px;gap:8px}
+  #parallax-study .pc-top-left{gap:10px}
+  #parallax-study .pc-top-left>span{display:none}
+  #parallax-study .pc-heading{padding:20px 16px 12px;min-height:84px;flex-wrap:wrap}
+  #parallax-study .pc-heading h1{font-size:24px}
+  #parallax-study .pc-tabs{padding:0 16px;gap:18px}
+  #parallax-study .pc-tabs>button{font-size:13px}
+  #parallax-study .pc-toolbar{padding:6px 16px}
+  #parallax-study .pc-stage,#parallax-study .pc-wide-page{padding:24px 16px}
+  #parallax-study .pc-reading h2{font-size:27px}
+  #parallax-study .pc-reading .pc-body{font-size:17px}
+  #parallax-study .pc-slide-stage{padding:12px 16px}
+  #parallax-study .pc-slide{padding:24px 18px;aspect-ratio:auto;min-height:410px}
+  #parallax-study .pc-slide h2{font-size:28px}
+  #parallax-study .pc-sampling{gap:8px}
+  #parallax-study .pc-sample{grid-template-columns:repeat(5,5px);gap:4px;padding:12px}
+  #parallax-study .pc-sample span{width:5px;height:5px}
+  #parallax-study .pc-sample-box em{font-size:16px}
+  #parallax-study .pc-notebook-intro{padding-left:0}
+  #parallax-study .pc-cell{grid-template-columns:26px minmax(0,1fr);gap:4px}
+  #parallax-study pre{padding:12px;font-size:13px}
+  #parallax-study .pc-output{padding:12px}
+  #parallax-study .pc-index{padding:28px 16px 40px}
+  #parallax-study .pc-course-grid{grid-template-columns:1fr;gap:14px}
+  #parallax-study .pc-course-card{min-height:200px;padding:20px}
+  #parallax-study .pc-search{width:100%}
+  #parallax-study .pc-search input{width:100%;min-width:0}
+  #parallax-study .pc-shiny-body{padding:20px}
+  #parallax-study .pc-panel{padding:24px 16px}
+  #parallax-study .pc-demo,#parallax-study .pc-notice{padding:12px 16px}
+  #parallax-study .pc-receipt{padding:24px 0}
+  #parallax-study .pc-receipt dl{grid-template-columns:1fr}
+}
+@media(pointer:coarse){#parallax-study button:not(.pc-card-open),#parallax-study select{min-height:44px;min-width:44px}#parallax-study .pc-tools{gap:10px}}
+@media(prefers-reduced-motion:reduce){#parallax-study *{scroll-behavior:auto!important;transition:none!important}}
+</style>
+<div class="pc-top">
+  <div class="pc-top-left"><button class="pc-brand" data-action="courses">Parallax</button><span aria-hidden="true"></span><button data-action="courses">Courses</button><button data-action="topics">Topics</button></div>
+  <nav class="pc-topic-nav" id="pc-topic-nav" aria-label="Neighbouring topics"></nav>
+</div>
+<div id="pc-measures" class="pc-panel" hidden>
+  <div class="pc-row pc-between"><h3>Layout at 1440 × 900</h3><span class="pc-small pc-muted">CSS pixels · regions grow with text</span></div>
+  <div class="pc-measure-grid">
+    <div class="pc-blueprint" role="img" aria-label="Layout diagram: global bar 56 pixels, topic heading about 120, tabs 44, toolbar 44, content with a 280 pixel notes margin.">
+      <div>Global bar · 56 px</div><div>Topic heading with objective · about 120 px</div><div>Five tabs · 44 px</div><div>Resource tools · 44 px</div><div><span>Content · 40 px inset<br>Reading 640–720 px</span><span>Notes 280 px<br>gap 56 px</span></div>
+    </div>
+    <div><div class="pc-swatch"><i style="background:var(--pc-paper)"></i>Content · #FFFFFF</div><div class="pc-swatch"><i style="background:var(--pc-ink)"></i>Text and controls · #202124</div><div class="pc-swatch"><i style="background:var(--pc-soft)"></i>Soft surface · #F1F2F4</div><div class="pc-swatch"><i style="background:var(--pc-highlight)"></i>Marked passage · #F7EDB1</div><p class="pc-small pc-muted" style="margin-top:14px">Light values shown. Dark mode follows the viewing environment.</p></div>
+  </div>
+</div>
+<div id="pc-notice" class="pc-notice" hidden><span id="pc-notice-text" role="status"></span><button data-action="dismiss" aria-label="Dismiss notice">Close</button></div>
+<div id="pc-view"></div>
+<div class="pc-demo"><span>Wireframe 04 · sample data · saves stay in memory · resets on reload</span><div class="pc-row"><label class="pc-role">Preview role <select id="pc-role" aria-label="Preview role"><option value="student">Student</option><option value="instructor">Instructor</option></select></label><button data-action="signin">Sign-in sketch</button><button data-action="layout" aria-expanded="false">Layout notes</button><span>28.09.2026</span></div></div>
+<script>
+(() => {
+  const root = document.getElementById('parallax-study');
+  const view = root.querySelector('#pc-view');
+  const state = {screen:'courses', role:'student', tab:'slides', courseFilter:'all', search:'', focus:false, margin:true, slideMargin:false, discussion:false, slide:0, slideIndex:false, n:25, answer:'', checked:false, hint:false, hintUsed:false, solution:false, inspected:false, step:0, explain:'', exerciseError:'', checks:[], practiceHistory:[], notebook:'jupyter', run:false, stale:false, reviewing:false, submitted:false, student:0, filter:'all', showDraw:false, highlight:true, previewDraft:false, publishedRelease:null, code:'def standard_error(values):\n    """Return the standard error of the mean."""\n    n = len(values)\n    # Implement your solution below\n    return None', note:'More observations make the estimate more stable. This does not mean the observations themselves become less variable.', question:'', posted:[], draftTitle:'Sampling & uncertainty', published:false, loginRole:'student', loginSent:false, topicNote:'', topicNoteOpen:false, sketchText:'', objective:'Explain why estimates differ across repeated samples.'};
+  const topics = ['Seeing variation','Describing a distribution','Sampling & uncertainty','Comparing groups','Fitting a model'];
+  const times = [35,40,45,50,60];
+  const CUR = 2;
+  const students = [{name:'Amira Khan',ex:'3 / 3 · 1 hint',test:'8 / 10 · draft',q:'1 open'},{name:'Leo Martín',ex:'2 / 3',test:'Submitted',q:'—'},{name:'Mei Chen',ex:'3 / 3',test:'9 / 10 · released',q:'Resolved'}];
+  const tabs = [['slides','Slides'],['reading','Reading'],['exercises','Exercises'],['notebooks','Notebooks'],['tests','Tests']];
+  const grades = [
+    {score:'8',saved:false,released:false,feedback:'Your calculation is correct. Explain why you used the sample standard deviation.',points:[6,2]},
+    {score:'6',saved:false,released:false,feedback:'The formula is right. Add a guard for a sample with fewer than two observations.',points:[4,2]},
+    {score:'9',saved:true,released:true,feedback:'Correct implementation and clear interpretation. State the independence assumption explicitly.',points:[6,3]}
+  ];
+  const esc = s => String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const btn = (text,action,cls='',extra='') => `<button class="${cls}" data-action="${action}" ${extra}>${text}</button>`;
+  let drawingPoints=[];
+  const saveTimers={}, saveStatus={};
+  const annotations={reading:{note:state.note,question:'',audience:'Instructor',posted:[]}};
+  function annotationKey(){return state.tab==='slides'?'slide-'+state.slide:'reading';}
+  function annotation(){const k=annotationKey();return annotations[k]||(annotations[k]={note:'',question:'',audience:'Instructor',posted:[]});}
+  function saved(key){return saveStatus[key]||'Saved';}
+  function filteredStudents(){return students.map((_,i)=>i).filter(i=>state.filter!=='needs'||!grades[i].released);}
+  function slideMove(i){state.slide=Math.max(0,Math.min(3,i));render();root.querySelector('.pc-slide-stage')?.focus({preventScroll:true});}
+  function restoreControl(action){root.querySelector(`[data-action="${action}"]`)?.focus({preventScroll:true});}
+  document.addEventListener('fullscreenchange',()=>{if(document.fullscreenElement===root||state.focus){state.focus=document.fullscreenElement===root;render();restoreControl('fullscreen');}});
+
+  function notice(text){root.querySelector('#pc-notice-text').textContent=text;root.querySelector('#pc-notice').hidden=false;}
+  function shell(content){return `<div class="pc-shell"><main class="pc-main">${content}</main></div>`;}
+  function heading(title,objective,kicker,actions=''){return `<header class="pc-heading"><div><h1>${esc(title)}</h1>${objective?`<p class="pc-objective">${esc(objective)}</p>`:''}<div class="pc-context">${kicker}</div></div>${actions}</header>`;}
+  function tabbar(){return `<div class="pc-tabs" role="tablist" aria-label="Topic materials">${tabs.map(([id,label])=>`<button id="pc-tab-${id}" role="tab" aria-selected="${state.tab===id}" aria-controls="pc-content" data-action="tab-${id}">${label}</button>`).join('')}</div>`;}
+  function toolbar(title,tools=''){return `<div class="pc-toolbar"><div class="pc-row"><span class="pc-small">${title}</span></div><div class="pc-tools">${tools}${btn(document.fullscreenElement===root?'Exit full screen':'Full screen','fullscreen','','aria-keyshortcuts="f"')}${btn(state.focus?'Exit focus':'Focus','focus','',`aria-pressed="${state.focus}"`)}</div></div>`;}
+  function chart(n=25,caption='Sampling distribution of the mean'){return `<div class="pc-distribution" data-n="${n}" data-label="${esc(caption)}"></div>`;}
+  function topicNav(){if(!['topic','edit'].includes(state.screen))return '';return `${btn(`‹ 0${CUR} ${esc(topics[CUR-1])}`,'topic-'+(CUR-1))}${btn(`0${CUR+2} ${esc(topics[CUR+1])} ›`,'topic-'+(CUR+1))}`;}
+
+  function reading(){
+    const passage='The spread of the sample means tells us how much uncertainty comes from sampling.';
+    return toolbar('01 / Sampling distributions',btn(state.margin?'Hide notes':'Notes','margin','',`aria-pressed="${state.margin}"`))+`<section class="pc-stage"><div class="pc-reading-grid ${state.margin?'':'pc-no-margin'}"><article class="pc-reading"><h2>Why samples disagree.</h2><div class="pc-row pc-between"><span class="pc-context">Reading 01 of 03</span><span class="pc-small pc-muted">8 min · Elena Ruiz</span></div><p class="pc-body">Take a sample, calculate its mean, and repeat. The answer changes each time, even when the population stays the same.</p><p class="pc-body">Those differences are useful. <a class="pc-anchor ${state.highlight?'':'pc-plain'}" href="#pc-note" data-action="anchor">${passage}</a><span class="pc-note-num">1</span> We call that spread the standard error.</p><div class="pc-inline-tools" role="toolbar" aria-label="Selected passage">${btn('Highlight','highlight','',`aria-pressed="${state.highlight}"`)}${btn('Note','anchor')}${btn('Ask','discussion')}</div><figure class="pc-figure"><div class="pc-figure-head"><span class="pc-small">Repeated samples, same population · n = 25</span>${btn(state.showDraw?'Close sketch':'Sketch','draw','',`aria-pressed="${state.showDraw}"`)}</div>${chart(25)}<figcaption>Figure 1. A schematic distribution of sample means, centred at 10.</figcaption>${state.showDraw?`<div class="pc-drawing"><div class="pc-row pc-between"><span class="pc-small">Private sketch · Figure 1</span><div>${btn('Undo','undo')}${btn('Done','draw')}</div></div><canvas id="pc-sketch" width="900" height="270" aria-label="Freehand sketch attached to Figure 1. A text alternative follows."></canvas><label class="pc-small">Text description<textarea id="pc-sketch-text" rows="2" placeholder="Describe what you drew.">${esc(state.sketchText)}</textarea></label></div>`:''}</figure><h3>What changes with a larger sample?</h3><p class="pc-body">A larger sample usually brings the estimate closer to the population mean. The observations can remain just as variable. It is the mean that becomes more precise.</p><div class="pc-row pc-between" style="margin-top:28px;border-top:1px solid var(--pc-rule);padding-top:16px"><span class="pc-small pc-muted">Section 1 of 3</span>${btn('Try the exercise','tab-exercises','pc-link')}</div></article>${state.margin?margin():''}</div></section>`;
+  }
+  function margin(){
+    const a=annotation(),k=annotationKey(),isSlide=state.tab==='slides';
+    const source=isSlide?'Slide '+(state.slide+1)+' · '+slideTitles[state.slide]:'The spread of the sample means…';
+    const notes=`<div id="pc-note-block"><div class="pc-row pc-between"><span class="pc-context">${isSlide?`Slide ${state.slide+1}`:'Note 01'}</span><span class="pc-small pc-muted">Private</span></div><blockquote>${esc(source)}</blockquote><label for="pc-note" class="pc-small">Your note</label><textarea id="pc-note" rows="6">${esc(a.note)}</textarea><div class="pc-save-line" id="pc-note-status" role="status">${saved(k)}</div></div><div>${btn(state.topicNoteOpen?'Close topic note':'Add a topic note','new-note','pc-text')}${state.topicNoteOpen?`<label for="pc-topic-note" class="pc-small" style="display:block;margin-top:14px">Topic note · no anchor</label><textarea id="pc-topic-note" rows="3">${esc(state.topicNote)}</textarea><div class="pc-save-line" id="pc-topic-status" role="status">${saved('topic')}</div>`:''}</div>`;
+    const discussion=`${isSlide?'':`<div class="pc-thread" style="border-top:0;padding-top:0"><div class="pc-row pc-between"><span class="pc-small">You → Instructor</span><span class="pc-small">Open</span></div><p>Does this relationship still hold when the observations are correlated?</p><div class="pc-small pc-muted">On “the standard error” · 10:24</div></div><div class="pc-thread"><div class="pc-small">Elena Ruiz · Instructor</div><p>Independence matters. Compare nearby measurements in the notebook, then look at the spread of their means.</p>${btn('Open notebook','tab-notebooks','pc-link')}</div>`}${a.posted.map(q=>`<div class="pc-thread"><div class="pc-small">You → ${esc(q.audience)}</div><p>${esc(q.text)}</p></div>`).join('')}<div class="pc-thread"><label class="pc-small" for="pc-audience">Visible to</label><select id="pc-audience" style="margin-top:8px;width:100%"><option ${a.audience==='Instructor'?'selected':''}>Instructor</option><option ${a.audience==='Class'?'selected':''}>Class</option></select><label class="pc-small" for="pc-question" style="display:block;margin-top:12px">Comment or question</label><textarea id="pc-question" rows="3" placeholder="${isSlide?'Ask about this slide':'Ask about this passage'}">${esc(a.question)}</textarea>${btn('Post','post','pc-outline')}</div>`;
+    return `<aside class="pc-margin" aria-label="Notes and discussion"><div class="pc-margin-tabs"><button data-action="my-notes" aria-pressed="${!state.discussion}">My notes</button><button data-action="discussion" aria-pressed="${state.discussion}">Discussion <span class="pc-muted">${(isSlide?0:2)+a.posted.length}</span></button></div>${state.discussion?discussion:notes}</aside>`;
+  }
+  const slideTitles=['One sample. One estimate.','Collect the estimates.','Four times the data. Half the standard error.','Are the observations independent?'];
+  function slides(){
+    const sample=()=>`<div class="pc-sample">${Array.from({length:25},()=>'<span></span>').join('')}</div>`;
+    const decks=[`<div><h2>One sample.<br>One estimate.</h2><div class="pc-context">03 / Sampling & uncertainty</div><p class="pc-slide-sub">Take another sample. The population stays the same; the estimate moves.</p></div><div class="pc-sampling">${['9.7','10.2','9.9'].map((v,i)=>`<div class="pc-sample-box">${sample()}<em>x̄ = ${v}</em><span class="pc-small pc-muted">Sample ${i+1}</span></div>`).join('')}</div>`,
+      `<h2>Collect the estimates.</h2><div class="pc-context">03 / From samples to a distribution</div>${chart(25)}<p class="pc-slide-sub">Their spread measures uncertainty in the mean.</p>`,
+      `<h2>Four times the data.<br>Half the standard error.</h2><div class="pc-context">03 / Sample size and precision</div><div class="pc-equation">SE = s / √n</div><p class="pc-slide-sub">For independent observations with the same variance.</p>`,
+      `<h2>Are the observations<br>independent?</h2><div class="pc-context">03 / A condition to check</div><p class="pc-slide-sub">Nearby measurements may move together. Counting more measurements can overstate how much information you have.</p><p class="pc-slide-sub">Next: compare independent and correlated samples.</p>`];
+    return toolbar('Lecture / Sampling & uncertainty',btn('Slide index','slide-index','',`aria-expanded="${state.slideIndex}"`)+btn(state.slideMargin?'Hide notes':'Notes','slide-notes','',`aria-pressed="${state.slideMargin}"`))+`<section class="pc-slide-stage" tabindex="0" aria-label="Slide viewer"><div class="pc-deck-grid ${state.slideMargin?'has-notes':''}"><div><div class="pc-slide-mat"><div class="pc-slide" aria-label="Slide ${state.slide+1} of 4">${decks[state.slide]}<div class="pc-slide-foot"><span>Statistical thinking / Elena Ruiz</span><span>0${state.slide+1}</span></div></div></div><div class="pc-progress" role="progressbar" aria-label="Slide position" aria-valuemin="1" aria-valuemax="4" aria-valuenow="${state.slide+1}"><span style="width:${(state.slide+1)*25}%"></span></div><div class="pc-slide-controls"><div class="pc-row">${btn('Previous','slide-prev','',state.slide===0?'disabled':'')}<span class="pc-small">${state.slide+1} / 4</span>${btn('Next','slide-next','',state.slide===3?'disabled':'')}</div></div>${state.slideIndex?`<ol class="pc-slide-index" aria-label="Slides">${slideTitles.map((t,i)=>`<li>${btn(`${i+1} · ${esc(t)}`,'slide-go-'+i,'',`aria-current="${i===state.slide}"`)}</li>`).join('')}</ol>`:''}</div>${state.slideMargin?margin():''}</div></section>`;
+  }
+  function exercises(){
+    const se=n=>(3/Math.sqrt(n)).toFixed(2);
+    const track=`<div class="pc-step-label">${state.step<3?['1 · Predict','2 · Inspect','3 · Explain'][state.step]:'3 of 3 steps complete'}</div><div class="pc-step-track" role="img" aria-label="Exercise step ${Math.min(state.step+1,3)} of 3">${[0,1,2].map(i=>`<span class="${i<=Math.min(state.step,2)?'is-done':''}"></span>`).join('')}</div>`;
+    let body='';
+    if(state.step===0){
+      const correct=state.answer==='half';
+      body=`<div class="pc-exercise-head"><h2>Make the estimate more precise.</h2><p class="pc-muted">Predict first. You will inspect it in the next step.</p></div><div class="pc-small pc-muted">Distribution of sample means · n = 25 · SE ≈ ${se(25)}</div>${chart(25)}<h3 style="margin-top:24px">What happens to the standard error when n goes from 25 to 100?</h3><div class="pc-options">${[['half','It halves'],['quarter','It falls to a quarter'],['same','It stays the same']].map(([v,t])=>`<label class="pc-option"><input type="radio" name="pc-answer" value="${v}" ${state.answer===v?'checked':''} ${state.solution?'disabled':''}>${t}</label>`).join('')}</div><div class="pc-row pc-actions">${state.solution?btn('Continue','step-next','pc-primary'):btn('Check answer','check','pc-primary')}${state.solution?'':btn(state.hint?'Hide hint':'Show a hint','hint','pc-text')}${state.solution?'':btn('Show solution','solution','pc-text')}</div>${state.hint&&!state.solution?'<p class="pc-feedback">The standard error is proportional to 1 / √n. Compare √25 with √100.</p>':''}${state.solution?`<div class="pc-feedback" role="status"><strong>Solution: it halves.</strong><p style="margin-top:8px">SE = s / √n, and √100 is twice √25. This step is recorded as solved with the solution shown.</p></div>`:state.checked?`<div class="pc-feedback" role="status"><strong>${correct?'Correct. The standard error halves.':'Not yet.'}</strong><p style="margin-top:8px">${correct?'√n doubles, so the standard error falls by a factor of two.':state.answer?'The relationship depends on √n, not on n. Try once more; your answer is kept.':'Choose a prediction before checking it.'}</p>${correct?`<div style="margin-top:12px">${btn('Continue','step-next','pc-primary')}</div>`:''}</div>`:''}`;
+    }else if(state.step===1){
+      body=`<div class="pc-exercise-head"><h2>Now inspect it.</h2><p class="pc-muted">Move n to 100 and compare the width with n = 25.</p></div><div class="pc-lab"><div><div class="pc-small pc-muted">Distribution of sample means · schematic</div>${chart(state.n)}</div><div class="pc-range"><label for="pc-size" class="pc-row pc-between"><span>Sample size</span><strong id="pc-size-value">n = ${state.n}</strong></label><input id="pc-size" type="range" min="25" max="200" step="25" value="${state.n}"><div class="pc-row pc-between pc-small pc-muted"><span>25</span><span>200</span></div><div class="pc-readout">SE ≈ 3 / √n = <strong id="pc-se">${se(state.n)}</strong></div><p class="pc-small pc-muted">Population variance fixed. Observations independent.</p></div></div><div class="pc-row pc-actions">${btn('Continue','step-next','pc-primary')}${btn('Back','step-prev','pc-text')}</div>`;
+    }else if(state.step===2){
+      body=`<div class="pc-exercise-head"><h2>Explain what you saw.</h2><p class="pc-muted">Which distribution narrowed, and which did not?</p></div><div class="pc-explain"><label for="pc-explain" class="pc-small">Your explanation</label><textarea id="pc-explain" rows="5" placeholder="The distribution of sample means…">${esc(state.explain)}</textarea></div><div class="pc-row pc-actions">${btn('Done','step-done','pc-primary')}${btn('Back','step-prev','pc-text')}</div>`;
+    }else{
+      const how=state.solution?'solution shown':state.hintUsed?'with a hint':'independently';
+      body=`<div class="pc-exercise-head"><h2>Exercise complete.</h2><p class="pc-muted">Completed ${how}. Explanation saved for review; practice is ungraded.</p></div><div class="pc-row pc-actions">${btn('Explore this in the notebook','tab-notebooks','pc-link')}${btn('Start again','step-reset','pc-text')}</div>`;
+    }
+    return toolbar('Exercise 01 / The precision of a mean','<span class="pc-small pc-muted">Practice · ungraded</span>')+`<section class="pc-stage"><div class="pc-exercise">${track}${body}${state.exerciseError?`<p class="pc-inline-error" role="alert">${esc(state.exerciseError)}</p>`:''}</div></section>`;
+  }
+  function notebooks(){
+    const picker=`<select class="pc-mode-select" id="pc-notebook-mode" aria-label="Notebook resource"><option value="jupyter" ${state.notebook==='jupyter'?'selected':''}>Repeated samples</option><option value="shiny" ${state.notebook==='shiny'?'selected':''}>Sampling lab</option></select> <span class="pc-small pc-muted">${state.notebook==='jupyter'?'Jupyter · saved outputs':'R Shiny · preview'}</span>`;
+    return toolbar(picker,btn(state.notebook==='jupyter'?'Open in Colab':'Open externally','external'))+`<section class="pc-stage">${state.notebook==='jupyter'?`<article class="pc-notebook"><header class="pc-notebook-intro"><h2 style="margin-top:12px">Repeated samples, in code.</h2><p>Draw 1,000 samples from the same population. Compare the distribution of their means with the spread of the original observations.</p></header><div class="pc-cell"><span class="pc-cell-num">[1]</span><pre><span class="pc-code-key">import</span> numpy <span class="pc-code-key">as</span> np\nrng = np.random.default_rng(42)\npopulation = rng.normal(loc=10, scale=3, size=100_000)</pre></div><div class="pc-cell"><span class="pc-cell-num">[2]</span><pre><span class="pc-code-comment"># One row per sample; one mean per row.</span>\nsamples = rng.choice(population, size=(1_000, 25))\nmeans = samples.mean(axis=1)\nmeans.std(ddof=1)</pre></div><div class="pc-cell"><span class="pc-cell-num">Out</span><div class="pc-output"><code>0.60</code><div class="pc-small pc-muted" style="margin-top:8px">Stored output · Python 3</div></div></div><div class="pc-cell"><span class="pc-cell-num">[3]</span><div class="pc-output"><div class="pc-small">Distribution of sample means</div>${chart(25)}</div></div><div class="pc-notebook-intro" style="padding-top:20px"><h3>Try a larger sample.</h3><p>Change 25 to 100 in your working copy. Explain which distribution becomes narrower and which remains unchanged.</p>${btn('Open working copy in Colab','external','pc-link')}</div></article>`:`<div class="pc-shiny"><header class="pc-shiny-head">Sampling lab <span class="pc-small pc-muted" style="margin-left:12px">Preview · no R session</span></header><div class="pc-shiny-body"><div class="pc-stack"><div class="pc-context">Population settings</div><label>Population mean<input value="10" readonly style="width:100%;margin-top:8px" aria-label="Population mean, fixed at 10 in preview"></label><label for="pc-shiny-size">Sample size <strong id="pc-shiny-value">${state.n}</strong></label><input id="pc-shiny-size" type="range" min="25" max="200" step="25" value="${state.n}">${btn('Reset','shiny-reset','pc-outline')}<p class="pc-small pc-muted">Local demonstration; no server connection.</p></div><div><h3>Distribution of sample means</h3>${chart(state.n)}</div></div></div>`}</section>`;
+  }
+  function tests(){
+    if(state.submitted)return toolbar('Test / Sampling & uncertainty')+`<section class="pc-stage"><div class="pc-receipt"><h2>Test submitted.</h2><p>The submission is now a fixed copy. Feedback will appear here when the instructor releases it.</p><dl><dt class="pc-muted">Attempt</dt><dd>01 · PARALLAX-DEMO-032</dd><dt class="pc-muted">Submitted</dt><dd>28 Sep 2026 · 11:42 CEST</dd><dt class="pc-muted">Result</dt><dd>Awaiting instructor review</dd></dl><p class="pc-small pc-muted">Wireframe state only. No work was sent or stored.</p><div style="margin-top:24px">${btn('Return to sample draft','test-reset','pc-outline')}</div></div></section>`;
+    return toolbar('Test / Sampling & uncertainty','<span class="pc-small pc-muted">Draft · saved</span>')+`<section class="pc-stage"><div class="pc-test-top"><div class="pc-row"><span class="pc-context">Question 02 / 02</span><span class="pc-small pc-muted">01 Answered · 02 Code draft</span></div></div><div class="pc-test-grid"><article class="pc-prompt"><h2 style="margin-top:12px">Estimate the standard error.</h2><div class="pc-context">Implementation / 6 points</div><p>Implement <code>standard_error(values)</code> for a sequence of independent observations.</p><p>Use the sample standard deviation. Raise <code>ValueError</code> when fewer than two observations are supplied.</p><div class="pc-small pc-muted">Python · standard library · 10 s · 512 MiB<br>Sample tests are visible. Grading also uses hidden tests.</div><div class="pc-rule"></div><dl class="pc-terms"><dt>Attempts</dt><dd>1 · untimed</dd><dt>Points</dt><dd>10</dd><dt>Closes</dt><dd>02 Oct 2026, 18:00 CEST · no late submission</dd><dt>Results</dt><dd>Released by the instructor</dd></dl></article><div><div class="pc-editor-head"><span>solution.py</span><span>Python</span></div><textarea class="pc-editor" id="pc-code" spellcheck="false" aria-label="Your implementation">${esc(state.code)}</textarea><div class="pc-row pc-between" style="margin-top:12px">${btn('Run sample tests','run','pc-outline')}<span class="pc-small pc-muted">Simulated runner</span></div>${state.run?`<div class="pc-run-output" role="status"><div class="pc-small ${state.stale?'':'pc-muted'}">${state.stale?'Output is out of date · code has changed':'Output for the starter code'}</div><pre style="border:0;padding:12px 0;background:none">FAIL  [2, 4, 6, 8]\nExpected: 1.290994\nReceived: None\n\nFAIL  [4]\nExpected: ValueError</pre><span class="pc-small pc-muted">Fixture. Your code was not executed.</span></div>`:''}</div></div><div class="pc-submit-review">${state.reviewing?`<div class="pc-stack"><h3>Review submission</h3><p>Question 01 is answered. Question 02 has a code draft. Closes 02 Oct 2026, 18:00 CEST.</p><div class="pc-row">${btn('Submit test','submit','pc-primary')}${btn('Keep working','keep-working','pc-text')}</div></div>`:`<div class="pc-row pc-between"><span class="pc-small pc-muted">Answers stay editable until you submit.</span>${btn('Review submission','review-submit','pc-primary')}</div>`}</div></section>`;
+  }
+
+  const catalog = [
+    {title:'Statistical thinking',topics:5,term:'Autumn 2026',reviewed:2,shape:'distribution',resume:'Sampling & uncertainty'},
+    {title:'Microbial ecology',topics:7,term:'Autumn 2026',reviewed:0,shape:'growth',detail:'Starts 05 October'},
+    {title:'Genomics',topics:9,term:'Autumn 2026',reviewed:0,shape:'sequence',detail:'Not started'},
+    {title:'Metabolic modelling',topics:8,term:'Spring 2027',reviewed:0,shape:'network',detail:'Starts 11 January'},
+    {title:'Dynamical systems',topics:10,term:'Self-paced',reviewed:0,shape:'phase',detail:'Not started'},
+    {title:'Lab methods',topics:6,term:'Summer 2026',reviewed:6,shape:'measure',detail:'Archived',archived:true}
+  ];
+  function courseMark(shape){
+    const marks={
+      distribution:'<path d="M3 45H73M5 44C24 44 26 7 38 7S52 44 71 44"/>',
+      growth:'<path d="M5 48V6M5 48H74M8 45C26 45 23 40 33 27S41 10 70 10"/><path d="M8 41C25 38 39 33 52 20S66 11 70 10" stroke-dasharray="2 4"/>',
+      sequence:'<path d="M6 43H72M10 43V30M18 43V17M26 43V25M34 43V8M42 43V15M50 43V34M58 43V24M66 43V11"/>',
+      network:'<path d="M13 27L35 9 64 23 47 46 13 27 64 23M35 9L47 46"/><circle cx="13" cy="27" r="4"/><circle cx="35" cy="9" r="4"/><circle cx="64" cy="23" r="4"/><circle cx="47" cy="46" r="4"/>',
+      phase:'<ellipse cx="39" cy="28" rx="31" ry="18"/><ellipse cx="39" cy="28" rx="22" ry="12"/><ellipse cx="39" cy="28" rx="10" ry="6"/><path d="M3 51H75M5 51V4"/>',
+      measure:'<path d="M8 45H72M8 45V5M16 37L27 29 39 26 51 16 64 9M16 32V42M27 24V34M39 21V31M51 11V21M64 5V14"/>'
+    };
+    return `<span class="pc-course-mark"><svg viewBox="0 0 78 56" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round">${marks[shape]}</svg></span>`;
+  }
+  function courseCards(){
+    const visible=catalog.map((c,i)=>({...c,i})).filter(c=>(state.courseFilter==='archived'?c.archived:state.courseFilter==='progress'?c.reviewed>0&&!c.archived:true)&&c.title.toLowerCase().includes(state.search.toLowerCase()));
+    if(!visible.length)return '<div class="pc-catalog-empty"><h2>No matching courses</h2><p class="pc-muted" style="margin-top:12px">Try a different title or choose All.</p></div>';
+    return visible.map(c=>{
+      const status=state.role==='instructor'?`${c.i===0?'<span>Class A · 3 students</span>'+btn('Class review','review','pc-link'):`<span>${esc(c.term)}</span>`}`:c.resume?`<span>${c.reviewed} of ${c.topics} reviewed</span>${btn('Resume '+esc(c.resume),'resume','pc-link')}`:c.archived?`<span>${c.detail} · ${c.reviewed} of ${c.topics} reviewed</span>`:`<span>${c.detail}</span>`;
+      return `<article class="pc-course-card"><button class="pc-card-open" data-action="course-${c.i}" aria-label="Open ${esc(c.title)}">${courseMark(c.shape)}<h2>${esc(c.title)}</h2><span class="pc-card-meta">${c.topics} topics · ${c.term}</span></button><div class="pc-card-status">${status}</div>${state.role==='student'?`<span class="pc-progress" role="img" aria-label="${c.reviewed} of ${c.topics} topics reviewed"><span style="width:${100*c.reviewed/c.topics}%"></span></span>`:''}</article>`;
+    }).join('');
+  }
+  function courses(){return `<main class="pc-index"><div class="pc-row pc-between"><h1>${state.role==='instructor'?'Courses you teach':'Your courses'}</h1>${btn(state.role==='instructor'?'Create course':'Join a class',state.role==='instructor'?'create-course':'join','pc-outline')}</div><div class="pc-catalog-tools"><div class="pc-filters" aria-label="Filter courses">${[['all','All'],['progress','In progress'],['archived','Archived']].map(([value,label])=>btn(label,'filter-'+value,'',`aria-pressed="${state.courseFilter===value}"`)).join('')}</div><label class="pc-search">Search<input id="pc-course-search" type="search" placeholder="Course title" value="${esc(state.search)}"></label></div><div class="pc-course-grid" id="pc-course-grid">${courseCards()}</div></main>`;}
+  function topicIndex(){
+    return `<main class="pc-index"><div class="pc-row pc-between"><div><h1>Statistical thinking</h1><p class="pc-index-intro">Separate patterns from variation, then test the explanation with data.</p><p class="pc-small pc-muted" style="margin-top:12px">STA 201 · Autumn 2026 · Class A · Elena Ruiz</p></div>${state.role==='instructor'?btn('Class review','review','pc-outline'):courseMark('distribution')}</div><div class="pc-topic-table-wrap" role="region" aria-label="Topic syllabus"><table class="pc-topic-table"><thead><tr><th scope="col">No.</th><th scope="col">Topic</th>${tabs.map(([id,label])=>`<th scope="col" class="pc-resource-presence"><abbr title="${label}">${label[0]}</abbr></th>`).join('')}<th scope="col">Time</th><th scope="col">Status</th></tr></thead><tbody>${topics.map((t,i)=>`<tr ${i===CUR?'class="pc-current-row"':''}><td>0${i+1}</td><td>${btn(esc(t),'topic-'+i,'pc-text')}</td>${tabs.map(([id,label],j)=>{const present=i===CUR||j<2||(i<2&&j===2)||(i>2&&j===3);return `<td class="pc-resource-presence"><span class="pc-material-dot ${present?'is-available':''}" role="img" aria-label="${label}: ${present?'available':'not added'}"></span></td>`}).join('')}<td class="pc-small pc-muted">${times[i]} min</td><td>${btn(i<CUR?'Reviewed':i===CUR?'Resume':'05 Oct','topic-'+i,i===CUR?'pc-link':'pc-text')}</td></tr>`).join('')}</tbody></table></div><div class="pc-syllabus-legend"><span>S · Slides</span><span>R · Reading</span><span>E · Exercises</span><span>N · Notebooks</span><span>T · Tests</span><span style="margin-left:auto">2 of 5 topics reviewed</span></div></main>`;
+  }
+  function review(){
+    const visible=filteredStudents();if(visible.length&&!visible.includes(state.student))state.student=visible[0];
+    if(!visible.length)return shell(heading('Class review','','STA 201 / Autumn 2026 · Class A',btn('Return to topic','resume','pc-outline'))+`<section class="pc-wide-page"><h2>No students need review.</h2>${btn('Show all students','review-all','pc-link')}</section>`);
+    const student=students[state.student],g=grades[state.student],position=visible.indexOf(state.student);
+    const code=state.student===1?'from statistics import stdev\nfrom math import sqrt\n\ndef standard_error(values):\n    return stdev(values) / sqrt(len(values))':'from statistics import stdev\nfrom math import sqrt\n\ndef standard_error(values):\n    if len(values) < 2:\n        raise ValueError("Need at least two values")\n    return stdev(values) / sqrt(len(values))';
+    const question=state.student===0?'Does this relationship still hold when the observations are correlated?':state.student===2?'Why use n − 1 in the sample variance?':'';
+    return shell(heading('Class review','','STA 201 / Autumn 2026 · Class A',btn('Return to topic','resume','pc-outline'))+`
+      <section class="pc-wide-page"><div class="pc-review-filters"><div><div class="pc-small pc-muted">Topic</div><div style="padding:8px 0">03 / Sampling & uncertainty</div></div><div><div class="pc-small pc-muted">Assignment</div><div style="padding:8px 0">Test · Question 02</div></div><label>Status<select id="pc-review-filter"><option value="all" ${state.filter==='all'?'selected':''}>All students</option><option value="needs" ${state.filter==='needs'?'selected':''}>Needs review</option></select></label></div>
+      <div class="pc-table-wrap"><table class="pc-review-table"><thead><tr><th>Student</th><th>Exercises</th><th>Test</th><th>Questions</th><th>Review</th></tr></thead><tbody>${students.map((s,i)=>state.filter==='needs'&&grades[i].released?'':`<tr class="${state.student===i?'pc-selected':''}"><td>${btn(esc(s.name),`student-${i}`,'pc-text')}</td><td>${s.ex}</td><td>${grades[i].released?`${esc(grades[i].score)} / 10 · released`:grades[i].saved?`${esc(grades[i].score)} / 10 · draft`:s.test}</td><td>${s.q}</td><td>${grades[i].released?'Reviewed':'Needs review'}</td></tr>`).join('')}</tbody></table></div>
+      <section class="pc-student-work"><div class="pc-row pc-between"><div><h2 style="margin-top:6px">${esc(student.name)}</h2><div class="pc-context">Test · Question 02 · attempt 01 · submitted 28 Sep, 11:42 CEST</div></div><div class="pc-student-nav">${btn('‹ Previous student','student-prev','',position===0?'disabled':'')}${btn('Next student ›','student-next','',position===visible.length-1?'disabled':'')}</div></div>
+      <div class="pc-review-grid"><div><div class="pc-context">Code submission</div><pre style="margin-top:16px">${esc(code)}</pre><p class="pc-small ${state.student===1?'':'pc-success'}" style="margin:16px 0">Automated checks: ${state.student===1?'3 / 4':'4 / 4'} passed</p><div class="pc-thread"><div class="pc-row pc-between"><h3>Comments & questions</h3><span class="pc-small">${student.q==='—'?'None':student.q}</span></div>${question?`<blockquote style="margin:16px 0;font-size:18px">“${question}”</blockquote><span class="pc-small pc-muted">Shared with instructor · Reading 01</span><div style="margin-top:12px">${btn('Open source passage','source-question','pc-link')}</div>`:'<p class="pc-muted">No shared questions for this topic.</p>'}</div></div>
+      <aside class="pc-rubric"><div class="pc-context">Rubric / ${g.released?'released':'draft'} feedback</div><div class="pc-row pc-between" style="margin-top:16px"><span>Implementation</span><span>${g.points[0]} / 6</span></div><div class="pc-row pc-between" style="margin-top:8px"><span>Explanation</span><span>${g.points[1]} / 4</span></div><label for="pc-score">Total points / 10</label><input id="pc-score" type="number" min="0" max="10" value="${esc(g.score)}" ${g.released?'disabled':''}><label for="pc-feedback">Feedback to ${esc(student.name.split(' ')[0])}</label><textarea id="pc-feedback" rows="5" ${g.released?'readonly':''}>${esc(g.feedback)}</textarea><div class="pc-stack" style="margin-top:16px">${btn('Save draft grade','save-grade','pc-outline',g.released?'disabled':'')}${btn(g.released?'Feedback released':'Release feedback','release-grade','pc-primary',g.released?'disabled':'')}<span id="pc-grade-status" class="pc-small ${g.saved||g.released?'pc-success':'pc-muted'}" role="status">${g.released?'Released.':g.saved?'Draft saved.':'Student cannot see draft feedback.'}</span></div></aside></div></section></section>`);
+  }
+  function edit(){return shell(heading('Edit topic','','Statistical thinking / Course draft',btn('Preview student view','preview','pc-outline'))+`<section class="pc-wide-page"><div class="pc-edit-grid"><div><div class="pc-context">Topic 03 / content</div><label>Title<input id="pc-draft-title" value="${esc(state.draftTitle)}"></label><label>Learning objective<textarea id="pc-objective" rows="3">${esc(state.objective)}</textarea></label><h3 style="margin:32px 0 16px">Resources</h3>${[['Slides','Sampling & uncertainty · 4 slides'],['Reading','Sampling distributions · HTML'],['Exercises','The precision of a mean · 3 steps'],['Notebooks','Repeated samples · Jupyter + Shiny'],['Tests','Sampling & uncertainty · 2 questions']].map(([t,d])=>`<div class="pc-resource-row"><div><div>${t}</div><div class="pc-small pc-muted">${d}</div></div>${btn('Edit',`edit-${t.toLowerCase()}`,'pc-link')}</div>`).join('')}<div class="pc-row" style="margin-top:24px">${btn('Save draft','save-topic','pc-outline')}${btn('Add resource','add-resource','pc-text')}</div></div><aside class="pc-edit-side"><h3 style="margin:16px 0">Draft revision 1.3</h3><div class="pc-context">Publication</div><p class="pc-muted">Class A uses release 1.2.</p><p style="margin:18px 0">Publishing creates a new release. Started tests keep the version they began with.</p><div class="pc-small pc-success" style="margin-bottom:24px">Preview check: 5 categories present</div>${btn(state.published?'Release 1.3 created':'Publish release 1.3','publish','pc-primary',state.published?'disabled':'')}<div class="pc-small pc-muted" style="margin-top:16px">${state.published?'Class A stays on 1.2 until an instructor adopts 1.3.':''}</div></aside></div></section>`);}
+  function signin(){return `<main class="pc-index"><h1>Sign in</h1><div class="pc-edit-grid" style="margin-top:40px"><section><div class="pc-options" style="margin-top:0;justify-content:flex-start">${btn('Student sign in','login-student',state.loginRole==='student'?'pc-primary':'pc-outline',`aria-pressed="${state.loginRole==='student'}"`)}${btn('Instructor sign in','login-instructor',state.loginRole==='instructor'?'pc-primary':'pc-outline',`aria-pressed="${state.loginRole==='instructor'}"`)}</div><label for="pc-email" style="display:block;margin:24px 0 8px">Email address</label><input id="pc-email" type="email" placeholder="name@university.edu" style="width:100%;max-width:440px"><div style="margin-top:20px">${btn('Send sign-in link','login-send','pc-primary')}</div>${state.loginSent?`<div class="pc-feedback" role="status"><h3>Sign-in link preview</h3><p style="margin:12px 0">This sketch sends no email.</p>${btn('Continue to courses','login-continue','pc-link')}</div>`:''}</section><aside class="pc-edit-side"><p class="pc-small pc-muted">${state.loginRole==='student'?'Open enrolled courses and resume your work.':'Open courses you teach and review your classes.'} Use the address on your invitation.</p></aside></div></main>`;}
+
+  function render(){
+    root.dataset.screen=state.screen;
+    root.classList.toggle('pc-focus',state.focus&&state.screen==='topic');
+    root.querySelector('#pc-role').value=state.role;
+    root.querySelector('#pc-topic-nav').innerHTML=topicNav();
+    if(state.screen==='signin')view.innerHTML=signin();
+    else if(state.screen==='courses')view.innerHTML=courses();
+    else if(state.screen==='topics')view.innerHTML=topicIndex();
+    else if(state.screen==='review')view.innerHTML=review();
+    else if(state.screen==='edit')view.innerHTML=edit();
+    else{
+      const content={reading,slides,exercises,notebooks,tests}[state.tab]();
+      view.innerHTML=shell(heading(state.previewDraft?state.draftTitle:'Sampling & uncertainty',state.previewDraft?state.objective:'Explain why estimates differ across repeated samples.','Statistical thinking · Topic 3 of 5 · 45 min · Class A · Elena Ruiz',state.previewDraft?btn('Exit draft preview','exit-preview','pc-outline'):state.role==='instructor'?`<div class="pc-row">${btn('Class review','review','pc-text')}${btn('Edit topic','edit','pc-outline')}</div>`:'')+tabbar()+`<div id="pc-content" role="tabpanel" aria-labelledby="pc-tab-${state.tab}">${content}</div>`);
+    }
+    drawCharts();layoutNotes();setupCanvas();
+  }
+  function drawCharts(){root.querySelectorAll('.pc-distribution').forEach(el=>{const w=Math.max(200,Math.round(el.getBoundingClientRect().width)||500),h=210,left=34,right=w-18,bottom=174,top=24,n=Number(el.dataset.n),mu=10,sd=.6*Math.sqrt(25/n);const x=v=>left+(v-8)/(12-8)*(right-left);const y=v=>bottom-v*105;let path='';for(let i=0;i<=120;i++){const v=8+4*i/120;const density=Math.exp(-.5*((v-mu)/sd)**2);path+=`${i?'L':'M'}${x(v).toFixed(2)},${y(density).toFixed(2)} `;}const ticks=w<340?[8,10,12]:[8,9,10,11,12];el.innerHTML=`<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="${esc(el.dataset.label)}. Sample size ${n}. Increasing sample size narrows the distribution around a mean of 10."><title>${esc(el.dataset.label)}</title><desc>Schematic bell-shaped distribution. Sample size ${n}, mean 10. Width decreases as sample size increases; vertical height is normalised.</desc><line x1="${left}" y1="${bottom}" x2="${right}" y2="${bottom}" stroke="var(--pc-muted)"/><line x1="${x(10)}" y1="${top}" x2="${x(10)}" y2="${bottom}" stroke="var(--pc-rule)" stroke-dasharray="4 4"/><path d="${path}L${right},${bottom}L${left},${bottom}Z" fill="var(--pc-soft)"/><path d="${path}" fill="none" stroke="var(--pc-accent)" stroke-width="2.5"/>${ticks.map(t=>`<text x="${x(t)}" y="${bottom+20}" text-anchor="middle" fill="var(--pc-muted)" font-size="12" font-family="system-ui">${t}</text>`).join('')}<text x="${right}" y="20" text-anchor="end" fill="var(--pc-muted)" font-size="12" font-family="system-ui">Sample mean</text></svg>`;});}
+  // The note block is moved down until it starts level with its anchor.
+  function layoutNotes(){const a=root.querySelector('.pc-anchor'),n=root.querySelector('#pc-note-block');if(!n)return;n.style.paddingTop='';if(!a||matchMedia('(max-width:800px)').matches)return;const d=a.getBoundingClientRect().top-n.getBoundingClientRect().top;if(d>0)n.style.paddingTop=Math.round(d)+'px';}
+  function autosave(key){saveStatus[key]='Saving…';updateSaveStatus();clearTimeout(saveTimers[key]);saveTimers[key]=setTimeout(()=>{saveStatus[key]='Saved';updateSaveStatus();},1000);}
+  function updateSaveStatus(){const note=root.querySelector('#pc-note-status'),topic=root.querySelector('#pc-topic-status');if(note)note.textContent=saved(annotationKey());if(topic)topic.textContent=saved('topic');}
+  function setupCanvas(){const c=root.querySelector('#pc-sketch');if(!c)return;const ctx=c.getContext('2d');const paint=()=>{ctx.clearRect(0,0,c.width,c.height);ctx.strokeStyle=getComputedStyle(root).color;ctx.lineWidth=3;ctx.lineCap='round';drawingPoints.forEach(line=>{ctx.beginPath();line.forEach((p,i)=>i?ctx.lineTo(p[0],p[1]):ctx.moveTo(p[0],p[1]));ctx.stroke();});};paint();let active=false;c.addEventListener('pointerdown',e=>{active=true;drawingPoints.push([]);c.setPointerCapture(e.pointerId);point(e);});function point(e){if(!active)return;const r=c.getBoundingClientRect();drawingPoints[drawingPoints.length-1].push([(e.clientX-r.left)*c.width/r.width,(e.clientY-r.top)*c.height/r.height]);paint();}c.addEventListener('pointermove',point);c.addEventListener('pointerup',()=>active=false);c.addEventListener('pointercancel',()=>active=false);}
+  function go(screen){root.querySelector('#pc-notice').hidden=true;if(screen!=='topic')state.previewDraft=false;state.screen=screen;state.focus=false;render();}
+
+  root.addEventListener('click',async e=>{const b=e.target.closest('[data-action]');if(!b||!root.contains(b)||b.disabled)return;if(b.tagName==='A')e.preventDefault();const a=b.dataset.action;
+    if(a.startsWith('filter-')){state.courseFilter=a.slice(7);render();return;}
+    if(a.startsWith('course-')){const i=Number(a.slice(7));if(i===0)go('topics');else notice(catalog[i].title+': sample course tile. Statistical thinking contains the complete topic walkthrough.');return;}
+    if(a.startsWith('tab-')){root.querySelector('#pc-notice').hidden=true;state.tab=a.slice(4);state.screen='topic';state.focus=false;render();root.querySelector(`#pc-tab-${state.tab}`)?.focus();return;}
+    if(a.startsWith('topic-')){const i=Number(a.slice(6));if(i===CUR){go('topic');}else if(i<CUR){notice(`Topic 0${i+1}: ${topics[i]}. This sample concentrates the five content views in Topic 03.`);go('topics');}else notice(`Topic 0${i+1} opens on 05 October. Topic 03 is available in this design study.`);return;}
+    if(a.startsWith('student-')){const k=a.slice(8);const visible=filteredStudents(),i=visible.indexOf(state.student);state.student=k==='prev'?visible[Math.max(0,i-1)]:k==='next'?visible[Math.min(visible.length-1,i+1)]:Number(k);render();return;}
+    if(a.startsWith('slide-go-')){slideMove(Number(a.slice(9)));return;}
+    if(a.startsWith('edit-')){notice(`The ${a.slice(5)} editor would open here. This wireframe covers the topic draft, preview, and publication flow.`);return;}
+    switch(a){
+      case 'signin':go('signin');return;
+      case 'login-student':state.loginRole='student';state.loginSent=false;break;
+      case 'login-instructor':state.loginRole='instructor';state.loginSent=false;break;
+      case 'login-send':{const email=root.querySelector('#pc-email');if(!email.value||!email.checkValidity()){notice('Enter an email-shaped example to preview the next state.');return;}state.loginSent=true;break;}
+      case 'login-continue':state.role=state.loginRole;go('courses');return;
+      case 'courses':go('courses');return;case 'topics':go('topics');return;case 'resume':go('topic');return;case 'review':go('review');return;case 'edit':go('edit');return;
+      case 'preview':state.previewDraft=true;go('topic');return;
+      case 'exit-preview':state.previewDraft=false;go('edit');return;
+      case 'layout':{const panel=root.querySelector('#pc-measures');panel.hidden=!panel.hidden;b.setAttribute('aria-expanded',String(!panel.hidden));if(a==='layout')root.classList.toggle('pc-diagram',!panel.hidden);return;}
+      case 'dismiss':root.querySelector('#pc-notice').hidden=true;return;
+      case 'focus':if(document.fullscreenElement===root){await document.exitFullscreen();return;}state.focus=!state.focus;render();restoreControl('focus');return;
+      case 'fullscreen':if(document.fullscreenElement===root){await document.exitFullscreen();return;}state.focus=true;render();try{if(window.self!==window.top){notice('Use the standalone wireframe for browser full screen. Focus is active here.');}else if(root.requestFullscreen){await root.requestFullscreen();}else notice('Browser full screen is unavailable. Focus remains active.');}catch{notice('Browser full screen was unavailable. Focus remains active.');}return;
+      case 'margin':state.margin=!state.margin;break;
+      case 'highlight':state.highlight=!state.highlight;break;
+      case 'anchor':state.margin=true;state.discussion=false;render();root.querySelector('#pc-note')?.focus();return;
+      case 'draw':state.showDraw=!state.showDraw;break;
+      case 'undo':drawingPoints.pop();render();return;
+      case 'my-notes':state.discussion=false;break;
+      case 'discussion':state.margin=true;state.discussion=true;render();root.querySelector('#pc-question')?.focus();return;
+      case 'new-note':state.topicNoteOpen=!state.topicNoteOpen;render();root.querySelector('#pc-topic-note')?.focus();return;
+      case 'post':{const t=root.querySelector('#pc-question').value.trim();if(!t){notice('Write a question before posting.');return;}annotation().posted.push({text:t,audience:annotation().audience});annotation().question='';break;}
+      case 'slide-notes':state.slideMargin=!state.slideMargin;break;
+      case 'slide-next':slideMove(state.slide+1);return;case 'slide-prev':slideMove(state.slide-1);return;
+      case 'slide-index':state.slideIndex=!state.slideIndex;break;
+      case 'check':state.checked=true;if(state.answer)state.checks.push({answer:state.answer,hintUsed:state.hintUsed});break;case 'hint':state.hint=!state.hint;state.hintUsed=true;break;
+      case 'solution':state.solution=true;state.checked=false;break;
+      case 'step-next':if(state.step===1&&!state.inspected){state.exerciseError='Move sample size to 100 to compare it with 25.';break;}state.exerciseError='';if(state.step===0&&!state.inspected)state.n=25;state.step=Math.min(2,state.step+1);break;case 'step-prev':state.exerciseError='';state.step=Math.max(0,state.step-1);break;
+      case 'step-done':if(!state.explain.trim()){state.exerciseError='Write an explanation before completing the exercise.';break;}state.exerciseError='';state.practiceHistory.push({checks:[...state.checks],hintUsed:state.hintUsed,solutionShown:state.solution,explanation:state.explain,n:state.n});state.step=3;break;
+      case 'step-reset':state.step=0;state.answer='';state.checked=false;state.hint=false;state.hintUsed=false;state.solution=false;state.inspected=false;state.checks=[];state.exerciseError='';state.explain='';state.n=25;break;
+      case 'external':notice(state.notebook==='jupyter'?'Colab would open a separate working copy. Return by uploading a notebook for an assignment; no automatic sync is assumed. No service was contacted.':'The configured Shiny app would open in a separate browser tab. No external app is connected in this preview.');return;
+      case 'shiny-reset':state.n=25;break;
+      case 'run':state.run=true;state.stale=!state.code.includes('return None');break;case 'review-submit':state.reviewing=true;break;case 'keep-working':state.reviewing=false;break;case 'submit':state.submitted=true;break;case 'test-reset':state.submitted=false;state.reviewing=false;break;
+      case 'review-all':state.filter='all';break;
+      case 'save-grade':{const g=grades[state.student],score=Number(g.score);if(g.score===''||!Number.isFinite(score)||score<0||score>10){notice('Enter a score between 0 and 10.');return;}g.saved=true;break;}
+      case 'release-grade':if(!grades[state.student].saved){notice('Save the draft grade before releasing it.');return;}grades[state.student].released=true;notice(`Feedback for ${students[state.student].name} is shown as released. No student was contacted.`);break;
+      case 'source-question':state.tab='reading';state.discussion=true;state.margin=true;go('topic');return;
+      case 'save-topic':notice('Topic draft saved in this preview. The published class release is unchanged.');return;case 'publish':state.published=true;break;
+      case 'join':notice('An enrolment dialog would accept an invitation code here. No account or class is connected in this wireframe.');return;
+      case 'create-course':notice('Course creation would collect a title, description, and first class. The sample course is available for editing.');return;
+      case 'add-resource':notice('Resource choices: PDF or web slides, HTML/PDF reading, exercise steps, notebook/Shiny link, or test questions.');return;
+    }render();restoreControl(a);
+  });
+  root.addEventListener('input',e=>{const t=e.target;
+    if(t.id==='pc-course-search'){state.search=t.value;root.querySelector('#pc-course-grid').innerHTML=courseCards();return;}
+    if(t.id==='pc-note'){annotation().note=t.value;autosave(annotationKey());}
+    if(t.id==='pc-topic-note'){state.topicNote=t.value;autosave('topic');}
+    if(t.id==='pc-question')annotation().question=t.value;
+    if(t.id==='pc-sketch-text')state.sketchText=t.value;
+    if(t.id==='pc-explain'){state.explain=t.value;if(t.value.trim()){state.exerciseError='';root.querySelector('.pc-inline-error')?.remove();}}
+    if(t.id==='pc-objective')state.objective=t.value;
+    if(t.id==='pc-draft-title')state.draftTitle=t.value;
+    if(t.id==='pc-code'){state.code=t.value;state.stale=true;const status=root.querySelector('.pc-run-output>.pc-small');if(status){status.textContent='Output is out of date · code has changed';status.className='pc-small';}}
+    if(t.id==='pc-score'||t.id==='pc-feedback'){const g=grades[state.student];if(t.id==='pc-score')g.score=t.value;else g.feedback=t.value;g.saved=false;const status=root.querySelector('#pc-grade-status');if(status){status.textContent='Unsaved draft changes';status.className='pc-small';}}
+    if(t.id==='pc-size'||t.id==='pc-shiny-size'){state.n=Number(t.value);if(t.id==='pc-size'&&state.n===100){state.inspected=true;state.exerciseError='';root.querySelector('.pc-inline-error')?.remove();}const v=root.querySelector(t.id==='pc-size'?'#pc-size-value':'#pc-shiny-value');if(v)v.textContent=(t.id==='pc-size'?'n = ':'')+state.n;const se=root.querySelector('#pc-se');if(se)se.textContent=(3/Math.sqrt(state.n)).toFixed(2);root.querySelectorAll('.pc-lab .pc-distribution, .pc-shiny .pc-distribution').forEach(el=>el.dataset.n=String(state.n));drawCharts();}
+  });
+  root.addEventListener('change',e=>{const t=e.target;
+    if(t.id==='pc-role'){root.querySelector('#pc-notice').hidden=true;state.previewDraft=false;state.role=t.value;if(state.role==='student'&&['review','edit'].includes(state.screen))state.screen='topic';render();}
+    if(t.name==='pc-answer'){state.answer=t.value;state.checked=false;const feedback=root.querySelector('.pc-exercise .pc-feedback[role=status]');if(feedback)feedback.remove();}
+    if(t.id==='pc-audience')annotation().audience=t.value;
+    if(t.id==='pc-notebook-mode'){state.notebook=t.value;render();}
+    if(t.id==='pc-review-filter'){state.filter=t.value;render();}
+  });
+  document.addEventListener('keydown',e=>{if(!root.contains(e.target)&&e.target!==document.body)return;
+    const typing=e.target.closest('input,textarea,select,[contenteditable]');
+    if(e.key.toLowerCase()==='f'&&!e.ctrlKey&&!e.metaKey&&!e.altKey&&!typing&&state.screen==='topic'){e.preventDefault();root.querySelector('[data-action=fullscreen]')?.click();return;}
+    if(e.key==='Escape'&&state.focus&&!document.fullscreenElement){state.focus=false;render();restoreControl('focus');return;}
+    if((e.key==='ArrowLeft'||e.key==='ArrowRight')&&!typing&&state.screen==='topic'&&state.tab==='slides'&&e.target.closest('.pc-slide-stage')){e.preventDefault();slideMove(state.slide+(e.key==='ArrowRight'?1:-1));return;}
+    if(e.target.matches('[role=tab]')&&['ArrowLeft','ArrowRight','Home','End'].includes(e.key)){e.preventDefault();let i=tabs.findIndex(t=>t[0]===state.tab);i=e.key==='Home'?0:e.key==='End'?4:(i+(e.key==='ArrowRight'?1:4))%5;state.tab=tabs[i][0];render();root.querySelector(`#pc-tab-${state.tab}`)?.focus();}
+  });
+  new ResizeObserver(()=>{drawCharts();layoutNotes();}).observe(root);
+  function restoreHost(saved){const s=saved?.privateContent;if(!s||s.version!==4)return;if(['courses','topics','topic','review','edit','signin'].includes(s.screen))state.screen=s.screen;if(['student','instructor'].includes(s.role))state.role=s.role;if(tabs.some(t=>t[0]===s.tab))state.tab=s.tab;render();}
+  function persistHost(){if(!window.openai?.setWidgetState)return;window.openai.setWidgetState({modelContent:{view:state.screen,tab:state.tab,role:state.role},privateContent:{version:4,screen:state.screen,tab:state.tab,role:state.role}}).catch(()=>{});}
+  root.addEventListener('click',()=>queueMicrotask(persistHost));root.addEventListener('change',persistHost);
+  window.addEventListener('openai:set_globals',e=>restoreHost(e.detail?.globals?.widgetState));
+  restoreHost(window.openai?.widgetState);
+  render();
+})();
+</script>
+</div>
+<!-- WIREFRAME-FRAGMENT-END -->
+</body>
+</html>

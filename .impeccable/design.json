@@ -1,0 +1,339 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-09-28T19:29:27.078863+00:00",
+  "title": "Design System: Parallax wireframe",
+  "extensions": {
+    "colorMeta": {
+      "paper": {
+        "role": "neutral",
+        "displayName": "Workspace",
+        "tonalRamp": [
+          "oklch(15.00% 0.0000 0.00)",
+          "oklch(26.43% 0.0000 0.00)",
+          "oklch(37.86% 0.0000 0.00)",
+          "oklch(49.29% 0.0000 0.00)",
+          "oklch(60.71% 0.0000 0.00)",
+          "oklch(72.14% 0.0000 0.00)",
+          "oklch(83.57% 0.0000 0.00)",
+          "oklch(95.00% 0.0000 0.00)"
+        ]
+      },
+      "sheet": {
+        "role": "neutral",
+        "displayName": "Sheet",
+        "tonalRamp": [
+          "oklch(15.00% 0.0000 0.00)",
+          "oklch(26.43% 0.0000 0.00)",
+          "oklch(37.86% 0.0000 0.00)",
+          "oklch(49.29% 0.0000 0.00)",
+          "oklch(60.71% 0.0000 0.00)",
+          "oklch(72.14% 0.0000 0.00)",
+          "oklch(83.57% 0.0000 0.00)",
+          "oklch(95.00% 0.0000 0.00)"
+        ],
+        "description": "Semantic field, toolbar, and slide surface; matches Workspace in light mode and differs in dark mode."
+      },
+      "ink": {
+        "role": "primary",
+        "displayName": "Ink",
+        "tonalRamp": [
+          "oklch(15.00% 0.0058 271.18)",
+          "oklch(26.43% 0.0058 271.18)",
+          "oklch(37.86% 0.0058 271.18)",
+          "oklch(49.29% 0.0058 271.18)",
+          "oklch(60.71% 0.0058 271.18)",
+          "oklch(72.14% 0.0058 271.18)",
+          "oklch(83.57% 0.0058 271.18)",
+          "oklch(95.00% 0.0058 271.18)"
+        ],
+        "cssAliases": {
+          "--pc-accent": "--pc-ink"
+        },
+        "description": "Text, plots, and primary control fills share Ink. --pc-accent is a live CSS alias, not another primitive."
+      },
+      "muted": {
+        "role": "neutral",
+        "displayName": "Secondary ink",
+        "tonalRamp": [
+          "oklch(15.00% 0.0136 264.44)",
+          "oklch(26.43% 0.0136 264.44)",
+          "oklch(37.86% 0.0136 264.44)",
+          "oklch(49.29% 0.0136 264.44)",
+          "oklch(60.71% 0.0136 264.44)",
+          "oklch(72.14% 0.0136 264.44)",
+          "oklch(83.57% 0.0136 264.44)",
+          "oklch(95.00% 0.0136 264.44)"
+        ]
+      },
+      "rule": {
+        "role": "neutral",
+        "displayName": "Rule",
+        "tonalRamp": [
+          "oklch(15.00% 0.0076 260.73)",
+          "oklch(26.43% 0.0076 260.73)",
+          "oklch(37.86% 0.0076 260.73)",
+          "oklch(49.29% 0.0076 260.73)",
+          "oklch(60.71% 0.0076 260.73)",
+          "oklch(72.14% 0.0076 260.73)",
+          "oklch(83.57% 0.0076 260.73)",
+          "oklch(95.00% 0.0076 260.73)"
+        ]
+      },
+      "accent-ink": {
+        "role": "primary",
+        "displayName": "Inverse control text",
+        "tonalRamp": [
+          "oklch(15.00% 0.0000 0.00)",
+          "oklch(26.43% 0.0000 0.00)",
+          "oklch(37.86% 0.0000 0.00)",
+          "oklch(49.29% 0.0000 0.00)",
+          "oklch(60.71% 0.0000 0.00)",
+          "oklch(72.14% 0.0000 0.00)",
+          "oklch(83.57% 0.0000 0.00)",
+          "oklch(95.00% 0.0000 0.00)"
+        ]
+      },
+      "highlight": {
+        "role": "secondary",
+        "displayName": "Passage yellow",
+        "tonalRamp": [
+          "oklch(15.00% 0.0775 99.75)",
+          "oklch(26.43% 0.0775 99.75)",
+          "oklch(37.86% 0.0775 99.75)",
+          "oklch(49.29% 0.0775 99.75)",
+          "oklch(60.71% 0.0775 99.75)",
+          "oklch(72.14% 0.0775 99.75)",
+          "oklch(83.57% 0.0775 99.75)",
+          "oklch(95.00% 0.0775 99.75)"
+        ]
+      },
+      "soft": {
+        "role": "neutral",
+        "displayName": "Soft surface",
+        "tonalRamp": [
+          "oklch(15.00% 0.0029 264.54)",
+          "oklch(26.43% 0.0029 264.54)",
+          "oklch(37.86% 0.0029 264.54)",
+          "oklch(49.29% 0.0029 264.54)",
+          "oklch(60.71% 0.0029 264.54)",
+          "oklch(72.14% 0.0029 264.54)",
+          "oklch(83.57% 0.0029 264.54)",
+          "oklch(95.00% 0.0029 264.54)"
+        ]
+      },
+      "success": {
+        "role": "primary",
+        "displayName": "Success green",
+        "tonalRamp": [
+          "oklch(15.00% 0.0515 165.28)",
+          "oklch(26.43% 0.0515 165.28)",
+          "oklch(37.86% 0.0515 165.28)",
+          "oklch(49.29% 0.0515 165.28)",
+          "oklch(60.71% 0.0515 165.28)",
+          "oklch(72.14% 0.0515 165.28)",
+          "oklch(83.57% 0.0515 165.28)",
+          "oklch(95.00% 0.0515 165.28)"
+        ]
+      },
+      "secondary": {
+        "role": "neutral",
+        "displayName": "Secondary surface",
+        "tonalRamp": [
+          "oklch(15.00% 0.0017 247.84)",
+          "oklch(26.43% 0.0017 247.84)",
+          "oklch(37.86% 0.0017 247.84)",
+          "oklch(49.29% 0.0017 247.84)",
+          "oklch(60.71% 0.0017 247.84)",
+          "oklch(72.14% 0.0017 247.84)",
+          "oklch(83.57% 0.0017 247.84)",
+          "oklch(95.00% 0.0017 247.84)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "title": {
+        "displayName": "Page, topic, and reading title",
+        "purpose": "Shared 28px heading role; phone topic and reading sizes remain local variants."
+      },
+      "subsection": {
+        "displayName": "Subsection",
+        "purpose": "General content subheadings; reading uses a 21px local variant."
+      },
+      "body": {
+        "displayName": "Reading body",
+        "purpose": "Continuous course prose."
+      },
+      "ui": {
+        "displayName": "Interface text",
+        "purpose": "Controls and ordinary interface copy."
+      },
+      "label": {
+        "displayName": "Metadata",
+        "purpose": "Captions, status, and context labels."
+      },
+      "code": {
+        "displayName": "Stored code",
+        "purpose": "Rendered notebook code."
+      },
+      "code-editor": {
+        "displayName": "Editable code",
+        "purpose": "Assessment code editor."
+      },
+      "section": {
+        "displayName": "Section heading",
+        "purpose": "General h2 role at 26px; course, reading, and slide headings use documented local variants."
+      },
+      "field": {
+        "displayName": "Editable text",
+        "purpose": "General 16px input text; textareas use a 1.6 line height."
+      }
+    },
+    "shadows": [],
+    "motion": [
+      {
+        "name": "course-card-border",
+        "value": "border-color .15s ease",
+        "purpose": "Strengthens the course-card border on hover."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "Compact stage, maximum width",
+        "value": "1199px"
+      },
+      {
+        "name": "Stack content and two-column catalog, maximum width",
+        "value": "800px"
+      },
+      {
+        "name": "Phone and one-column catalog, maximum width",
+        "value": "540px"
+      },
+      {
+        "name": "Standalone slide viewport fit, minimum width and height",
+        "value": "1200px × 800px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Rounded filled action for submitting or continuing.",
+      "html": "<button type=\"button\" class=\"ds-button-primary\">Review submission</button>",
+      "css": ".ds-button-primary{color-scheme:light dark;font:14px/1.5 \"Segoe UI\",Arial,Helvetica,sans-serif;color:var(--pc-ink,light-dark(#202124,#eef0f3));background:transparent;border:0;min-height:36px;padding:7px 11px;border-radius:24px;text-align:left;background:var(--pc-accent,var(--pc-ink,light-dark(#202124,#eef0f3)));color:var(--pc-accent-ink,light-dark(#ffffff,#202124));padding:9px 22px;font-weight:600;}.ds-button-primary:hover{filter:brightness(.9);}.ds-button-primary:focus-visible{outline:revert;}.ds-button-primary:disabled{opacity:.55;}@media(pointer:coarse){.ds-button-primary{min-height:44px;min-width:44px;}}.ds-button-primary{cursor:pointer;}.ds-button-primary:disabled{cursor:default;}"
+    },
+    {
+      "name": "Outline button",
+      "kind": "button",
+      "refersTo": "button-outline",
+      "description": "Bordered secondary action.",
+      "html": "<button type=\"button\" class=\"ds-button-outline\">Run sample tests</button>",
+      "css": ".ds-button-outline{color-scheme:light dark;font:14px/1.5 \"Segoe UI\",Arial,Helvetica,sans-serif;color:var(--pc-ink,light-dark(#202124,#eef0f3));background:transparent;border:0;min-height:36px;padding:7px 11px;border-radius:4px;text-align:left;border:1px solid var(--pc-muted,light-dark(#60646c,#afb5bf));padding:8px 14px;background:var(--pc-sheet,light-dark(#ffffff,#1b1e23));}.ds-button-outline:hover{background:var(--pc-sheet,light-dark(#ffffff,#1b1e23));}.ds-button-outline:focus-visible{outline:revert;}.ds-button-outline:disabled{opacity:.55;}@media(pointer:coarse){.ds-button-outline{min-height:44px;min-width:44px;}}.ds-button-outline{cursor:pointer;}.ds-button-outline:disabled{cursor:default;}"
+    },
+    {
+      "name": "Plain button",
+      "kind": "button",
+      "refersTo": "button-plain",
+      "description": "Unfilled control for local tools or navigation.",
+      "html": "<button type=\"button\" class=\"ds-button-plain\">Focus</button>",
+      "css": ".ds-button-plain{color-scheme:light dark;font:14px/1.5 \"Segoe UI\",Arial,Helvetica,sans-serif;color:var(--pc-ink,light-dark(#202124,#eef0f3));background:transparent;border:0;min-height:36px;padding:7px 11px;border-radius:4px;text-align:left;}.ds-button-plain:hover{background:var(--pc-soft,light-dark(#f1f2f4,#292d34));}.ds-button-plain:focus-visible{outline:revert;}.ds-button-plain:disabled{opacity:.55;}@media(pointer:coarse){.ds-button-plain{min-height:44px;min-width:44px;}}.ds-button-plain{cursor:pointer;}.ds-button-plain:disabled{cursor:default;}"
+    },
+    {
+      "name": "Link button",
+      "kind": "button",
+      "refersTo": "button-link",
+      "description": "Underlined action within content.",
+      "html": "<button type=\"button\" class=\"ds-button-link\">Open notebook</button>",
+      "css": ".ds-button-link{color-scheme:light dark;font:14px/1.5 \"Segoe UI\",Arial,Helvetica,sans-serif;color:var(--pc-ink,light-dark(#202124,#eef0f3));background:transparent;border:0;min-height:36px;padding:7px 11px;border-radius:4px;text-align:left;padding:2px 0;text-decoration:underline;text-underline-offset:4px;}.ds-button-link:hover{background:var(--pc-soft,light-dark(#f1f2f4,#292d34));}.ds-button-link:focus-visible{outline:revert;}.ds-button-link:disabled{opacity:.55;}@media(pointer:coarse){.ds-button-link{min-height:44px;min-width:44px;}}.ds-button-link{cursor:pointer;}.ds-button-link:disabled{cursor:default;}"
+    },
+    {
+      "name": "Text button",
+      "kind": "button",
+      "refersTo": "button-text",
+      "description": "Unfilled action aligned with adjacent text.",
+      "html": "<button type=\"button\" class=\"ds-button-text\">Keep working</button>",
+      "css": ".ds-button-text{color-scheme:light dark;font:14px/1.5 \"Segoe UI\",Arial,Helvetica,sans-serif;color:var(--pc-ink,light-dark(#202124,#eef0f3));background:transparent;border:0;min-height:36px;padding:7px 11px;border-radius:4px;text-align:left;padding-left:0;padding-right:0;}.ds-button-text:hover{background:var(--pc-soft,light-dark(#f1f2f4,#292d34));}.ds-button-text:focus-visible{outline:revert;}.ds-button-text:disabled{opacity:.55;}@media(pointer:coarse){.ds-button-text{min-height:44px;min-width:44px;}}.ds-button-text{cursor:pointer;}.ds-button-text:disabled{cursor:default;}"
+    },
+    {
+      "name": "Text field",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Labelled field with a sheet surface and a visible boundary.",
+      "html": "<label class=\"ds-field-label\">Title<input class=\"ds-field\" value=\"Sampling &amp; uncertainty\"></label>",
+      "css": ".ds-field-label{display:grid;gap:8px;color-scheme:light dark;font:14px/1.5 \"Segoe UI\",Arial,Helvetica,sans-serif;color:var(--pc-ink,light-dark(#202124,#eef0f3));}.ds-field{font:16px/1.5 \"Segoe UI\",Arial,Helvetica,sans-serif;color:var(--pc-ink,light-dark(#202124,#eef0f3));caret-color:var(--pc-ink,light-dark(#202124,#eef0f3));border:1px solid var(--pc-muted,light-dark(#60646c,#afb5bf));background:var(--pc-sheet,light-dark(#ffffff,#1b1e23));border-radius:4px;max-width:100%;padding:8px 10px;}.ds-field:focus-visible{outline:revert;}"
+    },
+    {
+      "name": "Course card",
+      "kind": "card",
+      "refersTo": "course-card",
+      "description": "A course-opening button and its own Resume action, reviewed count, and thin progress line.",
+      "html": "<article class=\"ds-course-card\"><button type=\"button\" class=\"ds-card-open\" aria-label=\"Open Statistical thinking\"><span class=\"ds-course-mark\"><svg viewBox=\"0 0 78 56\" aria-hidden=\"true\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.1\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><path d=\"M3 45H73M5 44C24 44 26 7 38 7S52 44 71 44\"/></svg></span><h2>Statistical thinking</h2><span class=\"ds-card-meta\">5 topics · Autumn 2026</span></button><div class=\"ds-card-status\"><span>2 of 5 reviewed</span><button type=\"button\" class=\"ds-card-resume\">Resume Sampling &amp; uncertainty</button></div><span class=\"ds-progress\" role=\"img\" aria-label=\"2 of 5 topics reviewed\"><span style=\"width:40%\"></span></span></article>",
+      "css": ".ds-course-card{color-scheme:light dark;font:14px/1.5 \"Segoe UI\",Arial,Helvetica,sans-serif;color:var(--pc-ink,light-dark(#202124,#eef0f3));border:1px solid var(--pc-rule,light-dark(#d9dce1,#3b4048));border-radius:8px;min-width:0;padding:22px 22px 18px;display:flex;flex-direction:column;align-items:flex-start;min-height:232px;transition:border-color .15s ease;}.ds-course-card:hover{border-color:var(--pc-muted,light-dark(#60646c,#afb5bf));}.ds-card-open,.ds-card-resume{font:inherit;color:inherit;background:transparent;border:0;text-align:left;cursor:pointer;}.ds-card-open{display:block;width:100%;padding:0;min-height:0;border-radius:0;}.ds-card-open:hover{background:none;}.ds-card-open:focus-visible,.ds-card-resume:focus-visible{outline:revert;}.ds-course-card h2{font:600 18px/1.3 \"Segoe UI\",Arial,Helvetica,sans-serif;margin:12px 0 8px;letter-spacing:-.01em;text-wrap:balance;}.ds-card-meta{font-size:12px;color:var(--pc-muted,light-dark(#60646c,#afb5bf));line-height:1.55;}.ds-card-status{display:flex;flex-wrap:wrap;gap:8px 12px;align-items:center;font-size:12px;color:var(--pc-muted,light-dark(#60646c,#afb5bf));margin:15px 0 12px;min-height:24px;}.ds-card-resume{font-size:12px;min-height:24px;padding:2px 0;color:var(--pc-ink,light-dark(#202124,#eef0f3));border-radius:4px;text-decoration:underline;text-underline-offset:4px;}.ds-card-resume:hover{background:var(--pc-soft,light-dark(#f1f2f4,#292d34));}.ds-course-mark{width:76px;height:54px;display:block;color:var(--pc-muted,light-dark(#60646c,#afb5bf));}.ds-course-mark svg{width:100%;height:100%;overflow:visible;}.ds-progress{height:2px;background:var(--pc-rule,light-dark(#d9dce1,#3b4048));overflow:hidden;width:100%;margin-top:auto;}.ds-progress>span{display:block;height:100%;background:var(--pc-ink,light-dark(#202124,#eef0f3));}@media(max-width:540px){.ds-course-card{min-height:200px;padding:20px;}}@media(pointer:coarse){.ds-card-resume{min-height:44px;min-width:44px;}}@media(prefers-reduced-motion:reduce){.ds-course-card{transition:none;}}"
+    },
+    {
+      "name": "Material tabs",
+      "kind": "nav",
+      "refersTo": "material-tab",
+      "description": "Fixed material order with a semibold label and underline for selection.",
+      "html": "<div class=\"ds-tabs\" role=\"tablist\" aria-label=\"Topic materials\"><button class=\"ds-tab\" role=\"tab\" aria-selected=\"false\">Slides</button><button class=\"ds-tab\" role=\"tab\" aria-selected=\"true\">Reading</button><button class=\"ds-tab\" role=\"tab\" aria-selected=\"false\">Exercises</button><button class=\"ds-tab\" role=\"tab\" aria-selected=\"false\">Notebooks</button><button class=\"ds-tab\" role=\"tab\" aria-selected=\"false\">Tests</button></div>",
+      "css": ".ds-tabs{color-scheme:light dark;display:flex;align-items:stretch;gap:32px;padding:0 40px;border-bottom:1px solid var(--pc-rule,light-dark(#d9dce1,#3b4048));min-height:44px;flex-wrap:wrap;}.ds-tab{font:14px/1.5 \"Segoe UI\",Arial,Helvetica,sans-serif;border:0;border-radius:0;position:relative;padding:10px 0;background:transparent;color:var(--pc-muted,light-dark(#60646c,#afb5bf));white-space:nowrap;min-height:44px;}.ds-tab:hover{background:none;color:var(--pc-ink,light-dark(#202124,#eef0f3));}.ds-tab[aria-selected=true]{color:var(--pc-ink,light-dark(#202124,#eef0f3));font-weight:600;}.ds-tab[aria-selected=true]:after{content:\"\";position:absolute;bottom:-1px;left:0;right:0;height:2px;background:var(--pc-ink,light-dark(#202124,#eef0f3));}.ds-tab:focus-visible{outline:revert;}@media(max-width:1199px){.ds-tabs{padding:0 32px;}}@media(max-width:800px){.ds-tabs{padding:0 24px;gap:22px;}}@media(max-width:540px){.ds-tabs{padding:0 16px;gap:18px;}.ds-tab{min-height:44px;font-size:13px;padding:10px 0;}}@media(pointer:coarse){.ds-tab{min-height:44px;min-width:44px;}}"
+    },
+    {
+      "name": "Catalog filter",
+      "kind": "chip",
+      "refersTo": "filter-chip",
+      "description": "Rounded filter with a soft selected fill and a semibold label.",
+      "html": "<div class=\"ds-filters\" aria-label=\"Filter courses\"><button type=\"button\" class=\"ds-filter\" aria-pressed=\"true\">All</button><button type=\"button\" class=\"ds-filter\" aria-pressed=\"false\">In progress</button><button type=\"button\" class=\"ds-filter\" aria-pressed=\"false\">Archived</button></div>",
+      "css": ".ds-filters{color-scheme:light dark;display:flex;gap:6px;flex-wrap:wrap;}.ds-filter{font:13px/1.5 \"Segoe UI\",Arial,Helvetica,sans-serif;color:var(--pc-muted,light-dark(#60646c,#afb5bf));background:transparent;border:0;border-radius:18px;padding:7px 14px;min-height:36px;cursor:pointer;}.ds-filter:hover{background:var(--pc-soft,light-dark(#f1f2f4,#292d34));}.ds-filter[aria-pressed=true]{background:var(--pc-soft,light-dark(#f1f2f4,#292d34));color:var(--pc-ink,light-dark(#202124,#eef0f3));font-weight:600;}.ds-filter:focus-visible{outline:revert;}@media(pointer:coarse){.ds-filter{min-height:44px;min-width:44px;}}"
+    },
+    {
+      "name": "Passage actions",
+      "kind": "custom",
+      "refersTo": "passage-tools",
+      "description": "Highlight, Note, and Ask follow the passage in document flow.",
+      "html": "<div class=\"ds-passage-tools\" role=\"toolbar\" aria-label=\"Selected passage\"><button type=\"button\" class=\"ds-passage-action\" aria-pressed=\"true\">Highlight</button><button type=\"button\" class=\"ds-passage-action\">Note</button><button type=\"button\" class=\"ds-passage-action\">Ask</button></div>",
+      "css": ".ds-passage-tools{color-scheme:light dark;position:relative;display:flex;width:max-content;max-width:100%;flex-wrap:wrap;margin-top:10px;gap:2px;padding:3px 6px;background:var(--pc-ink,light-dark(#202124,#eef0f3));color:var(--pc-accent-ink,light-dark(#ffffff,#202124));border-radius:5px;z-index:2;}.ds-passage-action{font:12px/1.5 \"Segoe UI\",Arial,Helvetica,sans-serif;color:inherit;background:transparent;border:0;border-radius:4px;min-height:30px;padding:5px 9px;cursor:pointer;}.ds-passage-action:hover,.ds-passage-action[aria-pressed=true]{background:var(--pc-muted,light-dark(#60646c,#afb5bf));color:var(--pc-accent-ink,light-dark(#ffffff,#202124));}.ds-passage-action:focus-visible{outline:revert;}@media(pointer:coarse){.ds-passage-action{min-height:44px;min-width:44px;}}"
+    }
+  ],
+  "narrative": {
+    "overview": "This records the reusable visual decisions in [the unified wireframe](docs/wireframe.html). The source HTML and rendered states are the evidence for this system. It is a design artifact with fictional course material and local demonstrations; [the product specification](docs/product-spec.md) identifies the services and behaviours still required for an implemented application. [The reconciliation record](docs/design-reconciliation.md) records how Fable’s review and counterproposal informed the unified design.\n\nThe working surface gives course material the most space. White and neutral-grey grounds, charcoal controls, fine borders, and familiar sans-serif type follow the user's reference composition. Course cards lead to a compact syllabus table, then a full-width topic with material tabs and local controls. Yellow marks selected passages. Small geometric diagrams identify course subjects. No raster assets or downloaded fonts ship with the wireframe.",
+    "keyCharacteristics": [
+      "Continuous reading and notebook material with optional source-specific notes.",
+      "Compact navigation, course-specific actions, and clear selected states.",
+      "Light and dark palettes with distinct workspace and sheet roles.",
+      "Flat surfaces separated by spacing, tone, and fine borders."
+    ],
+    "rules": [
+      {
+        "name": "The Shared Ink Rule",
+        "body": "Primary control colour follows Ink in both themes; do not maintain a second charcoal palette.",
+        "section": "colors"
+      },
+      {
+        "name": "The Content Type Rule",
+        "body": "Use the shared sans-serif hierarchy for interface and prose; reserve monospace for code and the serif exception for mathematical notation.",
+        "section": "typography"
+      },
+      {
+        "name": "The Flat Surface Rule",
+        "body": "Distinguish regions through tone, fine borders, and space, without introducing decorative shadow layers.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "**Do** keep reading, code, and slides spacious while navigation remains compact.",
+      "**Do** use the light and dark members of each colour token together and preserve Workspace and Sheet as separate roles.",
+      "**Do** retain text labels, selected-state cues, audience labels, and visible keyboard focus.",
+      "**Do** let regions grow or stack when text or viewport size requires it.",
+      "**Do** keep passage actions beside their source in document flow and position notes from measured anchors."
+    ],
+    "donts": [
+      "**Don't** restore tan or cream grounds, rust accents, or display-serif headings.",
+      "**Don't** fragment continuous reading or notebook material into decorative cards or dashboard tiles.",
+      "**Don't** duplicate the Ink palette or revive obsolete rail tokens and override layers.",
+      "**Don't** present prototype states or proposed product behaviours as implemented services."
+    ]
+  }
+}

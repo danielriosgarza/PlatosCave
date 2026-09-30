@@ -1,0 +1,5 @@
+.impeccable/review/
+.impeccable/mocks/
+.impeccable/cache/
+.impeccable/live/
+.impeccable/config.local.json
