@@ -1,0 +1,12 @@
+services:
+  postgres:
+    image: postgres:16.15
+    environment: { POSTGRES_USER: parallax, POSTGRES_PASSWORD: parallax, POSTGRES_DB: parallax }
+    ports: ["54329:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck: { test: ["CMD-SHELL", "pg_isready -U parallax"], interval: 5s, timeout: 5s, retries: 10 }
+  mailpit:                       # optional inbox UI; the app defaults to the file transport
+    image: axllent/mailpit:v1.31.3
+    profiles: [mail]
+    ports: ["8025:8025", "1025:1025"]
+volumes: { pgdata: {} }

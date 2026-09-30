@@ -26,3 +26,33 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
+
+  integration:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16.15
+        env:
+          POSTGRES_USER: parallax
+          POSTGRES_PASSWORD: parallax
+          POSTGRES_DB: parallax
+        ports:
+          - 54329:5432
+        options: >-
+          --health-cmd "pg_isready -U parallax"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://parallax:parallax@127.0.0.1:54329/parallax
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm db:migrate
+      - run: pnpm test:integration

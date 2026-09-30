@@ -1,5 +1,6 @@
 import { buildApp } from './app';
 import { loadConfig } from './config';
+import { createDb } from './db/client';
 
 const mode = process.argv[2] ?? 'api';
 if (mode !== 'api') {
@@ -8,11 +9,26 @@ if (mode !== 'api') {
 }
 
 const config = loadConfig();
-const app = await buildApp(config);
+const database = config.DATABASE_URL
+  ? createDb(config.DATABASE_URL, { onError: (err) => app.log.error({ err }, 'pg pool error') })
+  : undefined;
+const app = await buildApp(config, database ? { db: database.db } : {});
 await app.listen({ port: config.PORT, host: config.HOST });
 
+let stopping = false;
 const stop = () => {
-  app.close().then(() => process.exit(0));
+  if (stopping) process.exit(1); // second signal forces exit if close() hangs
+  stopping = true;
+  app
+    .close()
+    .then(() => database?.pool.end())
+    .then(
+      () => process.exit(0),
+      (err) => {
+        app.log.error({ err }, 'shutdown failed');
+        process.exit(1);
+      },
+    );
 };
 process.on('SIGTERM', stop);
 process.on('SIGINT', stop);

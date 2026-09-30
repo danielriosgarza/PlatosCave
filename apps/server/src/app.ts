@@ -10,9 +10,12 @@ import {
   validatorCompiler,
 } from 'fastify-type-provider-zod';
 import type { Config } from './config';
+import type { Db } from './db/client';
 import { isApiPath, registerStatic } from './http/static';
 
-export type Deps = Record<string, never>;
+export interface Deps {
+  db?: Db;
+}
 
 export async function buildApp(config: Config, deps: Deps = {}): Promise<FastifyInstance> {
   const app = Fastify({
