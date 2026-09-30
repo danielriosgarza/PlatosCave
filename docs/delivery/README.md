@@ -64,6 +64,15 @@ The orchestrator squash-merges at most one pull request per hourly run, and only
 3. Every CI check on that head completed with `success`, `skipped` or `neutral`, and there is at least one.
 4. The linked issue is not labelled `needs-human`.
 
+## Timing
+
+The orchestrator routine (`trig_01GLrhXFVWKkrjAb4DNu7LBX`) runs every hour at :41 as a fallback. To avoid waiting for that tick, sessions wake it early with `fire_trigger`:
+- the implementer, once CI is green on a head labelled `review:pending`;
+- the reviewer, right after posting its verdict;
+- the auditor, after filing its phase summary.
+
+A merge and the launch of the next item then happen within minutes. Each early wake-up is one extra orchestrator run.
+
 ## Limits
 
 - At most **3** issues in `status:in-progress` at once (escalated ones excluded), and at most 3 reviewer sessions launched per orchestrator run.

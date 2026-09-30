@@ -56,4 +56,8 @@ Checks run: <command → result>, …
 
 Then set the PR's review label: replace `review:in-progress` (or `review:pending`) with `review:approved` or `review:changes-requested`.
 
+Finally, wake the orchestrator so it acts on the verdict now instead of at the next hourly run: call `fire_trigger` with `trigger_id: trig_01GLrhXFVWKkrjAb4DNu7LBX` and `text: "Reviewer: PR #<n> <APPROVED|CHANGES REQUESTED> at <short SHA>"`. If the call fails, carry on; the hourly run is the fallback.
+
+An optional finding that concerns a later plan item rather than this PR (for example "P1-01 must move this check into a hook") will not reach that item's implementer from here. Post it also as a comment on that item's issue, starting "Carried over from the review of PR #<n>:". Implementers read their issue's comments.
+
 If you are the arbiter (round 3 or later), prefer approving with follow-up issues for non-critical remaining points. Create those issues yourself (labels `plan`, same `phase:`, a `model:` label, `status:ready`, title `[<ID>b] …`, body with `Depends on: none`). Request changes only for problems that would break correctness, security, a listed scenario, or a quality gate.
