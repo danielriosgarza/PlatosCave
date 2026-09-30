@@ -77,6 +77,6 @@ The orchestrator squash-merges at most one pull request per hourly run, and only
 | When | What |
 | --- | --- |
 | Once, before deployment | Provide hosting and identity-provider accounts and secrets. Phases 1–4 run locally and in GitHub Actions without them. |
-| On escalation | Issues labelled `needs-human` (credentials, a change to a user commitment in [PRODUCT.md](../../PRODUCT.md), or three failed attempts). Answer in the issue, then remove the label; the orchestrator resumes the item on its next run with a fresh attempt count. |
+| On escalation (the orchestrator sends a push notification) | Issues labelled `needs-human` (credentials, a change to a user commitment in [PRODUCT.md](../../PRODUCT.md), or three failed attempts). Answer in the issue, then remove the label; the orchestrator resumes the item on its next run with a fresh attempt count. |
 | Optional, per phase | Read the `Phase N summary` issue written by the auditor. |
 | Anytime | The pinned **Delivery status** issue shows the current state. Add the label `paused` to it to stop the orchestrator launching work; remove it to resume. |
