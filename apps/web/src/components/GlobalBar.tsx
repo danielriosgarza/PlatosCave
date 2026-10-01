@@ -1,7 +1,8 @@
 import { signOut } from '@parallax/contracts/routes/auth';
 import { useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
-import { call } from '../api/client';
+import { useState } from 'react';
+import { ApiError, call } from '../api/client';
 import { sessionQuery, studyingClasses, useSession } from '../session/useSession';
 import styles from './GlobalBar.module.css';
 
@@ -9,25 +10,33 @@ export function GlobalBar() {
   const session = useSession();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const [signOutFailed, setSignOutFailed] = useState(false);
   const { classId: routeClassId } = useParams({ strict: false });
 
   const me = session.status === 'signed-in' ? session.me : null;
   // Topics opens the class being viewed, else the first class the person studies or teaches.
   const topicsClassId =
-    me && (me.classes.some((c) => c.classId === routeClassId) ? routeClassId : undefined);
+    me &&
+    (me.classes.some((c) => c.classId === routeClassId && !c.isPreview) ? routeClassId : undefined);
   const fallback = me
     ? (studyingClasses(me)[0] ?? me.classes.find((c) => !c.isPreview))
     : undefined;
   const classId = topicsClassId ?? fallback?.classId;
 
   const handleSignOut = async () => {
+    setSignOutFailed(false);
     try {
       await call(signOut);
-    } finally {
-      queryClient.clear();
-      queryClient.setQueryData(sessionQuery.queryKey, null);
-      await navigate({ to: '/signin' });
+    } catch (error) {
+      // 401 means the session is already gone; anything else leaves the person signed in.
+      if (!(error instanceof ApiError && error.status === 401)) {
+        setSignOutFailed(true);
+        return;
+      }
     }
+    queryClient.clear();
+    queryClient.setQueryData(sessionQuery.queryKey, null);
+    await navigate({ to: '/signin' });
   };
 
   return (
@@ -54,6 +63,7 @@ export function GlobalBar() {
       {me ? (
         <div className={styles.account}>
           <span className={styles.who}>{me.user.name}</span>
+          {signOutFailed ? <span role="alert">Sign-out failed. Try again.</span> : null}
           <button type="button" className={styles.signOut} onClick={handleSignOut}>
             Sign out
           </button>

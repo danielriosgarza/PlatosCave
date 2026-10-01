@@ -1,4 +1,5 @@
-import { cleanup, screen } from '@testing-library/react';
+import { cleanup, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   CLASS_A,
@@ -43,5 +44,31 @@ describe('GlobalBar', () => {
     stubApi(signedIn(makeMe({ classes: [instructorIn(CLASS_A, 'Class A')] })));
     renderApp('/courses');
     expect(await screen.findByRole('link', { name: 'Topics' })).toBeInTheDocument();
+  });
+
+  it('A02 keeps the person signed in and says so when sign-out fails on the server', async () => {
+    const user = userEvent.setup();
+    stubApi((url) =>
+      url === '/api/me'
+        ? { status: 200, body: makeMe({ classes: [studentIn(CLASS_A, 'Class A')] }) }
+        : { status: 500, body: { error: 'boom' } },
+    );
+    const { router } = renderApp('/courses');
+    await user.click(await screen.findByRole('button', { name: 'Sign out' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Sign-out failed. Try again.');
+    expect(router.state.location.pathname).toBe('/courses');
+    expect(screen.getByRole('button', { name: 'Sign out' })).toBeInTheDocument();
+  });
+
+  it('A02 signs out and returns to /signin once the server confirms', async () => {
+    const user = userEvent.setup();
+    stubApi((url) =>
+      url === '/api/auth/signout'
+        ? { status: 200, body: { signedOut: true } }
+        : { status: 200, body: makeMe({ classes: [studentIn(CLASS_A, 'Class A')] }) },
+    );
+    const { router } = renderApp('/courses');
+    await user.click(await screen.findByRole('button', { name: 'Sign out' }));
+    await waitFor(() => expect(router.state.location.pathname).toBe('/signin'));
   });
 });

@@ -85,6 +85,16 @@ describe('courses contexts', () => {
   });
 });
 
+describe('courses default view', () => {
+  it('A02 an instructor-only account opening /courses sees the classes it teaches', async () => {
+    stubApi(signedIn(makeMe({ classes: [instructorIn(CLASS_A, 'Class A')] })));
+    renderApp('/courses');
+    expect(await screen.findByRole('heading', { name: 'Courses you teach' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Class A/ })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Class review' })).toBeInTheDocument();
+  });
+});
+
 describe('topic workspace tabs', () => {
   it('A02 selecting a tab changes the address and the selected tab', async () => {
     const user = userEvent.setup();

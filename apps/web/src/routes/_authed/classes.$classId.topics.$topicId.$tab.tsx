@@ -36,7 +36,7 @@ function TopicWorkspace() {
   if (!context || !isTab(tab)) return <Unavailable />;
   const label = TOPIC_TABS.find((t) => t.id === tab)?.label ?? tab;
   return (
-    <>
+    <main>
       <div className={styles.heading}>
         <h1>{context.courseTitle}</h1>
         <p className={`${styles.small} ${styles.muted}`} style={{ marginTop: 5 }}>
@@ -60,6 +60,6 @@ function TopicWorkspace() {
       >
         <p className={styles.intro}>{label} for this topic are not available yet.</p>
       </div>
-    </>
+    </main>
   );
 }

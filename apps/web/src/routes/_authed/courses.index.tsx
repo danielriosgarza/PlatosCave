@@ -18,9 +18,14 @@ export const Route = createFileRoute('/_authed/courses/')({
 
 function Courses() {
   const session = useSession();
-  const { view = 'student' } = Route.useSearch();
+  const { view } = Route.useSearch();
   if (session.status !== 'signed-in') return <main className={styles.index} aria-busy="true" />;
-  return <CoursesFor me={session.me} view={view} />;
+  // Without an explicit view, open the context the person actually holds: someone who only
+  // teaches starts on Courses you teach, everyone else on Your courses (§3).
+  const { classes, courses } = teachingContexts(session.me);
+  const onlyTeaches =
+    (classes.length > 0 || courses.length > 0) && studyingClasses(session.me).length === 0;
+  return <CoursesFor me={session.me} view={view ?? (onlyTeaches ? 'instructor' : 'student')} />;
 }
 
 function CoursesFor({ me, view }: { me: Me; view: View }) {
