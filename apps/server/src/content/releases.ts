@@ -14,6 +14,7 @@ import {
   topics,
 } from '../db/schema';
 import { forCourse } from '../db/scoped';
+import { derivedReady } from '../jobs/derived';
 
 export type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type Issue = z.infer<typeof validationIssue>;
@@ -107,7 +108,7 @@ export function validate(drafts: Drafts): ValidationReport {
         });
         continue;
       }
-      if (revision.type === 'slides_pdf' && revision.derived.status !== 'ready') {
+      if (revision.type === 'slides_pdf' && !derivedReady(revision.derived)) {
         errors.push({
           code: 'unconverted_deck',
           message: `“${resource.title}” has not been converted for viewing`,
