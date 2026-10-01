@@ -6,7 +6,7 @@ Parallax is built by Claude sessions with minimal human involvement. This page i
 
 | Role | Runs as | Does | Never does |
 | --- | --- | --- | --- |
-| Orchestrator | Hourly routine firing into one persistent Opus 5.5 session that has the repository checked out | Reads GitHub state, merges ready PRs, unblocks issues, launches implementer / reviewer / audit sessions, restarts stuck work, escalates, updates the dashboard issue | Write product code; merge anything that fails the merge rule |
+| Orchestrator | Hourly routine, plus the orchestrator's own follow-up check-ins, firing into one persistent Opus 5.5 session that has the repository checked out | Reads GitHub state, merges ready PRs, unblocks issues, launches implementer / reviewer / audit sessions, restarts stuck work, escalates, updates the dashboard issue | Write product code; merge anything that fails the merge rule |
 | Implementer | One cloud session per issue; model from the issue's `model:` label | Tests and code for exactly one issue, opens the PR, fixes CI and review findings | Merge, approve, widen scope, disable tests |
 | Reviewer | One cloud session per review round; a different model from the implementer | Reviews the PR head against issue, spec and ADRs; runs the checks; posts findings and a verdict label | Push code |
 | Phase auditor | Fable 5.1 session when every issue of phase 1, 2, 3 or 4 is closed | Compares `main` with the spec for that phase, files fix-up issues, writes the phase summary for the human | Change product scope |
@@ -57,7 +57,7 @@ A failed implementation attempt is retried once with the same model, then once w
 
 The owner allowed Claude sessions in this repository to merge (`.claude/settings.json` permits `mcp__github__merge_pull_request`). Only the orchestrator uses that permission; implementer and reviewer skills forbid merging, and any PR that changes `.claude/` is reviewed by Fable. If the permission system still refuses a merge, the orchestrator escalates instead of working around it.
 
-The orchestrator squash-merges at most one pull request per hourly run, and only when all of these hold:
+The orchestrator squash-merges every pull request that satisfies all of these at the moment of merging; after each merge the next one must be brought up to date with the new `main` and pass CI again:
 
 1. Label `review:approved`, and the latest `Review verdict: APPROVED` comment names the current head SHA, or the head differs from it only by "update from main" merge commits.
 2. The branch is up to date with `main` (the orchestrator updates it and waits for CI if not), so every merge was tested against the `main` it lands on.
@@ -66,16 +66,21 @@ The orchestrator squash-merges at most one pull request per hourly run, and only
 
 ## Timing
 
-The orchestrator routine (`trig_01GLrhXFVWKkrjAb4DNu7LBX`) runs every hour at :41 as a fallback. To avoid waiting for that tick, sessions wake it early with `fire_trigger`:
+The orchestrator routine (`trig_01GLrhXFVWKkrjAb4DNu7LBX`) runs every hour at :41 as a fallback. The mechanism relied on between ticks is the orchestrator's own follow-up: at the end of any run with work in flight (an implementer or reviewer session launched or still working, or an approved PR waiting for CI after an update from `main`), it schedules one check-in into its own session with `send_later`:
+- 10 minutes later after updating a branch from `main` (CI takes about 2–3 minutes);
+- 20 minutes later when it launched sessions or sessions are still working;
+- the shorter delay when both apply.
+
+Only one follow-up is pending at a time; the dashboard records it as `Next check-in: <ISO> <trigger id>`, and a sooner one replaces it. With nothing in flight, none is scheduled. A follow-up run follows the same steps, lock and limits as an hourly run.
+
+Sessions also try to wake the orchestrator early with `fire_trigger`, best effort only:
 - the implementer, once CI is green on a head labelled `review:pending`;
 - the reviewer, right after posting its verdict;
 - the auditor, after filing its phase summary.
 
-A merge and the launch of the next item then happen within minutes. Each early wake-up is one extra orchestrator run.
-
 ## Limits
 
-- At most **3** issues in `status:in-progress` at once (escalated ones excluded), and at most 3 reviewer sessions launched per orchestrator run.
+- At most **3** issues in `status:in-progress` at once (escalated ones excluded), and at most 3 reviewer sessions launched per orchestrator run (hourly or follow-up). Merges per run are not capped; each one is first brought up to date with `main` and green on CI. At most one follow-up check-in is pending at a time.
 - Three implementation attempts per issue (fresh or continuation): two with the labelled model, one with the next model up; then `needs-human`.
 - Sessions run in `auto` permission mode because nobody is present to answer prompts.
 - The orchestrator stops launching new implementers while 5 or more issues are `needs-human`.
