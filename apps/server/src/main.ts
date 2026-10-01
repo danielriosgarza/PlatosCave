@@ -3,7 +3,7 @@ import { buildApp } from './app';
 import { loadConfig } from './config';
 import { createDb } from './db/client';
 import { createBoss } from './jobs/boss';
-import { workMaintenance } from './jobs/maintenance';
+import { PURGE_SIGNIN_TOKENS, workMaintenance } from './jobs/maintenance';
 import { loadJobs } from './jobs/registry';
 import { workScopedJob } from './jobs/scoped';
 
@@ -63,7 +63,7 @@ if (mode === 'api') {
   const jobs = await loadJobs();
   for (const job of jobs) await workScopedJob(boss, database.db, job, log);
   await workMaintenance(boss, database.db, log);
-  log.info({ jobs: jobs.map((j) => j.name) }, 'worker started');
+  log.info({ jobs: [...jobs.map((j) => j.name), PURGE_SIGNIN_TOKENS] }, 'worker started');
   // Graceful: active jobs finish (up to pg-boss's stop timeout) before the pool closes.
   onSignals(log, () => boss.stop({ graceful: true }));
 }

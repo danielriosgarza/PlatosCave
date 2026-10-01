@@ -1,4 +1,5 @@
 import { count, eq } from 'drizzle-orm';
+import type { PgBoss } from 'pg-boss';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { EmailLinkProvider, LINK_TTL_MS, LINKS_PER_EMAIL } from '../../src/auth/email-provider';
 import { signinTokens } from '../../src/db/schema';
@@ -7,17 +8,22 @@ import {
   PURGE_SIGNIN_TOKENS,
   purgeSigninTokens,
   SIGNIN_TOKEN_RETENTION_MS,
+  workMaintenance,
 } from '../../src/jobs/maintenance';
 import { createTestDatabase, type TestDatabase } from './db';
 
 const now = new Date('2026-10-01T12:00:00Z');
 const ago = (ms: number) => new Date(now.getTime() - ms);
 let testDb: TestDatabase;
+let boss: PgBoss;
 
 beforeAll(async () => {
   testDb = await createTestDatabase();
+  boss = createBoss(testDb.db.$client, { role: 'worker', onError: () => {} });
+  await boss.start();
 });
 afterAll(async () => {
+  await boss?.stop({ graceful: false });
   await testDb?.drop();
 });
 
@@ -75,15 +81,8 @@ describe('sign-in link purge', () => {
   });
 
   test('the worker schedules the purge on pg-boss', async () => {
-    const boss = createBoss(testDb.db.$client, { role: 'worker', onError: () => {} });
-    await boss.start();
-    try {
-      const { workMaintenance } = await import('../../src/jobs/maintenance');
-      await workMaintenance(boss, testDb.db, { warn() {}, info() {} });
-      const schedules = await boss.getSchedules();
-      expect(schedules.map((s) => s.name)).toContain(PURGE_SIGNIN_TOKENS);
-    } finally {
-      await boss.stop({ graceful: false });
-    }
+    await workMaintenance(boss, testDb.db, { info() {}, error() {} });
+    const schedules = await boss.getSchedules();
+    expect(schedules.map((s) => s.name)).toContain(PURGE_SIGNIN_TOKENS);
   });
 });
