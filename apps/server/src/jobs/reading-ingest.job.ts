@@ -15,6 +15,10 @@ import {
 } from './derived';
 import { defineScopedJob, sendScopedJob } from './scoped';
 
+/** Resource types this job derives outputs for: readings and PDF slide decks. */
+export const isProcessed = (type: string): boolean =>
+  type === 'reading_native' || type === 'reading_pdf' || type === 'slides_pdf';
+
 export const READING_INGEST = 'reading.ingest';
 
 /** Largest upload the job reads into memory; P1-14 limits uploads below this. */
@@ -33,6 +37,15 @@ const NativeContent = z.object({
   assets: z.record(z.string(), z.string()).default({}),
 });
 const PdfContent = z.object({ objectKey: z.string().optional() });
+
+/**
+ * A deck is raster-only when fewer than half of its pages carry any text: its slides are
+ * images a screen reader cannot read, so publication requires a text alternative (spec §7).
+ */
+export function isRasterOnly(pages: readonly { text: string }[]): boolean {
+  const withText = pages.filter((page) => page.text.trim() !== '').length;
+  return withText * 2 < pages.length;
+}
 
 /** A problem with the reading itself: retrying cannot help, so the job ends failed at once. */
 export class IngestError extends Error {}
@@ -94,21 +107,25 @@ export async function ingestRevision(
       warnings: rendered.warnings,
     };
   }
-  if (revision.type === 'reading_pdf') {
+  if (revision.type === 'reading_pdf' || revision.type === 'slides_pdf') {
     const content = PdfContent.safeParse(revision.content);
     const key =
       (content.success ? content.data.objectKey : undefined) ??
       (revision.objectKeys.length === 1 ? revision.objectKeys[0] : undefined);
     if (!key) throw new IngestError('The reading has no PDF file');
     const bytes = await readObject(storage, revision, key);
+    let text: Awaited<ReturnType<typeof extractPdfText>>;
     try {
-      return { ...(await extractPdfText(new Uint8Array(bytes), { signal })) };
+      text = await extractPdfText(new Uint8Array(bytes), { signal });
     } catch (err) {
       if (err instanceof PdfReadError) throw new IngestError(err.message);
       throw err;
     }
+    if (revision.type === 'reading_pdf') return { ...text };
+    // The original stays downloadable through content tokens; the viewer renders it in the browser.
+    return { ...text, rasterOnly: isRasterOnly(text.pages) };
   }
-  throw new IngestError(`A ${revision.type} resource is not a reading`);
+  throw new IngestError(`A ${revision.type} resource has nothing to process`);
 }
 
 const status = (
@@ -130,7 +147,7 @@ const retryLimitOf = (job: object): number =>
   'retryLimit' in job && typeof job.retryLimit === 'number' ? job.retryLimit : RETRY_LIMIT;
 
 /**
- * Renders a native reading or reads a PDF's pages for one revision of the job's course, and
+ * Renders a native reading or reads a PDF reading's or deck's pages for one revision of the job's course, and
  * records progress in `derived.status`: running, then ready; a failing attempt that pg-boss
  * will retry shows queued with the error, the last one failed.
  */

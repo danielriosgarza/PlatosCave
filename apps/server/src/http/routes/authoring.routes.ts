@@ -13,7 +13,7 @@ import type { FastifyInstance } from 'fastify';
 import type { Deps } from '../../app';
 import { courseOverview } from '../../db/courseOverview';
 import { listResourceJobStatus, type ResourceJobStatus } from '../../jobs/derived';
-import { enqueueReadingIngest } from '../../jobs/reading-ingest.job';
+import { enqueueReadingIngest, isProcessed } from '../../jobs/reading-ingest.job';
 import { storeCourseObject } from '../../storage/objects';
 import { notFound, refuse, registerRoute } from '../register';
 
@@ -137,12 +137,12 @@ export default function authoringRoutes(app: FastifyInstance, deps: Deps): void 
 
   registerRoute(app, retryProcessing, async ({ scope, params }) => {
     const [found] = await listResourceJobStatus(db(), scope, params.resourceId);
-    if (!found?.revisionId || (found.type !== 'reading_native' && found.type !== 'reading_pdf')) {
+    if (!found?.revisionId || !isProcessed(found.type)) {
       notFound();
     }
     // Only a failed or never-queued reading is queued again: a running job would race the new one.
     if (found.status && found.status.state !== 'failed') {
-      refuse(409, 'This reading is already queued, being processed or ready');
+      refuse(409, 'This resource is already queued, being processed or ready');
     }
     if (!deps.boss) throw app.httpErrors.serviceUnavailable();
     await enqueueReadingIngest(deps.boss, db(), scope, found.revisionId);

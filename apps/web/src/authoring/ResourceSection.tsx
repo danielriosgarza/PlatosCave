@@ -120,7 +120,9 @@ function StatusLine({
     mutationFn: () => call(retryProcessing, { params: { courseId, resourceId: resource.id } }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: authoringKey(courseId) }),
   });
-  if (!isReading(resource.type) || resource.archived) return null;
+  if (!(isReading(resource.type) || resource.type === 'slides_pdf') || resource.archived) {
+    return null;
+  }
   const state = status?.state ?? null;
   const labels = {
     queued: 'Waiting to be processed',

@@ -9,7 +9,7 @@ import {
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { Deps } from '../../app';
 import * as drafts from '../../content/drafts';
-import { enqueueIfUnprocessed } from '../../jobs/reading-ingest.job';
+import { enqueueIfUnprocessed, isProcessed } from '../../jobs/reading-ingest.job';
 import { notFound, registerRoute, settle } from '../register';
 
 export default function draftRoutes(app: FastifyInstance, deps: Deps): void {
@@ -30,8 +30,8 @@ export default function draftRoutes(app: FastifyInstance, deps: Deps): void {
   );
 
   /**
-   * Readings are processed in the background (§8): a new head revision with no job on record is
-   * queued. A failure to queue does not undo the save; the editor sees the unprocessed state and
+   * Readings and PDF decks are processed in the background (§8): a new head revision with no job
+   * on record is queued. A failure to queue does not undo the save; the editor sees the unprocessed state and
    * can retry from the processing route.
    */
   const queueReading = async (
@@ -39,8 +39,8 @@ export default function draftRoutes(app: FastifyInstance, deps: Deps): void {
     resource: { type: string; headRevisionId: string | null },
     log: FastifyRequest['log'],
   ) => {
-    const reading = resource.type === 'reading_native' || resource.type === 'reading_pdf';
-    if (!reading || !resource.headRevisionId || !deps.boss) return;
+    const processed = isProcessed(resource.type);
+    if (!processed || !resource.headRevisionId || !deps.boss) return;
     await enqueueIfUnprocessed(deps.boss, db(), scope, resource.headRevisionId).catch((err) =>
       log.error({ err, courseId: scope.courseId }, 'could not queue reading processing'),
     );
