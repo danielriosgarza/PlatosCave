@@ -1,5 +1,5 @@
 import { and, eq } from 'drizzle-orm';
-import type { UserScope } from '../auth/scope';
+import type { ClassScope, CourseScope, UserScope } from '../auth/scope';
 import type { Db } from './client';
 import {
   auditEvents,
@@ -9,14 +9,13 @@ import {
   courses,
   users,
 } from './schema';
+import { forClass } from './scoped';
 
-type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
+export type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type Audit = typeof auditEvents.$inferInsert;
 
-/** Actor of a membership change; null for system actions such as fixtures. */
-type Actor = string | null;
-
-const audit = (tx: Tx, event: Audit) => tx.insert(auditEvents).values(event);
+/** Appends one audit event (ADR-0002) inside the transaction making the change. */
+export const audit = (tx: Tx, event: Audit) => tx.insert(auditEvents).values(event);
 
 /** Every class and course context of the signed-in person (§3: contexts they can switch between). */
 export async function listContexts(db: Db, scope: UserScope) {
@@ -93,69 +92,25 @@ export function createCourse(
 
 export async function createClass(
   db: Db,
-  actor: Actor,
-  input: { id?: string; courseId: string; name: string },
-): Promise<string> {
+  scope: CourseScope,
+  input: { id?: string; name: string },
+): Promise<{ id: string; name: string }> {
   return db.transaction(async (tx) => {
-    const [row] = await tx.insert(classes).values(input).returning({ id: classes.id });
+    const [row] = await tx
+      .insert(classes)
+      .values({ id: input.id, courseId: scope.courseId, name: input.name })
+      .returning({ id: classes.id, name: classes.name });
     if (!row) throw new Error('class insert returned no row');
     await audit(tx, {
-      actorId: actor,
+      actorId: scope.user.id,
       action: 'class.create',
       scopeKind: 'course',
-      scopeId: input.courseId,
+      scopeId: scope.courseId,
       targetType: 'class',
       targetId: row.id,
       after: { name: input.name },
     });
-    return row.id;
-  });
-}
-
-/** A student membership: the only row an enrolment code can create (§3). */
-export function addStudent(db: Db, actor: Actor, classId: string, userId: string) {
-  return db.transaction(async (tx) => {
-    await tx.insert(classMemberships).values({ classId, userId, role: 'student' });
-    await audit(tx, {
-      actorId: actor,
-      action: 'membership.add',
-      scopeKind: 'class',
-      scopeId: classId,
-      targetType: 'user',
-      targetId: userId,
-      after: { role: 'student' },
-    });
-  });
-}
-
-/**
- * A class instructor also gets draft editing on the class's course; publication and membership
- * management stay separate grants (§3, ADR-0002).
- */
-export function addInstructor(db: Db, actor: Actor, classId: string, userId: string) {
-  return db.transaction(async (tx) => {
-    const [cls] = await tx
-      .select({ courseId: classes.courseId })
-      .from(classes)
-      .where(eq(classes.id, classId));
-    if (!cls) throw new Error(`class ${classId} does not exist`);
-    await tx.insert(classMemberships).values({ classId, userId, role: 'instructor' });
-    await tx
-      .insert(courseMemberships)
-      .values({ courseId: cls.courseId, userId, editor: true })
-      .onConflictDoUpdate({
-        target: [courseMemberships.courseId, courseMemberships.userId],
-        set: { editor: true },
-      });
-    await audit(tx, {
-      actorId: actor,
-      action: 'membership.add',
-      scopeKind: 'class',
-      scopeId: classId,
-      targetType: 'user',
-      targetId: userId,
-      after: { role: 'instructor', courseEditor: true },
-    });
+    return row;
   });
 }
 
@@ -165,8 +120,10 @@ export function addInstructor(db: Db, actor: Actor, classId: string, userId: str
  */
 export function createPreviewPrincipal(
   db: Db,
-  input: { id?: string; instructorId: string; classId: string },
+  scope: ClassScope,
+  input: { id?: string } = {},
 ): Promise<string> {
+  const instructorId = scope.user.id;
   return db.transaction(async (tx) => {
     const [teaching] = await tx
       .select({ id: classMemberships.id })
@@ -174,8 +131,8 @@ export function createPreviewPrincipal(
       .innerJoin(users, eq(users.id, classMemberships.userId))
       .where(
         and(
-          eq(classMemberships.classId, input.classId),
-          eq(classMemberships.userId, input.instructorId),
+          forClass(scope, classMemberships),
+          eq(classMemberships.userId, instructorId),
           eq(classMemberships.role, 'instructor'),
           eq(users.kind, 'user'),
         ),
@@ -187,18 +144,18 @@ export function createPreviewPrincipal(
         id: input.id,
         kind: 'preview',
         name: 'Preview student',
-        ownerUserId: input.instructorId,
+        ownerUserId: instructorId,
       })
       .returning({ id: users.id });
     if (!preview) throw new Error('preview user insert returned no row');
     await tx
       .insert(classMemberships)
-      .values({ classId: input.classId, userId: preview.id, role: 'student', isPreview: true });
+      .values({ classId: scope.classId, userId: preview.id, role: 'student', isPreview: true });
     await audit(tx, {
-      actorId: input.instructorId,
+      actorId: instructorId,
       action: 'preview.create',
       scopeKind: 'class',
-      scopeId: input.classId,
+      scopeId: scope.classId,
       targetType: 'user',
       targetId: preview.id,
     });

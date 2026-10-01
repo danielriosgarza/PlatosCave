@@ -86,14 +86,19 @@ export async function revokeSession(db: Db, token: string, now: Date): Promise<v
     .where(and(eq(authSessions.tokenHash, hashToken(token)), isNull(authSessions.revokedAt)));
 }
 
+/** The columns that make an `Actor`, for every query that loads one (sessions and jobs). */
+export const actorColumns = {
+  id: users.id,
+  kind: users.kind,
+  name: users.name,
+  email: users.email,
+  ownerUserId: users.ownerUserId,
+};
+
 export async function findPrincipal(db: Db, token: string, now: Date): Promise<Principal | null> {
   const [row] = await db
     .select({
-      id: users.id,
-      kind: users.kind,
-      name: users.name,
-      email: users.email,
-      ownerUserId: users.ownerUserId,
+      ...actorColumns,
       sessionId: authSessions.id,
       authTime: authSessions.authTime,
     })

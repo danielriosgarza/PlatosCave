@@ -179,7 +179,16 @@ describe('publication', () => {
       .where(sql`${resources.id} in (${empty2.id}, ${borrowed.id}, ${mistyped.id})`);
     await db
       .update(resourceRevisions)
-      .set({ derived: { status: 'ready' } })
+      .set({
+        derived: {
+          status: {
+            state: 'ready',
+            job: 'slides.convert',
+            jobId: null,
+            updatedAt: '2026-10-01T09:00:00.000Z',
+          },
+        },
+      })
       .where(eq(resourceRevisions.resourceId, deck.id));
     const ok = await publish('olivia', course);
     expect(ok.status).toBe(200);
