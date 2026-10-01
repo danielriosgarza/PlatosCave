@@ -11,7 +11,7 @@ type Out<T> = T extends z.ZodType ? z.output<T> : undefined;
 /** A refusal raised inside a handler and sent with its status and body by registerRoute. */
 class RouteFailure extends Error {
   constructor(
-    readonly status: 404 | 409,
+    readonly status: number,
     readonly body: unknown,
   ) {
     super(`route answered ${status}`);
@@ -27,6 +27,11 @@ export const NOT_FOUND = { error: 'not found' } as const;
  */
 export function notFound(): never {
   throw new RouteFailure(404, NOT_FOUND);
+}
+
+/** Refuses with `status` and `{ error }`, a body the contract's success schema does not describe. */
+export function refuse(status: 400 | 403 | 404 | 409 | 410, error: string): never {
+  throw new RouteFailure(status, { error });
 }
 
 /**
