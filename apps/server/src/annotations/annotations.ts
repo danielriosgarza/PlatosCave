@@ -9,6 +9,7 @@ import type { Db } from '../db/client';
 import { annotations, posts, releaseResources, threads, users } from '../db/schema';
 import { forClass } from '../db/scoped';
 import { classArchived, invalid, notFound, type Outcome } from '../outcome';
+import { excerpt } from './excerpt';
 import { visiblePost, visibleTo } from './visibility';
 
 /**
@@ -326,12 +327,6 @@ export async function shareAnnotation(
   return { ok: true, value };
 }
 
-/** At most 140 characters, cut on whole code points so no surrogate pair is split. */
-export function excerpt(body: string): string {
-  const chars = Array.from(body);
-  return chars.length > 140 ? `${chars.slice(0, 139).join('')}…` : body;
-}
-
 /**
  * Notification list (stub until delivery exists): the newest threads by other people that the
  * caller may read, on resources the caller may study now. Same rules as the margin (§13).
@@ -368,8 +363,10 @@ export async function listNotifications(
       ),
     )
     .orderBy(asc(posts.createdAt));
+  const firstOf = new Map<string, (typeof firsts)[number]>();
+  for (const post of firsts) if (!firstOf.has(post.threadId)) firstOf.set(post.threadId, post);
   return rows.map(({ thread, authorName }) => {
-    const first = firsts.find((p) => p.threadId === thread.id);
+    const first = firstOf.get(thread.id);
     const body = first && !first.moderatedAt ? (first.body ?? '') : '';
     return {
       kind: 'thread',

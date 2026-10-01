@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { excerpt } from './annotations';
+import { excerpt } from './excerpt';
 
 describe('notification excerpts', () => {
   test('short bodies are kept whole', () => {
@@ -12,5 +12,14 @@ describe('notification excerpts', () => {
     expect(cut).toBe(`a${'😀'.repeat(138)}…`);
     // In a /u pattern a whole pair is one code point, so only a lone surrogate matches.
     expect(/\p{Cs}/u.test(cut)).toBe(false);
+  });
+
+  test('emoji sequences and combining accents stay whole', () => {
+    const family = '👨‍👩‍👧';
+    expect(excerpt(`${'a'.repeat(138)}${family}${'b'.repeat(10)}`)).toBe(
+      `${'a'.repeat(138)}${family}…`,
+    );
+    const accented = 'e\u0301';
+    expect(excerpt(accented.repeat(150))).toBe(`${accented.repeat(139)}…`);
   });
 });

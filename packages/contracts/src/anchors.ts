@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { resourceTypes } from './routes/drafts';
+import type { ResourceType } from './resources';
 
 /**
  * Annotation anchors (ADR-0003): where a note, highlight, sketch or thread sits in one
@@ -76,8 +76,6 @@ export const anchor = z.discriminatedUnion('kind', [
 ]);
 export type Anchor = z.infer<typeof anchor>;
 
-export type ResourceType = (typeof resourceTypes)[number];
-
 /**
  * Anchor kinds each resource type can place (ADR-0003 "produced by"): text blocks in native
  * readings and web slides, pages in PDFs, slides in decks, figures in native readings. Other
@@ -94,6 +92,9 @@ export const anchorKindsByType: Record<ResourceType, readonly Anchor['kind'][]> 
   test: ['none'],
 };
 
-/** Whether `anchor` can be placed on a revision of `resourceType`. */
+/**
+ * Whether `anchor` can be placed on a revision of `resourceType`. A type missing from the
+ * table (the database enum grew first) takes general notes only.
+ */
 export const anchorFits = (resourceType: ResourceType, a: Anchor): boolean =>
-  anchorKindsByType[resourceType].includes(a.kind);
+  (anchorKindsByType[resourceType] ?? ['none']).includes(a.kind);
