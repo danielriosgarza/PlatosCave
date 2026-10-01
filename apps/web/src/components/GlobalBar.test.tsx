@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   CLASS_A,
+  cardsFor,
   instructorIn,
   makeMe,
   renderApp,
@@ -49,10 +50,13 @@ describe('GlobalBar', () => {
 
   it('A02 keeps the person signed in and says so when sign-out fails on the server', async () => {
     const user = userEvent.setup();
+    const me = makeMe({ classes: [studentIn(CLASS_A, 'Class A')] });
     stubApi((url) =>
       url === '/api/me'
-        ? { status: 200, body: makeMe({ classes: [studentIn(CLASS_A, 'Class A')] }) }
-        : { status: 500, body: { error: 'boom' } },
+        ? { status: 200, body: me }
+        : url === '/api/courses'
+          ? { status: 200, body: cardsFor(me) }
+          : { status: 500, body: { error: 'boom' } },
     );
     const { router } = renderApp('/courses');
     await user.click(await screen.findByRole('button', { name: 'Sign out' }));
