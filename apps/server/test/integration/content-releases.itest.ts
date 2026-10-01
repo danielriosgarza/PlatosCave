@@ -169,7 +169,7 @@ describe('content releases and revisions', () => {
       topic.id,
       resource.id,
       revision.id,
-      1,
+      2,
     );
 
     await revise(resource.id, { question: 'draft v2' }, 'Quiz, revised');
@@ -183,8 +183,8 @@ describe('content releases and revisions', () => {
       .where(eq(releaseResources.releaseId, release.id));
     expect(pinned).toEqual([{ title: 'Quiz', content: { question: 'v1' } }]);
     expect(releaseResource.resourceRevisionId).toBe(revision.id);
-    // Class B adopted nothing: existing drafts do not make content appear there.
-    expect((await classView(ids.classB, world.cookie.bea)).releaseId).toBeNull();
+    // Class B stays on the release it adopted: class A's adoption and the drafts do not reach it.
+    expect((await classView(ids.classB, world.cookie.bea)).releaseId).toBe(ids.releaseV1);
   });
 
   test('A16 a pinned revision keeps its original content; releases and revisions reject changes', async () => {
@@ -193,7 +193,7 @@ describe('content releases and revisions', () => {
       topic.id,
       resource.id,
       revision.id,
-      2,
+      3,
     );
     const changed = await revise(resource.id, { question: 'changed', grader: 2 });
     const { db } = testDb;
