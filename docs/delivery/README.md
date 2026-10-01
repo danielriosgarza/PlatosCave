@@ -28,7 +28,7 @@ status:blocked ──(all dependencies closed)──► status:ready ──(orch
 
 The issue body contains one line `Depends on: P1-01, P1-03` (plan IDs, or `none`) and, when the plan names them, one line `Touches: path, path` (files the item is likely to edit; the orchestrator avoids running two items that touch the same file). Work discovered later gets a suffixed ID (`P2-04a`); audit findings get `P2-AUD1`, `P2-AUD2`, ….
 
-**Pull requests** are titled like their issue, say `Closes #<issue>`, and carry one review label:
+**Pull requests** are titled like their issue and say `Closes #<issue>`. A process change the owner asks for without an issue says `Closes: none (…)` instead; Fable reviews it and the owner merges it. Every PR carries one review label:
 
 | Label | Meaning |
 | --- | --- |
