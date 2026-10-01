@@ -1,6 +1,6 @@
 import { eq, type SQL } from 'drizzle-orm';
 import type { PgColumn, PgTable } from 'drizzle-orm/pg-core';
-import type { ClassContext, CourseScope } from '../auth/scope';
+import type { ClassContext, CourseContext } from '../auth/scope';
 import {
   annotationPlacements,
   annotations,
@@ -53,5 +53,5 @@ export const forClass = (scope: ClassContext, table: { classId: PgColumn }): SQL
   eq(table.classId, scope.classId);
 
 /** `WHERE course_id = …` for a course-scoped table; takes only a resolved scope. */
-export const forCourse = (scope: CourseScope, table: { courseId: PgColumn }): SQL =>
+export const forCourse = (scope: CourseContext, table: { courseId: PgColumn }): SQL =>
   eq(table.courseId, scope.courseId);
