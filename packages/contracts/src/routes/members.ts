@@ -60,7 +60,8 @@ export const createInvite = defineRoute({
     z.object({
       kind: z.literal('instructor'),
       email: z.email(),
-      expiresAt: datetime.nullable().optional(),
+      /** Defaults to seven days; an instructor invitation always expires. */
+      expiresAt: datetime.optional(),
     }),
   ]),
   response: issuedInvite.extend({ code: z.string() }),

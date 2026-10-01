@@ -2,12 +2,19 @@ import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
 import type { ClassManagerScope, CourseScope } from '../auth/scope';
 import type { Db } from '../db/client';
 import { audit, type Tx } from '../db/identity';
-import { classes, classInvites, classMemberships, courseMemberships, users } from '../db/schema';
+import {
+  authSessions,
+  classes,
+  classInvites,
+  classMemberships,
+  courseMemberships,
+  users,
+} from '../db/schema';
 import { forClass, forCourse } from '../db/scoped';
 
 /** Real members of the class (preview principals excluded) and its unrevoked invitations. */
 export async function listMembers(db: Db, scope: ClassManagerScope) {
-  const members = await db
+  const membersQuery = db
     .select({
       userId: users.id,
       name: users.name,
@@ -19,7 +26,7 @@ export async function listMembers(db: Db, scope: ClassManagerScope) {
     .innerJoin(users, eq(users.id, classMemberships.userId))
     .where(and(forClass(scope, classMemberships), eq(classMemberships.isPreview, false)))
     .orderBy(asc(classMemberships.role), asc(users.name));
-  const invites = await db
+  const invitesQuery = db
     .select({
       id: classInvites.id,
       kind: classInvites.kind,
@@ -32,6 +39,7 @@ export async function listMembers(db: Db, scope: ClassManagerScope) {
     .from(classInvites)
     .where(and(forClass(scope, classInvites), isNull(classInvites.revokedAt)))
     .orderBy(asc(classInvites.createdAt));
+  const [members, invites] = await Promise.all([membersQuery, invitesQuery]);
   return { members, invites };
 }
 
@@ -58,6 +66,8 @@ export function setManageMembers(
     if (!member) return { ok: false as const, reason: 'not_found' as const };
     if (member.role !== 'instructor')
       return { ok: false as const, reason: 'not_instructor' as const };
+    // Nothing changes, so nothing is recorded (audit_events holds changes only).
+    if (member.manageMembers === granted) return { ok: true as const };
     await tx
       .update(classMemberships)
       .set({ manageMembers: granted })
@@ -77,10 +87,11 @@ export function setManageMembers(
 }
 
 /**
- * Removes one membership. An instructor's preview membership in the class goes with them, and
+ * Removes one membership. An instructor's preview membership in the class goes with them (its
+ * sessions revoked), and
  * the draft editing their invitation granted ends once they teach no class of the course.
  */
-export function removeMember(db: Db, scope: ClassManagerScope, userId: string) {
+export function removeMember(db: Db, scope: ClassManagerScope, userId: string, now: Date) {
   return db.transaction(async (tx) => {
     const [removed] = await tx
       .delete(classMemberships)
@@ -89,7 +100,7 @@ export function removeMember(db: Db, scope: ClassManagerScope, userId: string) {
     if (!removed) return { ok: false as const };
     if (removed.role === 'instructor') {
       const previews = tx.select({ id: users.id }).from(users).where(eq(users.ownerUserId, userId));
-      await tx
+      const dropped = await tx
         .delete(classMemberships)
         .where(
           and(
@@ -97,7 +108,17 @@ export function removeMember(db: Db, scope: ClassManagerScope, userId: string) {
             eq(classMemberships.isPreview, true),
             inArray(classMemberships.userId, previews),
           ),
-        );
+        )
+        .returning({ userId: classMemberships.userId });
+      // The preview user row stays (later records and audit events may name it), but it can no
+      // longer sign anything in.
+      if (dropped.length > 0) {
+        const ids = dropped.map((d) => d.userId);
+        await tx
+          .update(authSessions)
+          .set({ revokedAt: now })
+          .where(and(inArray(authSessions.userId, ids), isNull(authSessions.revokedAt)));
+      }
       await dropEditorIfNotTeaching(tx, scope.courseId, userId);
     }
     await audit(tx, {
@@ -165,6 +186,8 @@ export function setPublisher(db: Db, scope: CourseScope, userId: string, granted
       .where(and(forCourse(scope, courseMemberships), eq(courseMemberships.userId, userId)))
       .for('update');
     if (current?.owner) return { ok: false as const, reason: 'owner' as const };
+    // Nothing changes, so nothing is recorded (audit_events holds changes only).
+    if ((current?.publisher ?? false) === granted) return { ok: true as const };
     if (granted) {
       await tx
         .insert(courseMemberships)

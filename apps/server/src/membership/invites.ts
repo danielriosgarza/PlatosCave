@@ -46,7 +46,7 @@ const inviteColumns = {
 
 export type IssueInput =
   | { kind: 'enrolment'; expiresAt?: string | null; maxUses?: number | null }
-  | { kind: 'instructor'; email: string; expiresAt?: string | null };
+  | { kind: 'instructor'; email: string; expiresAt?: string };
 
 export async function issueInvite(db: Db, scope: ClassManagerScope, input: IssueInput, now: Date) {
   if (scope.archived) return { ok: false as const, reason: 'class_archived' as const };
@@ -164,6 +164,24 @@ async function existingRole(tx: Tx, classId: string, userId: string) {
   return row?.role;
 }
 
+/**
+ * Inserts the membership unless one exists; false when a concurrent request of the same account
+ * got there first, so the unique (class, user) key never surfaces as a server error.
+ */
+async function insertMembership(
+  tx: Tx,
+  classId: string,
+  userId: string,
+  role: 'student' | 'instructor',
+): Promise<boolean> {
+  const rows = await tx
+    .insert(classMemberships)
+    .values({ classId, userId, role })
+    .onConflictDoNothing({ target: [classMemberships.classId, classMemberships.userId] })
+    .returning({ id: classMemberships.id });
+  return rows.length > 0;
+}
+
 /** Only real accounts join; a preview principal never gets a membership from a code. */
 async function isRealUser(tx: Tx, userId: string): Promise<boolean> {
   const [row] = await tx.select({ kind: users.kind }).from(users).where(eq(users.id, userId));
@@ -188,9 +206,12 @@ export function joinWithCode(
     const role = await existingRole(tx, invite.classId, scope.user.id);
     if (role) return { ok: true, role, joined: joinedFrom(invite, true) };
     if (full(invite)) return { ok: false, reason: 'invite_full' };
-    await tx
-      .insert(classMemberships)
-      .values({ classId: invite.classId, userId: scope.user.id, role: 'student' });
+    const inserted = await insertMembership(tx, invite.classId, scope.user.id, 'student');
+    if (!inserted) {
+      // Another request of this account joined the class since the check above.
+      const current = await existingRole(tx, invite.classId, scope.user.id);
+      return { ok: true, role: current ?? 'student', joined: joinedFrom(invite, true) };
+    }
     await recordUse(tx, invite, scope.user.id, { role: 'student' });
     return { ok: true, role: 'student', joined: joinedFrom(invite, false) };
   });
@@ -217,9 +238,13 @@ export function acceptInstructorInvite(
     if (role === 'instructor') return { ok: true, role, joined: joinedFrom(invite, true) };
     if (role) return { ok: false, reason: 'already_member' };
     if (full(invite)) return { ok: false, reason: 'invite_full' };
-    await tx
-      .insert(classMemberships)
-      .values({ classId: invite.classId, userId: scope.user.id, role: 'instructor' });
+    if (!(await insertMembership(tx, invite.classId, scope.user.id, 'instructor'))) {
+      // Another request of this account joined the class since the check above.
+      const current = await existingRole(tx, invite.classId, scope.user.id);
+      if (current === 'instructor')
+        return { ok: true, role: current, joined: joinedFrom(invite, true) };
+      return { ok: false, reason: 'already_member' };
+    }
     await tx
       .insert(courseMemberships)
       .values({ courseId: invite.courseId, userId: scope.user.id, editor: true })

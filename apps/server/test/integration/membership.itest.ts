@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { buildApp } from '../../src/app';
@@ -188,6 +188,23 @@ describe('enrolment codes', () => {
     expect(results.filter((r) => r.body.error === 'invite_full')).toHaveLength(3);
   });
 
+  test('A01 one account joining twice at once gets one membership and no error', async () => {
+    const first = await issue(as('elena'), ids.classB, { kind: 'enrolment' });
+    const second = await issue(as('elena'), ids.classB, { kind: 'enrolment' });
+    const twice = await newcomer('twice@example.test');
+    const results = await Promise.all([
+      join(twice, first.body.code),
+      join(twice, second.body.code),
+    ]);
+    expect(results.map((r) => r.status)).toEqual([200, 200]);
+    expect(results.map((r) => r.body.alreadyMember).sort()).toEqual([false, true]);
+    const used = await testDb.db
+      .select({ useCount: classInvites.useCount })
+      .from(classInvites)
+      .where(inArray(classInvites.id, [first.body.id, second.body.id]));
+    expect(used.reduce((n, r) => n + r.useCount, 0)).toBe(1);
+  });
+
   test('A01 a preview principal cannot join a class with a code', async () => {
     const code = await issue(as('elena'), ids.classA, { kind: 'enrolment' });
     expect((await join(as('previewB'), code.body.code)).status).toBe(404);
@@ -214,6 +231,13 @@ describe('instructor invitations', () => {
       maxUses: 1,
     });
     expect(Date.parse(invite.body.expiresAt)).toBe(now.getTime() + 7 * 24 * 60 * 60_000);
+
+    const noExpiry = await issue(as('noor'), ids.classA, {
+      kind: 'instructor',
+      email: 'kofi@example.test',
+      expiresAt: null,
+    });
+    expect(noExpiry.status).toBe(400);
 
     const intruder = await newcomer('intruder@example.test');
     expect(await accept(intruder, invite.body.code)).toEqual({
@@ -387,11 +411,24 @@ describe('grants, removal and recent sign-in', () => {
         .status,
     ).toBe(200);
     expect((await call(as('marcus'), 'GET', `/api/classes/${ids.classB}`)).status).toBe(404);
-    expect((await call(as('previewB'), 'GET', `/api/classes/${ids.classB}`)).status).toBe(404);
+    // Marcus's preview principal loses its membership and its sessions.
+    expect((await call(as('previewB'), 'GET', `/api/classes/${ids.classB}`)).status).toBe(401);
+    expect((await call(as('previewB'), 'GET', '/api/me')).status).toBe(401);
     expect((await call(as('marcus'), 'GET', `/api/courses/${ids.statistics}/drafts`)).status).toBe(
       404,
     );
     expect((await me(as('marcus'))).courses).toEqual([]);
+  });
+
+  test('A01 a grant change that changes nothing is not recorded', async () => {
+    const count = async () => (await testDb.db.select().from(auditEvents)).length;
+    const before = await count();
+    const noop = await call(as('elena'), 'PUT', publisherUrl(ids.sam), { granted: false });
+    expect(noop).toEqual({ status: 200, body: { userId: ids.sam, publisher: false } });
+    const same = await call(as('elena'), 'PUT', grantUrl(ids.classA, ids.noor), { granted: true });
+    expect(same.status).toBe(200);
+    expect(await count()).toBe(before);
+    expect((await me(as('sam'))).courses).toEqual([]);
   });
 
   test('A01 every membership change is recorded in audit_events', async () => {
@@ -427,7 +464,7 @@ describe('grants, removal and recent sign-in', () => {
 });
 
 describe('fixture routes', () => {
-  test('are absent unless TEST_ROUTES=1', async () => {
+  test('A01 are absent unless TEST_ROUTES=1', async () => {
     const res = await app.inject({
       method: 'POST',
       url: '/api/test/signin-as',
@@ -437,7 +474,7 @@ describe('fixture routes', () => {
     expect((await app.inject({ method: 'POST', url: '/api/test/world' })).statusCode).toBe(404);
   });
 
-  test('with TEST_ROUTES=1 sign in as anyone and report the world', async () => {
+  test('A01 with TEST_ROUTES=1 sign in as anyone and report the world', async () => {
     const fixtures = await buildApp(
       loadConfig({ NODE_ENV: 'test', LOG_LEVEL: 'silent', TEST_ROUTES: '1' }),
       { db: testDb.db, now: () => now },
