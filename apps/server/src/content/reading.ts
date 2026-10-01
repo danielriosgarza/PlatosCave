@@ -163,10 +163,10 @@ function fixLinks(tree: Root): void {
   visit(tree, 'element', (el) => {
     if (el.tagName !== 'a' || typeof el.properties.href !== 'string') return;
     const href = el.properties.href;
-    if (href.startsWith('#')) {
-      if (!href.startsWith(`#${CLOBBER_PREFIX}`))
-        el.properties.href = `#${CLOBBER_PREFIX}${href.slice(1)}`;
-    } else {
+    // The sanitiser prefixes every id, even one that already starts with the prefix, so every
+    // in-document link gets the prefix too.
+    if (href.startsWith('#')) el.properties.href = `#${CLOBBER_PREFIX}${href.slice(1)}`;
+    else {
       el.properties.rel = ['noopener', 'noreferrer', 'nofollow'];
     }
   });

@@ -161,6 +161,17 @@ describe('rendering', () => {
     expect(html).toBe(`<p data-block-id="${blockMap[0]?.id}">Hi</p>`);
   });
 
+  test('in-document links still reach ids that already carry the sanitiser prefix', () => {
+    const { html } = renderReading(
+      '<h2 id="user-content-x">X</h2><p><a href="#user-content-x">to X</a> <a href="#y">to Y</a></p><p id="y">Y</p>',
+      'html',
+    );
+    expect(html).toContain('id="user-content-user-content-x"');
+    expect(html).toContain('href="#user-content-user-content-x"');
+    expect(html).toContain('href="#user-content-y"');
+    expect(html).toContain('id="user-content-y"');
+  });
+
   test('image names cannot reach object prototype properties', () => {
     const { html, figures, warnings } = renderReading(
       '![a](constructor)\n\n![b](__proto__)\n\n![c](toString)',
