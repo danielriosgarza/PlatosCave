@@ -1,0 +1,32 @@
+/* Ported from the wireframe: .pc-heading, .pc-objective, .pc-context. */
+.heading {
+  min-height: 100px;
+  padding: 22px 40px 14px;
+}
+.heading h1 {
+  font-size: 28px;
+}
+.objective {
+  font-size: 15px;
+  line-height: 1.4;
+  margin-top: 6px;
+}
+.context {
+  font-size: 12px;
+  color: var(--pc-muted);
+  margin-top: 5px;
+}
+@media (max-width: 900px) {
+  .heading {
+    padding: 16px 24px;
+  }
+}
+@media (max-width: 540px) {
+  .heading {
+    padding: 20px 16px 12px;
+    min-height: 84px;
+  }
+  .heading h1 {
+    font-size: 24px;
+  }
+}
