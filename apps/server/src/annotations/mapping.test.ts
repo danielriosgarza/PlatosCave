@@ -100,6 +100,45 @@ describe('A06 mapping a mark to a changed revision', () => {
     expect(result).toMatchObject({ status: 'mapped', anchor: { blockId: 'eeeeeeeeeeee' } });
   });
 
+  test('A06 a re-wrapped paragraph keeps its id and maps exactly despite moved line breaks', () => {
+    const wrapped =
+      'Every sample tells\na slightly different story, and the\nsampling distribution collects them.';
+    const rewrapped =
+      'Every sample tells a slightly\ndifferent story, and the sampling distribution collects them.';
+    // Same normalised text, so ingestion keeps the block id; only the raw line breaks moved.
+    const before = reading([{ id: '333333333333', text: wrapped }]);
+    const after = reading([{ id: '333333333333', text: rewrapped }]);
+    const anchor = textAnchor('333333333333', wrapped, 'slightly different story');
+    const result = mapAnchor(anchor, before, after);
+    expect(result).toMatchObject({ status: 'mapped', confidence: 1 });
+    if (result.status !== 'mapped' || result.anchor.kind !== 'text') throw new Error('unmapped');
+    expect(rewrapped.slice(result.anchor.start, result.anchor.end)).toBe(
+      'slightly\ndifferent story',
+    );
+  });
+
+  test('A06 an edited quote that contains its own suffix text still maps', () => {
+    const text = 'Lead: the mean and the median.';
+    const anchor = textAnchor('444444444444', text, 'the mean and the median');
+    // The edit puts the suffix text (".") inside the quote: the first "." is not the end.
+    const edited = 'Lead: the mean. and the median.';
+    const result = mapAnchor(anchor, v1, reading([{ id: '555555555555', text: edited }]));
+    expect(result).toMatchObject({ status: 'mapped', anchor: { blockId: '555555555555' } });
+    if (result.status !== 'mapped' || result.anchor.kind !== 'text') throw new Error('unmapped');
+    expect(edited.slice(result.anchor.start, result.anchor.end)).toBe('the mean. and the median');
+  });
+
+  test('A06 a mapped quote never exceeds the anchor contract', () => {
+    const long = 'x'.repeat(995);
+    const text = `Lead in. ${long} middle ${long} Tail out.`;
+    const quote = `${long} middle ${long}`; // 1998 characters
+    const anchor = textAnchor('666666666666', text, quote);
+    // The passage grows by 80 characters: similar enough, but too long to be an anchor quote.
+    const grown = text.replace(' middle ', ` middle ${'y'.repeat(80)} `);
+    const result = mapAnchor(anchor, v1, reading([{ id: '777777777777', text: grown }]));
+    expect(result).toEqual({ status: 'needs_reattachment' });
+  });
+
   test('A06 a removed passage needs reattachment instead of a guess', () => {
     const v2 = reading([{ id: 'ffffffffffff', text: 'Samples differ; that is the whole point.' }]);
     expect(mapAnchor(mark, v1, v2)).toEqual({ status: 'needs_reattachment' });
@@ -165,6 +204,42 @@ describe('layouts and similarity', () => {
     expect(layoutOf('reading_native', {})).toBeUndefined();
     expect(layoutOf('slides_pdf', { status: { state: 'running' } })).toBeUndefined();
     expect(layoutOf('exercise', {})).toEqual({ type: 'exercise' });
+  });
+
+  test('the banded edit distance agrees with the full one, or reports that it exceeds max', () => {
+    const full = (a: string, b: string) => {
+      const d = Array.from({ length: a.length + 1 }, (_, i) =>
+        Array.from({ length: b.length + 1 }, (_, j) => (i === 0 ? j : j === 0 ? i : 0)),
+      );
+      for (let i = 1; i <= a.length; i++) {
+        for (let j = 1; j <= b.length; j++) {
+          const row = d[i] as number[];
+          const up = d[i - 1] as number[];
+          row[j] = Math.min(
+            (up[j] ?? 0) + 1,
+            (row[j - 1] ?? 0) + 1,
+            (up[j - 1] ?? 0) + (a[i - 1] === b[j - 1] ? 0 : 1),
+          );
+        }
+      }
+      return d[a.length]?.[b.length] ?? 0;
+    };
+    let seed = 7;
+    const random = () => {
+      seed = (seed * 48271) % 2147483647;
+      return seed / 2147483647;
+    };
+    const word = () =>
+      Array.from({ length: Math.floor(random() * 30) }, () => 'abc'[Math.floor(random() * 3)]).join(
+        '',
+      );
+    for (let n = 0; n < 500; n++) {
+      const [a, b] = [word(), word()];
+      const max = Math.floor(random() * 12);
+      const expected = full(a, b);
+      expect(editDistance(a, b)).toBe(expected);
+      expect(editDistance(a, b, max)).toBe(expected <= max ? expected : max + 1);
+    }
   });
 
   test('similarity ignores whitespace differences and counts edits', () => {

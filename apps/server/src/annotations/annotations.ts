@@ -57,18 +57,24 @@ const toAnnotation = (row: AnnotationRow, placement: Annotation['placement']): A
 
 type Placed = { id: string; resourceId: string; resourceRevisionId: string; anchor: Anchor };
 
+/** Resource id → the revision the caller studies it at, or undefined if they cannot. */
+type Pins = Map<string, string | undefined>;
+
 /**
  * Each mark's placement on the revision the class studies now (ADR-0003), or null where the
  * caller can no longer study its resource. Marks are annotations or threads, never both.
+ * `known` carries pins the caller already resolved, so they are not looked up again.
  */
 async function placementsOf(
   db: Db,
   scope: ClassScope,
   marks: Placed[],
   kind: 'annotation' | 'thread',
+  known: Pins = new Map(),
 ) {
-  const pins = new Map<string, string | undefined>();
+  const pins: Pins = new Map(known);
   for (const resourceId of new Set(marks.map((m) => m.resourceId))) {
+    if (pins.has(resourceId)) continue;
     pins.set(resourceId, (await studyableResource(db, scope, resourceId))?.revisionId);
   }
   const ids = marks.map((m) => m.id);
@@ -87,8 +93,8 @@ async function placementsOf(
   );
 }
 
-async function annotationViews(db: Db, scope: ClassScope, rows: AnnotationRow[]) {
-  const placements = await placementsOf(db, scope, rows, 'annotation');
+async function annotationViews(db: Db, scope: ClassScope, rows: AnnotationRow[], pins?: Pins) {
+  const placements = await placementsOf(db, scope, rows, 'annotation', pins);
   return rows.map((row) => toAnnotation(row, placements.get(row.id) ?? null));
 }
 
@@ -122,7 +128,7 @@ async function ownAnnotation(db: Db, scope: ClassScope, annotationId: string) {
 }
 
 /** Threads matching `where` (already audience-filtered) with the posts the caller may read. */
-async function loadThreads(db: Db, scope: ClassScope, where: ReturnType<typeof and>) {
+async function loadThreads(db: Db, scope: ClassScope, where: ReturnType<typeof and>, pins?: Pins) {
   const rows = await db
     .select({ thread: threads, authorName: users.name })
     .from(threads)
@@ -149,6 +155,7 @@ async function loadThreads(db: Db, scope: ClassScope, where: ReturnType<typeof a
     scope,
     rows.map((r) => r.thread),
     'thread',
+    pins,
   );
   return rows.map(
     ({ thread, authorName }): Thread => ({
@@ -191,14 +198,16 @@ export async function listForResource(db: Db, scope: ClassScope, resourceId: str
     .where(and(visibleTo(scope, annotations), eq(annotations.resourceId, resourceId)))
     .orderBy(asc(annotations.createdAt), asc(annotations.id));
   const studyable = await studyableResource(db, scope, resourceId);
+  const pins: Pins = new Map([[resourceId, studyable?.revisionId]]);
   const discussion = studyable
     ? await loadThreads(
         db,
         scope,
         and(visibleTo(scope, threads), eq(threads.resourceId, resourceId)),
+        pins,
       )
     : [];
-  return { annotations: await annotationViews(db, scope, own), threads: discussion };
+  return { annotations: await annotationViews(db, scope, own, pins), threads: discussion };
 }
 
 export async function createAnnotation(

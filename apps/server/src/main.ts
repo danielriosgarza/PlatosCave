@@ -2,6 +2,7 @@ import pino from 'pino';
 import { buildApp } from './app';
 import { loadConfig } from './config';
 import { createDb } from './db/client';
+import { createAnnotationsMapQueue } from './jobs/annotations-map.job';
 import { createBoss } from './jobs/boss';
 import { loadJobs } from './jobs/registry';
 import { workScopedJob } from './jobs/scoped';
@@ -48,13 +49,17 @@ if (mode === 'api') {
   const boss =
     database && createBoss(database.pool, { role: 'api', onError: (err) => logBossError(err) });
   // Without a queue the API still serves; adoptions then queue no mapping (logged at error).
-  const started = await boss?.start().then(
-    () => true,
-    (err) => {
-      logBossError(err);
-      return false;
-    },
-  );
+  // pg-boss refuses sends to a missing queue, so the queue exists before the first adoption.
+  const started = await boss
+    ?.start()
+    .then(() => createAnnotationsMapQueue(boss))
+    .then(
+      () => true,
+      (err) => {
+        logBossError(err);
+        return false;
+      },
+    );
   const app = await buildApp(config, database ? { db: database.db, ...(started && { boss }) } : {});
   logPoolError = (err) => app.log.error({ err }, 'pg pool error');
   logBossError = (err) => app.log.error({ err }, 'pg-boss error');
