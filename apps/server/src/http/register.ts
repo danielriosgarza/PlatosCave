@@ -62,7 +62,7 @@ export function registerRoute<C extends RouteContract>(
   app: FastifyInstance,
   contract: C,
   handler: (args: RouteArgs<C>) => Promise<z.input<C['response']>> | z.input<C['response']>,
-  options: { rateLimit?: RateLimitOptions; exposeHeadRoute?: boolean } = {},
+  options: { rateLimit?: RateLimitOptions } = {},
 ): void {
   checkScopeParams(contract);
   const status = contract.status ?? 200;
@@ -81,7 +81,9 @@ export function registerRoute<C extends RouteContract>(
   app.route({
     method: contract.method,
     url: contract.path,
-    ...(options.exposeHeadRoute !== undefined && { exposeHeadRoute: options.exposeHeadRoute }),
+    // Contracts never declare HEAD: an implicit HEAD route would run the handler, side effects
+    // included (a link checker's HEAD would use up a sign-in link).
+    exposeHeadRoute: false,
     schema: {
       summary: contract.summary,
       ...(contract.params && { params: contract.params }),

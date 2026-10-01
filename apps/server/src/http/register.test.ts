@@ -134,3 +134,17 @@ describe('registerRoute rate limits', () => {
     await app.close();
   });
 });
+
+it('API routes get no implicit HEAD route, so a HEAD never runs a handler', async () => {
+  const app = await buildApp(config);
+  let calls = 0;
+  registerRoute(app, echo, ({ params }) => {
+    calls += 1;
+    return { n: params.n };
+  });
+  await app.ready();
+  expect((await app.inject({ method: 'HEAD', url: '/api/echo/1' })).statusCode).toBe(404);
+  expect(calls).toBe(0);
+  expect((await app.inject({ method: 'GET', url: '/api/echo/1' })).json()).toEqual({ n: 1 });
+  await app.close();
+});

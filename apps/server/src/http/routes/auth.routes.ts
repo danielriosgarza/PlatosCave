@@ -57,11 +57,7 @@ export default function authRoutes(app: FastifyInstance, deps: Deps): void {
       // Re-checked at use: a stored destination is only ever a same-origin app path.
       return reply.redirect(safeDestination(result.destination) ?? '/courses') as never;
     },
-    {
-      rateLimit: { max: config.AUTH_VERIFY_RATE_LIMIT, timeWindow: '15 minutes' },
-      // A HEAD from a link checker must not use up the single-use link.
-      exposeHeadRoute: false,
-    },
+    { rateLimit: { max: config.AUTH_VERIFY_RATE_LIMIT, timeWindow: '15 minutes' } },
   );
 
   registerRoute(app, signOut, async ({ req, reply }) => {
