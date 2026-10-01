@@ -684,6 +684,7 @@ export async function placeMark(
   anchor: Anchor,
   now: Date,
 ): Promise<Outcome<Placement>> {
+  if (scope.archived) return classArchived;
   let mark: (Mark & { kind?: string }) | undefined;
   if ('annotationId' in target) {
     [mark] = await db

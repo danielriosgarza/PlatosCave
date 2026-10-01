@@ -111,6 +111,10 @@ describe('archived classes', () => {
     );
     expect(await call('sam', 'POST', `${own}/share`, { audience: 'instructor' })).toEqual(archived);
     expect(await call('sam', 'DELETE', own)).toEqual(archived);
+    const reattach = { annotationId: mine.body.id, anchor: { kind: 'none' } };
+    expect(await call('sam', 'PUT', `/api/classes/${ids.classA}/placements`, reattach)).toEqual(
+      archived,
+    );
 
     expect(await call('sam', 'GET', `${reading}/annotations`)).toEqual({
       status: 200,
