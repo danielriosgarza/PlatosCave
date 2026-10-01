@@ -1,10 +1,8 @@
 import { buildTestWorld, signInAs } from '@parallax/contracts/routes/test';
-import { and, eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import type { Deps } from '../../app';
 import { userForVerifiedEmail } from '../../auth/accounts';
 import { createSession, SESSION_COOKIE, sessionCookieOptions } from '../../auth/sessions';
-import { classes, users } from '../../db/schema';
 import { registerRoute } from '../register';
 
 /** E2E fixture routes (ADR-0006); mounted only when TEST_ROUTES=1, never in production. */
@@ -21,21 +19,8 @@ export default function testRoutes(app: FastifyInstance, deps: Deps): void {
 
   registerRoute(app, buildTestWorld, async () => {
     // The fixtures live with the tests and are loaded only when these routes are used.
-    const { buildWorld, ids } = await import('../../../test/fixtures/world');
-    building ??= (async () => {
-      const [started] = await db().select().from(users).where(eq(users.id, ids.elena));
-      if (!started) {
-        await buildWorld(db(), now());
-        return true;
-      }
-      // Adopting v1 in class B is the build's last data step; without it the world is partial.
-      const [done] = await db()
-        .select({ id: classes.id })
-        .from(classes)
-        .where(and(eq(classes.id, ids.classB), eq(classes.releaseId, ids.releaseV1)));
-      if (!done) throw new Error('the fixture world is half built; reset the e2e database');
-      return false;
-    })();
+    const { ensureWorld, ids } = await import('../../../test/fixtures/world');
+    building ??= ensureWorld(db(), now());
     try {
       return { ids, created: await building };
     } catch (err) {

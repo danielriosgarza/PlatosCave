@@ -6,6 +6,7 @@ import type { CourseScope } from '../auth/scope';
 import type { Db } from '../db/client';
 import { resourceRevisions, resources, storageObjects, topics } from '../db/schema';
 import { forCourse } from '../db/scoped';
+import { invalid, notFound, type Outcome } from '../outcome';
 
 /**
  * Draft topics and resources of one course (§12, ADR-0003). Every function takes a resolved
@@ -22,15 +23,6 @@ type TopicRow = typeof topics.$inferSelect;
 type ResourceRow = typeof resources.$inferSelect;
 type RevisionRow = typeof resourceRevisions.$inferSelect;
 type Json = Record<string, unknown>;
-
-export type Outcome<T> =
-  | { ok: true; value: T }
-  | { ok: false; reason: 'not_found' }
-  | { ok: false; reason: 'conflict'; current: T }
-  | { ok: false; reason: 'invalid'; message: string };
-
-const notFound = { ok: false, reason: 'not_found' } as const;
-const invalid = (message: string) => ({ ok: false, reason: 'invalid', message }) as const;
 
 const toTopic = (row: TopicRow): Topic => ({
   id: row.id,

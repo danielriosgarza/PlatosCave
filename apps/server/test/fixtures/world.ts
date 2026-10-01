@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import type { ClassManagerScope, ClassScope, CourseScope, UserScope } from '../../src/auth/scope';
 import { createSession, sessionCookieHeader } from '../../src/auth/sessions';
 import { DEV_SESSION_SECRET } from '../../src/config';
@@ -12,9 +12,9 @@ import {
   createPreviewPrincipal,
   createUser,
 } from '../../src/db/identity';
-import { resourceRevisions, resources, topics } from '../../src/db/schema';
-import { acceptInstructorInvite, issueInvite, joinWithCode } from '../../src/membership/invites';
-import { setManageMembers, setPublisher } from '../../src/membership/members';
+import { acceptInstructorInvite, issueInvite, joinWithCode } from '../../src/db/invites';
+import { setManageMembers, setPublisher } from '../../src/db/members';
+import { classes, resourceRevisions, resources, topics, users } from '../../src/db/schema';
 
 /** Deterministic fixture ids: `…-4000-8000-0000000000NN`. */
 const id = (n: number) => `00000000-0000-4000-8000-${n.toString().padStart(12, '0')}`;
@@ -160,6 +160,24 @@ export async function buildWorld(db: Db, now = new Date()): Promise<World> {
     cookie[key] = cookieFor(token);
   }
   return { ids, cookie };
+}
+
+/**
+ * Builds the world unless it exists (the e2e fixture route, ADR-0006); true when it built it.
+ * Throws on a half-built world: adopting v1 in class B is the build's last data step.
+ */
+export async function ensureWorld(db: Db, now: Date): Promise<boolean> {
+  const [started] = await db.select({ id: users.id }).from(users).where(eq(users.id, ids.elena));
+  if (!started) {
+    await buildWorld(db, now);
+    return true;
+  }
+  const [done] = await db
+    .select({ id: classes.id })
+    .from(classes)
+    .where(and(eq(classes.id, ids.classB), eq(classes.releaseId, ids.releaseV1)));
+  if (!done) throw new Error('the fixture world is half built; reset the e2e database');
+  return false;
 }
 
 /**

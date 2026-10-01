@@ -12,8 +12,8 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { Deps } from '../../app';
 import { readSessionToken } from '../../auth/sessions';
 import * as identity from '../../db/identity';
-import * as invites from '../../membership/invites';
-import * as members from '../../membership/members';
+import * as invites from '../../db/invites';
+import * as members from '../../db/members';
 import { notFound, refuse, registerRoute } from '../register';
 
 /** HTTP status for each reason an invitation cannot be used (§4: the cause is shown). */

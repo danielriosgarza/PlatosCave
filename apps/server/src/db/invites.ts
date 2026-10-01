@@ -4,8 +4,8 @@ import { and, eq, sql } from 'drizzle-orm';
 import type { z } from 'zod';
 import type { ClassManagerScope, UserScope } from '../auth/scope';
 import { hashToken, newToken } from '../auth/sessions';
-import type { Db } from '../db/client';
-import { audit, type Tx } from '../db/identity';
+import type { Db } from './client';
+import { audit, type Tx } from './identity';
 import {
   classes,
   classInvites,
@@ -13,7 +13,7 @@ import {
   courseMemberships,
   courses,
   users,
-} from '../db/schema';
+} from './schema';
 
 export type InviteFailure = z.infer<typeof inviteFailure>;
 

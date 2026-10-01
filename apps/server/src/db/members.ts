@@ -1,7 +1,7 @@
 import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
 import type { ClassManagerScope, CourseScope } from '../auth/scope';
-import type { Db } from '../db/client';
-import { audit, type Tx } from '../db/identity';
+import type { Db } from './client';
+import { audit, type Tx } from './identity';
 import {
   authSessions,
   classes,
@@ -9,8 +9,8 @@ import {
   classMemberships,
   courseMemberships,
   users,
-} from '../db/schema';
-import { forClass, forCourse } from '../db/scoped';
+} from './schema';
+import { forClass, forCourse } from './scoped';
 
 /** Real members of the class (preview principals excluded) and its unrevoked invitations. */
 export async function listMembers(db: Db, scope: ClassManagerScope) {

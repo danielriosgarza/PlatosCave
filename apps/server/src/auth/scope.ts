@@ -3,7 +3,7 @@ import { and, eq } from 'drizzle-orm';
 import type { FastifyRequest } from 'fastify';
 import type { Db } from '../db/client';
 import { classes, classMemberships, courseMemberships, courses } from '../db/schema';
-import { findPrincipal, type Principal, readSessionToken } from './sessions';
+import { type Actor, findPrincipal, type Principal, readSessionToken } from './sessions';
 
 /** §3: sensitive membership changes need an authentication no older than this. */
 export const RECENT_AUTH_MS = 15 * 60_000;
@@ -14,14 +14,17 @@ export const RECENT_AUTH_MS = 15 * 60_000;
  */
 declare const brand: unique symbol;
 
-interface ScopeBase {
-  readonly user: Principal;
+export interface ScopeBase {
+  /** The person acting: a signed-in session, or the actor a background job runs for. */
+  readonly user: Actor;
   /** Throws a 401 `recent_auth_required` error unless the session authenticated recently. */
   requireRecentAuth(): void;
 }
 
+/** Only routes resolve a user scope, so it always carries the session. */
 export interface UserScope extends ScopeBase {
   readonly [brand]: 'user';
+  readonly user: Principal;
 }
 
 /** What every class scope knows about its class; `forClass` accepts any of them. */
@@ -112,95 +115,107 @@ export async function resolveScope(
   if (!token) return deny(401, 'no session cookie');
   const { db } = deps;
   if (!db) return deny(503, 'no database configured');
-  const now = deps.now();
-  const user = await findPrincipal(db, token, now);
+  const user = await findPrincipal(db, token, deps.now());
   if (!user) return deny(401, 'unknown, expired or revoked session');
   const base = {
     user,
     requireRecentAuth: () => assertRecentAuth(user.authTime, deps.now()),
   };
 
-  if (scope.kind === 'user') return { ok: true, scope: base as UserScope };
-
+  if (scope.kind === 'user') return { ok: true, scope: base as unknown as UserScope };
   const params = (req.params ?? {}) as Record<string, string | undefined>;
-  if (scope.kind === 'class') {
-    const classId = params.classId;
-    if (!classId || !UUID.test(classId)) return deny(404, 'classId is not a uuid');
-    const [row] = await db
-      .select({
-        className: classes.name,
-        courseId: classes.courseId,
-        courseTitle: courses.title,
-        releaseId: classes.releaseId,
-        archivedAt: classes.archivedAt,
-        id: classMemberships.id,
-        role: classMemberships.role,
-        manageMembers: classMemberships.manageMembers,
-        isPreview: classMemberships.isPreview,
-        ownsCourse: courseMemberships.owner,
-      })
-      .from(classes)
-      .innerJoin(courses, eq(courses.id, classes.courseId))
-      .leftJoin(
-        classMemberships,
-        and(eq(classMemberships.classId, classes.id), eq(classMemberships.userId, user.id)),
-      )
-      .leftJoin(
-        courseMemberships,
-        and(
-          eq(courseMemberships.courseId, classes.courseId),
-          eq(courseMemberships.userId, user.id),
-        ),
-      )
-      .where(eq(classes.id, classId));
-    if (!row) return deny(404, 'no such class');
-    const context = {
-      ...base,
-      classId,
-      className: row.className,
-      courseId: row.courseId,
-      courseTitle: row.courseTitle,
-      releaseId: row.releaseId,
-      archived: row.archivedAt !== null,
-    };
-    // §3: the course owner manages membership of every class of the course, member or not.
-    const owner = row.ownsCourse === true && user.kind === 'user';
-    if (scope.grant === 'manage_members' && owner) {
-      return {
-        ok: true,
-        scope: { ...context, via: 'course_owner' } as unknown as ClassManagerScope,
-      };
-    }
-    // A preview principal only ever acts through its preview membership, and vice versa.
-    if (row.id === null || row.isPreview !== (user.kind === 'preview')) {
-      return deny(404, 'not a member of this class');
-    }
-    if (scope.role !== 'any' && row.role !== scope.role) {
-      return deny(403, `needs class role ${scope.role}`);
-    }
-    if (scope.grant === 'manage_members') {
-      if (!row.manageMembers) return deny(403, 'needs grant manage_members');
-      return {
-        ok: true,
-        scope: { ...context, via: 'manage_members' } as unknown as ClassManagerScope,
-      };
-    }
-    const membership = {
-      id: row.id,
-      role: row.role as 'student' | 'instructor',
-      manageMembers: row.manageMembers as boolean,
-      isPreview: row.isPreview,
-    };
-    const resolved = {
-      ...context,
-      membership,
-      role: membership.role,
-      grants: { manageMembers: membership.manageMembers },
-    };
-    return { ok: true, scope: resolved as unknown as ClassScope };
-  }
+  if (scope.kind === 'class') return resolveClass(db, base, scope, params.classId);
+  return resolveCourse(db, base, scope, params.courseId);
+}
 
-  const courseId = params.courseId;
+type ClassRule = Extract<Scope, { kind: 'class' }>;
+type CourseRule = Extract<Scope, { kind: 'course' }>;
+
+/** A principal's membership in one class, checked against a route's or job's rule. */
+export async function resolveClass(
+  db: Db,
+  base: ScopeBase,
+  scope: ClassRule,
+  classId: string | undefined,
+): Promise<Resolution> {
+  const { user } = base;
+  if (!classId || !UUID.test(classId)) return deny(404, 'classId is not a uuid');
+  const [row] = await db
+    .select({
+      className: classes.name,
+      courseId: classes.courseId,
+      courseTitle: courses.title,
+      releaseId: classes.releaseId,
+      archivedAt: classes.archivedAt,
+      id: classMemberships.id,
+      role: classMemberships.role,
+      manageMembers: classMemberships.manageMembers,
+      isPreview: classMemberships.isPreview,
+      ownsCourse: courseMemberships.owner,
+    })
+    .from(classes)
+    .innerJoin(courses, eq(courses.id, classes.courseId))
+    .leftJoin(
+      classMemberships,
+      and(eq(classMemberships.classId, classes.id), eq(classMemberships.userId, user.id)),
+    )
+    .leftJoin(
+      courseMemberships,
+      and(eq(courseMemberships.courseId, classes.courseId), eq(courseMemberships.userId, user.id)),
+    )
+    .where(eq(classes.id, classId));
+  if (!row) return deny(404, 'no such class');
+  const context = {
+    ...base,
+    classId,
+    className: row.className,
+    courseId: row.courseId,
+    courseTitle: row.courseTitle,
+    releaseId: row.releaseId,
+    archived: row.archivedAt !== null,
+  };
+  // §3: the course owner manages membership of every class of the course, member or not.
+  const owner = row.ownsCourse === true && user.kind === 'user';
+  if (scope.grant === 'manage_members' && owner) {
+    return { ok: true, scope: { ...context, via: 'course_owner' } as unknown as ClassManagerScope };
+  }
+  // A preview principal only ever acts through its preview membership, and vice versa.
+  if (row.id === null || row.isPreview !== (user.kind === 'preview')) {
+    return deny(404, 'not a member of this class');
+  }
+  if (scope.role !== 'any' && row.role !== scope.role) {
+    return deny(403, `needs class role ${scope.role}`);
+  }
+  if (scope.grant === 'manage_members') {
+    if (!row.manageMembers) return deny(403, 'needs grant manage_members');
+    return {
+      ok: true,
+      scope: { ...context, via: 'manage_members' } as unknown as ClassManagerScope,
+    };
+  }
+  const membership = {
+    id: row.id,
+    role: row.role as 'student' | 'instructor',
+    manageMembers: row.manageMembers as boolean,
+    isPreview: row.isPreview,
+  };
+  const resolved = {
+    ...context,
+    membership,
+    role: membership.role,
+    grants: { manageMembers: membership.manageMembers },
+  };
+  return { ok: true, scope: resolved as unknown as ClassScope };
+}
+
+/** A principal's grants on one course, checked against a route's or job's rule. */
+export async function resolveCourse(
+  db: Db,
+  base: ScopeBase,
+  scope: CourseRule,
+  courseId: string | undefined,
+): Promise<Resolution> {
+  const { user } = base;
   if (!courseId || !UUID.test(courseId)) return deny(404, 'courseId is not a uuid');
   const [row] = await db
     .select({

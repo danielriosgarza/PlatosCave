@@ -2,16 +2,20 @@ import { eq, type SQL } from 'drizzle-orm';
 import type { PgColumn, PgTable } from 'drizzle-orm/pg-core';
 import type { ClassContext, CourseScope } from '../auth/scope';
 import {
+  annotationPlacements,
+  annotations,
   classes,
   classInvites,
   classMemberships,
   classReleaseHistory,
   courseMemberships,
   courseReleases,
+  posts,
   resourceRevisions,
   resources,
   storageObjects,
   studyPositions,
+  threads,
   topics,
 } from './schema';
 
@@ -25,6 +29,10 @@ export const classScopedTables: PgTable[] = [
   classInvites,
   classReleaseHistory,
   studyPositions,
+  annotations,
+  threads,
+  posts,
+  annotationPlacements,
 ];
 export const courseScopedTables: PgTable[] = [
   classes,
