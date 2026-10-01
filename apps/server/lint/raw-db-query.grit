@@ -3,14 +3,17 @@
 //
 // The handle is recognised by the name `db`: `db`, `<x>.db`, `<x>['db']`, the `db()` accessor
 // the route modules define, and any of these wrapped in parentheses, `!`, `as`, `<T>` or
-// `satisfies`. Destructuring a query method from the handle is flagged, directly
-// (`const { select } = deps.db`, `const { ...all } = deps.db`) or through a `db` key
-// (`const { db: { select } } = deps`).
-// Known limits, not caught: a renamed alias (`const conn = deps.db`); assignment, parameter and
-// `for ... of` destructuring of the handle; a computed method with a non-literal key
-// (`deps.db[name]()`); the handle reached through an array (`[deps.db][0].select()`); and
-// passing the handle to an untyped helper. Any other object stored under `db` is treated as the
-// handle when a query method name is used on it (`deps.cache.db.delete(key)` is flagged).
+// `satisfies`. Destructuring a query method (or a rest element) from the handle is flagged,
+// directly in a declaration (`const { select } = deps.db`, `const { ...all } = deps.db`) or
+// through a `db` key in any binding, parameters included (`const { db: { select } } = deps`,
+// `function f({ db: { select } }: Deps)`).
+// Known limits, not caught: a renamed alias (`const conn = deps.db`); assignment and
+// `for ... of` destructuring of the handle, and parameter destructuring other than through a
+// `db` key; a computed method with a non-literal key (`deps.db[name]()`); the handle reached
+// through an array (`[deps.db][0].select()`); and passing the handle to an untyped helper.
+// Any other object stored under `db` is treated as the handle when a query method name is used
+// on it or a rest element destructures it (`deps.cache.db.delete(key)` and
+// `const { ...all } = deps.config.db` are flagged).
 //
 // The plugin runs from the biome.json override that exempts the data-access modules under db/,
 // the composition root main.ts and test files (ADR-0002, Scoped tables); every other server
@@ -36,13 +39,19 @@ pattern db_handle() {
 }
 
 // A destructuring key that names a query method, or a rest element that captures them all.
+// A computed key with a literal name counts too (`{ ['select']: s }`).
 pattern db_binding_key() {
   or {
     JsObjectBindingPatternRest(),
     or {
       JsObjectBindingPatternShorthandProperty(identifier=$key),
       JsObjectBindingPatternProperty(member=$key)
-    } where { $key <: db_method() }
+    } where {
+      $key <: or {
+        db_method(),
+        JsComputedMemberName(expression=db_method())
+      }
+    }
   }
 }
 
@@ -55,8 +64,11 @@ pattern db_method() {
 //
 // `createDb` is flagged as a member (`client.createDb`, `client['createDb']`) and as a key
 // destructured in a variable declaration (`const { createDb } = client`), since
-// `noRestrictedImports` does not see names taken from a namespace import. It does not see star
-// re-exports either, so `export * from` a restricted module is flagged too.
+// `noRestrictedImports` does not see names taken from a namespace import. Its `db/client` group
+// matches by import name, so it does not see a star re-export of that module either
+// (`export * from`, `export * as ns from`); those are flagged here unless type-only. The other
+// restricted modules are matched by path, and `noRestrictedImports` reports their star
+// re-exports itself.
 or {
   or {
     member_expression(object=$receiver, property=$method),
@@ -67,23 +79,35 @@ or {
     register_diagnostic(span=$method, message="Raw database query outside a data-access module. Call a db/ function that takes a branded ClassScope/CourseScope instead (ADR-0002, Scoped tables).")
   },
   JsVariableDeclarator(id=$pattern, initializer=JsInitializerClause(expression=$value)) where {
-    $pattern <: JsObjectBindingPattern(),
+    $pattern <: JsObjectBindingPattern(properties=$keys),
     $value <: db_handle(),
-    $pattern <: contains db_binding_key(),
+    $keys <: some db_binding_key(),
     register_diagnostic(span=$pattern, message="Destructuring the database handle outside a data-access module. Call a db/ function that takes a branded ClassScope/CourseScope instead (ADR-0002, Scoped tables).")
   },
+  // `until` stops at the first nested pattern, so only keys directly under `db` count.
   JsObjectBindingPatternProperty(member=$name) as $property where {
-    $name <: r"^['\"`]?db['\"`]?$",
-    $property <: contains JsObjectBindingPattern(),
-    $property <: contains db_binding_key(),
+    $name <: or {
+      r"^['\"`]?db['\"`]?$",
+      JsComputedMemberName(expression=r"^['\"`]db['\"`]$")
+    },
+    $property <: contains JsObjectBindingPattern(properties=$keys) until JsObjectBindingPattern(),
+    $keys <: some db_binding_key(),
     register_diagnostic(span=$name, message="Destructuring the database handle outside a data-access module. Call a db/ function that takes a branded ClassScope/CourseScope instead (ADR-0002, Scoped tables).")
   },
-  JsVariableDeclarator(id=$pattern, initializer=JsInitializerClause()) where {
+  or {
+    JsVariableDeclarator(id=$pattern, initializer=JsInitializerClause()),
+    JsForVariableDeclaration(declarator=JsVariableDeclarator(id=$pattern))
+  } where {
     $pattern <: contains or {
       JsObjectBindingPatternShorthandProperty(identifier=$name),
       JsObjectBindingPatternProperty(member=$name)
-    } where { $name <: r"^['\"`]?createDb['\"`]?$" },
-    register_diagnostic(span=$pattern, message="Only the composition root (main.ts) opens the database client (ADR-0002, Scoped tables).")
+    } where {
+      $name <: or {
+        r"^['\"`]?createDb['\"`]?$",
+        JsComputedMemberName(expression=r"^['\"`]createDb['\"`]$")
+      }
+    },
+    register_diagnostic(span=$name, message="Only the composition root (main.ts) opens the database client (ADR-0002, Scoped tables).")
   },
   or {
     member_expression(property=$method),
@@ -92,8 +116,9 @@ or {
     $method <: r"^['\"`]?createDb['\"`]?$",
     register_diagnostic(span=$method, message="Only the composition root (main.ts) opens the database client (ADR-0002, Scoped tables).")
   },
-  JsExportFromClause(source=$source) where {
-    $source <: r"^['\"](?:drizzle-orm|pg|.*/db/(?:client|schema|scoped|admin|migrate|reset))(?:[./].*)?['\"]$",
-    register_diagnostic(span=$source, message="Re-exporting a restricted database module outside a data-access module. Feature modules reach the database only through data-access functions that take a branded ClassScope/CourseScope (ADR-0002, Scoped tables).")
+  JsExportFromClause(source=$source) as $clause where {
+    $clause <: not r"(?s)^type\b.*",
+    $source <: r"^['\"](?:.*/)?db/client(?:\.js|\.ts)?['\"]$",
+    register_diagnostic(span=$source, message="Only the composition root (main.ts) opens the database client; re-export the types a feature module needs by name (ADR-0002, Scoped tables).")
   }
 }

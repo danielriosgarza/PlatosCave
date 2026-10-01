@@ -51,7 +51,16 @@ export function viaAccessor(deps: { db?: Db }) {
   ];
 }
 
+export type * as clientTypes from '../../src/db/client';
 export * as clientModule from '../../src/db/client'; // raw-query
+
+export function viaParameter({
+  db: { select }, // raw-query
+}: {
+  db: Db;
+}) {
+  return select;
+}
 
 export function wrappedReceivers(deps: { db: Db }) {
   const { select } = deps.db; // raw-query
@@ -59,7 +68,12 @@ export function wrappedReceivers(deps: { db: Db }) {
   const {
     db: { transaction }, // raw-query
   } = deps;
-  const { createDb: open } = client; // raw-query
+  // biome-ignore lint/complexity/useLiteralKeys: the fixture exercises a computed key
+  const { ['insert']: insertInto } = deps.db; // raw-query
+  const {
+    createDb: open, // raw-query
+  } = client;
+  for (const { createDb: make } of [client]) make('postgres://localhost/x'); // raw-query
   return [
     (deps.db as Db).select(), // raw-query
     (deps.db satisfies Db).execute(sql`select 1`), // raw-query
@@ -75,6 +89,7 @@ export function wrappedReceivers(deps: { db: Db }) {
     select,
     everything,
     transaction,
+    insertInto,
     open,
   ];
 }
@@ -85,6 +100,7 @@ export function notTheDatabase(deps: {
   db: Db;
   ledger: { db: { withdraw(): number } };
   config: { db: { url: string } };
+  vault: { db: { ledger: { select(): number } } };
   tools: { open(): void };
 }) {
   const { db } = deps;
@@ -92,11 +108,18 @@ export function notTheDatabase(deps: {
   const {
     db: { url: again },
   } = deps.config;
+  const {
+    db: {
+      ledger: { select },
+    },
+  } = deps.vault;
   const { open: createDb } = deps.tools;
   const cache = { db: new Map<string, number>() };
-  // Documented limit, asserted neither way: any object stored under `db` is treated as the handle.
+  // Documented limit, asserted neither way: any object stored under `db` is treated as the handle
+  // when a query method is called on it or a rest element destructures it.
   cache.db.delete('key'); // known-false-positive
-  return [deps.ledger.db.withdraw(), db, url, again, createDb];
+  const { ...settings } = deps.config.db; // known-false-positive
+  return [deps.ledger.db.withdraw(), db, url, again, select, settings, createDb];
 }
 
 export function takesAFactory({ createDb }: { createDb: () => void }) {

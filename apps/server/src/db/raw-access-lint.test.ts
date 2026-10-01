@@ -123,8 +123,8 @@ test('biome.json declares the import rule and the query plugin in one override',
 
 test('the fixture marks restricted imports and raw queries', () => {
   expect(markedLines('restricted-import')).toHaveLength(7);
-  expect(markedLines('raw-query')).toHaveLength(28);
-  expect(markedLines('known-false-positive')).toHaveLength(1);
+  expect(markedLines('raw-query')).toHaveLength(31);
+  expect(markedLines('known-false-positive')).toHaveLength(2);
 });
 
 test.each(restricted)('raw database access is a lint error in feature module %s', (path) => {
