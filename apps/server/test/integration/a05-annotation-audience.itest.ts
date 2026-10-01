@@ -359,7 +359,8 @@ describe('work on a resource the class stops using', () => {
     expect(adopted.ok).toBe(true);
 
     const after = await call('bea', 'GET', `${quiz}/annotations`);
-    expect(after.body).toEqual({ annotations: [note], threads: [] });
+    // The note is kept; it has no placement now because the class no longer studies the quiz.
+    expect(after.body).toEqual({ annotations: [{ ...note, placement: null }], threads: [] });
     const saved = await call('bea', 'PUT', annotationUrl(ids.classB, note.id), {
       expectedRevision: 1,
       body: 'Still mine',

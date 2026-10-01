@@ -11,11 +11,15 @@ import { afterAll, beforeAll, expect, test } from 'vitest';
 const root = resolve(import.meta.dirname, '../../../..');
 const biome = join(root, 'node_modules/.bin/biome');
 const config = JSON.parse(readFileSync(join(root, 'biome.json'), 'utf8')) as {
-  overrides?: { includes?: string[]; plugins?: (string | { path: string })[] }[];
+  overrides?: {
+    includes?: string[];
+    plugins?: (string | { path: string })[];
+    linter?: { rules?: { style?: { noRestrictedImports?: unknown } } };
+  }[];
 };
-const override = (config.overrides ?? []).find((o) =>
-  JSON.stringify(o).includes('noRestrictedImports'),
-);
+// The server override is the one that includes the server source tree, so a later override for
+// another app that uses the same rule cannot be mistaken for it.
+const override = (config.overrides ?? []).find((o) => o.includes?.includes('apps/server/src/**'));
 const plugins = (override?.plugins ?? []).map((p) => (typeof p === 'string' ? p : p.path));
 const fixture = readFileSync(join(root, 'apps/server/test/lint/raw-db-access.fixture.ts'), 'utf8');
 
@@ -42,6 +46,10 @@ function markedLines(marker: string): number[] {
     .split('\n')
     .flatMap((line, i) => (line.trimEnd().endsWith(`// ${marker}`) ? [i + 1] : []));
 }
+
+// Lines marked `known-false-positive` document a limit of the rule; the tests accept either
+// outcome there, so a more precise rule may stop flagging them.
+const unasserted = new Set(markedLines('known-false-positive'));
 
 interface Diagnostic {
   category: string;
@@ -81,6 +89,7 @@ function lintAt(path: string): { imports: number[]; queries: number[] } {
   const lines = (category: string) =>
     diagnostics
       .filter((d) => d.category === category && d.location.path === path)
+      .filter((d) => !unasserted.has(d.location.start.line))
       .map((d) => d.location.start.line)
       .sort((a, b) => a - b);
   return { imports: lines('lint/style/noRestrictedImports'), queries: lines('plugin') };
@@ -89,11 +98,13 @@ function lintAt(path: string): { imports: number[]; queries: number[] } {
 test('biome.json declares the import rule and the query plugin in one override', () => {
   expect(override?.includes).toContain('apps/server/src/**');
   expect(plugins).toEqual(['./apps/server/lint/raw-db-query.grit']);
+  expect(override?.linter?.rules?.style?.noRestrictedImports).toBeDefined();
 });
 
 test('the fixture marks restricted imports and raw queries', () => {
   expect(markedLines('restricted-import')).toHaveLength(7);
-  expect(markedLines('raw-query')).toHaveLength(12);
+  expect(markedLines('raw-query')).toHaveLength(25);
+  expect(markedLines('known-false-positive')).toHaveLength(1);
 });
 
 test.each(restricted)('raw database access is a lint error in feature module %s', (path) => {

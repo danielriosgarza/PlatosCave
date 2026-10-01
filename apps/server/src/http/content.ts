@@ -61,6 +61,13 @@ export function registerContentOrigin(app: FastifyInstance, deps: ContentOriginD
   app.addHook('onRequest', async (req, reply) => {
     const isContentRoute = req.routeOptions.url === CONTENT_ROUTE;
     if (isContentHost(req, config) !== isContentRoute) return reply.code(404).send(NOT_FOUND);
+    if (isContentRoute) {
+      // The app reads content bytes in script (fonts; PDFs, which the reader renders with pdf.js
+      // rather than framing them: the sandbox CSP blocks the browser's PDF viewer). Only the exact
+      // app origin may, without credentials. Set here so refusals (an expired token's 404) and
+      // errors are readable too, and the reader can tell "expired" from "unreachable".
+      reply.header('access-control-allow-origin', config.APP_ORIGIN).header('vary', 'origin');
+    }
   });
 
   // Not part of the API: kept out of the OpenAPI document.
@@ -94,11 +101,6 @@ export function registerContentOrigin(app: FastifyInstance, deps: ContentOriginD
           // The app origin embeds these objects (<img>, <video>, fonts): allow cross-origin reads.
           .header('cross-origin-resource-policy', 'cross-origin')
           .header('referrer-policy', 'no-referrer')
-          // The app reads content bytes in script (fonts; PDFs, which the reader renders with
-          // pdf.js rather than framing them: the sandbox CSP blocks the browser's PDF viewer).
-          // Only the exact app origin may, and without credentials. Embeds need no CORS.
-          .header('access-control-allow-origin', config.APP_ORIGIN)
-          .header('vary', 'origin')
           .header('cache-control', `private, max-age=${maxAge}`)
           // The app origin's helmet baseline forbids framing; the app frames content documents
           // (readings, PDFs), whose own CSP above already sandboxes them.

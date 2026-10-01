@@ -1,20 +1,20 @@
 import { createHash } from 'node:crypto';
-import { eq } from 'drizzle-orm';
-import type { ClassScope, CourseScope } from '../../src/auth/scope';
+import { and, eq } from 'drizzle-orm';
+import type { ClassManagerScope, ClassScope, CourseScope, UserScope } from '../../src/auth/scope';
 import { createSession, sessionCookieHeader } from '../../src/auth/sessions';
 import { DEV_SESSION_SECRET } from '../../src/config';
 import { adoptRelease } from '../../src/content/adoption';
 import { publishRelease } from '../../src/content/releases';
 import type { Db } from '../../src/db/client';
 import {
-  addInstructor,
-  addStudent,
   createClass,
   createCourse,
   createPreviewPrincipal,
   createUser,
 } from '../../src/db/identity';
-import { resourceRevisions, resources, topics } from '../../src/db/schema';
+import { acceptInstructorInvite, issueInvite, joinWithCode } from '../../src/db/invites';
+import { setManageMembers, setPublisher } from '../../src/db/members';
+import { classes, resourceRevisions, resources, topics, users } from '../../src/db/schema';
 
 /** Deterministic fixture ids: `…-4000-8000-0000000000NN`. */
 const id = (n: number) => `00000000-0000-4000-8000-${n.toString().padStart(12, '0')}`;
@@ -27,6 +27,8 @@ export const ids = {
   bea: id(5), // student in class B
   olivia: id(6), // owns Linear models only
   previewB: id(7), // Marcus's preview principal in class B
+  noor: id(8), // instructor of class A holding manage_members
+  ines: id(9), // publisher of Statistical thinking; no class membership
   statistics: id(101),
   linearModels: id(102),
   classA: id(201),
@@ -42,7 +44,16 @@ export const ids = {
   releaseV1: id(601), // Statistical thinking v1, adopted by classes A and B
 } as const;
 
-export type PersonName = 'elena' | 'marcus' | 'priya' | 'sam' | 'bea' | 'olivia' | 'previewB';
+export type PersonName =
+  | 'elena'
+  | 'marcus'
+  | 'priya'
+  | 'sam'
+  | 'bea'
+  | 'olivia'
+  | 'previewB'
+  | 'noor'
+  | 'ines';
 export const people: PersonName[] = [
   'elena',
   'marcus',
@@ -51,6 +62,8 @@ export const people: PersonName[] = [
   'bea',
   'olivia',
   'previewB',
+  'noor',
+  'ines',
 ];
 
 /** The Cookie header a browser sends for `token`, signed with the non-production secret. */
@@ -64,8 +77,9 @@ export interface World {
 
 /**
  * The standard world (ADR-0002): course *Statistical thinking* with classes A and B, owner
- * Elena, Marcus teaching B, students in each class, Priya teaching A and studying in B, and a
- * second course owned by Olivia. Release v1 of Statistical thinking (two topics, one hidden
+ * Elena, Marcus teaching B, students in each class, Priya teaching A and studying in B, Noor
+ * teaching A with the membership-management grant, Ines publishing the course without teaching,
+ * and a second course owned by Olivia. People join through invitations and enrolment codes. Release v1 of Statistical thinking (two topics, one hidden
  * resource) is adopted by classes A and B. Built through the service functions the API uses.
  */
 export async function buildWorld(db: Db, now = new Date()): Promise<World> {
@@ -77,21 +91,51 @@ export async function buildWorld(db: Db, now = new Date()): Promise<World> {
   await person('sam', 'Sam Okafor');
   await person('bea', 'Bea Lindqvist');
   await person('olivia', 'Olivia Hart');
+  await person('noor', 'Noor Haddad');
+  await person('ines', 'Ines Moreau');
 
   await createCourse(db, { id: ids.statistics, title: 'Statistical thinking', ownerId: ids.elena });
   await createCourse(db, { id: ids.linearModels, title: 'Linear models', ownerId: ids.olivia });
   const course = ids.statistics;
-  await createClass(db, ids.elena, { id: ids.classA, courseId: course, name: 'Autumn 2026 A' });
-  await createClass(db, ids.elena, { id: ids.classB, courseId: course, name: 'Autumn 2026 B' });
-  await addInstructor(db, ids.elena, ids.classA, ids.priya);
-  await addInstructor(db, ids.elena, ids.classB, ids.marcus);
-  await addStudent(db, null, ids.classA, ids.sam);
-  await addStudent(db, null, ids.classB, ids.bea);
-  await addStudent(db, null, ids.classB, ids.priya);
-  await createPreviewPrincipal(db, {
+  const owner = asCourseScope(course, ids.elena);
+  await createClass(db, owner, { id: ids.classA, name: 'Autumn 2026 A' });
+  await createClass(db, owner, { id: ids.classB, name: 'Autumn 2026 B' });
+  const teach = async (classId: string, who: PersonName) => {
+    const scope = asManagerScope(classId, course, ids.elena);
+    const email = `${who}@example.test`;
+    const issued = await issueInvite(db, scope, { kind: 'instructor', email }, now);
+    if (!issued.ok) throw new Error(`world invite: ${issued.reason}`);
+    const accepted = await acceptInstructorInvite(
+      db,
+      asUserScope(ids[who], email),
+      issued.invite.code,
+      now,
+    );
+    if (!accepted.ok) throw new Error(`world accept: ${accepted.reason}`);
+  };
+  const enrol = async (classId: string, students: PersonName[]) => {
+    const scope = asManagerScope(classId, course, ids.elena);
+    const issued = await issueInvite(db, scope, { kind: 'enrolment' }, now);
+    if (!issued.ok) throw new Error(`world code: ${issued.reason}`);
+    for (const who of students) {
+      const joined = await joinWithCode(
+        db,
+        asUserScope(ids[who], `${who}@example.test`),
+        issued.invite.code,
+        now,
+      );
+      if (!joined.ok) throw new Error(`world join: ${joined.reason}`);
+    }
+  };
+  await teach(ids.classA, 'priya');
+  await teach(ids.classB, 'marcus');
+  await teach(ids.classA, 'noor');
+  await setManageMembers(db, asManagerScope(ids.classA, course, ids.elena), ids.noor, true);
+  await setPublisher(db, owner, ids.ines, true);
+  await enrol(ids.classA, ['sam']);
+  await enrol(ids.classB, ['bea', 'priya']);
+  await createPreviewPrincipal(db, asClassScope(ids.classB, course, ids.marcus), {
     id: ids.previewB,
-    instructorId: ids.marcus,
-    classId: ids.classB,
   });
 
   await seedDrafts(db);
@@ -119,11 +163,39 @@ export async function buildWorld(db: Db, now = new Date()): Promise<World> {
 }
 
 /**
+ * Builds the world unless it exists (the e2e fixture route, ADR-0006); true when it built it.
+ * Throws on a half-built world: adopting v1 in class B is the build's last data step.
+ */
+export async function ensureWorld(db: Db, now: Date): Promise<boolean> {
+  const [started] = await db.select({ id: users.id }).from(users).where(eq(users.id, ids.elena));
+  if (!started) {
+    await buildWorld(db, now);
+    return true;
+  }
+  const [done] = await db
+    .select({ id: classes.id })
+    .from(classes)
+    .where(and(eq(classes.id, ids.classB), eq(classes.releaseId, ids.releaseV1)));
+  if (!done) throw new Error('the fixture world is half built; reset the e2e database');
+  return false;
+}
+
+/**
  * Scope objects for fixture code acting as a person outside a request. The brand is type-only
  * (ADR-0002), so only test code builds them this way; routes get theirs from the resolver.
  */
 export const asCourseScope = (courseId: string, userId: string) =>
   ({ courseId, user: { id: userId } }) as unknown as CourseScope;
+export const asManagerScope = (classId: string, courseId: string, userId: string) =>
+  ({
+    classId,
+    courseId,
+    archived: false,
+    via: 'course_owner',
+    user: { id: userId },
+  }) as unknown as ClassManagerScope;
+export const asUserScope = (userId: string, email: string) =>
+  ({ user: { id: userId, email, kind: 'user' } }) as unknown as UserScope;
 export const asClassScope = (
   classId: string,
   courseId: string,

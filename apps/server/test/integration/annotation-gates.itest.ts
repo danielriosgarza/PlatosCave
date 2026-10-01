@@ -161,7 +161,8 @@ describe('A26 a resource scheduled for later', () => {
     expect(prepared.status).toBe(200);
     expect(await call('bea', 'GET', `${reading}/annotations`)).toEqual({
       status: 200,
-      body: { annotations: [early.body], threads: [] },
+      // Her note is kept, without a placement until the reading opens to her.
+      body: { annotations: [{ ...early.body, placement: null }], threads: [] },
     });
     expect((await call('priya', 'GET', `${reading}/annotations`)).status).toBe(404);
     expect((await notified('bea', ids.classB)).map((i) => i.threadId)).not.toContain(

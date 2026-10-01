@@ -27,6 +27,19 @@ const classParams = z.object({ classId: z.uuid() });
 const resourceParams = classParams.extend({ resourceId: z.uuid() });
 const annotationParams = classParams.extend({ annotationId: z.uuid() });
 
+/**
+ * Where a mark sits in the revision the class uses now (ADR-0003). `original` when that is the
+ * revision it was made on; `mapped` or `manual` with the anchor to show; `needs_reattachment`
+ * when no confident match exists (show the original anchor's quote and context); `pending`
+ * until the mapping job has run. Null when the class no longer studies the resource.
+ */
+export const placementView = z.object({
+  resourceRevisionId: z.uuid(),
+  status: z.enum(['original', 'mapped', 'manual', 'needs_reattachment', 'pending']),
+  anchor: anchor.nullable(),
+  confidence: z.number().min(0).max(1).nullable(),
+});
+
 export const annotationView = z.object({
   id: z.uuid(),
   resourceId: z.uuid(),
@@ -39,6 +52,7 @@ export const annotationView = z.object({
   color: z.string().nullable(),
   /** Send back as `expectedRevision` with the next autosave. */
   revision: z.int(),
+  placement: placementView.nullable(),
   createdAt: timestamp,
   updatedAt: timestamp,
 });
@@ -63,6 +77,7 @@ export const threadView = z.object({
   audience: sharedAudience,
   status: z.enum(['open', 'resolved']),
   author: person,
+  placement: placementView.nullable(),
   createdAt: timestamp,
   posts: z.array(postView),
 });
