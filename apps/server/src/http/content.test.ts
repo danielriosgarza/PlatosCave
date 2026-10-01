@@ -147,6 +147,28 @@ describe('content origin', () => {
       expect(res.statusCode, url).toBe(404);
       expect(res.body, url).not.toContain('<title>Parallax</title>');
     }
+    // Spellings the router normalises differently from a URL parser reach nothing either.
+    for (const url of [
+      '//x/content/abc',
+      `//x/content/${token()}`,
+      '/%61pi/health',
+      '//api/health',
+    ]) {
+      const res = await get(url, content);
+      expect(res.statusCode, url).toBe(404);
+      expect(res.body, url).not.toContain('<title>Parallax</title>');
+    }
+    // Encoded and doubled spellings of the content route stay unreachable on the app host.
+    for (const url of [`/%63ontent/${token()}`]) {
+      const res = await get(url, app);
+      expect(res.statusCode, url).toBe(404);
+      expect(res.body, url).not.toContain('<svg>');
+    }
+    // These match no route (case and doubled slashes matter to the router): unknown app paths,
+    // answered by the web app, never with the object.
+    for (const url of [`/%63ONTENT/${token()}`, `//content/${token()}`]) {
+      expect((await get(url, app)).body, url).not.toContain('<svg>');
+    }
     // The web app itself is still served on the app host.
     expect((await get('/topics', app)).body).toContain('<title>Parallax</title>');
     const withCookie = await get('/api/health', { ...content, cookie: 'pc_session=anything' });

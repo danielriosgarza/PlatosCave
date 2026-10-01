@@ -3,6 +3,8 @@ import { z } from 'zod';
 /** Used outside production only, so a fresh checkout runs without configuration. */
 export const DEV_CONTENT_TOKEN_SECRET = 'parallax-development-content-secret-not-for-production';
 
+const LOOPBACK = new Set(['127.0.0.1', 'localhost', '::1']);
+
 /** A bare host name (no scheme, port or path), compared with each request's host name. */
 const HostName = z
   .string()
@@ -58,6 +60,15 @@ const Env = z
       for (const key of ['CONTENT_ORIGIN', 'CONTENT_TOKEN_SECRET'] as const) {
         if (!env[key]) ctx.addIssue({ code: 'custom', path: [key], message: 'required' });
       }
+    }
+    // The development secret is public: anything reachable beyond this machine needs its own,
+    // whatever NODE_ENV says (tests excepted: e2e listens on 0.0.0.0 inside the runner).
+    if (env.NODE_ENV !== 'test' && !LOOPBACK.has(env.HOST) && !env.CONTENT_TOKEN_SECRET) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['CONTENT_TOKEN_SECRET'],
+        message: 'required when HOST is not a loopback address',
+      });
     }
     if (env.CONTENT_ORIGIN && new URL(env.CONTENT_ORIGIN).hostname !== env.CONTENT_HOST) {
       ctx.addIssue({

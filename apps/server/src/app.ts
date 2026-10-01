@@ -13,7 +13,7 @@ import {
 import type { Config } from './config';
 import { MAX_TOKEN_LENGTH } from './content/tokens';
 import type { Db } from './db/client';
-import { redactContentUrl, registerContentOrigin } from './http/content';
+import { CONTENT_ROUTE, redactContentUrl, registerContentOrigin } from './http/content';
 import { isApiPath, registerStatic } from './http/static';
 import { createStorage } from './storage/create';
 import type { Storage } from './storage/storage';
@@ -47,7 +47,11 @@ export async function buildApp(config: Config, deps: Deps = {}): Promise<Fastify
         // Content tokens are credentials: keep them out of the logs.
         req: (req) => ({
           method: req.method,
-          url: redactContentUrl(req.url),
+          // Whatever the spelling, a request routed to the content route carries a token.
+          url:
+            req.routeOptions?.url === CONTENT_ROUTE
+              ? '/content/[redacted]'
+              : redactContentUrl(req.url),
           host: req.host,
           remoteAddress: req.ip,
         }),

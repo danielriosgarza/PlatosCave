@@ -35,6 +35,14 @@ describe('config', () => {
     expect(config.CONTENT_ORIGIN).toBe('https://content.parallax.example.org');
   });
 
+  test('a server reachable beyond loopback never runs on the public development secret', () => {
+    expect(() => loadConfig({ HOST: '0.0.0.0' })).toThrow(/CONTENT_TOKEN_SECRET/);
+    expect(loadConfig({ HOST: '0.0.0.0', CONTENT_TOKEN_SECRET: 's'.repeat(40) })).toBeTruthy();
+    expect(loadConfig({ HOST: '0.0.0.0', NODE_ENV: 'test' }).CONTENT_TOKEN_SECRET).toBe(
+      DEV_CONTENT_TOKEN_SECRET,
+    );
+  });
+
   test('the s3 driver needs a bucket and credentials', () => {
     expect(() => loadConfig({ STORAGE_DRIVER: 's3' })).toThrow(/S3_BUCKET/);
     const config = loadConfig({
