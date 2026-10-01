@@ -24,6 +24,9 @@ export async function readAnotherClass(deps: { db: Db }, classId: string) {
   await deps.db?.select().from(users); // raw-query
   await deps.db.$client.query('delete from class_memberships'); // raw-query
   client.createDb('postgres://localhost/x'); // raw-query
+  // biome-ignore lint/complexity/useLiteralKeys: the fixture exercises computed namespace access
+  // biome-ignore lint/performance/noDynamicNamespaceImportAccess: as above
+  client['createDb']('postgres://localhost/x'); // raw-query
   // biome-ignore lint/complexity/useLiteralKeys: the fixture exercises computed member access
   await deps.db['select']().from(users); // raw-query
   await deps.db.insert(users).values([]); // raw-query

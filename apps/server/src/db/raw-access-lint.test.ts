@@ -103,7 +103,7 @@ test('biome.json declares the import rule and the query plugin in one override',
 
 test('the fixture marks restricted imports and raw queries', () => {
   expect(markedLines('restricted-import')).toHaveLength(7);
-  expect(markedLines('raw-query')).toHaveLength(24);
+  expect(markedLines('raw-query')).toHaveLength(25);
   expect(markedLines('known-false-positive')).toHaveLength(1);
 });
 

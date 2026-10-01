@@ -33,7 +33,7 @@ pattern db_handle() {
 
 // Member access covers optional chaining (`deps.db?.select()`); subscript access covers
 // `deps.db['select']`; `_` is drizzle's internals object (`deps.db._.session`). `createDb` is
-// flagged as a member (`client.createDb`) and when destructured (`const { createDb } = client`),
+// flagged as a member (`client.createDb`, `client['createDb']`) and when destructured (`const { createDb } = client`),
 // since `noRestrictedImports` does not see names taken from a namespace import.
 or {
   or {
@@ -56,8 +56,11 @@ or {
     $name <: r"^['\"`]?createDb['\"`]?$",
     register_diagnostic(span=$name, message="Only the composition root (main.ts) opens the database client (ADR-0002, Scoped tables).")
   },
-  member_expression(property=$method) where {
-    $method <: `createDb`,
+  or {
+    member_expression(property=$method),
+    subscript_expression(index=$method)
+  } where {
+    $method <: r"^['\"`]?createDb['\"`]?$",
     register_diagnostic(span=$method, message="Only the composition root (main.ts) opens the database client (ADR-0002, Scoped tables).")
   }
 }
