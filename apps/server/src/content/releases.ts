@@ -98,6 +98,15 @@ export function validate(drafts: Drafts): ValidationReport {
         });
         continue;
       }
+      // The release tab comes from the revision type, so a mismatch would pin it in the wrong tab.
+      if (revision.type !== resource.type) {
+        errors.push({
+          code: 'broken_reference',
+          message: `“${resource.title}” has content of another resource type`,
+          ...at,
+        });
+        continue;
+      }
       if (revision.type === 'slides_pdf' && revision.derived.status !== 'ready') {
         errors.push({
           code: 'unconverted_deck',

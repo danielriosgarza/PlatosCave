@@ -118,21 +118,38 @@ describe('publication', () => {
       position,
       createdBy: ids.olivia,
     });
-    const [deck, empty2, borrowed] = await db
+    const [deck, empty2, borrowed, mistyped] = await db
       .insert(resources)
       .values([
         resource('Deck', 'slides_pdf', 0),
         resource('Notes', 'reading_native', 1),
         resource('Borrowed', 'reading_native', 2),
+        resource('Mistyped', 'reading_native', 3),
       ])
       .returning();
-    if (!deck || !empty2 || !borrowed) throw new Error('no resources');
+    if (!deck || !empty2 || !borrowed || !mistyped) throw new Error('no resources');
     await revise(deck.id, { pages: 3 });
     // Points at a revision of a resource in another course.
     await db
       .update(resources)
       .set({ headRevisionId: ids.samplingReadingV1 })
       .where(eq(resources.id, borrowed.id));
+    // Its head revision holds test content although the resource is a reading.
+    const [wrongType] = await db
+      .insert(resourceRevisions)
+      .values({
+        resourceId: mistyped.id,
+        courseId: course,
+        type: 'test',
+        content: {},
+        contentHash: 'x',
+        createdBy: ids.olivia,
+      })
+      .returning();
+    await db
+      .update(resources)
+      .set({ headRevisionId: wrongType?.id })
+      .where(eq(resources.id, mistyped.id));
 
     const report = (await call('olivia', 'GET', `/api/courses/${course}/releases/validation`)).body;
     const codes = (list: { code: string; resourceId?: string }[]) =>
@@ -141,6 +158,7 @@ describe('publication', () => {
       [
         'broken_reference:-',
         `broken_reference:${borrowed.id}`,
+        `broken_reference:${mistyped.id}`,
         `no_revision:${empty2.id}`,
         `unconverted_deck:${deck.id}`,
       ].sort(),
@@ -158,7 +176,7 @@ describe('publication', () => {
     await db
       .update(resources)
       .set({ archivedAt: now })
-      .where(sql`${resources.id} in (${empty2.id}, ${borrowed.id})`);
+      .where(sql`${resources.id} in (${empty2.id}, ${borrowed.id}, ${mistyped.id})`);
     await db
       .update(resourceRevisions)
       .set({ derived: { status: 'ready' } })
