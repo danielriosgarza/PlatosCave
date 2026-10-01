@@ -250,12 +250,18 @@ describe('class release and adoption', () => {
     for (const [who, classId] of [
       ['sam', ids.classA],
       ['bea', ids.classB],
-      ['previewB', ids.classB],
     ] as const) {
       const view = (await release(who, classId)).body;
       expect(view.release.id, who).toBe(ids.releaseV1);
       expect(pins(view), who).toEqual(v1);
     }
+    // Class B's draft preview (P1-15) studies the edited draft, not the class's release.
+    const draft = (await release('previewB', ids.classB)).body;
+    expect(draft.release).toBeNull();
+    expect(pins(draft)).toEqual([
+      `Draft title: Samples vary@${edited.id}`,
+      `Draft title: Sampling quiz@${ids.samplingQuizV1}`,
+    ]);
 
     // The instructor sees what adopting v2 changes, then adopts it in class A only.
     const preview = await call(

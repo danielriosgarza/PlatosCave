@@ -183,6 +183,8 @@ async function resolveClass(
 ): Promise<Resolution> {
   const { user } = base;
   if (!classId || !UUID.test(classId)) return deny(404, 'classId is not a uuid');
+  // A preview principal's course grants are its owner's: it studies the course draft (ADR-0003).
+  const courseUser = user.kind === 'preview' && user.ownerUserId ? user.ownerUserId : user.id;
   const [row] = await db
     .select({
       className: classes.name,
@@ -195,6 +197,7 @@ async function resolveClass(
       manageMembers: classMemberships.manageMembers,
       isPreview: classMemberships.isPreview,
       ownsCourse: courseMemberships.owner,
+      editsCourse: courseMemberships.editor,
     })
     .from(classes)
     .innerJoin(courses, eq(courses.id, classes.courseId))
@@ -204,7 +207,10 @@ async function resolveClass(
     )
     .leftJoin(
       courseMemberships,
-      and(eq(courseMemberships.courseId, classes.courseId), eq(courseMemberships.userId, user.id)),
+      and(
+        eq(courseMemberships.courseId, classes.courseId),
+        eq(courseMemberships.userId, courseUser),
+      ),
     )
     .where(eq(classes.id, classId));
   if (!row) return deny(404, 'no such class');
@@ -225,6 +231,10 @@ async function resolveClass(
   // A preview principal only ever acts through its preview membership, and vice versa.
   if (row.id === null || row.isPreview !== (user.kind === 'preview')) {
     return deny(404, 'not a member of this class');
+  }
+  // A draft preview lasts only while its owner may still edit the course draft it shows.
+  if (user.kind === 'preview' && !row.ownsCourse && !row.editsCourse) {
+    return deny(404, 'preview owner no longer edits this course');
   }
   if (scope.role !== 'any' && row.role !== scope.role) {
     return deny(403, `needs class role ${scope.role}`);

@@ -3,6 +3,8 @@ import type { ClassScope, CourseScope } from '../auth/scope';
 import { loadClassTopics } from '../db/classTopics';
 import type { Db } from '../db/client';
 import { releaseResources, resourceRevisions, storageObjects } from '../db/schema';
+import { openToStudent } from './availability';
+import { draftSnapshot } from './releases';
 import { type Disposition, keyInScope, mintContentToken } from './tokens';
 
 const EXTENSIONS: Record<string, string> = {
@@ -80,6 +82,7 @@ export function mintContentUrl(
  * see that resource now: students only see visible resources whose release time has passed;
  * instructors see every resource of the release. Students also need the topic to be open
  * (not prerequisite-locked or still scheduled). Anything else is null (the route answers 404).
+ * A draft preview finds objects of the draft snapshot instead, under the same rules.
  */
 export async function findReleasedObject(
   db: Db,
@@ -88,7 +91,9 @@ export async function findReleasedObject(
   key: string,
   now: Date,
 ): Promise<{ key: string; contentType: string; title: string } | null> {
-  if (!scope.releaseId || !key.startsWith(`courses/${scope.courseId}/`)) return null;
+  if (!key.startsWith(`courses/${scope.courseId}/`)) return null;
+  if (scope.membership.isPreview) return findDraftObject(db, scope, revisionId, key, now);
+  if (!scope.releaseId) return null;
   const studentView =
     scope.role === 'student'
       ? and(
@@ -120,16 +125,50 @@ export async function findReleasedObject(
     )
     .limit(1);
   if (!row) return null;
-  // The same availability the topic list shows: a locked topic's media is not downloadable (§4).
-  if (scope.role === 'student') {
-    const { topics } = await loadClassTopics(db, scope, now);
-    const topic = topics.find((t) => t.releaseTopicId === row.releaseTopicId);
-    if (
-      !topic ||
-      (topic.availability.state !== 'available' && topic.availability.state !== 'complete')
-    )
-      return null;
-  }
+  if (!(await topicOpens(db, scope, row.releaseTopicId, now))) return null;
   const { releaseTopicId: _topic, ...object } = row;
   return object;
+}
+
+/** The same availability the topic list shows: a locked topic's media is not downloadable (§4). */
+async function topicOpens(db: Db, scope: ClassScope, releaseTopicId: string, now: Date) {
+  if (scope.role !== 'student') return true;
+  const { topics } = await loadClassTopics(db, scope, now);
+  const topic = topics.find((t) => t.releaseTopicId === releaseTopicId);
+  return topic?.availability.state === 'available' || topic?.availability.state === 'complete';
+}
+
+/**
+ * The draft-preview counterpart of `findReleasedObject`: one object of a head revision in the
+ * course draft snapshot, under the same student rules (ADR-0003).
+ */
+async function findDraftObject(
+  db: Db,
+  scope: ClassScope,
+  revisionId: string,
+  key: string,
+  now: Date,
+): Promise<{ key: string; contentType: string; title: string } | null> {
+  const draft = await draftSnapshot(db, scope);
+  const resource = draft.resources.find(
+    (r) => r.revisionId === revisionId && (scope.role !== 'student' || openToStudent(r, now)),
+  );
+  if (!resource) return null;
+  const [row] = await db
+    .select({ key: storageObjects.key, contentType: storageObjects.contentType })
+    .from(resourceRevisions)
+    .innerJoin(
+      storageObjects,
+      and(eq(storageObjects.key, key), eq(storageObjects.courseId, resourceRevisions.courseId)),
+    )
+    .where(
+      and(
+        eq(resourceRevisions.id, revisionId),
+        eq(resourceRevisions.courseId, scope.courseId),
+        sql`${key} = any(${resourceRevisions.objectKeys})`,
+      ),
+    )
+    .limit(1);
+  if (!row || !(await topicOpens(db, scope, resource.releaseTopicId, now))) return null;
+  return { ...row, title: resource.title };
 }

@@ -9,6 +9,7 @@ import {
   type Tab,
   type TopicAvailability,
 } from '../content/availability';
+import { draftSnapshot } from '../content/releases';
 import type { Db } from './client';
 import {
   classMemberships,
@@ -70,22 +71,22 @@ async function instructorNames(db: Db, scope: ClassScope): Promise<string[]> {
 }
 
 /**
- * The syllabus of the class's adopted release as the caller may see it (§4): one query path for
- * the topic list and for the download gate, so a UI lock and a media refusal cannot disagree.
- * Reads only the adopted release (ADR-0003); drafts are unreachable from here.
+ * Topic and resource rows of the class's adopted release, or of the course draft for a draft
+ * preview (ADR-0003: a preview principal reads the draft snapshot, never the adopted release).
  */
-export async function loadClassTopics(db: Db, scope: ClassScope, now: Date): Promise<ClassTopics> {
-  const base = { cohort: scope.className, instructors: await instructorNames(db, scope) };
-  const empty = { ...base, release: null, topics: [], resume: null, reviewedCount: 0 };
-  if (!scope.releaseId) return empty;
+async function syllabusRows(db: Db, scope: ClassScope) {
+  if (scope.membership.isPreview) {
+    const draft = await draftSnapshot(db, scope);
+    return { release: null, topicRows: draft.topics, resourceRows: draft.resources };
+  }
+  if (!scope.releaseId) return undefined;
   const [release] = await db
     .select({ id: courseReleases.id, version: courseReleases.version })
     .from(courseReleases)
     .where(
       and(eq(courseReleases.id, scope.releaseId), eq(courseReleases.courseId, scope.courseId)),
     );
-  if (!release) return empty;
-
+  if (!release) return undefined;
   const topicRows = await db
     .select()
     .from(releaseTopics)
@@ -101,6 +102,20 @@ export async function loadClassTopics(db: Db, scope: ClassScope, now: Date): Pro
     })
     .from(releaseResources)
     .where(eq(releaseResources.releaseId, release.id));
+  return { release, topicRows, resourceRows };
+}
+
+/**
+ * The syllabus of the class's adopted release as the caller may see it (§4): one query path for
+ * the topic list and for the download gate, so a UI lock and a media refusal cannot disagree.
+ * Reads only the adopted release (ADR-0003); a draft preview reads the draft snapshot instead.
+ */
+export async function loadClassTopics(db: Db, scope: ClassScope, now: Date): Promise<ClassTopics> {
+  const base = { cohort: scope.className, instructors: await instructorNames(db, scope) };
+  const empty = { ...base, release: null, topics: [], resume: null, reviewedCount: 0 };
+  const source = await syllabusRows(db, scope);
+  if (!source) return empty;
+  const { release, topicRows, resourceRows } = source;
 
   const forStudent = scope.role === 'student';
   const inputs: (AvailabilityTopic & { id: string })[] = topicRows.map((t) => ({
