@@ -1,8 +1,15 @@
+import { useQuery } from '@tanstack/react-query';
 import { createFileRoute, Link } from '@tanstack/react-router';
-import styles from '../../components/Page.module.css';
-import { type Me, studyingClasses, teachingContexts, useSession } from '../../session/useSession';
+import { useState } from 'react';
+import page from '../../components/Page.module.css';
+import { CourseMark } from '../../courses/CourseMark';
+import styles from '../../courses/Courses.module.css';
+import { CreateCourseForm, Dialog, type Joined, JoinForm } from '../../courses/Dialogs';
+import { type Cards, type ClassCard, type CourseCard, coursesQuery } from '../../courses/queries';
+import { useSession } from '../../session/useSession';
 
 type View = 'student' | 'instructor';
+type Filter = 'all' | 'progress' | 'archived';
 
 export const Route = createFileRoute('/_authed/courses/')({
   validateSearch: (search: Record<string, unknown>): { view?: View } => ({
@@ -19,141 +26,449 @@ export const Route = createFileRoute('/_authed/courses/')({
 function Courses() {
   const session = useSession();
   const { view } = Route.useSearch();
-  if (session.status !== 'signed-in') return <main className={styles.index} aria-busy="true" />;
+  const cards = useQuery(coursesQuery);
+  if (session.status !== 'signed-in') return <main className={page.index} aria-busy="true" />;
+  if (cards.isError && !cards.data) {
+    return (
+      <main className={page.index}>
+        <h1>Your courses</h1>
+        <div className={page.feedback} role="alert">
+          <p>Your courses could not be loaded.</p>
+          <p>
+            <button type="button" className={page.textButton} onClick={() => void cards.refetch()}>
+              Try again
+            </button>
+          </p>
+        </div>
+      </main>
+    );
+  }
+  if (!cards.data) return <main className={page.index} aria-busy="true" />;
   // Without an explicit view, open the context the person actually holds: someone who only
   // teaches starts on Courses you teach, everyone else on Your courses (§3).
-  const { classes, courses } = teachingContexts(session.me);
-  const onlyTeaches =
-    (classes.length > 0 || courses.length > 0) && studyingClasses(session.me).length === 0;
-  return <CoursesFor me={session.me} view={view ?? (onlyTeaches ? 'instructor' : 'student')} />;
+  const studying = cards.data.classes.some((c) => c.role === 'student');
+  const teaches = teachesAnything(cards.data);
+  return (
+    <CoursesFor
+      cards={cards.data}
+      view={view ?? (teaches && !studying ? 'instructor' : 'student')}
+    />
+  );
 }
 
-function CoursesFor({ me, view }: { me: Me; view: View }) {
-  const studying = studyingClasses(me);
-  const teaching = teachingContexts(me);
-  const teachesAnything = teaching.classes.length > 0 || teaching.courses.length > 0;
+const teachesAnything = (cards: Cards) =>
+  cards.courses.length > 0 || cards.classes.some((c) => c.role === 'instructor');
+
+function CoursesFor({ cards, view }: { cards: Cards; view: View }) {
+  const studying = cards.classes.filter((c) => c.role === 'student');
+  const teaching = cards.classes.filter((c) => c.role === 'instructor');
+  const teaches = teachesAnything(cards);
   // A person holding both roles can switch between the two contexts (§3).
-  const canSwitch = teachesAnything && studying.length > 0;
+  const canSwitch = teaches && studying.length > 0;
+  const [dialog, setDialog] = useState<'join' | 'create' | null>(null);
+  const [filter, setFilter] = useState<Filter>('all');
+  const [search, setSearch] = useState('');
+  // The outcome stays on the page after the dialog closes and the cards reload.
+  const [notice, setNotice] = useState<{ text: string; classId?: string } | null>(null);
+
+  const onJoined = (joined: Joined) => {
+    setNotice({
+      text: joined.alreadyMember
+        ? `You are already in ${joined.courseTitle} · ${joined.className}.`
+        : `You joined ${joined.courseTitle} · ${joined.className}.`,
+      classId: joined.classId,
+    });
+    setDialog(null);
+  };
+
+  // An empty student account shows the join form itself rather than a dialog (§4).
+  const emptyStudent = view === 'student' && studying.length === 0;
+  const hasContent = view === 'instructor' ? teaches : studying.length > 0;
 
   return (
-    <main className={styles.index}>
-      <div className={`${styles.row} ${styles.between}`}>
+    <main className={page.index}>
+      <div className={`${page.row} ${page.between}`}>
         <h1>{view === 'instructor' ? 'Courses you teach' : 'Your courses'}</h1>
-        {canSwitch ? (
-          <fieldset className={`${styles.row} ${styles.group}`} aria-label="Context">
-            <Link
-              to="/courses"
-              search={{ view: 'student' }}
-              className={styles.link}
-              aria-current={view === 'student' ? 'page' : undefined}
-            >
-              Student view
-            </Link>
-            <Link
-              to="/courses"
-              search={{ view: 'instructor' }}
-              className={styles.link}
-              aria-current={view === 'instructor' ? 'page' : undefined}
-            >
-              Instructor view
-            </Link>
-          </fieldset>
-        ) : null}
+        <div className={page.row}>
+          {canSwitch ? (
+            <fieldset className={`${page.row} ${page.group}`} aria-label="Context">
+              <Link
+                to="/courses"
+                search={{ view: 'student' }}
+                className={page.link}
+                aria-current={view === 'student' ? 'page' : undefined}
+              >
+                Student view
+              </Link>
+              <Link
+                to="/courses"
+                search={{ view: 'instructor' }}
+                className={page.link}
+                aria-current={view === 'instructor' ? 'page' : undefined}
+              >
+                Instructor view
+              </Link>
+            </fieldset>
+          ) : null}
+          {view === 'student' && !emptyStudent ? (
+            <button type="button" className={page.outline} onClick={() => setDialog('join')}>
+              Join a class
+            </button>
+          ) : null}
+          {view === 'instructor' && teaches ? (
+            <button type="button" className={page.outline} onClick={() => setDialog('create')}>
+              Create course
+            </button>
+          ) : null}
+        </div>
       </div>
-      {view === 'student' && teachesAnything && !canSwitch ? (
-        <p className={styles.intro}>
-          <Link to="/courses" search={{ view: 'instructor' }} className={styles.link}>
+
+      {notice ? (
+        <div className={`${page.feedback} ${page.row}`} role="status">
+          <span>{notice.text}</span>
+          {notice.classId ? (
+            <Link
+              to="/classes/$classId/topics"
+              params={{ classId: notice.classId }}
+              className={page.link}
+            >
+              Open the course
+            </Link>
+          ) : null}
+        </div>
+      ) : null}
+
+      {view === 'student' && teaches && !canSwitch ? (
+        <p className={page.intro}>
+          <Link to="/courses" search={{ view: 'instructor' }} className={page.link}>
             Go to the courses you teach
           </Link>
         </p>
       ) : null}
-      {view === 'instructor' ? (
-        <InstructorView me={me} teachesAnything={teachesAnything} />
-      ) : (
-        <ClassList heading={null} classes={studying} empty="You are not enrolled in a class." />
-      )}
-    </main>
-  );
-}
 
-function InstructorView({ me, teachesAnything }: { me: Me; teachesAnything: boolean }) {
-  const teaching = teachingContexts(me);
-  const studying = studyingClasses(me);
-  if (!teachesAnything) {
-    return (
-      <>
-        <div className={styles.feedback} role="status">
+      {view === 'instructor' && !teaches ? (
+        <div className={page.feedback} role="status">
           <h2>This account has no instructor access</h2>
           <p>
             Instructor access comes from an invitation by a course owner. Signing in through the
             instructor entrance does not grant it.
           </p>
         </div>
-        <h2 style={{ marginTop: 32 }}>Your enrolled classes</h2>
-        <ClassList heading={null} classes={studying} empty="You are not enrolled in a class." />
-      </>
-    );
+      ) : null}
+
+      {emptyStudent ? (
+        <section className={page.feedback} aria-labelledby="join-heading">
+          <h2 id="join-heading">Join a class</h2>
+          <p>Enter the invitation code from your instructor to see the class here.</p>
+          <JoinForm onJoined={onJoined} />
+        </section>
+      ) : null}
+
+      {hasContent ? (
+        <>
+          <Tools filter={filter} onFilter={setFilter} search={search} onSearch={setSearch} />
+          {view === 'instructor' ? (
+            <InstructorCards
+              classes={teaching}
+              courses={cards.courses}
+              filter={filter}
+              search={search}
+            />
+          ) : (
+            <StudentCards classes={studying} filter={filter} search={search} />
+          )}
+        </>
+      ) : null}
+
+      {view === 'instructor' && !teaches && studying.length > 0 ? (
+        <>
+          <h2 className={styles.sectionHeading}>Your enrolled classes</h2>
+          <div style={{ marginTop: 20 }}>
+            <StudentCards classes={studying} filter="all" search="" />
+          </div>
+        </>
+      ) : null}
+
+      {dialog === 'join' ? (
+        <Dialog title="Join a class" onClose={() => setDialog(null)}>
+          <JoinForm onJoined={onJoined} onDone={() => setDialog(null)} />
+        </Dialog>
+      ) : null}
+      {dialog === 'create' ? (
+        <Dialog title="Create course" onClose={() => setDialog(null)}>
+          <CreateCourseForm
+            onCreated={(created) => {
+              setNotice({ text: `${created.title} was created. You own it.` });
+              setDialog(null);
+            }}
+            onDone={() => setDialog(null)}
+          />
+        </Dialog>
+      ) : null}
+    </main>
+  );
+}
+
+const FILTERS: [Filter, string][] = [
+  ['all', 'All'],
+  ['progress', 'In progress'],
+  ['archived', 'Archived'],
+];
+
+function Tools({
+  filter,
+  onFilter,
+  search,
+  onSearch,
+}: {
+  filter: Filter;
+  onFilter: (f: Filter) => void;
+  search: string;
+  onSearch: (s: string) => void;
+}) {
+  return (
+    <div className={styles.tools}>
+      <fieldset className={styles.filters} aria-label="Filter courses">
+        {FILTERS.map(([value, label]) => (
+          <button
+            key={value}
+            type="button"
+            aria-pressed={filter === value}
+            onClick={() => onFilter(value)}
+          >
+            {label}
+          </button>
+        ))}
+      </fieldset>
+      <label className={styles.search}>
+        Search
+        <input
+          type="search"
+          placeholder="Course title"
+          value={search}
+          onChange={(e) => onSearch(e.target.value)}
+        />
+      </label>
+    </div>
+  );
+}
+
+const matchesTitle = (title: string, search: string) =>
+  title.toLowerCase().includes(search.trim().toLowerCase());
+
+/** "In progress" is anything not archived the person has started: a saved place or reviewed topic. */
+function matchesFilter(c: ClassCard, filter: Filter): boolean {
+  if (filter === 'archived') return c.archived;
+  if (filter === 'progress') {
+    return !c.archived && (c.role === 'instructor' || c.resume !== null || c.reviewed.count > 0);
   }
+  return true;
+}
+
+function Empty() {
+  return (
+    <li className={styles.empty}>
+      <h2>No matching courses</h2>
+      <p className={page.muted} style={{ marginTop: 12 }}>
+        Try a different title or choose All.
+      </p>
+    </li>
+  );
+}
+
+function StudentCards({
+  classes,
+  filter,
+  search,
+}: {
+  classes: ClassCard[];
+  filter: Filter;
+  search: string;
+}) {
+  const visible = classes.filter(
+    (c) => matchesFilter(c, filter) && matchesTitle(c.courseTitle, search),
+  );
+  // Several enrolments in one course share a card with a class chooser.
+  const groups = new Map<string, ClassCard[]>();
+  for (const c of visible) groups.set(c.courseId, [...(groups.get(c.courseId) ?? []), c]);
+  return (
+    <ul className={styles.grid} aria-label="Your courses">
+      {groups.size === 0 ? <Empty /> : null}
+      {[...groups.values()].map((group) => (
+        <StudentCard key={group[0]?.courseId} group={group} />
+      ))}
+    </ul>
+  );
+}
+
+const reviewedText = (c: ClassCard) => `${c.reviewed.count} of ${c.reviewed.total} reviewed`;
+
+function resumeLabel(c: ClassCard): string | null {
+  return c.resume ? `${c.resume.resourceTitle} · ${c.resume.topicTitle}` : null;
+}
+
+function ResumeLink({ c }: { c: ClassCard }) {
+  if (!c.resume) return null;
+  return (
+    <Link
+      to="/classes/$classId/topics/$topicId/$tab"
+      params={{ classId: c.classId, topicId: c.resume.topicId, tab: c.resume.tab }}
+    >
+      Resume {resumeLabel(c)}
+    </Link>
+  );
+}
+
+function StudentCard({ group }: { group: ClassCard[] }) {
+  const [choosing, setChoosing] = useState(false);
+  const first = group[0];
+  if (!first) return null;
+  const single = group.length === 1;
+  return (
+    <li className={styles.card}>
+      {single ? (
+        <Link
+          to="/classes/$classId/topics"
+          params={{ classId: first.classId }}
+          className={styles.open}
+          aria-label={`Open ${first.courseTitle} · ${first.className}`}
+        >
+          <CourseMark seed={first.courseId} className={styles.mark} />
+          <h2>{first.courseTitle}</h2>
+          <span className={styles.meta}>
+            {first.topicCount} topics · {first.className}
+          </span>
+        </Link>
+      ) : (
+        <div className={styles.open}>
+          <CourseMark seed={first.courseId} className={styles.mark} />
+          <h2>{first.courseTitle}</h2>
+          <span className={styles.meta}>
+            {first.topicCount} topics · {group.length} classes
+          </span>
+        </div>
+      )}
+      <div className={styles.status}>
+        {single ? (
+          <>
+            <span>
+              {first.archived ? 'Archived · ' : ''}
+              {reviewedText(first)}
+            </span>
+            {first.resume ? <ResumeLink c={first} /> : <span>Not started</span>}
+          </>
+        ) : (
+          <button type="button" aria-expanded={choosing} onClick={() => setChoosing((v) => !v)}>
+            Choose class
+          </button>
+        )}
+      </div>
+      {!single && choosing ? (
+        <ul className={styles.chooser} aria-label={`Classes of ${first.courseTitle}`}>
+          {group.map((c) => (
+            <li key={c.classId}>
+              <Link to="/classes/$classId/topics" params={{ classId: c.classId }}>
+                {c.className}
+              </Link>
+              <span className={styles.meta}>
+                {c.archived ? 'Archived · ' : ''}
+                {reviewedText(c)}
+              </span>
+              <ResumeLink c={c} />
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {single ? <Progress c={first} /> : null}
+    </li>
+  );
+}
+
+function Progress({ c }: { c: ClassCard }) {
+  const share = c.reviewed.total > 0 ? (100 * c.reviewed.count) / c.reviewed.total : 0;
+  return (
+    <span className={styles.progress} role="img" aria-label={reviewedText(c)}>
+      <span style={{ width: `${share}%` }} />
+    </span>
+  );
+}
+
+function InstructorCards({
+  classes,
+  courses,
+  filter,
+  search,
+}: {
+  classes: ClassCard[];
+  courses: CourseCard[];
+  filter: Filter;
+  search: string;
+}) {
+  const visibleClasses = classes.filter(
+    (c) => matchesFilter(c, filter) && matchesTitle(c.courseTitle, search),
+  );
+  // Course permissions have no archived state: they appear under All and In progress.
+  const visibleCourses =
+    filter === 'archived' ? [] : courses.filter((c) => matchesTitle(c.title, search));
+  const nothing = visibleClasses.length === 0 && visibleCourses.length === 0;
   return (
     <>
-      <ClassList heading="Classes" classes={teaching.classes} empty="You teach no class yet." />
-      {teaching.courses.length > 0 ? (
-        <>
-          <h2 style={{ marginTop: 32 }}>Courses</h2>
-          <ul className={styles.list}>
-            {teaching.courses.map((c) => (
-              <li key={c.courseId}>
-                <span>{c.title}</span>
-                <span className={`${styles.small} ${styles.muted}`}>
-                  {c.owner ? 'Owner' : c.editor ? 'Editor' : 'Publisher'}
+      {nothing ? (
+        <ul className={styles.grid}>
+          <Empty />
+        </ul>
+      ) : null}
+      {visibleClasses.length > 0 ? (
+        <ul className={styles.grid} aria-label="Classes you teach">
+          {visibleClasses.map((c) => (
+            <li key={c.classId} className={styles.card}>
+              <Link
+                to="/classes/$classId/topics"
+                params={{ classId: c.classId }}
+                className={styles.open}
+                aria-label={`Open ${c.courseTitle} · ${c.className}`}
+              >
+                <CourseMark seed={c.courseId} className={styles.mark} />
+                <h2>{c.courseTitle}</h2>
+                <span className={styles.meta}>
+                  {c.topicCount} topics · {c.className}
                 </span>
+              </Link>
+              <div className={styles.status}>
+                <span>
+                  {c.archived ? 'Archived · ' : ''}
+                  {c.studentCount ?? 0} {c.studentCount === 1 ? 'student' : 'students'}
+                </span>
+                <Link to="/classes/$classId/review" params={{ classId: c.classId }}>
+                  Class review
+                </Link>
+              </div>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+      {visibleCourses.length > 0 ? (
+        <>
+          <h2 className={styles.sectionHeading}>Courses</h2>
+          <ul className={styles.grid} style={{ marginTop: 20 }} aria-label="Courses you hold">
+            {visibleCourses.map((c) => (
+              <li key={c.courseId} className={styles.card}>
+                <div className={styles.open}>
+                  <CourseMark seed={c.courseId} className={styles.mark} />
+                  <h2>{c.title}</h2>
+                  <span className={styles.meta}>
+                    {c.topicCount} draft topics · {c.classCount}{' '}
+                    {c.classCount === 1 ? 'class' : 'classes'}
+                  </span>
+                </div>
+                <div className={styles.status}>
+                  <span>{c.owner ? 'Owner' : c.publisher ? 'Publisher' : 'Editor'}</span>
+                </div>
               </li>
             ))}
           </ul>
         </>
       ) : null}
-    </>
-  );
-}
-
-function ClassList({
-  heading,
-  classes,
-  empty,
-}: {
-  heading: string | null;
-  classes: Me['classes'];
-  empty: string;
-}) {
-  return (
-    <>
-      {heading ? <h2 style={{ marginTop: 32 }}>{heading}</h2> : null}
-      {classes.length === 0 ? (
-        <p className={styles.intro}>{empty}</p>
-      ) : (
-        <ul className={styles.list}>
-          {classes.map((c) => (
-            <li key={c.classId}>
-              <Link
-                to="/classes/$classId/topics"
-                params={{ classId: c.classId }}
-                className={styles.link}
-              >
-                {c.courseTitle} · {c.className}
-              </Link>
-              {c.role === 'instructor' ? (
-                <Link
-                  to="/classes/$classId/review"
-                  params={{ classId: c.classId }}
-                  className={styles.link}
-                >
-                  Class review
-                </Link>
-              ) : null}
-            </li>
-          ))}
-        </ul>
-      )}
     </>
   );
 }

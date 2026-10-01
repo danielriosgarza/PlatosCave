@@ -72,6 +72,12 @@ export interface CourseScope extends ScopeBase {
   readonly grants: { owner: boolean; editor: boolean; publisher: boolean };
 }
 
+/**
+ * What `forCourse` accepts: a course scope, or a class scope (which knows its course), so
+ * course-side effects of a class action still go through a resolved scope (ADR-0002).
+ */
+export type CourseContext = CourseScope | ClassContext;
+
 export type ScopeFor<S extends Scope> = S extends { kind: 'class'; grant: 'manage_members' }
   ? ClassManagerScope
   : S extends { kind: 'class' }
