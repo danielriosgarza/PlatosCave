@@ -1,4 +1,5 @@
-import { createSession } from '../../src/auth/sessions';
+import { createSession, sessionCookieHeader } from '../../src/auth/sessions';
+import { DEV_SESSION_SECRET } from '../../src/config';
 import type { Db } from '../../src/db/client';
 import {
   addInstructor,
@@ -36,6 +37,9 @@ export const people: PersonName[] = [
   'olivia',
   'previewB',
 ];
+
+/** The Cookie header a browser sends for `token`, signed with the non-production secret. */
+export const cookieFor = (token: string): string => sessionCookieHeader(token, DEV_SESSION_SECRET);
 
 export interface World {
   ids: typeof ids;
@@ -77,7 +81,7 @@ export async function buildWorld(db: Db, now = new Date()): Promise<World> {
   const cookie = {} as Record<PersonName, string>;
   for (const key of people) {
     const { token } = await createSession(db, ids[key], { now });
-    cookie[key] = `pc_session=${token}`;
+    cookie[key] = cookieFor(token);
   }
   return { ids, cookie };
 }

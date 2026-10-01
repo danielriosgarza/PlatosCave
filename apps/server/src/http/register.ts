@@ -1,3 +1,4 @@
+import type { RateLimitOptions } from '@fastify/rate-limit';
 import type { RouteContract, Scope } from '@parallax/contracts';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { z } from 'zod';
@@ -56,8 +57,10 @@ export function registerRoute<C extends RouteContract>(
   app: FastifyInstance,
   contract: C,
   handler: (args: RouteArgs<C>) => Promise<z.input<C['response']>> | z.input<C['response']>,
+  options: { rateLimit?: RateLimitOptions } = {},
 ): void {
   checkScopeParams(contract);
+  const status = contract.status ?? 200;
   app.route({
     method: contract.method,
     url: contract.path,
@@ -66,9 +69,13 @@ export function registerRoute<C extends RouteContract>(
       ...(contract.params && { params: contract.params }),
       ...(contract.query && { querystring: contract.query }),
       ...(contract.body && { body: contract.body }),
-      response: { 200: contract.response },
+      response: { [status]: contract.response },
     },
-    config: { scope: contract.scope, contract },
+    config: {
+      scope: contract.scope,
+      contract,
+      ...(options.rateLimit && { rateLimit: options.rateLimit }),
+    },
     onRequest: async (req, reply) => {
       const result = await resolveScope(req, contract.scope as Scope, app.resolverDeps);
       if (!result.ok) {
@@ -78,14 +85,16 @@ export function registerRoute<C extends RouteContract>(
       }
       req.parallaxScope = result.scope;
     },
-    handler: async (req, reply) =>
-      handler({
+    handler: async (req, reply) => {
+      reply.code(status);
+      return handler({
         params: req.params,
         query: req.query,
         body: req.body,
         scope: req.parallaxScope,
         req,
         reply,
-      } as RouteArgs<C>),
+      } as RouteArgs<C>);
+    },
   });
 }
