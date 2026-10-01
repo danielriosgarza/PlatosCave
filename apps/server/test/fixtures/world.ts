@@ -1,11 +1,12 @@
 import { createHash } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
 import type { ClassManagerScope, ClassScope, CourseScope, UserScope } from '../../src/auth/scope';
-import { createSession, sessionCookieHeader } from '../../src/auth/sessions';
+import { sessionCookieHeader } from '../../src/auth/sessions';
 import { DEV_SESSION_SECRET } from '../../src/config';
-import { adoptRelease } from '../../src/content/adoption';
-import { publishRelease } from '../../src/content/releases';
+import { createSession } from '../../src/db/auth/sessions';
 import type { Db } from '../../src/db/client';
+import { adoptRelease } from '../../src/db/content/adoption';
+import { publishRelease } from '../../src/db/content/releases';
 import {
   createClass,
   createCourse,

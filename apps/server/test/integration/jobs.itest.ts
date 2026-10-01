@@ -8,11 +8,11 @@ import {
   NoRecentAuthError,
   resolveActorScope,
 } from '../../src/auth/scope';
-import { validateDrafts } from '../../src/content/releases';
 import type { Db } from '../../src/db/client';
+import { validateDrafts } from '../../src/db/content/releases';
+import { createBoss } from '../../src/db/jobs/boss';
+import { listResourceJobStatus, setDerivedStatus } from '../../src/db/jobs/derived';
 import { classMemberships, resourceRevisions, resources, topics } from '../../src/db/schema';
-import { createBoss } from '../../src/jobs/boss';
-import { listResourceJobStatus, setDerivedStatus } from '../../src/jobs/derived';
 import {
   defineScopedJob,
   ensureQueues,
