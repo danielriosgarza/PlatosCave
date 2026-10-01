@@ -26,6 +26,9 @@ export async function readAnotherClass(deps: { db: Db }, classId: string) {
   client.createDb('postgres://localhost/x'); // raw-query
   // biome-ignore lint/complexity/useLiteralKeys: the fixture exercises computed member access
   await deps.db['select']().from(users); // raw-query
+  await deps.db.insert(users).values([]); // raw-query
+  await deps.db.update(users).set({}); // raw-query
+  await deps.db.delete(users); // raw-query
   return rows;
 }
 
@@ -40,6 +43,8 @@ export function viaAccessor(deps: { db?: Db }) {
     asserted,
     db().select().from(users), // raw-query
     db().query.users.findMany(), // raw-query
+    // biome-ignore lint/style/noNonNullAssertion: the fixture exercises a non-null accessor result
+    db()!.select(), // raw-query
   ];
 }
 
@@ -52,16 +57,27 @@ export function wrappedReceivers(deps: { db: Db }) {
     // biome-ignore lint/complexity/useLiteralKeys: the fixture exercises a computed receiver
     deps['db'].select(), // raw-query
     deps.db._.session, // raw-query
+    // biome-ignore lint/style/noNonNullAssertion: the fixture exercises a wrapped non-null receiver
+    (deps.db as Db)!.select(), // raw-query
+    // biome-ignore lint/complexity/useLiteralKeys: the fixture exercises a computed receiver
+    // biome-ignore lint/style/noNonNullAssertion: the fixture exercises a computed non-null receiver
+    deps['db']!.select(), // raw-query
+    (<Db>deps.db).select(), // raw-query
     select,
     open,
   ];
 }
 
 // Must not fire: other names on an object called `db`, and destructuring the deps object.
-export function notTheDatabase(deps: { db: Db; ledger: { db: { withdraw(): number } } }) {
+export function notTheDatabase(deps: {
+  db: Db;
+  ledger: { db: { withdraw(): number } };
+  tools: { open(): void };
+}) {
   const { db } = deps;
+  const { open: createDb } = deps.tools;
   const cache = { db: new Map<string, number>() };
   // Documented limit, asserted neither way: any object stored under `db` is treated as the handle.
   cache.db.delete('key'); // known-false-positive
-  return [deps.ledger.db.withdraw(), db];
+  return [deps.ledger.db.withdraw(), db, createDb];
 }
