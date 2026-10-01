@@ -117,7 +117,7 @@ describe('draft editing API', () => {
     const { db } = testDb;
     const [release] = await db
       .insert(courseReleases)
-      .values({ courseId: ids.statistics, version: 1, createdBy: ids.elena })
+      .values({ courseId: ids.statistics, version: 2, createdBy: ids.elena })
       .returning();
     if (!release) throw new Error('no release');
     const [releaseTopic] = await db
@@ -184,8 +184,12 @@ describe('draft editing API', () => {
       .select()
       .from(courseReleases)
       .where(eq(courseReleases.courseId, ids.statistics));
-    expect(releases).toHaveLength(1);
-    expect((await call('bea', 'GET', `/api/classes/${ids.classB}`)).body.releaseId).toBeNull();
+    // The world's v1 and this release: draft edits published nothing.
+    expect(releases).toHaveLength(2);
+    // Class B stays on the release it adopted.
+    expect((await call('bea', 'GET', `/api/classes/${ids.classB}`)).body.releaseId).toBe(
+      ids.releaseV1,
+    );
   });
 
   test('a stale expectedRevision gets 409 with the server copy and overwrites nothing', async () => {
