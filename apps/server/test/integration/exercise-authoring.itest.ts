@@ -3,9 +3,9 @@ import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { buildApp } from '../../src/app';
 import { loadConfig } from '../../src/config';
-import { adoptRelease } from '../../src/content/adoption';
-import { createResource, updateResource } from '../../src/content/drafts';
-import { publishRelease, validateDrafts } from '../../src/content/releases';
+import { adoptRelease } from '../../src/db/content/adoption';
+import { createResource, updateResource } from '../../src/db/content/drafts';
+import { publishRelease, validateDrafts } from '../../src/db/content/releases';
 import { resourceRevisions, resources } from '../../src/db/schema';
 import {
   asClassScope,
