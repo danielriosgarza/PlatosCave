@@ -14,32 +14,29 @@
   "files": [
     {
       "path": "solution.py",
-      "content": "def f():\n    return 1\n"
+      "content": "print(open('data/sample.csv').read(), end='')\n"
     },
     {
-      "path": "tests/hidden_test.py",
-      "content": "from solution import f\nassert f() == 1\n"
+      "path": "data",
+      "content": "not a directory\n"
+    },
+    {
+      "path": "data/sample.csv",
+      "content": "x,y\n1,2\n"
     }
   ],
   "checks": [
     {
-      "name": "One",
-      "kind": "call",
+      "name": "Prints the sample",
+      "kind": "stdio",
       "visibility": "public",
       "file": "solution.py",
-      "function": "f",
       "expected": {
-        "value": 1
+        "stdout": "x,y\n1,2\n"
       },
       "compare": {
         "mode": "exact"
       }
-    },
-    {
-      "name": "Hidden",
-      "kind": "script",
-      "visibility": "hidden",
-      "file": "tests/hidden_test.py"
     }
   ]
 }

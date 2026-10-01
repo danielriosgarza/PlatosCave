@@ -2,7 +2,7 @@
 
 **Status:** Accepted, 2026-09-30
 
-Refined by [docs/design/runner.md](../design/runner.md) (P3-12): the job reaches the sandbox over stdin and the result returns over stdout rather than through `/work`, the harness is baked into the image, and the runner's queues live in their own pg-boss schema `pgboss_exec`. Where the two disagree, the design document is current.
+Refined by [docs/design/runner.md](../design/runner.md) (P3-12): the job reaches the sandbox over stdin and the result returns over stdout rather than through `/work`, the harness is baked into the image, the runner's queues live in their own pg-boss schema `pgboss_exec`, and the harness is pid 1 of the sandbox (`Init: false`, not the `Init: true` of the policy table below). Where the two disagree, the design document is current.
 
 ## Context
 
