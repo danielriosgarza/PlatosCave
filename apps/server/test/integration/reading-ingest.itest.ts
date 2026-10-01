@@ -8,7 +8,7 @@ import { type CourseScope, resolveActorScope } from '../../src/auth/scope';
 import { normaliseText } from '../../src/content/reading';
 import { resourceRevisions, resources, topics } from '../../src/db/schema';
 import { createBoss } from '../../src/jobs/boss';
-import { setDerivedStatus } from '../../src/jobs/derived';
+import { listResourceJobStatus, setDerivedStatus } from '../../src/jobs/derived';
 import readingIngest, { enqueueReadingIngest } from '../../src/jobs/reading-ingest.job';
 import { loadJobs } from '../../src/jobs/registry';
 import { runScopedJob, type ScopedPayload, workScopedJob } from '../../src/jobs/scoped';
@@ -460,6 +460,68 @@ describe('reading.ingest', () => {
     const derived = await derivedOf(running);
     expect(derived.status).toMatchObject({ state: 'queued', jobId: OTHER_JOB });
     expect(derived.pages).toBeUndefined();
+  });
+
+  test('a Retry that cannot be queued leaves a running job’s status, so its result still lands', async () => {
+    const revisionId = await revision('reading_native', { markdown: '# Held' });
+    const running = { ...statusFor(OTHER_JOB), state: 'running' as const };
+    await setDerivedStatus(testDb.db, elena, revisionId, running);
+    const broken = {
+      createQueue: async () => {
+        throw new Error('advisory lock timeout');
+      },
+    } as unknown as PgBoss;
+    await expect(enqueueReadingIngest(broken, testDb.db, elena, revisionId)).rejects.toThrow(
+      'advisory lock timeout',
+    );
+    expect((await derivedOf(revisionId)).status).toEqual(running);
+  });
+
+  test('a pending status lists as failed once its job ended without writing, not before', async () => {
+    const { db } = testDb;
+    /** A revision that is its resource's head, so the job status list shows it. */
+    const headRevision = async (title: string) => {
+      const revisionId = await revision('reading_native', { markdown: `# ${title}` });
+      const [row] = await db
+        .select({ resourceId: resourceRevisions.resourceId })
+        .from(resourceRevisions)
+        .where(eq(resourceRevisions.id, revisionId));
+      if (!row) throw new Error('no revision');
+      await db
+        .update(resources)
+        .set({ headRevisionId: revisionId })
+        .where(eq(resources.id, row.resourceId));
+      return revisionId;
+    };
+    const listed = async (revisionId: string) =>
+      (await listResourceJobStatus(db, elena)).find((r) => r.revisionId === revisionId)?.status;
+
+    // Sent for a student, who is no editor: the worker refuses it and pg-boss dead-letters it.
+    const refused = await headRevision('Refused');
+    const refusedJob = await boss.send(readingIngest.name, {
+      actorId: ids.sam,
+      scope: { kind: 'course', courseId: ids.statistics },
+      input: { revisionId: refused },
+    } satisfies ScopedPayload);
+    if (!refusedJob) throw new Error('not sent');
+    await setDerivedStatus(db, elena, refused, statusFor(refusedJob));
+    for (let i = 0; i < 60 && (await listed(refused))?.state === 'queued'; i++) {
+      await new Promise((r) => setTimeout(r, 250));
+    }
+    expect(await listed(refused)).toMatchObject({
+      state: 'failed',
+      jobId: refusedJob,
+      error: 'Processing stopped without a result',
+    });
+
+    // A job still waiting in its queue, however long, lists as queued.
+    await boss.createQueue('reading.ingest.idle');
+    const waitingJob = await boss.send('reading.ingest.idle', {});
+    if (!waitingJob) throw new Error('not sent');
+    const waiting = await headRevision('Waiting');
+    const old = { ...statusFor(waitingJob), updatedAt: '2026-01-01T00:00:00.000Z' };
+    await setDerivedStatus(db, elena, waiting, old);
+    expect(await listed(waiting)).toEqual(old);
   });
 
   test('an enqueued job is named in the status, so only it may write there', async () => {

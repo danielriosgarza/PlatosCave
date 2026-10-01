@@ -1,9 +1,10 @@
-import { and, asc, eq, isNull, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import type { CourseScope } from '../auth/scope';
 import type { Db } from '../db/client';
 import { resourceRevisions, resources, topics } from '../db/schema';
 import { forCourse } from '../db/scoped';
+import { BOSS_SCHEMA } from './boss';
 
 /**
  * State of the job deriving outputs (conversions, page text, block maps) from one resource
@@ -30,18 +31,25 @@ export const derivedReady = (derived: Record<string, unknown>): boolean =>
  * other's status: the job named in the status owns it.
  */
 export interface StatusGuard {
-  jobId: string | null;
+  jobId?: string | null;
   orUnattached?: boolean;
+  /** Writes only to revisions of these types, so one job never touches another's status. */
+  types?: readonly (typeof resourceRevisions.$inferSelect)['type'][];
 }
 
 const currentJobId = sql`${resourceRevisions.derived} -> 'status' ->> 'jobId'`;
 
 function guardCondition(guard: StatusGuard | undefined) {
   if (!guard) return undefined;
-  if (guard.jobId === null) return sql`${currentJobId} IS NULL`;
-  return guard.orUnattached
-    ? sql`(${currentJobId} IS NULL OR ${currentJobId} = ${guard.jobId})`
-    : sql`${currentJobId} = ${guard.jobId}`;
+  const types = guard.types ? inArray(resourceRevisions.type, [...guard.types]) : undefined;
+  if (guard.jobId === undefined) return types;
+  const owner =
+    guard.jobId === null
+      ? sql`${currentJobId} IS NULL`
+      : guard.orUnattached
+        ? sql`(${currentJobId} IS NULL OR ${currentJobId} = ${guard.jobId})`
+        : sql`${currentJobId} = ${guard.jobId}`;
+  return and(owner, types);
 }
 
 /**
@@ -68,6 +76,15 @@ export async function setDerivedStatus(
     )
     .returning({ id: resourceRevisions.id });
   return rows.length > 0;
+}
+
+/** `derived.status` of one revision of the scope's course as stored (not validated), if any. */
+export async function readStatus(db: Db, scope: CourseScope, revisionId: string): Promise<unknown> {
+  const [row] = await db
+    .select({ status: sql<unknown>`${resourceRevisions.derived} -> 'status'` })
+    .from(resourceRevisions)
+    .where(and(eq(resourceRevisions.id, revisionId), forCourse(scope, resourceRevisions)));
+  return row?.status ?? null;
 }
 
 /** What a derivation job reads of a revision: its type, content and stored objects. */
@@ -135,27 +152,28 @@ export interface ResourceJobStatus {
 }
 
 /**
- * A job that has shown `queued` or `running` this long is no longer coming: every attempt
- * rewrites the status when it starts and expires after 15 minutes, and retries follow within
- * minutes. It ended without writing (refused, dead-lettered, expired, or the worker died).
+ * pg-boss states in which a job may still write its status; any other state, or no job row at
+ * all, means it ended without writing (refused, dead-lettered, expired past its retries, or
+ * deleted by retention).
  */
-export const STALE_STATUS_MS = 60 * 60 * 1000;
+const LIVE_JOB_STATES = new Set(['created', 'retry', 'active']);
 
 /**
- * `derived.status` as a job wrote it, or the failure shown for one that cannot be read or that
- * stopped without a result (see `STALE_STATUS_MS`), so an editor is offered Retry.
+ * `derived.status` as a job wrote it, or the failure shown for one that cannot be read or whose
+ * job ended without a result, so an editor is offered Retry. `jobState` is the pg-boss state of
+ * the job the status names: a string, null when pg-boss has no such job, undefined when unknown.
  */
 export function readDerivedStatus(
   raw: unknown,
   revisionCreatedAt: Date,
-  now: Date = new Date(),
+  jobState?: string | null,
 ): DerivedStatus | null {
   if (raw === undefined || raw === null) return null;
   const parsed = DerivedStatus.safeParse(raw);
   if (parsed.success) {
-    const { state, updatedAt } = parsed.data;
+    const { state } = parsed.data;
     const pending = state === 'queued' || state === 'running';
-    if (pending && now.getTime() - Date.parse(updatedAt) > STALE_STATUS_MS) {
+    if (pending && jobState !== undefined && !(jobState && LIVE_JOB_STATES.has(jobState))) {
       return { ...parsed.data, state: 'failed', error: 'Processing stopped without a result' };
     }
     return parsed.data;
@@ -192,8 +210,40 @@ export async function listResourceJobStatus(
       and(forCourse(scope, resources), isNull(resources.archivedAt), isNull(topics.archivedAt)),
     )
     .orderBy(asc(topics.position), asc(resources.position));
-  return rows.map(({ status, revisionCreatedAt, ...row }) => ({
-    ...row,
-    status: revisionCreatedAt ? readDerivedStatus(status, revisionCreatedAt) : null,
-  }));
+  const pendingJobs = rows.flatMap(({ status }) => {
+    const parsed = DerivedStatus.safeParse(status);
+    const pending = parsed.data?.state === 'queued' || parsed.data?.state === 'running';
+    return pending && parsed.data?.jobId ? [parsed.data.jobId] : [];
+  });
+  const states = await jobStates(db, pendingJobs);
+  return rows.map(({ status, revisionCreatedAt, ...row }) => {
+    const jobId = DerivedStatus.safeParse(status).data?.jobId;
+    const jobState = states && jobId && isUuid(jobId) ? (states.get(jobId) ?? null) : undefined;
+    return {
+      ...row,
+      status: revisionCreatedAt ? readDerivedStatus(status, revisionCreatedAt, jobState) : null,
+    };
+  });
+}
+
+const isUuid = (id: string) =>
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+
+/**
+ * pg-boss's state of each of these jobs (ids it has no row for are absent), or null when its
+ * tables do not exist (pg-boss never started on this database), so nothing can be concluded.
+ */
+async function jobStates(db: Db, jobIds: string[]): Promise<Map<string, string> | null> {
+  const ids = [...new Set(jobIds.filter(isUuid))];
+  if (ids.length === 0) return new Map();
+  const table = `${BOSS_SCHEMA}.job`;
+  const { rows: found } = await db.execute<{ exists: boolean }>(
+    sql`select to_regclass(${table}) is not null as exists`,
+  );
+  if (!found[0]?.exists) return null;
+  const { rows } = await db.execute<{ id: string; state: string }>(
+    sql`select id::text as id, state::text as state from ${sql.raw(table)}
+        where id = any(${`{${ids.join(',')}}`}::uuid[])`,
+  );
+  return new Map(rows.map((r) => [r.id, r.state]));
 }

@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import type { Element, ElementContent, Nodes, Root } from 'hast';
 import { toString as hastToString } from 'hast-util-to-string';
 import rehypeHighlight from 'rehype-highlight';
@@ -13,6 +12,7 @@ import remarkRehype from 'remark-rehype';
 import { unified } from 'unified';
 import { SKIP, visit } from 'unist-util-visit';
 import { VFile } from 'vfile';
+import { blockId, normaliseText, sha12 } from './text';
 
 /**
  * Native reading ingestion (§8, ADR-0003): Markdown or HTML in, sanitised HTML out, with every
@@ -107,15 +107,7 @@ export const readingSchema: SanitizeSchema = {
   ],
 };
 
-const sha12 = (value: string) => createHash('sha256').update(value).digest('hex').slice(0, 12);
-
-/** Whitespace-collapsed NFC text: what block ids hash, so reflowed source keeps its ids. */
-export const normaliseText = (text: string): string =>
-  text.normalize('NFC').replace(/\s+/g, ' ').trim();
-
-/** ADR-0003: first 12 hex of sha256(normalisedText + ':' + occurrenceIndex). */
-export const blockId = (normalisedText: string, occurrence: number): string =>
-  sha12(`${normalisedText}:${occurrence}`);
+export { blockId, normaliseText };
 
 /** `textContent` of a hast node: all descendant text, no layout. */
 export const textContent = (node: Nodes): string => hastToString(node);
@@ -159,8 +151,9 @@ function liftDisplayMath(tree: Root): void {
     if (parent.tagName === 'p' && parent.children.every((c) => c === el || isBlank(c))) {
       lift();
       // The paragraph becomes the display block itself, keeping its place in the tree.
+      // It keeps its own sanitised attributes (an `id` a link targets, `dir`, `lang`).
       parent.tagName = 'div';
-      parent.properties = el.properties;
+      parent.properties = { ...parent.properties, ...el.properties };
       parent.children = el.children;
       return SKIP;
     }
@@ -232,9 +225,12 @@ function rewriteImages(tree: Root, assets: Record<string, string>, warnings: str
 const isBlockElement = (el: Element): boolean =>
   BLOCK_TAGS.has(el.tagName) || (el.tagName === 'div' && classes(el).includes(MATH_DISPLAY_CLASS));
 
+/** Content that stands on its own inside a wrapper: a block, or a figure (known by its own id). */
+const isNested = (el: Element): boolean => isBlockElement(el) || el.tagName === 'figure';
+
 /**
- * A block whose text all lies inside nested blocks (a loose list item, a blockquote, a cell
- * holding paragraphs) only wraps them. It gets no id: its text would repeat a child's and take
+ * A block whose text all lies inside nested blocks or figures (a loose list item, a blockquote,
+ * a cell holding paragraphs or an image) only wraps them. It gets no id: its text would repeat a child's and take
  * an occurrence from it, so an edit elsewhere in the wrapper would renumber the unchanged child.
  * Anchors in it belong to the nested blocks.
  */
@@ -245,7 +241,7 @@ function isWrapper(el: Element): boolean {
     for (const child of node.children) {
       if (child.type === 'text') ownText += child.value;
       else if (child.type === 'element') {
-        if (isBlockElement(child)) nested = true;
+        if (isNested(child)) nested = true;
         else walk(child);
       }
     }

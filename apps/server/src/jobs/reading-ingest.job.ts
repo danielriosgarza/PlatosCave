@@ -9,7 +9,9 @@ import { type Storage, StorageNotFoundError } from '../storage/storage';
 import {
   type DerivationSource,
   type DerivedStatus,
+  DerivedStatus as DerivedStatusSchema,
   loadDerivationSource,
+  readStatus,
   setDerivedStatus,
   writeDerivedOutputs,
 } from './derived';
@@ -36,7 +38,9 @@ const NativeContent = z.object({
 });
 const PdfContent = z.object({ objectKey: z.string().optional() });
 
-const READING_TYPES: readonly string[] = ['reading_native', 'reading_pdf'];
+/** The revision types this job derives outputs for; it reads and writes no other status. */
+const READING_TYPES = ['reading_native', 'reading_pdf'] as const;
+const isReading = (type: string) => (READING_TYPES as readonly string[]).includes(type);
 
 /** A problem with the reading itself: retrying cannot help, so the job ends failed at once. */
 export class IngestError extends Error {}
@@ -84,7 +88,8 @@ async function readObject(
     bytes.set(part, offset);
     offset += part.byteLength;
   }
-  return offset === size ? bytes : bytes.subarray(0, offset);
+  // A short read (the store reported more than it sent) is copied, so the result owns its buffer.
+  return offset === size ? bytes : bytes.slice(0, offset);
 }
 
 /** Derived outputs of one reading revision (ADR-0003); `status` is written separately. */
@@ -137,7 +142,7 @@ export async function ingestRevision(
     if (!key) throw new IngestError('The reading has no PDF file');
     const bytes = await readObject(storage, revision, key, MAX_PDF_BYTES);
     try {
-      return { ...(await extractPdfText(bytes, { signal })) };
+      return { ...(await extractPdfText(bytes, { signal, transfer: true })) };
     } catch (err) {
       if (err instanceof ThreadInputError) throw new IngestError(err.message);
       throw err;
@@ -179,7 +184,7 @@ const readingIngest = defineScopedJob({
     const revision = await loadDerivationSource(db, scope, input.revisionId);
     if (!revision) return { failed: 'revision not found in this course' };
     // Another job type's status (a slide deck's conversion) is not this job's to write.
-    if (!READING_TYPES.includes(revision.type)) return { failed: 'revision is not a reading' };
+    if (!isReading(revision.type)) return { failed: 'revision is not a reading' };
 
     const mine = { jobId: job.id };
     const claimed = await setDerivedStatus(db, scope, input.revisionId, status('running', job.id), {
@@ -215,6 +220,16 @@ const readingIngest = defineScopedJob({
 });
 export default readingIngest;
 
+/** Whether a status names a job that may still be working on the revision. */
+const heldByJob = (raw: unknown): boolean => {
+  const parsed = DerivedStatusSchema.safeParse(raw);
+  return (
+    parsed.success &&
+    parsed.data.jobId !== null &&
+    (parsed.data.state === 'queued' || parsed.data.state === 'running')
+  );
+};
+
 /**
  * Queues ingestion of one revision of the scope's course (first run or a retry after failure),
  * marking it queued first so the editor sees the state at once, then naming the new job in the
@@ -228,20 +243,22 @@ export async function enqueueReadingIngest(
   scope: CourseScope,
   revisionId: string,
 ): Promise<string | null> {
-  const revision = await loadDerivationSource(db, scope, revisionId);
-  if (!revision || !READING_TYPES.includes(revision.type)) return null;
-  if (!(await setDerivedStatus(db, scope, revisionId, status('queued', null)))) return null;
+  const previous = await readStatus(db, scope, revisionId);
+  const marked = await setDerivedStatus(db, scope, revisionId, status('queued', null), {
+    types: READING_TYPES,
+  });
+  if (!marked) return null;
   let jobId: string | null;
   try {
     await ensureQueues(boss, [readingIngest]);
     jobId = await sendScopedJob(boss, readingIngest, scope, { revisionId });
   } catch (err) {
-    await setDerivedStatus(
-      db,
-      scope,
-      revisionId,
-      status('failed', null, 'Could not queue processing'),
-    );
+    // No new job exists. A job that held the status before keeps it, so its result still
+    // lands; otherwise the editor sees why nothing is queued.
+    const restored = heldByJob(previous)
+      ? DerivedStatusSchema.parse(previous)
+      : status('failed', null, 'Could not queue processing');
+    await setDerivedStatus(db, scope, revisionId, restored, { jobId: null });
     throw err;
   }
   // Unless the job has already started (and claimed the status itself).

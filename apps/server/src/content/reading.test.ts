@@ -92,6 +92,14 @@ describe('block ids', () => {
     ]);
   });
 
+  test('A06 a loose list item holding only an image wraps its figure, with or without a caption', () => {
+    for (const md of ['- ![a](means.png)\n\n- other', '- ![a](means.png "Means")\n\n- other']) {
+      const { blockMap, figures } = renderReading(md, 'markdown', { 'means.png': KEY });
+      expect(blockMap.map((b) => b.tag)).not.toContain('li');
+      expect(figures).toHaveLength(1);
+    }
+  });
+
   test('A06 figure ids follow the image, not the text around it', () => {
     const fig = (md: string) => renderReading(md, 'markdown', { 'means.png': KEY }).figures;
     const [before] = fig(v1);
@@ -282,6 +290,14 @@ describe('rendering', () => {
     expect(alone.html).toMatch(
       /^<div class="math-display" data-block-id="[0-9a-f]{12}"><math display="block">/,
     );
+
+    // The paragraph's own attributes stay with the block that replaces it, so links still land.
+    const linked = renderReading(
+      '<p id="eq1" dir="ltr"><span class="math-display">z</span></p><p><a href="#eq1">see</a></p>',
+      'html',
+    );
+    expect(linked.html).toMatch(/^<div id="user-content-eq1" dir="ltr" class="math-display"/);
+    expect(linked.html).toContain('href="#user-content-eq1"');
   });
 
   test('a pre whose text starts with a newline keeps it, so the browser’s text matches the block map', () => {
@@ -378,11 +394,19 @@ describe('PDF readings', () => {
     expect(again.pages[1]?.textHash).not.toBe(pdf.pages[1]?.textHash);
   });
 
-  test('the file’s bytes are moved into the parsing thread, not copied', async () => {
-    const data = makePdf(['Moved']);
-    const pdf = await extractPdfText(data);
+  test('the file’s bytes are moved into the parsing thread only when the caller asks', async () => {
+    const kept = makePdf(['Kept']);
+    expect((await extractPdfText(kept)).pages.map((p) => p.text)).toEqual(['Kept']);
+    expect(kept.byteLength).toBeGreaterThan(0);
+
+    const moved = makePdf(['Moved']);
+    const pdf = await extractPdfText(moved, { transfer: true });
     expect(pdf.pages.map((p) => p.text)).toEqual(['Moved']);
-    expect(data.byteLength).toBe(0);
+    expect(moved.byteLength).toBe(0);
+
+    // A view into a larger buffer cannot be moved without taking the rest with it.
+    const part = new Uint8Array(new ArrayBuffer(16), 4, 8);
+    await expect(extractPdfText(part, { transfer: true })).rejects.toThrow(TypeError);
   });
 
   test('one unreadable page leaves that page empty with a warning; the PDF still reads', async () => {

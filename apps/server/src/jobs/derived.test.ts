@@ -1,38 +1,39 @@
 import { describe, expect, test } from 'vitest';
-import { type DerivedStatus, readDerivedStatus, STALE_STATUS_MS } from './derived';
+import { type DerivedStatus, readDerivedStatus } from './derived';
 
 const created = new Date('2026-10-01T08:00:00Z');
-const at = (iso: string) => new Date(iso);
-const status = (state: DerivedStatus['state'], updatedAt: string): DerivedStatus => ({
+const status = (state: DerivedStatus['state']): DerivedStatus => ({
   state,
   job: 'reading.ingest',
   jobId: '00000000-0000-4000-8000-00000000beef',
-  updatedAt,
+  updatedAt: '2026-10-01T09:00:00.000Z',
+});
+const stopped = (state: DerivedStatus['state']) => ({
+  ...status(state),
+  state: 'failed',
+  error: 'Processing stopped without a result',
 });
 
 describe('readDerivedStatus', () => {
-  test('a job that stayed queued or running past the bound shows as failed, so Retry is offered', () => {
-    const updated = '2026-10-01T09:00:00.000Z';
-    const later = new Date(Date.parse(updated) + STALE_STATUS_MS + 1);
+  test('a pending status whose job ended without writing, or is gone, shows as failed', () => {
     for (const state of ['queued', 'running'] as const) {
-      expect(readDerivedStatus(status(state, updated), created, later)).toEqual({
-        ...status(state, updated),
-        state: 'failed',
-        error: 'Processing stopped without a result',
-      });
+      for (const ended of ['completed', 'failed', 'cancelled', null]) {
+        expect(readDerivedStatus(status(state), created, ended)).toEqual(stopped(state));
+      }
     }
   });
 
-  test('a recent pending status and any finished one read as written', () => {
-    const updated = '2026-10-01T09:00:00.000Z';
-    const soon = at('2026-10-01T09:30:00Z');
-    const muchLater = at('2026-10-09T09:00:00Z');
-    expect(readDerivedStatus(status('running', updated), created, soon)?.state).toBe('running');
-    expect(readDerivedStatus(status('queued', updated), created, soon)?.state).toBe('queued');
-    expect(readDerivedStatus(status('ready', updated), created, muchLater)?.state).toBe('ready');
-    expect(readDerivedStatus(status('failed', updated), created, muchLater)).toEqual(
-      status('failed', updated),
-    );
+  test('a pending status whose job may still run reads as written, however old', () => {
+    for (const state of ['queued', 'running'] as const) {
+      for (const live of ['created', 'retry', 'active', undefined]) {
+        expect(readDerivedStatus(status(state), created, live)).toEqual(status(state));
+      }
+    }
+  });
+
+  test('a finished status reads as written whatever the job state', () => {
+    expect(readDerivedStatus(status('ready'), created, null)).toEqual(status('ready'));
+    expect(readDerivedStatus(status('failed'), created, 'completed')).toEqual(status('failed'));
     expect(readDerivedStatus(undefined, created)).toBeNull();
   });
 });

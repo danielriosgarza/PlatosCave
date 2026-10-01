@@ -1,6 +1,6 @@
 import { type Anchor, anchorFits, type ResourceType, textAnchor } from '@parallax/contracts';
 // The one definition ingestion uses for block ids and page hashes, so recomputed ids match.
-import { normaliseText } from '../content/reading';
+import { normaliseText } from '../content/text';
 
 /**
  * Anchor mapping between two revisions of one resource (ADR-0003, §8, A06). Pure functions:

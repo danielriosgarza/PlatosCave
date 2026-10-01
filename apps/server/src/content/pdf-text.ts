@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { normaliseText } from './reading';
+import { normaliseText } from './text';
 import { runInThread } from './thread';
 
 export interface PdfPage {
@@ -21,6 +21,11 @@ export interface ExtractOptions {
   timeoutMs?: number;
   /** Aborts parsing (pg-boss signals this when the job is stopped). */
   signal?: AbortSignal;
+  /**
+   * Moves `data`'s buffer into the parsing thread instead of copying it, leaving `data` empty
+   * (detached) afterwards. Only for a caller that owns the whole buffer and no longer needs it.
+   */
+  transfer?: boolean;
 }
 
 /** What the thread answers: each page's raw text, null for a page it could not read. */
@@ -35,14 +40,16 @@ export const cleanPageText = (text: string): string => text.replaceAll('\u0000',
  * Page count and per-page text of an uploaded PDF reading, for accessible text and anchors.
  * The file is untrusted: pdf.js runs in its own thread with a memory cap and a time bound
  * (without XFA, font loading, system fonts or eval), so it can neither block other jobs nor
- * exhaust the worker process. `data` is moved into the thread, not copied: it is detached here
- * afterwards. A file that cannot be read fails with `ThreadInputError`.
+ * exhaust the worker process. A file that cannot be read fails with `ThreadInputError`.
  */
 export async function extractPdfText(
   data: Uint8Array,
-  { timeoutMs = 120_000, signal }: ExtractOptions = {},
+  { timeoutMs = 120_000, signal, transfer = false }: ExtractOptions = {},
 ): Promise<PdfText> {
   const whole = data.byteOffset === 0 && data.byteLength === data.buffer.byteLength;
+  if (transfer && !(whole && data.buffer instanceof ArrayBuffer)) {
+    throw new TypeError('Only a view over a whole, unshared buffer can be moved');
+  }
   const { pages: raw } = await runInThread<RawPages>(
     new URL('./pdf-text.worker.mjs', import.meta.url),
     data,
@@ -55,8 +62,7 @@ export async function extractPdfText(
       timeoutMs,
       maxHeapMb: 512,
       signal,
-      // Only a view over a whole, unshared buffer can be moved; anything else is copied.
-      ...(whole && data.buffer instanceof ArrayBuffer && { transferList: [data.buffer] }),
+      ...(transfer && { transferList: [data.buffer as ArrayBuffer] }),
     },
   );
   const warnings: string[] = [];
