@@ -14,10 +14,16 @@ export async function findActor(db: Db, actorId: string): Promise<Actor | undefi
 }
 
 /**
- * One class with its course, and the user's class membership and course-owner grant in it
- * (both null when the user holds none); undefined when no such class exists.
+ * One class with its course, the user's class membership in it, and the course grants of
+ * `courseUserId` (the user, or a preview principal's owner); null when not held, undefined when
+ * no such class exists.
  */
-export async function findClassAccess(db: Db, userId: string, classId: string) {
+export async function findClassAccess(
+  db: Db,
+  userId: string,
+  classId: string,
+  courseUserId: string = userId,
+) {
   const [row] = await db
     .select({
       className: classes.name,
@@ -30,6 +36,7 @@ export async function findClassAccess(db: Db, userId: string, classId: string) {
       manageMembers: classMemberships.manageMembers,
       isPreview: classMemberships.isPreview,
       ownsCourse: courseMemberships.owner,
+      editsCourse: courseMemberships.editor,
     })
     .from(classes)
     .innerJoin(courses, eq(courses.id, classes.courseId))
@@ -39,7 +46,10 @@ export async function findClassAccess(db: Db, userId: string, classId: string) {
     )
     .leftJoin(
       courseMemberships,
-      and(eq(courseMemberships.courseId, classes.courseId), eq(courseMemberships.userId, userId)),
+      and(
+        eq(courseMemberships.courseId, classes.courseId),
+        eq(courseMemberships.userId, courseUserId),
+      ),
     )
     .where(eq(classes.id, classId));
   return row;

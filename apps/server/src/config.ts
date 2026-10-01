@@ -58,9 +58,13 @@ const Env = z
     /**
      * Fastify `trustProxy`: which proxies' `X-Forwarded-*` headers to believe, so `req.ip` (the
      * rate-limit key) and `req.host` name the client and the requested host, not the proxy.
-     * `false` (default), `true` (every hop; only when the app is reachable through the proxy
-     * alone), or a comma-separated list of proxy addresses / CIDR ranges. A bare hop count is
-     * refused: Fastify 5 treats it as "trust nobody" because it cannot check the peer.
+     * Prefer a comma-separated list of your proxies' addresses / CIDR ranges: `req.ip` is then
+     * the first address that is not one of them, which the client cannot choose. `true` believes
+     * every hop, so `req.ip` is the leftmost `X-Forwarded-For` entry; a proxy that appends to
+     * the header (nginx's `$proxy_add_x_forwarded_for`) lets a client pick it per request and
+     * void the per-IP limits, so use `true` only when the proxy replaces the header. `false`
+     * (default) ignores the headers. A bare hop count is refused: Fastify 5 treats it as "trust
+     * nobody" because it cannot check the peer.
      */
     TRUST_PROXY: z
       .string()

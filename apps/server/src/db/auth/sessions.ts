@@ -8,7 +8,11 @@ import { userForVerifiedEmail } from './accounts';
 export async function createSession(
   db: Executor,
   userId: string,
-  { now = new Date(), authTime = now }: { now?: Date; authTime?: Date } = {},
+  {
+    now = new Date(),
+    authTime = now,
+    ttlMs = SESSION_TTL_MS,
+  }: { now?: Date; authTime?: Date; ttlMs?: number } = {},
 ): Promise<{ token: string; sessionId: string }> {
   const token = newToken();
   const [row] = await db
@@ -18,7 +22,7 @@ export async function createSession(
       tokenHash: hashToken(token),
       authTime,
       createdAt: now,
-      expiresAt: new Date(now.getTime() + SESSION_TTL_MS),
+      expiresAt: new Date(now.getTime() + ttlMs),
     })
     .returning({ id: authSessions.id });
   if (!row) throw new Error('session insert returned no row');
@@ -36,8 +40,15 @@ export function signInWithProof(
   {
     consume,
     previous,
+    alsoEnd,
     now,
-  }: { consume: (tx: Executor) => Promise<SignInResult>; previous?: string; now: Date },
+  }: {
+    consume: (tx: Executor) => Promise<SignInResult>;
+    previous?: string;
+    /** Ends further sessions the browser holds (a preview's kept one), in the same transaction. */
+    alsoEnd?: (tx: Executor) => Promise<void>;
+    now: Date;
+  },
 ): Promise<{ token?: string; destination: string | null }> {
   return db.transaction(async (tx) => {
     const result = await consume(tx);
@@ -45,6 +56,7 @@ export function signInWithProof(
     const userId = await userForVerifiedEmail(tx, result.email);
     // Rotation: whatever session this browser held before is ended, never upgraded in place.
     if (previous) await revokeSession(tx, previous, now);
+    await alsoEnd?.(tx);
     const { token } = await createSession(tx, userId, { now, authTime: now });
     return { token, destination: result.destination };
   });

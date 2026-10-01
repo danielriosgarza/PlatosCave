@@ -10,7 +10,7 @@ import {
 import type { Db, Executor } from '../db/client';
 import type { Mailer } from '../mail/mailer';
 import type { IdentityProvider, SignInResult } from './identity-provider';
-import { hashToken, newToken, TOKEN_SHAPE } from './sessions';
+import { hashToken, newToken } from './sessions';
 
 /** §3: expiring single-use links. */
 export const LINK_TTL_MS = 15 * 60_000;
@@ -35,15 +35,24 @@ export function purgeSigninTokens(db: Db, now: Date): Promise<number> {
  * The parts of a delivery error that are safe to log: nodemailer's `envelope` and `rejected`
  * carry the recipient, and its message can quote the address, so the address is masked.
  */
+const MIN_BARE_LOCAL = 6;
+
 function describeMailError(err: unknown, address: string): Record<string, unknown> {
   const e = err as { message?: unknown; code?: unknown; responseCode?: unknown } | null;
   const message = typeof e?.message === 'string' ? e.message : String(err);
   const [local = ''] = address.split('@');
   // The address in any case, then a bare local part (relays often echo just that).
   const literal = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const masked = message
-    .replace(new RegExp(literal(address), 'gi'), '[address]')
-    .replace(new RegExp(`\\b${literal(local)}\\b`, 'gi'), '[address]');
+  let masked = message.replace(new RegExp(literal(address), 'gi'), '[address]');
+  // A short local part (`no`, `info`, `user`) is also an ordinary word of the diagnostic, so
+  // only longer ones are masked on their own. Lookarounds on the address characters, not `\\b`,
+  // so one that starts or ends in punctuation (`-ops`, `john.`) is still found.
+  if (local.length >= MIN_BARE_LOCAL) {
+    masked = masked.replace(
+      new RegExp(`(?<![A-Za-z0-9._%+-])${literal(local)}(?![A-Za-z0-9._%+-])`, 'gi'),
+      '[address]',
+    );
+  }
   return {
     message: masked,
     code: e?.code,
@@ -115,7 +124,9 @@ export class EmailLinkProvider implements IdentityProvider {
       // The answer was 202 for every address; a delivery failure is an operator problem.
       // Only the error's message and code are logged, never its envelope (the recipient).
       log.error({ ...describeMailError(err, address) }, 'sign-in link could not be sent');
-      // An undelivered link is removed so it does not use up one of the address's sends. When
+      // An undelivered link is removed so it does not use up one of the address's sends. The
+      // removal lands after the 202, so rapid retries while the relay is failing can reach the
+      // cap before their rows go; accepted, since each row goes within the SMTP timeouts. When
       // the database is down alongside the mail transport the row stays and expires on its own.
       try {
         await deleteSigninToken(db, rowId);
@@ -131,10 +142,10 @@ export class EmailLinkProvider implements IdentityProvider {
   /**
    * Finishes a sign-in from the link token. With `executor` the link is spent inside the
    * caller's transaction (verify's), so it stays usable if anything after it fails; that
-   * guarantee belongs to this provider, not to `IdentityProvider`.
+   * guarantee belongs to this provider, not to `IdentityProvider`. A token that is not shaped
+   * like ours simply matches no row; verify rejects those before opening a transaction.
    */
   async complete(token: string, executor?: Executor): Promise<SignInResult> {
-    if (!TOKEN_SHAPE.test(token)) return { ok: false, destination: null };
     const { now: clock } = this.deps;
     const db = executor ?? this.deps.db;
     const now = clock();

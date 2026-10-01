@@ -257,7 +257,7 @@ describe('POST /api/auth/link', () => {
           // What nodemailer attaches to a rejected send.
           // Relays echo the address in their own case, or just its local part.
           throw Object.assign(
-            new Error('550 5.1.1 <Both-Down@Example.test> no such user both-down'),
+            new Error('550 5.1.1 <Both-Down@Example.test> no such user both-down (both-down).'),
             {
               code: 'EENVELOPE',
               responseCode: 550,
@@ -277,13 +277,15 @@ describe('POST /api/auth/link', () => {
     );
     try {
       await expect(provider.begin({ email, destination: '/courses' })).resolves.toBeUndefined();
-      await expect(background.settled()).resolves.toBeUndefined();
+      await expect(background.settled()).resolves.toBe(0);
     } finally {
       await testDb.db.execute(sql`drop trigger pc_refuse_delete on signin_tokens`);
       await testDb.db.execute(sql`drop function pc_refuse_delete()`);
     }
     expect(logged).toHaveLength(2);
     expect(JSON.stringify(logged).toLowerCase()).not.toContain('both-down');
+    // The diagnostic stays readable.
+    expect(JSON.stringify(logged)).toContain('no such user');
     expect(JSON.stringify(logged)).toContain('EENVELOPE');
   });
 
@@ -482,6 +484,54 @@ describe('GET /api/auth/verify', () => {
     expect((await me(sessionCookieFrom(retry))).json().user.id).toBe(ids.priya);
   });
 
+  describe('a sign-in during a draft preview', () => {
+    async function startPreview() {
+      const held = await createSession(testDb.db, ids.marcus, { now: clock });
+      const marcus = cookieFor(held.token);
+      const started = await app.inject({
+        method: 'POST',
+        url: `/api/courses/${ids.statistics}/preview`,
+        headers: { cookie: marcus },
+        payload: { classId: ids.classB },
+      });
+      expect(started.statusCode).toBe(200);
+      const jar = started.cookies
+        .filter((c) => c.value)
+        .map((c) => `${c.name}=${encodeURIComponent(c.value)}`)
+        .join('; ');
+      return { marcus, jar };
+    }
+
+    test('ends the kept instructor session along with the preview session', async () => {
+      const { marcus, jar } = await startPreview();
+      const res = await verify(await linkFor('priya@example.test'), jar);
+      expect(res.statusCode).toBe(302);
+      expect(res.cookies.find((c) => c.name === 'pc_preview_return')?.value).toBe('');
+      expect((await me(marcus)).statusCode).toBe(401);
+      expect((await me(sessionCookieFrom(res))).json().user.id).toBe(ids.priya);
+    });
+
+    test('a failure rolls the kept instructor session’s end back with the link', async () => {
+      const { marcus, jar } = await startPreview();
+      const path = await linkFor('priya@example.test');
+      await testDb.db.execute(
+        sql`create function pc_refuse_session() returns trigger language plpgsql as $$ begin raise exception 'injected failure'; end $$`,
+      );
+      await testDb.db.execute(
+        sql`create trigger pc_refuse_session before insert on auth_sessions for each row execute function pc_refuse_session()`,
+      );
+      try {
+        expect((await verify(path, jar)).statusCode).toBe(500);
+      } finally {
+        await testDb.db.execute(sql`drop trigger pc_refuse_session on auth_sessions`);
+        await testDb.db.execute(sql`drop function pc_refuse_session()`);
+      }
+      expect((await me(marcus)).statusCode).toBe(200);
+      expect((await verify(path, jar)).statusCode).toBe(302);
+      expect((await me(marcus)).statusCode).toBe(401);
+    });
+  });
+
   test('rotates the session: a session held before sign-in is ended', async () => {
     const before = world.cookie.priya;
     expect((await me(before)).statusCode).toBe(200);
@@ -511,15 +561,37 @@ describe('POST /api/auth/signout', () => {
     expect(res.headers['set-cookie']).toBeUndefined();
   });
 
-  test('a cross-site text/plain form post (the browser sends no cookie) does not clear the cookie', async () => {
+  test('a request carrying only other sites’ cookies clears nothing', async () => {
     const res = await app.inject({
       method: 'POST',
       url: '/api/auth/signout',
-      headers: { 'content-type': 'text/plain' },
-      payload: 'x=1',
+      headers: { cookie: 'theme=dark; other_session=abc' },
     });
     expect(res.statusCode).toBe(200);
     expect(res.headers['set-cookie']).toBeUndefined();
+  });
+
+  test('a kept preview-return cookie alone still ends the kept instructor session', async () => {
+    const held = await createSession(testDb.db, ids.marcus, { now: clock });
+    const marcus = cookieFor(held.token);
+    const started = await app.inject({
+      method: 'POST',
+      url: `/api/courses/${ids.statistics}/preview`,
+      headers: { cookie: marcus },
+      payload: { classId: ids.classB },
+    });
+    expect(started.statusCode).toBe(200);
+    const kept = started.cookies.find((c) => c.name === 'pc_preview_return');
+    if (!kept) throw new Error('no preview-return cookie');
+    // The browser lost its session cookie (it lives 14 days, this one 8 hours).
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/auth/signout',
+      headers: { cookie: `pc_preview_return=${encodeURIComponent(kept.value)}` },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.cookies.find((c) => c.name === 'pc_preview_return')?.value).toBe('');
+    expect((await me(marcus)).statusCode).toBe(401);
   });
 
   test('a cookie the server cannot unsign (rotated secret) is still cleared', async () => {

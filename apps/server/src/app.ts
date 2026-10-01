@@ -51,9 +51,14 @@ export interface Deps {
 /** What every route module receives: the injected `Deps` with the defaults buildApp resolved. */
 export interface RouteDeps extends Deps {
   config: Config;
+  /** The injected clock, or the system one. */
+  now: () => Date;
   mailer: Mailer;
   background: BackgroundTasks;
 }
+
+/** How long close waits for background work, inside the 10 s stop grace main.ts documents. */
+const BACKGROUND_CLOSE_TIMEOUT_MS = 8_000;
 
 /** A path segment that could hold a token: encoded, or longer than any id the app routes use. */
 const SUSPECT_SEGMENT = /^(?:[A-Za-z0-9._~-]{41,}|.*[^A-Za-z0-9._~-].*)$/;
@@ -102,11 +107,16 @@ export async function buildApp(config: Config, deps: Deps = {}): Promise<Fastify
   const now = deps.now ?? (() => new Date());
   const storage = deps.storage ?? createStorage(config);
   const background = deps.background ?? new BackgroundTasks(app.log);
-  // Deliveries in flight finish (or fail and clean up) before the server closes.
-  app.addHook('onClose', () => background.settled());
+  // Deliveries in flight get most of the 10 s stop grace (main.ts) to finish or clean up; a
+  // stalled relay is abandoned then, and its row expires on its own.
+  app.addHook('onClose', async () => {
+    const left = await background.settled(BACKGROUND_CLOSE_TIMEOUT_MS);
+    if (left > 0) app.log.warn({ left }, 'abandoning background tasks still running at close');
+  });
   const routeDeps: RouteDeps = {
     ...deps,
     config,
+    now,
     mailer: deps.mailer ?? createMailer(config, now),
     background,
   };

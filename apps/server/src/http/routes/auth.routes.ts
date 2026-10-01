@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import type { RouteDeps } from '../../app';
 import { defaultDestination, safeDestination } from '../../auth/destination';
 import { EmailLinkProvider } from '../../auth/email-provider';
+import { clearPreviewReturn, PREVIEW_RETURN_COOKIE, revokePreviewReturn } from '../../auth/preview';
 import {
   readSessionToken,
   SESSION_COOKIE,
@@ -16,7 +17,7 @@ const EXPIRED = '/signin?link=expired';
 
 export default function authRoutes(app: FastifyInstance, deps: RouteDeps): void {
   const { config, mailer, background } = deps;
-  const now = () => app.resolverDeps.now();
+  const { now } = deps;
   const cookieOptions = sessionCookieOptions(config.APP_ORIGIN);
   const { db } = deps;
   const provider = db
@@ -53,10 +54,13 @@ export default function authRoutes(app: FastifyInstance, deps: RouteDeps): void 
       // Spending the link, finding the account, ending the old session and starting the new one
       // are one transaction: a failure after the link is marked used rolls the use back, so the
       // link still works on retry instead of leaving a dead link and a 500.
+      const at = now();
       const signedIn = await signInWithProof(db, {
         consume: (tx) => provider.complete(token, tx),
         previous: readSessionToken(req),
-        now: now(),
+        // A kept instructor session (a preview in progress) ends with the sign-in or not at all.
+        alsoEnd: (tx) => revokePreviewReturn(tx, req, at),
+        now: at,
       });
       if (!signedIn.token) {
         const keep = safeDestination(signedIn.destination);
@@ -64,6 +68,7 @@ export default function authRoutes(app: FastifyInstance, deps: RouteDeps): void 
         return reply.redirect(to) as never;
       }
       reply.setCookie(SESSION_COOKIE, signedIn.token, cookieOptions);
+      clearPreviewReturn(req, reply, config.APP_ORIGIN);
       // Re-checked at use: a stored destination is only ever a same-origin app path.
       return reply.redirect(safeDestination(signedIn.destination) ?? '/courses') as never;
     },
@@ -71,15 +76,23 @@ export default function authRoutes(app: FastifyInstance, deps: RouteDeps): void 
   );
 
   registerRoute(app, signOut, async ({ req, reply }) => {
-    // Only a request that carries the session cookie clears it. The route is public and Fastify
-    // parses text/plain, so a cross-site form post reaches it without the (SameSite=Lax)
-    // cookie; answering Set-Cookie there would sign the visitor out of their own session. Presence
-    // is enough (not a valid signature), so a cookie the server can no longer unsign, such as
-    // after a SESSION_SECRET rotation, is still dropped.
-    if (req.cookies?.[SESSION_COOKIE] === undefined) return { signedOut: true as const };
-    const token = readSessionToken(req);
-    if (token && db) await revokeSession(db, token, now());
-    reply.clearCookie(SESSION_COOKIE, cookieOptions);
+    // Only a request that carries one of our cookies ends or clears anything. The route is public
+    // and Fastify parses text/plain, so a cross-site form post reaches it without the
+    // (SameSite=Lax) cookies; answering Set-Cookie there would sign the visitor out of their own
+    // session. Presence is enough (not a valid signature), so a cookie the server can no longer
+    // unsign, such as after a SESSION_SECRET rotation, is still dropped. The preview-return
+    // cookie lives 8 h and the session cookie 14 d, so a browser can hold either one alone.
+    const hasSession = req.cookies?.[SESSION_COOKIE] !== undefined;
+    const hasReturn = req.cookies?.[PREVIEW_RETURN_COOKIE] !== undefined;
+    if (!hasSession && !hasReturn) return { signedOut: true as const };
+    const at = now();
+    if (hasSession) {
+      const token = readSessionToken(req);
+      if (token && db) await revokeSession(db, token, at);
+      reply.clearCookie(SESSION_COOKIE, cookieOptions);
+    }
+    await revokePreviewReturn(db, req, at);
+    clearPreviewReturn(req, reply, config.APP_ORIGIN);
     return { signedOut: true as const };
   });
 }

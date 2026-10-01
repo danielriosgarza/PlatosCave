@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import type { Element, ElementContent, Nodes, Root } from 'hast';
 import { toString as hastToString } from 'hast-util-to-string';
 import rehypeHighlight from 'rehype-highlight';
@@ -11,7 +10,9 @@ import remarkMath from 'remark-math';
 import remarkParse from 'remark-parse';
 import remarkRehype from 'remark-rehype';
 import { unified } from 'unified';
-import { visit } from 'unist-util-visit';
+import { SKIP, visit } from 'unist-util-visit';
+import { VFile } from 'vfile';
+import { blockId, normaliseText, sha12 } from './text';
 
 /**
  * Native reading ingestion (§8, ADR-0003): Markdown or HTML in, sanitised HTML out, with every
@@ -61,8 +62,9 @@ const MATHML_TAGS = (
 ).split(' ');
 const MATHML_ATTRIBUTES = (
   'accent accentunder columnalign columnlines columnspacing depth display displaystyle encoding ' +
-  'fence height linethickness lspace mathvariant maxsize minsize movablelimits notation ' +
-  'rowlines rowspacing rspace scriptlevel separator stretchy symmetric width'
+  'fence height largeop linebreak linethickness lspace mathbackground mathcolor mathsize ' +
+  'mathvariant maxsize minsize movablelimits notation rowlines rowspacing rspace scriptlevel ' +
+  'separator stretchy symmetric voffset width'
 ).split(' ');
 
 /**
@@ -105,15 +107,7 @@ export const readingSchema: SanitizeSchema = {
   ],
 };
 
-const sha12 = (value: string) => createHash('sha256').update(value).digest('hex').slice(0, 12);
-
-/** Whitespace-collapsed NFC text: what block ids hash, so reflowed source keeps its ids. */
-export const normaliseText = (text: string): string =>
-  text.normalize('NFC').replace(/\s+/g, ' ').trim();
-
-/** ADR-0003: first 12 hex of sha256(normalisedText + ':' + occurrenceIndex). */
-export const blockId = (normalisedText: string, occurrence: number): string =>
-  sha12(`${normalisedText}:${occurrence}`);
+export { blockId, normaliseText };
 
 /** `textContent` of a hast node: all descendant text, no layout. */
 export const textContent = (node: Nodes): string => hastToString(node);
@@ -125,14 +119,43 @@ const classes = (el: Element): string[] => {
 
 const isElement = (node: ElementContent): node is Element => node.type === 'element';
 
-/** Display math (a KaTeX span holding `<math display="block">`) becomes its own block. */
+/** Elements whose content model allows a `div`, so display math may stand as a block in them. */
+const FLOW_PARENTS = new Set(
+  'article aside blockquote dd details div figure footer header li main nav section td th'.split(
+    ' ',
+  ),
+);
+
+const isBlank = (node: ElementContent) => node.type === 'text' && node.value.trim() === '';
+
+/**
+ * Display math (a KaTeX span holding `<math display="block">`) becomes its own block where a
+ * block may stand. A paragraph holding nothing else is replaced by it; display math inside a
+ * paragraph with other content (possible only in uploaded HTML) stays inline, since a `div` in a
+ * `p` would close the paragraph in the browser and break the block map.
+ */
 function liftDisplayMath(tree: Root): void {
-  visit(tree, 'element', (el) => {
+  visit(tree, 'element', (el, index, parent) => {
     if (el.tagName !== 'span' || !classes(el).includes('katex')) return;
     const math = el.children.find(isElement);
-    if (math?.tagName === 'math' && math.properties.display === 'block') {
+    if (math?.tagName !== 'math' || math.properties.display !== 'block') return;
+    if (!parent || index === undefined) return;
+    const lift = () => {
       el.tagName = 'div';
       el.properties.className = [MATH_DISPLAY_CLASS];
+    };
+    if (parent.type === 'root' || FLOW_PARENTS.has(parent.tagName)) {
+      lift();
+      return SKIP;
+    }
+    if (parent.tagName === 'p' && parent.children.every((c) => c === el || isBlank(c))) {
+      lift();
+      // The paragraph becomes the display block itself, keeping its place in the tree.
+      // It keeps its own sanitised attributes (an `id` a link targets, `dir`, `lang`).
+      parent.tagName = 'div';
+      parent.properties = { ...parent.properties, ...el.properties };
+      parent.children = el.children;
+      return SKIP;
     }
   });
 }
@@ -141,7 +164,7 @@ function liftDisplayMath(tree: Root): void {
 function paragraphImagesToFigures(tree: Root): void {
   visit(tree, 'element', (el) => {
     if (el.tagName !== 'p') return;
-    const content = el.children.filter((c) => !(c.type === 'text' && c.value.trim() === ''));
+    const content = el.children.filter((c) => !isBlank(c));
     const [img] = content;
     if (content.length !== 1 || !img || !isElement(img) || img.tagName !== 'img') return;
     const title = typeof img.properties.title === 'string' ? img.properties.title : '';
@@ -181,7 +204,12 @@ function rewriteImages(tree: Root, assets: Record<string, string>, warnings: str
     if (el.tagName !== 'img') return;
     const src = typeof el.properties.src === 'string' ? el.properties.src : '';
     delete el.properties.src;
-    if (!src) return;
+    if (!src) {
+      // The sanitiser removes `data:`, `blob:` and script URLs; say so rather than show nothing.
+      const alt = typeof el.properties.alt === 'string' ? el.properties.alt : '';
+      warnings.push(`Image "${alt}" has no usable source; upload it as a file of this reading`);
+      return;
+    }
     const name = src.replace(/^\.\//, '');
     let decoded = name;
     try {
@@ -194,16 +222,41 @@ function rewriteImages(tree: Root, assets: Record<string, string>, warnings: str
   });
 }
 
+const isBlockElement = (el: Element): boolean =>
+  BLOCK_TAGS.has(el.tagName) || (el.tagName === 'div' && classes(el).includes(MATH_DISPLAY_CLASS));
+
+/** Content that stands on its own inside a wrapper: a block, or a figure (known by its own id). */
+const isNested = (el: Element): boolean => isBlockElement(el) || el.tagName === 'figure';
+
+/**
+ * A block whose text all lies inside nested blocks or figures (a loose list item, a blockquote,
+ * a cell holding paragraphs or an image) only wraps them. It gets no id: its text would repeat a child's and take
+ * an occurrence from it, so an edit elsewhere in the wrapper would renumber the unchanged child.
+ * Anchors in it belong to the nested blocks.
+ */
+function isWrapper(el: Element): boolean {
+  let nested = false;
+  let ownText = '';
+  const walk = (node: Element) => {
+    for (const child of node.children) {
+      if (child.type === 'text') ownText += child.value;
+      else if (child.type === 'element') {
+        if (isNested(child)) nested = true;
+        else walk(child);
+      }
+    }
+  };
+  walk(el);
+  return nested && ownText.trim() === '';
+}
+
 function assignIds(tree: Root): { blockMap: BlockEntry[]; figures: FigureEntry[] } {
   const blockMap: BlockEntry[] = [];
   const figures: FigureEntry[] = [];
   const seenText = new Map<string, number>();
   const seenFigure = new Map<string, number>();
   visit(tree, 'element', (el) => {
-    const isBlock =
-      BLOCK_TAGS.has(el.tagName) ||
-      (el.tagName === 'div' && classes(el).includes(MATH_DISPLAY_CLASS));
-    if (isBlock) {
+    if (isBlockElement(el) && !isWrapper(el)) {
       const text = textContent(el);
       const normalised = normaliseText(text);
       const occurrence = seenText.get(normalised) ?? 0;
@@ -234,41 +287,82 @@ function assignIds(tree: Root): { blockMap: BlockEntry[]; figures: FigureEntry[]
   return { blockMap, figures };
 }
 
+// Built once: rehype-highlight registers its grammars when a processor is first used.
+const markdownProcessor = unified()
+  .use(remarkParse)
+  .use(remarkGfm)
+  .use(remarkMath)
+  // Footnote ids without a prefix: the sanitiser adds one, and fixLinks follows it.
+  .use(remarkRehype, { clobberPrefix: '' })
+  .freeze();
+const htmlParser = unified().use(rehypeParse, { fragment: true }).freeze();
+const transformProcessor = unified()
+  .use(rehypeKatex, { output: 'mathml' })
+  .use(rehypeHighlight, { detect: false })
+  .use(rehypeSanitize, readingSchema)
+  .freeze();
+const stringifier = unified().use(rehypeStringify).freeze();
+
+/**
+ * The HTML parser drops a newline directly after `<pre>`, so a `pre` whose text starts with one
+ * is serialised with one more, as browsers do: the reader's `textContent` then equals the text
+ * in the block map, and parsing the stored HTML again yields the same tree.
+ */
+function stringify(tree: Root): string {
+  visit(tree, 'element', (el) => {
+    const [first] = el.children;
+    if (el.tagName === 'pre' && first?.type === 'text' && first.value.startsWith('\n')) {
+      first.value = `\n${first.value}`;
+    }
+  });
+  return stringifier.stringify(tree);
+}
+
+/** A sanitised KaTeX error keeps an empty `class`; it carries nothing, so it goes. */
+function dropEmptyClasses(tree: Root): void {
+  visit(tree, 'element', (el) => {
+    const c = el.properties.className;
+    if (Array.isArray(c) && c.length === 0) delete el.properties.className;
+  });
+}
+
 /**
  * Renders one native reading. `assets` maps image names used in the source to storage keys of
  * the revision's own objects. Raw HTML inside Markdown is dropped; HTML uploads are sanitised.
+ * Runs on the calling thread; the ingestion job calls it through `renderReadingInThread`.
  */
 export function renderReading(
   source: string,
   format: ReadingFormat,
   assets: Record<string, string> = {},
 ): RenderedReading {
-  let tree: Root;
-  if (format === 'markdown') {
-    const markdown = unified()
-      .use(remarkParse)
-      .use(remarkGfm)
-      .use(remarkMath)
-      // Footnote ids without a prefix: the sanitiser adds one, and fixLinks follows it.
-      .use(remarkRehype, { clobberPrefix: '' });
-    tree = markdown.runSync(markdown.parse(source));
-  } else {
-    tree = unified().use(rehypeParse, { fragment: true }).parse(source);
-  }
+  const tree: Root =
+    format === 'markdown'
+      ? markdownProcessor.runSync(markdownProcessor.parse(source))
+      : htmlParser.parse(source);
 
-  const transform = unified()
-    .use(rehypeKatex, { output: 'mathml' })
-    .use(rehypeHighlight, { detect: false })
-    .use(rehypeSanitize, readingSchema);
-  const clean = transform.runSync(tree);
+  const file = new VFile();
+  const clean = transformProcessor.runSync(tree, file);
 
   const warnings: string[] = [];
+  // Plugins report what they could not process on the file; the content stays, as plain text.
+  for (const message of file.messages) {
+    if (message.source === 'rehype-katex') {
+      const detail = message.cause instanceof Error ? message.cause.message : message.reason;
+      warnings.push(`An equation could not be rendered: ${detail}`);
+    } else if (message.source === 'rehype-highlight') {
+      warnings.push(`Code could not be highlighted: ${message.reason}`);
+    } else {
+      warnings.push(message.reason);
+    }
+  }
+  dropEmptyClasses(clean);
   liftDisplayMath(clean);
   paragraphImagesToFigures(clean);
   fixLinks(clean);
   rewriteImages(clean, assets, warnings);
   const { blockMap, figures } = assignIds(clean);
-  const html = unified().use(rehypeStringify).stringify(clean);
+  const html = stringify(clean);
   return { html, blockMap, figures, warnings };
 }
 
@@ -277,12 +371,12 @@ export function renderReading(
  * an image whose key it refuses keeps no `src` and shows its alt text.
  */
 export function resolveReadingImages(html: string, urlFor: (key: string) => string | null): string {
-  const processor = unified().use(rehypeParse, { fragment: true });
-  const tree = processor.parse(html);
+  if (!html.includes('data-object-key')) return html;
+  const tree = htmlParser.parse(html);
   visit(tree, 'element', (el) => {
     if (el.tagName !== 'img' || typeof el.properties.dataObjectKey !== 'string') return;
     const url = urlFor(el.properties.dataObjectKey);
     if (url) el.properties.src = url;
   });
-  return unified().use(rehypeStringify).stringify(tree);
+  return stringify(tree);
 }

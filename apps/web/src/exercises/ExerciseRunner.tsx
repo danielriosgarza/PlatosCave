@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { ApiError } from '../api/client';
 import { type Attempt, type AttemptStep, useAttempt, useAttemptActions } from './attempt';
 import styles from './Exercise.module.css';
 import { type Draft, initialDraft, StepForm, toResponse } from './StepForm';
@@ -25,11 +26,7 @@ export function ExerciseRunner({
   // Kept here: a stale tab moves to an attempt with another id, which remounts the keyed view.
   const [notice, setNotice] = useState<string | null>(null);
   if (query.isError) {
-    return (
-      <p className={styles.inlineError} role="alert">
-        This exercise could not be opened. It may not be open to you yet.
-      </p>
-    );
+    return <OpenFailure error={query.error} retry={() => void query.refetch()} />;
   }
   if (!query.data) return <p role="status">Opening exercise</p>;
   return (
@@ -42,6 +39,33 @@ export function ExerciseRunner({
       notice={notice}
       setNotice={setNotice}
     />
+  );
+}
+
+/** Why the exercise did not open: the server's reason, a retry for a lost connection, else it is closed. */
+function OpenFailure({ error, retry }: { error: unknown; retry: () => void }) {
+  const body = error instanceof ApiError ? (error.body as { message?: unknown } | null) : null;
+  if (error instanceof ApiError && error.status === 400 && typeof body?.message === 'string') {
+    return (
+      <p className={styles.inlineError} role="alert">
+        {body.message}
+      </p>
+    );
+  }
+  if (error instanceof ApiError && error.status === 404) {
+    return (
+      <p className={styles.inlineError} role="alert">
+        This exercise could not be opened. It may not be open to you yet.
+      </p>
+    );
+  }
+  return (
+    <div className={styles.inlineError} role="alert">
+      <p>This exercise could not be opened. Check your connection and try again.</p>
+      <button type="button" className={styles.outline} onClick={retry}>
+        Try again
+      </button>
+    </div>
   );
 }
 
@@ -83,8 +107,9 @@ function PracticeAttempt({
             ? `${steps.length} of ${steps.length} steps complete`
             : `${index + 1} · ${step?.title}`}
         </div>
-        <ol
+        <div
           className={styles.track}
+          role="img"
           aria-label={
             summary
               ? 'Exercise complete'
@@ -92,9 +117,9 @@ function PracticeAttempt({
           }
         >
           {steps.map((s, i) => (
-            <li key={s.id} data-done={s.status === 'completed' || i <= index} />
+            <span key={s.id} data-done={s.status === 'completed' || i <= index} />
           ))}
-        </ol>
+        </div>
         {notice && (
           <p className={styles.notice} role="status">
             {notice}
