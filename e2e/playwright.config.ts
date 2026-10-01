@@ -31,6 +31,7 @@ export default defineConfig({
       PORT: '3100',
       HOST: '127.0.0.1',
       NODE_ENV: 'test',
+      TEST_ROUTES: '1',
       STATIC_DIR: resolve(import.meta.dirname, '../apps/web/dist'),
       DATABASE_URL: e2eDatabaseUrl,
     },

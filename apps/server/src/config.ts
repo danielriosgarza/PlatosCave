@@ -30,12 +30,20 @@ const Env = z
     AUTH_LINK_RATE_LIMIT: z.coerce.number().int().positive().default(10),
     /** Sign-in link uses (`/api/auth/verify`) allowed per client IP per 15 minutes. */
     AUTH_VERIFY_RATE_LIMIT: z.coerce.number().int().positive().default(30),
+    /** `1` mounts the e2e fixture routes under /api/test (ADR-0006); refused in production. */
+    TEST_ROUTES: z
+      .enum(['0', '1'])
+      .default('0')
+      .transform((v) => v === '1'),
   })
   .superRefine((env, ctx) => {
     if (env.NODE_ENV === 'production') {
       for (const key of ['SESSION_SECRET', 'APP_ORIGIN'] as const) {
         if (!env[key]) ctx.addIssue({ code: 'custom', path: [key], message: 'required' });
       }
+    }
+    if (env.NODE_ENV === 'production' && env.TEST_ROUTES) {
+      ctx.addIssue({ code: 'custom', path: ['TEST_ROUTES'], message: 'not allowed in production' });
     }
     if (env.MAIL_TRANSPORT === 'smtp' && !env.SMTP_URL) {
       ctx.addIssue({ code: 'custom', path: ['SMTP_URL'], message: 'required for smtp' });
