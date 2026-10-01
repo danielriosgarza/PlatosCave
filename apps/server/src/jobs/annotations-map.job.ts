@@ -1,6 +1,6 @@
 import type { PgBoss } from 'pg-boss';
 import { z } from 'zod';
-import { mapClass } from '../annotations/placements';
+import { mapClass } from '../annotations/annotations';
 import type { ClassScope } from '../auth/scope';
 import { defineScopedJob, sendScopedJob } from './scoped';
 
