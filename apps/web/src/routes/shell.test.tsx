@@ -8,8 +8,10 @@ import {
   makeMe,
   renderApp,
   signedIn,
+  signedInWithTopics,
   stubApi,
   studentIn,
+  T_SAMPLING,
 } from '../test/render';
 
 afterEach(() => {
@@ -97,10 +99,10 @@ describe('courses default view', () => {
 
 describe('session changes while a page is open', () => {
   const me = makeMe({ classes: [studentIn(CLASS_A, 'Class A')] });
-  const handler = { current: signedIn(me) };
+  const handler = { current: signedInWithTopics(me) };
 
   it('A02 keeps the page and Sign out when a background re-check of the session fails', async () => {
-    handler.current = signedIn(me);
+    handler.current = signedInWithTopics(me);
     stubApi((url, init) => handler.current(url, init));
     const { queryClient } = renderApp(`/classes/${CLASS_A}/topics`);
     expect(await screen.findByRole('button', { name: 'Sign out' })).toBeInTheDocument();
@@ -112,7 +114,7 @@ describe('session changes while a page is open', () => {
   });
 
   it('A01 sends the person to /signin with the address kept when the session ends', async () => {
-    handler.current = signedIn(me);
+    handler.current = signedInWithTopics(me);
     stubApi((url, init) => handler.current(url, init));
     const { router, queryClient } = renderApp('/courses?view=student');
     await screen.findByRole('heading', { name: 'Your courses' });
@@ -126,24 +128,26 @@ describe('session changes while a page is open', () => {
 describe('topic workspace tabs', () => {
   it('A02 selecting a tab changes the address and the selected tab', async () => {
     const user = userEvent.setup();
-    stubApi(signedIn(makeMe({ classes: [studentIn(CLASS_A, 'Class A')] })));
-    const { router } = renderApp(`/classes/${CLASS_A}/topics/t1/slides`);
+    stubApi(signedInWithTopics(makeMe({ classes: [studentIn(CLASS_A, 'Class A')] })));
+    const { router } = renderApp(`/classes/${CLASS_A}/topics/${T_SAMPLING}/slides`);
     const slides = await screen.findByRole('tab', { name: 'Slides' });
     expect(slides).toHaveAttribute('aria-selected', 'true');
     slides.focus();
     await user.keyboard('{ArrowRight}');
     await waitFor(() =>
-      expect(router.state.location.pathname).toBe(`/classes/${CLASS_A}/topics/t1/reading`),
+      expect(router.state.location.pathname).toBe(
+        `/classes/${CLASS_A}/topics/${T_SAMPLING}/reading`,
+      ),
     );
     expect(screen.getByRole('tab', { name: 'Reading' })).toHaveAttribute('aria-selected', 'true');
     expect(screen.getByRole('tabpanel')).toHaveAccessibleName('Reading');
   });
 
   it('A02 an unknown tab in the address lands on Slides', async () => {
-    stubApi(signedIn(makeMe({ classes: [studentIn(CLASS_A, 'Class A')] })));
-    const { router } = renderApp(`/classes/${CLASS_A}/topics/t1/nonsense`);
+    stubApi(signedInWithTopics(makeMe({ classes: [studentIn(CLASS_A, 'Class A')] })));
+    const { router } = renderApp(`/classes/${CLASS_A}/topics/${T_SAMPLING}/nonsense`);
     await screen.findByRole('tab', { name: 'Slides' });
-    expect(router.state.location.pathname).toBe(`/classes/${CLASS_A}/topics/t1/slides`);
+    expect(router.state.location.pathname).toBe(`/classes/${CLASS_A}/topics/${T_SAMPLING}/slides`);
   });
 });
 
