@@ -38,6 +38,7 @@ export default defineConfig({
       STORAGE_DRIVER: 'fs',
       STORAGE_DIR: resolve(import.meta.dirname, '../.local/e2e-storage'),
       NODE_ENV: 'test',
+      TEST_ROUTES: '1',
       STATIC_DIR: resolve(import.meta.dirname, '../apps/web/dist'),
       DATABASE_URL: e2eDatabaseUrl,
       // Sign-in links in the mail must point at this server; the file mailer writes to the

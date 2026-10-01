@@ -65,6 +65,11 @@ const Env = z
       .enum(['true', 'false'])
       .default('true')
       .transform((v) => v === 'true'),
+    /** `1` mounts the e2e fixture routes under /api/test (ADR-0006); refused in production. */
+    TEST_ROUTES: z
+      .enum(['0', '1'])
+      .default('0')
+      .transform((v) => v === '1'),
   })
   .superRefine((env, ctx) => {
     if (env.NODE_ENV === 'production') {
@@ -76,6 +81,9 @@ const Env = z
       ] as const) {
         if (!env[key]) ctx.addIssue({ code: 'custom', path: [key], message: 'required' });
       }
+    }
+    if (env.NODE_ENV === 'production' && env.TEST_ROUTES) {
+      ctx.addIssue({ code: 'custom', path: ['TEST_ROUTES'], message: 'not allowed in production' });
     }
     if (env.MAIL_TRANSPORT === 'smtp' && !env.SMTP_URL) {
       ctx.addIssue({ code: 'custom', path: ['SMTP_URL'], message: 'required for smtp' });
