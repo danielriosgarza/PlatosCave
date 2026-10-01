@@ -1,0 +1,29 @@
+{
+  "v": 1,
+  "harnessVersion": "1",
+  "runtime": { "language": "python", "version": "3.12.8" },
+  "checks": [
+    {
+      "name": "Four observations",
+      "status": "timeout",
+      "durationMs": 10002,
+      "expected": "1.290994",
+      "message": "Killed after 10 s",
+      "signal": 9,
+      "stdout": "working\nworking\n",
+      "stderr": "",
+      "truncated": false
+    },
+    {
+      "name": "Fewer than two observations",
+      "status": "skipped",
+      "durationMs": 0,
+      "message": "Not run: time budget spent",
+      "stdout": "",
+      "stderr": "",
+      "truncated": false
+    }
+  ],
+  "truncated": false,
+  "durationMs": 10061
+}

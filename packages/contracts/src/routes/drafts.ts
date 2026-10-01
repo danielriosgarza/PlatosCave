@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { conflictBody, defineRoute } from '../define';
+import { resourceTypes } from '../resources';
 
 /** Draft editing for a course (§12, ADR-0003). Class routes never read these rows (A26). */
 
@@ -7,16 +8,7 @@ const exampleCourseId = '00000000-0000-4000-8000-000000000000';
 const exampleTopicId = '00000000-0000-4000-8000-0000000000aa';
 const exampleResourceId = '00000000-0000-4000-8000-0000000000bb';
 
-export const resourceTypes = [
-  'slides_pdf',
-  'slides_web',
-  'reading_native',
-  'reading_pdf',
-  'exercise',
-  'notebook',
-  'shiny',
-  'test',
-] as const;
+export { resourceTypes };
 
 const json = z.record(z.string(), z.unknown());
 const title = z.string().trim().min(1).max(300);
