@@ -50,10 +50,35 @@ export function stubApi(handler: Handler) {
   return fetchMock;
 }
 
+/** The cards the API derives from the same memberships, with no topics or study positions. */
+export function cardsFor(me: Me) {
+  return {
+    classes: me.classes
+      .filter((c) => !c.isPreview)
+      .map((c) => ({
+        classId: c.classId,
+        className: c.className,
+        courseId: c.courseId,
+        courseTitle: c.courseTitle,
+        role: c.role,
+        archived: false,
+        topicCount: 0,
+        reviewed: { count: 0, total: 0 },
+        resume: null,
+        studentCount: c.role === 'instructor' ? 0 : null,
+      })),
+    courses: me.courses.map((c) => ({ ...c, topicCount: 0, classCount: 0 })),
+  };
+}
+
 export const signedIn =
   (me: Me): Handler =>
   (url) =>
-    url === '/api/me' ? { status: 200, body: me } : { status: 404, body: {} };
+    url === '/api/me'
+      ? { status: 200, body: me }
+      : url === '/api/courses'
+        ? { status: 200, body: cardsFor(me) }
+        : { status: 404, body: {} };
 
 export const T_SAMPLING = '00000000-0000-4000-8000-000000000301';
 export const T_ESTIMATION = '00000000-0000-4000-8000-000000000302';

@@ -131,7 +131,7 @@ export async function buildWorld(db: Db, now = new Date()): Promise<World> {
   await teach(ids.classA, 'priya');
   await teach(ids.classB, 'marcus');
   await teach(ids.classA, 'noor');
-  await setManageMembers(db, asManagerScope(ids.classA, course, ids.elena), ids.noor, true);
+  await setManageMembers(db, asManagerScope(ids.classA, course, ids.elena), ids.noor, true, now);
   await setPublisher(db, owner, ids.ines, true);
   await enrol(ids.classA, ['sam']);
   await enrol(ids.classB, ['bea', 'priya']);

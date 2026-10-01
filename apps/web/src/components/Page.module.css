@@ -168,3 +168,8 @@
     padding-right: 16px;
   }
 }
+/* Full screen shows the workspace on its own ground (wireframe: #parallax-study:fullscreen). */
+.workspace:fullscreen {
+  overflow: auto;
+  background: var(--pc-paper);
+}

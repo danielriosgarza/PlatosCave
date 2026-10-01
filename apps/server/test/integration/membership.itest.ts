@@ -5,8 +5,16 @@ import { buildApp } from '../../src/app';
 import { loadConfig } from '../../src/config';
 import { userForVerifiedEmail } from '../../src/db/auth/accounts';
 import { createSession } from '../../src/db/auth/sessions';
+import { createPreviewPrincipal } from '../../src/db/identity';
 import { auditEvents, classInvites, classMemberships } from '../../src/db/schema';
-import { buildWorld, cookieFor, ids, type PersonName, type World } from '../fixtures/world';
+import {
+  asClassScope,
+  buildWorld,
+  cookieFor,
+  ids,
+  type PersonName,
+  type World,
+} from '../fixtures/world';
 import { createTestDatabase, type TestDatabase } from './db';
 
 const now = new Date('2026-10-01T09:00:00Z');
@@ -299,6 +307,7 @@ describe('grants, removal and recent sign-in', () => {
       ['DELETE', `/api/classes/${ids.classA}/members/${ids.sam}`, undefined],
       ['PUT', publisherUrl(ids.priya), { granted: true }],
       ['POST', `/api/classes/${ids.classA}/invites`, { kind: 'enrolment' }],
+      ['DELETE', `/api/classes/${ids.classA}/invites/${ids.sam}`, undefined],
     ] as const) {
       const res = await call(old, method, url, body);
       expect(res.status, url).toBe(401);
@@ -498,6 +507,235 @@ describe('fixture routes', () => {
       expect(meRes.json().user.id).toBe(ids.sam);
     } finally {
       await fixtures.close();
+    }
+  });
+});
+
+describe('invitation revocation and membership audit', () => {
+  const revoke = (who: string, classId: string, inviteId: string) =>
+    call(who, 'DELETE', `/api/classes/${classId}/invites/${inviteId}`);
+  const membersOf = async (classId: string) =>
+    (await call(as('elena'), 'GET', `/api/classes/${classId}/members`)).body;
+  const auditFor = (action: string, targetId: string) =>
+    testDb.db
+      .select()
+      .from(auditEvents)
+      .where(and(eq(auditEvents.action, action), eq(auditEvents.targetId, targetId)));
+
+  /** A new account teaching `classId` through an instructor invitation from the owner. */
+  async function instructorOf(classId: string, email: string) {
+    const invite = await issue(as('elena'), classId, { kind: 'instructor', email });
+    const cookie = await newcomer(email);
+    expect((await accept(cookie, invite.body.code)).status).toBe(200);
+    return { cookie, userId: (await me(cookie)).user.id as string };
+  }
+
+  test('A01 a manager revokes an enrolment code and later uses are refused', async () => {
+    const code = await issue(as('noor'), ids.classA, { kind: 'enrolment' });
+    const early = await newcomer('early@example.test');
+    expect((await join(early, code.body.code)).status).toBe(200);
+
+    // Instructors without the grant, students and other classes' managers cannot revoke it.
+    expect((await revoke(as('priya'), ids.classA, code.body.id)).status).toBe(403);
+    expect((await revoke(as('sam'), ids.classA, code.body.id)).status).toBe(403);
+    expect((await revoke(as('bea'), ids.classA, code.body.id)).status).toBe(404);
+    // The invitation belongs to class A; through class B it does not exist.
+    expect((await revoke(as('elena'), ids.classB, code.body.id)).status).toBe(404);
+
+    expect(await revoke(as('noor'), ids.classA, code.body.id)).toEqual({
+      status: 200,
+      body: { id: code.body.id, revokedAt: now.toISOString() },
+    });
+    expect(await join(await newcomer('late@example.test'), code.body.code)).toEqual({
+      status: 410,
+      body: { error: 'invite_revoked' },
+    });
+    expect((await me(await newcomer('late@example.test'))).classes).toEqual([]);
+    // Who joined before the revocation stays a member.
+    expect((await me(early)).classes).toEqual([
+      expect.objectContaining({ classId: ids.classA, role: 'student' }),
+    ]);
+    const list = await membersOf(ids.classA);
+    expect(list.invites.map((i: { id: string }) => i.id)).not.toContain(code.body.id);
+
+    // Revoking again changes nothing and records nothing more.
+    expect((await revoke(as('elena'), ids.classA, code.body.id)).status).toBe(200);
+    const events = await auditFor('invite.revoke', code.body.id);
+    expect(events).toHaveLength(1);
+    expect(events[0]).toMatchObject({
+      actorId: ids.noor,
+      scopeKind: 'class',
+      scopeId: ids.classA,
+      targetType: 'invite',
+      before: { revokedAt: null },
+      after: { via: 'manage_members' },
+    });
+  });
+
+  test('A01 a foreign account gets invite_other_account whether the invitation is live, revoked or expired', async () => {
+    const email = 'addressee@example.test';
+    const live = await issue(as('elena'), ids.classA, { kind: 'instructor', email });
+    const revoked = await issue(as('elena'), ids.classA, { kind: 'instructor', email });
+    const expired = await issue(as('elena'), ids.classA, { kind: 'instructor', email });
+    expect((await revoke(as('elena'), ids.classA, revoked.body.id)).status).toBe(200);
+    await testDb.db
+      .update(classInvites)
+      .set({ expiresAt: new Date(now.getTime() - 1) })
+      .where(eq(classInvites.id, expired.body.id));
+
+    const intruder = await newcomer('foreign@example.test');
+    for (const invite of [live, revoked, expired]) {
+      expect(await accept(intruder, invite.body.code)).toEqual({
+        status: 403,
+        body: { error: 'invite_other_account' },
+      });
+    }
+    // The addressee still learns the real cause.
+    const addressee = await newcomer(email);
+    expect((await accept(addressee, revoked.body.code)).body).toEqual({ error: 'invite_revoked' });
+    expect((await accept(addressee, expired.body.code)).body).toEqual({ error: 'invite_expired' });
+  });
+
+  test('A01 the member list shows only open invitations', async () => {
+    const usedUp = await issue(as('elena'), ids.classB, { kind: 'enrolment', maxUses: 1 });
+    expect((await join(await newcomer('only@example.test'), usedUp.body.code)).status).toBe(200);
+    const expired = await issue(as('elena'), ids.classB, {
+      kind: 'enrolment',
+      expiresAt: new Date(now.getTime() + 60_000).toISOString(),
+    });
+    await testDb.db
+      .update(classInvites)
+      .set({ expiresAt: new Date(now.getTime() - 1) })
+      .where(eq(classInvites.id, expired.body.id));
+    const accepted = await issue(as('elena'), ids.classB, {
+      kind: 'instructor',
+      email: 'listed@example.test',
+    });
+    expect((await accept(await newcomer('listed@example.test'), accepted.body.code)).status).toBe(
+      200,
+    );
+    const open = await issue(as('elena'), ids.classB, { kind: 'enrolment', maxUses: 2 });
+    const later = await issue(as('elena'), ids.classB, {
+      kind: 'enrolment',
+      expiresAt: new Date(now.getTime() + 60_000).toISOString(),
+    });
+
+    const listed = (await membersOf(ids.classB)).invites.map((i: { id: string }) => i.id);
+    expect(listed).toContain(open.body.id);
+    expect(listed).toContain(later.body.id);
+    for (const gone of [usedUp, expired, accepted]) expect(listed).not.toContain(gone.body.id);
+  });
+
+  test('A01 removing an instructor audits the dropped draft editing and preview on their own', async () => {
+    const tutor = await instructorOf(ids.classB, 'tutor@example.test');
+    const previewId = await createPreviewPrincipal(
+      testDb.db,
+      asClassScope(ids.classB, ids.statistics, tutor.userId),
+    );
+    expect(
+      (await call(as('elena'), 'DELETE', `/api/classes/${ids.classB}/members/${tutor.userId}`))
+        .status,
+    ).toBe(200);
+    expect((await me(tutor.cookie)).courses).toEqual([]);
+
+    expect(await auditFor('grant.editor', tutor.userId)).toEqual([
+      expect.objectContaining({
+        actorId: ids.elena,
+        scopeKind: 'course',
+        scopeId: ids.statistics,
+        targetType: 'user',
+        before: { editor: true },
+        after: { editor: false, membershipRemoved: true, via: 'course_owner' },
+      }),
+    ]);
+    expect(await auditFor('membership.remove', previewId)).toEqual([
+      expect.objectContaining({
+        actorId: ids.elena,
+        scopeKind: 'class',
+        scopeId: ids.classB,
+        before: { role: 'student', isPreview: true },
+        after: { via: 'course_owner', previewOf: tutor.userId },
+      }),
+    ]);
+  });
+
+  test('A01 revoking publishing records whether the course membership went with it', async () => {
+    const author = await newcomer('author@example.test');
+    const authorId = (await me(author)).user.id as string;
+    const url = `/api/courses/${ids.statistics}/members/${authorId}/publisher`;
+    expect((await call(as('elena'), 'PUT', url, { granted: true })).status).toBe(200);
+    expect((await call(as('elena'), 'PUT', url, { granted: false })).status).toBe(200);
+    const events = await auditFor('grant.publisher', authorId);
+    expect(events.map((e) => e.after)).toEqual([
+      { publisher: true, membershipRemoved: false },
+      { publisher: false, membershipRemoved: true },
+    ]);
+  });
+
+  test('A01 invitations issued by a manager are revoked when they lose the grant or the class', async () => {
+    const grantUrl = (userId: string) =>
+      `/api/classes/${ids.classA}/members/${userId}/manage-members`;
+    const lead = await instructorOf(ids.classA, 'lead@example.test');
+    expect((await call(as('elena'), 'PUT', grantUrl(lead.userId), { granted: true })).status).toBe(
+      200,
+    );
+    const code = await issue(lead.cookie, ids.classA, { kind: 'enrolment' });
+    const invite = await issue(lead.cookie, ids.classA, {
+      kind: 'instructor',
+      email: 'deputy@example.test',
+    });
+    const ownersCode = await issue(as('elena'), ids.classA, { kind: 'enrolment' });
+
+    expect((await call(as('elena'), 'PUT', grantUrl(lead.userId), { granted: false })).status).toBe(
+      200,
+    );
+    expect((await join(await newcomer('after@example.test'), code.body.code)).body).toEqual({
+      error: 'invite_revoked',
+    });
+    expect((await accept(await newcomer('deputy@example.test'), invite.body.code)).body).toEqual({
+      error: 'invite_revoked',
+    });
+    expect((await join(await newcomer('after@example.test'), ownersCode.body.code)).status).toBe(
+      200,
+    );
+    expect((await auditFor('invite.revoke', code.body.id))[0]).toMatchObject({
+      actorId: ids.elena,
+      after: { reason: 'issuer_lost_manage_members' },
+    });
+
+    expect((await call(as('elena'), 'PUT', grantUrl(lead.userId), { granted: true })).status).toBe(
+      200,
+    );
+    const second = await issue(lead.cookie, ids.classA, { kind: 'enrolment' });
+    expect(
+      (await call(as('elena'), 'DELETE', `/api/classes/${ids.classA}/members/${lead.userId}`))
+        .status,
+    ).toBe(200);
+    expect((await join(await newcomer('after2@example.test'), second.body.code)).body).toEqual({
+      error: 'invite_revoked',
+    });
+    expect((await auditFor('invite.revoke', second.body.id))[0]).toMatchObject({
+      after: { reason: 'issuer_removed' },
+    });
+  });
+
+  test('A01 removal from one class during acceptance into another keeps draft editing', async () => {
+    for (const n of [1, 2, 3, 4, 5, 6]) {
+      const email = `mover${n}@example.test`;
+      const mover = await instructorOf(ids.classB, email);
+      const invite = await issue(as('elena'), ids.classA, { kind: 'instructor', email });
+      const [removed, accepted] = await Promise.all([
+        call(as('elena'), 'DELETE', `/api/classes/${ids.classB}/members/${mover.userId}`),
+        accept(mover.cookie, invite.body.code),
+      ]);
+      expect([removed.status, accepted.status]).toEqual([200, 200]);
+      const view = await me(mover.cookie);
+      expect(view.classes).toEqual([
+        expect.objectContaining({ classId: ids.classA, role: 'instructor' }),
+      ]);
+      expect(view.courses, email).toEqual([
+        expect.objectContaining({ courseId: ids.statistics, editor: true }),
+      ]);
     }
   });
 });
