@@ -5,20 +5,20 @@ import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { buildApp } from '../../src/app';
-import type { CourseScope } from '../../src/auth/scope';
 import { loadConfig } from '../../src/config';
-import {
-  classes,
-  courseReleases,
-  releaseResources,
-  releaseTopics,
-  resourceRevisions,
-  resources,
-  topics,
-} from '../../src/db/schema';
+import { adoptRelease } from '../../src/content/adoption';
+import { publishRelease } from '../../src/content/releases';
+import { resourceRevisions, resources, topics } from '../../src/db/schema';
 import { FsStorage } from '../../src/storage/fs';
 import { storeCourseObject } from '../../src/storage/objects';
-import { buildWorld, ids, type PersonName, type World } from '../fixtures/world';
+import {
+  asClassScope,
+  asCourseScope,
+  buildWorld,
+  ids,
+  type PersonName,
+  type World,
+} from '../fixtures/world';
 import { createTestDatabase, type TestDatabase } from './db';
 
 const now = new Date('2026-10-01T09:00:00Z');
@@ -43,8 +43,7 @@ function one<T>(rows: T[]): T {
   return row;
 }
 
-/** Course *Statistical thinking* as its owner stores it; P1-04a/P1-05 add the real API. */
-const elenaScope = { courseId: ids.statistics, user: { id: ids.elena } } as unknown as CourseScope;
+const elenaScope = asCourseScope(ids.statistics, ids.elena);
 
 interface Fixture {
   revisionId: string;
@@ -52,21 +51,32 @@ interface Fixture {
 }
 const fx = {} as Record<'visible' | 'hidden' | 'scheduled' | 'draft' | 'foreign', Fixture>;
 
+/** A draft PDF reading whose revision holds one stored object. */
 async function resourceWithObject(
   topicId: string,
   title: string,
   bytes: string,
+  draft: { position?: number; visibility?: 'visible' | 'hidden'; releaseAt?: Date } = {},
   courseId: string = ids.statistics,
   owner: string = ids.elena,
 ): Promise<Fixture & { resourceId: string }> {
   const { db } = testDb;
   const storage = app.contentDeps.storage;
-  const scope = { courseId, user: { id: owner } } as unknown as CourseScope;
+  const scope = asCourseScope(courseId, owner);
   const stored = await storeCourseObject(db, storage, scope, Buffer.from(bytes), 'application/pdf');
   const resource = one(
     await db
       .insert(resources)
-      .values({ courseId, topicId, type: 'slides_pdf', title, position: 0, createdBy: owner })
+      .values({
+        courseId,
+        topicId,
+        type: 'reading_pdf',
+        title,
+        position: draft.position ?? 0,
+        createdBy: owner,
+        ...(draft.visibility && { visibility: draft.visibility }),
+        ...(draft.releaseAt && { releaseAt: draft.releaseAt }),
+      })
       .returning(),
   );
   const revision = one(
@@ -75,8 +85,9 @@ async function resourceWithObject(
       .values({
         resourceId: resource.id,
         courseId,
-        type: 'slides_pdf',
+        type: 'reading_pdf',
         content: { title },
+        accessibleAlternative: { text: title },
         objectKeys: [stored.key],
         contentHash: stored.sha256,
         createdBy: owner,
@@ -105,12 +116,18 @@ beforeAll(async () => {
   const topic = one(
     await db
       .insert(topics)
-      .values({ courseId: ids.statistics, position: 0, title: 'Sampling', createdBy: ids.elena })
+      .values({ courseId: ids.statistics, position: 2, title: 'Inference', createdBy: ids.elena })
       .returning(),
   );
   const visible = await resourceWithObject(topic.id, 'Lecture notes', 'visible pdf');
-  const hidden = await resourceWithObject(topic.id, 'Answer key', 'hidden pdf');
-  const scheduled = await resourceWithObject(topic.id, 'Week 2', 'scheduled pdf');
+  const hidden = await resourceWithObject(topic.id, 'Answer key', 'hidden pdf', {
+    position: 1,
+    visibility: 'hidden',
+  });
+  const scheduled = await resourceWithObject(topic.id, 'Week 2', 'scheduled pdf', {
+    position: 2,
+    releaseAt: tomorrow,
+  });
   const foreignTopic = one(
     await db
       .insert(topics)
@@ -121,50 +138,20 @@ beforeAll(async () => {
     foreignTopic.id,
     'OLS notes',
     'foreign pdf',
+    {},
     ids.linearModels,
     ids.olivia,
   );
 
-  // Release v1 of Statistical thinking, adopted by class A only.
-  const release = one(
-    await db
-      .insert(courseReleases)
-      .values({ courseId: ids.statistics, version: 1, createdBy: ids.elena })
-      .returning(),
-  );
-  const releaseTopic = one(
-    await db
-      .insert(releaseTopics)
-      .values({
-        releaseId: release.id,
-        topicId: topic.id,
-        position: 0,
-        title: 'Sampling',
-        objective: '',
-        prerequisites: [],
-      })
-      .returning(),
-  );
-  const pinned = [
-    [visible, 'visible', null],
-    [hidden, 'hidden', null],
-    [scheduled, 'visible', tomorrow],
-  ] as const;
-  for (const [i, [r, visibility, releaseAt]] of pinned.entries()) {
-    await db.insert(releaseResources).values({
-      releaseId: release.id,
-      releaseTopicId: releaseTopic.id,
-      resourceId: r.resourceId,
-      resourceRevisionId: r.revisionId,
-      tab: 'slides',
-      position: i,
-      title: (await db.select().from(resources).where(eq(resources.id, r.resourceId)))[0]
-        ?.title as string,
-      visibility,
-      releaseAt,
-    });
-  }
-  await db.update(classes).set({ releaseId: release.id }).where(eq(classes.id, ids.classA));
+  // Release v2 of Statistical thinking carries these resources; only class A adopts it, so
+  // class B stays on the world's v1, which has none of them.
+  const published = await publishRelease(db, elenaScope);
+  if (!published.ok) throw new Error(JSON.stringify(published.report));
+  const adopted = await adoptRelease(db, asClassScope(ids.classA, ids.statistics, ids.priya), {
+    releaseId: published.release.id,
+    expectedReleaseId: ids.releaseV1,
+  });
+  if (!adopted.ok) throw new Error(adopted.reason);
   fx.visible = visible;
   fx.hidden = hidden;
   fx.scheduled = scheduled;
@@ -250,8 +237,9 @@ describe('content origin and signed content tokens', () => {
       expect(res.statusCode, who).toBe(404);
       expect(res.json()).toEqual({ error: 'not found' });
     }
-    // Class B has adopted no release: the same revision is not reachable through it.
+    // Class B is on release v1, which does not pin these revisions: not reachable through it.
     expect((await mint(ids.classB, fx.visible, 'bea')).statusCode).toBe(404);
+    expect((await mint(ids.classB, fx.visible, 'marcus')).statusCode).toBe(404);
     expect((await mint(ids.classB, fx.visible, 'priya')).statusCode).toBe(404);
     // Another course's object cannot be named through class A's release.
     expect((await mint(ids.classA, fx.foreign, 'priya')).statusCode).toBe(404);
