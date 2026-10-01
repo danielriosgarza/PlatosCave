@@ -189,4 +189,19 @@ describe('sign-in page', () => {
     expect(await screen.findByText('This sign-in link no longer works')).toBeInTheDocument();
     expect(screen.getByLabelText('Email address')).toBeInTheDocument();
   });
+
+  it('A01 does not show the expired-link state again after a link was requested and the address is changed', async () => {
+    const user = userEvent.setup();
+    stubApi((url) =>
+      url === '/api/auth/link' ? { status: 202, body: { accepted: true } } : signedOut(),
+    );
+    renderApp('/signin?link=expired');
+    expect(await screen.findByText('This sign-in link no longer works')).toBeInTheDocument();
+    await user.type(screen.getByLabelText('Email address'), 'sam@example.test');
+    await user.click(screen.getByRole('button', { name: 'Send sign-in link' }));
+    expect(await screen.findByText('Sign-in link requested')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Use a different address' }));
+    expect(await screen.findByLabelText('Email address')).toBeInTheDocument();
+    expect(screen.queryByText('This sign-in link no longer works')).toBeNull();
+  });
 });

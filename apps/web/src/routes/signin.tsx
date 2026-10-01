@@ -29,6 +29,8 @@ function SignIn() {
   const { next, link } = Route.useSearch();
   const [entrance, setEntrance] = useState<Entrance>('student');
   const [email, setEmail] = useState('');
+  // Survives request.reset(): once a link was requested the expired-link state is not shown again.
+  const [requested, setRequested] = useState(false);
   const request = useMutation({
     mutationFn: (address: string) =>
       call(requestSignInLink, { body: { email: address, entrance, ...(next ? { next } : {}) } }),
@@ -36,13 +38,14 @@ function SignIn() {
 
   const submit = (event: FormEvent) => {
     event.preventDefault();
+    setRequested(true);
     request.mutate(email.trim());
   };
 
   return (
     <main className={styles.index}>
       <h1>Sign in</h1>
-      {link === 'expired' && request.isIdle ? (
+      {link === 'expired' && !requested ? (
         <div className={styles.feedback} role="alert">
           <h2>This sign-in link no longer works</h2>
           <p>Links work once and expire after 15 minutes. Request a new one below.</p>
