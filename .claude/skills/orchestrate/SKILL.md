@@ -129,7 +129,7 @@ If nothing is in flight, schedule nothing (the hourly routine is the fallback); 
 >
 > One orchestrator run for Parallax. If the skill is not listed, read .claude/skills/orchestrate/SKILL.md from main and follow it. (follow-up check-in)
 
-4. Record it on the dashboard (Step 9) as `Next check-in: <fire time ISO> <trigger id>`. Keep a still-pending check-in's line; write `Next check-in: none` when none is pending. If `send_later` fails, write `none` and note it; the hourly run is the fallback.
+4. Record it on the dashboard (Step 9) as `Next check-in: <fire time ISO> <trigger id>`. Keep a still-pending check-in's line; write `Next check-in: none` when none is pending, including when the hourly run comes first (the hourly run is never recorded on this line). If `send_later` fails, write `none` and note it; the hourly run is the fallback.
 
 ## Step 9 — Dashboard
 
