@@ -8,7 +8,8 @@ const task = getDocument({
   enableXfa: false,
   disableFontFace: true,
   useSystemFonts: false,
-  // PostScript functions would otherwise be compiled with `new Function`; text needs none.
+  // pdfjs-dist 6.3 has no eval path and ignores this; set for builds that compile PostScript
+  // functions with `new Function` when it is true. Text extraction needs none.
   isEvalSupported: false,
   stopAtErrors: false,
   verbosity: 0,

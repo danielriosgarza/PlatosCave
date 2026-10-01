@@ -345,10 +345,16 @@ export function renderReading(
   const clean = transformProcessor.runSync(tree, file);
 
   const warnings: string[] = [];
-  // rehype-katex reports equations it cannot parse on the file and renders their source as text.
+  // Plugins report what they could not process on the file; the content stays, as plain text.
   for (const message of file.messages) {
-    const detail = message.cause instanceof Error ? message.cause.message : message.reason;
-    warnings.push(`An equation could not be rendered: ${detail}`);
+    if (message.source === 'rehype-katex') {
+      const detail = message.cause instanceof Error ? message.cause.message : message.reason;
+      warnings.push(`An equation could not be rendered: ${detail}`);
+    } else if (message.source === 'rehype-highlight') {
+      warnings.push(`Code could not be highlighted: ${message.reason}`);
+    } else {
+      warnings.push(message.reason);
+    }
   }
   dropEmptyClasses(clean);
   liftDisplayMath(clean);

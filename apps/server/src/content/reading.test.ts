@@ -275,6 +275,18 @@ describe('rendering', () => {
     expect(html).toContain('\\frac{');
   });
 
+  test('a fence in a language highlight.js does not know is reported as code, not as math', () => {
+    const { html, warnings } = renderReading(
+      '```nolang\nx = 1\n```\n\nBad $\\frac{$ math',
+      'markdown',
+    );
+    expect(warnings).toEqual([
+      expect.stringMatching(/^An equation could not be rendered: KaTeX parse error: /),
+      'Code could not be highlighted: Cannot highlight as `nolang`, it’s not registered',
+    ]);
+    expect(html).toContain('x = 1');
+  });
+
   test('display math in uploaded HTML becomes a block only where a block may stand', () => {
     const mixed = renderReading('<p><span class="math-display">x^2</span> in para</p>', 'html');
     // Inside a paragraph with other text it stays inline: a div would close the paragraph.
