@@ -40,7 +40,7 @@ Find the open issue labelled `dashboard` (title "Delivery status"); create it if
 
 1. If it has the label `paused`: update the `Last run` line and stop.
 2. If the lock timestamp is less than 30 minutes old, another run is active: stop. Otherwise write the lock with the current time.
-3. **Fast path**: if `Last run` is less than 3 hours old, no issue or PR was updated since `Last run` (`list_issues` with `since`, `list_pull_requests` sorted by `updated`), there are no live issues and no PR labelled `review:in-progress`, and nothing is in flight, then update `Last run`, release the lock, and stop.
+3. **Fast path**: if `Last run` is less than 3 hours old, no issue or PR was updated since `Last run` (`list_issues` with `since`, `list_pull_requests` sorted by `updated`), there are no live issues, no PR labelled `review:in-progress`, no PR labelled `review:approved` whose linked issue is not `needs-human`, and nothing is in flight, then update `Last run`, release the lock, and stop.
 
 ## Step 1 — Read state
 
@@ -136,7 +136,7 @@ Rewrite the **Delivery status** issue body:
 
 ```
 Orchestrator lock: none
-Last run: <ISO> — <one-line summary>
+Last run: <ISO of this run's start (the lock time)> — <one-line summary>
 Next check-in: <ISO> <trigger id> (or "none")
 
 | Phase | Closed | Open | In progress | In review | Blocked | Needs human |
