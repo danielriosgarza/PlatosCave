@@ -56,6 +56,11 @@ export function ResourceSection({ courseId, topicId, resources }: Props) {
     () => queryClient.invalidateQueries({ queryKey: authoringKey(courseId) }),
     [queryClient, courseId],
   );
+  const lookup: Lookup = processing.data
+    ? { kind: 'known' }
+    : processing.isError
+      ? { kind: 'error', reload: () => void processing.refetch() }
+      : { kind: 'loading' };
   const stateOf = (id: string) => processing.data?.resources.find((r) => r.resourceId === id);
 
   return (
@@ -75,6 +80,7 @@ export function ResourceSection({ courseId, topicId, resources }: Props) {
                 courseId={courseId}
                 resource={r}
                 status={stateOf(r.id)}
+                lookup={lookup}
                 onChanged={() => void refresh()}
               />
             ))}
@@ -106,14 +112,19 @@ export function ResourceSection({ courseId, topicId, resources }: Props) {
 
 type Status = z.output<typeof processingEntry>;
 
+/** What is known about a reading's processing: the server's entry, or why there is none yet. */
+type Lookup = { kind: 'loading' } | { kind: 'error'; reload: () => void } | { kind: 'known' };
+
 function StatusLine({
   courseId,
   resource,
   status,
+  lookup,
 }: {
   courseId: string;
   resource: ResourceSummary;
   status?: Status;
+  lookup: Lookup;
 }) {
   const queryClient = useQueryClient();
   const retry = useMutation({
@@ -122,6 +133,22 @@ function StatusLine({
   });
   if (!(isReading(resource.type) || resource.type === 'slides_pdf') || resource.archived) {
     return null;
+  }
+  if (lookup.kind !== 'known') {
+    return (
+      <div className={local.resourceMeta} role="status" aria-busy={lookup.kind === 'loading'}>
+        {lookup.kind === 'loading' ? (
+          'Checking processing…'
+        ) : (
+          <>
+            Processing status could not be loaded.{' '}
+            <button type="button" className={styles.textButton} onClick={lookup.reload}>
+              Reload status
+            </button>
+          </>
+        )}
+      </div>
+    );
   }
   const state = status?.state ?? null;
   const labels = {
@@ -160,11 +187,13 @@ function ResourceRow({
   courseId,
   resource,
   status,
+  lookup,
   onChanged,
 }: {
   courseId: string;
   resource: ResourceSummary;
   status?: Status;
+  lookup: Lookup;
   onChanged: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -178,7 +207,7 @@ function ResourceRow({
             {resource.visibility === 'hidden' ? 'Hidden from students' : 'Visible to students'}
             {resource.archived ? ' · Archived' : ''}
           </div>
-          <StatusLine courseId={courseId} resource={resource} status={status} />
+          <StatusLine courseId={courseId} resource={resource} status={status} lookup={lookup} />
         </div>
         {isReading(resource.type) ? (
           <button

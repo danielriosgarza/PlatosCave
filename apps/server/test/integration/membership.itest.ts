@@ -2,9 +2,9 @@ import { and, eq, inArray } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { buildApp } from '../../src/app';
-import { userForVerifiedEmail } from '../../src/auth/accounts';
-import { createSession } from '../../src/auth/sessions';
 import { loadConfig } from '../../src/config';
+import { userForVerifiedEmail } from '../../src/db/auth/accounts';
+import { createSession } from '../../src/db/auth/sessions';
 import { createPreviewPrincipal } from '../../src/db/identity';
 import { auditEvents, classInvites, classMemberships } from '../../src/db/schema';
 import {

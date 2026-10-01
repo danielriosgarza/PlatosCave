@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import { resolve } from 'node:path';
 import pg from 'pg';
 import { afterAll, beforeAll, expect, test } from 'vitest';
-import { BOSS_SCHEMA, createBoss } from '../../src/jobs/boss';
+import { BOSS_SCHEMA, createBoss } from '../../src/db/jobs/boss';
 import { createTestDatabase, type TestDatabase } from './db';
 
 const serverDir = resolve(import.meta.dirname, '../..');

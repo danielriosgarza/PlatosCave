@@ -1,7 +1,12 @@
-import { and, count, eq, gt, isNull, lt, sql } from 'drizzle-orm';
 import type { FastifyBaseLogger } from 'fastify';
+import {
+  deleteSigninToken,
+  deleteSigninTokensExpiredBefore,
+  findSigninDestination,
+  insertSigninTokenUnderCap,
+  useSigninToken,
+} from '../db/auth/signin-tokens';
 import type { Db } from '../db/client';
-import { signinTokens } from '../db/schema';
 import type { Mailer } from '../mail/mailer';
 import type { IdentityProvider, SignInResult } from './identity-provider';
 import { hashToken, newToken, TOKEN_SHAPE } from './sessions';
@@ -21,11 +26,8 @@ export const SIGNIN_TOKEN_RETENTION_MS = 24 * 3_600_000;
  * stay, so the per-address cap and the "link expired" answer keep working. No index serves this
  * (`expires_at` is unindexed); the hourly purge keeps the table to about a day of links.
  */
-export async function purgeSigninTokens(db: Db, now: Date): Promise<number> {
-  const result = await db
-    .delete(signinTokens)
-    .where(lt(signinTokens.expiresAt, new Date(now.getTime() - SIGNIN_TOKEN_RETENTION_MS)));
-  return result.rowCount ?? 0;
+export function purgeSigninTokens(db: Db, now: Date): Promise<number> {
+  return deleteSigninTokensExpiredBefore(db, new Date(now.getTime() - SIGNIN_TOKEN_RETENTION_MS));
 }
 
 export interface EmailProviderDeps {
@@ -47,31 +49,18 @@ export class EmailLinkProvider implements IdentityProvider {
     const address = email.toLowerCase();
     const now = clock();
     const token = newToken();
-    // Count and insert under a per-address lock, so concurrent requests cannot all pass the cap.
-    const row = await db.transaction(async (tx) => {
-      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`signin:${address}`}))`);
-      const [recent] = await tx
-        .select({ n: count() })
-        .from(signinTokens)
-        .where(
-          and(
-            eq(signinTokens.email, address),
-            gt(signinTokens.createdAt, new Date(now.getTime() - LINK_TTL_MS)),
-          ),
-        );
-      if ((recent?.n ?? 0) >= LINKS_PER_EMAIL) return undefined;
-      const [inserted] = await tx
-        .insert(signinTokens)
-        .values({
-          email: address,
-          tokenHash: hashToken(token),
-          destination,
-          createdAt: now,
-          expiresAt: new Date(now.getTime() + LINK_TTL_MS),
-        })
-        .returning({ id: signinTokens.id });
-      return inserted;
-    });
+    // The per-address cap is checked and the link stored under one lock.
+    const row = await insertSigninTokenUnderCap(
+      db,
+      {
+        email: address,
+        tokenHash: hashToken(token),
+        destination,
+        createdAt: now,
+        expiresAt: new Date(now.getTime() + LINK_TTL_MS),
+      },
+      { since: new Date(now.getTime() - LINK_TTL_MS), limit: LINKS_PER_EMAIL },
+    );
     if (!row) {
       log.info('sign-in link not sent: per-address limit reached');
       return;
@@ -95,7 +84,7 @@ export class EmailLinkProvider implements IdentityProvider {
       // The answer stays 202 for every address; a delivery failure is an operator problem.
       // An undelivered link is removed so it does not use up one of the address's sends.
       log.error({ err }, 'sign-in link could not be sent');
-      await db.delete(signinTokens).where(eq(signinTokens.id, row.id));
+      await deleteSigninToken(db, row.id);
     }
   }
 
@@ -105,22 +94,8 @@ export class EmailLinkProvider implements IdentityProvider {
     const now = clock();
     const tokenHash = hashToken(token);
     // One conditional update: of two concurrent uses, exactly one gets the row back.
-    const [used] = await db
-      .update(signinTokens)
-      .set({ usedAt: now })
-      .where(
-        and(
-          eq(signinTokens.tokenHash, tokenHash),
-          isNull(signinTokens.usedAt),
-          gt(signinTokens.expiresAt, now),
-        ),
-      )
-      .returning({ email: signinTokens.email, destination: signinTokens.destination });
+    const used = await useSigninToken(db, tokenHash, now);
     if (used) return { ok: true, email: used.email, destination: used.destination ?? '/courses' };
-    const [known] = await db
-      .select({ destination: signinTokens.destination })
-      .from(signinTokens)
-      .where(eq(signinTokens.tokenHash, tokenHash));
-    return { ok: false, destination: known?.destination ?? null };
+    return { ok: false, destination: await findSigninDestination(db, tokenHash) };
   }
 }

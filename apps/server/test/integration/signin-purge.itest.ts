@@ -8,8 +8,8 @@ import {
   purgeSigninTokens,
   SIGNIN_TOKEN_RETENTION_MS,
 } from '../../src/auth/email-provider';
+import { createBoss } from '../../src/db/jobs/boss';
 import { signinTokens } from '../../src/db/schema';
-import { createBoss } from '../../src/jobs/boss';
 import { PURGE_SIGNIN_TOKENS, workMaintenance } from '../../src/jobs/maintenance';
 import { createTestDatabase, type TestDatabase } from './db';
 

@@ -8,7 +8,7 @@ import {
 } from '@parallax/contracts/routes/drafts';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { Deps } from '../../app';
-import * as drafts from '../../content/drafts';
+import * as drafts from '../../db/content/drafts';
 import { enqueueIfUnprocessed, isProcessed } from '../../jobs/reading-ingest.job';
 import { notFound, registerRoute, settle } from '../register';
 
