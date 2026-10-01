@@ -1,14 +1,16 @@
 // Lint fixture for the scoped-table rule (ADR-0002). apps/server/src/db/raw-access-lint.test.ts
-// lints copies of this file at feature-module paths, where every marked line must be an error,
-// and at data-access paths, where none may be. At its own path the file is ordinary code.
+// lints copies of this file at feature-module paths, where exactly the marked lines must be
+// errors, and at data-access paths, where none may be. At its own path the file is ordinary code.
 import { eq, sql } from 'drizzle-orm'; // restricted-import
 import pg from 'pg'; // restricted-import
+import * as client from '../../src/db/client';
 import { createDb, type Db } from '../../src/db/client'; // restricted-import
 import { classMemberships } from '../../src/db/schema'; // restricted-import
 import { users } from '../../src/db/schema/users'; // restricted-import
 import { classScopedTables } from '../../src/db/scoped'; // restricted-import
+import { courseScopedTables } from '../../src/db/scoped.js'; // restricted-import
 
-export const imported = [pg, createDb, users, classScopedTables];
+export const imported = [pg, createDb, users, classScopedTables, courseScopedTables];
 
 export async function readAnotherClass(deps: { db: Db }, classId: string) {
   const db = deps.db;
@@ -19,5 +21,15 @@ export async function readAnotherClass(deps: { db: Db }, classId: string) {
   await db.execute(sql`select 1`); // raw-query
   await deps.db.query.classMemberships.findMany(); // raw-query
   await deps.db.transaction(async () => {}); // raw-query
+  await deps.db?.select().from(users); // raw-query
+  await deps.db.$client.query('delete from class_memberships'); // raw-query
+  client.createDb('postgres://localhost/x'); // raw-query
   return rows;
+}
+
+export function notTheDatabase(deps: { ledger: { db: { withdraw(): number } } }) {
+  const cache = { db: new Map<string, number>() };
+  // Known false positive: any object stored under the name `db` is treated as the handle.
+  cache.db.delete('key'); // raw-query
+  return deps.ledger.db.withdraw();
 }
