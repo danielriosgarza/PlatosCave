@@ -281,9 +281,12 @@ describe('derived status of resource revisions', () => {
     expect(await setDerivedStatus(db, olivia, revision.id, { ...status, state: 'ready' })).toBe(
       false,
     );
-    expect(await listResourceJobStatus(db, olivia)).toEqual([]);
+    // The shared world has resources of its own; this test looks only at the topic it made.
+    const inTopic = async (scope: CourseScope) =>
+      (await listResourceJobStatus(db, scope)).filter((row) => row.topicId === topic.id);
+    expect(await inTopic(olivia)).toEqual([]);
 
-    expect(await listResourceJobStatus(db, elena)).toEqual([
+    expect(await inTopic(elena)).toEqual([
       {
         resourceId: reading.id,
         topicId: topic.id,
