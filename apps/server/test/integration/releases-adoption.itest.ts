@@ -3,7 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { buildApp } from '../../src/app';
 import { loadConfig } from '../../src/config';
-import { registerAffectedBy } from '../../src/content/adoption';
+import { registerAffectedBy } from '../../src/db/content/adoption';
 import {
   auditEvents,
   classes,

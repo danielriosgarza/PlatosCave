@@ -8,8 +8,8 @@ import {
 } from '@parallax/contracts/routes/releases';
 import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { Deps } from '../../app';
-import * as adoption from '../../content/adoption';
-import * as releases from '../../content/releases';
+import * as adoption from '../../db/content/adoption';
+import * as releases from '../../db/content/releases';
 import { enqueueAnnotationsMap } from '../../jobs/annotations-map.job';
 import { notFound, registerRoute } from '../register';
 

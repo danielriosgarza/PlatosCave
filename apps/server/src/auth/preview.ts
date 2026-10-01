@@ -1,9 +1,10 @@
 import type { CookieSerializeOptions } from '@fastify/cookie';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
+import { revokeSession } from '../db/auth/sessions';
 import type { Db } from '../db/client';
 import { PREVIEW_SESSION_TTL_MS } from '../db/preview';
-import { revokeSession, TOKEN_SHAPE } from './sessions';
+import { TOKEN_SHAPE } from './sessions';
 
 /**
  * While a draft preview runs, the browser's session cookie holds the preview principal's

@@ -7,13 +7,8 @@ import {
   returnCookieOptions,
   setPreviewReturn,
 } from '../../auth/preview';
-import {
-  findPrincipal,
-  readSessionToken,
-  revokeSession,
-  SESSION_COOKIE,
-  sessionCookieOptions,
-} from '../../auth/sessions';
+import { readSessionToken, SESSION_COOKIE, sessionCookieOptions } from '../../auth/sessions';
+import { findPrincipal, revokeSession } from '../../db/auth/sessions';
 import { PREVIEW_SESSION_TTL_MS, startPreview as start } from '../../db/preview';
 import { notFound, refuse, registerRoute } from '../register';
 

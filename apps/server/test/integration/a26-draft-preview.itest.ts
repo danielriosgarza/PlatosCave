@@ -4,8 +4,9 @@ import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { buildApp } from '../../src/app';
 import { PREVIEW_RETURN_COOKIE } from '../../src/auth/preview';
-import { createSession, SESSION_COOKIE } from '../../src/auth/sessions';
+import { SESSION_COOKIE } from '../../src/auth/sessions';
 import { DEV_SESSION_SECRET, loadConfig } from '../../src/config';
+import { createSession } from '../../src/db/auth/sessions';
 import { excludePreview } from '../../src/db/preview';
 import {
   annotations,

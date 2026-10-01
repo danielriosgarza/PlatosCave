@@ -1,17 +1,12 @@
 import { requestSignInLink, signOut, verifySignInLink } from '@parallax/contracts/routes/auth';
 import type { FastifyInstance } from 'fastify';
 import type { Deps } from '../../app';
-import { userForVerifiedEmail } from '../../auth/accounts';
 import { defaultDestination, safeDestination } from '../../auth/destination';
 import { EmailLinkProvider } from '../../auth/email-provider';
 import { endPreviewReturn } from '../../auth/preview';
-import {
-  createSession,
-  readSessionToken,
-  revokeSession,
-  SESSION_COOKIE,
-  sessionCookieOptions,
-} from '../../auth/sessions';
+import { readSessionToken, SESSION_COOKIE, sessionCookieOptions } from '../../auth/sessions';
+import { userForVerifiedEmail } from '../../db/auth/accounts';
+import { createSession, revokeSession } from '../../db/auth/sessions';
 import { registerRoute } from '../register';
 
 const EXPIRED = '/signin?link=expired';

@@ -1,7 +1,7 @@
 import { and, eq, isNull, type SQL, sql } from 'drizzle-orm';
 import type { PgColumn } from 'drizzle-orm/pg-core';
 import type { CourseScope } from '../auth/scope';
-import { createSession } from '../auth/sessions';
+import { createSession } from './auth/sessions';
 import type { Db } from './client';
 import { insertPreviewPrincipal } from './identity';
 import { authSessions, classes, classMemberships, topics, users } from './schema';

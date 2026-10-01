@@ -9,8 +9,8 @@ import {
   type Tab,
   type TopicAvailability,
 } from '../content/availability';
-import { draftSnapshot } from '../content/releases';
 import type { Db } from './client';
+import { draftSnapshot } from './content/releases';
 import {
   classMemberships,
   courseReleases,
