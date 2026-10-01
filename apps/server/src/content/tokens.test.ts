@@ -55,6 +55,12 @@ describe('content tokens', () => {
     }
   });
 
+  test('a few seconds of clock skew between instances are tolerated, more is not', () => {
+    const ahead = (s: number) => mintContentToken(secret, grant, later(s)).token;
+    expect(verifyContentToken(secret, ahead(4), now)).not.toBeNull();
+    expect(verifyContentToken(secret, ahead(7), now)).toBeNull();
+  });
+
   test('minting refuses a token longer than the content route accepts', () => {
     const filename = 'x'.repeat(MAX_TOKEN_LENGTH);
     expect(() => mintContentToken(secret, { ...grant, filename }, now)).toThrow(/too long/);

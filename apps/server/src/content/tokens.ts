@@ -4,6 +4,9 @@ import { assertSafeKey } from '../storage/storage';
 /** Content tokens live at most five minutes, so copied links expire (ADR-0002, §13). */
 export const CONTENT_TOKEN_TTL_S = 300;
 
+/** Clock difference tolerated between the instance that mints and the one that verifies. */
+const CLOCK_SKEW_S = 5;
+
 export type Disposition = 'inline' | 'attachment';
 
 /** What a token grants: one object, to one user, minted from one class or course scope. */
@@ -79,7 +82,8 @@ export function verifyContentToken(secret: string, token: string, now: Date): Co
   if (typeof claims !== 'object' || claims === null || Array.isArray(claims)) return null;
   const nowS = now.getTime() / 1000;
   if (typeof claims.exp !== 'number' || claims.exp <= nowS) return null;
-  if (claims.exp - nowS > CONTENT_TOKEN_TTL_S) return null;
+  // exp is floored at mint time, so only a minter's clock running ahead pushes it past the TTL.
+  if (claims.exp - nowS > CONTENT_TOKEN_TTL_S + CLOCK_SKEW_S) return null;
   try {
     assertKeyInScope(claims.key, claims.scopeId);
   } catch {
