@@ -43,10 +43,26 @@ function onSignals(
 }
 
 if (mode === 'api') {
-  const app = await buildApp(config, database ? { db: database.db } : {});
+  // The API only sends jobs (adoption queues annotation mapping); workers run them.
+  let logBossError = (err: Error) => console.error('pg-boss error', err);
+  const boss =
+    database && createBoss(database.pool, { role: 'api', onError: (err) => logBossError(err) });
+  // Without a queue the API still serves; adoptions then queue no mapping (logged at error).
+  const started = await boss?.start().then(
+    () => true,
+    (err) => {
+      logBossError(err);
+      return false;
+    },
+  );
+  const app = await buildApp(config, database ? { db: database.db, ...(started && { boss }) } : {});
   logPoolError = (err) => app.log.error({ err }, 'pg pool error');
+  logBossError = (err) => app.log.error({ err }, 'pg-boss error');
   await app.listen({ port: config.PORT, host: config.HOST });
-  onSignals(app.log, () => app.close());
+  onSignals(app.log, async () => {
+    await app.close();
+    await boss?.stop({ graceful: true });
+  });
 } else {
   const log = pino({ level: config.LOG_LEVEL, name: 'worker' });
   logPoolError = (err) => log.error({ err }, 'pg pool error');

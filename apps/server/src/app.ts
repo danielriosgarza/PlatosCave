@@ -13,6 +13,7 @@ import {
   serializerCompiler,
   validatorCompiler,
 } from 'fastify-type-provider-zod';
+import type { PgBoss } from 'pg-boss';
 import type { Config } from './config';
 import { MAX_TOKEN_LENGTH } from './content/tokens';
 import type { Db } from './db/client';
@@ -47,6 +48,8 @@ export interface Deps {
   mailer?: Mailer;
   /** Object store; defaults to the one STORAGE_DRIVER selects. */
   storage?: Storage;
+  /** Job queue for routes that start background work; absent, such work is not queued. */
+  boss?: PgBoss;
 }
 
 const NOT_FOUND = { error: 'not found' };

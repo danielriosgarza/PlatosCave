@@ -10,6 +10,7 @@ import type { FastifyInstance, FastifyReply } from 'fastify';
 import type { Deps } from '../../app';
 import * as adoption from '../../content/adoption';
 import * as releases from '../../content/releases';
+import { enqueueAnnotationsMap } from '../../jobs/annotations-map.job';
 import { registerRoute } from '../register';
 
 const iso = (d: Date) => d.toISOString();
@@ -78,9 +79,18 @@ export default function releaseRoutes(app: FastifyInstance, deps: Deps): void {
     return diff ?? fail(reply, 404, { error: 'not found' });
   });
 
-  registerRoute(app, adoptRelease, async ({ scope, body, reply }) => {
+  registerRoute(app, adoptRelease, async ({ scope, body, reply, req }) => {
     const result = await adoption.adoptRelease(db(), scope, body);
-    if (result.ok) return { releaseId: result.releaseId, diff: result.diff };
+    if (result.ok) {
+      // Marks are mapped onto the new revisions in the background (ADR-0003). The adoption has
+      // committed either way; until the job runs, reads show those marks as pending.
+      if (deps.boss && result.diff.from?.id !== result.releaseId) {
+        await enqueueAnnotationsMap(deps.boss, scope, result.releaseId).catch((err) =>
+          req.log.error({ err, classId: scope.classId }, 'could not queue annotation mapping'),
+        );
+      }
+      return { releaseId: result.releaseId, diff: result.diff };
+    }
     if (result.reason === 'not_found') return fail(reply, 404, { error: 'not found' });
     if (result.reason === 'class_archived') return fail(reply, 409, { error: 'class_archived' });
     return fail(reply, 409, {
