@@ -3,6 +3,7 @@ import { buildApp } from './app';
 import { loadConfig } from './config';
 import { createDb } from './db/client';
 import { createBoss } from './jobs/boss';
+import { workMaintenance } from './jobs/maintenance';
 import { loadJobs } from './jobs/registry';
 import { workScopedJob } from './jobs/scoped';
 
@@ -65,6 +66,7 @@ if (mode === 'api') {
   }
   const boss = createBoss(database.pool, {
     role: 'worker',
+    schedule: true,
     onError: (err) => log.error({ err }, 'pg-boss error'),
     onWarning: (warning) => log.warn({ warning }, 'pg-boss warning'),
   });
@@ -72,7 +74,8 @@ if (mode === 'api') {
     await boss.start();
     const jobs = await loadJobs();
     for (const job of jobs) await workScopedJob(boss, database.db, job, log);
-    log.info({ jobs: jobs.map((j) => j.name) }, 'worker started');
+    const maintenance = await workMaintenance(boss, database.db, log);
+    log.info({ jobs: [...jobs.map((j) => j.name), ...maintenance] }, 'worker started');
   })();
   // Installed before startup, so a signal during it still stops pg-boss once startup settles.
   onSignals(log, async () => {
