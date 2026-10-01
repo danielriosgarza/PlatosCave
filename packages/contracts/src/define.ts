@@ -7,6 +7,19 @@ export type Scope =
   | { kind: 'class'; role: 'student' | 'instructor' | 'any'; grant?: 'manage_members' }
   | { kind: 'course'; role: 'editor' | 'publisher' | 'owner' };
 
+/** The runtime check of a declared scope, for declarations loaded from modules (jobs). */
+export const Scope: z.ZodType<Scope> = z.discriminatedUnion('kind', [
+  z.strictObject({ kind: z.literal('public') }),
+  z.strictObject({ kind: z.literal('user') }),
+  z.strictObject({ kind: z.literal('system') }),
+  z.strictObject({
+    kind: z.literal('class'),
+    role: z.enum(['student', 'instructor', 'any']),
+    grant: z.literal('manage_members').optional(),
+  }),
+  z.strictObject({ kind: z.literal('course'), role: z.enum(['editor', 'publisher', 'owner']) }),
+]);
+
 export type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 
 /** A contract part that may be absent: `undefined` when the contract omits it. */

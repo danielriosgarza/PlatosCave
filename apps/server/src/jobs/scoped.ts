@@ -8,7 +8,13 @@ import type {
   SendOptions,
 } from 'pg-boss';
 import { z } from 'zod';
-import { type ClassScope, type CourseScope, resolveActorScope, type ScopeFor } from '../auth/scope';
+import {
+  type ClassScope,
+  type CourseScope,
+  NoRecentAuthError,
+  resolveActorScope,
+  type ScopeFor,
+} from '../auth/scope';
 import type { Db } from '../db/client';
 
 /** Jobs act on one class or one course; the rule is declared by the job, never by the payload. */
@@ -47,9 +53,11 @@ export type ScopedPayload = z.infer<typeof ScopedPayload>;
 
 /**
  * Enqueues a job for the person and class or course of an already resolved scope, so a job can
- * only be sent from code that itself passed the scope check. The input is validated here but
- * stored as given and parsed once when the job runs, so transforms run once. Resolves to null
- * when pg-boss drops the send as a duplicate (`singletonKey`, throttling).
+ * only be sent from code that itself passed the scope check. The input is stored as JSON and
+ * parsed once when the job runs, so transforms run once; what is validated here is that JSON
+ * form, the value the worker will parse, so an input that does not survive it (a `z.date()`, a
+ * field set to `undefined` whose key the schema requires) fails now rather than at run time.
+ * Resolves to null when pg-boss drops the send as a duplicate (`singletonKey`, throttling).
  */
 export async function sendScopedJob<R extends JobRule, I extends z.ZodType>(
   boss: PgBoss,
@@ -58,7 +66,8 @@ export async function sendScopedJob<R extends JobRule, I extends z.ZodType>(
   input: z.input<I>,
   options: SendOptions = {},
 ): Promise<string | null> {
-  job.input.parse(input);
+  const stored: unknown = JSON.parse(JSON.stringify(input) ?? 'null');
+  job.input.parse(stored);
   const resolved = scope as ClassScope | CourseScope;
   const payload: ScopedPayload = {
     actorId: resolved.user.id,
@@ -66,9 +75,19 @@ export async function sendScopedJob<R extends JobRule, I extends z.ZodType>(
       job.scope.kind === 'class'
         ? { kind: 'class', classId: (resolved as ClassScope).classId }
         : { kind: 'course', courseId: (resolved as CourseScope).courseId },
-    input,
+    input: stored,
   };
   return boss.send(job.name, payload, options);
+}
+
+/**
+ * Creates the job's queue, or brings an existing one in line with `job.queue`: `createQueue`
+ * leaves an existing queue as it is, so changed options reach it only through `updateQueue`.
+ * Options removed from `job.queue` keep their stored value (pg-boss merges updates).
+ */
+async function upsertQueue(boss: PgBoss, { name, queue }: Pick<ScopedJob, 'name' | 'queue'>) {
+  await boss.createQueue(name, queue);
+  if (queue && Object.keys(queue).length > 0) await boss.updateQueue(name, queue);
 }
 
 /**
@@ -76,7 +95,7 @@ export async function sendScopedJob<R extends JobRule, I extends z.ZodType>(
  * Workers create their own queues in `workScopedJob`.
  */
 export async function ensureQueues(boss: PgBoss, jobs: readonly ScopedJob[]): Promise<void> {
-  for (const job of jobs) await boss.createQueue(job.name, job.queue);
+  for (const job of jobs) await upsertQueue(boss, job);
 }
 
 export type ScopedOutcome =
@@ -84,17 +103,6 @@ export type ScopedOutcome =
   | { status: 'refused'; reason: string };
 
 const refuse = (reason: string): ScopedOutcome => ({ status: 'refused', reason });
-
-/** What `requireRecentAuth()` throws inside a job: a refusal, not an error worth retrying. */
-class JobRecentAuthError extends Error {
-  readonly statusCode = 401;
-  readonly code = 'recent_auth_required';
-}
-
-/** Jobs run without a session, so nothing they do can count as a recent sign-in (§3). */
-const noRecentAuth = () => {
-  throw new JobRecentAuthError('Background jobs cannot make sensitive changes');
-};
 
 /**
  * Runs one job for its actor (ADR-0002): rejects a payload without actor and scope, re-resolves
@@ -114,7 +122,7 @@ export async function runScopedJob<R extends JobRule, I extends z.ZodType>(
   if (scope.kind !== job.scope.kind) return refuse(`job needs ${job.scope.kind} scope`);
 
   const targetId = scope.kind === 'class' ? scope.classId : scope.courseId;
-  const resolution = await resolveActorScope(db, actorId, noRecentAuth, job.scope, targetId);
+  const resolution = await resolveActorScope(db, actorId, job.scope, targetId);
   if (!resolution.ok) return refuse(resolution.reason);
 
   const parsed = job.input.safeParse(input);
@@ -128,7 +136,8 @@ export async function runScopedJob<R extends JobRule, I extends z.ZodType>(
     });
     return { status: 'completed', output };
   } catch (err) {
-    if (err instanceof JobRecentAuthError) return refuse('a job cannot count as a recent sign-in');
+    // `requireRecentAuth()` inside a job: a refusal, not an error worth retrying.
+    if (err instanceof NoRecentAuthError) return refuse('a job cannot count as a recent sign-in');
     throw err;
   }
 }
@@ -151,7 +160,7 @@ export async function workScopedJob<R extends JobRule, I extends z.ZodType>(
   log: WorkLogger,
   polling: JobPollingOptions & Pick<JobFetchOptions, 'batchSize'> = {},
 ): Promise<string> {
-  await boss.createQueue(job.name, job.queue);
+  await upsertQueue(boss, job);
   return boss.work(job.name, { ...polling, perJobResults: true }, async (batch) => {
     const results = [];
     for (const pgJob of batch) {

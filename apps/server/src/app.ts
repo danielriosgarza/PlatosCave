@@ -143,10 +143,12 @@ export async function buildApp(config: Config, deps: Deps = {}): Promise<Fastify
 
   const routes = await loadModules(resolve(import.meta.dirname, 'http/routes'), '.routes.ts');
   for (const { file, mod } of routes) {
-    if (typeof mod.default !== 'function') throw new Error(`${file} has no default export`);
-    const register = mod.default as (app: FastifyInstance, deps: Deps) => void;
+    if (typeof mod.default !== 'function') {
+      throw new Error(`${file} does not default-export a route registrar`);
+    }
+    const register = mod.default as (app: FastifyInstance, deps: Deps) => void | Promise<void>;
     await app.register(async (instance) => {
-      register(instance, deps);
+      await register(instance, deps);
     });
   }
 
