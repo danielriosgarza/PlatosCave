@@ -13,6 +13,7 @@ import {
   T_SAMPLING,
 } from '../test/render';
 import type { Attempt, ClassRelease } from './attempt';
+import { parseNumber } from './StepForm';
 
 afterEach(() => {
   cleanup();
@@ -90,12 +91,23 @@ function exerciseApi(
     predictOnly?: boolean;
     /** Only the Explain (text) step, so it is the last one. */
     textLast?: boolean;
+    /** The simulation range ends between grid points. */
+    offGrid?: boolean;
+    /** Visibility of the exercise in the release. */
+    visibility?: 'visible' | 'hidden';
+    /** Makes the open call fail with this response. */
+    openFails?: { status: number; body: unknown };
     /** Answers checks as a stale tab: the attempt was started again elsewhere. */
     staleChecks?: boolean;
   } = {},
 ) {
   const begin = (n: number): Attempt => {
     const fresh = freshAttempt(n);
+    if (options.offGrid) {
+      fresh.steps = fresh.steps.map((st) =>
+        st.control ? { ...st, control: { ...st.control, max: 110 } } : st,
+      );
+    }
     if (options.textLast) return { ...fresh, steps: fresh.steps.slice(2) };
     return options.predictOnly ? { ...fresh, steps: fresh.steps.slice(0, 1) } : fresh;
   };
@@ -153,7 +165,7 @@ function exerciseApi(
             tab: 'exercises',
             position: 0,
             title: 'Sample size and spread',
-            visibility: 'visible',
+            visibility: options.visibility ?? 'visible',
             releaseAt: options.releaseAt ?? null,
           },
         ],
@@ -166,7 +178,10 @@ function exerciseApi(
     if (/\/topics$/.test(url)) return { status: 200, body: makeTopics() };
     if (/\/release$/.test(url)) return { status: 200, body: release };
     calls.push({ url, body });
-    if (url.endsWith('/exercise-attempt')) return { status: 200, body: attempt };
+    if (url.endsWith('/exercise-attempt')) {
+      if (options.openFails) return options.openFails;
+      return { status: 200, body: attempt };
+    }
     if (url.endsWith('/check') && options.staleChecks) {
       return {
         status: 409,
@@ -249,7 +264,7 @@ describe('exercise UI', () => {
     const { calls } = exerciseApi();
     open();
     expect(await screen.findByRole('heading', { name: 'Predict' })).toBeVisible();
-    expect(screen.getByRole('list', { name: /Exercise step 1 of 3: Predict/ })).toBeVisible();
+    expect(screen.getByRole('img', { name: /Exercise step 1 of 3: Predict/ })).toBeVisible();
 
     await user.click(screen.getByRole('radio', { name: 'Wider' }));
     await user.click(screen.getByRole('button', { name: 'Check answer' }));
@@ -446,5 +461,65 @@ describe('exercise UI', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('could not be recorded');
     expect(screen.getByRole('radio', { name: 'Wider' })).toBeChecked();
     expect(screen.queryByText('Correct.')).toBeNull();
+  });
+});
+
+describe('exercise UI follow-ups', () => {
+  it('A23 the simulation control stops at the last grid point when max is off the grid', async () => {
+    const user = userEvent.setup();
+    exerciseApi({ offGrid: true });
+    open();
+    await user.click(await screen.findByRole('radio', { name: 'Narrower' }));
+    await user.click(screen.getByRole('button', { name: 'Check answer' }));
+    await user.click(await screen.findByRole('button', { name: 'Continue' }));
+    const slider = await screen.findByRole('slider', { name: /Sample size/ });
+    const increase = screen.getByRole('button', { name: 'Increase' });
+    for (let i = 0; i < 3; i++) await user.click(increase);
+    expect(slider).toHaveValue('100');
+    expect(increase).toBeDisabled();
+    expect(slider).toHaveAttribute('max', '100');
+  });
+
+  it('A08 a hidden exercise is marked as hidden from students for an instructor', async () => {
+    exerciseApi({ role: 'instructor', visibility: 'hidden', releaseAt: '2099-01-15T09:00:00Z' });
+    open();
+    expect(await screen.findByText(/Hidden from students/)).toBeVisible();
+  });
+
+  it('A08 an exercise that fails to open shows the server message, or offers Try again', async () => {
+    const user = userEvent.setup();
+    exerciseApi({ openFails: { status: 400, body: { message: 'This exercise has no steps.' } } });
+    open();
+    expect(await screen.findByRole('alert')).toHaveTextContent('This exercise has no steps.');
+    cleanup();
+    exerciseApi({ openFails: { status: 404, body: {} } });
+    open();
+    expect(await screen.findByRole('alert')).toHaveTextContent('It may not be open to you yet.');
+    cleanup();
+    exerciseApi({ openFails: { status: 500, body: {} } });
+    open();
+    expect(await screen.findByRole('button', { name: 'Try again' })).toBeVisible();
+    expect(screen.getByRole('alert')).toHaveTextContent('Check your connection');
+    void user;
+  });
+});
+
+describe('parseNumber', () => {
+  it.each([
+    ['1000.5', 1000.5],
+    ['1,000', 1000],
+    ['1,000.5', 1000.5],
+    ['1.000,5', 1000.5],
+    ['1.000.000', 1000000],
+    ['3,14', 3.14],
+    ['-2,5', -2.5],
+    ['1 000', 1000],
+    ['.5', 0.5],
+    ['2e3', 2000],
+  ])('reads %s as %d', (text, value) => {
+    expect(parseNumber(text)).toBe(value);
+  });
+  it.each(['', ' ', 'abc', '1,2,3', '0x10', 'Infinity', '1.2.3'])('refuses %j', (text) => {
+    expect(parseNumber(text)).toBeNull();
   });
 });

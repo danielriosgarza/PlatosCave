@@ -1,4 +1,4 @@
-import { type ReactNode, useId, useState } from 'react';
+import { type ReactNode, useId } from 'react';
 import type { AttemptStep } from './attempt';
 import styles from './Exercise.module.css';
 
@@ -48,6 +48,29 @@ export function initialDraft(step: AttemptStep): Draft {
   }
 }
 
+/**
+ * Reads a typed number in the common forms: `1000.5`, `1,000.5`, `1.000,5`, `1000,5`, `1 000`.
+ * The last of `.` and `,` is the decimal mark when both appear; a lone separator followed by
+ * exactly three digits in every group is grouping (`1,000`, `1.000.000`), otherwise a lone
+ * comma is a decimal comma. Returns null for anything else.
+ */
+export function parseNumber(text: string): number | null {
+  let s = text.trim().replace(/(?<=\d)[\s\u00a0\u202f](?=\d{3}(?!\d))/g, '');
+  const dot = s.lastIndexOf('.');
+  const comma = s.lastIndexOf(',');
+  if (dot !== -1 && comma !== -1) {
+    const [decimal, group] = dot > comma ? ['.', ','] : [',', '.'];
+    s = s.split(group).join('').replace(decimal, '.');
+  } else if (comma !== -1) {
+    s = /^[+-]?\d{1,3}(,\d{3})+$/.test(s) ? s.replaceAll(',', '') : s.replace(',', '.');
+  } else if (/^[+-]?\d{1,3}(\.\d{3}){2,}$/.test(s)) {
+    s = s.replaceAll('.', '');
+  }
+  if (!/^[+-]?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?$/i.test(s)) return null;
+  const n = Number(s);
+  return Number.isFinite(n) ? n : null;
+}
+
 /** The response to send, or what is still missing. */
 export function toResponse(
   step: AttemptStep,
@@ -55,8 +78,8 @@ export function toResponse(
 ): { ok: true; response: unknown } | { ok: false; message: string } {
   switch (draft.kind) {
     case 'numeric': {
-      const n = Number(draft.text.replace(',', '.'));
-      return draft.text.trim() !== '' && Number.isFinite(n)
+      const n = parseNumber(draft.text);
+      return n !== null
         ? { ok: true, response: n }
         : { ok: false, message: 'Enter a number before checking it.' };
     }
@@ -264,22 +287,15 @@ function SimulationControl({
   onChange: (value: number) => void;
 }): ReactNode {
   const id = useId();
-  const [announce, setAnnounce] = useState('');
   const control = step.control;
   if (!control) return null;
+  // The last grid point min + k·step ≤ max: the server refuses values off the grid.
+  const lastIndex = Math.floor((control.max - control.min) / control.step + 1e-9);
+  const last = Number((control.min + lastIndex * control.step).toFixed(6));
   const clamp = (v: number) =>
-    Math.min(
-      control.max,
-      Math.max(
-        control.min,
-        Math.round((v - control.min) / control.step) * control.step + control.min,
-      ),
-    );
-  const set = (v: number) => {
-    const next = Number(clamp(v).toFixed(6));
-    onChange(next);
-    setAnnounce(`${control.label} ${num(next)}`);
-  };
+    Math.min(lastIndex, Math.max(0, Math.round((v - control.min) / control.step))) * control.step +
+    control.min;
+  const set = (v: number) => onChange(Number(clamp(v).toFixed(6)));
   const compared = step.compared ?? [];
   return (
     <div className={styles.lab}>
@@ -298,7 +314,7 @@ function SimulationControl({
           id={id}
           type="range"
           min={control.min}
-          max={control.max}
+          max={last}
           step={control.step}
           value={value}
           disabled={disabled}
@@ -307,7 +323,7 @@ function SimulationControl({
         />
         <div className={`${styles.between} ${styles.small} ${styles.muted}`}>
           <span>{num(control.min)}</span>
-          <span>{num(control.max)}</span>
+          <span>{num(last)}</span>
         </div>
         <div className={styles.nudge}>
           <button
@@ -321,7 +337,7 @@ function SimulationControl({
           <button
             type="button"
             className={styles.outline}
-            disabled={disabled || value >= control.max}
+            disabled={disabled || value >= last}
             onClick={() => set(value + control.step)}
           >
             Increase
@@ -337,9 +353,6 @@ function SimulationControl({
             ))}
           </ul>
         </div>
-        <span className={styles.visuallyHidden} role="status">
-          {announce}
-        </span>
       </div>
     </div>
   );
