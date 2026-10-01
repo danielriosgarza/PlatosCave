@@ -1,6 +1,6 @@
 import { eq, type SQL } from 'drizzle-orm';
 import type { PgColumn, PgTable } from 'drizzle-orm/pg-core';
-import type { ClassScope, CourseScope } from '../auth/scope';
+import type { ClassContext, CourseScope } from '../auth/scope';
 import {
   annotationPlacements,
   annotations,
@@ -10,6 +10,8 @@ import {
   classReleaseHistory,
   courseMemberships,
   courseReleases,
+  exerciseAttempts,
+  exerciseEvents,
   posts,
   resourceRevisions,
   resources,
@@ -33,6 +35,8 @@ export const classScopedTables: PgTable[] = [
   threads,
   posts,
   annotationPlacements,
+  exerciseAttempts,
+  exerciseEvents,
 ];
 export const courseScopedTables: PgTable[] = [
   classes,
@@ -45,7 +49,7 @@ export const courseScopedTables: PgTable[] = [
 ];
 
 /** `WHERE class_id = …` for a class-scoped table; takes only a resolved scope, never a raw id. */
-export const forClass = (scope: ClassScope, table: { classId: PgColumn }): SQL =>
+export const forClass = (scope: ClassContext, table: { classId: PgColumn }): SQL =>
   eq(table.classId, scope.classId);
 
 /** `WHERE course_id = …` for a course-scoped table; takes only a resolved scope. */

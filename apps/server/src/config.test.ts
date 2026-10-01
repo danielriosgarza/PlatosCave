@@ -92,3 +92,19 @@ test('the smtp transport needs SMTP_URL', () => {
       .MAIL_TRANSPORT,
   ).toBe('smtp');
 });
+
+test('A01 fixture routes are off by default and refused in production', () => {
+  expect(loadConfig({ NODE_ENV: 'test' }).TEST_ROUTES).toBe(false);
+  expect(loadConfig({ NODE_ENV: 'test', TEST_ROUTES: '1' }).TEST_ROUTES).toBe(true);
+  const production = {
+    NODE_ENV: 'production',
+    SESSION_SECRET: 'x'.repeat(32),
+    APP_ORIGIN: 'https://parallax.example.org',
+    APP_HOST: 'parallax.example.org',
+    CONTENT_HOST: 'content.parallax.example.org',
+    CONTENT_ORIGIN: 'https://content.parallax.example.org',
+    CONTENT_TOKEN_SECRET: 's'.repeat(40),
+  } as const;
+  expect(loadConfig(production).TEST_ROUTES).toBe(false);
+  expect(() => loadConfig({ ...production, TEST_ROUTES: '1' })).toThrow(/TEST_ROUTES/);
+});
