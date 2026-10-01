@@ -30,7 +30,6 @@ async function courseScope(actorId: string, courseId: string): Promise<CourseSco
   const resolution = await resolveActorScope(
     testDb.db,
     actorId,
-    () => {},
     { kind: 'course', role: 'editor' },
     courseId,
   );
