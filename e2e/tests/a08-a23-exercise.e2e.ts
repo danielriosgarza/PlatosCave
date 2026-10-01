@@ -104,7 +104,7 @@ test('A08 and A23 a student works Predict, Inspect and Explain; help is recorded
   await openExercise(page, ids.classA, ids.sampling, title);
 
   // Predict: a wrong answer gets its specific feedback, keeps the choice, allows retry.
-  await expect(page.getByRole('list', { name: /Exercise step 1 of 3: Predict/ })).toBeVisible();
+  await expect(page.getByRole('img', { name: /Exercise step 1 of 3: Predict/ })).toBeVisible();
   await page.getByRole('radio', { name: 'It stays the same' }).check();
   await page.getByRole('button', { name: 'Check answer' }).click();
   await expect(page.getByText('The error depends on √n, not on n.')).toBeVisible();
