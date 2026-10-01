@@ -41,7 +41,7 @@ Find the open issue labelled `dashboard` (title "Delivery status"); create it if
 
 1. If it has the label `paused`: update the `Last run` line and stop.
 2. If the lock timestamp is less than 30 minutes old, another run is active: stop. Otherwise write the lock with the current time.
-3. **Fast path**: if `Last run` is less than 3 hours old, no issue or PR was updated since `Last run` (`list_issues` with `since`, `list_pull_requests` sorted by `updated`), there are no live issues, no PR labelled `review:in-progress`, no `review:approved` PR that Step 2 could still merge (not issue-less, linked issue not `needs-human`), and nothing is in flight, then update `Last run`, release the lock, and stop.
+3. **Fast path**: if `Last run` is less than 3 hours old, no issue other than the dashboard issue and no PR was updated since `Last run` (`list_issues` with `since`, `list_pull_requests` sorted by `updated`), there are no live issues, no PR labelled `review:pending` or `review:in-progress`, no `review:approved` PR that Step 2 could still merge (not issue-less, linked issue not `needs-human`), and nothing is in flight, then update `Last run`, release the lock, and stop.
 
 ## Step 1 — Read state
 
