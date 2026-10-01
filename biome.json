@@ -17,5 +17,65 @@
     "formatter": { "quoteStyle": "single", "semicolons": "always", "trailingCommas": "all" }
   },
   "linter": { "enabled": true, "rules": { "recommended": true } },
-  "assist": { "actions": { "source": { "organizeImports": "on" } } }
+  "assist": { "actions": { "source": { "organizeImports": "on" } } },
+  "plugins": [
+    {
+      "path": "./apps/server/lint/raw-db-query.grit",
+      "includes": [
+        "**/apps/server/src/**",
+        "!**/apps/server/src/db/**",
+        "!**/apps/server/src/auth/**",
+        "!**/apps/server/src/content/**",
+        "!**/apps/server/src/storage/**",
+        "!**/apps/server/src/main.ts",
+        "!**/*.test.ts"
+      ]
+    }
+  ],
+  "overrides": [
+    {
+      "includes": [
+        "apps/server/src/**",
+        "!apps/server/src/db/**",
+        "!apps/server/src/auth/**",
+        "!apps/server/src/content/**",
+        "!apps/server/src/storage/**",
+        "!apps/server/src/main.ts",
+        "!**/*.test.ts"
+      ],
+      "linter": {
+        "rules": {
+          "style": {
+            "noRestrictedImports": {
+              "level": "error",
+              "options": {
+                "patterns": [
+                  {
+                    "group": ["drizzle-orm", "drizzle-orm/**", "pg", "pg/**"],
+                    "message": "Query builders and the database driver are for data-access modules only. Feature modules reach the database only through data-access functions (db/, or the allowlisted auth/, content/, storage/) that take a branded ClassScope/CourseScope (ADR-0002, Scoped tables)."
+                  },
+                  {
+                    "group": [
+                      "**/db/schema",
+                      "**/db/schema/**",
+                      "**/db/scoped",
+                      "**/db/admin",
+                      "**/db/migrate",
+                      "**/db/reset"
+                    ],
+                    "message": "Tables and database administration are for data-access modules only. Feature modules reach the database only through data-access functions (db/, or the allowlisted auth/, content/, storage/) that take a branded ClassScope/CourseScope (ADR-0002, Scoped tables)."
+                  },
+                  {
+                    "group": ["**/db/client"],
+                    "importNamePattern": "createDb",
+                    "message": "Only the composition root (main.ts) opens the database client. Feature modules reach the database only through data-access functions (db/, or the allowlisted auth/, content/, storage/) that take a branded ClassScope/CourseScope (ADR-0002, Scoped tables)."
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
 }
