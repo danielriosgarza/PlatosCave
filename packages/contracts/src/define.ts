@@ -1,4 +1,4 @@
-import type { z } from 'zod';
+import { z } from 'zod';
 
 export type Scope =
   | { kind: 'public' }
@@ -19,6 +19,7 @@ export interface RouteContract<
   B extends Part = Part,
   R extends z.ZodType = z.ZodType,
   S extends Scope = Scope,
+  X extends Part = Part,
 > {
   method: Method;
   path: `/api/${string}`;
@@ -28,6 +29,8 @@ export interface RouteContract<
   query?: Q;
   body?: B;
   response: R;
+  /** Declared error bodies beyond the shared `{ error }` shape; today only 409 conflicts. */
+  errors?: { 409: X };
   /**
    * Valid example inputs; the isolation matrix (ADR-0002) replays every contract with them,
    * substituting the fixture world's ids for `classId` and `courseId`.
@@ -42,9 +45,27 @@ export function defineRoute<
   P extends Part = undefined,
   Q extends Part = undefined,
   B extends Part = undefined,
->(c: RouteContract<P, Q, B, R, S>): RouteContract<P, Q, B, R, S> {
+  X extends Part = undefined,
+>(c: RouteContract<P, Q, B, R, S, X>): RouteContract<P, Q, B, R, S, X> {
   return c;
 }
 
 export type ResponseOf<C> =
   C extends RouteContract<Part, Part, Part, infer R> ? z.output<R> : never;
+
+/** Body of every refused request (401, 403, 404, 503): a short, non-identifying reason. */
+export const errorBody = z.object({ error: z.string() });
+
+/**
+ * 409 body of an optimistic revision check (ADR-0003, §12 "never overwrite silently"): the
+ * server's current copy, so an editor can show a conflict view instead of overwriting.
+ */
+export const conflictBody = <T extends z.ZodType>(current: T) =>
+  z.object({ error: z.literal('revision_conflict'), current });
+
+export type ConflictOf<C> =
+  C extends RouteContract<Part, Part, Part, z.ZodType, Scope, infer X>
+    ? X extends z.ZodType
+      ? z.output<X>
+      : never
+    : never;
