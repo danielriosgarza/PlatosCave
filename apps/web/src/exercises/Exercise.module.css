@@ -14,7 +14,6 @@
   letter-spacing: var(--pc-tracking-subsection);
 }
 .stage {
-  padding: 32px 40px;
   min-height: 550px;
 }
 .exercise {
@@ -32,15 +31,13 @@
   gap: 5px;
   margin: 0 auto 28px;
   max-width: 340px;
-  list-style: none;
-  padding: 0;
 }
-.track li {
+.track span {
   height: 3px;
   flex: 1;
   background: var(--pc-rule);
 }
-.track li[data-done="true"] {
+.track span[data-done="true"] {
   background: var(--pc-ink);
 }
 .head {
@@ -313,18 +310,12 @@
   border-top: 1px solid var(--pc-rule);
 }
 @media (max-width: 900px) {
-  .stage {
-    padding: 28px 32px;
-  }
   .lab {
     grid-template-columns: minmax(0, 1fr);
     gap: 24px;
   }
 }
 @media (max-width: 540px) {
-  .stage {
-    padding: 24px 16px;
-  }
   .pairs label {
     grid-template-columns: minmax(0, 1fr);
     gap: 4px;
