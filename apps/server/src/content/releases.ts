@@ -1,5 +1,5 @@
 import type { validationIssue, validationReport } from '@parallax/contracts/routes/releases';
-import { and, asc, eq, isNull, max, ne, sql } from 'drizzle-orm';
+import { and, asc, eq, isNull, max, ne, type SQL, sql } from 'drizzle-orm';
 import type { z } from 'zod';
 import type { ClassScope, CourseScope } from '../auth/scope';
 import type { Db } from '../db/client';
@@ -224,6 +224,32 @@ export function publishRelease(
   });
 }
 
+/** Release resources the caller may study: students never see hidden ones (A26). */
+export const studyVisible = (scope: ClassScope): SQL =>
+  scope.role === 'student' ? ne(releaseResources.visibility, 'hidden') : sql`true`;
+
+/**
+ * The pinned revision (id and type) of draft resource `resourceId` in the release the class
+ * adopted, if the caller may study it; undefined otherwise, including for drafts.
+ */
+export async function studyableResource(db: Db, scope: ClassScope, resourceId: string) {
+  if (!scope.releaseId) return undefined;
+  const [row] = await db
+    .select({ revisionId: releaseResources.resourceRevisionId, type: resourceRevisions.type })
+    .from(releaseResources)
+    .innerJoin(courseReleases, eq(courseReleases.id, releaseResources.releaseId))
+    .innerJoin(resourceRevisions, eq(resourceRevisions.id, releaseResources.resourceRevisionId))
+    .where(
+      and(
+        eq(releaseResources.releaseId, scope.releaseId),
+        eq(courseReleases.courseId, scope.courseId),
+        eq(releaseResources.resourceId, resourceId),
+        studyVisible(scope),
+      ),
+    );
+  return row;
+}
+
 /**
  * The class's adopted release: the only path from a class to content (ADR-0003, A26). It reads
  * `class → release → release_resources → resource_revisions` and never touches draft rows.
@@ -247,12 +273,7 @@ export async function readClassRelease(db: Db, scope: ClassScope) {
     .select({ item: releaseResources, type: resourceRevisions.type })
     .from(releaseResources)
     .innerJoin(resourceRevisions, eq(resourceRevisions.id, releaseResources.resourceRevisionId))
-    .where(
-      and(
-        eq(releaseResources.releaseId, release.id),
-        scope.role === 'student' ? ne(releaseResources.visibility, 'hidden') : sql`true`,
-      ),
-    )
+    .where(and(eq(releaseResources.releaseId, release.id), studyVisible(scope)))
     .orderBy(asc(releaseResources.position));
   return {
     release,
