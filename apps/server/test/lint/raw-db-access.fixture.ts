@@ -51,8 +51,14 @@ export function viaAccessor(deps: { db?: Db }) {
   ];
 }
 
+export * as clientModule from '../../src/db/client'; // raw-query
+
 export function wrappedReceivers(deps: { db: Db }) {
   const { select } = deps.db; // raw-query
+  const { ...everything } = deps.db; // raw-query
+  const {
+    db: { transaction }, // raw-query
+  } = deps;
   const { createDb: open } = client; // raw-query
   return [
     (deps.db as Db).select(), // raw-query
@@ -67,20 +73,32 @@ export function wrappedReceivers(deps: { db: Db }) {
     deps['db']!.select(), // raw-query
     (<Db>deps.db).select(), // raw-query
     select,
+    everything,
+    transaction,
     open,
   ];
 }
 
-// Must not fire: other names on an object called `db`, and destructuring the deps object.
+// Must not fire: other names on an object called `db`, destructuring the deps object, and a
+// `createDb` name that is not taken from an object in a declaration.
 export function notTheDatabase(deps: {
   db: Db;
   ledger: { db: { withdraw(): number } };
+  config: { db: { url: string } };
   tools: { open(): void };
 }) {
   const { db } = deps;
+  const { url } = deps.config.db;
+  const {
+    db: { url: again },
+  } = deps.config;
   const { open: createDb } = deps.tools;
   const cache = { db: new Map<string, number>() };
   // Documented limit, asserted neither way: any object stored under `db` is treated as the handle.
   cache.db.delete('key'); // known-false-positive
-  return [deps.ledger.db.withdraw(), db, createDb];
+  return [deps.ledger.db.withdraw(), db, url, again, createDb];
+}
+
+export function takesAFactory({ createDb }: { createDb: () => void }) {
+  createDb();
 }
