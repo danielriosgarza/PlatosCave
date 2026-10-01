@@ -1,4 +1,5 @@
-import type { Readable } from 'node:stream';
+import { createHash } from 'node:crypto';
+import { Readable, Transform } from 'node:stream';
 
 /** Result of storing one object: its content-addressed key, digest and byte length. */
 export interface StoredObject {
@@ -16,10 +17,36 @@ export type Body = Readable | AsyncIterable<Uint8Array> | Uint8Array;
  */
 export interface Storage {
   put(prefix: string, body: Body): Promise<StoredObject>;
-  /** Streams an object; rejects with `StorageNotFoundError` when it does not exist. */
-  get(key: string): Promise<Readable>;
+  /**
+   * Streams an object with its byte length (one backend call); rejects with
+   * `StorageNotFoundError` when it does not exist.
+   */
+  get(key: string): Promise<{ body: Readable; size: number }>;
   head(key: string): Promise<{ size: number } | null>;
   delete(key: string): Promise<void>;
+  /** Releases connections the adapter holds; buildApp calls it on close. */
+  destroy?(): void;
+}
+
+/** The body as a stream, whatever form it was given in. */
+export const toReadable = (body: Body): Readable =>
+  body instanceof Uint8Array ? Readable.from([body]) : Readable.from(body);
+
+/** Pass-through stream that hashes and counts what flows through it, for content addressing. */
+export function hashingMeter(): {
+  meter: Transform;
+  result: () => { sha256: string; size: number };
+} {
+  const hash = createHash('sha256');
+  let size = 0;
+  const meter = new Transform({
+    transform(chunk: Buffer, _enc, done) {
+      hash.update(chunk);
+      size += chunk.length;
+      done(null, chunk);
+    },
+  });
+  return { meter, result: () => ({ sha256: hash.digest('hex'), size }) };
 }
 
 export class StorageNotFoundError extends Error {

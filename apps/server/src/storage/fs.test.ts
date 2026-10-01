@@ -31,7 +31,9 @@ describe('fs storage', () => {
       sha256: sha('hello world'),
       size: 11,
     });
-    expect(await text(await storage.get(stored.key))).toBe('hello world');
+    const got = await storage.get(stored.key);
+    expect(got.size).toBe(11);
+    expect(await text(got.body)).toBe('hello world');
     expect(await storage.head(stored.key)).toEqual({ size: 11 });
   });
 
