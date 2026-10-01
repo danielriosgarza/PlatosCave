@@ -357,7 +357,7 @@ Tracks: **slides** (P2-01 → P2-02 → P2-03, P2-09), **annotations** (P2-04 �
 - Spec: §7. Scenarios: none. Depends on: P2-02. Model: sonnet. Security: yes. Size: S.
 
 ### P2-04 · Annotation and discussion schema, API, visibility
-- Scope: tables `annotations` (kind highlight|note|sketch, audience private, body/strokes, anchor, resource revision, class), `threads`/`posts` (audience instructor|class, status open|resolved, edited, tombstones, moderation audit), `annotation_placements`; `annotations/visibility.ts` used by every read; contracts for create/update/delete/list by resource, autosave `PUT` with revision, share-as-thread explicit action; notifications list stub.
+- Scope: tables `annotations` (kind highlight|note|sketch, audience private, body/strokes, anchor, resource revision, class), `threads`/`posts` (audience instructor|class, status open|resolved, edited, tombstones, moderation audit), `annotation_placements`; `annotations/visibility.ts` used by every read; contracts for create/update/delete/list by resource, autosave `PUT` with revision, share-as-thread explicit action; notifications list stub. Its migration also adds the index `signin_tokens_email_created_idx` on `signin_tokens (email, created_at)` (carried from P1-02a; the purge job is already in place), with the matching `index()` in `db/schema/users.ts`.
 - Spec: §8, §13. ADR-0002/0003. Scenarios: A05 (API), A21 (discussions per class). Depends on: P1-05 (migration chain after P1-04). Model: opus. Security: yes. Size: M.
 
 ### P2-05 · Anchor mapping across revisions

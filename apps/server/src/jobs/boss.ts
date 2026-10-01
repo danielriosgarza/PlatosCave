@@ -20,7 +20,8 @@ export function createBoss(pool: pg.Pool, { role, onError }: CreateBossOptions):
     db: { executeSql: (text, values) => pool.query(text, values) },
     schema: BOSS_SCHEMA,
     supervise: role === 'worker',
-    schedule: false,
+    // Only the worker runs the cron scheduler for maintenance jobs.
+    schedule: role === 'worker',
   });
   // Without a listener an emitted error would crash the process.
   boss.on('error', onError);
