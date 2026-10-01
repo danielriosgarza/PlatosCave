@@ -3,7 +3,10 @@ import pg from 'pg';
 import { withAdminClient } from './admin';
 import { runMigrations } from './migrate';
 
-/** Creates the database if missing, recreates schema `public`, and migrates. Dev and e2e only. */
+/**
+ * Creates the database if missing, recreates schema `public` (dropping the job queue), and
+ * migrates. Dev and e2e only.
+ */
 export async function resetDatabase(url: string): Promise<void> {
   if (process.env.NODE_ENV === 'production') {
     throw new Error('db:reset refuses to run when NODE_ENV=production');
@@ -21,6 +24,8 @@ export async function resetDatabase(url: string): Promise<void> {
   try {
     await client.query('drop schema if exists public cascade');
     await client.query('drop schema if exists drizzle cascade');
+    // Queued jobs name rows that no longer exist; pg-boss reinstalls its schema on start.
+    await client.query('drop schema if exists pgboss cascade');
     await client.query('create schema public');
   } finally {
     await client.end();

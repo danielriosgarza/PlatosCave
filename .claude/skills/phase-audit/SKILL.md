@@ -35,4 +35,4 @@ Create an issue titled `Phase N summary`, labelled `summary`. Keep it to one scr
 - **Risks** and the fix-up issues filed.
 - **Anything that needs the owner** (also label those issues `needs-human`).
 
-Then call `fire_trigger` with `trigger_id: trig_01GLrhXFVWKkrjAb4DNu7LBX` and `text: "Auditor: phase N audit done"` so the orchestrator picks up the fix-up issues and notifies the owner (the hourly run is the fallback). Your final message starts with `PHASE SUMMARY:` and links the summary issue.
+Your final message starts with `PHASE SUMMARY:` and links the summary issue.

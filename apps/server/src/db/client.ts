@@ -11,6 +11,9 @@ export function createDb(url: string, { onError }: CreateDbOptions = {}) {
   const pool = new pg.Pool({
     connectionString: url,
     connectionTimeoutMillis: 5000,
+    // Detects a dead peer on long application and worker queries without capping their duration.
+    keepAlive: true,
+    keepAliveInitialDelayMillis: 10_000,
   });
   // Idle clients dropped by the server surface here; without a listener the process crashes.
   // The pool discards the dead client and reconnects on the next query.
