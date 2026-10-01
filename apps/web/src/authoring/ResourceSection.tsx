@@ -127,7 +127,8 @@ function StatusLine({
   const labels = {
     queued: 'Waiting to be processed',
     running: 'Processing',
-    ready: 'Ready to publish',
+    // A deck can still be blocked at publication (raster-only without a text alternative).
+    ready: resource.type === 'slides_pdf' ? 'Processed' : 'Ready to publish',
     failed: `Processing failed${status?.error ? `: ${status.error}` : ''}`,
   } as const;
   const text = state ? labels[state] : 'Not processed yet';

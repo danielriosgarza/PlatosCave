@@ -345,6 +345,22 @@ describe('reading upload', () => {
   });
 });
 
+describe('deck processing status', () => {
+  it('a finished deck reads Processed, not Ready to publish: publication can still need a text alternative', async () => {
+    await open(
+      grant(),
+      fresh({ resources: [resource({ type: 'slides_pdf', title: 'Lecture 1' })] }),
+    );
+    expect(await screen.findByText('Processed')).toBeInTheDocument();
+    expect(screen.queryByText('Ready to publish')).not.toBeInTheDocument();
+  });
+
+  it('a finished reading still reads Ready to publish', async () => {
+    await open();
+    expect(await screen.findByText('Ready to publish')).toBeInTheDocument();
+  });
+});
+
 describe('publishing', () => {
   it('A16 Publish creates the next release and says classes stay on theirs', async () => {
     const user = userEvent.setup();

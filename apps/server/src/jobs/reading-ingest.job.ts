@@ -52,9 +52,12 @@ export class IngestError extends Error {}
 
 type Revision = DerivationSource;
 
+/** What editors call the revision's resource in job messages. */
+const noun = (revision: Revision) => (revision.type === 'slides_pdf' ? 'deck' : 'reading');
+
 async function readObject(storage: Storage | undefined, revision: Revision, key: string) {
   if (!revision.objectKeys.includes(key)) {
-    throw new IngestError('The file is not part of this reading');
+    throw new IngestError(`The file is not part of this ${noun(revision)}`);
   }
   if (!storage) throw new IngestError('This server cannot process uploaded files');
   let object: Awaited<ReturnType<Storage['get']>>;
@@ -112,7 +115,7 @@ export async function ingestRevision(
     const key =
       (content.success ? content.data.objectKey : undefined) ??
       (revision.objectKeys.length === 1 ? revision.objectKeys[0] : undefined);
-    if (!key) throw new IngestError('The reading has no PDF file');
+    if (!key) throw new IngestError(`The ${noun(revision)} has no PDF file`);
     const bytes = await readObject(storage, revision, key);
     let text: Awaited<ReturnType<typeof extractPdfText>>;
     try {
