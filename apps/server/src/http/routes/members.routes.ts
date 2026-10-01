@@ -5,12 +5,13 @@ import {
   joinClass,
   listMembers,
   removeMember,
+  revokeInvite,
   setManageMembers,
   setPublisher,
 } from '@parallax/contracts/routes/members';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { Deps } from '../../app';
-import { readSessionToken } from '../../auth/sessions';
+import { hashToken, readSessionToken } from '../../auth/sessions';
 import * as identity from '../../db/identity';
 import * as invites from '../../db/invites';
 import * as members from '../../db/members';
@@ -53,14 +54,21 @@ export default function memberRoutes(app: FastifyInstance, deps: Deps): void {
     return inviteView(result.invite);
   });
 
+  registerRoute(app, revokeInvite, async ({ scope, params }) => {
+    scope.requireRecentAuth();
+    const result = await invites.revokeInvite(db(), scope, params.inviteId, now());
+    if (!result.ok) return notFound();
+    return { id: params.inviteId, revokedAt: result.revokedAt.toISOString() };
+  });
+
   registerRoute(app, listMembers, async ({ scope }) => {
-    const list = await members.listMembers(db(), scope);
+    const list = await members.listMembers(db(), scope, now());
     return { members: list.members, invites: list.invites.map(inviteView) };
   });
 
   registerRoute(app, setManageMembers, async ({ scope, params, body }) => {
     scope.requireRecentAuth();
-    const result = await members.setManageMembers(db(), scope, params.userId, body.granted);
+    const result = await members.setManageMembers(db(), scope, params.userId, body.granted, now());
     if (!result.ok) return result.reason === 'not_found' ? notFound() : refuse(409, result.reason);
     return { userId: params.userId, manageMembers: body.granted };
   });
@@ -81,12 +89,16 @@ export default function memberRoutes(app: FastifyInstance, deps: Deps): void {
 
   // Brute-forcing codes is limited per session, not per address: a whole lecture hall may join
   // from one network address at once. Sessions come only from rate-limited sign-in links; a
-  // cookie that does not verify shares its address's bucket.
+  // cookie that does not verify shares its address's bucket. The key is the token's hash, as
+  // stored in auth_sessions, so the limiter's store never holds a live session secret.
   const joinLimit = {
     rateLimit: {
       max: 20,
       timeWindow: '15 minutes',
-      keyGenerator: (req: FastifyRequest) => readSessionToken(req) ?? req.ip,
+      keyGenerator: (req: FastifyRequest) => {
+        const token = readSessionToken(req);
+        return token ? hashToken(token) : req.ip;
+      },
     },
   };
 

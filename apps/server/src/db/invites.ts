@@ -6,14 +6,8 @@ import type { ClassManagerScope, UserScope } from '../auth/scope';
 import { hashToken, newToken } from '../auth/sessions';
 import type { Db } from './client';
 import { audit, type Tx } from './identity';
-import {
-  classes,
-  classInvites,
-  classMemberships,
-  courseMemberships,
-  courses,
-  users,
-} from './schema';
+import { classes, classInvites, classMemberships, courseMemberships, courses } from './schema';
+import { forClass } from './scoped';
 
 export type InviteFailure = z.infer<typeof inviteFailure>;
 
@@ -182,12 +176,6 @@ async function insertMembership(
   return rows.length > 0;
 }
 
-/** Only real accounts join; a preview principal never gets a membership from a code. */
-async function isRealUser(tx: Tx, userId: string): Promise<boolean> {
-  const [row] = await tx.select({ kind: users.kind }).from(users).where(eq(users.id, userId));
-  return row?.kind === 'user';
-}
-
 /**
  * Enrolment code → student membership; the only path this function has (§3: a student
  * enrolment code never grants instructor access). An existing membership is left as it is.
@@ -202,7 +190,8 @@ export function joinWithCode(
     const invite = await lockInvite(tx, 'enrolment', hashToken(normaliseCode(code)));
     const failure = unusable(invite, now);
     if (failure || !invite) return { ok: false, reason: failure ?? 'invite_not_found' };
-    if (!(await isRealUser(tx, scope.user.id))) return { ok: false, reason: 'invite_not_found' };
+    // Only real accounts join; a preview principal never gets a membership from a code.
+    if (scope.user.kind !== 'user') return { ok: false, reason: 'invite_not_found' };
     const role = await existingRole(tx, invite.classId, scope.user.id);
     if (role) return { ok: true, role, joined: joinedFrom(invite, true) };
     if (full(invite)) return { ok: false, reason: 'invite_full' };
@@ -229,15 +218,30 @@ export function acceptInstructorInvite(
 ): Promise<Outcome<'instructor'>> {
   return db.transaction(async (tx) => {
     const invite = await lockInvite(tx, 'instructor', hashToken(token));
-    const failure = unusable(invite, now);
-    if (failure || !invite) return { ok: false, reason: failure ?? 'invite_not_found' };
-    if (!(await isRealUser(tx, scope.user.id)) || invite.email !== scope.user.email) {
+    if (!invite) return { ok: false, reason: 'invite_not_found' };
+    // The addressee is checked first, so another account learns nothing about the
+    // invitation's state (live, revoked or expired all read as "not yours").
+    if (scope.user.kind !== 'user' || invite.email !== scope.user.email) {
       return { ok: false, reason: 'invite_other_account' };
     }
+    const failure = unusable(invite, now);
+    if (failure) return { ok: false, reason: failure };
     const role = await existingRole(tx, invite.classId, scope.user.id);
     if (role === 'instructor') return { ok: true, role, joined: joinedFrom(invite, true) };
     if (role) return { ok: false, reason: 'already_member' };
     if (full(invite)) return { ok: false, reason: 'invite_full' };
+    // Taken before the class membership exists, as a removal from another class of the course
+    // takes it before deciding the account no longer teaches there (members.ts).
+    await tx
+      .select({ id: courseMemberships.id })
+      .from(courseMemberships)
+      .where(
+        and(
+          eq(courseMemberships.courseId, invite.courseId),
+          eq(courseMemberships.userId, scope.user.id),
+        ),
+      )
+      .for('update');
     if (!(await insertMembership(tx, invite.classId, scope.user.id, 'instructor'))) {
       // Another request of this account joined the class since the check above.
       const current = await existingRole(tx, invite.classId, scope.user.id);
@@ -254,5 +258,34 @@ export function acceptInstructorInvite(
       });
     await recordUse(tx, invite, scope.user.id, { role: 'instructor', courseEditor: true });
     return { ok: true, role: 'instructor', joined: joinedFrom(invite, false) };
+  });
+}
+
+/**
+ * Withdraws one invitation of the class; later uses are refused with `invite_revoked`.
+ * Revoking an already revoked invitation changes nothing and records nothing.
+ */
+export function revokeInvite(db: Db, scope: ClassManagerScope, inviteId: string, now: Date) {
+  return db.transaction(async (tx) => {
+    const where = and(forClass(scope, classInvites), eq(classInvites.id, inviteId));
+    const [invite] = await tx
+      .select({ revokedAt: classInvites.revokedAt })
+      .from(classInvites)
+      .where(where)
+      .for('update');
+    if (!invite) return { ok: false as const };
+    if (invite.revokedAt) return { ok: true as const, revokedAt: invite.revokedAt };
+    await tx.update(classInvites).set({ revokedAt: now }).where(where);
+    await audit(tx, {
+      actorId: scope.user.id,
+      action: 'invite.revoke',
+      scopeKind: 'class',
+      scopeId: scope.classId,
+      targetType: 'invite',
+      targetId: inviteId,
+      before: { revokedAt: null },
+      after: { revokedAt: now, via: scope.via },
+    });
+    return { ok: true as const, revokedAt: now };
   });
 }
