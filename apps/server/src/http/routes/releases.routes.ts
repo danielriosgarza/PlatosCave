@@ -11,7 +11,7 @@ import type { Deps } from '../../app';
 import * as adoption from '../../content/adoption';
 import * as releases from '../../content/releases';
 import { enqueueAnnotationsMap } from '../../jobs/annotations-map.job';
-import { registerRoute } from '../register';
+import { notFound, registerRoute } from '../register';
 
 const iso = (d: Date) => d.toISOString();
 
@@ -74,9 +74,9 @@ export default function releaseRoutes(app: FastifyInstance, deps: Deps): void {
     };
   });
 
-  registerRoute(app, previewAdoption, async ({ scope, query, reply }) => {
+  registerRoute(app, previewAdoption, async ({ scope, query }) => {
     const diff = await adoption.previewAdoption(db(), scope, query.releaseId);
-    return diff ?? fail(reply, 404, { error: 'not found' });
+    return diff ?? notFound();
   });
 
   registerRoute(app, adoptRelease, async ({ scope, body, reply, req }) => {
@@ -91,7 +91,7 @@ export default function releaseRoutes(app: FastifyInstance, deps: Deps): void {
       }
       return { releaseId: result.releaseId, diff: result.diff };
     }
-    if (result.reason === 'not_found') return fail(reply, 404, { error: 'not found' });
+    if (result.reason === 'not_found') notFound();
     if (result.reason === 'class_archived') return fail(reply, 409, { error: 'class_archived' });
     return fail(reply, 409, {
       error: 'release_conflict',

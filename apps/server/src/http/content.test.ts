@@ -4,13 +4,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
-import { buildApp } from '../app';
+import { buildApp, logUrl } from '../app';
 import { loadConfig } from '../config';
 import { downloadName } from '../content/media';
 import { type ContentGrant, mintContentToken } from '../content/tokens';
 import { FsStorage } from '../storage/fs';
 import { courseObjectPrefix } from '../storage/storage';
-import { redactContentUrl } from './content';
 
 const course = '00000000-0000-4000-8000-000000000101';
 const now = new Date('2026-10-01T09:00:00Z');
@@ -20,6 +19,7 @@ const config = loadConfig({
   APP_HOST: '127.0.0.1',
   CONTENT_HOST: 'localhost',
   CONTENT_ORIGIN: 'http://localhost:3100',
+  APP_ORIGIN: 'http://127.0.0.1:3100',
 });
 const app = { host: '127.0.0.1:3100' };
 const content = { host: 'localhost:3100' };
@@ -84,6 +84,10 @@ describe('content origin', () => {
     );
     expect(csp).not.toContain('script-src');
     expect(res.headers['set-cookie']).toBeUndefined();
+    // Only the app origin may read the bytes in script (pdf.js, fonts), without credentials.
+    expect(res.headers['access-control-allow-origin']).toBe('http://127.0.0.1:3100');
+    expect(res.headers.vary).toMatch(/origin/i);
+    expect(res.headers['access-control-allow-credentials']).toBeUndefined();
     // The app frames content documents: the app origin's anti-framing header must not apply.
     expect(res.headers['x-frame-options']).toBeUndefined();
 
@@ -227,11 +231,28 @@ describe('content origin', () => {
     }
   });
 
-  test('tokens are redacted from logged request URLs', () => {
-    expect(redactContentUrl(`/content/${token()}`)).toBe('/content/[redacted]');
-    expect(redactContentUrl('/api/health')).toBe('/api/health');
-    expect(redactContentUrl(`http://x/content/${token()}?a=1`)).toBe(
-      'http://x/content/[redacted]?a=1',
+  test('no spelling of a content token reaches the request log', () => {
+    const t = token();
+    const as = (url: string, route?: string) => logUrl({ url, routeOptions: { url: route } });
+    expect(as(`/content/${t}`, '/content/:token')).toBe('/content/[redacted]');
+    expect(as(`/%63ontent/${t}`, '/content/:token')).toBe('/content/[redacted]');
+    expect(as(`http://x/content/${t}?a=1`, '/content/:token')).toBe('/content/[redacted]');
+    // Spellings no route matched, on either host: only a plain first path segment is logged.
+    for (const url of [
+      `/content\\${t}`,
+      `/content%2F${t}`,
+      `/%43ontent/${t}`,
+      `//x/content/${t}`,
+      `/${t}`,
+    ]) {
+      const logged = as(url);
+      expect(logged, url).not.toContain(t.slice(0, 33));
+      expect(logged, url).toMatch(/\/…\[unrouted\]$/);
+    }
+    expect(as('/nowhere/else')).toBe('/nowhere/…[unrouted]');
+    // Routed requests keep their path; sign-in tokens in the query are redacted.
+    expect(as('/api/auth/verify?token=abc', '/api/auth/verify')).toBe(
+      '/api/auth/verify?token=[redacted]',
     );
   });
 });

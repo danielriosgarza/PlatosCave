@@ -31,15 +31,14 @@ const annotationsMap = defineScopedJob({
 });
 export default annotationsMap;
 
-/** Creates the job's queue; the API calls this once at startup, before any adoption sends. */
-export const createAnnotationsMapQueue = (boss: PgBoss) =>
-  boss.createQueue(annotationsMap.name, annotationsMap.queue);
-
-/** Queues mapping for the class's newly adopted release. */
+/**
+ * Queues mapping for the class's newly adopted release. The API creates the queue at startup
+ * (`ensureQueues` in main.ts). Null when pg-boss drops the send as a duplicate.
+ */
 export function enqueueAnnotationsMap(
   boss: PgBoss,
   scope: ClassScope,
   releaseId: string,
-): Promise<string> {
+): Promise<string | null> {
   return sendScopedJob(boss, annotationsMap, scope, { releaseId });
 }
