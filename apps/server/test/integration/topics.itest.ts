@@ -103,7 +103,7 @@ describe('topic index', () => {
     expect(sam.body).toMatchObject({
       course: { id: ids.statistics, title: 'Statistical thinking' },
       cohort: 'Autumn 2026 A',
-      instructors: ['Priya Nair'],
+      instructors: ['Noor Haddad', 'Priya Nair'],
       release: { id: ids.releaseV1, version: 1 },
     });
     // Priya studies in class B and teaches class A: each side shows that class's cohort.

@@ -1,20 +1,30 @@
-import { readdirSync } from 'node:fs';
-import { resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
+import { loadModules } from '../modules';
 import type { ScopedJob } from './scoped';
+
+const isScopedJob = (value: unknown): value is ScopedJob => {
+  if (typeof value !== 'object' || value === null) return false;
+  const job = value as Partial<Record<keyof ScopedJob, unknown>>;
+  const scope = job.scope as { kind?: unknown } | undefined;
+  const input = job.input as { safeParse?: unknown } | undefined;
+  return (
+    typeof job.name === 'string' &&
+    job.name.length > 0 &&
+    (scope?.kind === 'class' || scope?.kind === 'course') &&
+    typeof input?.safeParse === 'function' &&
+    typeof job.run === 'function'
+  );
+};
 
 /**
  * Jobs are auto-discovered like route modules: each `jobs/*.job.ts` default-exports one
- * `defineScopedJob(...)`, so features add files instead of lines in a shared list.
+ * `defineScopedJob(...)`. A file that does not is named in the error, so the worker refuses to
+ * start instead of failing on the first job.
  */
 export async function loadJobs(dir = import.meta.dirname): Promise<ScopedJob[]> {
-  const files = readdirSync(dir)
-    .filter((f) => /\.job\.ts$/.test(f))
-    .sort();
-  const jobs: ScopedJob[] = [];
-  for (const file of files) {
-    const mod = await import(pathToFileURL(resolve(dir, file)).href);
-    jobs.push(mod.default as ScopedJob);
-  }
-  return jobs;
+  return (await loadModules(dir, '.job.ts')).map(({ file, mod }) => {
+    if (!isScopedJob(mod.default)) {
+      throw new Error(`${file} does not default-export defineScopedJob(...)`);
+    }
+    return mod.default;
+  });
 }

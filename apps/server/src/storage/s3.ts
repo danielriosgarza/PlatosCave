@@ -75,7 +75,9 @@ export class S3Storage implements Storage {
       await Promise.all([pipeline(source, meter, out), uploaded]);
       const { sha256, size } = result();
       const key = objectKey(prefix, sha256);
-      // Same key means same bytes, so an existing object is kept as it is.
+      // Same key means same bytes, so an existing object is kept as it is. A single CopyObject is
+      // limited to 5 GB on AWS S3 (Garage has no such limit); larger objects would need
+      // UploadPartCopy.
       if (!(await this.head(key))) {
         await this.client.send(
           new CopyObjectCommand({
@@ -112,7 +114,11 @@ export class S3Storage implements Storage {
     assertSafeKey(key);
     try {
       const res = await this.client.send(new HeadObjectCommand({ Bucket: this.bucket, Key: key }));
-      return { size: res.ContentLength ?? 0 };
+      // Same rule as get(): never report a length the backend did not give.
+      if (res.ContentLength === undefined) {
+        throw new Error(`storage object without a length: ${key}`);
+      }
+      return { size: res.ContentLength };
     } catch (err) {
       if (isMissing(err)) return null;
       throw err;
