@@ -1,35 +1,66 @@
 // Feature modules receive the database handle through `deps.db` and pass it to data-access
 // functions; they never build queries on it themselves (ADR-0002, Scoped tables).
 //
-// The handle is recognised by the name `db`. A renamed alias (`const conn = deps.db`) is not
-// caught, and any other object stored under `db` (`deps.cache.db.delete(key)`) is flagged.
+// The handle is recognised by the name `db`: `db`, `<x>.db`, `<x>['db']`, the `db()` accessor
+// the route modules define, and any of these wrapped in parentheses, `!`, `as`, `<T>` or `satisfies`.
+// Known limits: a renamed alias (`const conn = deps.db`), assignment or parameter destructuring
+// of the handle, and passing it to an untyped helper are not caught; any other object stored
+// under `db` (`deps.cache.db.delete(key)`) is flagged.
 //
 // The plugin runs from the biome.json override that lists the exempt files. ADR-0002 says
 // "outside db/"; the existing data-access files under auth/, content/, storage/, annotations/
 // and jobs/ take branded scopes and are exempt by name until they move under db/, so any other
 // file, existing or new, stays restricted unless biome.json names it.
+//
+// Node names are Biome's own (`JsParenthesizedExpression`, `TsAsExpression`, ...); tree-sitter
+// names such as `as_expression` do not compile in this Biome version.
 language js
 
+pattern db_handle() {
+  or {
+    `db`,
+    member_expression(property=`db`),
+    subscript_expression(index=r"^['\"`]db['\"`]$"),
+    call_expression(function=`db`),
+    call_expression(function=member_expression(property=`db`)),
+    JsParenthesizedExpression(expression=db_handle()),
+    TsNonNullAssertionExpression(expression=db_handle()),
+    TsAsExpression(expression=db_handle()),
+    TsTypeAssertionExpression(expression=db_handle()),
+    TsSatisfiesExpression(expression=db_handle())
+  }
+}
+
 // Member access covers optional chaining (`deps.db?.select()`); subscript access covers
-// `deps.db['select']`; call receivers cover the `db()` accessor the route modules define; `deps.db!` is covered too.
+// `deps.db['select']`; `_` is drizzle's internals object (`deps.db._.session`). `createDb` is
+// flagged as a member (`client.createDb`, `client['createDb']`) and when destructured (`const { createDb } = client`),
+// since `noRestrictedImports` does not see names taken from a namespace import.
 or {
   or {
     member_expression(object=$receiver, property=$method),
     subscript_expression(object=$receiver, index=$method)
   } where {
-    $receiver <: or {
-      `db`,
-      member_expression(property=`db`),
-      call_expression(function=`db`),
-      call_expression(function=member_expression(property=`db`)),
-      `db!`,
-      `$_.db!`
-    },
-    $method <: r"^['\"`]?(?:select|selectDistinct|selectDistinctOn|insert|update|delete|execute|query|transaction|\$client|\$count|\$with|with|refreshMaterializedView)['\"`]?$",
+    $receiver <: db_handle(),
+    $method <: r"^['\"`]?(?:select|selectDistinct|selectDistinctOn|insert|update|delete|execute|query|transaction|_|\$client|\$count|\$with|with|refreshMaterializedView)['\"`]?$",
     register_diagnostic(span=$method, message="Raw database query outside a data-access module. Call a db/ function that takes a branded ClassScope/CourseScope instead (ADR-0002, Scoped tables).")
   },
-  member_expression(property=$method) where {
-    $method <: `createDb`,
+  JsVariableDeclarator(id=$pattern, initializer=JsInitializerClause(expression=$value)) where {
+    $pattern <: JsObjectBindingPattern(),
+    $value <: db_handle(),
+    register_diagnostic(span=$pattern, message="Destructuring the database handle outside a data-access module. Call a db/ function that takes a branded ClassScope/CourseScope instead (ADR-0002, Scoped tables).")
+  },
+  or {
+    JsObjectBindingPatternShorthandProperty(identifier=$name),
+    JsObjectBindingPatternProperty(member=$name)
+  } where {
+    $name <: r"^['\"`]?createDb['\"`]?$",
+    register_diagnostic(span=$name, message="Only the composition root (main.ts) opens the database client (ADR-0002, Scoped tables).")
+  },
+  or {
+    member_expression(property=$method),
+    subscript_expression(index=$method)
+  } where {
+    $method <: r"^['\"`]?createDb['\"`]?$",
     register_diagnostic(span=$method, message="Only the composition root (main.ts) opens the database client (ADR-0002, Scoped tables).")
   }
 }

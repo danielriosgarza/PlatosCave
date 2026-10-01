@@ -2,10 +2,11 @@ import pino from 'pino';
 import { buildApp } from './app';
 import { loadConfig } from './config';
 import { createDb } from './db/client';
+import annotationsMap from './jobs/annotations-map.job';
 import { createBoss } from './jobs/boss';
 import { workMaintenance } from './jobs/maintenance';
 import { loadJobs } from './jobs/registry';
-import { workScopedJob } from './jobs/scoped';
+import { ensureQueues, workScopedJob } from './jobs/scoped';
 import { createStorage } from './storage/create';
 
 const mode = process.argv[2] ?? 'api';
@@ -54,10 +55,37 @@ function onSignals(
 }
 
 if (mode === 'api') {
-  const app = await buildApp(config, database ? { db: database.db } : {});
+  // The API only sends jobs (adoption queues annotation mapping); workers run them.
+  let logBossError = (err: Error) => console.error('pg-boss error', err);
+  let logBossWarning = (warning: object) => console.warn('pg-boss warning', warning);
+  const boss =
+    database &&
+    createBoss(database.pool, {
+      role: 'api',
+      onError: (err) => logBossError(err),
+      onWarning: (warning) => logBossWarning(warning),
+    });
+  // Without a queue the API still serves; adoptions then queue no mapping (logged at error).
+  // pg-boss refuses sends to a missing queue, so the queue exists before the first adoption.
+  const started = await boss
+    ?.start()
+    .then(() => ensureQueues(boss, [annotationsMap]))
+    .then(
+      () => true,
+      (err) => {
+        logBossError(err);
+        return false;
+      },
+    );
+  const app = await buildApp(config, database ? { db: database.db, ...(started && { boss }) } : {});
   logPoolError = (err) => app.log.error({ err }, 'pg pool error');
+  logBossError = (err) => app.log.error({ err }, 'pg-boss error');
+  logBossWarning = (warning) => app.log.warn({ warning }, 'pg-boss warning');
   await app.listen({ port: config.PORT, host: config.HOST });
-  onSignals(app.log, () => app.close());
+  onSignals(app.log, async () => {
+    await app.close();
+    await boss?.stop({ graceful: true });
+  });
 } else {
   const log = pino({ level: config.LOG_LEVEL, name: 'worker' });
   logPoolError = (err) => log.error({ err }, 'pg pool error');
