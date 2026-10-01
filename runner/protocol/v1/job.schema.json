@@ -29,7 +29,7 @@
         "image": {
           "description": "Only for replays: the exact image the original run used, either a repository digest (`repo@sha256:\u2026`) or a Docker image id (`sha256:\u2026`, used where no registry exists). Absent for ordinary runs: the runner then uses its own mapping for `id`.",
           "type": "string",
-          "pattern": "^(sha256:[0-9a-f]{64}|[a-z0-9][a-z0-9._/-]*(:[A-Za-z0-9._-]+)?@sha256:[0-9a-f]{64})$"
+          "pattern": "^(sha256:[0-9a-f]{64}|[a-z0-9][a-z0-9._-]*(:[0-9]+)?(/[a-z0-9][a-z0-9._-]*)*(:[A-Za-z0-9._-]+)?@sha256:[0-9a-f]{64})$"
         }
       }
     },

@@ -2,6 +2,8 @@
 
 **Status:** Accepted, 2026-09-30
 
+Refined by [docs/design/runner.md](../design/runner.md) §8.4 (P3-12): the `execution.run`, `execution.result` and `execution.failed` queues in the separate pg-boss schema `pgboss_exec` carry runner messages without `actorId` or `scope`; authorisation for them completes before `bossExec.send` under a resolved class scope and is repeated on every read. Every queue in `pgboss` keeps the rule below.
+
 ## Context
 
 Spec §3 fixes the rule: one account, permissions per membership, and "every content read, media download, result export, and background job checks the relevant course or class scope on the server". §13 requires audience enforcement on annotation reads, private signed media access, and audit events. Scenarios A01, A02, A21 and A33 test that a student cannot reach instructor or classmate data, that one person holding two roles gets only each context's permissions, and that two cohorts of a course are mutually invisible. Because dozens of PRs will add routes, jobs and sockets, the enforcement must be structural: a route that forgets authorization must fail CI, not silently pass.
