@@ -9,6 +9,7 @@ import { normaliseText } from '../../src/content/reading';
 import { resourceRevisions, resources, topics } from '../../src/db/schema';
 import { createBoss } from '../../src/jobs/boss';
 import readingIngest, { enqueueReadingIngest } from '../../src/jobs/reading-ingest.job';
+import { loadJobs } from '../../src/jobs/registry';
 import { runScopedJob, type ScopedPayload, workScopedJob } from '../../src/jobs/scoped';
 import { FsStorage } from '../../src/storage/fs';
 import { storeCourseObject } from '../../src/storage/objects';
@@ -138,6 +139,10 @@ afterAll(async () => {
 });
 
 describe('reading.ingest', () => {
+  test('the worker discovers reading.ingest among the real job modules', async () => {
+    expect((await loadJobs()).map((job) => job.name)).toContain(readingIngest.name);
+  });
+
   test('A06 an uploaded Markdown reading is ingested by the worker with block ids and images', async () => {
     // Sent before any worker exists: the enqueue creates the queue (pg-boss refuses otherwise).
     const source = await storeCourseObject(
