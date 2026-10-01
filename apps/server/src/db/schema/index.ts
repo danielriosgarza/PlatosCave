@@ -1,3 +1,4 @@
+export * from './annotations';
 export * from './app';
 export * from './audit';
 export * from './content';
