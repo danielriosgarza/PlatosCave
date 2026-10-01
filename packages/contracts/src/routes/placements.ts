@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { anchor } from '../anchors';
 import { defineRoute } from '../define';
-import { placementView } from './annotations';
+import { classArchived, placementView } from './annotations';
 
 /**
  * Annotation placements across revisions (ADR-0003, §8, A06). After a class adopts a release
@@ -47,6 +47,7 @@ export const listPlacements = defineRoute({
 /**
  * Manual placement on the revision the class uses now: an author reattaches their own note;
  * a thread is placed by its author or an instructor. The anchor keeps the mark's anchor kind.
+ * 409 `class_archived` in an archived class.
  */
 export const placeMark = defineRoute({
   method: 'PUT',
@@ -59,6 +60,7 @@ export const placeMark = defineRoute({
     z.object({ threadId: z.uuid(), anchor }).strict(),
   ]),
   response: placementView,
+  errors: { 409: classArchived },
   examples: {
     params: { classId: exampleClass },
     body: { threadId: exampleThread, anchor: { kind: 'none' } },

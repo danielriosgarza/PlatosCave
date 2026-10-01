@@ -1,4 +1,4 @@
-import { type Anchor, anchorFits, textAnchor } from '@parallax/contracts';
+import { type Anchor, anchorFits, type ResourceType, textAnchor } from '@parallax/contracts';
 
 /**
  * Anchor mapping between two revisions of one resource (ADR-0003, §8, A06). Pure functions:
@@ -26,7 +26,7 @@ export interface Block {
  * figure ids for native readings and web slides, per-page text hashes for PDFs and decks.
  */
 export interface Layout {
-  type: string;
+  type: ResourceType;
   blocks?: Block[];
   figures?: string[];
   /** Text hash per page; undefined for a page whose hash is missing. */
@@ -47,7 +47,7 @@ const str = (value: unknown): value is string => typeof value === 'string';
  * The layout of a revision, or undefined while the derived outputs that anchors need are not
  * there yet (ingestion still running). Types that only take `none` anchors need nothing.
  */
-export function layoutOf(type: string, derived: Record<string, unknown>): Layout | undefined {
+export function layoutOf(type: ResourceType, derived: Record<string, unknown>): Layout | undefined {
   if (type === 'reading_native' || type === 'slides_web') {
     const blocks = array(derived.blockMap)?.flatMap((b) => {
       const { id, text } = (b ?? {}) as Record<string, unknown>;

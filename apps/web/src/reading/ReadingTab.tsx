@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router';
-import { useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import { ApiError } from '../api/client';
 import page from '../components/Page.module.css';
 import { useSession } from '../session/useSession';
@@ -36,6 +36,19 @@ export function ReadingTab({ classId, courseId, topicId, instructor, search, onS
     instructor &&
     session.status === 'signed-in' &&
     session.me.courses.some((c) => c.courseId === courseId && (c.editor || c.owner));
+
+  // An entry opened without a reading in its address is pinned to the one shown, so Back returns
+  // to it even after a later save has moved "the reading studied last".
+  const shown =
+    list.data &&
+    (list.data.readings.find((r) => r.revisionId === search.resource) ??
+      list.data.readings.find((r) => r.revisionId === list.data?.lastRevisionId) ??
+      list.data.readings[0]);
+  const shownId = shown?.revisionId;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `onSearch` is a new function every render
+  useEffect(() => {
+    if (shownId && search.resource === undefined) onSearch({ resource: shownId }, 'replace');
+  }, [shownId, search.resource]);
 
   if (!list.data) {
     return (

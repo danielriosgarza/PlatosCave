@@ -360,6 +360,25 @@ describe('native reading', () => {
     expect(screen.getByRole('combobox', { name: 'Reading' })).toHaveValue(REV_NATIVE);
   });
 
+  it('A03 Back to an entry opened without a reading returns to the reading it showed', async () => {
+    const user = userEvent.setup();
+    // Studied last: the PDF. The address names nothing, so the PDF is shown and pinned.
+    const world = makeWorld({ ...two(), lastRevisionId: REV_PDF });
+    api(world);
+    openPdf.mockResolvedValue(pdfDocument());
+    const { router } = renderApp(READING);
+    expect(await screen.findByText('Page 1 of 3')).toBeVisible();
+    await waitFor(() => expect(router.state.location.search).toMatchObject({ resource: REV_PDF }));
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Reading' }), REV_NATIVE);
+    await screen.findByText('Every sample tells a slightly different story.');
+    scrollThrough({ 'b-title': -50, 'b-one': 10, 'b-two': 110, 'b-code': 210 });
+    // The acknowledged save makes the native reading "the one studied last" in the cache.
+    await waitFor(() => expect(world.positions).toHaveLength(1));
+    router.history.back();
+    expect(await screen.findByText('Page 1 of 3')).toBeVisible();
+    expect(screen.getByRole('combobox', { name: 'Reading' })).toHaveValue(REV_PDF);
+  });
+
   it('A03 a save that fails is retried by the next move and nothing claims it was kept', async () => {
     const world = makeWorld(two());
     world.failPut = true;
