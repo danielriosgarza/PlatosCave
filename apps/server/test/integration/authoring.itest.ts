@@ -396,7 +396,7 @@ describe('processing recovery', () => {
       await leave(revisionId, status);
       expect(await processing(id), why).toMatchObject({
         state: 'failed',
-        error: expect.stringContaining('stopped before it finished'),
+        error: 'Processing stopped without a result',
       });
       const publish = await call('elena', 'POST', `${course}/releases`);
       expect(publish.body.report.errors, why).toContainEqual(
