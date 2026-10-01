@@ -31,8 +31,8 @@ The repository owner authorised this process on 2026-09-30, including fully auto
 - **Implementer model of a PR** = `model=` of the latest `role=implementer` launch record on its issue.
 - A launched session has **ended** if `get_session` shows `status_bucket` `completed`, `failed` or `review_ready`, or `blocked` with no update for 60 minutes. A record with `session=pending` older than 30 minutes is a failed launch.
 - **Live issues** = open `plan` issues labelled `status:in-progress` and not `needs-human`.
-- **In flight** = an implementer or reviewer session launched this run or still `working`, or a `review:approved` PR whose head checks are still running (for example after an update from `main`).
-- **Pending check-in** = the `Next check-in: <ISO> <trigger id>` line on the dashboard, if its time has not passed. A check-in whose time has passed is consumed.
+- **In flight** = an implementer or reviewer session launched this run or still `working`, or an open PR whose head checks are still running (for example after an update from `main`) and started less than 30 minutes ago. Checks queued or running for longer are Step 4's "CI not running" case, not in flight.
+- **Pending check-in** = the `Next check-in: <ISO> <trigger id>` line on the dashboard. It is consumed when the message that woke this run ends `(follow-up check-in)`, or when its time is more than 30 minutes past (lost delivery). A check-in whose time has passed but is not consumed is still pending: its message is queued behind this run.
 
 ## Step 0 — Lock, pause, fast path
 
@@ -51,11 +51,13 @@ Open and closed `plan` issues (number, title, labels, body, updated_at; paginate
 Walk the open PRs labelled `review:approved`, lowest number first, and merge each one that meets all of these at that moment. Every merge moves `main`, so check each PR afresh:
 
 1. **Verdict** says `APPROVED` and its `Head:` line equals the PR head SHA, or every commit after that SHA (`get_commits`) is a merge of `main` made by an update from main (message starting `Merge branch 'main' into`). Otherwise set the PR's review label to `review:pending` and continue with the next PR.
-2. **Freshness**, immediately before merging: `update_pull_request_branch` with `expectedHeadSha` = head SHA. If the branch was already up to date, continue. If `main` was merged in (including because an earlier merge this run moved `main`), comment "Updated from main; waiting for CI" and continue with the next PR; it merges on the follow-up run (Step 8) once CI is green. Do not wait or poll. If it fails with a conflict, set `review:changes-requested` and comment "Merge conflict with main; merge `origin/main` into the branch."
+2. **Freshness**, immediately before merging: `update_pull_request_branch` with `expectedHeadSha` = head SHA. If the branch was already up to date, continue. If `main` was merged in (including because an earlier merge this run moved `main`), comment "Updated from main; waiting for CI" and stop the walk: leave later PRs untouched until their turn, so each is tested once. It merges on the follow-up run (Step 8) once CI is green. Do not wait or poll. If it fails with a conflict, set `review:changes-requested` and comment "Merge conflict with main; merge `origin/main` into the branch."
 3. **Checks** on the head (`get_check_runs`): at least one run, all `completed`, every conclusion `success`, `skipped` or `neutral`. If one is still running, continue with the next PR. If one failed, set `review:changes-requested` and comment naming the failed check.
 4. The linked issue is not `needs-human`.
 
 Then `merge_pull_request` with `merge_method: squash`, `expectedHeadSha`, and title `<PR title> (#<PR>)`. Confirm the linked issue closed; close it (`state_reason: completed`) if GitHub did not. Continue with the next PR.
+
+A PR with no linked issue (a process change the owner approved) merges under the same rule, condition 4 aside.
 
 ## Step 3 — Unblock
 
@@ -66,7 +68,7 @@ For each `status:blocked` issue: if every dependency ID maps to a closed issue, 
 For each live issue and each open PR, find the latest launch records and `get_session`:
 
 - **Implementer ended, issue has no PR** → failed attempt. If attempts < 3, launch a fresh attempt (Step 6). Otherwise label `needs-human` with an escalate record linking the sessions.
-- **PR needs work** (`review:changes-requested`, a failed check on the head, or a merge conflict), its implementer is not `working`, and no commit was pushed to the PR in the 60 minutes since the verdict or failure → launch a continuation (Step 6) if attempts < 3, else escalate. The previous implementer will not push: implementers stop when a newer implementer launch record exists.
+- **PR needs work** (`review:changes-requested`, a failed check on the head, or a merge conflict), its implementer is not `working`, and no commit was pushed to the PR in the 60 minutes since the verdict or failure → launch a continuation (Step 6) if attempts < 3, else escalate. The previous implementer will not push: implementers stop when a newer implementer launch record exists. A PR with no linked issue gets no continuation; the session that opened it drives it. If it has stayed `review:changes-requested` with no push for 24 hours, label the dashboard issue `needs-human` (once, with an escalate record naming the PR).
 - **Implementer `working` for more than 12 hours, or 4 hours with no new commit on its branch** → treat as a failed attempt as above (the stale session stops itself at its next push check), and note it on the dashboard.
 - **PR has no review label and all checks on its head are green** → set `review:pending`.
 - **Reviewer ended while `review:in-progress` is set** → if a verdict with `Head:` equal to the current head exists, apply its label (`review:approved` or `review:changes-requested`). Otherwise set `review:pending`; after two reviewer launch records for the same head SHA without a verdict, escalate the linked issue.
@@ -118,8 +120,8 @@ When every phase through 4 is audited and no `plan` issue is open, report "Deliv
 
 If nothing is in flight, schedule nothing; the hourly routine is the fallback. Otherwise:
 
-1. Delay: 10 minutes if this run updated a PR branch from `main` or an approved PR is waiting for CI (CI takes about 2–3 minutes); 20 minutes if this run launched implementers or reviewers, or sessions are still working. When both apply, use 10.
-2. Never stack follow-ups. If a check-in is pending and is not later than now + delay, keep it and schedule nothing. If the new one would be sooner, `delete_trigger` the pending one first.
+1. Delay: 10 minutes if this run updated a PR branch from `main` or a PR head's checks are running (CI takes about 2–3 minutes); 20 minutes if this run launched implementers or reviewers, or sessions are still working. When both apply, use 10.
+2. Never stack follow-ups. If a check-in is pending, or the next hourly run (:41) comes, no later than now + delay, schedule nothing and keep the pending line. If the new one would be sooner than a pending check-in, `delete_trigger` the pending one first; if that fails, schedule the new one anyway and overwrite the line (the old one costs at most one extra run).
 3. `send_later` with `delay_minutes`, `initiation: own_followup`, `name: "Parallax orchestrator follow-up"`, and `message`:
 
 > /orchestrate

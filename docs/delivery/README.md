@@ -66,12 +66,12 @@ The orchestrator squash-merges every pull request that satisfies all of these at
 
 ## Timing
 
-The orchestrator routine (`trig_01GLrhXFVWKkrjAb4DNu7LBX`) runs every hour at :41 as a fallback. The mechanism relied on between ticks is the orchestrator's own follow-up: at the end of any run with work in flight (an implementer or reviewer session launched or still working, or an approved PR waiting for CI after an update from `main`), it schedules one check-in into its own session with `send_later`:
+The orchestrator routine (`trig_01GLrhXFVWKkrjAb4DNu7LBX`) runs every hour at :41 as a fallback. The mechanism relied on between ticks is the orchestrator's own follow-up: at the end of any run with work in flight (an implementer or reviewer session launched or still working, or a PR whose CI is running), it schedules one check-in into its own session with `send_later`:
 - 10 minutes later after updating a branch from `main` (CI takes about 2–3 minutes);
 - 20 minutes later when it launched sessions or sessions are still working;
 - the shorter delay when both apply.
 
-Only one follow-up is pending at a time; the dashboard records it as `Next check-in: <ISO> <trigger id>`, and a sooner one replaces it. With nothing in flight, none is scheduled. A follow-up run follows the same steps, lock and limits as an hourly run.
+Only one follow-up is pending at a time; the dashboard records it as `Next check-in: <ISO> <trigger id>`, and a sooner one replaces it. None is scheduled when the hourly run comes first. After a merge, only the next approved PR is updated from `main`, so each PR runs CI once before it merges. With nothing in flight, none is scheduled. A follow-up run follows the same steps, lock and limits as an hourly run.
 
 Sessions also try to wake the orchestrator early with `fire_trigger`, best effort only:
 - the implementer, once CI is green on a head labelled `review:pending`;
