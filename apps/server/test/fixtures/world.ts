@@ -1,7 +1,8 @@
 import { createHash } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import type { ClassScope, CourseScope } from '../../src/auth/scope';
-import { createSession } from '../../src/auth/sessions';
+import { createSession, sessionCookieHeader } from '../../src/auth/sessions';
+import { DEV_SESSION_SECRET } from '../../src/config';
 import { adoptRelease } from '../../src/content/adoption';
 import { publishRelease } from '../../src/content/releases';
 import type { Db } from '../../src/db/client';
@@ -51,6 +52,9 @@ export const people: PersonName[] = [
   'olivia',
   'previewB',
 ];
+
+/** The Cookie header a browser sends for `token`, signed with the non-production secret. */
+export const cookieFor = (token: string): string => sessionCookieHeader(token, DEV_SESSION_SECRET);
 
 export interface World {
   ids: typeof ids;
@@ -109,7 +113,7 @@ export async function buildWorld(db: Db, now = new Date()): Promise<World> {
   const cookie = {} as Record<PersonName, string>;
   for (const key of people) {
     const { token } = await createSession(db, ids[key], { now });
-    cookie[key] = `pc_session=${token}`;
+    cookie[key] = cookieFor(token);
   }
   return { ids, cookie };
 }
