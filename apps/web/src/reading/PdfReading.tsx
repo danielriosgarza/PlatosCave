@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
-import { openPdf, type PdfDocument } from './pdfjs';
+import { openPdf, type PdfDocument, type RenderHandle } from './pdfjs';
 import styles from './Reading.module.css';
-import { READER_INPUT } from './readerInput';
+import { HOLD_MS, READER_INPUT } from './readerInput';
 import type { ReadingPosition } from './readings';
 
 interface Props {
@@ -45,6 +45,7 @@ export function PdfReading({ url, pageCount, renew, initial, onPosition }: Props
   const text = useRef<HTMLDivElement>(null);
   const restore = useRef<number | null>(start?.offset ?? null);
   const moved = useRef(false);
+  const settledAt = useRef<number | null>(null);
   const current = useRef(url);
   current.current = url;
 
@@ -86,14 +87,22 @@ export function PdfReading({ url, pageCount, renew, initial, onPosition }: Props
   }, []);
 
   const doc = load.state === 'ready' ? load.doc : null;
+  // Draws run one after another on the one canvas: pdf.js refuses a second render() while one is
+  // still running, so a newer draw cancels the older and starts only after it has settled.
+  const queue = useRef<Promise<unknown>>(Promise.resolve());
   useEffect(() => {
     if (!doc || !width || !canvas.current || !text.current) return;
+    const target = { canvas: canvas.current, text: text.current };
     let cancelled = false;
-    doc
-      .renderPage(page, { canvas: canvas.current, text: text.current }, width)
-      .then(() => {
+    let handle: RenderHandle | null = null;
+    queue.current = queue.current
+      .then(async () => {
         if (cancelled) return;
+        handle = doc.renderPage(page, target, width);
+        const size = await handle.done;
+        if (cancelled || !size) return;
         setDrawn({ page, width });
+        settledAt.current = performance.now();
         const share = restore.current;
         restore.current = null;
         const el = sheet.current;
@@ -107,6 +116,7 @@ export function PdfReading({ url, pageCount, renew, initial, onPosition }: Props
       });
     return () => {
       cancelled = true;
+      handle?.cancel();
     };
   }, [doc, page, width]);
 
@@ -125,7 +135,10 @@ export function PdfReading({ url, pageCount, renew, initial, onPosition }: Props
       moved.current = true;
     };
     const onScroll = () => {
-      if (moved.current) place();
+      const at = settledAt.current;
+      // Not before the page is drawn and its place restored, and not in the moment after it.
+      if (at === null) return;
+      if (moved.current || performance.now() - at > HOLD_MS) place();
     };
     for (const type of READER_INPUT) window.addEventListener(type, input, { passive: true });
     window.addEventListener('scroll', onScroll, { passive: true });

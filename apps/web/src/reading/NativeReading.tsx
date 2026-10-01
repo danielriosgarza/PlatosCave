@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useRef } from 'react';
 import styles from './Reading.module.css';
-import { READER_INPUT } from './readerInput';
+import { HOLD_MS, READER_INPUT } from './readerInput';
 import type { ReadingPosition } from './readings';
 
 interface Props {
@@ -42,18 +42,20 @@ function scrollToBlock(root: HTMLElement, position: { blockId: string; offset: n
 /**
  * A native reading inside the reading measure. The place is the block under the top of the
  * window plus a character offset into it, so it survives reflow and zoom (§8). Until the reader
- * first scrolls, the saved place is held: the router's own scroll to the top after a navigation,
+ * first scrolls, the saved place is held for a moment: the router's own scroll to the top after a navigation,
  * a browser's restoration and images that load late all move the page, and none may overwrite
  * the place with where they left it.
  */
 export function NativeReading({ html, initial, onPosition }: Props) {
   const ref = useRef<HTMLDivElement>(null);
   const moved = useRef(false);
+  const openedAt = useRef(performance.now());
   const start = useRef(initial && 'blockId' in initial ? initial : null);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: restores once per document
   useLayoutEffect(() => {
     moved.current = false;
+    openedAt.current = performance.now();
     const root = ref.current;
     if (root && start.current) scrollToBlock(root, start.current);
   }, [html]);
@@ -61,14 +63,15 @@ export function NativeReading({ html, initial, onPosition }: Props) {
   useEffect(() => {
     const root = ref.current;
     if (!root) return;
+    const settling = () => !moved.current && performance.now() - openedAt.current < HOLD_MS;
     const hold = () => {
-      if (!moved.current && start.current) scrollToBlock(root, start.current);
+      if (settling() && start.current) scrollToBlock(root, start.current);
     };
     const input = () => {
       moved.current = true;
     };
     const onScroll = () => {
-      if (!moved.current) return hold();
+      if (settling()) return hold();
       const place = currentBlock(root);
       if (place) onPosition(place);
     };

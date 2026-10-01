@@ -2,6 +2,7 @@ import { Link } from '@tanstack/react-router';
 import { useCallback, useRef } from 'react';
 import { ApiError } from '../api/client';
 import page from '../components/Page.module.css';
+import { useSession } from '../session/useSession';
 import { NativeReading } from './NativeReading';
 import { PdfReading } from './PdfReading';
 import { positionFromSearch, type ReadingSearch, searchFor } from './place';
@@ -29,6 +30,12 @@ interface Props {
 /** The Reading tab (§5, §8): resource toolbar, then the picked reading in its reader. */
 export function ReadingTab({ classId, courseId, topicId, instructor, search, onSearch }: Props) {
   const list = useReadings(classId, topicId);
+  // Adding a reading is course authoring (§12): an instructor without an editor grant has no page for it.
+  const session = useSession();
+  const canAdd =
+    instructor &&
+    session.status === 'signed-in' &&
+    session.me.courses.some((c) => c.courseId === courseId && (c.editor || c.owner));
 
   if (!list.data) {
     return (
@@ -54,7 +61,7 @@ export function ReadingTab({ classId, courseId, topicId, instructor, search, onS
     return (
       <div className={styles.stage}>
         <p className={styles.empty}>No reading has been added</p>
-        {instructor && (
+        {canAdd && (
           <p>
             <Link
               to="/courses/$courseId/edit/$topicId"
@@ -100,7 +107,7 @@ export function ReadingTab({ classId, courseId, topicId, instructor, search, onS
         ) : (
           <span className={styles.small}>{chosen.title}</span>
         )}
-        {instructor && (
+        {canAdd && (
           <Link
             to="/courses/$courseId/edit/$topicId"
             params={{ courseId, topicId }}

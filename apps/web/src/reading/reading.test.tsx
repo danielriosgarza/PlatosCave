@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   CLASS_A,
+  COURSE,
   instructorIn,
   makeMe,
   makeTopics,
@@ -157,17 +158,41 @@ const scrollThrough = (tops: Record<string, number>) => {
 const putsOf = (fetchMock: ReturnType<typeof stubApi>) =>
   fetchMock.mock.calls.filter(([, init]) => init?.method === 'PUT');
 
-function pdfDocument(): PdfDocument & { rendered: number[] } {
+/** A document whose draws finish at once, or only when the test releases them. */
+function pdfDocument(options: { hold?: boolean } = {}) {
   const rendered: number[] = [];
-  return {
+  const cancelled: number[] = [];
+  const running: { n: number; settle: (done: boolean) => void }[] = [];
+  const doc: PdfDocument = {
     pageCount: 3,
-    rendered,
-    renderPage: vi.fn(async (n: number) => {
+    renderPage: vi.fn((n: number) => {
+      // pdf.js refuses a second render on a canvas that is busy.
+      if (running.length > 0)
+        throw new Error('Cannot use the same canvas during multiple render()');
       rendered.push(n);
-      return { width: 600, height: 800 };
+      let settle: (done: boolean) => void = () => {};
+      const done = new Promise<{ width: number; height: number } | null>((resolve) => {
+        settle = (finished) => {
+          running.splice(
+            running.findIndex((r) => r.n === n),
+            1,
+          );
+          resolve(finished ? { width: 600, height: 800 } : null);
+        };
+      });
+      running.push({ n, settle });
+      if (!options.hold) queueMicrotask(() => settle(true));
+      return {
+        done,
+        cancel: () => {
+          cancelled.push(n);
+          queueMicrotask(() => settle(false));
+        },
+      };
     }),
     destroy: vi.fn(),
   };
+  return Object.assign(doc, { rendered, cancelled, running });
 }
 
 describe('empty category', () => {
@@ -181,11 +206,32 @@ describe('empty category', () => {
   it('A03 offers an instructor Add reading', async () => {
     api(
       makeWorld({ readings: [], lastRevisionId: null }),
-      makeMe({ classes: [instructorIn(CLASS_A, 'Class A')] }),
+      makeMe({
+        classes: [instructorIn(CLASS_A, 'Class A')],
+        courses: [
+          {
+            courseId: COURSE,
+            title: 'Statistical thinking',
+            owner: false,
+            editor: true,
+            publisher: false,
+          },
+        ],
+      }),
     );
     renderApp(READING);
     expect(await screen.findByText('No reading has been added')).toBeVisible();
     expect(screen.getByRole('link', { name: 'Add reading' })).toBeVisible();
+  });
+
+  it('A03 offers no Add reading to an instructor who cannot edit the course', async () => {
+    api(
+      makeWorld({ readings: [], lastRevisionId: null }),
+      makeMe({ classes: [instructorIn(CLASS_A, 'Class A')] }),
+    );
+    renderApp(READING);
+    expect(await screen.findByText('No reading has been added')).toBeVisible();
+    expect(screen.queryByRole('link', { name: 'Add reading' })).toBeNull();
   });
 });
 
@@ -229,6 +275,23 @@ describe('native reading', () => {
     await new Promise((resolve) => setTimeout(resolve, 450));
     expect(putsOf(fetchMock)).toHaveLength(0);
     expect(scrollTo).toHaveBeenCalledWith({ top: 160 });
+  });
+
+  it('A03 a reader who drags the scrollbar, which sends no input event, is followed once the hold ends', async () => {
+    const world = makeWorld(two({ blockId: 'b-two', offset: 0 }));
+    const fetchMock = api(world);
+    renderApp(READING);
+    await screen.findByText('Wider samples vary less than narrow ones do.');
+    const now = performance.now();
+    vi.spyOn(performance, 'now').mockReturnValue(now + 5000);
+    layout.tops = { 'b-title': -460, 'b-one': -400, 'b-two': -300, 'b-code': -50 };
+    scrollTo.mockClear();
+    window.dispatchEvent(new Event('scroll'));
+    await waitFor(() => expect(putsOf(fetchMock)).toHaveLength(1));
+    expect(scrollTo).not.toHaveBeenCalled();
+    expect((world.positions[0] as { position: { blockId: string } }).position.blockId).toBe(
+      'b-code',
+    );
   });
 
   it('A03 saves the place a reader pauses at and writes it into the address', async () => {
@@ -340,6 +403,27 @@ describe('PDF reading', () => {
     expect(screen.getByRole('button', { name: 'Next page' })).toBeEnabled();
     // The sheet is 100 px tall in this layout: half of it is above the window top.
     await waitFor(() => expect(scrollTo).toHaveBeenCalledWith({ top: 50 }));
+  });
+
+  it('A03 clicking Next page while a page is still drawing cancels that draw instead of failing', async () => {
+    const user = userEvent.setup();
+    const doc = pdfDocument({ hold: true });
+    openPdf.mockResolvedValue(doc);
+    api(makeWorld(pdfList()));
+    renderApp(READING);
+    expect(await screen.findByText('Page 1 of 3')).toBeVisible();
+    await waitFor(() => expect(doc.rendered).toEqual([1]));
+    // Page 1 is still being drawn: two quick clicks ask for page 3 on the same canvas.
+    await user.click(screen.getByRole('button', { name: 'Next page' }));
+    await user.click(screen.getByRole('button', { name: 'Next page' }));
+    await screen.findByText('Page 3 of 3');
+    await waitFor(() => expect(doc.cancelled).toContain(1));
+    // The newer draw starts only once the older has settled, and the viewer stays up.
+    await waitFor(() => expect(doc.rendered).toContain(3));
+    expect(screen.queryByRole('alert')).toBeNull();
+    doc.running[0]?.settle(true);
+    await waitFor(() => expect(doc.running).toHaveLength(0));
+    expect(screen.queryByText('This PDF could not be loaded.')).toBeNull();
   });
 
   it('A03 the page controls move through the document and save the new page', async () => {

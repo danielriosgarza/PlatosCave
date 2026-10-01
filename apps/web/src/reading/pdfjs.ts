@@ -6,6 +6,12 @@ import 'pdfjs-dist/web/pdf_viewer.css';
  * browsers of the same age lack. Loaded on first use so the shell stays light (§14). Tests
  * replace this module: pdf.js needs a canvas and a worker, which jsdom does not provide.
  */
+/** A page being drawn: `done` is null when the draw was cancelled before it finished. */
+export interface RenderHandle {
+  done: Promise<{ width: number; height: number } | null>;
+  cancel(): void;
+}
+
 export interface PdfDocument {
   pageCount: number;
   /** Draws page `n` (1-based) at `width` CSS pixels, with its selectable text layer. */
@@ -13,7 +19,7 @@ export interface PdfDocument {
     n: number,
     target: { canvas: HTMLCanvasElement; text: HTMLElement },
     width: number,
-  ): Promise<{ width: number; height: number }>;
+  ): RenderHandle;
   destroy(): void;
 }
 
@@ -25,35 +31,54 @@ export async function openPdf(data: Uint8Array): Promise<PdfDocument> {
   const doc = await task.promise;
   return {
     pageCount: doc.numPages,
-    async renderPage(n, { canvas, text }, width) {
-      const page = await doc.getPage(n);
-      const natural = page.getViewport({ scale: 1 });
-      const viewport = page.getViewport({ scale: width / natural.width });
-      const ratio = window.devicePixelRatio || 1;
-      canvas.width = Math.floor(viewport.width * ratio);
-      canvas.height = Math.floor(viewport.height * ratio);
-      canvas.style.width = `${viewport.width}px`;
-      canvas.style.height = `${viewport.height}px`;
-      const context = canvas.getContext('2d');
-      if (!context) throw new Error('canvas is not available');
-      text.replaceChildren();
-      text.style.setProperty('--scale-factor', String(viewport.scale));
-      text.style.setProperty('--total-scale-factor', String(viewport.scale));
-      const layer = new pdfjs.TextLayer({
-        textContentSource: page.streamTextContent(),
-        container: text,
-        viewport,
-      });
-      await Promise.all([
-        page.render({
+    renderPage(n, { canvas, text }, width) {
+      let cancelled = false;
+      const cancels: (() => void)[] = [];
+      const done = (async () => {
+        const page = await doc.getPage(n);
+        if (cancelled) return null;
+        const natural = page.getViewport({ scale: 1 });
+        const viewport = page.getViewport({ scale: width / natural.width });
+        const ratio = window.devicePixelRatio || 1;
+        canvas.width = Math.floor(viewport.width * ratio);
+        canvas.height = Math.floor(viewport.height * ratio);
+        canvas.style.width = `${viewport.width}px`;
+        canvas.style.height = `${viewport.height}px`;
+        const context = canvas.getContext('2d');
+        if (!context) throw new Error('canvas is not available');
+        text.replaceChildren();
+        text.style.setProperty('--scale-factor', String(viewport.scale));
+        text.style.setProperty('--total-scale-factor', String(viewport.scale));
+        const layer = new pdfjs.TextLayer({
+          textContentSource: page.streamTextContent(),
+          container: text,
+          viewport,
+        });
+        const task = page.render({
           canvas,
           canvasContext: context,
           viewport,
           transform: ratio === 1 ? undefined : [ratio, 0, 0, ratio, 0, 0],
-        }).promise,
-        layer.render(),
-      ]);
-      return { width: viewport.width, height: viewport.height };
+        });
+        cancels.push(
+          () => task.cancel(),
+          () => layer.cancel(),
+        );
+        try {
+          await Promise.all([task.promise, layer.render()]);
+        } catch (error) {
+          if (cancelled || error instanceof pdfjs.RenderingCancelledException) return null;
+          throw error;
+        }
+        return cancelled ? null : { width: viewport.width, height: viewport.height };
+      })();
+      return {
+        done,
+        cancel() {
+          cancelled = true;
+          for (const cancel of cancels) cancel();
+        },
+      };
     },
     destroy: () => void task.destroy(),
   };
