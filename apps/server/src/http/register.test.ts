@@ -1,10 +1,10 @@
-import { defineRoute } from '@parallax/contracts';
+import { conflictBody, defineRoute } from '@parallax/contracts';
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import { z } from 'zod';
 import { buildApp } from '../app';
 import type { ClassScope, UserScope } from '../auth/scope';
 import { loadConfig } from '../config';
-import { type RouteArgs, registerRoute } from './register';
+import { notFound, type RouteArgs, registerRoute } from './register';
 
 const config = loadConfig({ NODE_ENV: 'test', LOG_LEVEL: 'silent' });
 
@@ -35,6 +35,17 @@ const classEcho = defineRoute({
   params: z.object({ classId: z.uuid(), n: z.coerce.number() }),
   response: z.object({ n: z.number() }),
   examples: { params: { classId: '00000000-0000-4000-8000-000000000000', n: 1 } },
+});
+
+const versioned = defineRoute({
+  method: 'PUT',
+  path: '/api/versioned/:n',
+  scope: { kind: 'public' },
+  summary: 'versioned',
+  params: z.object({ n: z.coerce.number() }),
+  response: z.object({ n: z.number() }),
+  errors: { 409: conflictBody(z.object({ n: z.number() })) },
+  examples: { params: { n: 1 } },
 });
 
 describe('registerRoute and the scope guard', () => {
@@ -92,6 +103,32 @@ describe('registerRoute and the scope guard', () => {
     type Cls = RouteArgs<typeof classEcho>;
     expectTypeOf<Cls['params']>().toEqualTypeOf<{ classId: string; n: number }>();
     expectTypeOf<Cls['scope']>().toEqualTypeOf<ClassScope>();
+  });
+
+  it('answers a handler conflict with the declared 409 body and a missing row with 404', async () => {
+    const app = await buildApp(config);
+    registerRoute(app, versioned, ({ params, conflict }) => {
+      if (params.n === 0) return notFound();
+      if (params.n > 1) return conflict({ error: 'revision_conflict', current: { n: 1 } });
+      return { n: params.n };
+    });
+    expect((await app.inject({ method: 'PUT', url: '/api/versioned/1' })).json()).toEqual({ n: 1 });
+    const stale = await app.inject({ method: 'PUT', url: '/api/versioned/2' });
+    expect(stale.statusCode).toBe(409);
+    expect(stale.json()).toEqual({ error: 'revision_conflict', current: { n: 1 } });
+    const missing = await app.inject({ method: 'PUT', url: '/api/versioned/0' });
+    expect(missing.statusCode).toBe(404);
+    expect(missing.json()).toEqual({ error: 'not found' });
+    await app.close();
+  });
+
+  it('documents draft routes and their 409 bodies in openapi', async () => {
+    const app = await buildApp(config);
+    const spec = (await app.inject({ method: 'GET', url: '/api/openapi.json' })).json();
+    const patch = spec.paths['/api/courses/{courseId}/resources/{resourceId}'].patch;
+    expect(Object.keys(patch.responses)).toEqual(expect.arrayContaining(['200', '409']));
+    expect(Object.keys(spec.paths)).toContain('/api/courses/{courseId}/drafts');
+    await app.close();
   });
 
   it('serves health with db skipped and lists it in openapi', async () => {

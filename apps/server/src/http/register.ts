@@ -5,8 +5,26 @@ import { type ResolverDeps, resolveScope, type ScopeFor } from '../auth/scope';
 
 type Out<T> = T extends z.ZodType ? z.output<T> : undefined;
 
+/** A refusal raised inside a handler and sent with its status and body by registerRoute. */
+class RouteFailure extends Error {
+  constructor(
+    readonly status: 404 | 409,
+    readonly body: unknown,
+  ) {
+    super(`route answered ${status}`);
+  }
+}
+
+/**
+ * 404 with the same body the scope resolver sends, so a row outside the caller's scope is
+ * indistinguishable from one that does not exist (ADR-0002).
+ */
+export function notFound(): never {
+  throw new RouteFailure(404, { error: 'not found' });
+}
+
 export type RouteArgs<C> =
-  C extends RouteContract<infer P, infer Q, infer B, z.ZodType, infer S>
+  C extends RouteContract<infer P, infer Q, infer B, z.ZodType, infer S, infer X>
     ? {
         params: Out<P>;
         query: Out<Q>;
@@ -14,6 +32,8 @@ export type RouteArgs<C> =
         scope: ScopeFor<S>;
         req: FastifyRequest;
         reply: FastifyReply;
+        /** Answers 409 with the contract's declared conflict body. */
+        conflict: (body: X extends z.ZodType ? z.input<X> : never) => never;
       }
     : never;
 
@@ -66,7 +86,10 @@ export function registerRoute<C extends RouteContract>(
       ...(contract.params && { params: contract.params }),
       ...(contract.query && { querystring: contract.query }),
       ...(contract.body && { body: contract.body }),
-      response: { 200: contract.response },
+      response: {
+        200: contract.response,
+        ...(contract.errors && { 409: contract.errors[409] }),
+      },
     },
     config: { scope: contract.scope, contract },
     onRequest: async (req, reply) => {
@@ -78,14 +101,24 @@ export function registerRoute<C extends RouteContract>(
       }
       req.parallaxScope = result.scope;
     },
-    handler: async (req, reply) =>
-      handler({
-        params: req.params,
-        query: req.query,
-        body: req.body,
-        scope: req.parallaxScope,
-        req,
-        reply,
-      } as RouteArgs<C>),
+    handler: async (req, reply) => {
+      try {
+        return await handler({
+          params: req.params,
+          query: req.query,
+          body: req.body,
+          scope: req.parallaxScope,
+          req,
+          reply,
+          conflict: (body: unknown) => {
+            if (!contract.errors) throw new Error(`${contract.path} declares no 409 body`);
+            throw new RouteFailure(409, body);
+          },
+        } as RouteArgs<C>);
+      } catch (err) {
+        if (!(err instanceof RouteFailure)) throw err;
+        return (reply as FastifyReply).code(err.status).send(err.body);
+      }
+    },
   });
 }
