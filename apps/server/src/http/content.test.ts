@@ -1,4 +1,5 @@
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { connect } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
@@ -150,8 +151,30 @@ describe('content origin', () => {
     expect((await get('/api/health', app)).statusCode).toBe(200);
   });
 
+  test('an absolute-form request target cannot reach /content on the app host', async () => {
+    const address = await server.listen({ port: 0, host: '127.0.0.1' });
+    const { port } = new URL(address);
+    const status = await new Promise<string>((resolve, reject) => {
+      const socket = connect(Number(port), '127.0.0.1', () => {
+        socket.write(
+          `GET http://x/content/${token()} HTTP/1.1\r\nHost: 127.0.0.1:3100\r\nConnection: close\r\n\r\n`,
+        );
+      });
+      let data = '';
+      socket.on('data', (chunk) => {
+        data += chunk;
+      });
+      socket.on('end', () => resolve(data.split('\r\n')[0] ?? ''));
+      socket.on('error', reject);
+    });
+    expect(status).toBe('HTTP/1.1 404 Not Found');
+  });
+
   test('tokens are redacted from logged request URLs', () => {
     expect(redactContentUrl(`/content/${token()}`)).toBe('/content/[redacted]');
     expect(redactContentUrl('/api/health')).toBe('/api/health');
+    expect(redactContentUrl(`http://x/content/${token()}?a=1`)).toBe(
+      'http://x/content/[redacted]?a=1',
+    );
   });
 });

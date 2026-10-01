@@ -5,13 +5,19 @@ import { type ContentClaims, verifyContentToken } from '../content/tokens';
 import { type Storage, StorageNotFoundError } from '../storage/storage';
 
 const NOT_FOUND = { error: 'not found' };
-/** The one path the content host serves: a single token segment, optional query. */
-const TOKEN_PATH = /^\/content\/[^/?#]+(\?.*)?$/;
-const CONTENT_PREFIX = /^\/content(\/|\?|$)/;
+/** The one path the content host serves: a single token segment. */
+const TOKEN_PATH = /^\/content\/[^/]+$/;
+const CONTENT_PREFIX = /^\/content(\/|$)/;
+
+/**
+ * The path the router will see. The router strips scheme and host from an absolute-form target
+ * (`GET http://x/content/… HTTP/1.1`), so the raw URL must not be tested as if it were a path.
+ */
+const pathOf = (url: string): string => new URL(url, 'http://invalid').pathname;
 
 /** Request URL with any content token replaced, so credentials never reach the logs. */
 export const redactContentUrl = (url: string): string =>
-  url.replace(/^\/content\/[^?#]*/, '/content/[redacted]');
+  url.replace(/\/content\/[^/?#]+/g, '/content/[redacted]');
 
 /**
  * Untrusted bytes run with no script, no plugins, no forms and an opaque origin; they may only
@@ -62,9 +68,8 @@ export function registerContentOrigin(app: FastifyInstance, deps: ContentOriginD
   // On the content host anything but `/content/<token>` is 404 here, before routing, so neither
   // the API nor the SPA fallback can answer there; on other hosts `/content…` does not exist.
   app.addHook('onRequest', async (req, reply) => {
-    const allowed = isContentHost(req, config)
-      ? TOKEN_PATH.test(req.url)
-      : !CONTENT_PREFIX.test(req.url);
+    const path = pathOf(req.url);
+    const allowed = isContentHost(req, config) ? TOKEN_PATH.test(path) : !CONTENT_PREFIX.test(path);
     if (!allowed) return reply.code(404).send(NOT_FOUND);
   });
 
