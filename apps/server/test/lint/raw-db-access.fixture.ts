@@ -34,7 +34,10 @@ export function viaAccessor(deps: { db?: Db }) {
     if (!deps.db) throw new Error('no database');
     return deps.db;
   };
+  // biome-ignore lint/style/noNonNullAssertion: the fixture exercises a non-null receiver
+  const asserted = deps.db!.execute(sql`select 1`); // raw-query
   return [
+    asserted,
     db().select().from(users), // raw-query
     db().query.users.findMany(), // raw-query
   ];

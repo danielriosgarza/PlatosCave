@@ -11,7 +11,7 @@
 language js
 
 // Member access covers optional chaining (`deps.db?.select()`); subscript access covers
-// `deps.db['select']`; call receivers cover the `db()` accessor the route modules define.
+// `deps.db['select']`; call receivers cover the `db()` accessor the route modules define; `deps.db!` is covered too.
 or {
   or {
     member_expression(object=$receiver, property=$method),
@@ -21,7 +21,9 @@ or {
       `db`,
       member_expression(property=`db`),
       call_expression(function=`db`),
-      call_expression(function=member_expression(property=`db`))
+      call_expression(function=member_expression(property=`db`)),
+      `db!`,
+      `$_.db!`
     },
     $method <: r"^['\"`]?(?:select|selectDistinct|selectDistinctOn|insert|update|delete|execute|query|transaction|\$client|\$count|\$with|with|refreshMaterializedView)['\"`]?$",
     register_diagnostic(span=$method, message="Raw database query outside a data-access module. Call a db/ function that takes a branded ClassScope/CourseScope instead (ADR-0002, Scoped tables).")
