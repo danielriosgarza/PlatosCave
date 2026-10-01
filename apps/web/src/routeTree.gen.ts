@@ -10,33 +10,122 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AuthedRouteImport } from './routes/_authed'
+import { Route as SigninRouteImport } from './routes/signin'
+import { Route as AuthedCoursesIndexRouteImport } from './routes/_authed/courses.index'
+import { Route as AuthedClassesClassIdReviewRouteImport } from './routes/_authed/classes.$classId.review'
+import { Route as AuthedClassesClassIdTopicsIndexRouteImport } from './routes/_authed/classes.$classId.topics.index'
+import { Route as AuthedCoursesCourseIdEditTopicIdRouteImport } from './routes/_authed/courses.$courseId.edit.$topicId'
+import { Route as AuthedClassesClassIdTopicsTopicIdTabRouteImport } from './routes/_authed/classes.$classId.topics.$topicId.$tab'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AuthedRoute = AuthedRouteImport.update({
+  id: '/_authed',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SigninRoute = SigninRouteImport.update({
+  id: '/signin',
+  path: '/signin',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthedCoursesIndexRoute = AuthedCoursesIndexRouteImport.update({
+  id: '/courses/',
+  path: '/courses/',
+  getParentRoute: () => AuthedRoute,
+} as any)
+const AuthedClassesClassIdReviewRoute =
+  AuthedClassesClassIdReviewRouteImport.update({
+    id: '/classes/$classId/review',
+    path: '/classes/$classId/review',
+    getParentRoute: () => AuthedRoute,
+  } as any)
+const AuthedClassesClassIdTopicsIndexRoute =
+  AuthedClassesClassIdTopicsIndexRouteImport.update({
+    id: '/classes/$classId/topics/',
+    path: '/classes/$classId/topics/',
+    getParentRoute: () => AuthedRoute,
+  } as any)
+const AuthedCoursesCourseIdEditTopicIdRoute =
+  AuthedCoursesCourseIdEditTopicIdRouteImport.update({
+    id: '/courses/$courseId/edit/$topicId',
+    path: '/courses/$courseId/edit/$topicId',
+    getParentRoute: () => AuthedRoute,
+  } as any)
+const AuthedClassesClassIdTopicsTopicIdTabRoute =
+  AuthedClassesClassIdTopicsTopicIdTabRouteImport.update({
+    id: '/classes/$classId/topics/$topicId/$tab',
+    path: '/classes/$classId/topics/$topicId/$tab',
+    getParentRoute: () => AuthedRoute,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/signin': typeof SigninRoute
+  '/courses/': typeof AuthedCoursesIndexRoute
+  '/classes/$classId/review': typeof AuthedClassesClassIdReviewRoute
+  '/courses/$courseId/edit/$topicId': typeof AuthedCoursesCourseIdEditTopicIdRoute
+  '/classes/$classId/topics/': typeof AuthedClassesClassIdTopicsIndexRoute
+  '/classes/$classId/topics/$topicId/$tab': typeof AuthedClassesClassIdTopicsTopicIdTabRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/signin': typeof SigninRoute
+  '/courses': typeof AuthedCoursesIndexRoute
+  '/classes/$classId/review': typeof AuthedClassesClassIdReviewRoute
+  '/courses/$courseId/edit/$topicId': typeof AuthedCoursesCourseIdEditTopicIdRoute
+  '/classes/$classId/topics': typeof AuthedClassesClassIdTopicsIndexRoute
+  '/classes/$classId/topics/$topicId/$tab': typeof AuthedClassesClassIdTopicsTopicIdTabRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/_authed': typeof AuthedRouteWithChildren
+  '/signin': typeof SigninRoute
+  '/_authed/courses/': typeof AuthedCoursesIndexRoute
+  '/_authed/classes/$classId/review': typeof AuthedClassesClassIdReviewRoute
+  '/_authed/courses/$courseId/edit/$topicId': typeof AuthedCoursesCourseIdEditTopicIdRoute
+  '/_authed/classes/$classId/topics/': typeof AuthedClassesClassIdTopicsIndexRoute
+  '/_authed/classes/$classId/topics/$topicId/$tab': typeof AuthedClassesClassIdTopicsTopicIdTabRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/'
+  fullPaths:
+    | '/'
+    | '/signin'
+    | '/courses/'
+    | '/classes/$classId/review'
+    | '/courses/$courseId/edit/$topicId'
+    | '/classes/$classId/topics/'
+    | '/classes/$classId/topics/$topicId/$tab'
   fileRoutesByTo: FileRoutesByTo
-  to: '/'
-  id: '__root__' | '/'
+  to:
+    | '/'
+    | '/signin'
+    | '/courses'
+    | '/classes/$classId/review'
+    | '/courses/$courseId/edit/$topicId'
+    | '/classes/$classId/topics'
+    | '/classes/$classId/topics/$topicId/$tab'
+  id:
+    | '__root__'
+    | '/'
+    | '/_authed'
+    | '/signin'
+    | '/_authed/courses/'
+    | '/_authed/classes/$classId/review'
+    | '/_authed/courses/$courseId/edit/$topicId'
+    | '/_authed/classes/$classId/topics/'
+    | '/_authed/classes/$classId/topics/$topicId/$tab'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AuthedRoute: typeof AuthedRouteWithChildren
+  SigninRoute: typeof SigninRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -48,11 +137,82 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_authed': {
+      id: '/_authed'
+      path: ''
+      fullPath: '/'
+      preLoaderRoute: typeof AuthedRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/signin': {
+      id: '/signin'
+      path: '/signin'
+      fullPath: '/signin'
+      preLoaderRoute: typeof SigninRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_authed/courses/': {
+      id: '/_authed/courses/'
+      path: '/courses'
+      fullPath: '/courses/'
+      preLoaderRoute: typeof AuthedCoursesIndexRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/classes/$classId/review': {
+      id: '/_authed/classes/$classId/review'
+      path: '/classes/$classId/review'
+      fullPath: '/classes/$classId/review'
+      preLoaderRoute: typeof AuthedClassesClassIdReviewRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/classes/$classId/topics/': {
+      id: '/_authed/classes/$classId/topics/'
+      path: '/classes/$classId/topics'
+      fullPath: '/classes/$classId/topics/'
+      preLoaderRoute: typeof AuthedClassesClassIdTopicsIndexRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/courses/$courseId/edit/$topicId': {
+      id: '/_authed/courses/$courseId/edit/$topicId'
+      path: '/courses/$courseId/edit/$topicId'
+      fullPath: '/courses/$courseId/edit/$topicId'
+      preLoaderRoute: typeof AuthedCoursesCourseIdEditTopicIdRouteImport
+      parentRoute: typeof AuthedRoute
+    }
+    '/_authed/classes/$classId/topics/$topicId/$tab': {
+      id: '/_authed/classes/$classId/topics/$topicId/$tab'
+      path: '/classes/$classId/topics/$topicId/$tab'
+      fullPath: '/classes/$classId/topics/$topicId/$tab'
+      preLoaderRoute: typeof AuthedClassesClassIdTopicsTopicIdTabRouteImport
+      parentRoute: typeof AuthedRoute
+    }
   }
 }
 
+interface AuthedRouteChildren {
+  AuthedCoursesIndexRoute: typeof AuthedCoursesIndexRoute
+  AuthedClassesClassIdReviewRoute: typeof AuthedClassesClassIdReviewRoute
+  AuthedCoursesCourseIdEditTopicIdRoute: typeof AuthedCoursesCourseIdEditTopicIdRoute
+  AuthedClassesClassIdTopicsIndexRoute: typeof AuthedClassesClassIdTopicsIndexRoute
+  AuthedClassesClassIdTopicsTopicIdTabRoute: typeof AuthedClassesClassIdTopicsTopicIdTabRoute
+}
+
+const AuthedRouteChildren: AuthedRouteChildren = {
+  AuthedCoursesIndexRoute: AuthedCoursesIndexRoute,
+  AuthedClassesClassIdReviewRoute: AuthedClassesClassIdReviewRoute,
+  AuthedCoursesCourseIdEditTopicIdRoute: AuthedCoursesCourseIdEditTopicIdRoute,
+  AuthedClassesClassIdTopicsIndexRoute: AuthedClassesClassIdTopicsIndexRoute,
+  AuthedClassesClassIdTopicsTopicIdTabRoute:
+    AuthedClassesClassIdTopicsTopicIdTabRoute,
+}
+
+const AuthedRouteWithChildren =
+  AuthedRoute._addFileChildren(AuthedRouteChildren)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AuthedRoute: AuthedRouteWithChildren,
+  SigninRoute: SigninRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

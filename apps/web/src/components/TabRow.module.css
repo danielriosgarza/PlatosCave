@@ -1,0 +1,54 @@
+.tabs {
+  display: flex;
+  align-items: stretch;
+  gap: 32px;
+  padding: 0 40px;
+  border-bottom: 1px solid var(--pc-rule);
+  min-height: 44px;
+  /* §14 / A19: the tab strip scrolls on its own at narrow widths, never the page. */
+  overflow-x: auto;
+  overflow-y: hidden;
+}
+.tabs > button {
+  border: 0;
+  background: none;
+  border-radius: 0;
+  position: relative;
+  padding: 10px 0;
+  color: var(--pc-muted);
+  white-space: nowrap;
+  font-size: 14px;
+  min-height: 44px;
+  cursor: pointer;
+}
+.tabs > button:hover {
+  color: var(--pc-ink);
+}
+.tabs > button[aria-selected="true"] {
+  color: var(--pc-ink);
+  font-weight: 600;
+}
+.tabs > button[aria-selected="true"]::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--pc-ink);
+}
+@media (max-width: 900px) {
+  .tabs {
+    padding: 0 24px;
+    gap: 22px;
+  }
+}
+@media (max-width: 540px) {
+  .tabs {
+    padding: 0 16px;
+    gap: 18px;
+  }
+  .tabs > button {
+    font-size: 13px;
+  }
+}
