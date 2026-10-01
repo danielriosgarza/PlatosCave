@@ -36,7 +36,8 @@ export function refuse(status: 400 | 403 | 404 | 409 | 410, error: string): neve
 
 /**
  * Maps a service outcome to the response: the value, a 404 (same body as the resolver), a 400
- * with the reason, or a 409 with the server copy through the route's declared `conflict`.
+ * with the reason, a 409 `class_archived`, or a 409 with the server copy through the route's
+ * declared `conflict`.
  */
 export function settle<T>(
   outcome: Outcome<T>,
@@ -47,6 +48,7 @@ export function settle<T>(
   if (outcome.reason === 'invalid') {
     throw Object.assign(new Error(outcome.message), { statusCode: 400 });
   }
+  if (outcome.reason === 'class_archived') throw new RouteFailure(409, { error: 'class_archived' });
   if (!conflict) throw new Error('unexpected revision conflict');
   return conflict({ error: 'revision_conflict', current: outcome.current });
 }
