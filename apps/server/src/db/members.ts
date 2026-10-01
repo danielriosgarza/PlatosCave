@@ -1,5 +1,5 @@
-import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
-import type { ClassManagerScope, CourseScope } from '../auth/scope';
+import { and, asc, eq, gt, inArray, isNull, lt, or } from 'drizzle-orm';
+import type { ClassManagerScope, CourseContext, CourseScope } from '../auth/scope';
 import type { Db } from './client';
 import { audit, type Tx } from './identity';
 import {
@@ -12,8 +12,11 @@ import {
 } from './schema';
 import { forClass, forCourse } from './scoped';
 
-/** Real members of the class (preview principals excluded) and its unrevoked invitations. */
-export async function listMembers(db: Db, scope: ClassManagerScope) {
+/**
+ * Real members of the class (preview principals excluded) and its open invitations: not
+ * revoked, not expired and not used up.
+ */
+export async function listMembers(db: Db, scope: ClassManagerScope, now: Date) {
   const membersQuery = db
     .select({
       userId: users.id,
@@ -37,7 +40,14 @@ export async function listMembers(db: Db, scope: ClassManagerScope) {
       createdAt: classInvites.createdAt,
     })
     .from(classInvites)
-    .where(and(forClass(scope, classInvites), isNull(classInvites.revokedAt)))
+    .where(
+      and(
+        forClass(scope, classInvites),
+        isNull(classInvites.revokedAt),
+        or(isNull(classInvites.expiresAt), gt(classInvites.expiresAt, now)),
+        or(isNull(classInvites.maxUses), lt(classInvites.useCount, classInvites.maxUses)),
+      ),
+    )
     .orderBy(asc(classInvites.createdAt));
   const [members, invites] = await Promise.all([membersQuery, invitesQuery]);
   return { members, invites };
@@ -56,6 +66,7 @@ export function setManageMembers(
   scope: ClassManagerScope,
   userId: string,
   granted: boolean,
+  now: Date,
 ) {
   return db.transaction(async (tx) => {
     const [member] = await tx
@@ -82,14 +93,16 @@ export function setManageMembers(
       before: { manageMembers: member.manageMembers },
       after: { manageMembers: granted, via: scope.via },
     });
+    if (!granted) await revokeIssuedBy(tx, scope, userId, now, 'issuer_lost_manage_members');
     return { ok: true as const };
   });
 }
 
 /**
  * Removes one membership. An instructor's preview membership in the class goes with them (its
- * sessions revoked), and
- * the draft editing their invitation granted ends once they teach no class of the course.
+ * sessions revoked), the draft editing their invitation granted ends once they teach no class of
+ * the course, and the open invitations they issued in the class are revoked unless they own the
+ * course. Each cascade is audited on its own.
  */
 export function removeMember(db: Db, scope: ClassManagerScope, userId: string, now: Date) {
   return db.transaction(async (tx) => {
@@ -98,29 +111,6 @@ export function removeMember(db: Db, scope: ClassManagerScope, userId: string, n
       .where(realMember(scope, userId))
       .returning({ role: classMemberships.role, manageMembers: classMemberships.manageMembers });
     if (!removed) return { ok: false as const };
-    if (removed.role === 'instructor') {
-      const previews = tx.select({ id: users.id }).from(users).where(eq(users.ownerUserId, userId));
-      const dropped = await tx
-        .delete(classMemberships)
-        .where(
-          and(
-            forClass(scope, classMemberships),
-            eq(classMemberships.isPreview, true),
-            inArray(classMemberships.userId, previews),
-          ),
-        )
-        .returning({ userId: classMemberships.userId });
-      // The preview user row stays (later records and audit events may name it), but it can no
-      // longer sign anything in.
-      if (dropped.length > 0) {
-        const ids = dropped.map((d) => d.userId);
-        await tx
-          .update(authSessions)
-          .set({ revokedAt: now })
-          .where(and(inArray(authSessions.userId, ids), isNull(authSessions.revokedAt)));
-      }
-      await dropEditorIfNotTeaching(tx, scope.courseId, userId);
-    }
     await audit(tx, {
       actorId: scope.user.id,
       action: 'membership.remove',
@@ -131,48 +121,163 @@ export function removeMember(db: Db, scope: ClassManagerScope, userId: string, n
       before: removed,
       after: { via: scope.via },
     });
+    if (removed.role === 'instructor') {
+      await dropPreviews(tx, scope, userId, now);
+      await dropEditorIfNotTeaching(tx, scope, userId);
+    }
+    await revokeIssuedBy(tx, scope, userId, now, 'issuer_removed');
     return { ok: true as const };
   });
 }
 
-async function dropEditorIfNotTeaching(tx: Tx, courseId: string, userId: string) {
+/** The instructor's preview principals lose their membership in the class and their sessions. */
+async function dropPreviews(tx: Tx, scope: ClassManagerScope, userId: string, now: Date) {
+  const previews = tx.select({ id: users.id }).from(users).where(eq(users.ownerUserId, userId));
+  const dropped = await tx
+    .delete(classMemberships)
+    .where(
+      and(
+        forClass(scope, classMemberships),
+        eq(classMemberships.isPreview, true),
+        inArray(classMemberships.userId, previews),
+      ),
+    )
+    .returning({ userId: classMemberships.userId, role: classMemberships.role });
+  if (dropped.length === 0) return;
+  // The preview user row stays (later records and audit events may name it), but it can no
+  // longer sign anything in.
+  const ids = dropped.map((d) => d.userId);
+  await tx
+    .update(authSessions)
+    .set({ revokedAt: now })
+    .where(and(inArray(authSessions.userId, ids), isNull(authSessions.revokedAt)));
+  for (const preview of dropped) {
+    await audit(tx, {
+      actorId: scope.user.id,
+      action: 'membership.remove',
+      scopeKind: 'class',
+      scopeId: scope.classId,
+      targetType: 'user',
+      targetId: preview.userId,
+      before: { role: preview.role, isPreview: true },
+      after: { via: scope.via, previewOf: userId },
+    });
+  }
+}
+
+/**
+ * Locks the person's course membership row, so a removal deciding whether they still teach the
+ * course and an invitation acceptance re-granting draft editing run one after the other.
+ */
+async function lockCourseMembership(tx: Tx, scope: CourseContext, userId: string) {
+  const [row] = await tx
+    .select({
+      owner: courseMemberships.owner,
+      editor: courseMemberships.editor,
+      publisher: courseMemberships.publisher,
+    })
+    .from(courseMemberships)
+    .where(and(forCourse(scope, courseMemberships), eq(courseMemberships.userId, userId)))
+    .for('update');
+  return row;
+}
+
+async function dropEditorIfNotTeaching(tx: Tx, scope: ClassManagerScope, userId: string) {
+  const current = await lockCourseMembership(tx, scope, userId);
+  if (!current?.editor || current.owner) return;
   const [teaching] = await tx
     .select({ id: classMemberships.id })
     .from(classMemberships)
     .innerJoin(classes, eq(classes.id, classMemberships.classId))
     .where(
       and(
-        eq(classes.courseId, courseId),
+        forCourse(scope, classes),
         eq(classMemberships.userId, userId),
         eq(classMemberships.role, 'instructor'),
       ),
     )
     .limit(1);
   if (teaching) return;
-  const course = and(
-    eq(courseMemberships.courseId, courseId),
-    eq(courseMemberships.userId, userId),
-  );
   await tx
     .update(courseMemberships)
     .set({ editor: false })
-    .where(and(course, eq(courseMemberships.owner, false)));
-  await tryDeleteEmpty(tx, courseId, userId);
+    .where(and(forCourse(scope, courseMemberships), eq(courseMemberships.userId, userId)));
+  const membershipRemoved = await tryDeleteEmpty(tx, scope, userId);
+  await audit(tx, {
+    actorId: scope.user.id,
+    action: 'grant.editor',
+    scopeKind: 'course',
+    scopeId: scope.courseId,
+    targetType: 'user',
+    targetId: userId,
+    before: { editor: true },
+    after: { editor: false, membershipRemoved, via: scope.via },
+  });
 }
 
-/** A course membership holding no grant carries no meaning; drop it. */
-async function tryDeleteEmpty(tx: Tx, courseId: string, userId: string) {
-  await tx
+/** A course membership holding no grant carries no meaning; drop it. True when it was dropped. */
+async function tryDeleteEmpty(tx: Tx, scope: CourseContext, userId: string): Promise<boolean> {
+  const deleted = await tx
     .delete(courseMemberships)
     .where(
       and(
-        eq(courseMemberships.courseId, courseId),
+        forCourse(scope, courseMemberships),
         eq(courseMemberships.userId, userId),
         eq(courseMemberships.owner, false),
         eq(courseMemberships.editor, false),
         eq(courseMemberships.publisher, false),
       ),
+    )
+    .returning({ id: courseMemberships.id });
+  return deleted.length > 0;
+}
+
+/**
+ * Invitations rest on their issuer's authority: once a person can no longer manage the class
+ * (removed, or `manage_members` revoked), the open invitations they issued there are revoked.
+ * A course owner keeps that authority through the course, so theirs stay.
+ */
+async function revokeIssuedBy(
+  tx: Tx,
+  scope: ClassManagerScope,
+  userId: string,
+  now: Date,
+  reason: 'issuer_removed' | 'issuer_lost_manage_members',
+) {
+  const [owner] = await tx
+    .select({ id: courseMemberships.id })
+    .from(courseMemberships)
+    .where(
+      and(
+        forCourse(scope, courseMemberships),
+        eq(courseMemberships.userId, userId),
+        eq(courseMemberships.owner, true),
+      ),
     );
+  if (owner) return;
+  const revoked = await tx
+    .update(classInvites)
+    .set({ revokedAt: now })
+    .where(
+      and(
+        forClass(scope, classInvites),
+        eq(classInvites.createdBy, userId),
+        isNull(classInvites.revokedAt),
+      ),
+    )
+    .returning({ id: classInvites.id });
+  for (const invite of revoked) {
+    await audit(tx, {
+      actorId: scope.user.id,
+      action: 'invite.revoke',
+      scopeKind: 'class',
+      scopeId: scope.classId,
+      targetType: 'invite',
+      targetId: invite.id,
+      before: { revokedAt: null },
+      after: { revokedAt: now, via: scope.via, reason },
+    });
+  }
 }
 
 /** Publication is a course grant only the owner hands out (§3: "If delegated"). */
@@ -180,14 +285,11 @@ export function setPublisher(db: Db, scope: CourseScope, userId: string, granted
   return db.transaction(async (tx) => {
     const [user] = await tx.select({ kind: users.kind }).from(users).where(eq(users.id, userId));
     if (user?.kind !== 'user') return { ok: false as const, reason: 'not_found' as const };
-    const [current] = await tx
-      .select({ owner: courseMemberships.owner, publisher: courseMemberships.publisher })
-      .from(courseMemberships)
-      .where(and(forCourse(scope, courseMemberships), eq(courseMemberships.userId, userId)))
-      .for('update');
+    const current = await lockCourseMembership(tx, scope, userId);
     if (current?.owner) return { ok: false as const, reason: 'owner' as const };
     // Nothing changes, so nothing is recorded (audit_events holds changes only).
     if ((current?.publisher ?? false) === granted) return { ok: true as const };
+    let membershipRemoved = false;
     if (granted) {
       await tx
         .insert(courseMemberships)
@@ -201,7 +303,7 @@ export function setPublisher(db: Db, scope: CourseScope, userId: string, granted
         .update(courseMemberships)
         .set({ publisher: false })
         .where(and(forCourse(scope, courseMemberships), eq(courseMemberships.userId, userId)));
-      await tryDeleteEmpty(tx, scope.courseId, userId);
+      membershipRemoved = await tryDeleteEmpty(tx, scope, userId);
     }
     await audit(tx, {
       actorId: scope.user.id,
@@ -211,7 +313,7 @@ export function setPublisher(db: Db, scope: CourseScope, userId: string, granted
       targetType: 'user',
       targetId: userId,
       before: { publisher: current?.publisher ?? false },
-      after: { publisher: granted },
+      after: { publisher: granted, membershipRemoved },
     });
     return { ok: true as const };
   });
