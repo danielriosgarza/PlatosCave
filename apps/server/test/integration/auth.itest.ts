@@ -37,6 +37,7 @@ async function makeApp(env: Record<string, string> = {}): Promise<FastifyInstanc
     APP_ORIGIN,
     MAIL_DIR: mailDir,
     AUTH_LINK_RATE_LIMIT: '1000',
+    AUTH_VERIFY_RATE_LIMIT: '1000',
     ...env,
   });
   const instance = await buildApp(config, { db: testDb.db, now: () => clock });
@@ -222,6 +223,13 @@ describe('POST /api/auth/link', () => {
     expect(sent).toEqual([email]);
   });
 
+  test('concurrent requests for one address still send at most five links', async () => {
+    const email = 'burst@example.test';
+    const results = await Promise.all(Array.from({ length: 20 }, () => requestLink({ email })));
+    expect(results.every((r) => r.statusCode === 202)).toBe(true);
+    expect(await mailsTo(email)).toHaveLength(5);
+  });
+
   test('sends at most five links per address per 15 minutes, still answering 202', async () => {
     const email = 'flood@example.test';
     for (let i = 0; i < 7; i++) expect((await requestLink({ email })).statusCode).toBe(202);
@@ -265,6 +273,21 @@ describe('GET /api/auth/verify', () => {
     );
     const res = await secure.inject({ method: 'GET', url: `${url.pathname}${url.search}` });
     expect(String(res.headers['set-cookie'])).toContain('Secure');
+  });
+
+  test('a HEAD request does not use up the link', async () => {
+    const path = await linkFor('bea@example.test');
+    const head = await app.inject({ method: 'HEAD', url: path });
+    expect(head.headers['set-cookie']).toBeUndefined();
+    expect((await verify(path)).headers.location).toBe('/courses?view=student');
+  });
+
+  test('is rate limited per client', async () => {
+    const limited = await makeApp({ AUTH_VERIFY_RATE_LIMIT: '2' });
+    const use = () => limited.inject({ method: 'GET', url: '/api/auth/verify?token=forged' });
+    expect((await use()).statusCode).toBe(302);
+    expect((await use()).statusCode).toBe(302);
+    expect((await use()).statusCode).toBe(429);
   });
 
   test('a link works once', async () => {

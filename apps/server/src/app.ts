@@ -15,6 +15,7 @@ import {
 } from 'fastify-type-provider-zod';
 import type { Config } from './config';
 import type { Db } from './db/client';
+import { redactUrl } from './http/redact';
 import { isApiPath, registerStatic } from './http/static';
 import { createMailer, type Mailer } from './mail/mailer';
 
@@ -36,10 +37,6 @@ export interface Deps {
 }
 
 const NOT_FOUND = { error: 'not found' };
-
-/** Sign-in link tokens must never reach the logs, even single-use ones. */
-export const redactUrl = (url: string): string =>
-  url.replace(/([?&]token=)[^&#]*/g, '$1[redacted]');
 
 export async function buildApp(config: Config, deps: Deps = {}): Promise<FastifyInstance> {
   const app = Fastify({
@@ -76,8 +73,9 @@ export async function buildApp(config: Config, deps: Deps = {}): Promise<Fastify
   await app.register(sensible);
   await app.register(cookie, { secret: config.SESSION_SECRET });
   // Baseline headers for the app origin; the content origin gets its own policy (P1-06).
-  // Helmet's default Cross-Origin-Resource-Policy is same-origin on every response: P1-06 must
-  // relax it on /content responses, or app-origin <img>/<video>/font loads from it are blocked.
+  // P1-06 must extend this for the content origin: helmet's default Cross-Origin-Resource-Policy
+  // (same-origin) on /content responses, and img-src, media-src, frame-src and connect-src below,
+  // which allow only 'self' today, would otherwise block content-origin media, PDFs and frames.
   await app.register(helmet, {
     contentSecurityPolicy: {
       useDefaults: false,

@@ -1,6 +1,7 @@
 import { expect, test } from 'vitest';
-import { buildApp, redactUrl } from './app';
+import { buildApp } from './app';
 import { loadConfig } from './config';
+import { redactUrl } from './http/redact';
 
 test('sign-in tokens are redacted from logged URLs', () => {
   expect(redactUrl('/api/auth/verify?token=abc123')).toBe('/api/auth/verify?token=[redacted]');

@@ -1,19 +1,15 @@
-import { randomBytes } from 'node:crypto';
-import { and, count, eq, gt, isNull } from 'drizzle-orm';
+import { and, count, eq, gt, isNull, sql } from 'drizzle-orm';
 import type { FastifyBaseLogger } from 'fastify';
 import type { Db } from '../db/client';
 import { signinTokens } from '../db/schema';
 import type { Mailer } from '../mail/mailer';
 import type { IdentityProvider, SignInResult } from './identity-provider';
-import { hashToken } from './sessions';
+import { hashToken, newToken, TOKEN_SHAPE } from './sessions';
 
 /** §3: expiring single-use links. */
 export const LINK_TTL_MS = 15 * 60_000;
 /** Links issued per address per LINK_TTL_MS; further requests are accepted but send nothing. */
 export const LINKS_PER_EMAIL = 5;
-
-/** 32 random bytes in base64url, as issued by `begin`. */
-const TOKEN_SHAPE = /^[A-Za-z0-9_-]{43}$/;
 
 export interface EmailProviderDeps {
   db: Db;
@@ -33,30 +29,36 @@ export class EmailLinkProvider implements IdentityProvider {
     const { db, now: clock, mailer, log } = this.deps;
     const address = email.toLowerCase();
     const now = clock();
-    const [recent] = await db
-      .select({ n: count() })
-      .from(signinTokens)
-      .where(
-        and(
-          eq(signinTokens.email, address),
-          gt(signinTokens.createdAt, new Date(now.getTime() - LINK_TTL_MS)),
-        ),
-      );
-    if ((recent?.n ?? 0) >= LINKS_PER_EMAIL) {
+    const token = newToken();
+    // Count and insert under a per-address lock, so concurrent requests cannot all pass the cap.
+    const row = await db.transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`signin:${address}`}))`);
+      const [recent] = await tx
+        .select({ n: count() })
+        .from(signinTokens)
+        .where(
+          and(
+            eq(signinTokens.email, address),
+            gt(signinTokens.createdAt, new Date(now.getTime() - LINK_TTL_MS)),
+          ),
+        );
+      if ((recent?.n ?? 0) >= LINKS_PER_EMAIL) return undefined;
+      const [inserted] = await tx
+        .insert(signinTokens)
+        .values({
+          email: address,
+          tokenHash: hashToken(token),
+          destination,
+          createdAt: now,
+          expiresAt: new Date(now.getTime() + LINK_TTL_MS),
+        })
+        .returning({ id: signinTokens.id });
+      return inserted;
+    });
+    if (!row) {
       log.info('sign-in link not sent: per-address limit reached');
       return;
     }
-    const token = randomBytes(32).toString('base64url');
-    const [row] = await db
-      .insert(signinTokens)
-      .values({
-        email: address,
-        tokenHash: hashToken(token),
-        destination,
-        createdAt: now,
-        expiresAt: new Date(now.getTime() + LINK_TTL_MS),
-      })
-      .returning({ id: signinTokens.id });
     const link = new URL('/api/auth/verify', this.deps.appOrigin);
     link.searchParams.set('token', token);
     try {
@@ -76,7 +78,7 @@ export class EmailLinkProvider implements IdentityProvider {
       // The answer stays 202 for every address; a delivery failure is an operator problem.
       // An undelivered link is removed so it does not use up one of the address's sends.
       log.error({ err }, 'sign-in link could not be sent');
-      if (row) await db.delete(signinTokens).where(eq(signinTokens.id, row.id));
+      await db.delete(signinTokens).where(eq(signinTokens.id, row.id));
     }
   }
 

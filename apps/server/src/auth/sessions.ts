@@ -8,6 +8,11 @@ import { authSessions, users } from '../db/schema';
 export const SESSION_COOKIE = 'pc_session';
 export const SESSION_TTL_MS = 14 * 24 * 60 * 60_000;
 
+/** A fresh secret token: 32 random bytes in base64url (43 characters). */
+export const newToken = (): string => randomBytes(32).toString('base64url');
+/** The shape every token from `newToken` has. */
+export const TOKEN_SHAPE = /^[A-Za-z0-9_-]{43}$/;
+
 /** Tokens are stored only as their SHA-256, so a database read cannot be replayed as a cookie. */
 export const hashToken = (token: string): string =>
   createHash('sha256').update(token).digest('hex');
@@ -27,7 +32,7 @@ export async function createSession(
   userId: string,
   { now = new Date(), authTime = now }: { now?: Date; authTime?: Date } = {},
 ): Promise<{ token: string; sessionId: string }> {
-  const token = randomBytes(32).toString('base64url');
+  const token = newToken();
   const [row] = await db
     .insert(authSessions)
     .values({

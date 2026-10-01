@@ -3,6 +3,7 @@ import type { RouteContract, Scope } from '@parallax/contracts';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { z } from 'zod';
 import { type ResolverDeps, resolveScope, type ScopeFor } from '../auth/scope';
+import { redactUrl } from './redact';
 
 type Out<T> = T extends z.ZodType ? z.output<T> : undefined;
 
@@ -61,23 +62,17 @@ export function registerRoute<C extends RouteContract>(
   app: FastifyInstance,
   contract: C,
   handler: (args: RouteArgs<C>) => Promise<z.input<C['response']>> | z.input<C['response']>,
-  options: { rateLimit?: RateLimitOptions } = {},
+  options: { rateLimit?: RateLimitOptions; exposeHeadRoute?: boolean } = {},
 ): void {
   checkScopeParams(contract);
   const status = contract.status ?? 200;
-  const routeKey = `${contract.method} ${contract.path}`;
   // The limiter runs before the scope resolver, so an over-limit request costs no session lookup.
-  // Limiters built this way share one store, so the key names the route as well as the client.
-  const limiter = options.rateLimit
-    ? app.rateLimit({
-        keyGenerator: (req: FastifyRequest) => `${routeKey}|${req.ip}`,
-        ...options.rateLimit,
-      })
-    : undefined;
+  // Each limiter built by app.rateLimit() has its own store, so counts are per route.
+  const limiter = options.rateLimit ? app.rateLimit(options.rateLimit) : undefined;
   const resolve = async (req: FastifyRequest, reply: FastifyReply) => {
     const result = await resolveScope(req, contract.scope as Scope, app.resolverDeps);
     if (!result.ok) {
-      req.log.debug({ reason: result.reason, url: req.url }, 'scope denied');
+      req.log.debug({ reason: result.reason, url: redactUrl(req.url) }, 'scope denied');
       // The typed reply only knows the contract's 200 schema; denials use the shared error body.
       return reply.code(result.status).send({ error: result.error });
     }
@@ -86,6 +81,7 @@ export function registerRoute<C extends RouteContract>(
   app.route({
     method: contract.method,
     url: contract.path,
+    ...(options.exposeHeadRoute !== undefined && { exposeHeadRoute: options.exposeHeadRoute }),
     schema: {
       summary: contract.summary,
       ...(contract.params && { params: contract.params }),

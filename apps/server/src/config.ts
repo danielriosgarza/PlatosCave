@@ -28,6 +28,8 @@ const Env = z
     SMTP_URL: z.string().optional(),
     /** Sign-in link requests allowed per client IP per 15 minutes. */
     AUTH_LINK_RATE_LIMIT: z.coerce.number().int().positive().default(10),
+    /** Sign-in link uses (`/api/auth/verify`) allowed per client IP per 15 minutes. */
+    AUTH_VERIFY_RATE_LIMIT: z.coerce.number().int().positive().default(30),
   })
   .superRefine((env, ctx) => {
     if (env.NODE_ENV === 'production') {

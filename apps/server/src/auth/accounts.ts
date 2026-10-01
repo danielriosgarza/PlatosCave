@@ -1,4 +1,3 @@
-import { eq } from 'drizzle-orm';
 import type { Db } from '../db/client';
 import { users } from '../db/schema';
 
@@ -9,8 +8,12 @@ import { users } from '../db/schema';
 export async function userForVerifiedEmail(db: Db, email: string): Promise<string> {
   const address = email.toLowerCase();
   const name = address.slice(0, address.indexOf('@')) || address;
-  await db.insert(users).values({ email: address, name }).onConflictDoNothing();
-  const [row] = await db.select({ id: users.id }).from(users).where(eq(users.email, address));
-  if (!row) throw new Error('verified account could not be loaded');
+  // The no-op update makes RETURNING yield the id for an existing account too.
+  const [row] = await db
+    .insert(users)
+    .values({ email: address, name })
+    .onConflictDoUpdate({ target: users.email, set: { email: address } })
+    .returning({ id: users.id });
+  if (!row) throw new Error('user upsert returned no row');
   return row.id;
 }
