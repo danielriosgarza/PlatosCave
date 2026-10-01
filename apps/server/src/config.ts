@@ -1,6 +1,7 @@
 import { z } from 'zod';
 
 /** Used outside production only, so a fresh checkout runs without configuration. */
+export const DEV_SESSION_SECRET = 'parallax-development-session-secret-not-for-production';
 export const DEV_CONTENT_TOKEN_SECRET = 'parallax-development-content-secret-not-for-production';
 
 const LOOPBACK = new Set(['127.0.0.1', 'localhost', '::1']);
@@ -21,6 +22,23 @@ const Env = z
     LOG_LEVEL: z
       .enum(['fatal', 'error', 'warn', 'info', 'debug', 'trace', 'silent'])
       .default('info'),
+    /** Signs the session cookie. Required in production. */
+    SESSION_SECRET: z.string().min(32).optional(),
+    /** Origin people open the app at; sign-in links point here. Required in production. */
+    APP_ORIGIN: z
+      .url()
+      .transform((u) => new URL(u).origin)
+      .optional(),
+    MAIL_TRANSPORT: z.enum(['file', 'smtp']).default('file'),
+    /** `file` transport: one JSON file per message (ADR-0001). */
+    MAIL_DIR: z.string().default('.local/mail'),
+    MAIL_FROM: z.string().default('Parallax <no-reply@parallax.invalid>'),
+    /** `smtp` transport, e.g. smtp://user:pass@mail.example.org:587 */
+    SMTP_URL: z.string().optional(),
+    /** Sign-in link requests allowed per client IP per 15 minutes. */
+    AUTH_LINK_RATE_LIMIT: z.coerce.number().int().positive().default(10),
+    /** Sign-in link uses (`/api/auth/verify`) allowed per client IP per 15 minutes. */
+    AUTH_VERIFY_RATE_LIMIT: z.coerce.number().int().positive().default(30),
     /**
      * Two host names for one server (ADR-0002): the app (API, web) and the content origin,
      * which serves only `/content/:token`. Development defaults match Vite on localhost:5173.
@@ -32,7 +50,7 @@ const Env = z
       .url()
       .transform((u) => new URL(u).origin)
       .optional(),
-    /** HMAC key for content tokens. Required in production. */
+    /** HMAC key for content tokens. Required in production and off loopback. */
     CONTENT_TOKEN_SECRET: z.string().min(32).optional(),
     STORAGE_DRIVER: z.enum(['fs', 's3']).default('fs'),
     /** `fs` driver: root directory of the object store. */
@@ -49,17 +67,25 @@ const Env = z
       .transform((v) => v === 'true'),
   })
   .superRefine((env, ctx) => {
+    if (env.NODE_ENV === 'production') {
+      for (const key of [
+        'SESSION_SECRET',
+        'APP_ORIGIN',
+        'CONTENT_ORIGIN',
+        'CONTENT_TOKEN_SECRET',
+      ] as const) {
+        if (!env[key]) ctx.addIssue({ code: 'custom', path: [key], message: 'required' });
+      }
+    }
+    if (env.MAIL_TRANSPORT === 'smtp' && !env.SMTP_URL) {
+      ctx.addIssue({ code: 'custom', path: ['SMTP_URL'], message: 'required for smtp' });
+    }
     if (env.APP_HOST === env.CONTENT_HOST) {
       ctx.addIssue({
         code: 'custom',
         path: ['CONTENT_HOST'],
         message: 'must differ from APP_HOST',
       });
-    }
-    if (env.NODE_ENV === 'production') {
-      for (const key of ['CONTENT_ORIGIN', 'CONTENT_TOKEN_SECRET'] as const) {
-        if (!env[key]) ctx.addIssue({ code: 'custom', path: [key], message: 'required' });
-      }
     }
     // The development secret is public: anything reachable beyond this machine needs its own,
     // whatever NODE_ENV says (tests excepted: e2e listens on 0.0.0.0 inside the runner).
@@ -85,6 +111,9 @@ const Env = z
   })
   .transform((env) => ({
     ...env,
+    SESSION_SECRET: env.SESSION_SECRET ?? DEV_SESSION_SECRET,
+    // The Vite dev server proxies /api, so links open the web app's origin in development.
+    APP_ORIGIN: env.APP_ORIGIN ?? 'http://localhost:5173',
     CONTENT_ORIGIN: env.CONTENT_ORIGIN ?? `http://${env.CONTENT_HOST}:${env.PORT}`,
     CONTENT_TOKEN_SECRET: env.CONTENT_TOKEN_SECRET ?? DEV_CONTENT_TOKEN_SECRET,
   }));

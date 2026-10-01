@@ -84,6 +84,8 @@ describe('content origin', () => {
     );
     expect(csp).not.toContain('script-src');
     expect(res.headers['set-cookie']).toBeUndefined();
+    // The app frames content documents: the app origin's anti-framing header must not apply.
+    expect(res.headers['x-frame-options']).toBeUndefined();
 
     const head = await server.inject({
       method: 'HEAD',
@@ -92,6 +94,20 @@ describe('content origin', () => {
     });
     expect(head.statusCode).toBe(200);
     expect(head.body).toBe('');
+  });
+
+  test('the app origin’s CSP lets it embed media, fonts, frames and fetches from the content origin', async () => {
+    const csp = String((await get('/api/health', app)).headers['content-security-policy']);
+    const directives = Object.fromEntries(
+      csp.split(';').map((d) => {
+        const [name, ...values] = d.trim().split(/\s+/);
+        return [name, values];
+      }),
+    );
+    for (const name of ['img-src', 'media-src', 'font-src', 'frame-src', 'connect-src']) {
+      expect(directives[name], name).toContain('http://localhost:3100');
+    }
+    expect(directives['script-src']).toEqual(["'self'"]);
   });
 
   test('downloads carry an attachment disposition with a safe file name', async () => {

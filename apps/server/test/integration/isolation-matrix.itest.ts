@@ -8,7 +8,7 @@ import { createSession } from '../../src/auth/sessions';
 import { loadConfig } from '../../src/config';
 import { authSessions } from '../../src/db/schema';
 import { registerRoute } from '../../src/http/register';
-import { buildWorld, ids, type PersonName, people, type World } from '../fixtures/world';
+import { buildWorld, cookieFor, ids, type PersonName, people, type World } from '../fixtures/world';
 import { createTestDatabase, type TestDatabase } from './db';
 
 const now = new Date('2026-10-01T09:00:00Z');
@@ -306,7 +306,7 @@ describe('scenario checks at the API level', () => {
     const res = await app.inject({
       method: 'GET',
       url: '/api/me',
-      headers: { cookie: `pc_session=${stale.token}` },
+      headers: { cookie: cookieFor(stale.token) },
     });
     expect(res.statusCode).toBe(401);
     const forged = await app.inject({
@@ -323,7 +323,7 @@ describe('scenario checks at the API level', () => {
     const revoked = await app.inject({
       method: 'GET',
       url: '/api/me',
-      headers: { cookie: `pc_session=${live.token}` },
+      headers: { cookie: cookieFor(live.token) },
     });
     expect(revoked.statusCode).toBe(401);
   });
@@ -343,7 +343,7 @@ describe('scenario checks at the API level', () => {
     const res = await app.inject({
       method: 'POST',
       url,
-      headers: { cookie: `pc_session=${old.token}` },
+      headers: { cookie: cookieFor(old.token) },
     });
     expect(res.statusCode).toBe(401);
     expect(res.json()).toMatchObject({ code: 'recent_auth_required' });

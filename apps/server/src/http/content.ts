@@ -99,6 +99,9 @@ export function registerContentOrigin(app: FastifyInstance, deps: ContentOriginD
           .header('cross-origin-resource-policy', 'cross-origin')
           .header('referrer-policy', 'no-referrer')
           .header('cache-control', `private, max-age=${maxAge}`)
+          // The app origin's helmet baseline forbids framing; the app frames content documents
+          // (readings, PDFs), whose own CSP above already sandboxes them.
+          .removeHeader('x-frame-options')
           .send(object.body)
       );
     },

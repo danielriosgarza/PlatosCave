@@ -1,10 +1,13 @@
 import { readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import cookie from '@fastify/cookie';
+import helmet from '@fastify/helmet';
+import rateLimit from '@fastify/rate-limit';
 import sensible from '@fastify/sensible';
 import swagger from '@fastify/swagger';
 import type { RouteContract } from '@parallax/contracts';
-import Fastify, { type FastifyInstance } from 'fastify';
+import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import {
   jsonSchemaTransform,
   serializerCompiler,
@@ -19,12 +22,16 @@ import {
   redactContentUrl,
   registerContentOrigin,
 } from './http/content';
+import { redactUrl } from './http/redact';
 import { isApiPath, registerStatic } from './http/static';
+import { createMailer, type Mailer } from './mail/mailer';
 import { createStorage } from './storage/create';
 import type { Storage } from './storage/storage';
 
 declare module 'fastify' {
   interface FastifyInstance {
+    /** Configuration and mail transport for the sign-in routes. */
+    authDeps: { config: Config; mailer: Mailer };
     /** Configuration and object store for content tokens and the content origin (P1-06). */
     contentDeps: { config: Config; storage: Storage };
   }
@@ -36,6 +43,8 @@ export interface Deps {
   now?: () => Date;
   /** Deadline for the health probe's database query; defaults to PROBE_TIMEOUT_MS. */
   probeTimeoutMs?: number;
+  /** Mail transport; defaults to the one MAIL_TRANSPORT selects. */
+  mailer?: Mailer;
   /** Object store; defaults to the one STORAGE_DRIVER selects. */
   storage?: Storage;
 }
@@ -49,14 +58,14 @@ export async function buildApp(config: Config, deps: Deps = {}): Promise<Fastify
     logger: {
       level: config.LOG_LEVEL,
       serializers: {
-        // Content tokens are credentials: keep them out of the logs.
-        req: (req) => ({
+        req: (req: FastifyRequest) => ({
           method: req.method,
-          // Whatever the spelling, a request routed to the content route carries a token.
+          // Sign-in tokens in query strings and content tokens in paths are credentials. Whatever
+          // the spelling, a request routed to the content route carries a token.
           url:
             req.routeOptions?.url === CONTENT_ROUTE
               ? '/content/[redacted]'
-              : redactContentUrl(req.url),
+              : redactContentUrl(redactUrl(req.url)),
           host: req.host,
           remoteAddress: req.ip,
         }),
@@ -74,6 +83,7 @@ export async function buildApp(config: Config, deps: Deps = {}): Promise<Fastify
   app.decorate('resolverDeps', { db: deps.db, now });
   app.decorate('contentDeps', { config, storage });
   app.decorate('contracts', [] as RouteContract[]);
+  app.decorate('authDeps', { config, mailer: deps.mailer ?? createMailer(config) });
   app.decorateRequest('parallaxScope', undefined);
 
   // Structural guard (ADR-0002): every /api route must declare a scope via registerRoute().
@@ -89,6 +99,39 @@ export async function buildApp(config: Config, deps: Deps = {}): Promise<Fastify
   registerContentOrigin(app, { config, storage, now });
 
   await app.register(sensible);
+  await app.register(cookie, { secret: config.SESSION_SECRET });
+  // Baseline headers for the app origin. The app embeds media, fonts, PDFs and frames from the
+  // content origin (ADR-0002), so those directives name it; content responses replace the CSP,
+  // CORP and framing headers with their own policy (http/content.ts).
+  const content = config.CONTENT_ORIGIN;
+  await app.register(helmet, {
+    contentSecurityPolicy: {
+      useDefaults: false,
+      directives: {
+        defaultSrc: ["'self'"],
+        baseUri: ["'self'"],
+        connectSrc: ["'self'", content],
+        fontSrc: ["'self'", 'data:', content],
+        formAction: ["'self'"],
+        frameAncestors: ["'none'"],
+        frameSrc: [content],
+        imgSrc: ["'self'", 'data:', 'blob:', content],
+        mediaSrc: ["'self'", 'blob:', content],
+        objectSrc: ["'none'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+      },
+    },
+  });
+  // Only routes that opt in (registerRoute's `rateLimit` option) are limited.
+  await app.register(rateLimit, {
+    global: false,
+    errorResponseBuilder: (_req, ctx) => ({
+      statusCode: ctx.statusCode,
+      error: 'too many requests',
+      message: `Try again in ${ctx.after}`,
+    }),
+  });
   await app.register(swagger, {
     openapi: { info: { title: 'Parallax API', version: '0.0.0' } },
     transform: jsonSchemaTransform,

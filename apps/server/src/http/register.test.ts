@@ -140,3 +140,48 @@ describe('registerRoute and the scope guard', () => {
     await app.close();
   });
 });
+
+describe('registerRoute rate limits', () => {
+  const route = (path: `/api/${string}`, kind: 'public' | 'user') =>
+    defineRoute({
+      method: 'GET',
+      path,
+      scope: { kind } as { kind: 'public' } | { kind: 'user' },
+      summary: 'limited',
+      response: z.object({}),
+      examples: {},
+    });
+
+  it('limits before resolving the scope, and keeps a separate count per route', async () => {
+    const app = await buildApp(config);
+    const rateLimit = { max: 1, timeWindow: '1 minute' };
+    registerRoute(app, route('/api/limited/a', 'public'), () => ({}), { rateLimit });
+    registerRoute(app, route('/api/limited/b', 'public'), () => ({}), { rateLimit });
+    registerRoute(app, route('/api/limited/user', 'user'), () => ({}), { rateLimit });
+    await app.ready();
+    const status = async (url: string) => (await app.inject({ url })).statusCode;
+
+    expect(await status('/api/limited/a')).toBe(200);
+    expect(await status('/api/limited/b')).toBe(200);
+    expect(await status('/api/limited/a')).toBe(429);
+    expect(await status('/api/limited/b')).toBe(429);
+    // Without a session the resolver answers 401; once over the limit the limiter answers first.
+    expect(await status('/api/limited/user')).toBe(401);
+    expect(await status('/api/limited/user')).toBe(429);
+    await app.close();
+  });
+});
+
+it('API routes get no implicit HEAD route, so a HEAD never runs a handler', async () => {
+  const app = await buildApp(config);
+  let calls = 0;
+  registerRoute(app, echo, ({ params }) => {
+    calls += 1;
+    return { n: params.n };
+  });
+  await app.ready();
+  expect((await app.inject({ method: 'HEAD', url: '/api/echo/1' })).statusCode).toBe(404);
+  expect(calls).toBe(0);
+  expect((await app.inject({ method: 'GET', url: '/api/echo/1' })).json()).toEqual({ n: 1 });
+  await app.close();
+});
