@@ -265,7 +265,7 @@ The PR template already exists (`.github/pull_request_template.md`); do not repl
 
 ## 2. Phase 1 — identity, membership, immutable releases, reading shell
 
-Parallel tracks once P1-01 merges: **auth** (P1-02 → P1-03), **content** (P1-04 → P1-05 / P1-06 / P1-07 → P1-08), **web** (P1-09 → P1-10, P1-11 → P1-12, P1-13). Authoring (P1-14 → P1-15) and states (P1-16) close the phase.
+Parallel tracks once P1-01 merges: **auth** (P1-02 → P1-03), **content** (P1-04 → P1-04a / P1-05 / P1-06 / P1-07 → P1-08), **web** (P1-09 → P1-10, P1-11 → P1-12, P1-13). Authoring (P1-14 → P1-15) and states (P1-16) close the phase.
 
 ### P1-01 · Identity, membership schema, scope resolver, isolation matrix
 - Scope: tables `users` (incl. `kind` user|preview, `owner_user_id`), `auth_sessions`, `signin_tokens`, `courses`, `course_memberships` (owner/editor/publisher), `classes`, `class_memberships` (role, `manage_members`, `is_preview`), `class_invites` (enrolment codes, instructor invitations, expiry, capacity), `audit_events`. Scope resolver per ADR-0002 (404 for non-members, 403 for wrong role/grant, `requireRecentAuth`), branded `ClassScope`/`CourseScope`, `db/scoped.ts` registry + introspection test, `test/fixtures/world.ts`, isolation-matrix `itest` over all contracts with `examples`, `GET /api/me` (user scope), `GET /api/classes/:classId` (class any) as first scoped routes.
@@ -282,9 +282,14 @@ Parallel tracks once P1-01 merges: **auth** (P1-02 → P1-03), **content** (P1-0
 - Spec: §3, §4 (join, invite errors). Scenarios: A01, A02 (instructor invitation cannot come from a code). Depends on: P1-02. Model: opus. Security: yes. Size: M.
 
 ### P1-04 · Content schema, storage interface, immutability
-- Scope: tables per ADR-0003 (`topics`, `resources`, `resource_revisions`, `course_releases`, `release_topics`, `release_resources`, `class_release_history`, `study_positions`, `storage_objects`), immutability trigger, optimistic `revision` columns, `Storage` interface with `fs` adapter (content-addressed keys, streaming), draft CRUD contracts for topics/resources (course editor scope) with 409 conflict bodies.
-- Spec: §12, §13. ADR-0003. Scenarios: A16 (revision pinning at the data level), A26 (drafts invisible on class routes). Depends on: P1-01. Model: opus. Security: no. Size: M.
-- Touches: `db/schema/{content,releases,storage}.ts`, `storage/*`, `content/drafts.ts`, `contracts/routes/drafts.ts`.
+- Scope: tables per ADR-0003 (`topics`, `resources`, `resource_revisions`, `course_releases`, `release_topics`, `release_resources`, `class_release_history`, `study_positions`, `storage_objects`), immutability trigger, optimistic `revision` columns, `Storage` interface with `fs` adapter (content-addressed keys, streaming). Draft CRUD moved to P1-04a to keep the PR within size.
+- Spec: §12, §13. ADR-0003. Scenarios: A16 (revision pinning at the data level), A26 (draft changes never reach a class's adopted release, data level). Depends on: P1-01. Model: opus. Security: no. Size: M.
+- Touches: `db/schema/{content,releases,storage}.ts`, `storage/*`.
+
+### P1-04a · Draft editing API with revision conflicts
+- Scope: draft CRUD contracts and routes for topics and resources (course `editor` scope): list drafts, create/update topic, create/get/update resource; every mutation sends `expectedRevision` and a mismatch returns 409 with the server copy (contracts declare the 409 body); a content change inserts a `resource_revisions` row and moves `head_revision_id`, unchanged content (same `content_hash`) keeps the head; archive/restore instead of delete. No migration.
+- Spec: §12, §13. ADR-0003. Scenarios: A26 (class members without a course grant get 404 on draft routes; editing drafts through the API never changes the adopted release). Depends on: P1-04. Model: opus. Security: no. Size: M.
+- Touches: `content/drafts.ts`, `contracts/routes/drafts.ts`, `http/routes/drafts.routes.ts`, `packages/contracts/src/define.ts` (error bodies), `http/register.ts`.
 
 ### P1-05 · Publish release and class adoption
 - Scope: validation report, `POST /api/courses/:courseId/releases` (publisher), snapshot copy, `GET /api/classes/:classId/release` (class any; the only content read path for students), adoption `POST /api/classes/:classId/adopt` (instructor) with diff (added/removed/changed, counts of affected annotations and assignments, computed even before those tables exist through a pluggable `affectedBy` registry), history, audit. Fixture world publishes v1 and adopts it in classes A and B.
@@ -325,7 +330,7 @@ Parallel tracks once P1-01 merges: **auth** (P1-02 → P1-03), **content** (P1-0
 
 ### P1-14 · Authoring: course creation, topic draft editor, reading upload
 - Scope: create course (owner membership), topic editor (title, objective, order, prerequisites, completion rule, estimated time), resource list per tab with Add reading (Markdown/HTML/PDF upload via `@fastify/multipart` with size/type limits, content-addressed storage, ingestion job trigger and status), accessible-alternative field, autosave with `expectedRevision` and conflict view, Publish release button with validation report display, "Class A uses release 1.2" side panel.
-- Spec: §12. Scenarios: A26 (partial: editing never touches the class release), A16 (publish creates a new version). Depends on: P1-06, P1-08, P1-09. Model: sonnet. Security: yes. Size: M.
+- Spec: §12. Scenarios: A26 (partial: editing never touches the class release), A16 (publish creates a new version). Depends on: P1-04a, P1-06, P1-08, P1-09. Model: sonnet. Security: yes. Size: M.
 
 ### P1-15 · Preview as student and draft isolation
 - Scope: preview principal creation (ADR-0002), `POST /api/courses/:courseId/preview` returning a preview session bound to a draft snapshot, topic workspace rendering in preview with an "Exit draft preview" banner returning to the editor, preview writes isolated, review/export exclusion hook.
@@ -544,7 +549,7 @@ Tracks: **connector** (P3-01 → P3-02 ∥ P3-03 → P3-04 → P3-05; P3-06 → 
 | A05 | P2-04, P2-06, P2-07 | | A23 | P2-10, P2-11 |
 | A06 | P2-05, P1-08 | | A24 | P2-02, P2-09 |
 | A07 | P2-08 | | A25 | P4-02, P4-03 |
-| A08 | P2-10, P2-11 | | A26 | P1-15, P1-04, P1-05, P1-14 |
+| A08 | P2-10, P2-11 | | A26 | P1-15, P1-04, P1-04a, P1-05, P1-14 |
 | A09 | P2-13 | | A27 | P3-04, P3-03, P3-07, P3-08, P3-11 |
 | A10 | P2-14 | | A28 | P3-05, P3-11 |
 | A11 | P2-15 | | A29 | P3-05, P3-07 |
