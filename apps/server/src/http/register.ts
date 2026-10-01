@@ -17,12 +17,15 @@ class RouteFailure extends Error {
   }
 }
 
+/** The one 404 body: unknown paths, non-members and missing rows all answer with it. */
+export const NOT_FOUND = { error: 'not found' } as const;
+
 /**
  * 404 with the same body the scope resolver sends, so a row outside the caller's scope is
  * indistinguishable from one that does not exist (ADR-0002).
  */
 export function notFound(): never {
-  throw new RouteFailure(404, { error: 'not found' });
+  throw new RouteFailure(404, NOT_FOUND);
 }
 
 export type RouteArgs<C> =
