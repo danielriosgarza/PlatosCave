@@ -1,37 +1,67 @@
+import pino from 'pino';
 import { buildApp } from './app';
 import { loadConfig } from './config';
 import { createDb } from './db/client';
+import { createBoss } from './jobs/boss';
+import { loadJobs } from './jobs/registry';
+import { workScopedJob } from './jobs/scoped';
 
 const mode = process.argv[2] ?? 'api';
-if (mode !== 'api') {
+if (mode !== 'api' && mode !== 'worker') {
   console.error(`unknown mode: ${mode}`);
   process.exit(2);
 }
 
 const config = loadConfig();
-// The pool is created before the app (and its logger); errors go to the app logger once it exists.
+// The pool is created before the logger that reports its errors; until then they go to stderr.
 let logPoolError = (err: Error) => console.error('pg pool error', err);
 const database = config.DATABASE_URL
   ? createDb(config.DATABASE_URL, { onError: (err) => logPoolError(err) })
   : undefined;
-const app = await buildApp(config, database ? { db: database.db } : {});
-logPoolError = (err) => app.log.error({ err }, 'pg pool error');
-await app.listen({ port: config.PORT, host: config.HOST });
 
-let stopping = false;
-const stop = () => {
-  if (stopping) process.exit(1); // second signal forces exit if close() hangs
-  stopping = true;
-  app
-    .close()
-    .then(() => database?.pool.end())
-    .then(
-      () => process.exit(0),
-      (err) => {
-        app.log.error({ err }, 'shutdown failed');
-        process.exit(1);
-      },
-    );
-};
-process.on('SIGTERM', stop);
-process.on('SIGINT', stop);
+/** Closes in order and exits; a second signal forces exit if closing hangs. */
+function onSignals(
+  log: { error: (obj: object, msg: string) => void },
+  close: () => Promise<unknown>,
+): void {
+  let stopping = false;
+  const stop = () => {
+    if (stopping) process.exit(1);
+    stopping = true;
+    close()
+      .then(() => database?.pool.end())
+      .then(
+        () => process.exit(0),
+        (err) => {
+          log.error({ err }, 'shutdown failed');
+          process.exit(1);
+        },
+      );
+  };
+  process.on('SIGTERM', stop);
+  process.on('SIGINT', stop);
+}
+
+if (mode === 'api') {
+  const app = await buildApp(config, database ? { db: database.db } : {});
+  logPoolError = (err) => app.log.error({ err }, 'pg pool error');
+  await app.listen({ port: config.PORT, host: config.HOST });
+  onSignals(app.log, () => app.close());
+} else {
+  const log = pino({ level: config.LOG_LEVEL, name: 'worker' });
+  logPoolError = (err) => log.error({ err }, 'pg pool error');
+  if (!database) {
+    log.fatal('worker mode needs DATABASE_URL');
+    process.exit(2);
+  }
+  const boss = createBoss(database.pool, {
+    role: 'worker',
+    onError: (err) => log.error({ err }, 'pg-boss error'),
+  });
+  await boss.start();
+  const jobs = await loadJobs();
+  for (const job of jobs) await workScopedJob(boss, database.db, job, log);
+  log.info({ jobs: jobs.map((j) => j.name) }, 'worker started');
+  // Graceful: active jobs finish (up to pg-boss's stop timeout) before the pool closes.
+  onSignals(log, () => boss.stop({ graceful: true }));
+}

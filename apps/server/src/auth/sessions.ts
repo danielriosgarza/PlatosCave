@@ -10,12 +10,16 @@ const SESSION_TTL_MS = 14 * 24 * 60 * 60_000;
 export const hashToken = (token: string): string =>
   createHash('sha256').update(token).digest('hex');
 
-export interface Principal {
+/** A person who can act: a signed-in session's user, or the actor of a background job. */
+export interface Actor {
   id: string;
   kind: 'user' | 'preview';
   name: string;
   email: string | null;
   ownerUserId: string | null;
+}
+
+export interface Principal extends Actor {
   sessionId: string;
   authTime: Date;
 }

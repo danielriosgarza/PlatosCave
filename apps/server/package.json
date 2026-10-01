@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "tsx watch src/main.ts api",
     "start": "tsx src/main.ts api",
+    "worker": "tsx src/main.ts worker",
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/db/migrate.ts",
@@ -19,6 +20,7 @@
     "fastify": "5.12.5",
     "fastify-type-provider-zod": "7.0.0",
     "pg": "8.23.0",
+    "pg-boss": "12.35.0",
     "pino": "10.3.1",
     "tsx": "4.23.15",
     "zod": "4.6.5"
