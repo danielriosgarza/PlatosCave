@@ -5,12 +5,15 @@
   "scripts": {
     "dev": "tsx watch src/main.ts api",
     "start": "tsx src/main.ts api",
+    "worker": "tsx src/main.ts worker",
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/db/migrate.ts",
     "db:reset": "tsx src/db/reset.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "3.1144.0",
+    "@aws-sdk/lib-storage": "3.1144.0",
     "@fastify/cookie": "11.1.2",
     "@fastify/helmet": "13.1.1",
     "@fastify/rate-limit": "11.2.0",
@@ -23,6 +26,7 @@
     "fastify-type-provider-zod": "7.0.0",
     "nodemailer": "10.0.13",
     "pg": "8.23.0",
+    "pg-boss": "12.35.0",
     "pino": "10.3.1",
     "tsx": "4.23.15",
     "zod": "4.6.5"

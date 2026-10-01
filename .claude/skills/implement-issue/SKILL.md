@@ -41,7 +41,6 @@ Read, in order:
 - Open a PR against `main` titled exactly like the issue, using `.github/pull_request_template.md`; its body must contain the line `Closes #<issue>`, and sections **Summary**, **Scenarios** (IDs and test names), **Decisions**, **Checks run** (command + result lines), **Follow-ups** (issues you created).
 - Label the PR `review:pending`. On the issue, replace `status:in-progress` with `status:in-review`.
 - Subscribe to the PR's activity so CI results and review comments wake you.
-- **Wake the orchestrator** once for each head SHA whose checks all completed successfully while the PR is labelled `review:pending` (ready for review) or `review:approved` (the orchestrator updated it from `main` and is waiting to merge): call `fire_trigger` with `trigger_id: trig_01GLrhXFVWKkrjAb4DNu7LBX` and `text: "Implementer: PR #<n> green at <short SHA>"`. The orchestrator then reviews or merges now instead of at the next hourly run. If the call fails, carry on; the hourly run is the fallback.
 
 ## 5. Drive the PR to approval
 

@@ -59,6 +59,9 @@ export const classes = pgTable(
      */
     releaseId: uuid(),
     archivedAt: timestamp({ withTimezone: true }),
+    /** Declared discussion policy (§8): whether students may edit or delete their own posts. */
+    studentsEditPosts: boolean().notNull().default(true),
+    studentsDeletePosts: boolean().notNull().default(true),
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index().on(t.courseId)],
