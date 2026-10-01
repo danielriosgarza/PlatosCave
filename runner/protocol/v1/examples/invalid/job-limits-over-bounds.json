@@ -1,0 +1,35 @@
+{
+  "v": 1,
+  "jobId": "6f1d2c3a-4b5e-4f60-9a71-82b3c4d5e6f7",
+  "runtime": {
+    "id": "python-3.12",
+    "language": "python"
+  },
+  "set": "public",
+  "limits": {
+    "wallSeconds": 600,
+    "memoryMiB": 512,
+    "outputBytes": 1048576
+  },
+  "files": [
+    {
+      "path": "x.py",
+      "content": ""
+    }
+  ],
+  "checks": [
+    {
+      "name": "x",
+      "kind": "call",
+      "visibility": "public",
+      "file": "x.py",
+      "function": "f",
+      "expected": {
+        "value": 1
+      },
+      "compare": {
+        "mode": "exact"
+      }
+    }
+  ]
+}
