@@ -56,14 +56,20 @@ export function initialDraft(step: AttemptStep): Draft {
  */
 export function parseNumber(text: string): number | null {
   let s = text.trim().replace(/(?<=\d)[\s\u00a0\u202f](?=\d{3}(?!\d))/g, '');
+  // Grouped integers: one to three digits not starting with 0, then groups of exactly three.
+  const grouped = (int: string, mark: string) =>
+    new RegExp(`^[+-]?[1-9]\\d{0,2}(\\${mark}\\d{3})+$`).test(int);
   const dot = s.lastIndexOf('.');
   const comma = s.lastIndexOf(',');
   if (dot !== -1 && comma !== -1) {
     const [decimal, group] = dot > comma ? ['.', ','] : [',', '.'];
-    s = s.split(group).join('').replace(decimal, '.');
+    const at = s.lastIndexOf(decimal);
+    const int = s.slice(0, at);
+    if (!grouped(int, group)) return null;
+    s = int.split(group).join('') + '.' + s.slice(at + 1);
   } else if (comma !== -1) {
-    s = /^[+-]?\d{1,3}(,\d{3})+$/.test(s) ? s.replaceAll(',', '') : s.replace(',', '.');
-  } else if (/^[+-]?\d{1,3}(\.\d{3}){2,}$/.test(s)) {
+    s = grouped(s, ',') ? s.replaceAll(',', '') : s.replace(',', '.');
+  } else if (grouped(s, '.') && s.split('.').length > 2) {
     s = s.replaceAll('.', '');
   }
   if (!/^[+-]?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?$/i.test(s)) return null;

@@ -487,7 +487,6 @@ describe('exercise UI follow-ups', () => {
   });
 
   it('A08 an exercise that fails to open shows the server message, or offers Try again', async () => {
-    const user = userEvent.setup();
     exerciseApi({ openFails: { status: 400, body: { message: 'This exercise has no steps.' } } });
     open();
     expect(await screen.findByRole('alert')).toHaveTextContent('This exercise has no steps.');
@@ -496,11 +495,12 @@ describe('exercise UI follow-ups', () => {
     open();
     expect(await screen.findByRole('alert')).toHaveTextContent('It may not be open to you yet.');
     cleanup();
-    exerciseApi({ openFails: { status: 500, body: {} } });
+    const { calls } = exerciseApi({ openFails: { status: 500, body: {} } });
     open();
-    expect(await screen.findByRole('button', { name: 'Try again' })).toBeVisible();
+    const retry = await screen.findByRole('button', { name: 'Try again' });
     expect(screen.getByRole('alert')).toHaveTextContent('Check your connection');
-    void user;
+    await userEvent.setup().click(retry);
+    await waitFor(() => expect(posted(calls, '/exercise-attempt')).toHaveLength(2));
   });
 });
 
@@ -512,6 +512,9 @@ describe('parseNumber', () => {
     ['1.000,5', 1000.5],
     ['1.000.000', 1000000],
     ['3,14', 3.14],
+    ['0,125', 0.125],
+    ['-0,250', -0.25],
+    ['0,500', 0.5],
     ['-2,5', -2.5],
     ['1 000', 1000],
     ['.5', 0.5],
@@ -519,7 +522,19 @@ describe('parseNumber', () => {
   ])('reads %s as %d', (text, value) => {
     expect(parseNumber(text)).toBe(value);
   });
-  it.each(['', ' ', 'abc', '1,2,3', '0x10', 'Infinity', '1.2.3'])('refuses %j', (text) => {
+  it.each([
+    '',
+    ' ',
+    'abc',
+    '0.000.001',
+    '1,2.5',
+    '1.5,3',
+    '12,34.5',
+    '1,2,3',
+    '0x10',
+    'Infinity',
+    '1.2.3',
+  ])('refuses %j', (text) => {
     expect(parseNumber(text)).toBeNull();
   });
 });
