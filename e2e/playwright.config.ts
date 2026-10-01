@@ -1,6 +1,7 @@
 import { resolve } from 'node:path';
 import { defineConfig, devices } from '@playwright/test';
 import { e2eDatabaseUrl } from './global-setup';
+import { mailDir } from './paths';
 
 const CI = Boolean(process.env.CI);
 
@@ -33,6 +34,10 @@ export default defineConfig({
       NODE_ENV: 'test',
       STATIC_DIR: resolve(import.meta.dirname, '../apps/web/dist'),
       DATABASE_URL: e2eDatabaseUrl,
+      // Sign-in links in the mail must point at this server; the file mailer writes to the
+      // repository-root .local/mail (ADR-0001), not the server's working directory.
+      APP_ORIGIN: 'http://127.0.0.1:3100',
+      MAIL_DIR: mailDir,
     },
   },
 });
