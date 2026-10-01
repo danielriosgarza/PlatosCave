@@ -53,3 +53,21 @@
     display: none;
   }
 }
+.account {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 12px;
+}
+.who {
+  color: var(--pc-muted);
+}
+.signOut {
+  border: 0;
+  background: none;
+  padding: 7px 4px;
+  min-height: 36px;
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}

@@ -14,13 +14,9 @@ import {
 import type { Config } from './config';
 import { MAX_TOKEN_LENGTH } from './content/tokens';
 import type { Db } from './db/client';
-import {
-  CONTENT_ROUTE,
-  isContentHost,
-  redactContentUrl,
-  registerContentOrigin,
-} from './http/content';
+import { CONTENT_ROUTE, isContentHost, registerContentOrigin } from './http/content';
 import { redactUrl } from './http/redact';
+import { NOT_FOUND } from './http/register';
 import { isApiPath, registerStatic } from './http/static';
 import { createMailer, type Mailer } from './mail/mailer';
 import { loadModules } from './modules';
@@ -48,7 +44,21 @@ export interface Deps {
   storage?: Storage;
 }
 
-const NOT_FOUND = { error: 'not found' };
+/**
+ * The URL as logged. Sign-in tokens (query) and content tokens (path) are credentials: the content
+ * route logs no token at all, and a request no route matched, on either host, logs only its first
+ * path segment, since its raw path may be a token in a spelling the router rejected.
+ */
+export function logUrl(req: Pick<FastifyRequest, 'url'> & { routeOptions?: { url?: string } }) {
+  const route = req.routeOptions?.url;
+  if (route === CONTENT_ROUTE) return '/content/[redacted]';
+  if (route === undefined) {
+    // Plain characters only, and few: an encoded or long segment may itself be a token.
+    const first = /^\/[A-Za-z0-9._~-]{0,32}/.exec(req.url)?.[0] ?? '/';
+    return `${first}/…[unrouted]`;
+  }
+  return redactUrl(req.url);
+}
 
 export async function buildApp(config: Config, deps: Deps = {}): Promise<FastifyInstance> {
   const app = Fastify({
@@ -59,12 +69,7 @@ export async function buildApp(config: Config, deps: Deps = {}): Promise<Fastify
       serializers: {
         req: (req: FastifyRequest) => ({
           method: req.method,
-          // Sign-in tokens in query strings and content tokens in paths are credentials. Whatever
-          // the spelling, a request routed to the content route carries a token.
-          url:
-            req.routeOptions?.url === CONTENT_ROUTE
-              ? '/content/[redacted]'
-              : redactContentUrl(redactUrl(req.url)),
+          url: logUrl(req),
           host: req.host,
           remoteAddress: req.ip,
         }),

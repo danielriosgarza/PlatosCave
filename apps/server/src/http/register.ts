@@ -3,6 +3,7 @@ import type { RouteContract, Scope } from '@parallax/contracts';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { z } from 'zod';
 import { type ResolverDeps, resolveScope, type ScopeFor } from '../auth/scope';
+import type { Outcome } from '../outcome';
 import { redactUrl } from './redact';
 
 type Out<T> = T extends z.ZodType ? z.output<T> : undefined;
@@ -17,12 +18,32 @@ class RouteFailure extends Error {
   }
 }
 
+/** The one 404 body: unknown paths, non-members and missing rows all answer with it. */
+export const NOT_FOUND = { error: 'not found' } as const;
+
 /**
  * 404 with the same body the scope resolver sends, so a row outside the caller's scope is
  * indistinguishable from one that does not exist (ADR-0002).
  */
 export function notFound(): never {
-  throw new RouteFailure(404, { error: 'not found' });
+  throw new RouteFailure(404, NOT_FOUND);
+}
+
+/**
+ * Maps a service outcome to the response: the value, a 404 (same body as the resolver), a 400
+ * with the reason, or a 409 with the server copy through the route's declared `conflict`.
+ */
+export function settle<T>(
+  outcome: Outcome<T>,
+  conflict?: (body: { error: 'revision_conflict'; current: T }) => never,
+): T {
+  if (outcome.ok) return outcome.value;
+  if (outcome.reason === 'not_found') return notFound();
+  if (outcome.reason === 'invalid') {
+    throw Object.assign(new Error(outcome.message), { statusCode: 400 });
+  }
+  if (!conflict) throw new Error('unexpected revision conflict');
+  return conflict({ error: 'revision_conflict', current: outcome.current });
 }
 
 export type RouteArgs<C> =

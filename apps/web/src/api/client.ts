@@ -38,9 +38,18 @@ export async function call<C extends RouteContract>(
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const isJson = res.headers.get('content-type')?.includes('json') ?? false;
-  const json: unknown = isJson ? await res.json().catch(() => null) : null;
+  let json: unknown = null;
+  let malformed = false;
+  if (isJson) {
+    try {
+      json = await res.json();
+    } catch {
+      malformed = true;
+    }
+  }
   if (!res.ok) throw new ApiError(res.status, json);
   if (!isJson) throw new ApiError(res.status, 'response is not JSON');
+  if (malformed) throw new ApiError(res.status, 'response body is not valid JSON');
   const parsed = import.meta.env.DEV ? contract.response.parse(json) : json;
   return parsed as z.output<C['response']>;
 }
