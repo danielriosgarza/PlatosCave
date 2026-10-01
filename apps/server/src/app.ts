@@ -12,7 +12,17 @@ import {
 } from 'fastify-type-provider-zod';
 import type { Config } from './config';
 import type { Db } from './db/client';
+import { redactContentUrl, registerContentOrigin } from './http/content';
 import { isApiPath, registerStatic } from './http/static';
+import { createStorage } from './storage/create';
+import type { Storage } from './storage/storage';
+
+declare module 'fastify' {
+  interface FastifyInstance {
+    /** Configuration and object store for content tokens and the content origin (P1-06). */
+    contentDeps: { config: Config; storage: Storage };
+  }
+}
 
 export interface Deps {
   db?: Db;
@@ -20,21 +30,37 @@ export interface Deps {
   now?: () => Date;
   /** Deadline for the health probe's database query; defaults to PROBE_TIMEOUT_MS. */
   probeTimeoutMs?: number;
+  /** Object store; defaults to the one STORAGE_DRIVER selects. */
+  storage?: Storage;
 }
 
 const NOT_FOUND = { error: 'not found' };
 
 export async function buildApp(config: Config, deps: Deps = {}): Promise<FastifyInstance> {
   const app = Fastify({
+    // Storage keys and content tokens are path parameters longer than the default 100.
+    routerOptions: { maxParamLength: 1024 },
     logger: {
       level: config.LOG_LEVEL,
+      serializers: {
+        // Content tokens are credentials: keep them out of the logs.
+        req: (req) => ({
+          method: req.method,
+          url: redactContentUrl(req.url),
+          host: req.host,
+          remoteAddress: req.ip,
+        }),
+      },
       ...(config.NODE_ENV === 'development' ? { transport: { target: 'pino-pretty' } } : {}),
     },
   });
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
 
-  app.decorate('resolverDeps', { db: deps.db, now: deps.now ?? (() => new Date()) });
+  const now = deps.now ?? (() => new Date());
+  const storage = deps.storage ?? createStorage(config);
+  app.decorate('resolverDeps', { db: deps.db, now });
+  app.decorate('contentDeps', { config, storage });
   app.decorate('contracts', [] as RouteContract[]);
   app.decorateRequest('parallaxScope', undefined);
 
@@ -46,6 +72,9 @@ export async function buildApp(config: Config, deps: Deps = {}): Promise<Fastify
     }
     if (routeConfig?.contract && route.method !== 'HEAD') app.contracts.push(routeConfig.contract);
   });
+
+  // Before any route: splits requests between the app host and the content host.
+  registerContentOrigin(app, { config, storage, now });
 
   await app.register(sensible);
   await app.register(swagger, {

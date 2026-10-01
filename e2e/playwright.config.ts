@@ -27,9 +27,15 @@ export default defineConfig({
     command: 'pnpm --filter @parallax/server start',
     url: 'http://127.0.0.1:3100/api/health',
     reuseExistingServer: !CI,
+    // One server, two origins (ADR-0002): the app on 127.0.0.1, the content origin on localhost.
     env: {
       PORT: '3100',
-      HOST: '127.0.0.1',
+      HOST: '0.0.0.0',
+      APP_HOST: '127.0.0.1',
+      CONTENT_HOST: 'localhost',
+      CONTENT_ORIGIN: 'http://localhost:3100',
+      STORAGE_DRIVER: 'fs',
+      STORAGE_DIR: resolve(import.meta.dirname, '../.local/e2e-storage'),
       NODE_ENV: 'test',
       STATIC_DIR: resolve(import.meta.dirname, '../apps/web/dist'),
       DATABASE_URL: e2eDatabaseUrl,
