@@ -164,7 +164,7 @@ export function TopicForm({ courseId, topic, others, requirable }: Props) {
                 checked={values.prerequisites.includes(t.id)}
                 onChange={() => change({ prerequisites: toggle(values.prerequisites, t.id) })}
               />
-              {t.title}
+              {t.archived ? `${t.title} (archived)` : t.title}
             </label>
           ))
         )}
@@ -213,9 +213,6 @@ export function TopicForm({ courseId, topic, others, requirable }: Props) {
             ))}
           </div>
         ) : null}
-        <span className={local.hint}>
-          Completion is shown to students and is separate from any grade.
-        </span>
       </fieldset>
       <p className={`${styles.small} ${styles.muted}`} style={{ marginTop: 24 }}>
         Edits change the course draft only. Classes keep the release they use.

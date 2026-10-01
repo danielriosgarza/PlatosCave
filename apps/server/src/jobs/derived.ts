@@ -23,14 +23,6 @@ export type DerivedStatus = z.infer<typeof DerivedStatus>;
 export const derivedReady = (derived: Record<string, unknown>): boolean =>
   DerivedStatus.safeParse(derived.status).data?.state === 'ready';
 
-/** The state a job recorded for a revision, or undefined when none was ever queued. */
-export const derivedState = (
-  derived: Record<string, unknown>,
-): DerivedStatus['state'] | undefined =>
-  derived.status === undefined || derived.status === null
-    ? undefined
-    : (DerivedStatus.safeParse(derived.status).data?.state ?? 'failed');
-
 /** Whether a revision of the scope's course has a recorded job status; false when it has none. */
 export async function hasDerivedStatus(
   db: Db,

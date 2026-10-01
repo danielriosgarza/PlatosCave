@@ -67,7 +67,10 @@ function EditTopic() {
                 key={topic.id}
                 courseId={courseId}
                 topic={topic}
-                others={topics.filter((t) => t.id !== topic.id && !t.archived)}
+                // An archived topic stays listed while it is a prerequisite, so it can be unticked.
+                others={topics.filter(
+                  (t) => t.id !== topic.id && (!t.archived || topic.prerequisites.includes(t.id)),
+                )}
                 requirable={topic.resources
                   .filter((r) => !r.archived && (r.type === 'test' || r.type === 'exercise'))
                   .map((r) => ({ id: r.id, title: r.title }))}

@@ -129,6 +129,9 @@ export function useAutosave<V extends object, S extends { revision: number }>({
   const takeTheirs = useCallback(
     (current: S) => {
       stopped.current = false;
+      // Nothing local is pending once their copy is taken; leaving would otherwise resend it.
+      clearTimeout(timer.current);
+      dirty.current = false;
       revision.current = current.revision;
       latest.current = toValues(current);
       setValues(latest.current);

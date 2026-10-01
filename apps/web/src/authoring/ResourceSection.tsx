@@ -260,7 +260,10 @@ function ReadingFields({
           title: v.title.trim() || server.title,
           visibility: v.visibility,
           archived: v.archived,
-          accessibleAlternative: v.alternative.trim() ? { text: v.alternative.trim() } : null,
+          // Only a changed alternative makes a new revision (and a new processing job).
+          ...(v.alternative.trim() !== alternativeText(server).trim() && {
+            accessibleAlternative: v.alternative.trim() ? { text: v.alternative.trim() } : null,
+          }),
         },
       }),
     onSaved,
@@ -310,13 +313,9 @@ function ReadingFields({
         <label htmlFor={`alternative-${server.id}`}>Accessible alternative</label>
         <textarea
           id={`alternative-${server.id}`}
-          aria-describedby={`alternative-hint-${server.id}`}
           value={values.alternative}
           onChange={(e) => change({ alternative: e.target.value })}
         />
-        <span id={`alternative-hint-${server.id}`} className={local.hint}>
-          Publishing warns when a PDF reading has none.
-        </span>
       </div>
       <div className={styles.row} style={{ marginTop: 16 }}>
         <button

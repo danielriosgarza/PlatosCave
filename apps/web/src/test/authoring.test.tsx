@@ -261,7 +261,7 @@ describe('topic editor', () => {
   it('A26 taking their version replaces the form without saving anything', async () => {
     const user = userEvent.setup();
     const theirs = topic({ title: 'Sampling, by Priya', revision: 3 });
-    const { s } = await open(grant(), fresh({ topicStatus: 409, conflictWith: theirs }));
+    const { s, router } = await open(grant(), fresh({ topicStatus: 409, conflictWith: theirs }));
     await user.type(await screen.findByLabelText('Title'), '!');
     const conflict = await screen.findByRole(
       'alert',
@@ -270,6 +270,10 @@ describe('topic editor', () => {
     );
     await user.click(within(conflict).getByRole('button', { name: 'Use their version' }));
     expect(await screen.findByDisplayValue('Sampling, by Priya')).toBeInTheDocument();
+    expect(s.patched).toHaveLength(1);
+    // Leaving must not send their own copy back (which would bump the revision under them).
+    await router.navigate({ to: '/courses/$courseId/edit', params: { courseId: COURSE } });
+    await screen.findByRole('heading', { name: 'Topics' });
     expect(s.patched).toHaveLength(1);
   });
 

@@ -1,6 +1,6 @@
 import { publishRelease, type validationIssue } from '@parallax/contracts/routes/releases';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { z } from 'zod';
 import { ApiError, call } from '../api/client';
 import styles from '../components/Page.module.css';
@@ -30,8 +30,12 @@ export function PublishPanel({ courseId, grant }: Props) {
   const processingStates = processing.data?.resources
     .map((r) => `${r.resourceId}:${r.state}`)
     .join();
+  const seen = useRef<string | undefined>(undefined);
   useEffect(() => {
-    if (processingStates !== undefined) {
+    const before = seen.current;
+    seen.current = processingStates;
+    // The first result is already covered by the validation fetch made on mount.
+    if (before !== undefined && before !== processingStates) {
       void queryClient.invalidateQueries({ queryKey: validationQuery(courseId).queryKey });
     }
   }, [processingStates, courseId, queryClient]);
