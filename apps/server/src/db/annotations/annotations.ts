@@ -437,7 +437,12 @@ export async function listNotifications(
     .limit(50);
   if (rows.length === 0) return [];
   const firsts = await db
-    .select({ threadId: posts.threadId, body: posts.body, moderatedAt: posts.moderatedAt })
+    .select({
+      threadId: posts.threadId,
+      body: posts.body,
+      moderatedAt: posts.moderatedAt,
+      deletedAt: posts.deletedAt,
+    })
     .from(posts)
     .where(
       and(
@@ -454,7 +459,7 @@ export async function listNotifications(
   for (const post of firsts) if (!firstOf.has(post.threadId)) firstOf.set(post.threadId, post);
   return rows.map(({ thread, authorName }) => {
     const first = firstOf.get(thread.id);
-    const body = first && !first.moderatedAt ? (first.body ?? '') : '';
+    const body = first && !first.moderatedAt && !first.deletedAt ? (first.body ?? '') : '';
     return {
       kind: 'thread',
       threadId: thread.id,
