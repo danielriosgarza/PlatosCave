@@ -7,7 +7,7 @@
   },
   "set": "public",
   "limits": {
-    "wallSeconds": 600,
+    "wallSeconds": 10,
     "memoryMiB": 512,
     "outputBytes": 1048576
   },
@@ -25,7 +25,10 @@
       "file": "x.py",
       "function": "f",
       "expected": {
-        "value": 1
+        "value": 1,
+        "raises": {
+          "type": "ValueError"
+        }
       },
       "compare": {
         "mode": "exact"

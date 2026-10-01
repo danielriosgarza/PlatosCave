@@ -8,11 +8,12 @@
   "checks": [
     {
       "name": "x",
-      "status": "crashed",
+      "status": "failed",
       "durationMs": 1,
       "stdout": "",
       "stderr": "",
-      "truncated": false
+      "truncated": false,
+      "hiddenValue": "must not exist"
     }
   ],
   "truncated": false,

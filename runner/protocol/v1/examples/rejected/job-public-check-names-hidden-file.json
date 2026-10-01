@@ -5,31 +5,37 @@
     "id": "python-3.12",
     "language": "python"
   },
-  "set": "public",
+  "set": "full",
   "limits": {
-    "wallSeconds": 600,
+    "wallSeconds": 10,
     "memoryMiB": 512,
     "outputBytes": 1048576
   },
   "files": [
     {
-      "path": "x.py",
-      "content": ""
+      "path": "solution.py",
+      "content": "def f():\n    return 1\n"
+    },
+    {
+      "path": "tests/hidden_test.py",
+      "content": "print(1)\n",
+      "hidden": true
     }
   ],
   "checks": [
     {
-      "name": "x",
+      "name": "One",
       "kind": "call",
       "visibility": "public",
-      "file": "x.py",
+      "file": "solution.py",
       "function": "f",
       "expected": {
         "value": 1
       },
       "compare": {
         "mode": "exact"
-      }
+      },
+      "files": ["tests/hidden_test.py"]
     }
   ]
 }

@@ -2,12 +2,14 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://parallax.invalid/runner/v1/job.schema.json",
   "title": "Parallax runner job (protocol v1)",
-  "description": "What apps/server enqueues as the `execution.run` payload and what the harness finds at /bundle/job.json. It carries no user, class or attempt identifiers: the runner is a separate trust domain and only needs the code, the checks and the limits. docs/design/runner.md is the normative description.",
+  "description": "What apps/server enqueues as the `execution.run` payload and what the runner writes to the sandbox's stdin after the nonce line; the harness holds it in memory and never writes it to disk. It carries no user, class or attempt identifiers: the runner is a separate trust domain and only needs the code, the checks and the limits. Four rules the schema cannot express (unique check names; a `public` set has no hidden check and no hidden file; a check names only files that exist and a public check names no hidden file; unique paths and at most 2 MiB decoded) are listed in docs/design/runner.md \u00a73.1 with fixtures under examples/rejected/.",
   "type": "object",
   "required": ["v", "jobId", "runtime", "set", "limits", "files", "checks"],
   "additionalProperties": false,
   "properties": {
-    "v": { "const": 1 },
+    "v": {
+      "const": 1
+    },
     "jobId": {
       "description": "execution_jobs.id; the only identifier the runner ever sees.",
       "type": "string",
@@ -18,28 +20,44 @@
       "required": ["id", "language"],
       "additionalProperties": false,
       "properties": {
-        "id": { "$ref": "#/$defs/runtimeId" },
-        "language": { "enum": ["python", "r"] },
+        "id": {
+          "$ref": "#/$defs/runtimeId"
+        },
+        "language": {
+          "enum": ["python", "r"]
+        },
         "image": {
-          "description": "Image reference pinned for a replay (`repository@sha256:…`). Absent for ordinary runs: the runner then uses its own mapping for `id`.",
+          "description": "Only for replays: the exact image the original run used, either a repository digest (`repo@sha256:\u2026`) or a Docker image id (`sha256:\u2026`, used where no registry exists). Absent for ordinary runs: the runner then uses its own mapping for `id`.",
           "type": "string",
-          "pattern": "^[a-z0-9][a-z0-9._/-]*@sha256:[0-9a-f]{64}$"
+          "pattern": "^(sha256:[0-9a-f]{64}|[a-z0-9][a-z0-9._/-]*(:[A-Za-z0-9._-]+)?@sha256:[0-9a-f]{64})$"
         }
       }
     },
     "set": {
-      "description": "`public`: only checks a student may see, for Run sample tests. `full`: every check, for grading, replay, regrade and instructor preview.",
+      "description": "`public`: only checks a student may see and only non-hidden files, for Run sample tests. `full`: every check and file, for grading, replay, regrade and instructor preview.",
       "enum": ["public", "full"]
     },
     "limits": {
-      "description": "Already clamped by the server to the bounds in docs/design/runner.md §5; the runner clamps again.",
+      "description": "Already clamped by the server to the bounds in docs/design/runner.md \u00a75; the runner clamps again.",
       "type": "object",
       "required": ["wallSeconds", "memoryMiB", "outputBytes"],
       "additionalProperties": false,
       "properties": {
-        "wallSeconds": { "type": "integer", "minimum": 1, "maximum": 60 },
-        "memoryMiB": { "type": "integer", "minimum": 64, "maximum": 2048 },
-        "outputBytes": { "type": "integer", "minimum": 4096, "maximum": 4194304 }
+        "wallSeconds": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 60
+        },
+        "memoryMiB": {
+          "type": "integer",
+          "minimum": 64,
+          "maximum": 2048
+        },
+        "outputBytes": {
+          "type": "integer",
+          "minimum": 4096,
+          "maximum": 4194304
+        }
       }
     },
     "files": {
@@ -47,13 +65,17 @@
       "type": "array",
       "minItems": 1,
       "maxItems": 64,
-      "items": { "$ref": "#/$defs/file" }
+      "items": {
+        "$ref": "#/$defs/file"
+      }
     },
     "checks": {
       "type": "array",
       "minItems": 1,
       "maxItems": 50,
-      "items": { "$ref": "#/$defs/check" }
+      "items": {
+        "$ref": "#/$defs/check"
+      }
     }
   },
   "$defs": {
@@ -73,9 +95,21 @@
       "required": ["path", "content"],
       "additionalProperties": false,
       "properties": {
-        "path": { "$ref": "#/$defs/path" },
-        "content": { "type": "string" },
-        "encoding": { "enum": ["utf8", "base64"], "default": "utf8" }
+        "path": {
+          "$ref": "#/$defs/path"
+        },
+        "content": {
+          "type": "string"
+        },
+        "encoding": {
+          "enum": ["utf8", "base64"],
+          "default": "utf8"
+        },
+        "hidden": {
+          "description": "True for files only hidden checks may see (hidden tests, hidden data). Never present in a `public` job; materialised only for the hidden checks that name the file.",
+          "type": "boolean",
+          "default": false
+        }
       }
     },
     "checkBase": {
@@ -87,13 +121,25 @@
           "type": "string",
           "pattern": "^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$"
         },
-        "kind": { "enum": ["stdio", "call", "script"] },
-        "visibility": { "enum": ["public", "hidden"] },
+        "kind": {
+          "enum": ["stdio", "call", "script"]
+        },
+        "visibility": {
+          "enum": ["public", "hidden"]
+        },
         "timeoutSeconds": {
           "description": "Cap for this check; the effective cap is the smaller of this and the remaining wall budget.",
           "type": "integer",
           "minimum": 1,
           "maximum": 60
+        },
+        "files": {
+          "description": "Additional hidden files this check needs on disk besides `file`. Only a hidden check may name a hidden file.",
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/path"
+          }
         }
       }
     },
@@ -102,9 +148,19 @@
       "required": ["mode"],
       "additionalProperties": false,
       "properties": {
-        "mode": { "enum": ["exact", "trimmed", "tokens", "numeric"] },
-        "abs": { "type": "number", "minimum": 0, "default": 1e-6 },
-        "rel": { "type": "number", "minimum": 0, "default": 1e-9 }
+        "mode": {
+          "enum": ["exact", "trimmed", "tokens", "numeric"]
+        },
+        "abs": {
+          "type": "number",
+          "minimum": 0,
+          "default": 1e-6
+        },
+        "rel": {
+          "type": "number",
+          "minimum": 0,
+          "default": 1e-9
+        }
       }
     },
     "callCompare": {
@@ -112,52 +168,113 @@
       "required": ["mode"],
       "additionalProperties": false,
       "properties": {
-        "mode": { "enum": ["exact", "numeric", "repr"] },
-        "abs": { "type": "number", "minimum": 0, "default": 1e-6 },
-        "rel": { "type": "number", "minimum": 0, "default": 1e-9 }
+        "mode": {
+          "enum": ["exact", "numeric", "repr"]
+        },
+        "abs": {
+          "type": "number",
+          "minimum": 0,
+          "default": 1e-6
+        },
+        "rel": {
+          "type": "number",
+          "minimum": 0,
+          "default": 1e-9
+        }
       }
     },
     "stdioCheck": {
       "description": "Runs `file` as a program with `args` and `stdin`; compares stdout and the exit code.",
-      "allOf": [{ "$ref": "#/$defs/checkBase" }],
+      "allOf": [
+        {
+          "$ref": "#/$defs/checkBase"
+        }
+      ],
       "required": ["file", "expected", "compare"],
       "properties": {
-        "kind": { "const": "stdio" },
-        "file": { "$ref": "#/$defs/path" },
+        "kind": {
+          "const": "stdio"
+        },
+        "file": {
+          "$ref": "#/$defs/path"
+        },
         "args": {
           "type": "array",
           "maxItems": 32,
-          "items": { "type": "string", "maxLength": 1024 }
+          "items": {
+            "type": "string",
+            "maxLength": 1024
+          }
         },
-        "stdin": { "type": "string", "maxLength": 262144 },
+        "stdin": {
+          "type": "string",
+          "maxLength": 262144
+        },
         "expected": {
           "type": "object",
           "required": ["stdout"],
           "additionalProperties": false,
           "properties": {
-            "stdout": { "type": "string", "maxLength": 262144 },
-            "exitCode": { "type": "integer", "minimum": 0, "maximum": 255, "default": 0 }
+            "stdout": {
+              "type": "string",
+              "maxLength": 262144
+            },
+            "exitCode": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 255,
+              "default": 0
+            }
           }
         },
-        "compare": { "$ref": "#/$defs/stdioCompare" }
+        "compare": {
+          "$ref": "#/$defs/stdioCompare"
+        }
       },
       "unevaluatedProperties": false
     },
     "callCheck": {
       "description": "Loads `file` and calls `function` with JSON `args` and `kwargs`; compares the returned value, or expects an exception.",
-      "allOf": [{ "$ref": "#/$defs/checkBase" }],
+      "allOf": [
+        {
+          "$ref": "#/$defs/checkBase"
+        }
+      ],
       "required": ["file", "function", "expected", "compare"],
       "properties": {
-        "kind": { "const": "call" },
-        "file": { "$ref": "#/$defs/path" },
-        "function": { "type": "string", "pattern": "^[A-Za-z_.][A-Za-z0-9_.]{0,127}$" },
-        "args": { "type": "array", "maxItems": 32 },
-        "kwargs": { "type": "object", "maxProperties": 32 },
-        "stdin": { "type": "string", "maxLength": 262144 },
+        "kind": {
+          "const": "call"
+        },
+        "file": {
+          "$ref": "#/$defs/path"
+        },
+        "function": {
+          "type": "string",
+          "pattern": "^[A-Za-z_.][A-Za-z0-9_.]{0,127}$"
+        },
+        "args": {
+          "type": "array",
+          "maxItems": 32
+        },
+        "kwargs": {
+          "type": "object",
+          "maxProperties": 32
+        },
+        "stdin": {
+          "type": "string",
+          "maxLength": 262144
+        },
         "expected": {
           "type": "object",
           "additionalProperties": false,
-          "oneOf": [{ "required": ["value"] }, { "required": ["raises"] }],
+          "oneOf": [
+            {
+              "required": ["value"]
+            },
+            {
+              "required": ["raises"]
+            }
+          ],
           "properties": {
             "value": {
               "description": "Any JSON value; with compare.mode `repr` a string compared with the language's repr."
@@ -181,31 +298,53 @@
             }
           }
         },
-        "compare": { "$ref": "#/$defs/callCompare" }
+        "compare": {
+          "$ref": "#/$defs/callCompare"
+        }
       },
       "unevaluatedProperties": false
     },
     "scriptCheck": {
       "description": "Runs an author-written test program; exit code 0 passes. Used for hidden tests that need more than one comparison.",
-      "allOf": [{ "$ref": "#/$defs/checkBase" }],
+      "allOf": [
+        {
+          "$ref": "#/$defs/checkBase"
+        }
+      ],
       "required": ["file"],
       "properties": {
-        "kind": { "const": "script" },
-        "file": { "$ref": "#/$defs/path" },
+        "kind": {
+          "const": "script"
+        },
+        "file": {
+          "$ref": "#/$defs/path"
+        },
         "args": {
           "type": "array",
           "maxItems": 32,
-          "items": { "type": "string", "maxLength": 1024 }
+          "items": {
+            "type": "string",
+            "maxLength": 1024
+          }
         },
-        "stdin": { "type": "string", "maxLength": 262144 }
+        "stdin": {
+          "type": "string",
+          "maxLength": 262144
+        }
       },
       "unevaluatedProperties": false
     },
     "check": {
       "oneOf": [
-        { "$ref": "#/$defs/stdioCheck" },
-        { "$ref": "#/$defs/callCheck" },
-        { "$ref": "#/$defs/scriptCheck" }
+        {
+          "$ref": "#/$defs/stdioCheck"
+        },
+        {
+          "$ref": "#/$defs/callCheck"
+        },
+        {
+          "$ref": "#/$defs/scriptCheck"
+        }
       ]
     }
   }

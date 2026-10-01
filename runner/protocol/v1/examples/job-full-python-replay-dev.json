@@ -1,10 +1,10 @@
 {
   "v": 1,
-  "jobId": "0c9b8a7f-6e5d-4c3b-8a19-f0e1d2c3b4a5",
+  "jobId": "7a6b5c4d-3e2f-4a1b-9c8d-7e6f5a4b3c2d",
   "runtime": {
     "id": "python-3.12",
     "language": "python",
-    "image": "ghcr.io/example/parallax-runner-python@sha256:2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae"
+    "image": "sha256:9d2e4f6a8b0c1d3e5f7a9b1c3d5e7f9a0b2c4d6e8f0a1b3c5d7e9f1a3b5c7d9e"
   },
   "set": "full",
   "limits": {

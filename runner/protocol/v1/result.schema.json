@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://parallax.invalid/runner/v1/result.schema.json",
   "title": "Parallax harness result (protocol v1)",
-  "description": "The single JSON document the harness writes to the container's stdout, framed by the job nonce (docs/design/runner.md \u00a74.4). The runner validates it before trusting any field, then wraps it in the outcome it stores as the pg-boss job output.",
+  "description": "The single JSON document the harness writes to the container's stdout, framed by the job nonce (docs/design/runner.md \u00a74.4). The runner validates it before trusting any field, then wraps it in the outcome it sends as an `execution.result` message.",
   "type": "object",
   "required": ["v", "harnessVersion", "runtime", "checks", "truncated", "durationMs"],
   "additionalProperties": false,
@@ -117,12 +117,14 @@
           "maximum": 64
         },
         "stdout": {
+          "description": "Captured text, cut when the job's outputBytes budget is spent (`truncated`); at most 4 MiB, the largest outputBytes.",
           "type": "string",
-          "maxLength": 65536
+          "maxLength": 4194304
         },
         "stderr": {
+          "description": "Captured text, cut when the job's outputBytes budget is spent (`truncated`); at most 4 MiB, the largest outputBytes.",
           "type": "string",
-          "maxLength": 65536
+          "maxLength": 4194304
         },
         "truncated": {
           "type": "boolean"
