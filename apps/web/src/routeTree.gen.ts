@@ -15,6 +15,7 @@ import { Route as SigninRouteImport } from './routes/signin'
 import { Route as AuthedCoursesIndexRouteImport } from './routes/_authed/courses.index'
 import { Route as AuthedClassesClassIdReviewRouteImport } from './routes/_authed/classes.$classId.review'
 import { Route as AuthedClassesClassIdTopicsIndexRouteImport } from './routes/_authed/classes.$classId.topics.index'
+import { Route as AuthedCoursesCourseIdEditIndexRouteImport } from './routes/_authed/courses.$courseId.edit.index'
 import { Route as AuthedCoursesCourseIdEditTopicIdRouteImport } from './routes/_authed/courses.$courseId.edit.$topicId'
 import { Route as AuthedClassesClassIdTopicsTopicIdTabRouteImport } from './routes/_authed/classes.$classId.topics.$topicId.$tab'
 
@@ -49,6 +50,12 @@ const AuthedClassesClassIdTopicsIndexRoute =
     path: '/classes/$classId/topics/',
     getParentRoute: () => AuthedRoute,
   } as any)
+const AuthedCoursesCourseIdEditIndexRoute =
+  AuthedCoursesCourseIdEditIndexRouteImport.update({
+    id: '/courses/$courseId/edit/',
+    path: '/courses/$courseId/edit/',
+    getParentRoute: () => AuthedRoute,
+  } as any)
 const AuthedCoursesCourseIdEditTopicIdRoute =
   AuthedCoursesCourseIdEditTopicIdRouteImport.update({
     id: '/courses/$courseId/edit/$topicId',
@@ -69,6 +76,7 @@ export interface FileRoutesByFullPath {
   '/classes/$classId/review': typeof AuthedClassesClassIdReviewRoute
   '/courses/$courseId/edit/$topicId': typeof AuthedCoursesCourseIdEditTopicIdRoute
   '/classes/$classId/topics/': typeof AuthedClassesClassIdTopicsIndexRoute
+  '/courses/$courseId/edit/': typeof AuthedCoursesCourseIdEditIndexRoute
   '/classes/$classId/topics/$topicId/$tab': typeof AuthedClassesClassIdTopicsTopicIdTabRoute
 }
 export interface FileRoutesByTo {
@@ -78,6 +86,7 @@ export interface FileRoutesByTo {
   '/classes/$classId/review': typeof AuthedClassesClassIdReviewRoute
   '/courses/$courseId/edit/$topicId': typeof AuthedCoursesCourseIdEditTopicIdRoute
   '/classes/$classId/topics': typeof AuthedClassesClassIdTopicsIndexRoute
+  '/courses/$courseId/edit': typeof AuthedCoursesCourseIdEditIndexRoute
   '/classes/$classId/topics/$topicId/$tab': typeof AuthedClassesClassIdTopicsTopicIdTabRoute
 }
 export interface FileRoutesById {
@@ -89,6 +98,7 @@ export interface FileRoutesById {
   '/_authed/classes/$classId/review': typeof AuthedClassesClassIdReviewRoute
   '/_authed/courses/$courseId/edit/$topicId': typeof AuthedCoursesCourseIdEditTopicIdRoute
   '/_authed/classes/$classId/topics/': typeof AuthedClassesClassIdTopicsIndexRoute
+  '/_authed/courses/$courseId/edit/': typeof AuthedCoursesCourseIdEditIndexRoute
   '/_authed/classes/$classId/topics/$topicId/$tab': typeof AuthedClassesClassIdTopicsTopicIdTabRoute
 }
 export interface FileRouteTypes {
@@ -100,6 +110,7 @@ export interface FileRouteTypes {
     | '/classes/$classId/review'
     | '/courses/$courseId/edit/$topicId'
     | '/classes/$classId/topics/'
+    | '/courses/$courseId/edit/'
     | '/classes/$classId/topics/$topicId/$tab'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -109,6 +120,7 @@ export interface FileRouteTypes {
     | '/classes/$classId/review'
     | '/courses/$courseId/edit/$topicId'
     | '/classes/$classId/topics'
+    | '/courses/$courseId/edit'
     | '/classes/$classId/topics/$topicId/$tab'
   id:
     | '__root__'
@@ -119,6 +131,7 @@ export interface FileRouteTypes {
     | '/_authed/classes/$classId/review'
     | '/_authed/courses/$courseId/edit/$topicId'
     | '/_authed/classes/$classId/topics/'
+    | '/_authed/courses/$courseId/edit/'
     | '/_authed/classes/$classId/topics/$topicId/$tab'
   fileRoutesById: FileRoutesById
 }
@@ -172,6 +185,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedClassesClassIdTopicsIndexRouteImport
       parentRoute: typeof AuthedRoute
     }
+    '/_authed/courses/$courseId/edit/': {
+      id: '/_authed/courses/$courseId/edit/'
+      path: '/courses/$courseId/edit'
+      fullPath: '/courses/$courseId/edit/'
+      preLoaderRoute: typeof AuthedCoursesCourseIdEditIndexRouteImport
+      parentRoute: typeof AuthedRoute
+    }
     '/_authed/courses/$courseId/edit/$topicId': {
       id: '/_authed/courses/$courseId/edit/$topicId'
       path: '/courses/$courseId/edit/$topicId'
@@ -194,6 +214,7 @@ interface AuthedRouteChildren {
   AuthedClassesClassIdReviewRoute: typeof AuthedClassesClassIdReviewRoute
   AuthedCoursesCourseIdEditTopicIdRoute: typeof AuthedCoursesCourseIdEditTopicIdRoute
   AuthedClassesClassIdTopicsIndexRoute: typeof AuthedClassesClassIdTopicsIndexRoute
+  AuthedCoursesCourseIdEditIndexRoute: typeof AuthedCoursesCourseIdEditIndexRoute
   AuthedClassesClassIdTopicsTopicIdTabRoute: typeof AuthedClassesClassIdTopicsTopicIdTabRoute
 }
 
@@ -202,6 +223,7 @@ const AuthedRouteChildren: AuthedRouteChildren = {
   AuthedClassesClassIdReviewRoute: AuthedClassesClassIdReviewRoute,
   AuthedCoursesCourseIdEditTopicIdRoute: AuthedCoursesCourseIdEditTopicIdRoute,
   AuthedClassesClassIdTopicsIndexRoute: AuthedClassesClassIdTopicsIndexRoute,
+  AuthedCoursesCourseIdEditIndexRoute: AuthedCoursesCourseIdEditIndexRoute,
   AuthedClassesClassIdTopicsTopicIdTabRoute:
     AuthedClassesClassIdTopicsTopicIdTabRoute,
 }
