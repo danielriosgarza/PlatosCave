@@ -19,6 +19,10 @@ export const DerivedStatus = z.object({
 });
 export type DerivedStatus = z.infer<typeof DerivedStatus>;
 
+/** Whether the job deriving a revision's outputs has finished (gates publishing slide decks). */
+export const derivedReady = (derived: Record<string, unknown>): boolean =>
+  DerivedStatus.safeParse(derived.status).data?.state === 'ready';
+
 /**
  * Writes `derived.status` of one revision of the scope's course, leaving other derived outputs
  * untouched. Returns false when no such revision exists in that course.
@@ -44,11 +48,29 @@ export interface ResourceJobStatus {
   title: string;
   type: (typeof resources.$inferSelect)['type'];
   revisionId: string | null;
-  /** Null when the head revision has no derived outputs to produce, or no revision exists. */
+  /**
+   * Null when the head revision has no derived outputs to produce, or no revision exists. A
+   * status that cannot be read shows as `failed`, so it never disappears from the view.
+   */
   status: DerivedStatus | null;
 }
 
-/** Job status of every unarchived draft resource's head revision in the scope's course. */
+/** `derived.status` as a job wrote it, or the failure shown for one that cannot be read. */
+export function readDerivedStatus(raw: unknown, revisionCreatedAt: Date): DerivedStatus | null {
+  if (raw === undefined || raw === null) return null;
+  const parsed = DerivedStatus.safeParse(raw);
+  if (parsed.success) return parsed.data;
+  const job = (raw as { job?: unknown }).job;
+  return {
+    state: 'failed',
+    job: typeof job === 'string' ? job : 'unknown',
+    jobId: null,
+    error: 'unreadable status',
+    updatedAt: revisionCreatedAt.toISOString(),
+  };
+}
+
+/** Job status of each unarchived resource's head revision in the course's unarchived topics. */
 export async function listResourceJobStatus(
   db: Db,
   scope: CourseScope,
@@ -60,15 +82,18 @@ export async function listResourceJobStatus(
       title: resources.title,
       type: resources.type,
       revisionId: resources.headRevisionId,
+      revisionCreatedAt: resourceRevisions.createdAt,
       status: sql<unknown>`${resourceRevisions.derived} -> 'status'`,
     })
     .from(resources)
     .innerJoin(topics, eq(topics.id, resources.topicId))
     .leftJoin(resourceRevisions, eq(resourceRevisions.id, resources.headRevisionId))
-    .where(and(forCourse(scope, resources), isNull(resources.archivedAt)))
+    .where(
+      and(forCourse(scope, resources), isNull(resources.archivedAt), isNull(topics.archivedAt)),
+    )
     .orderBy(asc(topics.position), asc(resources.position));
-  return rows.map(({ status, ...row }) => {
-    const parsed = DerivedStatus.safeParse(status);
-    return { ...row, status: parsed.success ? parsed.data : null };
-  });
+  return rows.map(({ status, revisionCreatedAt, ...row }) => ({
+    ...row,
+    status: revisionCreatedAt ? readDerivedStatus(status, revisionCreatedAt) : null,
+  }));
 }

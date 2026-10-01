@@ -1,6 +1,4 @@
-import { readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { pathToFileURL } from 'node:url';
 import cookie from '@fastify/cookie';
 import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
@@ -25,6 +23,7 @@ import {
 import { redactUrl } from './http/redact';
 import { isApiPath, registerStatic } from './http/static';
 import { createMailer, type Mailer } from './mail/mailer';
+import { loadModules } from './modules';
 import { createStorage } from './storage/create';
 import type { Storage } from './storage/storage';
 
@@ -137,14 +136,12 @@ export async function buildApp(config: Config, deps: Deps = {}): Promise<Fastify
     transform: jsonSchemaTransform,
   });
 
-  const routesDir = resolve(import.meta.dirname, 'http/routes');
-  const files = readdirSync(routesDir)
-    .filter((f) => /\.routes\.ts$/.test(f))
-    .sort();
-  for (const file of files) {
-    const mod = await import(pathToFileURL(resolve(routesDir, file)).href);
+  const routes = await loadModules(resolve(import.meta.dirname, 'http/routes'), '.routes.ts');
+  for (const { file, mod } of routes) {
+    if (typeof mod.default !== 'function') throw new Error(`${file} has no default export`);
+    const register = mod.default as (app: FastifyInstance, deps: Deps) => void;
     await app.register(async (instance) => {
-      mod.default(instance, deps);
+      register(instance, deps);
     });
   }
 
