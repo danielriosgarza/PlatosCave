@@ -158,7 +158,7 @@ export function StepForm({ step, draft, disabled, onChange }: FormProps) {
       };
       return (
         <div>
-          <p className={styles.small} style={{ textAlign: 'center' }}>
+          <p className={`${styles.small} ${styles.centered}`}>
             Put the items in order with the move buttons.
           </p>
           <ol className={styles.sortable}>

@@ -293,8 +293,9 @@
 }
 .summary li {
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
-  gap: 16px;
+  gap: 4px 16px;
   padding: 10px 0;
   border-top: 1px solid var(--pc-rule);
 }
@@ -339,4 +340,19 @@
   clip-path: inset(50%);
   white-space: nowrap;
   border: 0;
+}
+.solutionNote {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 14px;
+}
+.hintsUsed {
+  text-align: center;
+  margin-top: var(--pc-space-12);
+}
+.allExercises {
+  margin-top: var(--pc-space-12);
+}
+.centered {
+  text-align: center;
 }

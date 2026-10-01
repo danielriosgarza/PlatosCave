@@ -142,6 +142,8 @@ test('A08 and A23 a student works Predict, Inspect and Explain; help is recorded
   await expect(page.getByRole('heading', { name: 'Exercise complete.' })).toHaveCount(0);
   await page.getByLabel('Your explanation').fill('The distribution of sample means narrowed.');
   await page.getByRole('button', { name: 'Done' }).click();
+  await expect(page.getByText('Saved. Your practice is complete.')).toBeVisible();
+  await page.getByRole('button', { name: 'See summary' }).click();
   await expect(page.getByRole('heading', { name: 'Exercise complete.' })).toBeVisible();
   await expect(page.getByText(/Completed with hints\./)).toBeVisible();
   const how = page.getByRole('list', { name: 'How each step was completed' });

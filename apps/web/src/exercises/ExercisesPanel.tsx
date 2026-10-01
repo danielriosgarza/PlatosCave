@@ -59,7 +59,7 @@ export function ExercisesPanel({
           <span className={`${styles.small} ${styles.muted}`}>Practice · ungraded</span>
         </header>
         {exercises.length > 1 && (
-          <p style={{ marginTop: 12 }}>
+          <p className={styles.allExercises}>
             <button type="button" className={styles.textButton} onClick={() => setChosen(null)}>
               All exercises
             </button>

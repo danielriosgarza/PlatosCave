@@ -56,13 +56,18 @@ type StepBody = { stepId: string };
 
 /**
  * The actions on an attempt. Each one writes the server's attempt view back to the cache; a
- * stale tab (409 `revision_conflict`) is moved to the current attempt and told so. Nothing is
+ * stale tab (409 `revision_conflict`) is moved to the current attempt and told so through
+ * `setNotice`, which lives above the per-attempt view that the move remounts. Nothing is
  * shown as recorded until the server has answered.
  */
-export function useAttemptActions(classId: string, resourceId: string, attempt: Attempt) {
+export function useAttemptActions(
+  classId: string,
+  resourceId: string,
+  attempt: Attempt,
+  setNotice: (notice: string | null) => void,
+) {
   const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
   const params = { classId, attemptId: attempt.id };
   const store = (next: Attempt) => queryClient.setQueryData(attemptKey(classId, resourceId), next);
 
@@ -146,7 +151,6 @@ export function useAttemptActions(classId: string, resourceId: string, attempt: 
       complete.isPending ||
       restart.isPending,
     error,
-    notice,
     clearError: () => setError(null),
   };
 }

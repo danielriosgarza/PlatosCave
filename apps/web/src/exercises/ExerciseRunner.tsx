@@ -22,6 +22,8 @@ export function ExerciseRunner({
   title: string;
 }) {
   const query = useAttempt(classId, resourceId);
+  // Kept here: a stale tab moves to an attempt with another id, which remounts the keyed view.
+  const [notice, setNotice] = useState<string | null>(null);
   if (query.isError) {
     return (
       <p className={styles.inlineError} role="alert">
@@ -37,6 +39,8 @@ export function ExerciseRunner({
       resourceId={resourceId}
       title={title}
       attempt={query.data}
+      notice={notice}
+      setNotice={setNotice}
     />
   );
 }
@@ -46,13 +50,17 @@ function PracticeAttempt({
   resourceId,
   title,
   attempt,
+  notice,
+  setNotice,
 }: {
   classId: string;
   resourceId: string;
   title: string;
   attempt: Attempt;
+  notice: string | null;
+  setNotice: (notice: string | null) => void;
 }) {
-  const actions = useAttemptActions(classId, resourceId, attempt);
+  const actions = useAttemptActions(classId, resourceId, attempt, setNotice);
   const steps = attempt.steps;
   // The step on show. It stays put when its check completes, so the feedback can be read;
   // Continue moves on. A reopened attempt starts at the first step still open.
@@ -62,7 +70,9 @@ function PracticeAttempt({
   });
   const step = steps[index];
   const last = steps.length - 1;
-  const summary = !step || (index === last && attempt.completion !== null);
+  // The summary follows an explicit step from the last one, so its feedback and any revealed
+  // solution can be read first; an attempt reopened complete starts there.
+  const summary = !step;
   const done = steps.filter((s) => s.status === 'completed').length;
 
   return (
@@ -85,9 +95,9 @@ function PracticeAttempt({
             <li key={s.id} data-done={s.status === 'completed' || i <= index} />
           ))}
         </ol>
-        {actions.notice && (
+        {notice && (
           <p className={styles.notice} role="status">
-            {actions.notice}
+            {notice}
           </p>
         )}
         {summary ? (
@@ -170,11 +180,9 @@ function StepPanel({
       <StepForm step={step} draft={draft} disabled={completed || actions.busy} onChange={change} />
       <div className={styles.actions}>
         {completed ? (
-          !isLast && (
-            <button type="button" className={styles.primary} onClick={onContinue}>
-              Continue
-            </button>
-          )
+          <button type="button" className={styles.primary} onClick={onContinue}>
+            {isLast ? 'See summary' : 'Continue'}
+          </button>
         ) : (
           <>
             <button
@@ -227,10 +235,7 @@ function StepPanel({
         </p>
       )}
       {step.hints.length > 0 && (
-        <p
-          className={`${styles.small} ${styles.muted}`}
-          style={{ textAlign: 'center', marginTop: 12 }}
-        >
+        <p className={`${styles.small} ${styles.muted} ${styles.hintsUsed}`}>
           Hints used: {step.hints.length} of {step.hintCount}. Use is recorded for review.
         </p>
       )}
@@ -308,6 +313,7 @@ function Summary({
           <li key={s.id}>
             <span>{s.title}</span>
             <span className={styles.muted}>{s.help ? HELP_LABEL[s.help] : 'not completed'}</span>
+            {s.solution !== null && <p className={styles.solutionNote}>Solution: {s.solution}</p>}
           </li>
         ))}
       </ul>

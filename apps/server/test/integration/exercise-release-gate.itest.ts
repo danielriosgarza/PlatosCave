@@ -108,7 +108,7 @@ const act = (who: PersonName, attemptId: string, action: string, body: object) =
   call(who, `${base}/exercise-attempts/${attemptId}/${action}`, body);
 
 describe('an exercise scheduled for later', () => {
-  test('A26 a student can neither open nor act on an exercise before its release time', async () => {
+  test('a student can neither open nor act on an exercise before its release time', async () => {
     // Bea started practising while the exercise was open to her.
     const attempt = await open('bea');
     expect(attempt.status).toBe(200);

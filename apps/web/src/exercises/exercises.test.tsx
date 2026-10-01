@@ -82,8 +82,21 @@ function freshAttempt(number: number): Attempt {
 }
 
 /** A stand-in for the exercise routes with the behaviour the UI relies on (the real ones run in e2e). */
-function exerciseApi(options: { releaseAt?: string | null; role?: 'student' | 'instructor' } = {}) {
-  let attempt = freshAttempt(1);
+function exerciseApi(
+  options: {
+    releaseAt?: string | null;
+    role?: 'student' | 'instructor';
+    /** Only the Predict step, so it is the last one. */
+    predictOnly?: boolean;
+    /** Answers checks as a stale tab: the attempt was started again elsewhere. */
+    staleChecks?: boolean;
+  } = {},
+) {
+  const begin = (n: number): Attempt => {
+    const fresh = freshAttempt(n);
+    return options.predictOnly ? { ...fresh, steps: fresh.steps.slice(0, 1) } : fresh;
+  };
+  let attempt = begin(1);
   const calls: { url: string; body: unknown }[] = [];
   const step = (id: string) => attempt.steps.find((s) => s.id === id);
   const set = (id: string, patch: object) => {
@@ -151,6 +164,12 @@ function exerciseApi(options: { releaseAt?: string | null; role?: 'student' | 'i
     if (/\/release$/.test(url)) return { status: 200, body: release };
     calls.push({ url, body });
     if (url.endsWith('/exercise-attempt')) return { status: 200, body: attempt };
+    if (url.endsWith('/check') && options.staleChecks) {
+      return {
+        status: 409,
+        body: { error: 'revision_conflict', current: begin(attempt.number + 1) },
+      };
+    }
     if (url.endsWith('/check')) {
       const id = body.stepId as string;
       if (id === 'predict') {
@@ -190,6 +209,7 @@ function exerciseApi(options: { releaseAt?: string | null; role?: 'student' | 'i
         help: 'solution_shown',
         solution: 'Narrower: quadrupling n halves the SE.',
       });
+      finish();
       return { status: 200, body: attempt };
     }
     if (url.endsWith('/complete')) {
@@ -203,7 +223,7 @@ function exerciseApi(options: { releaseAt?: string | null; role?: 'student' | 'i
       return { status: 200, body: attempt };
     }
     if (url.endsWith('/restart')) {
-      attempt = freshAttempt(attempt.number + 1);
+      attempt = begin(attempt.number + 1);
       return { status: 200, body: attempt };
     }
     return { status: 404, body: {} };
@@ -328,6 +348,8 @@ describe('exercise UI', () => {
     await user.click(await screen.findByRole('button', { name: 'Continue' }));
     await user.type(await screen.findByLabelText('Your explanation'), 'Averages vary less.');
     await user.click(screen.getByRole('button', { name: 'Done' }));
+    expect(await screen.findByText('Saved. Your practice is complete.')).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'See summary' }));
 
     expect(await screen.findByRole('heading', { name: 'Exercise complete.' })).toBeVisible();
     expect(screen.getByText(/Completed with the solution shown\./)).toBeVisible();
@@ -343,6 +365,30 @@ describe('exercise UI', () => {
     expect(await screen.findByRole('heading', { name: 'Predict' })).toBeVisible();
     expect(posted(calls, '/restart')).toHaveLength(1);
     expect(screen.getByRole('radio', { name: 'Narrower' })).not.toBeChecked();
+  });
+
+  it('A23 Show solution on the last step shows the solution before the summary', async () => {
+    const user = userEvent.setup();
+    exerciseApi({ predictOnly: true });
+    open();
+    await user.click(await screen.findByRole('button', { name: 'Show solution' }));
+    expect(await screen.findByText(/Narrower: quadrupling n halves the SE/)).toBeVisible();
+    expect(screen.queryByRole('heading', { name: 'Exercise complete.' })).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'See summary' }));
+    expect(await screen.findByRole('heading', { name: 'Exercise complete.' })).toBeVisible();
+    expect(screen.getByText(/Completed with the solution shown\./)).toBeVisible();
+    expect(screen.getByText(/Solution: Narrower: quadrupling n halves the SE/)).toBeVisible();
+  });
+
+  it('A08 a check from a tab whose attempt was started again elsewhere says so and moves on', async () => {
+    const user = userEvent.setup();
+    exerciseApi({ staleChecks: true });
+    open();
+    await user.click(await screen.findByRole('radio', { name: 'Wider' }));
+    await user.click(screen.getByRole('button', { name: 'Check answer' }));
+    expect(await screen.findByText(/started again elsewhere/)).toBeVisible();
+    expect(screen.getByRole('heading', { name: 'Predict' })).toBeVisible();
+    expect(screen.getByRole('radio', { name: 'Wider' })).not.toBeChecked();
   });
 
   it('a scheduled exercise is locked for a student with its release date, and is not opened', async () => {
