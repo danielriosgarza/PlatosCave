@@ -5,17 +5,23 @@ import { and, asc, desc, eq, inArray, isNull } from 'drizzle-orm';
 import type { z } from 'zod';
 import type { ClassScope } from '../auth/scope';
 import { studyableResource, type Tx } from '../content/releases';
-import type { Db } from '../db/client';
+import {
+  type Judgement,
+  judge,
+  parseResponse,
+  savedByComplete,
+  viewStep,
+} from '../exercises/evaluate';
+import { invalid, notFound, type Outcome } from '../outcome';
+import type { Db } from './client';
 import {
   classMemberships,
   exerciseAttempts,
   exerciseEvents,
   resourceRevisions,
   users,
-} from '../db/schema';
-import { forClass } from '../db/scoped';
-import { invalid, notFound, type Outcome } from '../outcome';
-import { type Judgement, judge, parseResponse, savedByComplete, viewStep } from './evaluate';
+} from './schema';
+import { forClass } from './scoped';
 
 /**
  * Practice attempts of one class (§9). Every function takes the resolved `ClassScope`; an

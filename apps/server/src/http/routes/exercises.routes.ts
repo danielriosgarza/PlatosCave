@@ -9,7 +9,7 @@ import {
 } from '@parallax/contracts/routes/exercises';
 import type { FastifyInstance } from 'fastify';
 import type { Deps } from '../../app';
-import * as attempts from '../../exercises/attempts';
+import * as attempts from '../../db/exercises';
 import { registerRoute, settle } from '../register';
 
 export default function exerciseRoutes(app: FastifyInstance, deps: Deps): void {
