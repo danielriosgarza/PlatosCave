@@ -1,0 +1,58 @@
+/* Ported from the wireframe: .pc-toolbar, .pc-tools. */
+.toolbar {
+  padding: 6px 40px;
+  border-bottom: 1px solid var(--pc-rule);
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  background: var(--pc-sheet);
+}
+.title {
+  font-size: 12px;
+  line-height: 1.5;
+}
+.tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.tools button {
+  font: inherit;
+  font-size: 12px;
+  min-height: 32px;
+  cursor: pointer;
+  border: 1px solid var(--pc-muted);
+  padding: 4px 12px;
+  background: var(--pc-sheet);
+  color: var(--pc-ink);
+  border-radius: var(--pc-radius-control);
+}
+.tools button[aria-pressed="true"] {
+  background: var(--pc-soft);
+  font-weight: 600;
+}
+.notice {
+  margin: 0;
+  padding: 8px 40px;
+  font-size: 12px;
+  background: var(--pc-soft);
+  border-bottom: 1px solid var(--pc-rule);
+}
+@media (max-width: 900px) {
+  .toolbar,
+  .notice {
+    padding-left: 24px;
+    padding-right: 24px;
+  }
+}
+@media (max-width: 540px) {
+  .toolbar,
+  .notice {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+}

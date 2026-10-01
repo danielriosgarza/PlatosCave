@@ -1,4 +1,5 @@
 import { createFileRoute, redirect } from '@tanstack/react-router';
+import { useRef } from 'react';
 import { ApiError } from '../../api/client';
 import styles from '../../components/Page.module.css';
 import { type TabDef, TabRow } from '../../components/TabRow';
@@ -6,6 +7,8 @@ import { Unavailable } from '../../components/Unavailable';
 import { useClassContext } from '../../session/classContext';
 import { TopicHeading } from '../../topics/TopicHeading';
 import { isOpen, lockReason, useClassTopics } from '../../topics/topics';
+import { useFocusMode } from '../../workspace/focus';
+import { ResourceToolbar } from '../../workspace/ResourceToolbar';
 
 export const TOPIC_TABS = [
   { id: 'slides', label: 'Slides' },
@@ -38,6 +41,8 @@ function TopicWorkspace() {
   const navigate = Route.useNavigate();
   const context = useClassContext(classId);
   const query = useClassTopics(classId);
+  const workspace = useRef<HTMLElement | null>(null);
+  const mode = useFocusMode(workspace);
   if (!context || !isTab(tab)) return <Unavailable />;
   if (query.error instanceof ApiError && query.error.status === 404) return <Unavailable />;
   const data = query.data;
@@ -73,14 +78,26 @@ function TopicWorkspace() {
   }
   const label = TOPIC_TABS.find((t) => t.id === tab)?.label ?? tab;
   return (
-    <main>
-      <TopicHeading data={data} topic={topic} />
-      <TabRow
-        label="Topic materials"
-        tabs={TOPIC_TABS}
-        selected={tab}
-        panelId="pc-content"
-        onSelect={(next) => navigate({ params: { classId, topicId, tab: next } })}
+    <main ref={workspace} className={styles.workspace}>
+      {mode.focus ? null : <TopicHeading data={data} topic={topic} />}
+      {mode.focus ? null : (
+        <TabRow
+          label="Topic materials"
+          tabs={TOPIC_TABS}
+          selected={tab}
+          panelId="pc-content"
+          onSelect={(next) => navigate({ params: { classId, topicId, tab: next } })}
+        />
+      )}
+      <ResourceToolbar
+        title={`${topic.title} / ${label}`}
+        focus={mode.focus}
+        fullscreen={mode.fullscreen}
+        notice={mode.notice}
+        onFocus={() => void mode.toggleFocus()}
+        onFullscreen={() => void mode.toggleFullscreen()}
+        focusButton={mode.focusButton}
+        fullscreenButton={mode.fullscreenButton}
       />
       <div
         className={styles.panel}
