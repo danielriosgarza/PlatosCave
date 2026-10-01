@@ -1,3 +1,4 @@
+import { exerciseProblems } from '@parallax/contracts';
 import type { validationIssue, validationReport } from '@parallax/contracts/routes/releases';
 import { and, asc, eq, isNull, lte, max, ne, or, type SQL, sql } from 'drizzle-orm';
 import type { z } from 'zod';
@@ -127,6 +128,15 @@ export function validate(drafts: Drafts): ValidationReport {
               state === 'failed'
                 ? `“${resource.title}” could not be processed; upload it again or retry`
                 : `“${resource.title}” is still being processed`,
+            ...at,
+          });
+        }
+      }
+      if (revision.type === 'exercise') {
+        for (const problem of exerciseProblems(revision.content)) {
+          errors.push({
+            code: 'invalid_exercise',
+            message: `“${resource.title}”: ${problem}`,
             ...at,
           });
         }
