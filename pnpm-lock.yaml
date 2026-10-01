@@ -159,6 +159,9 @@ importers:
       '@tanstack/react-router':
         specifier: 1.170.40
         version: 1.170.40(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+      pdfjs-dist:
+        specifier: 6.3.289
+        version: 6.3.289
       react:
         specifier: 19.3.0
         version: 19.3.0

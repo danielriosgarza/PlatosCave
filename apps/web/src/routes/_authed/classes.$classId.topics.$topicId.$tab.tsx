@@ -1,10 +1,13 @@
 import { createFileRoute, redirect } from '@tanstack/react-router';
 import { useRef } from 'react';
+import { z } from 'zod';
 import { ApiError } from '../../api/client';
 import styles from '../../components/Page.module.css';
 import { type TabDef, TabRow } from '../../components/TabRow';
 import { Unavailable } from '../../components/Unavailable';
 import { ExercisesPanel } from '../../exercises/ExercisesPanel';
+import readingStyles from '../../reading/Reading.module.css';
+import { ReadingTab } from '../../reading/ReadingTab';
 import { useClassContext } from '../../session/classContext';
 import { TopicHeading } from '../../topics/TopicHeading';
 import {
@@ -28,7 +31,19 @@ export const TOPIC_TABS = [
 type TabId = (typeof TOPIC_TABS)[number]['id'];
 const isTab = (value: string): value is TabId => TOPIC_TABS.some((t) => t.id === value);
 
+/**
+ * The reading and the place in it live in the address, so Back and Forward return to where each
+ * history entry was left (§5). `block` carries a `b:` prefix: see `place.ts`.
+ */
+const topicSearch = z.object({
+  resource: z.coerce.string().optional().catch(undefined),
+  block: z.coerce.string().optional().catch(undefined),
+  page: z.coerce.number().int().min(1).optional().catch(undefined),
+  offset: z.coerce.number().int().min(0).optional().catch(undefined),
+});
+
 export const Route = createFileRoute('/_authed/classes/$classId/topics/$topicId/$tab')({
+  validateSearch: topicSearch,
   // An unknown tab is a mistyped address, not a missing page: land on the first tab.
   beforeLoad: ({ params }) => {
     if (!isTab(params.tab)) {
@@ -83,6 +98,7 @@ function TopicWorkspace() {
   return (
     <OpenTopic
       classId={classId}
+      courseId={context.courseId}
       topicId={topicId}
       tab={tab}
       data={data}
@@ -95,6 +111,7 @@ function TopicWorkspace() {
 /** Mounted only for an open topic, so F and Escape act only where the toolbar exists (§5). */
 function OpenTopic({
   classId,
+  courseId,
   topicId,
   tab,
   data,
@@ -102,6 +119,7 @@ function OpenTopic({
   role,
 }: {
   classId: string;
+  courseId: string;
   topicId: string;
   tab: TabId;
   data: ClassTopics;
@@ -109,6 +127,7 @@ function OpenTopic({
   role: 'student' | 'instructor';
 }) {
   const navigate = Route.useNavigate();
+  const search = Route.useSearch();
   const workspace = useRef<HTMLElement | null>(null);
   const mode = useFocusMode(workspace);
   const label = TOPIC_TABS.find((t) => t.id === tab)?.label ?? tab;
@@ -135,14 +154,31 @@ function OpenTopic({
         fullscreenButton={mode.fullscreenButton}
       />
       <div
-        className={styles.panel}
+        className={tab === 'reading' ? readingStyles.panel : styles.panel}
         role="tabpanel"
         id="pc-content"
         aria-labelledby={`pc-tab-${tab}`}
         // biome-ignore lint/a11y/noNoninteractiveTabindex: panel without focusable content must be reachable
         tabIndex={0}
       >
-        {tab === 'exercises' ? (
+        {tab === 'reading' ? (
+          <ReadingTab
+            classId={classId}
+            courseId={courseId}
+            topicId={topicId}
+            instructor={role === 'instructor'}
+            search={search}
+            onSearch={(next, how) =>
+              navigate({
+                params: { classId, topicId, tab },
+                search: next,
+                replace: how === 'replace',
+                // Moving the place is not a visit: the router must not scroll to the top.
+                resetScroll: how !== 'replace',
+              })
+            }
+          />
+        ) : tab === 'exercises' ? (
           <ExercisesPanel classId={classId} topicId={topicId} role={role} />
         ) : (
           <p className={styles.intro}>Nothing is available under {label} for this topic yet.</p>
