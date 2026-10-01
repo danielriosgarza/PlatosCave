@@ -1,4 +1,5 @@
 import { basename } from 'node:path';
+import { finished, type Readable } from 'node:stream';
 import multipart from '@fastify/multipart';
 import {
   getCourseOverview,
@@ -14,7 +15,7 @@ import type { Deps } from '../../app';
 import { courseOverview } from '../../db/courseOverview';
 import { listResourceJobStatus } from '../../db/jobs/derived';
 import type { ResourceJobStatus } from '../../jobs/derived';
-import { enqueueReadingIngest } from '../../jobs/reading-ingest.job';
+import { abandonedIngest, enqueueReadingIngest } from '../../jobs/reading-ingest.job';
 import { storeCourseObject } from '../../storage/objects';
 import { notFound, refuse, registerRoute } from '../register';
 
@@ -40,18 +41,23 @@ const entry = (r: ResourceJobStatus) => ({
   updatedAt: r.status?.updatedAt ?? null,
 });
 
+const BUSY = 'This reading is already queued, being processed or ready';
+const ABANDONED = 'Processing stopped before it finished; retry processing';
+
 const PDF_MAGIC = '%PDF-';
 
-/** Passes the file through, refusing bytes that are not what its extension claims. */
-async function* checked(
-  stream: AsyncIterable<Buffer> & { truncated?: boolean },
-  format: UploadFormat,
-) {
+/**
+ * Passes the file through, refusing bytes that are not what its extension claims. A refusal
+ * leaves the stream open (not destroyed) so the caller can drain the rest of the request.
+ */
+async function* checked(stream: Readable & { truncated?: boolean }, format: UploadFormat) {
   const decoder = format === 'pdf' ? undefined : new TextDecoder('utf-8', { fatal: true });
   let empty = true;
   let header = Buffer.alloc(0);
   try {
-    for await (const chunk of stream) {
+    for await (const chunk of stream.iterator({
+      destroyOnReturn: false,
+    }) as AsyncIterable<Buffer>) {
       if (format === 'pdf' && header.length < PDF_MAGIC.length) {
         // A slow client may deliver the first bytes in pieces; judge the first five together.
         header = Buffer.concat([header, chunk]).subarray(0, PDF_MAGIC.length);
@@ -75,6 +81,15 @@ async function* checked(
     throw err;
   }
   if (empty) throw new UploadRejected('The file is empty');
+}
+
+/** Reads a stream to its end, discarding the bytes; stops quietly if it fails or is destroyed. */
+async function drain(stream: Readable): Promise<void> {
+  if (stream.destroyed || stream.readableEnded) return;
+  await new Promise<void>((resolve) => {
+    finished(stream, () => resolve());
+    stream.resume();
+  });
 }
 
 /** The file name as shown back to the editor: no directories, no control characters. */
@@ -122,6 +137,9 @@ export default function authoringRoutes(app: FastifyInstance, deps: Deps): void 
       );
       return { key: stored.key, sha256: stored.sha256, size: stored.size, format, filename };
     } catch (err) {
+      // Read the rest of a refused file and discard it before answering: unread, it stops the
+      // request body and holds the connection until the client gives up.
+      await drain(part.file);
       if (err instanceof UploadRejected) refuse(400, err.message);
       if (err instanceof UploadTooLarge) {
         throw app.httpErrors.payloadTooLarge(
@@ -132,22 +150,37 @@ export default function authoringRoutes(app: FastifyInstance, deps: Deps): void 
     }
   });
 
+  /** A queued or running reading no job will finish shows as failed, so it can be retried. */
+  const current = async (r: ResourceJobStatus): Promise<ResourceJobStatus> =>
+    r.status && deps.boss && (await abandonedIngest(deps.boss, r.status))
+      ? { ...r, status: { ...r.status, state: 'failed', error: ABANDONED } }
+      : r;
+
   registerRoute(app, getProcessing, async ({ scope }) => ({
-    resources: (await listResourceJobStatus(db(), scope)).map(entry),
+    resources: (await Promise.all((await listResourceJobStatus(db(), scope)).map(current))).map(
+      entry,
+    ),
   }));
 
   registerRoute(app, retryProcessing, async ({ scope, params }) => {
-    const [found] = await listResourceJobStatus(db(), scope, params.resourceId);
-    if (!found?.revisionId || (found.type !== 'reading_native' && found.type !== 'reading_pdf')) {
+    const [listed] = await listResourceJobStatus(db(), scope, params.resourceId);
+    if (
+      !listed?.revisionId ||
+      (listed.type !== 'reading_native' && listed.type !== 'reading_pdf')
+    ) {
       notFound();
     }
-    // Only a failed or never-queued reading is queued again: a running job would race the new one.
-    if (found.status && found.status.state !== 'failed') {
-      refuse(409, 'This reading is already queued, being processed or ready');
-    }
+    const found = await current(listed);
+    // Only a failed, abandoned or never-queued reading is queued again: a live job would race
+    // the new one.
+    if (found.status && found.status.state !== 'failed') refuse(409, BUSY);
     if (!deps.boss) throw app.httpErrors.serviceUnavailable();
-    await enqueueReadingIngest(deps.boss, db(), scope, found.revisionId);
+    // Queued only if the status is still the one read here: of two retries, one queues.
+    const queued = await enqueueReadingIngest(deps.boss, db(), scope, listed.revisionId, {
+      tag: listed.statusTag,
+    });
+    if (!queued) refuse(409, BUSY);
     const [now] = await listResourceJobStatus(db(), scope, params.resourceId);
-    return entry(now ?? found);
+    return entry(now ? await current(now) : found);
   });
 }

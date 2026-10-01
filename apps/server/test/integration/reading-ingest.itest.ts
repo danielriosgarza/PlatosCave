@@ -8,7 +8,10 @@ import { type CourseScope, resolveActorScope } from '../../src/auth/scope';
 import { normaliseText } from '../../src/content/reading';
 import { createBoss } from '../../src/db/jobs/boss';
 import { resourceRevisions, resources, topics } from '../../src/db/schema';
-import readingIngest, { enqueueReadingIngest } from '../../src/jobs/reading-ingest.job';
+import readingIngest, {
+  enqueueIfUnprocessed,
+  enqueueReadingIngest,
+} from '../../src/jobs/reading-ingest.job';
 import { loadJobs } from '../../src/jobs/registry';
 import { runScopedJob, type ScopedPayload, workScopedJob } from '../../src/jobs/scoped';
 import { FsStorage } from '../../src/storage/fs';
@@ -163,8 +166,9 @@ describe('reading.ingest', () => {
       { sourceKey: source.key, format: 'markdown', assets: { 'means.png': image.key } },
       [source.key, image.key],
     );
-    const jobId = await enqueueReadingIngest(boss, testDb.db, elena, revisionId);
-    expect(jobId).toEqual(expect.any(String));
+    const queued = await enqueueReadingIngest(boss, testDb.db, elena, revisionId, { tag: null });
+    expect(queued).toEqual({ jobId: expect.any(String) });
+    const jobId = queued?.jobId;
     expect(await boss.getQueue(readingIngest.name)).toMatchObject({
       retryLimit: 2,
       retryBackoff: true,
@@ -172,6 +176,7 @@ describe('reading.ingest', () => {
     expect((await derivedOf(revisionId)).status).toMatchObject({
       state: 'queued',
       job: 'reading.ingest',
+      jobId,
     });
 
     await workScopedJob(
@@ -214,7 +219,7 @@ describe('reading.ingest', () => {
       'application/pdf',
     );
     const revisionId = await revision('reading_pdf', {}, [pdf.key]);
-    await enqueueReadingIngest(boss, testDb.db, elena, revisionId);
+    await enqueueReadingIngest(boss, testDb.db, elena, revisionId, { tag: null });
     const derived = await settled(revisionId);
     expect(derived.status.state).toBe('ready');
     expect(derived.pageCount).toBe(3);
@@ -226,7 +231,7 @@ describe('reading.ingest', () => {
       sourceKey: 'courses/elsewhere/objects/x',
       format: 'html',
     });
-    await enqueueReadingIngest(boss, testDb.db, elena, revisionId);
+    await enqueueReadingIngest(boss, testDb.db, elena, revisionId, { tag: null });
     const derived = await settled(revisionId);
     expect(derived.status).toMatchObject({
       state: 'failed',
@@ -235,11 +240,27 @@ describe('reading.ingest', () => {
     // An uploaded file missing from the store is final as well: retrying cannot bring it back.
     const gone = 'courses/00000000-0000-4000-8000-000000000101/objects/0000';
     const missing = await revision('reading_pdf', { objectKey: gone }, [gone]);
-    await enqueueReadingIngest(boss, testDb.db, elena, missing);
+    await enqueueReadingIngest(boss, testDb.db, elena, missing, { tag: null });
     expect((await settled(missing)).status).toMatchObject({
       state: 'failed',
       error: 'The uploaded file is no longer available; upload it again',
     });
+  });
+
+  test('two saves of one new revision at once queue one job', async () => {
+    const revisionId = await revision('reading_native', { markdown: '# Twice' });
+    const results = await Promise.all([
+      enqueueIfUnprocessed(boss, testDb.db, elena, revisionId),
+      enqueueIfUnprocessed(boss, testDb.db, elena, revisionId),
+      enqueueIfUnprocessed(boss, testDb.db, elena, revisionId),
+    ]);
+    expect(results.filter((r) => r !== null)).toEqual([{ jobId: expect.any(String) }]);
+    expect((await derivedOf(revisionId)).status).toMatchObject({
+      state: expect.stringMatching(/^(queued|running|ready)$/),
+    });
+    // A revision that already has a status is left as it is.
+    expect(await enqueueIfUnprocessed(boss, testDb.db, elena, revisionId)).toBeNull();
+    await settled(revisionId);
   });
 
   test('a queue that cannot be created leaves the revision failed, not queued', async () => {
@@ -249,9 +270,9 @@ describe('reading.ingest', () => {
         throw new Error('advisory lock timeout');
       },
     } as unknown as PgBoss;
-    await expect(enqueueReadingIngest(broken, testDb.db, elena, revisionId)).rejects.toThrow(
-      'advisory lock timeout',
-    );
+    await expect(
+      enqueueReadingIngest(broken, testDb.db, elena, revisionId, { tag: null }),
+    ).rejects.toThrow('advisory lock timeout');
     expect((await derivedOf(revisionId)).status).toMatchObject({
       state: 'failed',
       error: 'Could not queue processing',
@@ -299,14 +320,16 @@ describe('reading.ingest', () => {
     expect(failed.error).not.toContain('/internal/path');
 
     // Retrying after the failure (enqueuing again, as an editor's Retry will) succeeds.
-    await enqueueReadingIngest(boss, testDb.db, elena, revisionId);
+    await enqueueReadingIngest(boss, testDb.db, elena, revisionId, { written: failed });
     expect(await settled(revisionId)).toMatchObject({ status: { state: 'ready' }, pageCount: 1 });
   });
 
   test('another course cannot enqueue or ingest this course’s revisions', async () => {
     const revisionId = await revision('reading_native', { markdown: '# Private' });
     const olivia = await courseScope(ids.olivia, ids.linearModels);
-    expect(await enqueueReadingIngest(boss, testDb.db, olivia, revisionId)).toBeNull();
+    expect(
+      await enqueueReadingIngest(boss, testDb.db, olivia, revisionId, { tag: null }),
+    ).toBeNull();
     expect((await derivedOf(revisionId)).status).toBeUndefined();
 
     const foreign = {

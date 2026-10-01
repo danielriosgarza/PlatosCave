@@ -7,17 +7,43 @@ import { forCourse } from '../scoped';
 
 export type ResourceType = (typeof resources.$inferSelect)['type'];
 
-/** Whether a revision of the scope's course has a recorded job status; false when it has none. */
-export async function hasDerivedStatus(
+/**
+ * Identifies a recorded `derived.status` as read: md5 of its jsonb text, null when there is none
+ * (no key, or JSON null). A conditional write compares it in SQL, so nothing round-trips.
+ */
+const statusTag = sql<
+  string | null
+>`md5(nullif(${resourceRevisions.derived} -> 'status', 'null'::jsonb)::text)`;
+
+/**
+ * The status a conditional write expects to replace: the one read with `tag` (null for none),
+ * or one this process wrote itself.
+ */
+export type ExpectedStatus = { tag: string | null } | { written: DerivedStatus };
+
+/**
+ * Writes `derived.status` of one revision of the scope's course only if the recorded status is
+ * still the expected one, in one statement, so of two callers acting on the same reading only
+ * one moves it on. Returns false when the status has changed or the revision is not in the course.
+ */
+export async function claimDerivedStatus(
   db: Db,
   scope: CourseScope,
   revisionId: string,
+  expected: ExpectedStatus,
+  status: DerivedStatus,
 ): Promise<boolean> {
-  const [row] = await db
-    .select({ status: sql<unknown>`${resourceRevisions.derived} -> 'status'` })
-    .from(resourceRevisions)
-    .where(and(eq(resourceRevisions.id, revisionId), forCourse(scope, resourceRevisions)));
-  return row?.status !== undefined && row.status !== null;
+  const value = JSON.stringify(DerivedStatus.parse(status));
+  const current =
+    'tag' in expected
+      ? sql`${statusTag} IS NOT DISTINCT FROM ${expected.tag}`
+      : sql`${resourceRevisions.derived} -> 'status' = ${JSON.stringify(DerivedStatus.parse(expected.written))}::jsonb`;
+  const rows = await db
+    .update(resourceRevisions)
+    .set({ derived: sql`jsonb_set(${resourceRevisions.derived}, '{status}', ${value}::jsonb)` })
+    .where(and(eq(resourceRevisions.id, revisionId), forCourse(scope, resourceRevisions), current))
+    .returning({ id: resourceRevisions.id });
+  return rows.length > 0;
 }
 
 /**
@@ -95,6 +121,7 @@ export async function listResourceJobStatus(
       revisionId: resources.headRevisionId,
       revisionCreatedAt: resourceRevisions.createdAt,
       status: sql<unknown>`${resourceRevisions.derived} -> 'status'`,
+      statusTag,
     })
     .from(resources)
     .innerJoin(topics, eq(topics.id, resources.topicId))

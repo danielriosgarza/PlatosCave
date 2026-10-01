@@ -30,6 +30,8 @@ export interface ResourceJobStatus {
    * status that cannot be read shows as `failed`, so it never disappears from the view.
    */
   status: DerivedStatus | null;
+  /** The recorded status as read, for a conditional write (`claimDerivedStatus`); null if none. */
+  statusTag: string | null;
 }
 
 /** `derived.status` as a job wrote it, or the failure shown for one that cannot be read. */

@@ -5,8 +5,9 @@ import { extractPdfText, PdfReadError } from '../content/pdf-text';
 import { renderReading } from '../content/reading';
 import type { Db } from '../db/client';
 import {
+  claimDerivedStatus,
   type DerivationSource,
-  hasDerivedStatus,
+  type ExpectedStatus,
   loadDerivationSource,
   setDerivedStatus,
   writeDerivedOutputs,
@@ -187,30 +188,39 @@ function ensureQueue(boss: PgBoss): Promise<void> {
 }
 
 /**
- * Queues ingestion of one revision of the scope's course (first run or a retry after failure),
- * marking it queued first so the editor sees the state at once. Creates the queue if no worker
- * has yet (pg-boss refuses sends to a missing queue). Returns the job id, or null when the
- * revision does not exist in this course.
+ * Queues ingestion of one revision of the scope's course (first run or a retry), provided its
+ * recorded status is still `expected`: the revision is marked queued in one conditional write,
+ * so concurrent saves or retries of one reading queue one job. Creates the queue if no worker
+ * has yet (pg-boss refuses sends to a missing queue), then records the job id. Returns null when
+ * the status had already moved on or the revision does not exist in this course.
  */
 export async function enqueueReadingIngest(
   boss: PgBoss,
   db: Db,
   scope: CourseScope,
   revisionId: string,
-): Promise<string | null> {
-  if (!(await setDerivedStatus(db, scope, revisionId, status('queued', null)))) return null;
+  expected: ExpectedStatus,
+): Promise<{ jobId: string } | null> {
+  const claimed = status('queued', null);
+  if (!(await claimDerivedStatus(db, scope, revisionId, expected, claimed))) return null;
+  let jobId: string | null;
   try {
     await ensureQueue(boss);
-    return await sendScopedJob(boss, readingIngest, scope, { revisionId });
+    jobId = await sendScopedJob(boss, readingIngest, scope, { revisionId });
+    if (!jobId) throw new Error('pg-boss did not create the job');
   } catch (err) {
-    await setDerivedStatus(
+    await claimDerivedStatus(
       db,
       scope,
       revisionId,
+      { written: claimed },
       status('failed', null, 'Could not queue processing'),
     );
     throw err;
   }
+  // Unless the worker has already moved it on, so a status whose job is gone can be recognised.
+  await claimDerivedStatus(db, scope, revisionId, { written: claimed }, status('queued', jobId));
+  return { jobId };
 }
 
 /** Queues ingestion for a revision no job has touched yet; a revision with a status is left as is. */
@@ -219,7 +229,34 @@ export async function enqueueIfUnprocessed(
   db: Db,
   scope: CourseScope,
   revisionId: string,
-): Promise<string | null> {
-  if (await hasDerivedStatus(db, scope, revisionId)) return null;
-  return enqueueReadingIngest(boss, db, scope, revisionId);
+): Promise<{ jobId: string } | null> {
+  return enqueueReadingIngest(boss, db, scope, revisionId, { tag: null });
+}
+
+/**
+ * How long a status may stay queued without a job id: the send follows the claim within
+ * milliseconds, so one older than this was claimed by a process that died before sending.
+ */
+export const UNSENT_AFTER_MS = 60_000;
+
+/** pg-boss states after which the job will not run again. */
+const FINISHED = new Set(['completed', 'cancelled', 'failed']);
+
+/**
+ * Whether a queued or running ingestion status was left by work that will never finish it: the
+ * job was never sent, or its pg-boss job is gone or finished without the handler recording the
+ * outcome (a worker that died mid-run until retries ran out, a refused scope). Such a reading
+ * shows as failed and can be retried, instead of blocking publication for good.
+ */
+export async function abandonedIngest(
+  boss: PgBoss,
+  derived: DerivedStatus,
+  now = Date.now(),
+): Promise<boolean> {
+  if (derived.job !== READING_INGEST) return false;
+  if (derived.state !== 'queued' && derived.state !== 'running') return false;
+  if (derived.jobId === null) return now - Date.parse(derived.updatedAt) > UNSENT_AFTER_MS;
+  if (!z.uuid().safeParse(derived.jobId).success) return true;
+  const job = await boss.getJobById(READING_INGEST, derived.jobId);
+  return !job || FINISHED.has(job.state);
 }
