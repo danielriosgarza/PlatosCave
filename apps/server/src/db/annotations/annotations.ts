@@ -4,10 +4,13 @@ import type * as contracts from '@parallax/contracts/routes/annotations';
 import type * as placementContracts from '@parallax/contracts/routes/placements';
 import { and, asc, desc, eq, inArray, isNotNull, isNull, ne, or, type SQL, sql } from 'drizzle-orm';
 import type { z } from 'zod';
-import type { ClassScope } from '../auth/scope';
+import { excerpt } from '../../annotations/excerpt';
+import { layoutOf, mapAnchor } from '../../annotations/mapping';
+import type { ClassScope } from '../../auth/scope';
+import { classArchived, invalid, notFound, type Outcome } from '../../outcome';
+import type { Db } from '../client';
 import { registerAffectedBy } from '../content/adoption';
 import { studyableResource, studyableRows } from '../content/releases';
-import type { Db } from '../db/client';
 import {
   annotationPlacements,
   annotations,
@@ -16,11 +19,8 @@ import {
   resourceRevisions,
   threads,
   users,
-} from '../db/schema';
-import { forClass } from '../db/scoped';
-import { classArchived, invalid, notFound, type Outcome } from '../outcome';
-import { excerpt } from './excerpt';
-import { layoutOf, mapAnchor } from './mapping';
+} from '../schema';
+import { forClass } from '../scoped';
 import { visiblePost, visibleTo } from './visibility';
 
 /**

@@ -3,8 +3,8 @@ import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { buildApp } from '../../src/app';
 import { loadConfig } from '../../src/config';
-import { adoptRelease } from '../../src/content/adoption';
-import { publishRelease } from '../../src/content/releases';
+import { adoptRelease } from '../../src/db/content/adoption';
+import { publishRelease } from '../../src/db/content/releases';
 import { classes, resources } from '../../src/db/schema';
 import {
   asClassScope,

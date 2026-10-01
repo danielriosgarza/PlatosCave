@@ -8,7 +8,7 @@ import {
 } from '@parallax/contracts/routes/drafts';
 import type { FastifyInstance } from 'fastify';
 import type { Deps } from '../../app';
-import * as drafts from '../../content/drafts';
+import * as drafts from '../../db/content/drafts';
 import { notFound, registerRoute, settle } from '../register';
 
 export default function draftRoutes(app: FastifyInstance, deps: Deps): void {

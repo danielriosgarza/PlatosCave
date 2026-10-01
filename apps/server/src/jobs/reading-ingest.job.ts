@@ -4,14 +4,14 @@ import type { CourseScope } from '../auth/scope';
 import { extractPdfText, PdfReadError } from '../content/pdf-text';
 import { renderReading } from '../content/reading';
 import type { Db } from '../db/client';
-import { type Storage, StorageNotFoundError } from '../storage/storage';
 import {
   type DerivationSource,
-  type DerivedStatus,
   loadDerivationSource,
   setDerivedStatus,
   writeDerivedOutputs,
-} from './derived';
+} from '../db/jobs/derived';
+import { type Storage, StorageNotFoundError } from '../storage/storage';
+import type { DerivedStatus } from './derived';
 import { defineScopedJob, sendScopedJob } from './scoped';
 
 export const READING_INGEST = 'reading.ingest';
