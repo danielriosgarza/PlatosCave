@@ -169,7 +169,7 @@ function StepPanel({
       ? 'Record this value'
       : 'Check answer';
   const moreHints = step.hints.length < step.hintCount;
-  const showSolution = step.hasSolution && !completed;
+  const showSolution = step.hasSolution && !completed && step.solution === null;
 
   return (
     <div>
@@ -265,7 +265,11 @@ function Outcome({ step }: { step: AttemptStep }) {
       <div className={styles.feedback}>
         <strong>Solution</strong>
         <p>{step.solution}</p>
-        <p>This step is recorded as completed with the solution shown.</p>
+        <p>
+          {step.status === 'completed'
+            ? 'This step is recorded as completed with the solution shown.'
+            : 'Showing the solution is recorded. This step still needs your own answer.'}
+        </p>
       </div>
     );
   }

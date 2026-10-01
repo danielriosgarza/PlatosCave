@@ -88,12 +88,15 @@ function exerciseApi(
     role?: 'student' | 'instructor';
     /** Only the Predict step, so it is the last one. */
     predictOnly?: boolean;
+    /** Only the Explain (text) step, so it is the last one. */
+    textLast?: boolean;
     /** Answers checks as a stale tab: the attempt was started again elsewhere. */
     staleChecks?: boolean;
   } = {},
 ) {
   const begin = (n: number): Attempt => {
     const fresh = freshAttempt(n);
+    if (options.textLast) return { ...fresh, steps: fresh.steps.slice(2) };
     return options.predictOnly ? { ...fresh, steps: fresh.steps.slice(0, 1) } : fresh;
   };
   let attempt = begin(1);
@@ -204,6 +207,11 @@ function exerciseApi(
       return { status: 200, body: attempt };
     }
     if (url.endsWith('/solution')) {
+      if (step(body.stepId)?.kind === 'text') {
+        // Like the server: the reveal is recorded, the written step stays open.
+        set(body.stepId, { solution: 'Averages of more values vary less.' });
+        return { status: 200, body: attempt };
+      }
       set(body.stepId, {
         status: 'completed',
         help: 'solution_shown',
@@ -378,6 +386,21 @@ describe('exercise UI', () => {
     expect(await screen.findByRole('heading', { name: 'Exercise complete.' })).toBeVisible();
     expect(screen.getByText(/Completed with the solution shown\./)).toBeVisible();
     expect(screen.getByText(/Solution: Narrower: quadrupling n halves the SE/)).toBeVisible();
+  });
+
+  it('A23 Show solution on the Explain step is not a completion; the answer can still be saved', async () => {
+    const user = userEvent.setup();
+    const { calls } = exerciseApi({ textLast: true });
+    open();
+    await user.click(await screen.findByRole('button', { name: 'Show solution' }));
+    expect(await screen.findByText(/Averages of more values vary less/)).toBeVisible();
+    expect(screen.queryByText(/recorded as completed/)).toBeNull();
+    expect(screen.getByText(/still needs your own answer/)).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Show solution' })).toBeNull();
+    await user.type(screen.getByLabelText('Your explanation'), 'Averages vary less.');
+    await user.click(screen.getByRole('button', { name: 'Done' }));
+    expect(await screen.findByRole('button', { name: 'See summary' })).toBeVisible();
+    expect(posted(calls, '/complete')).toHaveLength(1);
   });
 
   it('A08 a check from a tab whose attempt was started again elsewhere says so and moves on', async () => {

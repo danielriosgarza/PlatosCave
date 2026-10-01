@@ -13,7 +13,16 @@ const lockedUntil = (resource: ReleasedResource, role: 'student' | 'instructor',
     : null;
 
 /** The Exercises tab of a topic: its released exercises, scheduled ones locked with their date. */
-export function ExercisesPanel({
+export function ExercisesPanel(props: {
+  classId: string;
+  topicId: string;
+  role: 'student' | 'instructor';
+}) {
+  // A choice made in one topic must not carry into the next.
+  return <TopicExercises key={props.topicId} {...props} />;
+}
+
+function TopicExercises({
   classId,
   topicId,
   role,
