@@ -11,6 +11,7 @@ import {
   serializerCompiler,
   validatorCompiler,
 } from 'fastify-type-provider-zod';
+import type { PgBoss } from 'pg-boss';
 import type { Config } from './config';
 import { MAX_TOKEN_LENGTH } from './content/tokens';
 import type { Db } from './db/client';
@@ -42,22 +43,31 @@ export interface Deps {
   mailer?: Mailer;
   /** Object store; defaults to the one STORAGE_DRIVER selects. */
   storage?: Storage;
+  /** Job queue for routes that start background work; absent, such work is not queued. */
+  boss?: PgBoss;
 }
+
+/** A path segment that could hold a token: encoded, or longer than any id the app routes use. */
+const SUSPECT_SEGMENT = /^(?:[A-Za-z0-9._~-]{41,}|.*[^A-Za-z0-9._~-].*)$/;
 
 /**
  * The URL as logged. Sign-in tokens (query) and content tokens (path) are credentials: the content
- * route logs no token at all, and a request no route matched, on either host, logs only its first
- * path segment, since its raw path may be a token in a spelling the router rejected.
+ * route logs no token at all. A request no route matched (SPA pages, near-miss spellings of a
+ * token URL such as `/content%2F<token>` or `/content\<token>`) keeps its path, with every segment
+ * that is encoded, unusual or long enough to be a token replaced.
  */
 export function logUrl(req: Pick<FastifyRequest, 'url'> & { routeOptions?: { url?: string } }) {
   const route = req.routeOptions?.url;
   if (route === CONTENT_ROUTE) return '/content/[redacted]';
-  if (route === undefined) {
-    // Plain characters only, and few: an encoded or long segment may itself be a token.
-    const first = /^\/[A-Za-z0-9._~-]{0,32}/.exec(req.url)?.[0] ?? '/';
-    return `${first}/…[unrouted]`;
-  }
-  return redactUrl(req.url);
+  if (route !== undefined) return redactUrl(req.url);
+  const q = req.url.search(/[?#]/);
+  const path = q === -1 ? req.url : req.url.slice(0, q);
+  const rest = q === -1 ? '' : redactUrl(req.url.slice(q));
+  const safe = path
+    .split('/')
+    .map((seg) => (seg !== '' && SUSPECT_SEGMENT.test(seg) ? '[redacted]' : seg))
+    .join('/');
+  return safe + rest;
 }
 
 export async function buildApp(config: Config, deps: Deps = {}): Promise<FastifyInstance> {

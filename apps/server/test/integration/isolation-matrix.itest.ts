@@ -72,27 +72,40 @@ const recentAuthProbe = defineRoute({
 
 type Role = 'student' | 'instructor';
 const classRoles: Record<string, Partial<Record<PersonName, Role>>> = {
-  [ids.classA]: { priya: 'instructor', sam: 'student' },
+  [ids.classA]: { priya: 'instructor', noor: 'instructor', sam: 'student' },
   [ids.classB]: { marcus: 'instructor', bea: 'student', priya: 'student', previewB: 'student' },
 };
-const courseGrants: Record<string, Partial<Record<PersonName, 'owner' | 'editor'>>> = {
-  [ids.statistics]: { elena: 'owner', marcus: 'editor', priya: 'editor' },
-  [ids.linearModels]: { olivia: 'owner' },
+/** Who satisfies `grant: 'manage_members'`: the course owner and Noor, who holds the grant. */
+const classManagers: Record<string, PersonName[]> = {
+  [ids.classA]: ['elena', 'noor'],
+  [ids.classB]: ['elena'],
+};
+type Grant = 'owner' | 'editor' | 'publisher';
+const courseGrants: Record<string, Partial<Record<PersonName, Grant[]>>> = {
+  [ids.statistics]: {
+    elena: ['owner'],
+    marcus: ['editor'],
+    priya: ['editor'],
+    noor: ['editor'],
+    ines: ['publisher'],
+  },
+  [ids.linearModels]: { olivia: ['owner'] },
 };
 
 /** What the resolver must answer: 'pass' means the request reached the handler stage. */
 function expected(contract: RouteContract, scopeId: string, who: PersonName): 'pass' | 403 | 404 {
   const { scope } = contract;
   if (scope.kind === 'class') {
+    if (scope.grant && classManagers[scopeId]?.includes(who)) return 'pass';
     const role = classRoles[scopeId]?.[who];
     if (!role) return 404;
     if (scope.role !== 'any' && scope.role !== role) return 403;
-    return scope.grant ? 403 : 'pass'; // nobody in the world holds manage_members
+    return scope.grant ? 403 : 'pass';
   }
   if (scope.kind === 'course') {
-    const grant = courseGrants[scopeId]?.[who];
-    if (!grant) return 404;
-    return grant === 'owner' || scope.role === 'editor' ? 'pass' : 403;
+    const grants = courseGrants[scopeId]?.[who];
+    if (!grants) return 404;
+    return grants.includes('owner') || grants.includes(scope.role) ? 'pass' : 403;
   }
   throw new Error(`unexpected scope ${scope.kind}`);
 }

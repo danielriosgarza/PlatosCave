@@ -33,7 +33,8 @@ export interface UserScope extends ScopeBase {
   readonly user: Principal;
 }
 
-export interface ClassScope extends ScopeBase {
+/** What every class scope knows about its class; `forClass` accepts any of them. */
+export interface ClassContext extends ScopeBase {
   readonly [brand]: 'class';
   readonly classId: string;
   readonly className: string;
@@ -41,6 +42,9 @@ export interface ClassScope extends ScopeBase {
   readonly courseTitle: string;
   readonly releaseId: string | null;
   readonly archived: boolean;
+}
+
+export interface ClassScope extends ClassContext {
   readonly membership: {
     id: string;
     role: 'student' | 'instructor';
@@ -51,6 +55,15 @@ export interface ClassScope extends ScopeBase {
   readonly grants: { manageMembers: boolean };
 }
 
+/**
+ * Scope of `{ kind: 'class', grant: 'manage_members' }` routes. §3 lets the course owner manage
+ * membership of every class of the course, so the caller need not be a class member; `via`
+ * records which permission let them in.
+ */
+export interface ClassManagerScope extends ClassContext {
+  readonly via: 'course_owner' | 'manage_members';
+}
+
 export interface CourseScope extends ScopeBase {
   readonly [brand]: 'course';
   readonly courseId: string;
@@ -59,16 +72,18 @@ export interface CourseScope extends ScopeBase {
   readonly grants: { owner: boolean; editor: boolean; publisher: boolean };
 }
 
-export type ScopeFor<S extends Scope> = S extends { kind: 'class' }
-  ? ClassScope
-  : S extends { kind: 'course' }
-    ? CourseScope
-    : S extends { kind: 'user' }
-      ? UserScope
-      : undefined;
+export type ScopeFor<S extends Scope> = S extends { kind: 'class'; grant: 'manage_members' }
+  ? ClassManagerScope
+  : S extends { kind: 'class' }
+    ? ClassScope
+    : S extends { kind: 'course' }
+      ? CourseScope
+      : S extends { kind: 'user' }
+        ? UserScope
+        : undefined;
 
 export type Resolution =
-  | { ok: true; scope: UserScope | ClassScope | CourseScope | undefined }
+  | { ok: true; scope: UserScope | ClassScope | ClassManagerScope | CourseScope | undefined }
   | { ok: false; status: 401 | 403 | 404 | 503; error: string; reason: string };
 
 export interface ResolverDeps {
@@ -173,31 +188,21 @@ async function resolveClass(
       role: classMemberships.role,
       manageMembers: classMemberships.manageMembers,
       isPreview: classMemberships.isPreview,
+      ownsCourse: courseMemberships.owner,
     })
     .from(classes)
     .innerJoin(courses, eq(courses.id, classes.courseId))
-    .innerJoin(
+    .leftJoin(
       classMemberships,
       and(eq(classMemberships.classId, classes.id), eq(classMemberships.userId, user.id)),
     )
+    .leftJoin(
+      courseMemberships,
+      and(eq(courseMemberships.courseId, classes.courseId), eq(courseMemberships.userId, user.id)),
+    )
     .where(eq(classes.id, classId));
-  // A preview principal only ever acts through its preview membership, and vice versa.
-  if (!row || row.isPreview !== (user.kind === 'preview')) {
-    return deny(404, 'not a member of this class');
-  }
-  if (scope.role !== 'any' && row.role !== scope.role) {
-    return deny(403, `needs class role ${scope.role}`);
-  }
-  if (scope.grant === 'manage_members' && !row.manageMembers) {
-    return deny(403, 'needs grant manage_members');
-  }
-  const membership = {
-    id: row.id,
-    role: row.role,
-    manageMembers: row.manageMembers,
-    isPreview: row.isPreview,
-  };
-  const resolved = {
+  if (!row) return deny(404, 'no such class');
+  const context = {
     ...base,
     classId,
     className: row.className,
@@ -205,9 +210,37 @@ async function resolveClass(
     courseTitle: row.courseTitle,
     releaseId: row.releaseId,
     archived: row.archivedAt !== null,
+  };
+  // §3: the course owner manages membership of every class of the course, member or not.
+  const owner = row.ownsCourse === true && user.kind === 'user';
+  if (scope.grant === 'manage_members' && owner) {
+    return { ok: true, scope: { ...context, via: 'course_owner' } as unknown as ClassManagerScope };
+  }
+  // A preview principal only ever acts through its preview membership, and vice versa.
+  if (row.id === null || row.isPreview !== (user.kind === 'preview')) {
+    return deny(404, 'not a member of this class');
+  }
+  if (scope.role !== 'any' && row.role !== scope.role) {
+    return deny(403, `needs class role ${scope.role}`);
+  }
+  if (scope.grant === 'manage_members') {
+    if (!row.manageMembers) return deny(403, 'needs grant manage_members');
+    return {
+      ok: true,
+      scope: { ...context, via: 'manage_members' } as unknown as ClassManagerScope,
+    };
+  }
+  const membership = {
+    id: row.id,
+    role: row.role as 'student' | 'instructor',
+    manageMembers: row.manageMembers as boolean,
+    isPreview: row.isPreview,
+  };
+  const resolved = {
+    ...context,
     membership,
-    role: row.role,
-    grants: { manageMembers: row.manageMembers },
+    role: membership.role,
+    grants: { manageMembers: membership.manageMembers },
   };
   return { ok: true, scope: resolved as unknown as ClassScope };
 }
