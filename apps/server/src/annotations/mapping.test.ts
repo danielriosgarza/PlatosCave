@@ -120,6 +120,9 @@ describe('A06 mapping a mark to a changed revision', () => {
     expect(mapAnchor(pageMark, pdf(['h0', 'h1']), pdf(['h0', 'h1', 'h2']))).toEqual({
       status: 'needs_reattachment',
     });
+    // A page whose hash is missing on both sides is not a match.
+    const unhashed = layoutOf('reading_pdf', { pages: [{ text: '' }, { text: '' }] });
+    expect(mapAnchor(pageMark, unhashed, unhashed as Layout).status).toBe('needs_reattachment');
     // Without the original page hashes nothing can be compared.
     expect(mapAnchor(pageMark, undefined, pdf(['h0', 'h1'])).status).toBe('needs_reattachment');
   });

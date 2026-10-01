@@ -296,12 +296,13 @@ export async function placeMark(
 
 type MappingList = z.input<typeof contracts.listPlacements.response>;
 
-/** The instructor's "map annotations" list: readable threads on changed revisions, plus counts. */
+/**
+ * The instructor's "map annotations" list: threads the caller can read whose resource the
+ * release now pins at another revision. Private notes are never read here (§8, A05).
+ */
 export async function listMapping(db: Db, scope: ClassScope): Promise<MappingList> {
   const pins = await pinsOf(db, scope);
-  const empty = { needsReattachment: 0, pending: 0 };
-  if (pins.size === 0)
-    return { releaseId: scope.releaseId, threads: [], privateAnnotations: empty };
+  if (pins.size === 0) return { releaseId: scope.releaseId, threads: [] };
   const resourceIds = [...pins.keys()];
   const pinned = [...pins.values()].map((p) => p.revisionId);
   const asked = (
@@ -312,28 +313,12 @@ export async function listMapping(db: Db, scope: ClassScope): Promise<MappingLis
       .where(and(visibleTo(scope, threads), inArray(threads.resourceId, resourceIds)))
       .orderBy(asc(threads.createdAt), asc(threads.id))
   ).filter(({ thread }) => pins.get(thread.resourceId)?.revisionId !== thread.resourceRevisionId);
-  const notes = (
-    await db
-      .select({
-        id: annotations.id,
-        resourceId: annotations.resourceId,
-        revisionId: annotations.resourceRevisionId,
-      })
-      .from(annotations)
-      .where(and(forClass(scope, annotations), inArray(annotations.resourceId, resourceIds)))
-  ).filter((n) => pins.get(n.resourceId)?.revisionId !== n.revisionId);
   const placed = await loadPlacements(
     db,
     scope,
-    { threadIds: asked.map((a) => a.thread.id), annotationIds: notes.map((n) => n.id) },
+    { threadIds: asked.map((a) => a.thread.id) },
     pinned,
   );
-  const privateAnnotations = { ...empty };
-  for (const note of notes) {
-    const status = placed.get(`${note.id}:${pins.get(note.resourceId)?.revisionId}`)?.status;
-    if (status === 'needs_reattachment') privateAnnotations.needsReattachment += 1;
-    if (!status) privateAnnotations.pending += 1;
-  }
   const order = { needs_reattachment: 0, pending: 1, manual: 2, mapped: 3, original: 4 };
   const items = asked.flatMap(({ thread, authorName }) => {
     const pin = pins.get(thread.resourceId);
@@ -357,7 +342,7 @@ export async function listMapping(db: Db, scope: ClassScope): Promise<MappingLis
     ];
   });
   items.sort((a, b) => order[a.placement.status] - order[b.placement.status]);
-  return { releaseId: scope.releaseId, threads: items, privateAnnotations };
+  return { releaseId: scope.releaseId, threads: items };
 }
 
 /**

@@ -242,7 +242,8 @@ describe('A06 marks across a changed source revision', () => {
   test('A06 the instructor maps a question by hand; private notes stay private', async () => {
     const list = await call('priya', 'GET', `${classA}/placements`);
     expect(list.status).toBe(200);
-    expect(list.body.privateAnnotations).toEqual({ needsReattachment: 1, pending: 0 });
+    // Only discussions the instructor may read; nothing about Sam's private notes.
+    expect(Object.keys(list.body).sort()).toEqual(['releaseId', 'threads']);
     expect(list.body.threads).toHaveLength(1);
     const [item] = list.body.threads;
     expect(item).toMatchObject({
@@ -281,15 +282,14 @@ describe('A06 marks across a changed source revision', () => {
       (await call('priya', 'PUT', `${classA}/placements`, { annotationId: own.id, anchor: target }))
         .status,
     ).toBe(404);
+    const instructorView = (await call('priya', 'GET', `${classA}/placements`)).body;
     const mine = await call('sam', 'PUT', `${classA}/placements`, {
       annotationId: own.id,
       anchor: target,
     });
     expect(mine.body).toMatchObject({ status: 'manual', anchor: target });
-    expect((await call('priya', 'GET', `${classA}/placements`)).body.privateAnnotations).toEqual({
-      needsReattachment: 0,
-      pending: 0,
-    });
+    // Reattaching a private note leaves the instructor's list exactly as it was.
+    expect((await call('priya', 'GET', `${classA}/placements`)).body).toEqual(instructorView);
 
     // The job never overwrites a manual placement.
     const rerun = await runScopedJob(testDb.db, annotationsMap, workerJob(sent[0]?.data));

@@ -28,18 +28,18 @@ export const mappingItem = z.object({
 
 /**
  * Discussions the instructor can read whose resource changed revision in the class's release,
- * reattachment first. Private notes stay private: only their counts are reported.
+ * reattachment first. Nothing here derives from private notes, which only their authors see
+ * (§8, A05); authors find their own notes' placements on their annotation reads.
  */
 export const listPlacements = defineRoute({
   method: 'GET',
   path: '/api/classes/:classId/placements',
   scope: { kind: 'class', role: 'instructor' },
-  summary: 'Discussions to map onto the revisions the class uses, and private-note counts',
+  summary: 'Discussions to map onto the revisions the class uses, reattachment first',
   params: classParams,
   response: z.object({
     releaseId: z.uuid().nullable(),
     threads: z.array(mappingItem),
-    privateAnnotations: z.object({ needsReattachment: z.int(), pending: z.int() }),
   }),
   examples: { params: { classId: exampleClass } },
 });

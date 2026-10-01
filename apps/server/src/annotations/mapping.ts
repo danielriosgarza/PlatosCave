@@ -27,7 +27,8 @@ export interface Layout {
   type: string;
   blocks?: Block[];
   figures?: string[];
-  pages?: string[];
+  /** Text hash per page; undefined for a page whose hash is missing. */
+  pages?: (string | undefined)[];
 }
 
 export type Mapping =
@@ -58,9 +59,10 @@ export function layoutOf(type: string, derived: Record<string, unknown>): Layout
     return { type, blocks, figures };
   }
   if (type === 'reading_pdf' || type === 'slides_pdf') {
+    // A page without a text hash can never match: `undefined` compares unequal below.
     const pages = array(derived.pages)?.map((p) => {
       const { textHash } = (p ?? {}) as Record<string, unknown>;
-      return str(textHash) ? textHash : '';
+      return str(textHash) ? textHash : undefined;
     });
     return pages ? { type, pages } : undefined;
   }
