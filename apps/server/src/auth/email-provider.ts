@@ -1,4 +1,4 @@
-import { and, count, eq, gt, isNull, sql } from 'drizzle-orm';
+import { and, count, eq, gt, isNull, lt, sql } from 'drizzle-orm';
 import type { FastifyBaseLogger } from 'fastify';
 import type { Db } from '../db/client';
 import { signinTokens } from '../db/schema';
@@ -10,6 +10,23 @@ import { hashToken, newToken, TOKEN_SHAPE } from './sessions';
 export const LINK_TTL_MS = 15 * 60_000;
 /** Links issued per address per LINK_TTL_MS; further requests are accepted but send nothing. */
 export const LINKS_PER_EMAIL = 5;
+/**
+ * Links stay this long after expiry, then go. Until then an expired link keeps its destination
+ * for the expired-link page (§3); after it, that page loses `next`.
+ */
+export const SIGNIN_TOKEN_RETENTION_MS = 24 * 3_600_000;
+
+/**
+ * Deletes links that expired more than a day ago, used or not; live and recently expired links
+ * stay, so the per-address cap and the "link expired" answer keep working. No index serves this
+ * (`expires_at` is unindexed); the hourly purge keeps the table to about a day of links.
+ */
+export async function purgeSigninTokens(db: Db, now: Date): Promise<number> {
+  const result = await db
+    .delete(signinTokens)
+    .where(lt(signinTokens.expiresAt, new Date(now.getTime() - SIGNIN_TOKEN_RETENTION_MS)));
+  return result.rowCount ?? 0;
+}
 
 export interface EmailProviderDeps {
   db: Db;
