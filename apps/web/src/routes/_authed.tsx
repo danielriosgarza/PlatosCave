@@ -30,7 +30,7 @@ export const Route = createFileRoute('/_authed')({
 
 /** Marks a failed session check, so its copy is shown for that and nothing else. */
 class SessionCheckError extends Error {
-  constructor(readonly cause: unknown) {
+  constructor(readonly reason: unknown) {
     super('session check failed');
   }
 }
