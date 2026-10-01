@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { Element, ElementContent, Nodes, Root } from 'hast';
+import { toString as hastToString } from 'hast-util-to-string';
 import rehypeHighlight from 'rehype-highlight';
 import rehypeKatex from 'rehype-katex';
 import rehypeParse from 'rehype-parse';
@@ -87,6 +88,21 @@ export const readingSchema: SanitizeSchema = {
     ...Object.fromEntries(MATHML_TAGS.map((t) => [t, MATHML_ATTRIBUTES])),
   },
   ancestors: { ...defaultSchema.ancestors, caption: ['table'], col: ['table'] },
+  // Removed with their content rather than unwrapped: a document head or style sheet would
+  // otherwise turn into stray visible text.
+  strip: [
+    'script',
+    'style',
+    'title',
+    'head',
+    'iframe',
+    'textarea',
+    'noscript',
+    'object',
+    'embed',
+    'template',
+    'svg',
+  ],
 };
 
 const sha12 = (value: string) => createHash('sha256').update(value).digest('hex').slice(0, 12);
@@ -100,11 +116,7 @@ export const blockId = (normalisedText: string, occurrence: number): string =>
   sha12(`${normalisedText}:${occurrence}`);
 
 /** `textContent` of a hast node: all descendant text, no layout. */
-export function textContent(node: Nodes): string {
-  if (node.type === 'text') return node.value;
-  if ('children' in node) return node.children.map((c) => textContent(c as Nodes)).join('');
-  return '';
-}
+export const textContent = (node: Nodes): string => hastToString(node);
 
 const classes = (el: Element): string[] => {
   const c = el.properties.className;
@@ -175,8 +187,9 @@ function rewriteImages(tree: Root, assets: Record<string, string>, warnings: str
     try {
       decoded = decodeURIComponent(name);
     } catch {}
-    const key = assets[name] ?? assets[decoded];
-    if (key) el.properties.dataObjectKey = key;
+    const lookup = (n: string) => (Object.hasOwn(assets, n) ? assets[n] : undefined);
+    const key = lookup(name) ?? lookup(decoded);
+    if (typeof key === 'string' && key) el.properties.dataObjectKey = key;
     else warnings.push(`Image "${src}" is not an uploaded file of this reading`);
   });
 }

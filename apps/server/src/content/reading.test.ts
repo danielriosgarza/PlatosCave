@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import { makePdf } from '../../test/fixtures/pdf';
-import { extractPdfText } from './pdf-text';
+import { extractPdfText, PdfReadError } from './pdf-text';
 import { blockId, normaliseText, renderReading, resolveReadingImages } from './reading';
 
 const KEY = 'courses/00000000-0000-4000-8000-000000000101/objects/abc123';
@@ -151,6 +151,27 @@ describe('rendering', () => {
     expect(html).toContain('id="user-content-app"');
   });
 
+  test('a whole HTML document keeps only its body; head, styles and fallbacks vanish', () => {
+    const { html, blockMap } = renderReading(
+      '<html><head><title>Secret title</title><style>body{color:red}</style></head><body>' +
+        '<p>Hi</p><iframe src="https://evil.example">fallback</iframe><textarea>text</textarea>' +
+        '<noscript>ns</noscript><object>obj</object><template>tpl</template></body></html>',
+      'html',
+    );
+    expect(html).toBe(`<p data-block-id="${blockMap[0]?.id}">Hi</p>`);
+  });
+
+  test('image names cannot reach object prototype properties', () => {
+    const { html, figures, warnings } = renderReading(
+      '![a](constructor)\n\n![b](__proto__)\n\n![c](toString)',
+      'markdown',
+      { 'means.png': KEY },
+    );
+    expect(html).not.toContain('data-object-key');
+    expect(figures.map((f) => f.objectKey)).toEqual([null, null, null]);
+    expect(warnings).toHaveLength(3);
+  });
+
   test('images keep only uploaded files of the reading; others lose their source', () => {
     const { html, warnings } = renderReading(
       '![a](./means.png)\n\n![b](https://tracker.example/pixel.png)\n\n![c](missing.png)',
@@ -198,6 +219,21 @@ describe('PDF readings', () => {
   });
 
   test('a file that is not a PDF is refused', async () => {
-    await expect(extractPdfText(new TextEncoder().encode('not a pdf'))).rejects.toThrow();
+    await expect(extractPdfText(new TextEncoder().encode('not a pdf'))).rejects.toThrow(
+      new PdfReadError('The file could not be read as a PDF'),
+    );
+  });
+
+  test('parsing runs in its own thread, bounded in time and stopped on abort', async () => {
+    await expect(extractPdfText(makePdf(['Slow']), { timeoutMs: 1 })).rejects.toThrow(
+      new PdfReadError('Reading the PDF took too long'),
+    );
+    const controller = new AbortController();
+    const pending = extractPdfText(makePdf(['Stopped']), { signal: controller.signal });
+    controller.abort();
+    const err = await pending.catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(Error);
+    // An abort is not a problem with the file: the job retries it.
+    expect(err).not.toBeInstanceOf(PdfReadError);
   });
 });

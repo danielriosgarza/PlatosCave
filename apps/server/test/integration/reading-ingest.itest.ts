@@ -92,7 +92,11 @@ async function settled(revisionId: string) {
   throw new Error(`revision ${revisionId} did not settle`);
 }
 
-const fakeJob = (revisionId: string, retryCount: number): Job<unknown> => ({
+const fakeJob = (
+  revisionId: string,
+  retryCount: number,
+  retryLimit?: number,
+): Job<unknown> & { retryLimit?: number } => ({
   id: '00000000-0000-4000-8000-00000000beef',
   name: readingIngest.name,
   data: {
@@ -103,6 +107,7 @@ const fakeJob = (revisionId: string, retryCount: number): Job<unknown> => ({
   expireInSeconds: 60,
   heartbeatSeconds: null,
   retryCount,
+  ...(retryLimit !== undefined && { retryLimit }),
   signal: new AbortController().signal,
 });
 
@@ -215,6 +220,30 @@ describe('reading.ingest', () => {
       state: 'failed',
       error: 'The file is not part of this reading',
     });
+    // An uploaded file missing from the store is final as well: retrying cannot bring it back.
+    const gone = 'courses/00000000-0000-4000-8000-000000000101/objects/0000';
+    const missing = await revision('reading_pdf', { objectKey: gone }, [gone]);
+    await enqueueReadingIngest(boss, testDb.db, elena, missing);
+    expect((await settled(missing)).status).toMatchObject({
+      state: 'failed',
+      error: 'The uploaded file is no longer available; upload it again',
+    });
+  });
+
+  test('a queue that cannot be created leaves the revision failed, not queued', async () => {
+    const revisionId = await revision('reading_native', { markdown: '# Queue' });
+    const broken = {
+      createQueue: async () => {
+        throw new Error('advisory lock timeout');
+      },
+    } as unknown as PgBoss;
+    await expect(enqueueReadingIngest(broken, testDb.db, elena, revisionId)).rejects.toThrow(
+      'advisory lock timeout',
+    );
+    expect((await derivedOf(revisionId)).status).toMatchObject({
+      state: 'failed',
+      error: 'Could not queue processing',
+    });
   });
 
   test('derived.status retry: a failing attempt shows queued with the error, the last one failed', async () => {
@@ -235,15 +264,23 @@ describe('reading.ingest', () => {
         throw new Error('backend unavailable at /internal/path');
       },
     };
-    const attempt = (retryCount: number, store: Storage) =>
-      runScopedJob(testDb.db, readingIngest, fakeJob(revisionId, retryCount), { storage: store });
+    const attempt = (retryCount: number, store: Storage, retryLimit?: number) =>
+      runScopedJob(testDb.db, readingIngest, fakeJob(revisionId, retryCount, retryLimit), {
+        storage: store,
+      });
 
     await expect(attempt(0, broken)).rejects.toThrow('backend unavailable');
     expect((await derivedOf(revisionId)).status).toMatchObject({
       state: 'queued',
       error: 'Attempt 1 could not finish; trying again',
     });
-    await expect(attempt(2, broken)).rejects.toThrow('backend unavailable');
+    // The limit pg-boss reports for the job wins over the queue default of 2.
+    await expect(attempt(2, broken, 5)).rejects.toThrow('backend unavailable');
+    expect((await derivedOf(revisionId)).status).toMatchObject({
+      state: 'queued',
+      error: 'Attempt 3 could not finish; trying again',
+    });
+    await expect(attempt(2, broken, 2)).rejects.toThrow('backend unavailable');
     const failed = (await derivedOf(revisionId)).status;
     expect(failed.state).toBe('failed');
     // Internal error details stay in the logs, not in what editors see.

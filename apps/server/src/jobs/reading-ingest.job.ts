@@ -2,12 +2,12 @@ import { and, eq, sql } from 'drizzle-orm';
 import type { PgBoss } from 'pg-boss';
 import { z } from 'zod';
 import type { CourseScope } from '../auth/scope';
-import { extractPdfText } from '../content/pdf-text';
+import { extractPdfText, PdfReadError } from '../content/pdf-text';
 import { renderReading } from '../content/reading';
 import type { Db } from '../db/client';
 import { resourceRevisions } from '../db/schema';
 import { forCourse } from '../db/scoped';
-import type { Storage } from '../storage/storage';
+import { type Storage, StorageNotFoundError } from '../storage/storage';
 import { type DerivedStatus, setDerivedStatus } from './derived';
 import { defineScopedJob, sendScopedJob } from './scoped';
 
@@ -39,8 +39,17 @@ async function readObject(storage: Storage | undefined, revision: Revision, key:
   if (!revision.objectKeys.includes(key)) {
     throw new IngestError('The file is not part of this reading');
   }
-  if (!storage) throw new Error('reading.ingest needs object storage');
-  const { body, size } = await storage.get(key);
+  if (!storage) throw new IngestError('This server cannot process uploaded files');
+  let object: Awaited<ReturnType<Storage['get']>>;
+  try {
+    object = await storage.get(key);
+  } catch (err) {
+    if (err instanceof StorageNotFoundError) {
+      throw new IngestError('The uploaded file is no longer available; upload it again');
+    }
+    throw err;
+  }
+  const { body, size } = object;
   if (size > MAX_SOURCE_BYTES) {
     body.destroy();
     throw new IngestError('The file is larger than 50 MB');
@@ -54,6 +63,7 @@ async function readObject(storage: Storage | undefined, revision: Revision, key:
 export async function ingestRevision(
   revision: Revision,
   storage: Storage | undefined,
+  signal?: AbortSignal,
 ): Promise<Record<string, unknown>> {
   if (revision.type === 'reading_native') {
     const content = NativeContent.safeParse(revision.content);
@@ -88,9 +98,10 @@ export async function ingestRevision(
     if (!key) throw new IngestError('The reading has no PDF file');
     const bytes = await readObject(storage, revision, key);
     try {
-      return { ...(await extractPdfText(new Uint8Array(bytes))) };
-    } catch {
-      throw new IngestError('The file could not be read as a PDF');
+      return { ...(await extractPdfText(new Uint8Array(bytes), { signal })) };
+    } catch (err) {
+      if (err instanceof PdfReadError) throw new IngestError(err.message);
+      throw err;
     }
   }
   throw new IngestError(`A ${revision.type} resource is not a reading`);
@@ -109,6 +120,10 @@ const status = (
 });
 
 const RETRY_LIMIT = 2;
+
+/** The retry limit pg-boss holds for this job (workers fetch metadata); the queue default otherwise. */
+const retryLimitOf = (job: object): number =>
+  'retryLimit' in job && typeof job.retryLimit === 'number' ? job.retryLimit : RETRY_LIMIT;
 
 /**
  * Renders a native reading or reads a PDF's pages for one revision of the job's course, and
@@ -134,13 +149,13 @@ const readingIngest = defineScopedJob({
     await setDerivedStatus(db, scope, input.revisionId, status('running', job.id));
     let outputs: Record<string, unknown>;
     try {
-      outputs = await ingestRevision(revision, storage);
+      outputs = await ingestRevision(revision, storage, job.signal);
     } catch (err) {
       if (err instanceof IngestError) {
         await setDerivedStatus(db, scope, input.revisionId, status('failed', job.id, err.message));
         return { failed: err.message };
       }
-      const retrying = job.retryCount < RETRY_LIMIT;
+      const retrying = job.retryCount < retryLimitOf(job);
       const message = retrying
         ? `Attempt ${job.retryCount + 1} could not finish; trying again`
         : 'Processing failed. Retry the upload or contact support.';
@@ -162,6 +177,18 @@ const readingIngest = defineScopedJob({
 });
 export default readingIngest;
 
+/** Queue creation per pg-boss instance, once per process rather than on every upload. */
+const queues = new WeakMap<PgBoss, Promise<void>>();
+function ensureQueue(boss: PgBoss): Promise<void> {
+  let created = queues.get(boss);
+  if (!created) {
+    created = boss.createQueue(readingIngest.name, readingIngest.queue);
+    queues.set(boss, created);
+    created.catch(() => queues.delete(boss));
+  }
+  return created;
+}
+
 /**
  * Queues ingestion of one revision of the scope's course (first run or a retry after failure),
  * marking it queued first so the editor sees the state at once. Creates the queue if no worker
@@ -175,8 +202,8 @@ export async function enqueueReadingIngest(
   revisionId: string,
 ): Promise<string | null> {
   if (!(await setDerivedStatus(db, scope, revisionId, status('queued', null)))) return null;
-  await boss.createQueue(readingIngest.name, readingIngest.queue);
   try {
+    await ensureQueue(boss);
     return await sendScopedJob(boss, readingIngest, scope, { revisionId });
   } catch (err) {
     await setDerivedStatus(

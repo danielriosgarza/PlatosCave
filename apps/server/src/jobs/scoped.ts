@@ -155,7 +155,8 @@ export interface WorkLogger {
 
 /**
  * Creates the job's queue and starts a worker for it. Refused jobs end terminally
- * (`deadletter`) with the reason as output, so a revoked membership is not retried.
+ * (`deadletter`) with the reason as output, so a revoked membership is not retried. Jobs carry
+ * pg-boss metadata, so a handler can read the retry limit pg-boss actually applies.
  */
 export async function workScopedJob<R extends JobRule, I extends z.ZodType>(
   boss: PgBoss,
@@ -166,21 +167,25 @@ export async function workScopedJob<R extends JobRule, I extends z.ZodType>(
   services: JobServices = {},
 ): Promise<string> {
   await boss.createQueue(job.name, job.queue);
-  return boss.work(job.name, { ...polling, perJobResults: true }, async (batch) => {
-    const results = [];
-    for (const pgJob of batch) {
-      const outcome = await runScopedJob(db, job, pgJob, services);
-      if (outcome.status === 'refused') {
-        log.warn({ job: job.name, jobId: pgJob.id, reason: outcome.reason }, 'job refused');
-        results.push({
-          id: pgJob.id,
-          status: 'deadletter' as const,
-          output: { refused: outcome.reason },
-        });
-      } else {
-        results.push({ id: pgJob.id, status: 'completed' as const, output: outcome.output });
+  return boss.work(
+    job.name,
+    { ...polling, perJobResults: true, includeMetadata: true },
+    async (batch) => {
+      const results = [];
+      for (const pgJob of batch) {
+        const outcome = await runScopedJob(db, job, pgJob, services);
+        if (outcome.status === 'refused') {
+          log.warn({ job: job.name, jobId: pgJob.id, reason: outcome.reason }, 'job refused');
+          results.push({
+            id: pgJob.id,
+            status: 'deadletter' as const,
+            output: { refused: outcome.reason },
+          });
+        } else {
+          results.push({ id: pgJob.id, status: 'completed' as const, output: outcome.output });
+        }
       }
-    }
-    return results;
-  });
+      return results;
+    },
+  );
 }

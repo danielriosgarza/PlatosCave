@@ -4,3 +4,6 @@ packages:
   - 'e2e'
 onlyBuiltDependencies:
   - esbuild
+overrides:
+  # ADR-0001 pins KaTeX; rehype-katex 7.0.1 would otherwise resolve its own 0.16.x.
+  katex: 0.18.9
