@@ -42,7 +42,7 @@ function SignIn() {
   return (
     <main className={styles.index}>
       <h1>Sign in</h1>
-      {link === 'expired' && !request.isSuccess ? (
+      {link === 'expired' && request.isIdle ? (
         <div className={styles.feedback} role="alert">
           <h2>This sign-in link no longer works</h2>
           <p>Links work once and expire after 15 minutes. Request a new one below.</p>

@@ -21,7 +21,8 @@ export const sessionQuery = queryOptions({
   retry: false,
 });
 
-export const loadSession = (queryClient: QueryClient) => queryClient.ensureQueryData(sessionQuery);
+export const loadSession = (queryClient: QueryClient) =>
+  queryClient.ensureQueryData({ ...sessionQuery, revalidateIfStale: true });
 
 /** Records the signed-out state where observers can see it, then drops other cached data. */
 export function endSession(queryClient: QueryClient) {
