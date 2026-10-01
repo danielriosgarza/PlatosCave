@@ -101,8 +101,13 @@ export function useFocusMode(workspace: RefObject<HTMLElement | null>) {
 
   // The browser ends full screen itself on Escape: restore the normal workspace.
   useEffect(() => {
+    let wasOurs = isOurs();
     const onChange = () => {
       const active = isOurs();
+      const changed = active !== wasOurs;
+      wasOurs = active;
+      // Another element entering or leaving full screen is not ours to react to.
+      if (!changed) return;
       setFullscreen(active);
       if (!active) {
         setFocusOn(false);
@@ -127,6 +132,7 @@ export function useFocusMode(workspace: RefObject<HTMLElement | null>) {
         !event.ctrlKey &&
         !event.metaKey &&
         !event.altKey &&
+        !event.shiftKey &&
         !event.repeat &&
         !isEditable(event.target)
       ) {

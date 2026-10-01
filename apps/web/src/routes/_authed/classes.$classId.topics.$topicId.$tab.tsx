@@ -6,7 +6,13 @@ import { type TabDef, TabRow } from '../../components/TabRow';
 import { Unavailable } from '../../components/Unavailable';
 import { useClassContext } from '../../session/classContext';
 import { TopicHeading } from '../../topics/TopicHeading';
-import { isOpen, lockReason, useClassTopics } from '../../topics/topics';
+import {
+  type ClassTopic,
+  type ClassTopics,
+  isOpen,
+  lockReason,
+  useClassTopics,
+} from '../../topics/topics';
 import { useFocusMode } from '../../workspace/focus';
 import { ResourceToolbar } from '../../workspace/ResourceToolbar';
 
@@ -38,11 +44,8 @@ export const Route = createFileRoute('/_authed/classes/$classId/topics/$topicId/
 
 function TopicWorkspace() {
   const { classId, topicId, tab } = Route.useParams();
-  const navigate = Route.useNavigate();
   const context = useClassContext(classId);
   const query = useClassTopics(classId);
-  const workspace = useRef<HTMLElement | null>(null);
-  const mode = useFocusMode(workspace);
   if (!context || !isTab(tab)) return <Unavailable />;
   if (query.error instanceof ApiError && query.error.status === 404) return <Unavailable />;
   const data = query.data;
@@ -76,6 +79,26 @@ function TopicWorkspace() {
       </main>
     );
   }
+  return <OpenTopic classId={classId} topicId={topicId} tab={tab} data={data} topic={topic} />;
+}
+
+/** Mounted only for an open topic, so F and Escape act only where the toolbar exists (§5). */
+function OpenTopic({
+  classId,
+  topicId,
+  tab,
+  data,
+  topic,
+}: {
+  classId: string;
+  topicId: string;
+  tab: TabId;
+  data: ClassTopics;
+  topic: ClassTopic;
+}) {
+  const navigate = Route.useNavigate();
+  const workspace = useRef<HTMLElement | null>(null);
+  const mode = useFocusMode(workspace);
   const label = TOPIC_TABS.find((t) => t.id === tab)?.label ?? tab;
   return (
     <main ref={workspace} className={styles.workspace}>

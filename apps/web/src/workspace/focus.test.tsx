@@ -8,6 +8,7 @@ import {
   signedInWithTopics,
   stubApi,
   studentIn,
+  T_ESTIMATION,
   T_SAMPLING,
 } from '../test/render';
 
@@ -133,6 +134,7 @@ describe('focus and full screen', () => {
     await user.keyboard('{Control>}f{/Control}');
     await user.keyboard('{Meta>}f{/Meta}');
     await user.keyboard('{Alt>}f{/Alt}');
+    await user.keyboard('{Shift>}f{/Shift}');
     expect(requestFullscreen).not.toHaveBeenCalled();
     expect(bar()).toBeInTheDocument();
   });
@@ -164,6 +166,25 @@ describe('focus and full screen', () => {
     expect(await screen.findByRole('status')).toHaveTextContent(
       'Browser full screen is unavailable',
     );
+    expect(screen.getByRole('button', { name: 'Exit focus' })).toBeVisible();
+  });
+
+  it('A04 F and Escape do nothing on a locked topic, which has no toolbar', async () => {
+    const user = userEvent.setup();
+    renderApp(`/classes/${CLASS_A}/topics/${T_ESTIMATION}/slides`);
+    await screen.findByRole('heading', { name: 'Estimation' });
+    await user.keyboard('f');
+    expect(requestFullscreen).not.toHaveBeenCalled();
+    expect(bar()).toBeInTheDocument();
+    expect(screen.queryByRole('toolbar')).not.toBeInTheDocument();
+  });
+
+  it('A04 another element leaving full screen does not end Focus', async () => {
+    const user = userEvent.setup();
+    await open();
+    await user.click(screen.getByRole('button', { name: 'Focus' }));
+    document.dispatchEvent(new Event('fullscreenchange'));
+    expect(bar()).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Exit focus' })).toBeVisible();
   });
 });
