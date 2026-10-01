@@ -1,5 +1,6 @@
 import { type processingEntry, retryProcessing } from '@parallax/contracts/routes/authoring';
 import {
+  createResource,
   type draftResource,
   type draftResourceSummary,
   getResource,
@@ -14,6 +15,7 @@ import { AddReading } from './AddReading';
 import local from './Authoring.module.css';
 import { useAutosave } from './autosave';
 import { ConflictView } from './ConflictView';
+import { ExerciseEditor } from './ExerciseEditor';
 import { authoringKey, processingQuery } from './queries';
 import { SaveStatus } from './SaveStatus';
 
@@ -39,6 +41,7 @@ const typeNames: Record<Type, string> = {
   test: 'Test',
 };
 
+const isExercise = (t: Type) => t === 'exercise';
 const isReading = (t: Type) => t === 'reading_native' || t === 'reading_pdf';
 
 interface Props {
@@ -102,6 +105,9 @@ export function ResourceSection({ courseId, topicId, resources }: Props) {
                   </button>
                 </div>
               )
+            ) : null}
+            {tab.name === 'Exercises' ? (
+              <AddExercise courseId={courseId} topicId={topicId} onAdded={() => void refresh()} />
             ) : null}
           </section>
         );
@@ -206,7 +212,7 @@ function ResourceRow({
           </div>
           <StatusLine courseId={courseId} resource={resource} status={status} lookup={lookup} />
         </div>
-        {isReading(resource.type) ? (
+        {isReading(resource.type) || isExercise(resource.type) ? (
           <button
             type="button"
             className={styles.textButton}
@@ -217,10 +223,78 @@ function ResourceRow({
           </button>
         ) : null}
       </div>
-      {open ? (
+      {open && isExercise(resource.type) ? (
+        <ExerciseEditor courseId={courseId} resourceId={resource.id} onSaved={onChanged} />
+      ) : null}
+      {open && isReading(resource.type) ? (
         <ReadingEditor courseId={courseId} resourceId={resource.id} onSaved={onChanged} />
       ) : null}
     </div>
+  );
+}
+
+/** Creates an exercise without content; the editor's first valid save makes its first revision. */
+function AddExercise({
+  courseId,
+  topicId,
+  onAdded,
+}: {
+  courseId: string;
+  topicId: string;
+  onAdded: () => void;
+}) {
+  const [adding, setAdding] = useState(false);
+  const [title, setTitle] = useState('');
+  const create = useMutation({
+    mutationFn: () =>
+      call(createResource, {
+        params: { courseId, topicId },
+        body: { type: 'exercise', title: title.trim() },
+      }),
+    onSuccess: () => {
+      setAdding(false);
+      setTitle('');
+      onAdded();
+    },
+  });
+  if (!adding) {
+    return (
+      <div style={{ marginTop: 12 }}>
+        <button type="button" className={styles.outline} onClick={() => setAdding(true)}>
+          Add exercise
+        </button>
+      </div>
+    );
+  }
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (title.trim()) create.mutate();
+      }}
+    >
+      <label className={local.field}>
+        New exercise title
+        <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} />
+      </label>
+      <div className={styles.row} style={{ marginTop: 12 }}>
+        <button
+          type="submit"
+          className={styles.outline}
+          disabled={!title.trim() || create.isPending}
+        >
+          Create exercise
+        </button>
+        <button type="button" className={styles.textButton} onClick={() => setAdding(false)}>
+          Cancel
+        </button>
+      </div>
+      {create.isError ? (
+        <p role="alert" className={styles.small}>
+          Could not create the exercise.
+        </p>
+      ) : null}
+    </form>
   );
 }
 
