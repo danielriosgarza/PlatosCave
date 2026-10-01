@@ -1,8 +1,11 @@
 import { createFileRoute, redirect } from '@tanstack/react-router';
+import { ApiError } from '../../api/client';
 import styles from '../../components/Page.module.css';
 import { type TabDef, TabRow } from '../../components/TabRow';
 import { Unavailable } from '../../components/Unavailable';
 import { useClassContext } from '../../session/classContext';
+import { TopicHeading } from '../../topics/TopicHeading';
+import { isOpen, lockReason, useClassTopics } from '../../topics/topics';
 
 export const TOPIC_TABS = [
   { id: 'slides', label: 'Slides' },
@@ -34,16 +37,44 @@ function TopicWorkspace() {
   const { classId, topicId, tab } = Route.useParams();
   const navigate = Route.useNavigate();
   const context = useClassContext(classId);
+  const query = useClassTopics(classId);
   if (!context || !isTab(tab)) return <Unavailable />;
+  if (query.error instanceof ApiError && query.error.status === 404) return <Unavailable />;
+  const data = query.data;
+  if (!data) {
+    return (
+      <main className={styles.index}>
+        {query.isError ? (
+          <div className={styles.feedback} role="alert">
+            <p>This topic could not be loaded.</p>
+            <button type="button" className={styles.outline} onClick={() => void query.refetch()}>
+              Try again
+            </button>
+          </div>
+        ) : (
+          <p className={styles.intro} role="status">
+            Loading topic
+          </p>
+        )}
+      </main>
+    );
+  }
+  const topic = data.topics.find((t) => t.topicId === topicId);
+  if (!topic) return <Unavailable />;
+  if (!isOpen(topic)) {
+    return (
+      <main>
+        <TopicHeading data={data} topic={topic} />
+        <div className={styles.panel}>
+          <p className={styles.intro}>{lockReason(topic)}</p>
+        </div>
+      </main>
+    );
+  }
   const label = TOPIC_TABS.find((t) => t.id === tab)?.label ?? tab;
   return (
     <main>
-      <div className={styles.heading}>
-        <h1>{context.courseTitle}</h1>
-        <p className={`${styles.small} ${styles.muted}`} style={{ marginTop: 5 }}>
-          {context.className}
-        </p>
-      </div>
+      <TopicHeading data={data} topic={topic} />
       <TabRow
         label="Topic materials"
         tabs={TOPIC_TABS}

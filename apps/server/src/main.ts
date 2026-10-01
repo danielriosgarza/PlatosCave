@@ -7,6 +7,7 @@ import { createBoss } from './jobs/boss';
 import { workMaintenance } from './jobs/maintenance';
 import { loadJobs } from './jobs/registry';
 import { ensureQueues, workScopedJob } from './jobs/scoped';
+import { createStorage } from './storage/create';
 
 const mode = process.argv[2] ?? 'api';
 if (mode !== 'api' && mode !== 'worker') {
@@ -98,10 +99,11 @@ if (mode === 'api') {
     onError: (err) => log.error({ err }, 'pg-boss error'),
     onWarning: (warning) => log.warn({ warning }, 'pg-boss warning'),
   });
+  const storage = createStorage(config);
   const started = (async () => {
     await boss.start();
     const jobs = await loadJobs();
-    for (const job of jobs) await workScopedJob(boss, database.db, job, log);
+    for (const job of jobs) await workScopedJob(boss, database.db, job, log, {}, { storage });
     const maintenance = await workMaintenance(boss, database.db, log);
     log.info({ jobs: [...jobs.map((j) => j.name), ...maintenance] }, 'worker started');
   })();
@@ -109,6 +111,7 @@ if (mode === 'api') {
   onSignals(log, async () => {
     await started.catch(() => {});
     await boss.stop({ graceful: true, timeout: WORKER_STOP_TIMEOUT_MS });
+    storage.destroy?.();
   });
   try {
     await started;

@@ -1,0 +1,58 @@
+{
+  "v": 1,
+  "jobId": "3e2d1c0b-9a8f-4e7d-8c6b-5a4f3e2d1c0b",
+  "runtime": { "id": "r-4.6", "language": "r" },
+  "set": "public",
+  "limits": { "wallSeconds": 10, "memoryMiB": 512, "outputBytes": 65536 },
+  "files": [
+    {
+      "path": "main.R",
+      "content": "x <- scan(file('stdin'), quiet = TRUE)\ncat(sprintf('%.4f\\n', mean(x)))\ncat(sprintf('%.4f\\n', sd(x)))\n"
+    },
+    {
+      "path": "se.R",
+      "content": "standard_error <- function(values) {\n  if (length(values) < 2) stop('Need at least two values')\n  sd(values) / sqrt(length(values))\n}\n"
+    }
+  ],
+  "checks": [
+    {
+      "name": "Mean and standard deviation of 2 4 6 8",
+      "kind": "stdio",
+      "visibility": "public",
+      "file": "main.R",
+      "stdin": "2 4 6 8\n",
+      "expected": { "stdout": "5.0000\n2.5820\n" },
+      "compare": { "mode": "numeric", "abs": 0.0001 }
+    },
+    {
+      "name": "Exit code with no input",
+      "kind": "stdio",
+      "visibility": "public",
+      "file": "main.R",
+      "args": ["--quiet"],
+      "stdin": "",
+      "expected": { "stdout": "NaN\nNA\n", "exitCode": 0 },
+      "compare": { "mode": "trimmed" }
+    },
+    {
+      "name": "Standard error of four observations",
+      "kind": "call",
+      "visibility": "public",
+      "file": "se.R",
+      "function": "standard_error",
+      "args": [[2, 4, 6, 8]],
+      "expected": { "value": 1.290994 },
+      "compare": { "mode": "numeric", "abs": 1e-6 }
+    },
+    {
+      "name": "Single observation stops",
+      "kind": "call",
+      "visibility": "public",
+      "file": "se.R",
+      "function": "standard_error",
+      "args": [[4]],
+      "expected": { "raises": { "type": "error", "message": "at least two" } },
+      "compare": { "mode": "exact" }
+    }
+  ]
+}

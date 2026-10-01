@@ -42,6 +42,47 @@ export async function setDerivedStatus(
   return rows.length > 0;
 }
 
+/** What a derivation job reads of a revision: its type, content and stored objects. */
+export type DerivationSource = Pick<
+  typeof resourceRevisions.$inferSelect,
+  'type' | 'content' | 'objectKeys'
+>;
+
+/** The source of one revision of the scope's course, or null when it is not in that course. */
+export async function loadDerivationSource(
+  db: Db,
+  scope: CourseScope,
+  revisionId: string,
+): Promise<DerivationSource | null> {
+  const [row] = await db
+    .select({
+      type: resourceRevisions.type,
+      content: resourceRevisions.content,
+      objectKeys: resourceRevisions.objectKeys,
+    })
+    .from(resourceRevisions)
+    .where(and(eq(resourceRevisions.id, revisionId), forCourse(scope, resourceRevisions)));
+  return row ?? null;
+}
+
+/**
+ * Merges a job's outputs and its final status into `derived` of one revision of the scope's
+ * course, keeping other keys.
+ */
+export async function writeDerivedOutputs(
+  db: Db,
+  scope: CourseScope,
+  revisionId: string,
+  outputs: Record<string, unknown>,
+  status: DerivedStatus,
+): Promise<void> {
+  const value = JSON.stringify({ ...outputs, status: DerivedStatus.parse(status) });
+  await db
+    .update(resourceRevisions)
+    .set({ derived: sql`${resourceRevisions.derived} || ${value}::jsonb` })
+    .where(and(eq(resourceRevisions.id, revisionId), forCourse(scope, resourceRevisions)));
+}
+
 export interface ResourceJobStatus {
   resourceId: string;
   topicId: string;
