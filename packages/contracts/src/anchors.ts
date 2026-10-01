@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { resourceTypes } from './routes/drafts';
 
 /**
  * Annotation anchors (ADR-0003): where a note, highlight, sketch or thread sits in one
@@ -10,6 +11,9 @@ import { z } from 'zod';
 const unit = z.number().min(0).max(1);
 const context = z.string().max(32);
 
+/** A colour as `#rrggbb`, for pens and highlights. */
+export const hexColor = z.string().regex(/^#[0-9a-f]{6}$/i);
+
 /** Normalised rectangle on a PDF page: 0..1 of the page width and height. */
 export const rect = z.object({ x: unit, y: unit, w: unit, h: unit });
 
@@ -18,7 +22,7 @@ export const strokes = z
   .array(
     z.object({
       tool: z.enum(['pen', 'eraser']),
-      color: z.string().regex(/^#[0-9a-f]{6}$/i),
+      color: hexColor,
       width: z.number().positive().max(64),
       points: z
         .array(z.tuple([unit, unit]))
@@ -72,17 +76,24 @@ export const anchor = z.discriminatedUnion('kind', [
 ]);
 export type Anchor = z.infer<typeof anchor>;
 
+export type ResourceType = (typeof resourceTypes)[number];
+
 /**
  * Anchor kinds each resource type can place (ADR-0003 "produced by"): text blocks in native
- * readings and web slides, pages in PDFs, slides in decks, figures in native readings.
+ * readings and web slides, pages in PDFs, slides in decks, figures in native readings. Other
+ * types take general notes only.
  */
-export const anchorKindsByType: Record<string, readonly Anchor['kind'][]> = {
+export const anchorKindsByType: Record<ResourceType, readonly Anchor['kind'][]> = {
   reading_native: ['text', 'figure', 'none'],
   reading_pdf: ['pdf', 'none'],
   slides_web: ['text', 'slide', 'none'],
   slides_pdf: ['pdf', 'slide', 'none'],
+  exercise: ['none'],
+  notebook: ['none'],
+  shiny: ['none'],
+  test: ['none'],
 };
 
-/** Whether `anchor` can be placed on a revision of `resourceType`; other types take `none`. */
-export const anchorFits = (resourceType: string, a: Anchor): boolean =>
-  (anchorKindsByType[resourceType] ?? ['none']).includes(a.kind);
+/** Whether `anchor` can be placed on a revision of `resourceType`. */
+export const anchorFits = (resourceType: ResourceType, a: Anchor): boolean =>
+  anchorKindsByType[resourceType].includes(a.kind);

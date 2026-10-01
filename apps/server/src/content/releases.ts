@@ -1,5 +1,5 @@
 import type { validationIssue, validationReport } from '@parallax/contracts/routes/releases';
-import { and, asc, eq, isNull, max, ne, type SQL, sql } from 'drizzle-orm';
+import { and, asc, eq, isNull, lte, max, ne, or, type SQL, sql } from 'drizzle-orm';
 import type { z } from 'zod';
 import type { ClassScope, CourseScope } from '../auth/scope';
 import type { Db } from '../db/client';
@@ -229,24 +229,43 @@ export const studyVisible = (scope: ClassScope): SQL =>
   scope.role === 'student' ? ne(releaseResources.visibility, 'hidden') : sql`true`;
 
 /**
- * The pinned revision (id and type) of draft resource `resourceId` in the release the class
- * adopted, if the caller may study it; undefined otherwise, including for drafts.
+ * Release resources the caller may study at `now`: students only once a resource is not hidden
+ * and its release time has passed (§4, A26). Instructors study everything in the release.
  */
-export async function studyableResource(db: Db, scope: ClassScope, resourceId: string) {
+export const studyOpen = (scope: ClassScope, now: Date): SQL =>
+  scope.role === 'student'
+    ? (and(
+        ne(releaseResources.visibility, 'hidden'),
+        or(isNull(releaseResources.releaseAt), lte(releaseResources.releaseAt, now)),
+      ) as SQL)
+    : sql`true`;
+
+/**
+ * `release_resources` rows of the class's adopted release, which must be a release of the
+ * class's own course, that the caller may study at `now`. False when the class has adopted
+ * nothing.
+ */
+export function studyableRows(scope: ClassScope, now: Date): SQL {
+  if (!scope.releaseId) return sql`false`;
+  const ofCourse = sql`exists (select 1 from ${courseReleases} where ${courseReleases.id} = ${releaseResources.releaseId} and ${courseReleases.courseId} = ${scope.courseId})`;
+  return and(
+    eq(releaseResources.releaseId, scope.releaseId),
+    ofCourse,
+    studyOpen(scope, now),
+  ) as SQL;
+}
+
+/**
+ * The pinned revision (id and type) of draft resource `resourceId` in the release the class
+ * adopted, if the caller may study it at `now`; undefined otherwise, including for drafts.
+ */
+export async function studyableResource(db: Db, scope: ClassScope, resourceId: string, now: Date) {
   if (!scope.releaseId) return undefined;
   const [row] = await db
     .select({ revisionId: releaseResources.resourceRevisionId, type: resourceRevisions.type })
     .from(releaseResources)
-    .innerJoin(courseReleases, eq(courseReleases.id, releaseResources.releaseId))
     .innerJoin(resourceRevisions, eq(resourceRevisions.id, releaseResources.resourceRevisionId))
-    .where(
-      and(
-        eq(releaseResources.releaseId, scope.releaseId),
-        eq(courseReleases.courseId, scope.courseId),
-        eq(releaseResources.resourceId, resourceId),
-        studyVisible(scope),
-      ),
-    );
+    .where(and(studyableRows(scope, now), eq(releaseResources.resourceId, resourceId)));
   return row;
 }
 

@@ -1,11 +1,13 @@
 import { z } from 'zod';
-import { anchor } from '../anchors';
+import { anchor, hexColor } from '../anchors';
 import { conflictBody, defineRoute } from '../define';
 
 /**
  * Private annotations and class discussions (§8, §13). Every route is class-scoped; reads
  * return only what the audience rule permits the caller (ADR-0002). `resourceId` is the
  * draft resource id, stable across revisions; the server pins the class's adopted revision.
+ * Students reach a resource only once it is visible and its release time has passed. Writes
+ * to an archived class answer 409 `{ error: 'class_archived' }`; reads keep working (§4).
  */
 
 const exampleClass = '00000000-0000-4000-8000-000000000000';
@@ -13,10 +15,13 @@ const exampleResource = '00000000-0000-4000-8000-0000000000bb';
 const exampleAnnotation = '00000000-0000-4000-8000-0000000000cc';
 
 const timestamp = z.iso.datetime({ offset: true });
-const color = z.string().regex(/^#[0-9a-f]{6}$/i);
+const color = hexColor;
 const text = z.string().max(20_000);
 const person = z.object({ id: z.uuid(), name: z.string() });
 const sharedAudience = z.enum(['instructor', 'class']);
+
+/** 409 body of every write to an archived class. */
+export const classArchived = z.object({ error: z.literal('class_archived') });
 
 const classParams = z.object({ classId: z.uuid() });
 const resourceParams = classParams.extend({ resourceId: z.uuid() });
@@ -94,6 +99,7 @@ export const createAnnotation = defineRoute({
       path: ['anchor'],
     }),
   response: annotationView,
+  errors: { 409: classArchived },
   examples: {
     params: { classId: exampleClass, resourceId: exampleResource },
     body: { kind: 'note', anchor: { kind: 'none' }, body: 'Ask about the bootstrap.' },
@@ -118,7 +124,7 @@ export const saveAnnotation = defineRoute({
     anchor: anchor.optional(),
   }),
   response: annotationView,
-  errors: { 409: conflictBody(annotationView) },
+  errors: { 409: z.union([conflictBody(annotationView), classArchived]) },
   examples: {
     params: { classId: exampleClass, annotationId: exampleAnnotation },
     body: { expectedRevision: 1, body: 'Ask about the bootstrap interval.' },
@@ -132,6 +138,7 @@ export const deleteAnnotation = defineRoute({
   summary: 'Delete one of your annotations; threads shared from it remain',
   params: annotationParams,
   response: z.object({ id: z.uuid() }),
+  errors: { 409: classArchived },
   examples: { params: { classId: exampleClass, annotationId: exampleAnnotation } },
 });
 
@@ -159,6 +166,7 @@ export const createThread = defineRoute({
   params: resourceParams,
   body: z.object({ audience: sharedAudience, anchor, body: text.trim().min(1) }),
   response: threadView,
+  errors: { 409: classArchived },
   examples: {
     params: { classId: exampleClass, resourceId: exampleResource },
     body: { audience: 'instructor', anchor: { kind: 'none' }, body: 'Why n − 1?' },
@@ -177,6 +185,7 @@ export const shareAnnotation = defineRoute({
   params: annotationParams,
   body: z.object({ audience: sharedAudience, body: text.trim().min(1).optional() }),
   response: threadView,
+  errors: { 409: classArchived },
   examples: {
     params: { classId: exampleClass, annotationId: exampleAnnotation },
     body: { audience: 'instructor' },
