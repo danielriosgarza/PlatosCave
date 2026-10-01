@@ -32,6 +32,11 @@
         "!apps/server/src/content/media.ts",
         "!apps/server/src/content/releases.ts",
         "!apps/server/src/storage/objects.ts",
+        "!apps/server/src/annotations/annotations.ts",
+        "!apps/server/src/annotations/visibility.ts",
+        "!apps/server/src/jobs/boss.ts",
+        "!apps/server/src/jobs/derived.ts",
+        "!apps/server/src/jobs/scoped.ts",
         "!apps/server/src/main.ts",
         "!**/*.test.ts"
       ],

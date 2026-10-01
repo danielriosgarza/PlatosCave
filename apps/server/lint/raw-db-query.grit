@@ -5,9 +5,9 @@
 // caught, and any other object stored under `db` (`deps.cache.db.delete(key)`) is flagged.
 //
 // The plugin runs from the biome.json override that lists the exempt files. ADR-0002 says
-// "outside db/"; the existing data-access files under auth/, content/ and storage/ take branded
-// scopes and are exempt by name until they move under db/, so any other file, existing or new,
-// stays restricted unless biome.json names it.
+// "outside db/"; the existing data-access files under auth/, content/, storage/, annotations/
+// and jobs/ take branded scopes and are exempt by name until they move under db/, so any other
+// file, existing or new, stays restricted unless biome.json names it.
 language js
 
 // Member access covers optional chaining (`deps.db?.select()`); subscript access covers
