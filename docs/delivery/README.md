@@ -73,10 +73,7 @@ The orchestrator routine (`trig_01GLrhXFVWKkrjAb4DNu7LBX`) runs every hour at :4
 
 Only one follow-up is pending at a time; the dashboard records it as `Next check-in: <ISO> <trigger id>`, and a sooner one replaces it. None is scheduled when the hourly run comes first. After a merge, only the next approved PR is updated from `main`, so each PR runs CI once before it merges. With nothing in flight, none is scheduled. A follow-up run follows the same steps, lock and limits as an hourly run.
 
-Sessions also try to wake the orchestrator early with `fire_trigger`, best effort only:
-- the implementer, once CI is green on a head labelled `review:pending`;
-- the reviewer, right after posting its verdict;
-- the auditor, after filing its phase summary.
+The orchestrator's own follow-ups are the only early-run mechanism. Sessions must not call `fire_trigger`: it fires the routine into a session without the repository checked out, which cannot run and alerts the owner instead.
 
 ## Limits
 
