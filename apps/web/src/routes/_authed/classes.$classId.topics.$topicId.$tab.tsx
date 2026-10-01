@@ -4,6 +4,7 @@ import { ApiError } from '../../api/client';
 import styles from '../../components/Page.module.css';
 import { type TabDef, TabRow } from '../../components/TabRow';
 import { Unavailable } from '../../components/Unavailable';
+import { ExercisesPanel } from '../../exercises/ExercisesPanel';
 import { useClassContext } from '../../session/classContext';
 import { TopicHeading } from '../../topics/TopicHeading';
 import {
@@ -79,7 +80,16 @@ function TopicWorkspace() {
       </main>
     );
   }
-  return <OpenTopic classId={classId} topicId={topicId} tab={tab} data={data} topic={topic} />;
+  return (
+    <OpenTopic
+      classId={classId}
+      topicId={topicId}
+      tab={tab}
+      data={data}
+      topic={topic}
+      role={context.role}
+    />
+  );
 }
 
 /** Mounted only for an open topic, so F and Escape act only where the toolbar exists (§5). */
@@ -89,12 +99,14 @@ function OpenTopic({
   tab,
   data,
   topic,
+  role,
 }: {
   classId: string;
   topicId: string;
   tab: TabId;
   data: ClassTopics;
   topic: ClassTopic;
+  role: 'student' | 'instructor';
 }) {
   const navigate = Route.useNavigate();
   const workspace = useRef<HTMLElement | null>(null);
@@ -130,7 +142,11 @@ function OpenTopic({
         // biome-ignore lint/a11y/noNoninteractiveTabindex: panel without focusable content must be reachable
         tabIndex={0}
       >
-        <p className={styles.intro}>Nothing is available under {label} for this topic yet.</p>
+        {tab === 'exercises' ? (
+          <ExercisesPanel classId={classId} topicId={topicId} role={role} />
+        ) : (
+          <p className={styles.intro}>Nothing is available under {label} for this topic yet.</p>
+        )}
       </div>
     </main>
   );
