@@ -173,3 +173,9 @@
   overflow: auto;
   background: var(--pc-paper);
 }
+.offline {
+  margin: 0 0 12px;
+}
+.offline p {
+  margin: 0;
+}
