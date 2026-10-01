@@ -5,8 +5,15 @@ import { count, eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
 import { buildApp } from '../../src/app';
+import { hashToken } from '../../src/auth/sessions';
 import { loadConfig } from '../../src/config';
-import { authSessions, classMemberships, courseMemberships, users } from '../../src/db/schema';
+import {
+  authSessions,
+  classMemberships,
+  courseMemberships,
+  signinTokens,
+  users,
+} from '../../src/db/schema';
 import { buildWorld, ids, type World } from '../fixtures/world';
 import { createTestDatabase, type TestDatabase } from './db';
 
@@ -323,7 +330,15 @@ describe('GET /api/auth/verify', () => {
     '/a/..//evil.example/x',
     '/%2e%2e//evil.example',
   ])('rejects open redirect destination %j', async (next) => {
-    const res = await verify(await linkFor('sam@example.test', { next, entrance: 'instructor' }));
+    const path = await linkFor('sam@example.test', { next, entrance: 'instructor' });
+    // Refused when the link is requested: the stored destination is never off-origin.
+    const token = new URL(path, APP_ORIGIN).searchParams.get('token') ?? '';
+    const [stored] = await testDb.db
+      .select({ destination: signinTokens.destination })
+      .from(signinTokens)
+      .where(eq(signinTokens.tokenHash, hashToken(token)));
+    expect(stored?.destination).toBe('/courses?view=instructor');
+    const res = await verify(path);
     expect(res.statusCode).toBe(302);
     expect(res.headers.location).toBe('/courses?view=instructor');
   });
