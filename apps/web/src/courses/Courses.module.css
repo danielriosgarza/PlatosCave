@@ -1,0 +1,239 @@
+/* Ported from the wireframe: .pc-catalog-tools, .pc-filters, .pc-search, .pc-course-grid, .pc-course-card. */
+.tools {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+  margin: 26px 0 24px;
+}
+.filters {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+.filters button {
+  font: inherit;
+  cursor: pointer;
+  min-height: 36px;
+  border: 0;
+  background: none;
+  color: var(--pc-muted);
+  border-radius: var(--pc-radius-filter);
+  padding: 7px 14px;
+  font-size: 13px;
+}
+.filters button[aria-pressed="true"] {
+  background: var(--pc-soft);
+  color: var(--pc-ink);
+  font-weight: 600;
+}
+.search {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  color: var(--pc-muted);
+  font-size: 12px;
+}
+.search input {
+  width: 230px;
+  border: 1px solid var(--pc-rule);
+  background: var(--pc-sheet);
+  border-radius: var(--pc-radius-search);
+  font-size: 14px;
+  padding: 8px 14px;
+}
+.grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 20px;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.card {
+  border: 1px solid var(--pc-rule);
+  border-radius: var(--pc-radius-card);
+  min-width: 0;
+  padding: 22px 22px 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-height: 232px;
+  transition: border-color 0.15s ease;
+}
+.card:hover {
+  border-color: var(--pc-muted);
+}
+.open {
+  display: block;
+  width: 100%;
+  color: inherit;
+  text-decoration: none;
+}
+.card h2 {
+  font-size: 18px;
+  line-height: 1.3;
+  margin: 12px 0 8px;
+  letter-spacing: -0.01em;
+}
+.meta {
+  display: block;
+  font-size: 12px;
+  color: var(--pc-muted);
+  line-height: 1.55;
+}
+.status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: center;
+  font-size: 12px;
+  color: var(--pc-muted);
+  margin: 15px 0 12px;
+  min-height: 24px;
+}
+.status a,
+.status button {
+  font-size: 12px;
+  min-height: 24px;
+  color: var(--pc-ink);
+  text-underline-offset: 4px;
+}
+.status button {
+  font: inherit;
+  font-size: 12px;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  text-decoration: underline;
+}
+.progress {
+  display: block;
+  width: 100%;
+  height: 2px;
+  background: var(--pc-rule);
+  margin-top: auto;
+  overflow: hidden;
+}
+.progress > span {
+  display: block;
+  height: 100%;
+  background: var(--pc-ink);
+}
+.mark {
+  width: 76px;
+  height: 54px;
+  display: block;
+  color: var(--pc-muted);
+}
+.mark svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.chooser {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 12px;
+  width: 100%;
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+}
+.chooser li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 1px solid var(--pc-rule);
+  padding-top: 6px;
+}
+.empty {
+  padding: 48px 0;
+  grid-column: 1 / -1;
+}
+.sectionHeading {
+  margin-top: 32px;
+}
+.notice {
+  margin-top: 20px;
+}
+
+/* Dialog: a sheet over the page with the same field and button styles as the rest. */
+.backdrop {
+  position: fixed;
+  inset: 0;
+  background: color-mix(in srgb, var(--pc-ink) 40%, transparent);
+  display: grid;
+  place-items: center;
+  padding: 16px;
+  z-index: 20;
+}
+.dialog {
+  background: var(--pc-sheet);
+  border: 1px solid var(--pc-rule);
+  border-radius: var(--pc-radius-card);
+  padding: 24px;
+  width: min(440px, 100%);
+}
+.dialog h2 {
+  font: var(--pc-text-subsection);
+  letter-spacing: var(--pc-tracking-subsection);
+}
+.dialog form {
+  display: grid;
+  gap: 16px;
+  margin-top: 16px;
+}
+.field {
+  display: grid;
+  gap: 8px;
+}
+.field input {
+  width: 100%;
+  border: 1px solid var(--pc-muted);
+  background: var(--pc-sheet);
+  border-radius: var(--pc-radius-control);
+  padding: 8px 10px;
+}
+.error {
+  font-size: 14px;
+  color: var(--pc-ink);
+  border-left: 3px solid var(--pc-ink);
+  padding-left: 10px;
+}
+.actions {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 900px) {
+  .grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .tools {
+    align-items: flex-start;
+  }
+}
+@media (max-width: 540px) {
+  .grid {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+  .card {
+    min-height: 200px;
+    padding: 20px;
+  }
+  .search {
+    width: 100%;
+  }
+  .search input {
+    width: 100%;
+    min-width: 0;
+  }
+}
