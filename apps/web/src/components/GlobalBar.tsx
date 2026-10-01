@@ -4,6 +4,8 @@ import { Link, useNavigate, useParams } from '@tanstack/react-router';
 import { useState } from 'react';
 import { ApiError, call } from '../api/client';
 import { endSession, studyingClasses, useSession } from '../session/useSession';
+import { TopicNav, useTopicRoute } from '../topics/TopicNav';
+import { useFocusActive } from '../workspace/focus';
 import styles from './GlobalBar.module.css';
 
 export function GlobalBar() {
@@ -13,6 +15,8 @@ export function GlobalBar() {
   const [signOutFailed, setSignOutFailed] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const { classId: routeClassId } = useParams({ strict: false });
+  const topicRoute = useTopicRoute();
+  const focus = useFocusActive();
 
   const me = session.status === 'signed-in' ? session.me : null;
   // Topics opens the class being viewed, else the first class the person studies or teaches.
@@ -43,6 +47,7 @@ export function GlobalBar() {
     endSession(queryClient);
   };
 
+  if (focus) return null;
   return (
     <header className={styles.top}>
       <div className={styles.left}>
@@ -63,7 +68,9 @@ export function GlobalBar() {
           <Link to="/signin">Sign in</Link>
         ) : null}
       </div>
-      <nav className={styles.topicNav} aria-label="Neighbouring topics" />
+      <nav className={styles.topicNav} aria-label="Neighbouring topics">
+        {me && topicRoute ? <TopicNav {...topicRoute} /> : null}
+      </nav>
       {me ? (
         <div className={styles.account}>
           <span className={styles.who}>{me.user.name}</span>

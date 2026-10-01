@@ -1,8 +1,20 @@
 import { createFileRoute, redirect } from '@tanstack/react-router';
+import { useRef } from 'react';
+import { ApiError } from '../../api/client';
 import styles from '../../components/Page.module.css';
 import { type TabDef, TabRow } from '../../components/TabRow';
 import { Unavailable } from '../../components/Unavailable';
 import { useClassContext } from '../../session/classContext';
+import { TopicHeading } from '../../topics/TopicHeading';
+import {
+  type ClassTopic,
+  type ClassTopics,
+  isOpen,
+  lockReason,
+  useClassTopics,
+} from '../../topics/topics';
+import { useFocusMode } from '../../workspace/focus';
+import { ResourceToolbar } from '../../workspace/ResourceToolbar';
 
 export const TOPIC_TABS = [
   { id: 'slides', label: 'Slides' },
@@ -32,24 +44,83 @@ export const Route = createFileRoute('/_authed/classes/$classId/topics/$topicId/
 
 function TopicWorkspace() {
   const { classId, topicId, tab } = Route.useParams();
-  const navigate = Route.useNavigate();
   const context = useClassContext(classId);
+  const query = useClassTopics(classId);
   if (!context || !isTab(tab)) return <Unavailable />;
+  if (query.error instanceof ApiError && query.error.status === 404) return <Unavailable />;
+  const data = query.data;
+  if (!data) {
+    return (
+      <main className={styles.index}>
+        {query.isError ? (
+          <div className={styles.feedback} role="alert">
+            <p>This topic could not be loaded.</p>
+            <button type="button" className={styles.outline} onClick={() => void query.refetch()}>
+              Try again
+            </button>
+          </div>
+        ) : (
+          <p className={styles.intro} role="status">
+            Loading topic
+          </p>
+        )}
+      </main>
+    );
+  }
+  const topic = data.topics.find((t) => t.topicId === topicId);
+  if (!topic) return <Unavailable />;
+  if (!isOpen(topic)) {
+    return (
+      <main>
+        <TopicHeading data={data} topic={topic} />
+        <div className={styles.panel}>
+          <p className={styles.intro}>{lockReason(topic)}</p>
+        </div>
+      </main>
+    );
+  }
+  return <OpenTopic classId={classId} topicId={topicId} tab={tab} data={data} topic={topic} />;
+}
+
+/** Mounted only for an open topic, so F and Escape act only where the toolbar exists (§5). */
+function OpenTopic({
+  classId,
+  topicId,
+  tab,
+  data,
+  topic,
+}: {
+  classId: string;
+  topicId: string;
+  tab: TabId;
+  data: ClassTopics;
+  topic: ClassTopic;
+}) {
+  const navigate = Route.useNavigate();
+  const workspace = useRef<HTMLElement | null>(null);
+  const mode = useFocusMode(workspace);
   const label = TOPIC_TABS.find((t) => t.id === tab)?.label ?? tab;
   return (
-    <main>
-      <div className={styles.heading}>
-        <h1>{context.courseTitle}</h1>
-        <p className={`${styles.small} ${styles.muted}`} style={{ marginTop: 5 }}>
-          {context.className}
-        </p>
-      </div>
-      <TabRow
-        label="Topic materials"
-        tabs={TOPIC_TABS}
-        selected={tab}
-        panelId="pc-content"
-        onSelect={(next) => navigate({ params: { classId, topicId, tab: next } })}
+    <main ref={workspace} className={styles.workspace}>
+      {mode.focus ? null : <TopicHeading data={data} topic={topic} />}
+      {mode.focus ? null : (
+        <TabRow
+          label="Topic materials"
+          tabs={TOPIC_TABS}
+          selected={tab}
+          panelId="pc-content"
+          onSelect={(next) => navigate({ params: { classId, topicId, tab: next } })}
+        />
+      )}
+      <ResourceToolbar
+        title={`${topic.title} / ${label}`}
+        focus={mode.focus}
+        fullscreen={mode.fullscreen}
+        notice={mode.notice}
+        onFocus={() => void mode.toggleFocus()}
+        onFullscreen={() => void mode.toggleFullscreen()}
+        focusButton={mode.focusButton}
+        fullscreenButton={mode.fullscreenButton}
       />
       <div
         className={styles.panel}

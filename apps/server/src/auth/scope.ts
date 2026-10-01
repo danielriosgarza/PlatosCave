@@ -72,6 +72,12 @@ export interface CourseScope extends ScopeBase {
   readonly grants: { owner: boolean; editor: boolean; publisher: boolean };
 }
 
+/**
+ * What `forCourse` accepts: a course scope, or a class scope (which knows its course), so
+ * course-side effects of a class action still go through a resolved scope (ADR-0002).
+ */
+export type CourseContext = CourseScope | ClassContext;
+
 export type ScopeFor<S extends Scope> = S extends { kind: 'class'; grant: 'manage_members' }
   ? ClassManagerScope
   : S extends { kind: 'class' }
@@ -137,21 +143,32 @@ export async function resolveScope(
 type ClassRule = Extract<Scope, { kind: 'class' }>;
 type CourseRule = Extract<Scope, { kind: 'course' }>;
 
+/** What `requireRecentAuth()` throws on a scope resolved from an actor id. */
+export class NoRecentAuthError extends Error {
+  readonly statusCode = 401;
+  readonly code = 'recent_auth_required';
+}
+
+/** Without a session, nothing can count as a recent sign-in (§3). */
+const noRecentAuth = () => {
+  throw new NoRecentAuthError('Background jobs cannot make sensitive changes');
+};
+
 /**
  * Resolves the class or course scope of a person acting without a session (a background job,
  * ADR-0002): loads the actor itself, so a scope comes only from a session token or an actor id.
+ * Its `requireRecentAuth()` always throws `NoRecentAuthError`: no caller can make it permissive.
  */
 export async function resolveActorScope(
   db: Db,
   actorId: string,
-  requireRecentAuth: () => void,
   rule: ClassRule | CourseRule,
   targetId: string,
 ): Promise<Resolution> {
   if (!UUID.test(actorId)) return deny(404, 'actor does not exist');
   const [user] = await db.select(actorColumns).from(users).where(eq(users.id, actorId));
   if (!user) return deny(404, 'actor does not exist');
-  const base = { user, requireRecentAuth };
+  const base = { user, requireRecentAuth: noRecentAuth };
   return rule.kind === 'class'
     ? resolveClass(db, base, rule, targetId)
     : resolveCourse(db, base, rule, targetId);

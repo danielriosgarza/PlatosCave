@@ -68,11 +68,25 @@ export const createInvite = defineRoute({
   examples: { params: { classId: zero }, body: { kind: 'enrolment', maxUses: 30 } },
 });
 
+/**
+ * Later uses of the invitation are refused with `invite_revoked`. 404 for an invitation of
+ * another class. Revoking twice changes nothing. Needs a recent sign-in.
+ */
+export const revokeInvite = defineRoute({
+  method: 'DELETE',
+  path: '/api/classes/:classId/invites/:inviteId',
+  scope: managers,
+  summary: 'Revoke an enrolment code or instructor invitation of the class',
+  params: z.object({ classId: z.uuid(), inviteId: z.uuid() }),
+  response: z.object({ id: z.uuid(), revokedAt: datetime }),
+  examples: { params: { classId: zero, inviteId: zero } },
+});
+
 export const listMembers = defineRoute({
   method: 'GET',
   path: '/api/classes/:classId/members',
   scope: managers,
-  summary: 'Members of the class with their grants, and its unrevoked invitations',
+  summary: 'Members of the class with their grants, and its open invitations',
   params: classParams,
   response: z.object({
     members: z.array(
@@ -89,7 +103,11 @@ export const listMembers = defineRoute({
   examples: { params: { classId: zero } },
 });
 
-/** 404 when the user is not a member; 409 `not_instructor`. Needs a recent sign-in. */
+/**
+ * Revoking the grant also revokes the open invitations the instructor issued in the class,
+ * unless they own the course. 404 when the user is not a member; 409 `not_instructor`. Needs a
+ * recent sign-in.
+ */
 export const setManageMembers = defineRoute({
   method: 'PUT',
   path: '/api/classes/:classId/members/:userId/manage-members',
@@ -103,7 +121,8 @@ export const setManageMembers = defineRoute({
 
 /**
  * Removing an instructor also removes their preview principal in the class, and their draft
- * editing once they teach no class of the course. 404 when not a member. Needs a recent sign-in.
+ * editing once they teach no class of the course. Open invitations the person issued in the
+ * class are revoked unless they own the course. 404 when not a member. Needs a recent sign-in.
  */
 export const removeMember = defineRoute({
   method: 'DELETE',
