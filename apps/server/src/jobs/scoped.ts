@@ -13,6 +13,7 @@ import {
 } from '../auth/scope';
 import type { Db } from '../db/client';
 import { users } from '../db/schema';
+import type { Storage } from '../storage/storage';
 
 /** Jobs act on one class or one course; the rule is declared by the job, never by the payload. */
 export type JobRule = Extract<Scope, { kind: 'class' } | { kind: 'course' }>;
@@ -23,6 +24,13 @@ export interface ScopedJobArgs<R extends JobRule, I extends z.ZodType> {
   input: z.output<I>;
   db: Db;
   job: Job<unknown>;
+  /** Object store, for jobs that read uploads; absent where the caller has none. */
+  storage?: Storage;
+}
+
+/** Services a worker hands every job besides the database. */
+export interface JobServices {
+  storage?: Storage;
 }
 
 export interface ScopedJob<R extends JobRule = JobRule, I extends z.ZodType = z.ZodType> {
@@ -100,6 +108,7 @@ export async function runScopedJob<R extends JobRule, I extends z.ZodType>(
   db: Db,
   job: ScopedJob<R, I>,
   pgJob: Job<unknown>,
+  services: JobServices = {},
 ): Promise<ScopedOutcome> {
   const payload = ScopedPayload.safeParse(pgJob.data);
   if (!payload.success) return refuse('payload has no valid actorId and scope');
@@ -135,6 +144,7 @@ export async function runScopedJob<R extends JobRule, I extends z.ZodType>(
     input: parsed.data as z.output<I>,
     db,
     job: pgJob,
+    ...services,
   });
   return { status: 'completed', output };
 }
@@ -153,12 +163,13 @@ export async function workScopedJob<R extends JobRule, I extends z.ZodType>(
   job: ScopedJob<R, I>,
   log: WorkLogger,
   polling: JobPollingOptions = {},
+  services: JobServices = {},
 ): Promise<string> {
   await boss.createQueue(job.name, job.queue);
   return boss.work(job.name, { ...polling, perJobResults: true }, async (batch) => {
     const results = [];
     for (const pgJob of batch) {
-      const outcome = await runScopedJob(db, job, pgJob);
+      const outcome = await runScopedJob(db, job, pgJob, services);
       if (outcome.status === 'refused') {
         log.warn({ job: job.name, jobId: pgJob.id, reason: outcome.reason }, 'job refused');
         results.push({

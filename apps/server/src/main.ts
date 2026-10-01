@@ -5,6 +5,7 @@ import { createDb } from './db/client';
 import { createBoss } from './jobs/boss';
 import { loadJobs } from './jobs/registry';
 import { workScopedJob } from './jobs/scoped';
+import { createStorage } from './storage/create';
 
 const mode = process.argv[2] ?? 'api';
 if (mode !== 'api' && mode !== 'worker') {
@@ -60,8 +61,12 @@ if (mode === 'api') {
   });
   await boss.start();
   const jobs = await loadJobs();
-  for (const job of jobs) await workScopedJob(boss, database.db, job, log);
+  const storage = createStorage(config);
+  for (const job of jobs) await workScopedJob(boss, database.db, job, log, {}, { storage });
   log.info({ jobs: jobs.map((j) => j.name) }, 'worker started');
   // Graceful: active jobs finish (up to pg-boss's stop timeout) before the pool closes.
-  onSignals(log, () => boss.stop({ graceful: true }));
+  onSignals(log, async () => {
+    await boss.stop({ graceful: true });
+    storage.destroy?.();
+  });
 }
