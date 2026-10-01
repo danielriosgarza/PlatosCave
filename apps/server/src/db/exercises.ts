@@ -203,7 +203,7 @@ export async function openExercise(
   resourceId: string,
   now: Date,
 ): Promise<Outcome<AttemptView>> {
-  const resource = await studyableResource(db, scope, resourceId);
+  const resource = await studyableResource(db, scope, resourceId, now);
   if (resource?.type !== 'exercise') return notFound;
   if (!(await definitionOf(db, resource.revisionId))) {
     return invalid('This exercise cannot be opened: its definition is not valid');
@@ -245,7 +245,7 @@ async function act(
       .where(and(ownAttempts(scope), eq(exerciseAttempts.id, attemptId)))
       .for('update');
     if (!attempt) return notFound;
-    const resource = await studyableResource(tx, scope, attempt.resourceId);
+    const resource = await studyableResource(tx, scope, attempt.resourceId, now);
     if (!resource) return notFound;
     if (attempt.supersededAt) {
       const current = await currentAttempt(tx, scope, attempt.resourceId);
