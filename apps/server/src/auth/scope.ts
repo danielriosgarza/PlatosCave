@@ -3,7 +3,7 @@ import { and, eq } from 'drizzle-orm';
 import type { FastifyRequest } from 'fastify';
 import type { Db } from '../db/client';
 import { classes, classMemberships, courseMemberships, courses } from '../db/schema';
-import { findPrincipal, type Principal, sessionTokenFrom } from './sessions';
+import { findPrincipal, type Principal, readSessionToken } from './sessions';
 
 /** §3: sensitive membership changes need an authentication no older than this. */
 export const RECENT_AUTH_MS = 15 * 60_000;
@@ -93,7 +93,7 @@ export async function resolveScope(
   // No system token exists yet; system routes stay closed until one is designed.
   if (scope.kind === 'system') return deny(401, 'system scope has no authenticator yet');
 
-  const token = sessionTokenFrom(req.headers.cookie);
+  const token = readSessionToken(req);
   if (!token) return deny(401, 'no session cookie');
   const { db } = deps;
   if (!db) return deny(503, 'no database configured');

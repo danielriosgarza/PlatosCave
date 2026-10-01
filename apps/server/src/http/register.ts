@@ -1,7 +1,9 @@
+import type { RateLimitOptions } from '@fastify/rate-limit';
 import type { RouteContract, Scope } from '@parallax/contracts';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import type { z } from 'zod';
 import { type ResolverDeps, resolveScope, type ScopeFor } from '../auth/scope';
+import { redactUrl } from './redact';
 
 type Out<T> = T extends z.ZodType ? z.output<T> : undefined;
 
@@ -47,6 +49,10 @@ declare module 'fastify' {
   interface FastifyRequest {
     parallaxScope: unknown;
   }
+  interface FastifyContextConfig {
+    scope?: Scope;
+    contract?: RouteContract;
+  }
 }
 
 /** Path parameters that name a scope must be resolved by that scope, never read raw. */
@@ -76,32 +82,42 @@ export function registerRoute<C extends RouteContract>(
   app: FastifyInstance,
   contract: C,
   handler: (args: RouteArgs<C>) => Promise<z.input<C['response']>> | z.input<C['response']>,
+  options: { rateLimit?: RateLimitOptions } = {},
 ): void {
   checkScopeParams(contract);
+  const status = contract.status ?? 200;
+  // The limiter runs before the scope resolver, so an over-limit request costs no session lookup.
+  // Each limiter built by app.rateLimit() has its own store, so counts are per route.
+  const limiter = options.rateLimit ? app.rateLimit(options.rateLimit) : undefined;
+  const resolve = async (req: FastifyRequest, reply: FastifyReply) => {
+    const result = await resolveScope(req, contract.scope as Scope, app.resolverDeps);
+    if (!result.ok) {
+      req.log.debug({ reason: result.reason, url: redactUrl(req.url) }, 'scope denied');
+      // The typed reply only knows the contract's 200 schema; denials use the shared error body.
+      return reply.code(result.status).send({ error: result.error });
+    }
+    req.parallaxScope = result.scope;
+  };
   app.route({
     method: contract.method,
     url: contract.path,
+    // Contracts never declare HEAD: an implicit HEAD route would run the handler, side effects
+    // included (a link checker's HEAD would use up a sign-in link).
+    exposeHeadRoute: false,
     schema: {
       summary: contract.summary,
       ...(contract.params && { params: contract.params }),
       ...(contract.query && { querystring: contract.query }),
       ...(contract.body && { body: contract.body }),
       response: {
-        200: contract.response,
+        [status]: contract.response,
         ...(contract.errors && { 409: contract.errors[409] }),
       },
     },
     config: { scope: contract.scope, contract },
-    onRequest: async (req, reply) => {
-      const result = await resolveScope(req, contract.scope as Scope, app.resolverDeps);
-      if (!result.ok) {
-        req.log.debug({ reason: result.reason, url: req.url }, 'scope denied');
-        // The typed reply only knows the contract's 200 schema; denials use the shared error body.
-        return (reply as FastifyReply).code(result.status).send({ error: result.error });
-      }
-      req.parallaxScope = result.scope;
-    },
+    onRequest: limiter ? [limiter, resolve] : resolve,
     handler: async (req, reply) => {
+      reply.code(status);
       try {
         return await handler({
           params: req.params,

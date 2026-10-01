@@ -1,10 +1,13 @@
 import { readdirSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import cookie from '@fastify/cookie';
+import helmet from '@fastify/helmet';
+import rateLimit from '@fastify/rate-limit';
 import sensible from '@fastify/sensible';
 import swagger from '@fastify/swagger';
 import type { RouteContract } from '@parallax/contracts';
-import Fastify, { type FastifyInstance } from 'fastify';
+import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import {
   jsonSchemaTransform,
   serializerCompiler,
@@ -12,7 +15,16 @@ import {
 } from 'fastify-type-provider-zod';
 import type { Config } from './config';
 import type { Db } from './db/client';
+import { redactUrl } from './http/redact';
 import { isApiPath, registerStatic } from './http/static';
+import { createMailer, type Mailer } from './mail/mailer';
+
+declare module 'fastify' {
+  interface FastifyInstance {
+    /** Configuration and mail transport for the sign-in routes. */
+    authDeps: { config: Config; mailer: Mailer };
+  }
+}
 
 export interface Deps {
   db?: Db;
@@ -20,6 +32,8 @@ export interface Deps {
   now?: () => Date;
   /** Deadline for the health probe's database query; defaults to PROBE_TIMEOUT_MS. */
   probeTimeoutMs?: number;
+  /** Mail transport; defaults to the one MAIL_TRANSPORT selects. */
+  mailer?: Mailer;
 }
 
 const NOT_FOUND = { error: 'not found' };
@@ -28,6 +42,14 @@ export async function buildApp(config: Config, deps: Deps = {}): Promise<Fastify
   const app = Fastify({
     logger: {
       level: config.LOG_LEVEL,
+      serializers: {
+        req: (req: FastifyRequest) => ({
+          method: req.method,
+          url: redactUrl(req.url),
+          host: req.host,
+          remoteAddress: req.ip,
+        }),
+      },
       ...(config.NODE_ENV === 'development' ? { transport: { target: 'pino-pretty' } } : {}),
     },
   });
@@ -36,6 +58,7 @@ export async function buildApp(config: Config, deps: Deps = {}): Promise<Fastify
 
   app.decorate('resolverDeps', { db: deps.db, now: deps.now ?? (() => new Date()) });
   app.decorate('contracts', [] as RouteContract[]);
+  app.decorate('authDeps', { config, mailer: deps.mailer ?? createMailer(config) });
   app.decorateRequest('parallaxScope', undefined);
 
   // Structural guard (ADR-0002): every /api route must declare a scope via registerRoute().
@@ -48,6 +71,37 @@ export async function buildApp(config: Config, deps: Deps = {}): Promise<Fastify
   });
 
   await app.register(sensible);
+  await app.register(cookie, { secret: config.SESSION_SECRET });
+  // Baseline headers for the app origin; the content origin gets its own policy (P1-06).
+  // P1-06 must extend this for the content origin: helmet's default Cross-Origin-Resource-Policy
+  // (same-origin) on /content responses, and img-src, media-src, frame-src and connect-src below,
+  // which allow only 'self' today, would otherwise block content-origin media, PDFs and frames.
+  await app.register(helmet, {
+    contentSecurityPolicy: {
+      useDefaults: false,
+      directives: {
+        defaultSrc: ["'self'"],
+        baseUri: ["'self'"],
+        connectSrc: ["'self'"],
+        fontSrc: ["'self'", 'data:'],
+        formAction: ["'self'"],
+        frameAncestors: ["'none'"],
+        imgSrc: ["'self'", 'data:', 'blob:'],
+        objectSrc: ["'none'"],
+        scriptSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+      },
+    },
+  });
+  // Only routes that opt in (registerRoute's `rateLimit` option) are limited.
+  await app.register(rateLimit, {
+    global: false,
+    errorResponseBuilder: (_req, ctx) => ({
+      statusCode: ctx.statusCode,
+      error: 'too many requests',
+      message: `Try again in ${ctx.after}`,
+    }),
+  });
   await app.register(swagger, {
     openapi: { info: { title: 'Parallax API', version: '0.0.0' } },
     transform: jsonSchemaTransform,
