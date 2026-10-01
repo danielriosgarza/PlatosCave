@@ -1,0 +1,257 @@
+import type { validationIssue, validationReport } from '@parallax/contracts/routes/releases';
+import { and, asc, eq, isNull, max, ne, sql } from 'drizzle-orm';
+import type { z } from 'zod';
+import type { ClassScope, CourseScope } from '../auth/scope';
+import type { Db } from '../db/client';
+import {
+  auditEvents,
+  courseReleases,
+  courses,
+  releaseResources,
+  releaseTopics,
+  resourceRevisions,
+  resources,
+  topics,
+} from '../db/schema';
+import { forCourse } from '../db/scoped';
+
+export type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
+type Issue = z.infer<typeof validationIssue>;
+export type ValidationReport = z.infer<typeof validationReport>;
+type ResourceType = (typeof resources.$inferSelect)['type'];
+type Tab = (typeof releaseResources.$inferInsert)['tab'];
+
+/** Destination tab of each resource type (§5). */
+export const tabOf: Record<ResourceType, Tab> = {
+  slides_pdf: 'slides',
+  slides_web: 'slides',
+  reading_native: 'reading',
+  reading_pdf: 'reading',
+  exercise: 'exercises',
+  notebook: 'notebooks',
+  shiny: 'notebooks',
+  test: 'tests',
+};
+
+/** Types whose material is not text, so they need an accessible alternative (§7, §14). */
+const needsAlternative = new Set<ResourceType>(['slides_pdf', 'reading_pdf', 'shiny']);
+
+/** The course's live (not archived) draft topics with their resources and head revisions. */
+async function loadDrafts(tx: Tx, scope: CourseScope) {
+  const topicRows = await tx
+    .select()
+    .from(topics)
+    .where(and(forCourse(scope, topics), isNull(topics.archivedAt)))
+    .orderBy(asc(topics.position), asc(topics.createdAt));
+  const resourceRows = await tx
+    .select({ resource: resources, revision: resourceRevisions })
+    .from(resources)
+    .leftJoin(resourceRevisions, eq(resourceRevisions.id, resources.headRevisionId))
+    .where(and(forCourse(scope, resources), isNull(resources.archivedAt)))
+    .orderBy(asc(resources.position), asc(resources.createdAt));
+  return topicRows.map((topic) => ({
+    topic,
+    resources: resourceRows.filter((r) => r.resource.topicId === topic.id),
+  }));
+}
+type Drafts = Awaited<ReturnType<typeof loadDrafts>>;
+
+/**
+ * Publication checks (§12, ADR-0003): broken references, missing alternatives and unconverted
+ * decks. Grading-rule and execution-configuration checks join this function with the items
+ * that define those resource contents (P2-10, P3-15).
+ */
+export function validate(drafts: Drafts): ValidationReport {
+  const errors: Issue[] = [];
+  const warnings: Issue[] = [];
+  if (drafts.length === 0) {
+    errors.push({ code: 'empty_release', message: 'The course has no topics to publish' });
+  }
+  const topicIds = new Set(drafts.map((d) => d.topic.id));
+  for (const { topic, resources: items } of drafts) {
+    const topicId = topic.id;
+    for (const prerequisite of topic.prerequisites) {
+      if (!topicIds.has(prerequisite)) {
+        errors.push({
+          code: 'broken_reference',
+          message: `“${topic.title}” requires a topic that is not in this release`,
+          topicId,
+        });
+      }
+    }
+    if (items.length === 0) {
+      warnings.push({ code: 'empty_topic', message: `“${topic.title}” has no resources`, topicId });
+    }
+    for (const { resource, revision } of items) {
+      const at = { topicId, resourceId: resource.id };
+      if (!revision) {
+        errors.push({ code: 'no_revision', message: `“${resource.title}” has no content`, ...at });
+        continue;
+      }
+      // Nothing in the schema ties a head revision to its resource; the immutability
+      // triggers would make a wrong pin permanent, so check before snapshotting.
+      if (revision.resourceId !== resource.id || revision.courseId !== resource.courseId) {
+        errors.push({
+          code: 'broken_reference',
+          message: `“${resource.title}” points at another resource’s revision`,
+          ...at,
+        });
+        continue;
+      }
+      if (revision.type === 'slides_pdf' && revision.derived.status !== 'ready') {
+        errors.push({
+          code: 'unconverted_deck',
+          message: `“${resource.title}” has not been converted for viewing`,
+          ...at,
+        });
+      }
+      if (needsAlternative.has(revision.type) && !revision.accessibleAlternative) {
+        const rasterDeck = revision.type === 'slides_pdf' && revision.derived.rasterOnly === true;
+        (rasterDeck ? errors : warnings).push({
+          code: 'missing_alternative',
+          message: `“${resource.title}” has no accessible alternative`,
+          ...at,
+        });
+      }
+    }
+  }
+  return { errors, warnings };
+}
+
+export function validateDrafts(db: Db, scope: CourseScope): Promise<ValidationReport> {
+  return db.transaction(async (tx) => validate(await loadDrafts(tx, scope)));
+}
+
+export type PublishResult =
+  | { ok: true; release: typeof courseReleases.$inferSelect; report: ValidationReport }
+  | { ok: false; report: ValidationReport };
+
+/**
+ * Validates the drafts and, when nothing blocks, snapshots them as the course's next release
+ * (ADR-0003). The course row lock serialises concurrent publishes of one course.
+ */
+export function publishRelease(
+  db: Db,
+  scope: CourseScope,
+  opts: { id?: string } = {},
+): Promise<PublishResult> {
+  return db.transaction(async (tx) => {
+    await tx
+      .select({ id: courses.id })
+      .from(courses)
+      .where(eq(courses.id, scope.courseId))
+      .for('update');
+    const drafts = await loadDrafts(tx, scope);
+    const report = validate(drafts);
+    if (report.errors.length > 0) return { ok: false, report };
+
+    const [last] = await tx
+      .select({ version: max(courseReleases.version) })
+      .from(courseReleases)
+      .where(forCourse(scope, courseReleases));
+    const [release] = await tx
+      .insert(courseReleases)
+      .values({
+        id: opts.id,
+        courseId: scope.courseId,
+        version: (last?.version ?? 0) + 1,
+        validationReport: report,
+        createdBy: scope.user.id,
+      })
+      .returning();
+    if (!release) throw new Error('release insert returned no row');
+
+    let resourceCount = 0;
+    for (const { topic, resources: items } of drafts) {
+      const [releaseTopic] = await tx
+        .insert(releaseTopics)
+        .values({
+          releaseId: release.id,
+          topicId: topic.id,
+          position: topic.position,
+          title: topic.title,
+          objective: topic.objective,
+          prerequisites: topic.prerequisites,
+          completionRule: topic.completionRule,
+          estimatedMinutes: topic.estimatedMinutes,
+        })
+        .returning({ id: releaseTopics.id });
+      if (!releaseTopic) throw new Error('release topic insert returned no row');
+      const rows = items.map(({ resource, revision }) => {
+        // validate() has rejected these already; the guard keeps a bad row out of the snapshot.
+        if (!revision || revision.resourceId !== resource.id || topic.courseId !== scope.courseId)
+          throw new Error(`resource ${resource.id} failed its publish check`);
+        return {
+          releaseId: release.id,
+          releaseTopicId: releaseTopic.id,
+          resourceId: resource.id,
+          resourceRevisionId: revision.id,
+          tab: tabOf[revision.type],
+          position: resource.position,
+          title: resource.title,
+          visibility: resource.visibility,
+          releaseAt: resource.releaseAt,
+        };
+      });
+      if (rows.length > 0) await tx.insert(releaseResources).values(rows);
+      resourceCount += rows.length;
+    }
+
+    await tx.insert(auditEvents).values({
+      actorId: scope.user.id,
+      action: 'release.publish',
+      scopeKind: 'course',
+      scopeId: scope.courseId,
+      targetType: 'course_release',
+      targetId: release.id,
+      after: {
+        version: release.version,
+        topics: drafts.length,
+        resources: resourceCount,
+        warnings: report.warnings.length,
+      },
+    });
+    return { ok: true, release, report };
+  });
+}
+
+/**
+ * The class's adopted release: the only path from a class to content (ADR-0003, A26). It reads
+ * `class → release → release_resources → resource_revisions` and never touches draft rows.
+ * Students (and preview principals) do not see hidden resources.
+ */
+export async function readClassRelease(db: Db, scope: ClassScope) {
+  if (!scope.releaseId) return { release: null, topics: [] };
+  const [release] = await db
+    .select()
+    .from(courseReleases)
+    .where(
+      and(eq(courseReleases.id, scope.releaseId), eq(courseReleases.courseId, scope.courseId)),
+    );
+  if (!release) return { release: null, topics: [] };
+  const topicRows = await db
+    .select()
+    .from(releaseTopics)
+    .where(eq(releaseTopics.releaseId, release.id))
+    .orderBy(asc(releaseTopics.position));
+  const resourceRows = await db
+    .select({ item: releaseResources, type: resourceRevisions.type })
+    .from(releaseResources)
+    .innerJoin(resourceRevisions, eq(resourceRevisions.id, releaseResources.resourceRevisionId))
+    .where(
+      and(
+        eq(releaseResources.releaseId, release.id),
+        scope.role === 'student' ? ne(releaseResources.visibility, 'hidden') : sql`true`,
+      ),
+    )
+    .orderBy(asc(releaseResources.position));
+  return {
+    release,
+    topics: topicRows.map((t) => ({
+      ...t,
+      resources: resourceRows
+        .filter((r) => r.item.releaseTopicId === t.id)
+        .map(({ item, type }) => ({ ...item, revisionId: item.resourceRevisionId, type })),
+    })),
+  };
+}
