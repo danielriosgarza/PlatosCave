@@ -5,17 +5,16 @@ import { extractPdfText } from '../content/pdf-text';
 import { renderReadingInThread } from '../content/reading-render';
 import { ThreadInputError } from '../content/thread';
 import type { Db } from '../db/client';
-import { type Storage, StorageNotFoundError } from '../storage/storage';
 import {
   type DerivationSource,
-  type DerivedStatus,
-  DerivedStatus as DerivedStatusSchema,
   hasDerivedStatus,
   loadDerivationSource,
   readStatus,
   setDerivedStatus,
   writeDerivedOutputs,
-} from './derived';
+} from '../db/jobs/derived';
+import { type Storage, StorageNotFoundError } from '../storage/storage';
+import { type DerivedStatus, DerivedStatus as DerivedStatusSchema } from './derived';
 import { defineScopedJob, ensureQueues, sendScopedJob } from './scoped';
 
 export const READING_INGEST = 'reading.ingest';

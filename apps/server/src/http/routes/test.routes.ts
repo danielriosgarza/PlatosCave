@@ -1,8 +1,9 @@
 import { buildTestWorld, signInAs } from '@parallax/contracts/routes/test';
 import type { FastifyInstance } from 'fastify';
 import type { Deps } from '../../app';
-import { userForVerifiedEmail } from '../../auth/accounts';
-import { createSession, SESSION_COOKIE, sessionCookieOptions } from '../../auth/sessions';
+import { SESSION_COOKIE, sessionCookieOptions } from '../../auth/sessions';
+import { userForVerifiedEmail } from '../../db/auth/accounts';
+import { createSession } from '../../db/auth/sessions';
 import { registerRoute } from '../register';
 
 /** E2E fixture routes (ADR-0006); mounted only when TEST_ROUTES=1, never in production. */
