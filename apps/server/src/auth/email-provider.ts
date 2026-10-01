@@ -10,7 +10,10 @@ import { hashToken, newToken, TOKEN_SHAPE } from './sessions';
 export const LINK_TTL_MS = 15 * 60_000;
 /** Links issued per address per LINK_TTL_MS; further requests are accepted but send nothing. */
 export const LINKS_PER_EMAIL = 5;
-/** Links stay this long after expiry, then go (§3: nothing reads them after expiry). */
+/**
+ * Links stay this long after expiry, then go. Until then an expired link keeps its destination
+ * for the expired-link page (§3); after it, that page loses `next`.
+ */
 export const SIGNIN_TOKEN_RETENTION_MS = 24 * 3_600_000;
 
 /**

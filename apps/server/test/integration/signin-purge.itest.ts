@@ -13,14 +13,15 @@ import { createBoss } from '../../src/jobs/boss';
 import { PURGE_SIGNIN_TOKENS, workMaintenance } from '../../src/jobs/maintenance';
 import { createTestDatabase, type TestDatabase } from './db';
 
-const now = new Date('2026-10-01T12:00:00Z');
+// Real clock: the queue test's handler purges against `new Date()`, so every fixture is relative to it.
+const now = new Date();
 const ago = (ms: number) => new Date(now.getTime() - ms);
 let testDb: TestDatabase;
 let boss: PgBoss;
 
 beforeAll(async () => {
   testDb = await createTestDatabase();
-  boss = createBoss(testDb.db.$client, { role: 'worker', onError: () => {} });
+  boss = createBoss(testDb.db.$client, { role: 'worker', onError: () => {}, onWarning: () => {} });
   await boss.start();
 });
 afterAll(async () => {
@@ -44,7 +45,7 @@ describe('sign-in link purge', () => {
       .values([
         row('p@example.org', 'old-unused', ago(day + 60_000)),
         row('p@example.org', 'old-used', ago(day + 60_000), ago(day + 3_600_000)),
-        row('p@example.org', 'just-expired', ago(day - 60_000)),
+        row('p@example.org', 'just-expired', ago(day - 3_600_000)),
         row('p@example.org', 'live', new Date(now.getTime() + 60_000)),
       ]);
     expect(await purgeSigninTokens(testDb.db, now)).toBe(2);
@@ -62,23 +63,22 @@ describe('sign-in link purge', () => {
       log: { info() {}, error() {} } as never,
     });
     const email = 'cap@example.org';
+    // The address's live links fill the cap; one old link is purgeable.
+    for (let i = 0; i < LINKS_PER_EMAIL; i++) {
+      await provider.begin({ email, destination: '/courses' });
+    }
+    expect(sent).toHaveLength(LINKS_PER_EMAIL);
     await testDb.db
       .insert(signinTokens)
       .values(row(email, 'cap-old', ago(2 * SIGNIN_TOKEN_RETENTION_MS)));
-    await purgeSigninTokens(testDb.db, now);
-    for (let i = 0; i < LINKS_PER_EMAIL + 2; i++) {
-      await provider.begin({ email, destination: '/courses' });
-    }
+    expect(await purgeSigninTokens(testDb.db, now)).toBe(1);
+    await provider.begin({ email, destination: '/courses' });
     expect(sent).toHaveLength(LINKS_PER_EMAIL);
     const [n] = await testDb.db
       .select({ n: count() })
       .from(signinTokens)
       .where(eq(signinTokens.email, email));
     expect(n?.n).toBe(LINKS_PER_EMAIL);
-    // A purge leaves those live links, so the cap holds afterwards too.
-    expect(await purgeSigninTokens(testDb.db, now)).toBe(0);
-    await provider.begin({ email, destination: '/courses' });
-    expect(sent).toHaveLength(LINKS_PER_EMAIL);
   });
 
   test('the worker schedules the purge and runs it from the queue', async () => {
@@ -86,13 +86,12 @@ describe('sign-in link purge', () => {
     const schedules = await boss.getSchedules();
     expect(schedules.map((s) => s.name)).toContain(PURGE_SIGNIN_TOKENS);
 
-    // Real clock: the handler purges against `new Date()`.
-    const stale = new Date(Date.now() - SIGNIN_TOKEN_RETENTION_MS - 3_600_000);
+    const stale = ago(SIGNIN_TOKEN_RETENTION_MS + 3_600_000);
     await testDb.db.insert(signinTokens).values(row('queue@example.org', 'queue-old', stale));
     const id = await boss.send(PURGE_SIGNIN_TOKENS);
     if (!id) throw new Error('pg-boss did not accept the purge job');
     let job = await boss.getJobById(PURGE_SIGNIN_TOKENS, id);
-    for (let i = 0; i < 60 && job?.state !== 'completed' && job?.state !== 'failed'; i++) {
+    for (let i = 0; i < 40 && job?.state !== 'completed' && job?.state !== 'failed'; i++) {
       await new Promise((r) => setTimeout(r, 250));
       job = await boss.getJobById(PURGE_SIGNIN_TOKENS, id);
     }

@@ -3,7 +3,7 @@ import { buildApp } from './app';
 import { loadConfig } from './config';
 import { createDb } from './db/client';
 import { createBoss } from './jobs/boss';
-import { PURGE_SIGNIN_TOKENS, workMaintenance } from './jobs/maintenance';
+import { workMaintenance } from './jobs/maintenance';
 import { loadJobs } from './jobs/registry';
 import { workScopedJob } from './jobs/scoped';
 
@@ -13,6 +13,15 @@ if (mode !== 'api' && mode !== 'worker') {
   process.exit(2);
 }
 
+/**
+ * Active jobs get this long to finish on SIGTERM before pg-boss fails them for retry. It stays
+ * below the 10 s stop grace period of Docker Compose and Kubernetes, which a worker deployment
+ * must keep at 10 s or more, so the worker exits before it is killed.
+ */
+const WORKER_STOP_TIMEOUT_MS = 8_000;
+
+// Both modes read one environment (the worker also requires the API's secrets in production), so
+// API and worker deploy from the same configuration and a worker can mint content URLs later.
 const config = loadConfig();
 // The pool is created before the logger that reports its errors; until then they go to stderr.
 let logPoolError = (err: Error) => console.error('pg pool error', err);
@@ -57,13 +66,26 @@ if (mode === 'api') {
   }
   const boss = createBoss(database.pool, {
     role: 'worker',
+    schedule: true,
     onError: (err) => log.error({ err }, 'pg-boss error'),
+    onWarning: (warning) => log.warn({ warning }, 'pg-boss warning'),
   });
-  await boss.start();
-  const jobs = await loadJobs();
-  for (const job of jobs) await workScopedJob(boss, database.db, job, log);
-  await workMaintenance(boss, database.db, log);
-  log.info({ jobs: [...jobs.map((j) => j.name), PURGE_SIGNIN_TOKENS] }, 'worker started');
-  // Graceful: active jobs finish (up to pg-boss's stop timeout) before the pool closes.
-  onSignals(log, () => boss.stop({ graceful: true }));
+  const started = (async () => {
+    await boss.start();
+    const jobs = await loadJobs();
+    for (const job of jobs) await workScopedJob(boss, database.db, job, log);
+    const maintenance = await workMaintenance(boss, database.db, log);
+    log.info({ jobs: [...jobs.map((j) => j.name), ...maintenance] }, 'worker started');
+  })();
+  // Installed before startup, so a signal during it still stops pg-boss once startup settles.
+  onSignals(log, async () => {
+    await started.catch(() => {});
+    await boss.stop({ graceful: true, timeout: WORKER_STOP_TIMEOUT_MS });
+  });
+  try {
+    await started;
+  } catch (err) {
+    log.fatal({ err }, 'worker failed to start');
+    process.exit(1);
+  }
 }

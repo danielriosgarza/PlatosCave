@@ -15,7 +15,12 @@ export interface MaintenanceLogger {
  * Maintenance jobs act on no class or course, so they sit outside the scoped-job wrapper
  * (ADR-0002): they take no payload and are only ever started by the schedule below.
  */
-export async function workMaintenance(boss: PgBoss, db: Db, log: MaintenanceLogger) {
+/** Registers every maintenance queue and returns their names. */
+export async function workMaintenance(
+  boss: PgBoss,
+  db: Db,
+  log: MaintenanceLogger,
+): Promise<string[]> {
   await boss.createQueue(PURGE_SIGNIN_TOKENS);
   await boss.schedule(PURGE_SIGNIN_TOKENS, PURGE_SIGNIN_TOKENS_CRON);
   await boss.work(PURGE_SIGNIN_TOKENS, async () => {
@@ -30,4 +35,5 @@ export async function workMaintenance(boss: PgBoss, db: Db, log: MaintenanceLogg
     }
   });
   log.info({ job: PURGE_SIGNIN_TOKENS, cron: PURGE_SIGNIN_TOKENS_CRON }, 'maintenance scheduled');
+  return [PURGE_SIGNIN_TOKENS];
 }
