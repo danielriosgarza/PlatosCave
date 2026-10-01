@@ -1,0 +1,216 @@
+import { Link } from '@tanstack/react-router';
+import { useCallback, useRef } from 'react';
+import { ApiError } from '../api/client';
+import page from '../components/Page.module.css';
+import { NativeReading } from './NativeReading';
+import { PdfReading } from './PdfReading';
+import { positionFromSearch, type ReadingSearch, searchFor } from './place';
+import styles from './Reading.module.css';
+import {
+  type ReadingPosition,
+  type ReadingSummary,
+  renewPdfUrl,
+  useReadingContent,
+  useReadings,
+  useSavePosition,
+} from './readings';
+import { useReporter } from './useReporter';
+
+interface Props {
+  classId: string;
+  courseId: string;
+  topicId: string;
+  instructor: boolean;
+  search: ReadingSearch;
+  /** Moves the address: a new entry when the reading changes, in place for a new position. */
+  onSearch: (search: ReadingSearch, mode: 'push' | 'replace') => void;
+}
+
+/** The Reading tab (§5, §8): resource toolbar, then the picked reading in its reader. */
+export function ReadingTab({ classId, courseId, topicId, instructor, search, onSearch }: Props) {
+  const list = useReadings(classId, topicId);
+
+  if (!list.data) {
+    return (
+      <div className={styles.stage}>
+        {list.isError ? (
+          <div className={page.feedback} role="alert">
+            <p>The readings could not be loaded.</p>
+            <button type="button" className={page.outline} onClick={() => void list.refetch()}>
+              Try again
+            </button>
+          </div>
+        ) : (
+          <p className={styles.loading} role="status">
+            Loading reading
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  const { readings, lastRevisionId } = list.data;
+  if (readings.length === 0) {
+    return (
+      <div className={styles.stage}>
+        <p className={styles.empty}>No reading has been added</p>
+        {instructor && (
+          <p>
+            <Link
+              to="/courses/$courseId/edit/$topicId"
+              params={{ courseId, topicId }}
+              className={page.link}
+            >
+              Add reading
+            </Link>
+          </p>
+        )}
+      </div>
+    );
+  }
+
+  const chosen =
+    readings.find((r) => r.revisionId === search.resource) ??
+    readings.find((r) => r.revisionId === lastRevisionId) ??
+    readings[0];
+  if (!chosen) return null;
+  // The address place wins over the saved one: it is where this history entry was left.
+  const initial =
+    (search.resource === undefined || search.resource === chosen.revisionId
+      ? positionFromSearch(search)
+      : null) ?? chosen.position;
+
+  return (
+    <>
+      <div className={styles.toolbar}>
+        {readings.length > 1 ? (
+          <label className={styles.picker}>
+            <span className={styles.small}>Reading</span>
+            <select
+              value={chosen.revisionId}
+              onChange={(e) => onSearch({ resource: e.target.value }, 'push')}
+            >
+              {readings.map((r) => (
+                <option key={r.revisionId} value={r.revisionId}>
+                  {r.title}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : (
+          <span className={styles.small}>{chosen.title}</span>
+        )}
+        {instructor && (
+          <Link
+            to="/courses/$courseId/edit/$topicId"
+            params={{ courseId, topicId }}
+            className={page.link}
+          >
+            Add reading
+          </Link>
+        )}
+      </div>
+      <div className={styles.stage}>
+        <ReadingView
+          key={chosen.revisionId}
+          classId={classId}
+          topicId={topicId}
+          reading={chosen}
+          initial={initial}
+          onSearch={onSearch}
+        />
+      </div>
+    </>
+  );
+}
+
+interface ViewProps {
+  classId: string;
+  topicId: string;
+  reading: ReadingSummary;
+  initial: ReadingPosition | null;
+  onSearch: Props['onSearch'];
+}
+
+function ReadingView({ classId, topicId, reading, initial, onSearch }: ViewProps) {
+  const content = useReadingContent(classId, reading.revisionId);
+  const save = useSavePosition(classId, topicId);
+  const { revisionId } = reading;
+  const lastSaved = useRef<string>('');
+
+  const store = useCallback(
+    (position: ReadingPosition) => {
+      const key = JSON.stringify(position);
+      if (key === lastSaved.current) return;
+      lastSaved.current = key;
+      // A save that fails is retried by the next move; nothing here claims it was kept.
+      save(revisionId, position).catch(() => {
+        lastSaved.current = '';
+      });
+    },
+    [save, revisionId],
+  );
+  const report = useReporter((position) => {
+    store(position);
+    onSearch(searchFor(revisionId, position), 'replace');
+  }, store);
+
+  const renew = useCallback(() => renewPdfUrl(classId, revisionId), [classId, revisionId]);
+
+  if (content.error instanceof ApiError && content.error.status === 404) {
+    return (
+      <div className={page.feedback} role="alert">
+        <p>You no longer have access to this reading.</p>
+      </div>
+    );
+  }
+  const data = content.data;
+  if (!data) {
+    return content.isError ? (
+      <div className={page.feedback} role="alert">
+        <p>This reading could not be loaded.</p>
+        <button type="button" className={page.outline} onClick={() => void content.refetch()}>
+          Try again
+        </button>
+      </div>
+    ) : (
+      <p className={styles.loading} role="status">
+        Loading reading
+      </p>
+    );
+  }
+  if (data.status === 'pending') {
+    return (
+      <p className={styles.loading} role="status">
+        {data.title} is being prepared
+      </p>
+    );
+  }
+  if (data.status === 'failed') {
+    return (
+      <div className={page.feedback} role="alert">
+        <p>
+          {data.title} could not be processed{data.error ? `: ${data.error}` : ''}
+        </p>
+        <button type="button" className={page.outline} onClick={() => void content.refetch()}>
+          Try again
+        </button>
+      </div>
+    );
+  }
+  if (data.html !== null) {
+    return <NativeReading html={data.html} initial={initial} onPosition={report} />;
+  }
+  if (data.pdf) {
+    return (
+      <PdfReading
+        url={data.pdf.url}
+        pageCount={data.pdf.pageCount}
+        renew={renew}
+        initial={initial}
+        onPosition={report}
+      />
+    );
+  }
+  return null;
+}
