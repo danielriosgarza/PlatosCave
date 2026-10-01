@@ -80,7 +80,16 @@ function TopicWorkspace() {
       </main>
     );
   }
-  return <OpenTopic classId={classId} topicId={topicId} tab={tab} data={data} topic={topic} />;
+  return (
+    <OpenTopic
+      classId={classId}
+      topicId={topicId}
+      tab={tab}
+      data={data}
+      topic={topic}
+      role={context.role}
+    />
+  );
 }
 
 /** Mounted only for an open topic, so F and Escape act only where the toolbar exists (§5). */
@@ -90,12 +99,14 @@ function OpenTopic({
   tab,
   data,
   topic,
+  role,
 }: {
   classId: string;
   topicId: string;
   tab: TabId;
   data: ClassTopics;
   topic: ClassTopic;
+  role: 'student' | 'instructor';
 }) {
   const navigate = Route.useNavigate();
   const workspace = useRef<HTMLElement | null>(null);
@@ -132,7 +143,7 @@ function OpenTopic({
         tabIndex={0}
       >
         {tab === 'exercises' ? (
-          <ExercisesPanel classId={classId} topicId={topicId} role={context.role} />
+          <ExercisesPanel classId={classId} topicId={topicId} role={role} />
         ) : (
           <p className={styles.intro}>Nothing is available under {label} for this topic yet.</p>
         )}
