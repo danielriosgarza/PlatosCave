@@ -72,6 +72,9 @@ interface Server {
   topicStatus?: number;
   conflictWith?: ReturnType<typeof topic>;
   publishStatus?: number;
+  /** GET /processing answers with this status instead of the entries. */
+  processingStatus?: number;
+  classArchived?: boolean;
   uploads: number;
   /** PATCH of this topic id answers with this status (reorder tests). */
   otherStatus?: number;
@@ -116,13 +119,14 @@ function api(me: ReturnType<typeof makeMe>, s: Server) {
           {
             id: COURSE,
             name: 'Class A',
-            archived: false,
+            archived: s.classArchived ?? false,
             release: s.classUses ? { id: COURSE, version: s.classUses } : null,
           },
         ],
       });
     }
     if (path === `${base}/processing`) {
+      if (s.processingStatus) return json({ error: 'boom' }, s.processingStatus);
       return json({
         resources: s.resources.map((r) => ({
           resourceId: r.id,
@@ -137,6 +141,7 @@ function api(me: ReturnType<typeof makeMe>, s: Server) {
     }
     if (path === `${base}/releases/validation`) return json(s.report);
     if (path === `${base}/releases` && method === 'POST') {
+      if (s.publishStatus === 403) return json({ error: 'forbidden' }, 403);
       if (s.publishStatus === 422) {
         return json({ error: 'validation_failed', report: s.report }, 422);
       }
@@ -182,6 +187,27 @@ function api(me: ReturnType<typeof makeMe>, s: Server) {
     }
     return json({ error: 'not found' }, 404);
   });
+}
+
+/** Holds matching requests until released, so a test can act while one is in flight. */
+function hold(
+  fetchMock: ReturnType<typeof api>,
+  match: (url: string, init?: RequestInit) => boolean,
+) {
+  const original = fetchMock.getMockImplementation();
+  let release: () => void = () => {};
+  const gate = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  const held = { count: 0 };
+  fetchMock.mockImplementation(async (input, init) => {
+    if (match(String(input), init)) {
+      held.count += 1;
+      await gate;
+    }
+    return original?.(input, init) as Promise<Response>;
+  });
+  return { held, release };
 }
 
 const open = async (me = grant(), s = fresh()) => {
@@ -231,6 +257,34 @@ describe('topic editor', () => {
     s.topicStatus = undefined;
     await user.click(screen.getByRole('button', { name: 'Retry' }));
     expect(await screen.findByText(/Draft saved at/)).toBeInTheDocument();
+  });
+
+  it('A26 Retry after a failed save sends the edits once, not again for a request made during the failure', async () => {
+    const user = userEvent.setup();
+    const s = fresh({ topicStatus: 503 });
+    const fetchMock = api(grant(), s);
+    const gate = hold(
+      fetchMock,
+      (url, init) => init?.method === 'PATCH' && url.endsWith(`/topics/${TOPIC}`),
+    );
+    renderApp(`/courses/${COURSE}/edit/${TOPIC}`);
+    const objective = await screen.findByLabelText('Learning objective');
+    await user.type(objective, 'a');
+    await waitFor(() => expect(gate.held.count).toBe(1), { timeout: 3000 });
+    // An edit while the first save is in flight asks for another save, which waits behind it.
+    await user.type(objective, 'b');
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+    gate.release();
+    expect(await screen.findByRole('alert', {}, { timeout: 3000 })).toHaveTextContent(
+      'Your changes are not saved.',
+    );
+    s.topicStatus = undefined;
+    await user.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(await screen.findByText(/Draft saved at/)).toBeInTheDocument();
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    // The failed attempt and one retry; no third request with the same values.
+    expect(s.patched).toHaveLength(2);
+    expect(s.topic.revision).toBe(2);
   });
 
   it('A26 a stale revision shows both versions and keeps the choice with the editor', async () => {
@@ -345,6 +399,38 @@ describe('reading upload', () => {
   });
 });
 
+describe('processing state while it is not known', () => {
+  it('A26 says it is checking while the status loads, and offers no retry for a ready reading', async () => {
+    const fetchMock = api(grant(), fresh());
+    const gate = hold(fetchMock, (url) => url.endsWith('/processing'));
+    renderApp(`/courses/${COURSE}/edit/${TOPIC}`);
+    await waitFor(() => expect(gate.held.count).toBe(1));
+    expect(await screen.findByText('Checking processing…')).toBeInTheDocument();
+    expect(screen.queryByText(/Not processed yet/)).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Retry processing' })).toBeNull();
+    gate.release();
+    expect(await screen.findByText('Ready to publish')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Retry processing' })).toBeNull();
+  });
+
+  it('A26 reports a status that could not be loaded and reloads it instead of retrying processing', async () => {
+    const user = userEvent.setup();
+    const { s } = await open(grant(), fresh({ processingStatus: 503 }));
+    expect(await screen.findByText(/Processing status could not be loaded/)).toBeInTheDocument();
+    expect(screen.queryByText(/Not processed yet/)).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Retry processing' })).toBeNull();
+    s.processingStatus = undefined;
+    await user.click(screen.getByRole('button', { name: 'Reload status' }));
+    expect(await screen.findByText('Ready to publish')).toBeInTheDocument();
+  });
+
+  it('A26 offers Retry processing when the server reported no status', async () => {
+    await open(grant(), fresh({ processing: { state: null } }));
+    expect(await screen.findByText(/Not processed yet/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Retry processing' })).toBeInTheDocument();
+  });
+});
+
 describe('publishing', () => {
   it('A16 Publish creates the next release and says classes stay on theirs', async () => {
     const user = userEvent.setup();
@@ -376,6 +462,42 @@ describe('publishing', () => {
       ).toBeGreaterThan(0),
     );
     expect(screen.queryByText('Release 3 created.')).toBeNull();
+  });
+
+  it('A16 says the release was not created because of the listed problems', async () => {
+    const user = userEvent.setup();
+    const report = {
+      errors: [{ code: 'unprocessed_reading', message: '“Why samples vary” is not processed' }],
+      warnings: [],
+    };
+    await open(grant(), fresh({ report, publishStatus: 422 }));
+    await user.click(await screen.findByRole('button', { name: 'Publish release 3' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'The release was not created because of the blocking problems listed above.',
+    );
+  });
+
+  it('A16 names the publisher permission when it was revoked and follows the new session', async () => {
+    const user = userEvent.setup();
+    const me = grant();
+    const { s } = await open(me, fresh({ publishStatus: 403 }));
+    const button = await screen.findByRole('button', { name: 'Publish release 3' });
+    expect(button).toBeEnabled();
+    // The grant is withdrawn after the session loaded.
+    me.courses = me.courses.map((c) => ({ ...c, publisher: false }));
+    await user.click(button);
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'The release was not created. Publishing needs the publisher permission on this course.',
+    );
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Publish release 3' })).toBeDisabled(),
+    );
+    expect(s.latest).toBe(2);
+  });
+
+  it('A16 marks an archived class in the release list', async () => {
+    await open(grant(), fresh({ classArchived: true }));
+    expect(await screen.findByText(/Class A \(archived\) uses release 2\./)).toBeInTheDocument();
   });
 
   it('A16 an editor without the publisher permission cannot publish and is told why', async () => {
