@@ -7,10 +7,9 @@
 // of the handle, and passing it to an untyped helper are not caught; any other object stored
 // under `db` (`deps.cache.db.delete(key)`) is flagged.
 //
-// The plugin runs from the biome.json override that lists the exempt files. ADR-0002 says
-// "outside db/"; the existing data-access files under auth/, content/, storage/, annotations/
-// and jobs/ take branded scopes and are exempt by name until they move under db/, so any other
-// file, existing or new, stays restricted unless biome.json names it.
+// The plugin runs from the biome.json override that exempts the data-access modules under db/,
+// the composition root main.ts and test files (ADR-0002, Scoped tables); every other server
+// file, existing or new, is restricted.
 //
 // Node names are Biome's own (`JsParenthesizedExpression`, `TsAsExpression`, ...); tree-sitter
 // names such as `as_expression` do not compile in this Biome version.

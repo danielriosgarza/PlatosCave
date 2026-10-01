@@ -1,5 +1,5 @@
-import type { Db } from '../db/client';
-import { users } from '../db/schema';
+import type { Db } from '../client';
+import { users } from '../schema';
 
 /**
  * The account for an address whose control was just proved. A first sign-in creates the

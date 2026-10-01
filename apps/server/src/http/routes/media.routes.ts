@@ -1,6 +1,7 @@
 import { getObjectUrl } from '@parallax/contracts/routes/media';
 import type { FastifyInstance } from 'fastify';
-import { downloadName, findReleasedObject, mintContentUrl } from '../../content/media';
+import { downloadName, mintContentUrl } from '../../content/media';
+import { findReleasedObject } from '../../db/content/media';
 import { notFound, registerRoute } from '../register';
 
 export default function mediaRoutes(app: FastifyInstance): void {

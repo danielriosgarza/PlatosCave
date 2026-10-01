@@ -15,6 +15,10 @@
     {
       "path": "solution.py",
       "content": "def f():\n    return 1\n"
+    },
+    {
+      "path": "tests/hidden_test.py",
+      "content": "from solution import f\nassert f() == 1\n"
     }
   ],
   "checks": [

@@ -2,7 +2,7 @@
 
 **Status:** Accepted, 2026-09-30
 
-Refined by [docs/design/runner.md](../design/runner.md) §8.4 (P3-12): the `execution.run`, `execution.result` and `execution.failed` queues in the separate pg-boss schema `pgboss_exec` carry runner messages without `actorId` or `scope`; authorisation for them completes before `bossExec.send` under a resolved class scope and is repeated on every read. Every queue in `pgboss` keeps the rule below.
+Refined by [docs/design/runner.md](../design/runner.md) §8.4 (P3-12): the `execution.run`, `execution.result` and `execution.failed` queues in the separate pg-boss schema `pgboss_exec` carry runner messages without `actorId` or `scope`; authorisation for them completes before `bossExec.send` under a resolved class scope and is repeated on every read. Every queue in `pgboss` keeps the rule below. The same section records the one exception to the scoped-table rule below: `forOwnRows(user, table)` in `apps/server/src/db/scoped.ts` reads a class-scoped table across classes, restricted to the rows owned by the user of a resolved `ClassScope` (`WHERE user_id = scope.user.id`, never a raw id), so that the per-student run cap counts a student's sample runs in every class; it is read-only (the cap counts and writes nothing through it; a row is settled only under its own class scope or by the worker, design §8.5); `scoped.ts` lists the tables that allow it (`execution_jobs`, P3-16) and its introspection test asserts that list, so any further table needs an entry there and a reason here.
 
 ## Context
 
@@ -27,7 +27,7 @@ type Scope =
 
 **Scoped tables.** Every table holding class data has `class_id NOT NULL` (annotations, threads, attempts, submissions, study positions, notebook sessions, grades, exports); course drafts and releases carry `course_id`. `apps/server/src/db/scoped.ts` lists both sets; a unit test introspects the drizzle schema and fails if a table with such a column is missing from the list or if a scoped table lacks the column. Repository helpers `forClass(scope)` / `forCourse(scope)` add the `WHERE class_id = …` predicate; direct `db.select()` on a scoped table outside `db/` is a lint error (Biome `noRestrictedImports` on the raw client from feature modules).
 
-Data-access files that predate this rule and live outside `db/` (under `auth/`, `content/`, `storage/`, `annotations/` and `jobs/`) take branded scopes and are exempt by name in the `biome.json` override, together with the composition root `main.ts`, until they move under `db/`; test files (`**/*.test.ts`) are exempt too. Every other server file, existing or new, is restricted unless that list names it. The rule is the import restriction plus the GritQL plugin `apps/server/lint/raw-db-query.grit`, whose header lists the forms it does not catch.
+The `biome.json` override exempts exactly `apps/server/src/db/**`, the composition root `main.ts` and test files (`**/*.test.ts`); every other server file, existing or new, is restricted. Data-access modules live under `db/` (for example `db/auth/`, `db/content/`, `db/annotations/`), and feature modules call them. The rule is the import restriction plus the GritQL plugin `apps/server/lint/raw-db-query.grit`, whose header lists the forms it does not catch.
 
 **Audience and privacy.** Annotation visibility is computed in one module (`annotations/visibility.ts`): `private` → author only; `instructor` → author plus class instructors; `class` → class members. Every read, count, notification and export uses it. Private notes are never joined into instructor views (§17 default).
 

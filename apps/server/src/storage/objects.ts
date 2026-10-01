@@ -1,6 +1,6 @@
 import type { CourseScope } from '../auth/scope';
 import type { Db } from '../db/client';
-import { storageObjects } from '../db/schema';
+import { recordCourseObject } from '../db/storage/objects';
 import { type Body, courseObjectPrefix, type Storage, type StoredObject } from './storage';
 
 /**
@@ -15,9 +15,6 @@ export async function storeCourseObject(
   contentType: string,
 ): Promise<StoredObject> {
   const stored = await storage.put(courseObjectPrefix(scope.courseId), body);
-  await db
-    .insert(storageObjects)
-    .values({ ...stored, courseId: scope.courseId, contentType, createdBy: scope.user.id })
-    .onConflictDoNothing();
+  await recordCourseObject(db, scope, stored, contentType);
   return stored;
 }

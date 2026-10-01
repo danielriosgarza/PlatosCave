@@ -5,6 +5,7 @@ import { ApiError } from '../../api/client';
 import styles from '../../components/Page.module.css';
 import { type TabDef, TabRow } from '../../components/TabRow';
 import { Unavailable } from '../../components/Unavailable';
+import { ExercisesPanel } from '../../exercises/ExercisesPanel';
 import readingStyles from '../../reading/Reading.module.css';
 import { ReadingTab } from '../../reading/ReadingTab';
 import { useClassContext } from '../../session/classContext';
@@ -98,11 +99,11 @@ function TopicWorkspace() {
     <OpenTopic
       classId={classId}
       courseId={context.courseId}
-      instructor={context.role === 'instructor'}
       topicId={topicId}
       tab={tab}
       data={data}
       topic={topic}
+      role={context.role}
     />
   );
 }
@@ -111,19 +112,19 @@ function TopicWorkspace() {
 function OpenTopic({
   classId,
   courseId,
-  instructor,
   topicId,
   tab,
   data,
   topic,
+  role,
 }: {
   classId: string;
   courseId: string;
-  instructor: boolean;
   topicId: string;
   tab: TabId;
   data: ClassTopics;
   topic: ClassTopic;
+  role: 'student' | 'instructor';
 }) {
   const navigate = Route.useNavigate();
   const search = Route.useSearch();
@@ -165,7 +166,7 @@ function OpenTopic({
             classId={classId}
             courseId={courseId}
             topicId={topicId}
-            instructor={instructor}
+            instructor={role === 'instructor'}
             search={search}
             onSearch={(next, how) =>
               navigate({
@@ -177,6 +178,8 @@ function OpenTopic({
               })
             }
           />
+        ) : tab === 'exercises' ? (
+          <ExercisesPanel classId={classId} topicId={topicId} role={role} />
         ) : (
           <p className={styles.intro}>Nothing is available under {label} for this topic yet.</p>
         )}

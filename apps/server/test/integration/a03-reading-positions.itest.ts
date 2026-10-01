@@ -6,11 +6,11 @@ import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { buildApp } from '../../src/app';
 import { loadConfig } from '../../src/config';
-import { adoptRelease } from '../../src/content/adoption';
 import { renderReading } from '../../src/content/reading';
-import { publishRelease } from '../../src/content/releases';
+import { adoptRelease } from '../../src/db/content/adoption';
+import { publishRelease } from '../../src/db/content/releases';
+import { writeDerivedOutputs } from '../../src/db/jobs/derived';
 import { resourceRevisions, resources, studyPositions } from '../../src/db/schema';
-import { writeDerivedOutputs } from '../../src/jobs/derived';
 import { FsStorage } from '../../src/storage/fs';
 import { storeCourseObject } from '../../src/storage/objects';
 import {

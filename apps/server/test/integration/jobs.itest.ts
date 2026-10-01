@@ -2,12 +2,17 @@ import { and, eq } from 'drizzle-orm';
 import type { Job, PgBoss } from 'pg-boss';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { z } from 'zod';
-import { type ClassScope, type CourseScope, resolveActorScope } from '../../src/auth/scope';
-import { validateDrafts } from '../../src/content/releases';
+import {
+  type ClassScope,
+  type CourseScope,
+  NoRecentAuthError,
+  resolveActorScope,
+} from '../../src/auth/scope';
 import type { Db } from '../../src/db/client';
+import { validateDrafts } from '../../src/db/content/releases';
+import { createBoss } from '../../src/db/jobs/boss';
+import { listResourceJobStatus, setDerivedStatus } from '../../src/db/jobs/derived';
 import { classMemberships, resourceRevisions, resources, topics } from '../../src/db/schema';
-import { createBoss } from '../../src/jobs/boss';
-import { listResourceJobStatus, setDerivedStatus } from '../../src/jobs/derived';
 import {
   defineScopedJob,
   ensureQueues,
@@ -109,7 +114,6 @@ async function courseScope(actorId: string, courseId: string): Promise<CourseSco
   const resolution = await resolveActorScope(
     testDb.db,
     actorId,
-    () => {},
     { kind: 'course', role: 'editor' },
     courseId,
   );
@@ -231,8 +235,7 @@ describe('runScopedJob', () => {
 
   test('resolveActorScope loads the actor itself and refuses unknown or malformed ids', async () => {
     const rule = { kind: 'class', role: 'instructor' } as const;
-    const resolve = (actorId: string) =>
-      resolveActorScope(testDb.db, actorId, () => {}, rule, ids.classB);
+    const resolve = (actorId: string) => resolveActorScope(testDb.db, actorId, rule, ids.classB);
     expect(await resolve('00000000-0000-4000-8000-000000009999')).toMatchObject({
       ok: false,
       status: 404,
@@ -244,6 +247,21 @@ describe('runScopedJob', () => {
       id: ids.marcus,
       kind: 'user',
     });
+  });
+
+  test('a scope resolved from an actor id never passes requireRecentAuth()', async () => {
+    const resolution = await resolveActorScope(
+      testDb.db,
+      ids.elena,
+      { kind: 'course', role: 'owner' },
+      ids.statistics,
+    );
+    if (!resolution.ok) throw new Error(resolution.reason);
+    const scope = resolution.scope as CourseScope;
+    expect(() => scope.requireRecentAuth()).toThrow(NoRecentAuthError);
+    expect(() => scope.requireRecentAuth()).toThrow(
+      expect.objectContaining({ statusCode: 401, code: 'recent_auth_required' }),
+    );
   });
 });
 
@@ -330,6 +348,47 @@ describe('worker', () => {
     expect(job.output).toEqual({ words: ['one', 'two'], at: at.toISOString() });
     // Invalid input is refused at send time.
     await expect(sendScopedJob(boss, typed, scope, { words: 1 as never, at })).rejects.toThrow();
+  });
+
+  test('sendScopedJob validates the JSON the worker will parse, not the value it was given', async () => {
+    const scope = await classScope(ids.priya, ids.classA);
+    // A Date passes z.date() but is stored as a string, which z.date() would refuse at run time.
+    const dated = defineScopedJob({
+      ...typed,
+      name: 'test.dated',
+      input: z.object({ at: z.date() }),
+      run: async () => ({}),
+    });
+    // A field set to undefined is dropped by JSON, so a key the schema requires goes missing.
+    const strict = defineScopedJob({
+      ...typed,
+      name: 'test.strict',
+      input: z.object({ note: z.union([z.string(), z.undefined()]) }),
+      run: async () => ({}),
+    });
+    await ensureQueues(boss, [dated, strict]);
+    expect(dated.input.safeParse({ at: new Date() }).success).toBe(true);
+    await expect(sendScopedJob(boss, dated, scope, { at: new Date() })).rejects.toThrow();
+    expect(strict.input.safeParse({ note: undefined }).success).toBe(true);
+    await expect(sendScopedJob(boss, strict, scope, { note: undefined })).rejects.toThrow();
+    // Nothing was enqueued.
+    for (const job of [dated, strict]) {
+      expect(await boss.findJobs(job.name)).toEqual([]);
+    }
+  });
+
+  test('changed queue options reach an existing queue, from ensureQueues and from workers', async () => {
+    const base = defineScopedJob({ ...typed, name: 'test.options', queue: { retryLimit: 1 } });
+    await ensureQueues(boss, [base]);
+    expect(await boss.getQueue(base.name)).toMatchObject({ retryLimit: 1 });
+    await ensureQueues(boss, [{ ...base, queue: { retryLimit: 4, retryDelay: 7 } }]);
+    expect(await boss.getQueue(base.name)).toMatchObject({ retryLimit: 4, retryDelay: 7 });
+    await workScopedJob(boss, testDb.db, { ...base, queue: { retryLimit: 5 } }, log);
+    expect(await boss.getQueue(base.name)).toMatchObject({ retryLimit: 5, retryDelay: 7 });
+    await boss.offWork(base.name);
+    // A job without options leaves the queue as it is.
+    await ensureQueues(boss, [{ ...base, queue: undefined }]);
+    expect(await boss.getQueue(base.name)).toMatchObject({ retryLimit: 5 });
   });
 
   test('a deduplicated send resolves to null', async () => {

@@ -1,15 +1,9 @@
 import type { Scope } from '@parallax/contracts';
-import { and, eq } from 'drizzle-orm';
 import type { FastifyRequest } from 'fastify';
+import { findActor, findClassAccess, findCourseAccess } from '../db/auth/scope';
+import { findPrincipal } from '../db/auth/sessions';
 import type { Db } from '../db/client';
-import { classes, classMemberships, courseMemberships, courses, users } from '../db/schema';
-import {
-  type Actor,
-  actorColumns,
-  findPrincipal,
-  type Principal,
-  readSessionToken,
-} from './sessions';
+import { type Actor, type Principal, readSessionToken } from './sessions';
 
 /** §3: sensitive membership changes need an authentication no older than this. */
 export const RECENT_AUTH_MS = 15 * 60_000;
@@ -143,21 +137,32 @@ export async function resolveScope(
 type ClassRule = Extract<Scope, { kind: 'class' }>;
 type CourseRule = Extract<Scope, { kind: 'course' }>;
 
+/** What `requireRecentAuth()` throws on a scope resolved from an actor id. */
+export class NoRecentAuthError extends Error {
+  readonly statusCode = 401;
+  readonly code = 'recent_auth_required';
+}
+
+/** Without a session, nothing can count as a recent sign-in (§3). */
+const noRecentAuth = () => {
+  throw new NoRecentAuthError('Background jobs cannot make sensitive changes');
+};
+
 /**
  * Resolves the class or course scope of a person acting without a session (a background job,
  * ADR-0002): loads the actor itself, so a scope comes only from a session token or an actor id.
+ * Its `requireRecentAuth()` always throws `NoRecentAuthError`: no caller can make it permissive.
  */
 export async function resolveActorScope(
   db: Db,
   actorId: string,
-  requireRecentAuth: () => void,
   rule: ClassRule | CourseRule,
   targetId: string,
 ): Promise<Resolution> {
   if (!UUID.test(actorId)) return deny(404, 'actor does not exist');
-  const [user] = await db.select(actorColumns).from(users).where(eq(users.id, actorId));
+  const user = await findActor(db, actorId);
   if (!user) return deny(404, 'actor does not exist');
-  const base = { user, requireRecentAuth };
+  const base = { user, requireRecentAuth: noRecentAuth };
   return rule.kind === 'class'
     ? resolveClass(db, base, rule, targetId)
     : resolveCourse(db, base, rule, targetId);
@@ -172,30 +177,7 @@ async function resolveClass(
 ): Promise<Resolution> {
   const { user } = base;
   if (!classId || !UUID.test(classId)) return deny(404, 'classId is not a uuid');
-  const [row] = await db
-    .select({
-      className: classes.name,
-      courseId: classes.courseId,
-      courseTitle: courses.title,
-      releaseId: classes.releaseId,
-      archivedAt: classes.archivedAt,
-      id: classMemberships.id,
-      role: classMemberships.role,
-      manageMembers: classMemberships.manageMembers,
-      isPreview: classMemberships.isPreview,
-      ownsCourse: courseMemberships.owner,
-    })
-    .from(classes)
-    .innerJoin(courses, eq(courses.id, classes.courseId))
-    .leftJoin(
-      classMemberships,
-      and(eq(classMemberships.classId, classes.id), eq(classMemberships.userId, user.id)),
-    )
-    .leftJoin(
-      courseMemberships,
-      and(eq(courseMemberships.courseId, classes.courseId), eq(courseMemberships.userId, user.id)),
-    )
-    .where(eq(classes.id, classId));
+  const row = await findClassAccess(db, user.id, classId);
   if (!row) return deny(404, 'no such class');
   const context = {
     ...base,
@@ -249,20 +231,7 @@ async function resolveCourse(
 ): Promise<Resolution> {
   const { user } = base;
   if (!courseId || !UUID.test(courseId)) return deny(404, 'courseId is not a uuid');
-  const [row] = await db
-    .select({
-      courseTitle: courses.title,
-      id: courseMemberships.id,
-      owner: courseMemberships.owner,
-      editor: courseMemberships.editor,
-      publisher: courseMemberships.publisher,
-    })
-    .from(courses)
-    .innerJoin(
-      courseMemberships,
-      and(eq(courseMemberships.courseId, courses.id), eq(courseMemberships.userId, user.id)),
-    )
-    .where(eq(courses.id, courseId));
+  const row = await findCourseAccess(db, user.id, courseId);
   if (!row || user.kind === 'preview') return deny(404, 'no membership in this course');
   const grants = { owner: row.owner, editor: row.editor, publisher: row.publisher };
   // Owners hold every course permission (§3: "New courses grant their creator these permissions").

@@ -2,8 +2,8 @@ import pino from 'pino';
 import { buildApp } from './app';
 import { loadConfig } from './config';
 import { createDb } from './db/client';
+import { createBoss } from './db/jobs/boss';
 import annotationsMap from './jobs/annotations-map.job';
-import { createBoss } from './jobs/boss';
 import { workMaintenance } from './jobs/maintenance';
 import { loadJobs } from './jobs/registry';
 import { ensureQueues, workScopedJob } from './jobs/scoped';
@@ -30,6 +30,23 @@ let logPoolError = (err: Error) => console.error('pg pool error', err);
 const database = config.DATABASE_URL
   ? createDb(config.DATABASE_URL, { onError: (err) => logPoolError(err) })
   : undefined;
+
+/** Whether the promise settles (resolves or rejects) within `ms`. */
+async function settlesWithin(promise: Promise<unknown>, ms: number): Promise<boolean> {
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<boolean>((resolve) => {
+    timer = setTimeout(() => resolve(false), ms);
+  });
+  const settled = promise.then(
+    () => true,
+    () => true,
+  );
+  try {
+    return await Promise.race([settled, timeout]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 /** Closes in order and exits; a second signal forces exit if closing hangs. */
 function onSignals(
@@ -108,9 +125,14 @@ if (mode === 'api') {
     log.info({ jobs: [...jobs.map((j) => j.name), ...maintenance] }, 'worker started');
   })();
   // Installed before startup, so a signal during it still stops pg-boss once startup settles.
+  // pg-boss's own stop() waits for start() too, so a startup that hangs (boss.start() waiting on
+  // the database) is raced against the budget: past it the worker exits 1 without stopping.
   onSignals(log, async () => {
-    await started.catch(() => {});
-    await boss.stop({ graceful: true, timeout: WORKER_STOP_TIMEOUT_MS });
+    const deadline = Date.now() + WORKER_STOP_TIMEOUT_MS;
+    if (!(await settlesWithin(started, WORKER_STOP_TIMEOUT_MS))) {
+      throw new Error(`worker startup did not settle within ${WORKER_STOP_TIMEOUT_MS} ms`);
+    }
+    await boss.stop({ graceful: true, timeout: Math.max(deadline - Date.now(), 1) });
     storage.destroy?.();
   });
   try {

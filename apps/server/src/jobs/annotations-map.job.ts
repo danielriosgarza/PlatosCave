@@ -1,7 +1,7 @@
 import type { PgBoss } from 'pg-boss';
 import { z } from 'zod';
-import { mapClass } from '../annotations/annotations';
 import type { ClassScope } from '../auth/scope';
+import { mapClass } from '../db/annotations/annotations';
 import { defineScopedJob, sendScopedJob } from './scoped';
 
 export const ANNOTATIONS_MAP = 'annotations.map';

@@ -4,14 +4,15 @@ import type { CourseScope } from '../auth/scope';
 import { extractPdfText, PdfReadError } from '../content/pdf-text';
 import { renderReading } from '../content/reading';
 import type { Db } from '../db/client';
-import { type Storage, StorageNotFoundError } from '../storage/storage';
 import {
   type DerivationSource,
-  type DerivedStatus,
+  hasDerivedStatus,
   loadDerivationSource,
   setDerivedStatus,
   writeDerivedOutputs,
-} from './derived';
+} from '../db/jobs/derived';
+import { type Storage, StorageNotFoundError } from '../storage/storage';
+import type { DerivedStatus } from './derived';
 import { defineScopedJob, sendScopedJob } from './scoped';
 
 export const READING_INGEST = 'reading.ingest';
@@ -210,4 +211,15 @@ export async function enqueueReadingIngest(
     );
     throw err;
   }
+}
+
+/** Queues ingestion for a revision no job has touched yet; a revision with a status is left as is. */
+export async function enqueueIfUnprocessed(
+  boss: PgBoss,
+  db: Db,
+  scope: CourseScope,
+  revisionId: string,
+): Promise<string | null> {
+  if (await hasDerivedStatus(db, scope, revisionId)) return null;
+  return enqueueReadingIngest(boss, db, scope, revisionId);
 }
