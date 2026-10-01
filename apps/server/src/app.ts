@@ -13,7 +13,12 @@ import {
 import type { Config } from './config';
 import { MAX_TOKEN_LENGTH } from './content/tokens';
 import type { Db } from './db/client';
-import { CONTENT_ROUTE, redactContentUrl, registerContentOrigin } from './http/content';
+import {
+  CONTENT_ROUTE,
+  isContentHost,
+  redactContentUrl,
+  registerContentOrigin,
+} from './http/content';
 import { isApiPath, registerStatic } from './http/static';
 import { createStorage } from './storage/create';
 import type { Storage } from './storage/storage';
@@ -102,6 +107,10 @@ export async function buildApp(config: Config, deps: Deps = {}): Promise<Fastify
 
   const spa = config.STATIC_DIR ? await registerStatic(app, config.STATIC_DIR) : undefined;
   // One JSON 404 shape for unknown /api paths and non-members, in dev, tests and production.
-  app.setNotFoundHandler((req, reply) => spa?.(req, reply) ?? reply.code(404).send(NOT_FOUND));
+  // The web app never answers on the content host, however the path is spelled (ADR-0002).
+  app.setNotFoundHandler(
+    (req, reply) =>
+      (!isContentHost(req, config) && spa?.(req, reply)) || reply.code(404).send(NOT_FOUND),
+  );
   return app;
 }

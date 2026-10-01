@@ -14,6 +14,7 @@ test('P1-06 the content origin serves only token URLs; the app origin serves no 
     '/topics',
     '/content/',
     '/content/a/b',
+    '//x/content/abc',
     '/content/not-a-token',
   ]) {
     const res = await request.get(`${content}${path}`);

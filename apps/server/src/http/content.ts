@@ -47,7 +47,7 @@ export interface ContentOriginDeps {
   now: () => Date;
 }
 
-const isContentHost = (req: FastifyRequest, config: Config) =>
+export const isContentHost = (req: FastifyRequest, config: Config): boolean =>
   (req.hostname ?? '').toLowerCase() === config.CONTENT_HOST;
 
 /**
@@ -72,6 +72,8 @@ export function registerContentOrigin(app: FastifyInstance, deps: ContentOriginD
     CONTENT_ROUTE,
     { schema: { hide: true } },
     async (req, reply) => {
+      // Defence in depth: the onRequest hook already refuses other hosts.
+      if (!isContentHost(req, config)) return reply.code(404).send(NOT_FOUND);
       const claims = verifyContentToken(config.CONTENT_TOKEN_SECRET, req.params.token, now());
       if (!claims) return reply.code(404).send(NOT_FOUND);
       // One backend call per request: HEAD needs only the size, GET streams body and size.
