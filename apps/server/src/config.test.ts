@@ -59,14 +59,22 @@ describe('config', () => {
     expect(loadConfig({}).MAIL_FROM).toBe('Parallax <no-reply@parallax.invalid>');
   });
 
-  test('TRUST_PROXY is off by default and reads true, a hop count or proxy addresses', () => {
+  test('TRUST_PROXY is off by default and reads true or proxy addresses', () => {
     expect(loadConfig({}).TRUST_PROXY).toBe(false);
     expect(loadConfig({ TRUST_PROXY: 'true' }).TRUST_PROXY).toBe(true);
-    expect(loadConfig({ TRUST_PROXY: '1' }).TRUST_PROXY).toBe(1);
+    expect(loadConfig({ TRUST_PROXY: 'loopback, ::1, fd00::/8' }).TRUST_PROXY).toEqual([
+      'loopback',
+      '::1',
+      'fd00::/8',
+    ]);
     expect(loadConfig({ TRUST_PROXY: '10.0.0.0/8, 192.168.1.5' }).TRUST_PROXY).toEqual([
       '10.0.0.0/8',
       '192.168.1.5',
     ]);
+    // A hop count would silently trust nobody under Fastify 5; anything else would crash later.
+    for (const bad of ['1', 'yes', 'nginx', '1.5', '10.0.0.0/33', '10.0.0.0/8,', '1.2.3.4/8/9']) {
+      expect(() => loadConfig({ TRUST_PROXY: bad }), bad).toThrow(/TRUST_PROXY/);
+    }
   });
 
   test('the s3 driver needs a bucket and credentials', () => {

@@ -1,5 +1,3 @@
-import type { Executor } from '../db/client';
-
 /**
  * An identity service (§3: "Both use the same identity service"). Email links are the only
  * provider today; institutional sign-in is a later provider decision and implements this too.
@@ -11,11 +9,8 @@ export interface IdentityProvider {
    * exists: the caller answers the same way for every address.
    */
   begin(input: { email: string; destination: string }): Promise<void>;
-  /**
-   * Finishes a sign-in from the provider's proof (here, the link token). With `executor`, the
-   * proof is consumed inside the caller's transaction, so it is spent only if the caller commits.
-   */
-  complete(proof: string, executor?: Executor): Promise<SignInResult>;
+  /** Finishes a sign-in from the provider's proof (here, the link token). */
+  complete(proof: string): Promise<SignInResult>;
 }
 
 export type SignInResult =

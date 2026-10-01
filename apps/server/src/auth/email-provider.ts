@@ -38,8 +38,14 @@ export function purgeSigninTokens(db: Db, now: Date): Promise<number> {
 function describeMailError(err: unknown, address: string): Record<string, unknown> {
   const e = err as { message?: unknown; code?: unknown; responseCode?: unknown } | null;
   const message = typeof e?.message === 'string' ? e.message : String(err);
+  const [local = ''] = address.split('@');
+  // The address in any case, then a bare local part (relays often echo just that).
+  const literal = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const masked = message
+    .replace(new RegExp(literal(address), 'gi'), '[address]')
+    .replace(new RegExp(`\\b${literal(local)}\\b`, 'gi'), '[address]');
   return {
-    message: message.split(address).join('[address]'),
+    message: masked,
     code: e?.code,
     responseCode: e?.responseCode,
   };
@@ -122,6 +128,11 @@ export class EmailLinkProvider implements IdentityProvider {
     }
   }
 
+  /**
+   * Finishes a sign-in from the link token. With `executor` the link is spent inside the
+   * caller's transaction (verify's), so it stays usable if anything after it fails; that
+   * guarantee belongs to this provider, not to `IdentityProvider`.
+   */
   async complete(token: string, executor?: Executor): Promise<SignInResult> {
     if (!TOKEN_SHAPE.test(token)) return { ok: false, destination: null };
     const { now: clock } = this.deps;

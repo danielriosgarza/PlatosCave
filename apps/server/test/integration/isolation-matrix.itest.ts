@@ -303,25 +303,13 @@ describe('scenario checks at the API level', () => {
     }
     expect((await get(getClassUrl(ids.classB), 'sam')).statusCode).toBe(404);
     // HEAD is not exposed on any API route (registerRoute), so it answers the route-not-found
-    // 404 whoever asks and says nothing about the scope guard. The guard is exercised by a write
-    // to a route that exists: the other cohort's members get 404, the class's manager reaches it.
+    // 404 whoever asks; the scope guard itself is driven by the matrix above.
     const head = await app.inject({
       method: 'HEAD',
       url: getClassUrl(ids.classA),
       headers: { cookie: world.cookie.bea },
     });
     expect(head.statusCode).toBe(404);
-    const [, , membersProbe] = probes;
-    if (!membersProbe) throw new Error('members probe missing');
-    for (const who of ['bea', 'marcus'] as const) {
-      expect(await send(membersProbe, { classId: ids.classA }, who)).toMatchObject({
-        status: 404,
-        reached: false,
-      });
-    }
-    expect(await send(membersProbe, { classId: ids.classA }, 'noor')).toMatchObject({
-      reached: true,
-    });
     // Owning the course is not class access (§3: "Only with class access").
     expect((await get(getClassUrl(ids.classA), 'elena')).statusCode).toBe(404);
   });

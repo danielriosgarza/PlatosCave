@@ -82,8 +82,7 @@ export async function buildApp(config: Config, deps: Deps = {}): Promise<Fastify
   const app = Fastify({
     // Storage keys and content tokens are path parameters longer than the default 100.
     routerOptions: { maxParamLength: MAX_TOKEN_LENGTH },
-    // A hop count is documented Fastify behaviour that its option type omits.
-    trustProxy: config.TRUST_PROXY as boolean | string[],
+    trustProxy: config.TRUST_PROXY,
     logger: {
       level: config.LOG_LEVEL,
       serializers: {

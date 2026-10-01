@@ -3,7 +3,12 @@ import type { FastifyInstance } from 'fastify';
 import type { RouteDeps } from '../../app';
 import { defaultDestination, safeDestination } from '../../auth/destination';
 import { EmailLinkProvider } from '../../auth/email-provider';
-import { readSessionToken, SESSION_COOKIE, sessionCookieOptions } from '../../auth/sessions';
+import {
+  readSessionToken,
+  SESSION_COOKIE,
+  sessionCookieOptions,
+  TOKEN_SHAPE,
+} from '../../auth/sessions';
 import { revokeSession, signInWithProof } from '../../db/auth/sessions';
 import { registerRoute } from '../register';
 
@@ -42,14 +47,14 @@ export default function authRoutes(app: FastifyInstance, deps: RouteDeps): void 
     verifySignInLink,
     async ({ query, req, reply }) => {
       if (!db || !provider) throw app.httpErrors.serviceUnavailable();
+      // A missing or malformed token is decided in memory: no transaction, no pool connection.
+      const { token } = query;
+      if (!token || !TOKEN_SHAPE.test(token)) return reply.redirect(EXPIRED) as never;
       // Spending the link, finding the account, ending the old session and starting the new one
       // are one transaction: a failure after the link is marked used rolls the use back, so the
       // link still works on retry instead of leaving a dead link and a 500.
       const signedIn = await signInWithProof(db, {
-        consume: (tx) =>
-          query.token
-            ? provider.complete(query.token, tx)
-            : Promise.resolve({ ok: false as const, destination: null }),
+        consume: (tx) => provider.complete(token, tx),
         previous: readSessionToken(req),
         now: now(),
       });
@@ -66,15 +71,15 @@ export default function authRoutes(app: FastifyInstance, deps: RouteDeps): void 
   );
 
   registerRoute(app, signOut, async ({ req, reply }) => {
-    // Only a request carrying a validly signed session cookie ends anything or clears the
-    // cookie. The route is public and Fastify parses text/plain, so a cross-site form post
-    // reaches it without the (SameSite=Lax) cookie; answering Set-Cookie there would sign the
-    // visitor out of their own session.
+    // Only a request that carries the session cookie clears it. The route is public and Fastify
+    // parses text/plain, so a cross-site form post reaches it without the (SameSite=Lax)
+    // cookie; answering Set-Cookie there would sign the visitor out of their own session. Presence
+    // is enough (not a valid signature), so a cookie the server can no longer unsign, such as
+    // after a SESSION_SECRET rotation, is still dropped.
+    if (req.cookies?.[SESSION_COOKIE] === undefined) return { signedOut: true as const };
     const token = readSessionToken(req);
-    if (token) {
-      if (db) await revokeSession(db, token, now());
-      reply.clearCookie(SESSION_COOKIE, cookieOptions);
-    }
+    if (token && db) await revokeSession(db, token, now());
+    reply.clearCookie(SESSION_COOKIE, cookieOptions);
     return { signedOut: true as const };
   });
 }

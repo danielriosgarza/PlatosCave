@@ -1,3 +1,4 @@
+import { isIP } from 'node:net';
 import { z } from 'zod';
 
 /** Used outside production only, so a fresh checkout runs without configuration. */
@@ -11,6 +12,16 @@ const HostName = z
   .string()
   .regex(/^[A-Za-z0-9.-]+$|^\[[0-9A-Fa-f:]+\]$/, 'a host name without scheme or port')
   .transform((h) => h.toLowerCase());
+
+/** One `trustProxy` entry as proxy-addr reads it: an address, an address/prefix, or a keyword. */
+function isProxyAddress(entry: string): boolean {
+  if (['loopback', 'linklocal', 'uniquelocal'].includes(entry)) return true;
+  const [address = '', prefix, ...rest] = entry.split('/');
+  const family = isIP(address);
+  if (family === 0 || rest.length > 0) return false;
+  if (prefix === undefined) return true;
+  return /^\d{1,3}$/.test(prefix) && Number(prefix) <= (family === 4 ? 32 : 128);
+}
 
 const Env = z
   .object({
@@ -48,19 +59,22 @@ const Env = z
      * Fastify `trustProxy`: which proxies' `X-Forwarded-*` headers to believe, so `req.ip` (the
      * rate-limit key) and `req.host` name the client and the requested host, not the proxy.
      * `false` (default), `true` (every hop; only when the app is reachable through the proxy
-     * alone), a hop count, or a comma-separated list of proxy addresses / CIDR ranges.
+     * alone), or a comma-separated list of proxy addresses / CIDR ranges. A bare hop count is
+     * refused: Fastify 5 treats it as "trust nobody" because it cannot check the peer.
      */
     TRUST_PROXY: z
       .string()
       .default('false')
-      .transform((v): boolean | number | string[] => {
-        const value = v.trim().toLowerCase();
-        if (value === 'true') return true;
-        if (value === 'false') return false;
-        if (/^\d+$/.test(value)) return Number(value);
+      .transform((v): boolean | string[] => {
+        const value = v.trim();
+        if (value.toLowerCase() === 'true') return true;
+        if (value.toLowerCase() === 'false') return false;
         return value.split(',').map((a) => a.trim());
       })
-      .refine((v) => !Array.isArray(v) || v.every((a) => a !== ''), 'empty proxy address'),
+      .refine((v) => !Array.isArray(v) || v.every(isProxyAddress), {
+        message:
+          'true, false, or a comma-separated list of proxy addresses, CIDR ranges or loopback / linklocal / uniquelocal',
+      }),
     /**
      * Two host names for one server (ADR-0002): the app (API, web) and the content origin,
      * which serves only `/content/:token`. Development defaults match Vite on localhost:5173.

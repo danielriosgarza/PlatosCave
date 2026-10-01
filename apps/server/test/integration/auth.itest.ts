@@ -255,12 +255,16 @@ describe('POST /api/auth/link', () => {
       mailer: {
         send: async () => {
           // What nodemailer attaches to a rejected send.
-          throw Object.assign(new Error(`550 5.1.1 <${email}> user unknown`), {
-            code: 'EENVELOPE',
-            responseCode: 550,
-            envelope: { to: [email] },
-            rejected: [email],
-          });
+          // Relays echo the address in their own case, or just its local part.
+          throw Object.assign(
+            new Error('550 5.1.1 <Both-Down@Example.test> no such user both-down'),
+            {
+              code: 'EENVELOPE',
+              responseCode: 550,
+              envelope: { to: [email] },
+              rejected: [email],
+            },
+          );
         },
       },
     });
@@ -279,7 +283,7 @@ describe('POST /api/auth/link', () => {
       await testDb.db.execute(sql`drop function pc_refuse_delete()`);
     }
     expect(logged).toHaveLength(2);
-    expect(JSON.stringify(logged)).not.toContain(email);
+    expect(JSON.stringify(logged).toLowerCase()).not.toContain('both-down');
     expect(JSON.stringify(logged)).toContain('EENVELOPE');
   });
 
@@ -507,17 +511,25 @@ describe('POST /api/auth/signout', () => {
     expect(res.headers['set-cookie']).toBeUndefined();
   });
 
-  test('a cross-site text/plain form post (no cookie sent, or a forged one) does not clear the cookie', async () => {
-    for (const cookie of [undefined, 'pc_session=forged.value']) {
-      const res = await app.inject({
-        method: 'POST',
-        url: '/api/auth/signout',
-        headers: { 'content-type': 'text/plain', ...(cookie ? { cookie } : {}) },
-        payload: 'x=1',
-      });
-      expect(res.statusCode).toBe(200);
-      expect(res.headers['set-cookie']).toBeUndefined();
-    }
+  test('a cross-site text/plain form post (the browser sends no cookie) does not clear the cookie', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/auth/signout',
+      headers: { 'content-type': 'text/plain' },
+      payload: 'x=1',
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['set-cookie']).toBeUndefined();
+  });
+
+  test('a cookie the server cannot unsign (rotated secret) is still cleared', async () => {
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/auth/signout',
+      headers: { cookie: 'pc_session=forged.value' },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.cookies.find((c) => c.name === 'pc_session')?.value).toBe('');
   });
 });
 
