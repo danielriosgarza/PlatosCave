@@ -31,9 +31,11 @@ export type SessionState =
 
 export function useSession(): SessionState {
   const { data, isPending, isError } = useQuery(sessionQuery);
+  // A failed background re-check keeps the last good answer; only report an error without one.
+  if (data !== undefined)
+    return data ? { status: 'signed-in', me: data } : { status: 'signed-out' };
   if (isPending) return { status: 'loading' };
-  if (isError) return { status: 'error' };
-  return data ? { status: 'signed-in', me: data } : { status: 'signed-out' };
+  return isError ? { status: 'error' } : { status: 'loading' };
 }
 
 /** Teaching means an instructor class membership or any course permission (§3). */

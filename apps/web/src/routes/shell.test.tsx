@@ -95,6 +95,34 @@ describe('courses default view', () => {
   });
 });
 
+describe('session changes while a page is open', () => {
+  const me = makeMe({ classes: [studentIn(CLASS_A, 'Class A')] });
+  const handler = { current: signedIn(me) };
+
+  it('A02 keeps the page and Sign out when a background re-check of the session fails', async () => {
+    handler.current = signedIn(me);
+    stubApi((url, init) => handler.current(url, init));
+    const { queryClient } = renderApp(`/classes/${CLASS_A}/topics`);
+    expect(await screen.findByRole('button', { name: 'Sign out' })).toBeInTheDocument();
+    handler.current = () => ({ status: 500, body: { error: 'boom' } });
+    await queryClient.invalidateQueries({ queryKey: ['session'] });
+    expect(screen.getByRole('button', { name: 'Sign out' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Statistical thinking' })).toBeInTheDocument();
+    expect(screen.queryByText('This page is not available')).toBeNull();
+  });
+
+  it('A01 sends the person to /signin with the address kept when the session ends', async () => {
+    handler.current = signedIn(me);
+    stubApi((url, init) => handler.current(url, init));
+    const { router, queryClient } = renderApp('/courses?view=student');
+    await screen.findByRole('heading', { name: 'Your courses' });
+    handler.current = signedOut;
+    await queryClient.invalidateQueries({ queryKey: ['session'] });
+    await waitFor(() => expect(router.state.location.pathname).toBe('/signin'));
+    expect(router.state.location.search).toEqual({ next: '/courses?view=student' });
+  });
+});
+
 describe('topic workspace tabs', () => {
   it('A02 selecting a tab changes the address and the selected tab', async () => {
     const user = userEvent.setup();

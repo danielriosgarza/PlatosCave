@@ -1,5 +1,12 @@
-import { createFileRoute, Outlet, redirect } from '@tanstack/react-router';
-import { loadSession } from '../session/useSession';
+import {
+  createFileRoute,
+  Outlet,
+  redirect,
+  useLocation,
+  useNavigate,
+} from '@tanstack/react-router';
+import { useEffect } from 'react';
+import { loadSession, useSession } from '../session/useSession';
 
 /** Everything below needs a session; the intended address travels in `next` (§3). */
 export const Route = createFileRoute('/_authed')({
@@ -7,5 +14,19 @@ export const Route = createFileRoute('/_authed')({
     const me = await loadSession(context.queryClient);
     if (!me) throw redirect({ to: '/signin', search: { next: location.href } });
   },
-  component: Outlet,
+  component: Authed,
 });
+
+/** A session that ends while a page is open (expiry, sign-out in another tab) leaves too. */
+function Authed() {
+  const session = useSession();
+  const navigate = useNavigate();
+  const href = useLocation({ select: (l) => l.href });
+  // The layout can still be mounted for a moment after the move to /signin; never chain from it.
+  const onSignin = useLocation({ select: (l) => l.pathname === '/signin' });
+  const signedOut = session.status === 'signed-out' && !onSignin;
+  useEffect(() => {
+    if (signedOut) void navigate({ to: '/signin', search: { next: href }, replace: true });
+  }, [signedOut, href, navigate]);
+  return <Outlet />;
+}

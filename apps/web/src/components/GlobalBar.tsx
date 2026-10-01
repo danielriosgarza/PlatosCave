@@ -11,6 +11,7 @@ export function GlobalBar() {
   const queryClient = useQueryClient();
   const navigate = useNavigate();
   const [signOutFailed, setSignOutFailed] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
   const { classId: routeClassId } = useParams({ strict: false });
 
   const me = session.status === 'signed-in' ? session.me : null;
@@ -25,6 +26,7 @@ export function GlobalBar() {
 
   const handleSignOut = async () => {
     setSignOutFailed(false);
+    setSigningOut(true);
     try {
       await call(signOut);
     } catch (error) {
@@ -33,10 +35,13 @@ export function GlobalBar() {
         setSignOutFailed(true);
         return;
       }
+    } finally {
+      setSigningOut(false);
     }
+    // Leave the guarded pages first so the signed-out guard does not add a `next` to /signin.
+    await navigate({ to: '/signin' });
     queryClient.clear();
     queryClient.setQueryData(sessionQuery.queryKey, null);
-    await navigate({ to: '/signin' });
   };
 
   return (
@@ -64,7 +69,12 @@ export function GlobalBar() {
         <div className={styles.account}>
           <span className={styles.who}>{me.user.name}</span>
           {signOutFailed ? <span role="alert">Sign-out failed. Try again.</span> : null}
-          <button type="button" className={styles.signOut} onClick={handleSignOut}>
+          <button
+            type="button"
+            className={styles.signOut}
+            disabled={signingOut}
+            onClick={handleSignOut}
+          >
             Sign out
           </button>
         </div>
