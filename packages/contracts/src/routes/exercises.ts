@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { conflictBody, defineRoute } from '../define';
-import { exerciseStepView } from '../exercise';
+import { exerciseCredit, exerciseStepView } from '../exercise';
 
 /**
  * Practice attempts on `exercise` resources (§9, §13). Every route is class-scoped; an
@@ -48,6 +48,8 @@ export const attemptView = z.object({
   completion: exerciseHelp.nullable(),
   completedAt: timestamp.nullable(),
   startedAt: timestamp,
+  /** Points and hint policy when the exercise is for credit; null for ungraded practice (§9). */
+  credit: exerciseCredit.nullable(),
   steps: z.array(attemptStepView),
 });
 
