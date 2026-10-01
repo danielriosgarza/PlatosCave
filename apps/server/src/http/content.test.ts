@@ -106,13 +106,17 @@ describe('content origin', () => {
   });
 
   test('the longest download name still yields a token the content origin accepts', async () => {
-    const name = downloadName('統計'.repeat(400), 'application/pdf');
-    expect([...name]).toHaveLength(104);
-    const res = await get(
-      `/content/${token({ disposition: 'attachment', filename: name })}`,
-      content,
-    );
-    expect(res.statusCode).toBe(200);
+    // Four-byte characters and a content type with parameters: the worst case found in review.
+    const contentType = 'application/x-ipynb+json; charset=utf-8';
+    for (const title of ['😀'.repeat(400), '統計'.repeat(400), 'a'.repeat(5000)]) {
+      const name = downloadName(title, contentType);
+      expect(Buffer.byteLength(name)).toBeLessThanOrEqual(120 + '.ipynb'.length);
+      const res = await get(
+        `/content/${token({ disposition: 'attachment', filename: name, contentType })}`,
+        content,
+      );
+      expect(res.statusCode, title.slice(0, 2)).toBe(200);
+    }
   });
 
   test('A01 expired, forged and unknown-object tokens get 404', async () => {

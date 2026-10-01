@@ -11,6 +11,7 @@ import {
   validatorCompiler,
 } from 'fastify-type-provider-zod';
 import type { Config } from './config';
+import { MAX_TOKEN_LENGTH } from './content/tokens';
 import type { Db } from './db/client';
 import { redactContentUrl, registerContentOrigin } from './http/content';
 import { isApiPath, registerStatic } from './http/static';
@@ -39,7 +40,7 @@ const NOT_FOUND = { error: 'not found' };
 export async function buildApp(config: Config, deps: Deps = {}): Promise<FastifyInstance> {
   const app = Fastify({
     // Storage keys and content tokens are path parameters longer than the default 100.
-    routerOptions: { maxParamLength: 1024 },
+    routerOptions: { maxParamLength: MAX_TOKEN_LENGTH },
     logger: {
       level: config.LOG_LEVEL,
       serializers: {
@@ -59,6 +60,8 @@ export async function buildApp(config: Config, deps: Deps = {}): Promise<Fastify
 
   const now = deps.now ?? (() => new Date());
   const storage = deps.storage ?? createStorage(config);
+  // Only the store built here is ours to release; an injected one belongs to the caller.
+  if (!deps.storage) app.addHook('onClose', async () => storage.destroy?.());
   app.decorate('resolverDeps', { db: deps.db, now });
   app.decorate('contentDeps', { config, storage });
   app.decorate('contracts', [] as RouteContract[]);

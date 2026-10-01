@@ -1,16 +1,18 @@
-import { createHash, randomUUID } from 'node:crypto';
+import { randomUUID } from 'node:crypto';
 import { createWriteStream } from 'node:fs';
 import { mkdir, open, rename, rm, stat } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
-import { Readable, Transform } from 'node:stream';
+import type { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import {
   assertSafeKey,
   type Body,
+  hashingMeter,
   objectKey,
   type Storage,
   StorageNotFoundError,
   type StoredObject,
+  toReadable,
 } from './storage';
 
 const isMissing = (err: unknown) => (err as NodeJS.ErrnoException).code === 'ENOENT';
@@ -30,19 +32,11 @@ export class FsStorage implements Storage {
     const tmpDir = join(this.root, '.tmp');
     await mkdir(tmpDir, { recursive: true });
     const tmp = join(tmpDir, randomUUID());
-    const hash = createHash('sha256');
-    let size = 0;
-    const meter = new Transform({
-      transform(chunk: Buffer, _enc, done) {
-        hash.update(chunk);
-        size += chunk.length;
-        done(null, chunk);
-      },
-    });
-    const source = body instanceof Uint8Array ? Readable.from([body]) : Readable.from(body);
+    const { meter, result } = hashingMeter();
+    const source = toReadable(body);
     try {
       await pipeline(source, meter, createWriteStream(tmp, { flags: 'wx' }));
-      const sha256 = hash.digest('hex');
+      const { sha256, size } = result();
       const key = objectKey(prefix, sha256);
       const dest = this.path(key);
       await mkdir(dirname(dest), { recursive: true });

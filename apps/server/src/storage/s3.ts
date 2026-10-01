@@ -1,5 +1,5 @@
-import { createHash, randomUUID } from 'node:crypto';
-import { PassThrough, Readable, Transform } from 'node:stream';
+import { randomUUID } from 'node:crypto';
+import { PassThrough, type Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import {
   CopyObjectCommand,
@@ -12,10 +12,12 @@ import { Upload } from '@aws-sdk/lib-storage';
 import {
   assertSafeKey,
   type Body,
+  hashingMeter,
   objectKey,
   type Storage,
   StorageNotFoundError,
   type StoredObject,
+  toReadable,
 } from './storage';
 
 export interface S3Options {
@@ -58,16 +60,8 @@ export class S3Storage implements Storage {
   async put(prefix: string, body: Body): Promise<StoredObject> {
     assertSafeKey(prefix);
     const tmpKey = `tmp/${randomUUID()}`;
-    const hash = createHash('sha256');
-    let size = 0;
-    const meter = new Transform({
-      transform(chunk: Buffer, _enc, done) {
-        hash.update(chunk);
-        size += chunk.length;
-        done(null, chunk);
-      },
-    });
-    const source = body instanceof Uint8Array ? Readable.from([body]) : Readable.from(body);
+    const { meter, result } = hashingMeter();
+    const source = toReadable(body);
     const out = new PassThrough();
     const upload = new Upload({
       client: this.client,
@@ -79,7 +73,7 @@ export class S3Storage implements Storage {
         throw err;
       });
       await Promise.all([pipeline(source, meter, out), uploaded]);
-      const sha256 = hash.digest('hex');
+      const { sha256, size } = result();
       const key = objectKey(prefix, sha256);
       // Same key means same bytes, so an existing object is kept as it is.
       if (!(await this.head(key))) {
@@ -103,7 +97,11 @@ export class S3Storage implements Storage {
     assertSafeKey(key);
     try {
       const res = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }));
-      return { body: res.Body as Readable, size: res.ContentLength ?? 0 };
+      if (res.ContentLength === undefined) {
+        (res.Body as Readable).destroy();
+        throw new Error(`storage object without a length: ${key}`);
+      }
+      return { body: res.Body as Readable, size: res.ContentLength };
     } catch (err) {
       if (isMissing(err)) throw new StorageNotFoundError(key);
       throw err;

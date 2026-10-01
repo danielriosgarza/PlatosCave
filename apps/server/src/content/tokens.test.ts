@@ -1,5 +1,11 @@
+import { createHmac } from 'node:crypto';
 import { describe, expect, test } from 'vitest';
-import { type ContentGrant, mintContentToken, verifyContentToken } from './tokens';
+import {
+  type ContentGrant,
+  MAX_TOKEN_LENGTH,
+  mintContentToken,
+  verifyContentToken,
+} from './tokens';
 
 const secret = 'x'.repeat(32);
 const course = '00000000-0000-4000-8000-000000000101';
@@ -39,6 +45,19 @@ describe('content tokens', () => {
       expect(verifyContentToken(secret, bad, now), bad).toBeNull();
     }
     expect(verifyContentToken('y'.repeat(32), token, now)).toBeNull();
+  });
+
+  test('A01 correctly signed payloads that are not claim objects are refused, not thrown on', () => {
+    for (const json of ['null', '42', '[]', '"x"', '{}']) {
+      const payload = Buffer.from(json).toString('base64url');
+      const mac = createHmac('sha256', secret).update(payload).digest('base64url');
+      expect(verifyContentToken(secret, `${payload}.${mac}`, now), json).toBeNull();
+    }
+  });
+
+  test('minting refuses a token longer than the content route accepts', () => {
+    const filename = 'x'.repeat(MAX_TOKEN_LENGTH);
+    expect(() => mintContentToken(secret, { ...grant, filename }, now)).toThrow(/too long/);
   });
 
   test('A21 tokens are only minted for keys under the scope’s own prefix', () => {

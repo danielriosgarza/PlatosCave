@@ -2,7 +2,7 @@ import { and, eq, isNull, lte, or, sql } from 'drizzle-orm';
 import type { ClassScope, CourseScope } from '../auth/scope';
 import type { Db } from '../db/client';
 import { releaseResources, resourceRevisions, storageObjects } from '../db/schema';
-import { type Disposition, mintContentToken } from './tokens';
+import { type Disposition, keyInScope, mintContentToken } from './tokens';
 
 const EXTENSIONS: Record<string, string> = {
   'application/pdf': '.pdf',
@@ -13,13 +13,21 @@ const EXTENSIONS: Record<string, string> = {
   'text/csv': '.csv',
 };
 
-/** Longest download base name, in characters: keeps signed tokens well under the router limit. */
-const MAX_NAME = 100;
+/**
+ * Longest download base name in UTF-8 bytes: the name travels in the signed token, which must
+ * stay under MAX_TOKEN_LENGTH even with long content types (minting refuses longer tokens).
+ */
+const MAX_NAME_BYTES = 120;
 
 /** File name for a download: the resource title with filesystem-hostile characters removed. */
 export function downloadName(title: string, contentType: string): string {
   const cleaned = title.replace(/[\\/:*?"<>|\p{Cc}]+/gu, ' ').trim();
-  const base = [...cleaned].slice(0, MAX_NAME).join('').trim() || 'download';
+  let base = '';
+  for (const char of cleaned) {
+    if (Buffer.byteLength(base + char) > MAX_NAME_BYTES) break;
+    base += char;
+  }
+  base = base.trim() || 'download';
   const ext = EXTENSIONS[contentType.split(';')[0]?.trim() ?? ''] ?? '';
   return base.toLowerCase().endsWith(ext) ? base : `${base}${ext}`;
 }
@@ -33,9 +41,7 @@ export interface ContentUrlDeps {
 /** Key prefixes a scope may mint for: its own class area and its course's content. */
 function scopeIdFor(scope: ClassScope | CourseScope, key: string): string {
   const owners = 'classId' in scope ? [scope.classId, scope.courseId] : [scope.courseId];
-  const owner = owners.find(
-    (id) => key.startsWith(`courses/${id}/`) || key.startsWith(`classes/${id}/`),
-  );
+  const owner = owners.find((id) => keyInScope(key, id));
   if (!owner) throw new Error(`storage key ${key} is outside the request scope`);
   return owner;
 }
