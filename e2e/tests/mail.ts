@@ -17,7 +17,7 @@ export async function latestSignInLink(address: string): Promise<string> {
       .reverse();
     for (const name of names) {
       const mail = JSON.parse(await readFile(join(mailDir, name), 'utf8')) as StoredMail;
-      if (mail.to !== address) continue;
+      if (mail.to.toLowerCase() !== address.toLowerCase()) continue;
       const link = /https?:\/\/[^\s"'<>]+\/api\/auth\/verify\?token=[^\s"'<>]+/.exec(
         `${mail.text ?? ''} ${mail.html ?? ''}`,
       );

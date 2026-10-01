@@ -20,7 +20,7 @@ export default function annotationRoutes(app: FastifyInstance, deps: Deps): void
   const now = () => (deps.now ?? (() => new Date()))();
 
   registerRoute(app, listAnnotations, async ({ scope, params }) => {
-    return (await annotations.listForResource(db(), scope, params.resourceId)) ?? notFound();
+    return (await annotations.listForResource(db(), scope, params.resourceId, now())) ?? notFound();
   });
 
   registerRoute(app, createAnnotation, async ({ scope, params, body }) =>
@@ -34,9 +34,9 @@ export default function annotationRoutes(app: FastifyInstance, deps: Deps): void
     ),
   );
 
-  registerRoute(app, deleteAnnotation, async ({ scope, params }) => {
-    return (await annotations.deleteAnnotation(db(), scope, params.annotationId)) ?? notFound();
-  });
+  registerRoute(app, deleteAnnotation, async ({ scope, params }) =>
+    settle(await annotations.deleteAnnotation(db(), scope, params.annotationId)),
+  );
 
   registerRoute(app, createThread, async ({ scope, params, body }) =>
     settle(await annotations.createThread(db(), scope, params.resourceId, body, now())),
@@ -47,6 +47,6 @@ export default function annotationRoutes(app: FastifyInstance, deps: Deps): void
   );
 
   registerRoute(app, listNotifications, async ({ scope }) => ({
-    items: await annotations.listNotifications(db(), scope),
+    items: await annotations.listNotifications(db(), scope, now()),
   }));
 }

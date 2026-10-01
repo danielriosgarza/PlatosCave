@@ -35,6 +35,17 @@
   align-items: center;
   font-size: 12px;
 }
+.topicNav a {
+  color: var(--pc-muted);
+  text-decoration: none;
+  min-height: 32px;
+  padding: 5px 9px;
+  display: inline-flex;
+  align-items: center;
+}
+.topicNav a:hover {
+  color: var(--pc-ink);
+}
 @media (max-width: 800px) {
   .top,
   .topicNav {

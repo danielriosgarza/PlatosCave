@@ -10,6 +10,7 @@ import type {
 import { z } from 'zod';
 import { type ClassScope, type CourseScope, resolveActorScope, type ScopeFor } from '../auth/scope';
 import type { Db } from '../db/client';
+import type { Storage } from '../storage/storage';
 
 /** Jobs act on one class or one course; the rule is declared by the job, never by the payload. */
 export type JobRule = Extract<Scope, { kind: 'class' } | { kind: 'course' }>;
@@ -20,6 +21,13 @@ export interface ScopedJobArgs<R extends JobRule, I extends z.ZodType> {
   input: z.output<I>;
   db: Db;
   job: Job<unknown>;
+  /** Object store, for jobs that read uploads; absent where the caller has none. */
+  storage?: Storage;
+}
+
+/** Services a worker hands every job besides the database. */
+export interface JobServices {
+  storage?: Storage;
 }
 
 export interface ScopedJob<R extends JobRule = JobRule, I extends z.ZodType = z.ZodType> {
@@ -106,6 +114,7 @@ export async function runScopedJob<R extends JobRule, I extends z.ZodType>(
   db: Db,
   job: ScopedJob<R, I>,
   pgJob: Job<unknown>,
+  services: JobServices = {},
 ): Promise<ScopedOutcome> {
   const payload = ScopedPayload.safeParse(pgJob.data);
   if (!payload.success) return refuse('payload has no valid actorId and scope');
@@ -125,6 +134,7 @@ export async function runScopedJob<R extends JobRule, I extends z.ZodType>(
       input: parsed.data as z.output<I>,
       db,
       job: pgJob,
+      ...services,
     });
     return { status: 'completed', output };
   } catch (err) {
@@ -142,7 +152,8 @@ export interface WorkLogger {
  * Creates the job's queue and starts a worker for it. Refused jobs end terminally
  * (`deadletter`) with the reason as output, so a revoked membership is not retried. A job that
  * throws is settled `failed` on its own, so pg-boss retries it without re-running the rest of
- * its batch.
+ * its batch. Jobs carry pg-boss metadata, so a
+ * handler can read the retry limit pg-boss actually applies.
  */
 export async function workScopedJob<R extends JobRule, I extends z.ZodType>(
   boss: PgBoss,
@@ -150,31 +161,36 @@ export async function workScopedJob<R extends JobRule, I extends z.ZodType>(
   job: ScopedJob<R, I>,
   log: WorkLogger,
   polling: JobPollingOptions & Pick<JobFetchOptions, 'batchSize'> = {},
+  services: JobServices = {},
 ): Promise<string> {
   await boss.createQueue(job.name, job.queue);
-  return boss.work(job.name, { ...polling, perJobResults: true }, async (batch) => {
-    const results = [];
-    for (const pgJob of batch) {
-      let outcome: ScopedOutcome;
-      try {
-        outcome = await runScopedJob(db, job, pgJob);
-      } catch (err) {
-        log.error({ job: job.name, jobId: pgJob.id, err }, 'job failed');
-        const message = err instanceof Error ? err.message : String(err);
-        results.push({ id: pgJob.id, status: 'failed' as const, output: { error: message } });
-        continue;
+  return boss.work(
+    job.name,
+    { ...polling, perJobResults: true, includeMetadata: true },
+    async (batch) => {
+      const results = [];
+      for (const pgJob of batch) {
+        let outcome: ScopedOutcome;
+        try {
+          outcome = await runScopedJob(db, job, pgJob, services);
+        } catch (err) {
+          log.error({ job: job.name, jobId: pgJob.id, err }, 'job failed');
+          const message = err instanceof Error ? err.message : String(err);
+          results.push({ id: pgJob.id, status: 'failed' as const, output: { error: message } });
+          continue;
+        }
+        if (outcome.status === 'refused') {
+          log.warn({ job: job.name, jobId: pgJob.id, reason: outcome.reason }, 'job refused');
+          results.push({
+            id: pgJob.id,
+            status: 'deadletter' as const,
+            output: { refused: outcome.reason },
+          });
+        } else {
+          results.push({ id: pgJob.id, status: 'completed' as const, output: outcome.output });
+        }
       }
-      if (outcome.status === 'refused') {
-        log.warn({ job: job.name, jobId: pgJob.id, reason: outcome.reason }, 'job refused');
-        results.push({
-          id: pgJob.id,
-          status: 'deadletter' as const,
-          output: { refused: outcome.reason },
-        });
-      } else {
-        results.push({ id: pgJob.id, status: 'completed' as const, output: outcome.output });
-      }
-    }
-    return results;
-  });
+      return results;
+    },
+  );
 }

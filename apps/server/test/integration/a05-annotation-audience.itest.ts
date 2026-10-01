@@ -208,6 +208,7 @@ describe('A05 private annotations and an instructor question', () => {
     expect(await call('bea', 'PUT', url, { expectedRevision: 2 })).toEqual(same(saved.body));
     const moved = await call('bea', 'PUT', url, { expectedRevision: 2, anchor: { kind: 'none' } });
     expect(moved.status).toBe(400);
+    expect(moved.body.message).toBe('A mark cannot move to another kind of anchor');
   });
 
   test('A26 annotations attach only to the class’s adopted release, never to drafts or hidden resources', async () => {
@@ -225,9 +226,10 @@ describe('A05 private annotations and an instructor question', () => {
       body: 'Answers for instructors.',
     });
     expect(onHidden.status).toBe(200);
+    // Without marks of her own there, the hidden resource is unknown to the student.
     expect(await call('bea', 'GET', `${hidden}/annotations`)).toEqual({
-      status: 200,
-      body: { annotations: [], threads: [] },
+      status: 404,
+      body: { error: 'not found' },
     });
     expect(ids_((await call('marcus', 'GET', `${hidden}/annotations`)).body.threads)).toEqual([
       onHidden.body.id,
@@ -357,7 +359,8 @@ describe('work on a resource the class stops using', () => {
     expect(adopted.ok).toBe(true);
 
     const after = await call('bea', 'GET', `${quiz}/annotations`);
-    expect(after.body).toEqual({ annotations: [note], threads: [] });
+    // The note is kept; it has no placement now because the class no longer studies the quiz.
+    expect(after.body).toEqual({ annotations: [{ ...note, placement: null }], threads: [] });
     const saved = await call('bea', 'PUT', annotationUrl(ids.classB, note.id), {
       expectedRevision: 1,
       body: 'Still mine',
