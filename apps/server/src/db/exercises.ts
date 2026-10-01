@@ -14,6 +14,7 @@ import {
 import { invalid, notFound, type Outcome } from '../outcome';
 import type { Db } from './client';
 import { studyableResource, type Tx } from './content/releases';
+import { excludePreview } from './preview';
 import {
   classMemberships,
   exerciseAttempts,
@@ -455,7 +456,7 @@ export async function reviewAttempts(
       and(
         forClass(scope, exerciseAttempts),
         eq(exerciseAttempts.resourceId, resourceId),
-        eq(exerciseAttempts.isPreview, false),
+        excludePreview(exerciseAttempts.userId),
         eq(classMemberships.role, 'student'),
       ),
     )

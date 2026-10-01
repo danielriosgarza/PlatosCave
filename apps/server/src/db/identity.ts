@@ -138,27 +138,38 @@ export function createPreviewPrincipal(
         ),
       );
     if (!teaching) throw new Error('only an instructor of the class can have a preview principal');
-    const [preview] = await tx
-      .insert(users)
-      .values({
-        id: input.id,
-        kind: 'preview',
-        name: 'Preview student',
-        ownerUserId: instructorId,
-      })
-      .returning({ id: users.id });
-    if (!preview) throw new Error('preview user insert returned no row');
-    await tx
-      .insert(classMemberships)
-      .values({ classId: scope.classId, userId: preview.id, role: 'student', isPreview: true });
-    await audit(tx, {
-      actorId: instructorId,
-      action: 'preview.create',
-      scopeKind: 'class',
-      scopeId: scope.classId,
-      targetType: 'user',
-      targetId: preview.id,
-    });
-    return preview.id;
+    return insertPreviewPrincipal(tx, { classId: scope.classId, instructorId, id: input.id });
   });
+}
+
+/**
+ * Inserts the `preview` user owned by `instructorId` and its `is_preview` student membership
+ * of `classId`, and audits it. Callers have checked that the instructor teaches the class.
+ */
+export async function insertPreviewPrincipal(
+  tx: Tx,
+  input: { classId: string; instructorId: string; id?: string },
+): Promise<string> {
+  const [preview] = await tx
+    .insert(users)
+    .values({
+      id: input.id,
+      kind: 'preview',
+      name: 'Preview student',
+      ownerUserId: input.instructorId,
+    })
+    .returning({ id: users.id });
+  if (!preview) throw new Error('preview user insert returned no row');
+  await tx
+    .insert(classMemberships)
+    .values({ classId: input.classId, userId: preview.id, role: 'student', isPreview: true });
+  await audit(tx, {
+    actorId: input.instructorId,
+    action: 'preview.create',
+    scopeKind: 'class',
+    scopeId: input.classId,
+    targetType: 'user',
+    targetId: preview.id,
+  });
+  return preview.id;
 }

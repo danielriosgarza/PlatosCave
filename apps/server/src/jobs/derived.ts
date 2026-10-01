@@ -32,11 +32,33 @@ export interface ResourceJobStatus {
   status: DerivedStatus | null;
 }
 
-/** `derived.status` as a job wrote it, or the failure shown for one that cannot be read. */
-export function readDerivedStatus(raw: unknown, revisionCreatedAt: Date): DerivedStatus | null {
+/**
+ * pg-boss states in which a job may still write its status; any other state, or no job row at
+ * all, means it ended without writing (refused, dead-lettered, expired past its retries, or
+ * deleted by retention).
+ */
+const LIVE_JOB_STATES = new Set(['created', 'retry', 'active']);
+
+/**
+ * `derived.status` as a job wrote it, or the failure shown for one that cannot be read or whose
+ * job ended without a result, so an editor is offered Retry. `jobState` is the pg-boss state of
+ * the job the status names: a string, null when pg-boss has no such job, undefined when unknown.
+ */
+export function readDerivedStatus(
+  raw: unknown,
+  revisionCreatedAt: Date,
+  jobState?: string | null,
+): DerivedStatus | null {
   if (raw === undefined || raw === null) return null;
   const parsed = DerivedStatus.safeParse(raw);
-  if (parsed.success) return parsed.data;
+  if (parsed.success) {
+    const { state } = parsed.data;
+    const pending = state === 'queued' || state === 'running';
+    if (pending && jobState !== undefined && !(jobState && LIVE_JOB_STATES.has(jobState))) {
+      return { ...parsed.data, state: 'failed', error: 'Processing stopped without a result' };
+    }
+    return parsed.data;
+  }
   const job = (raw as { job?: unknown }).job;
   return {
     state: 'failed',
