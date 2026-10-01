@@ -357,7 +357,7 @@ Tracks: **slides** (P2-01 → P2-02 → P2-03, P2-09), **annotations** (P2-04 �
 - Spec: §7. Scenarios: none. Depends on: P2-02. Model: sonnet. Security: yes. Size: S.
 
 ### P2-04 · Annotation and discussion schema, API, visibility
-- Scope: tables `annotations` (kind highlight|note|sketch, audience private, body/strokes, anchor, resource revision, class), `threads`/`posts` (audience instructor|class, status open|resolved, edited, tombstones, moderation audit), `annotation_placements`; `annotations/visibility.ts` used by every read; contracts for create/update/delete/list by resource, autosave `PUT` with revision, share-as-thread explicit action; notifications list stub.
+- Scope: tables `annotations` (kind highlight|note|sketch, audience private, body/strokes, anchor, resource revision, class), `threads`/`posts` (audience instructor|class, status open|resolved, edited, tombstones, moderation audit), `annotation_placements`; `annotations/visibility.ts` used by every read; contracts for create/update/delete/list by resource, autosave `PUT` with revision, share-as-thread explicit action; notifications list stub. Placements also hold thread anchors (exactly one of annotation/thread), and `classes` gains the student edit/delete post policy, so P2-05 and P2-07 need no migration. Anchor zod schemas live in `packages/contracts/src/anchors.ts`; drawings are `annotations.strokes` for both figure and PDF sketches.
 - Spec: §8, §13. ADR-0002/0003. Scenarios: A05 (API), A21 (discussions per class). Depends on: P1-05 (migration chain after P1-04). Model: opus. Security: yes. Size: M.
 
 ### P2-05 · Anchor mapping across revisions
