@@ -15,6 +15,13 @@
       "when": 1790801174974,
       "tag": "0001_p1-01_identity",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790815550339,
+      "tag": "0002_p1-04_content",
+      "breakpoints": true
     }
   ]
 }

@@ -52,7 +52,11 @@ export const classes = pgTable(
       .notNull()
       .references(() => courses.id, { onDelete: 'cascade' }),
     name: text().notNull(),
-    /** Adopted course release (ADR-0003); the foreign key arrives with `course_releases` (P1-04). */
+    /**
+     * Adopted course release (ADR-0003). Migration 0002 adds the foreign key
+     * `(release_id, course_id) → course_releases (id, course_id)` in SQL, because declaring it
+     * here would make this module and releases.ts import each other.
+     */
     releaseId: uuid(),
     archivedAt: timestamp({ withTimezone: true }),
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
