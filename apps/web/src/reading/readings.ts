@@ -35,7 +35,11 @@ export const useReadingContent = (classId: string, revisionId: string) => {
     staleTime: CONTENT_TTL_MS,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
-    refetchInterval: (query) => (query.state.data?.status === 'pending' ? PENDING_POLL_MS : false),
+    // A failed poll (a reading deleted or unpublished mid-ingestion) ends the polling.
+    refetchInterval: (query) =>
+      query.state.status !== 'error' && query.state.data?.status === 'pending'
+        ? PENDING_POLL_MS
+        : false,
   });
 };
 

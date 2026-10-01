@@ -29,32 +29,41 @@ export function revokeClass(client: QueryClient, classId: string) {
   client.setQueryData(revokedKey(classId), true);
 }
 
-/** A 404 on class data that loaded before means access ended only if the session says so too. */
-async function checkMembership(client: QueryClient, key: QueryKey) {
-  const before = client.getQueryData<Me | null>(sessionQuery.queryKey);
-  const classes = (before?.classes ?? []).filter((c) => mentions(key, c.classId));
-  if (classes.length === 0) return;
-  let now: Me | null | undefined;
+/**
+ * A 404 on class data that loaded before may mean access ended: ask the session. If it lost the
+ * class, the session subscription in `createQueryClient` revokes it.
+ */
+async function recheckSession(client: QueryClient) {
   try {
-    now = await client.fetchQuery({ ...sessionQuery, staleTime: 0 });
+    await client.fetchQuery({ ...sessionQuery, staleTime: 0 });
   } catch {
-    return; // Could not tell: keep the page rather than claim a loss.
-  }
-  if (!now) return; // Signed out: the session guard handles it.
-  for (const c of classes) {
-    if (!now.classes.some((k) => k.classId === c.classId)) revokeClass(client, c.classId);
+    // Could not tell: keep the page rather than claim a loss.
   }
 }
+
+const classIds = (me: Me | null | undefined) => new Set((me?.classes ?? []).map((c) => c.classId));
 
 export function createQueryClient(defaultQueries: { retry?: boolean } = {}): QueryClient {
   const queryCache = new QueryCache({
     onError(error, query) {
       if (error instanceof ApiError && error.status === 404 && query.state.data !== undefined) {
-        void checkMembership(client, query.queryKey);
+        void recheckSession(client);
       }
     },
   });
   const client = new QueryClient({ queryCache, defaultOptions: { queries: defaultQueries } });
+  // Whichever request first sees the loss, a class that leaves the session is revoked, and one
+  // that returns is let back in (§14).
+  let known = new Set<string>();
+  queryCache.subscribe((event) => {
+    if (event.type !== 'updated' || event.action.type !== 'success') return;
+    if (JSON.stringify(event.query.queryKey) !== JSON.stringify(sessionQuery.queryKey)) return;
+    const now = classIds(event.query.state.data as Me | null | undefined);
+    if (event.query.state.data == null) return; // Signed out: the session guard handles it.
+    for (const id of known) if (!now.has(id)) revokeClass(client, id);
+    for (const id of now) client.removeQueries({ queryKey: revokedKey(id), exact: true });
+    known = now;
+  });
   // A page still mounted for a moment after the loss may ask again; its answer is never kept.
   queryCache.subscribe((event) => {
     const { queryKey } = event.query;

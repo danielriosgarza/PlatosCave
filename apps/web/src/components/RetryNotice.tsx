@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useState } from 'react';
 import styles from './Page.module.css';
 
 interface RetryNoticeProps {
@@ -17,12 +17,17 @@ export function RetryNotice({
   retryLabel = 'Try again',
   recovery,
 }: RetryNoticeProps) {
-  const href = useMemo(
-    () =>
-      recovery ? URL.createObjectURL(new Blob([recovery.text], { type: 'text/plain' })) : null,
-    [recovery],
-  );
-  useEffect(() => () => (href ? URL.revokeObjectURL(href) : undefined), [href]);
+  // Created and revoked inside the effect so StrictMode's second run gets a live URL.
+  const [href, setHref] = useState<string | null>(null);
+  useEffect(() => {
+    if (!recovery) {
+      setHref(null);
+      return;
+    }
+    const url = URL.createObjectURL(new Blob([recovery.text], { type: 'text/plain' }));
+    setHref(url);
+    return () => URL.revokeObjectURL(url);
+  }, [recovery]);
   return (
     <div className={styles.feedback} role="alert">
       <p>{message}</p>

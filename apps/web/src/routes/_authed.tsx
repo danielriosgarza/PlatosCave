@@ -9,6 +9,7 @@ import {
 import { useEffect } from 'react';
 import page from '../components/Page.module.css';
 import { RetryNotice } from '../components/RetryNotice';
+import { PreviewBanner } from '../preview/PreviewBanner';
 import { loadSession, useSession } from '../session/useSession';
 
 /** Everything below needs a session; the intended address travels in `next` (§3). */
@@ -45,5 +46,10 @@ function Authed() {
   useEffect(() => {
     if (signedOut) void navigate({ to: '/signin', search: { next: href }, replace: true });
   }, [signedOut, href, navigate]);
-  return <Outlet />;
+  return (
+    <>
+      <PreviewBanner />
+      <Outlet />
+    </>
+  );
 }

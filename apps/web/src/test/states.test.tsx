@@ -55,6 +55,36 @@ describe('permission revoked', () => {
     expect(fetchMock.mock.calls.length).toBe(callsAfter);
   });
 
+  it('A01 explains lost access when only the session refresh sees the loss, and lets a rejoin back in', async () => {
+    const me = makeMe({ classes: [studentIn(CLASS_A, 'Class A')] });
+    let member = true;
+    stubApi((url, init) =>
+      url === '/api/me'
+        ? { status: 200, body: member ? me : { ...me, classes: [] } }
+        : signedInWithTopics(me)(url, init),
+    );
+    const { queryClient } = renderApp(`/classes/${CLASS_A}/topics`);
+    expect(await screen.findByText('Sampling')).toBeInTheDocument();
+
+    member = false;
+    await act(() => queryClient.refetchQueries({ queryKey: ['session'] }));
+    expect(
+      await screen.findByRole('heading', { name: 'Your access to this class has ended' }),
+    ).toBeInTheDocument();
+    const cached = () =>
+      queryClient
+        .getQueryCache()
+        .findAll()
+        .filter(
+          (q) => JSON.stringify(q.queryKey).includes(CLASS_A) && q.queryKey[0] !== 'access-revoked',
+        );
+    expect(cached()).toEqual([]);
+
+    member = true;
+    await act(() => queryClient.refetchQueries({ queryKey: ['session'] }));
+    expect(await screen.findByText('Sampling')).toBeInTheDocument();
+  });
+
   it('A01 keeps the page when a class request fails but the person is still a member', async () => {
     const me = makeMe({ classes: [studentIn(CLASS_A, 'Class A')] });
     let broken = false;
@@ -74,7 +104,7 @@ describe('permission revoked', () => {
 });
 
 describe('session check failure', () => {
-  it('A01 keeps the bar, says the session could not be checked and retries', async () => {
+  it('keeps the bar, says the session could not be checked and retries', async () => {
     const me = makeMe({ classes: [studentIn(CLASS_A, 'Class A')] });
     let down = true;
     stubApi((url, init) =>

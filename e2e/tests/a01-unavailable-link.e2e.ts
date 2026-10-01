@@ -1,20 +1,21 @@
 import AxeBuilder from '@axe-core/playwright';
-import { expect, type Page, test } from '@playwright/test';
-import { latestSignInLink } from './mail';
+import { expect, type Page, request, test } from '@playwright/test';
 
 test.use({ colorScheme: 'light' });
 
-async function signIn(page: Page, email: string) {
-  await page.goto('/signin');
-  await page.getByRole('button', { name: 'Student sign in' }).click();
-  await page.getByLabel('Email address').fill(email);
-  await page.getByRole('button', { name: 'Send sign-in link' }).click();
-  await expect(page.getByText('Sign-in link requested')).toBeVisible();
-  await page.goto(await latestSignInLink(email));
+/**
+ * Signs `page` in through the fixture route. No mail is involved, so these tests cannot take
+ * another spec's sign-in link for the same address when files run in parallel.
+ */
+async function signIn(page: Page, baseURL: string | undefined, email: string) {
+  const client = await request.newContext({ baseURL });
+  expect((await client.post('/api/test/signin-as', { data: { email } })).ok()).toBe(true);
+  await page.context().addCookies((await client.storageState()).cookies);
 }
 
 const SECRET_TITLE = 'Unreleased Bayesian methods';
 
+// The draft lives in a course no class has adopted, so other specs' topic counts are untouched.
 test('A01 a link to an unpublished topic shows the neutral page and discloses nothing', async ({
   page,
   playwright,
@@ -23,17 +24,23 @@ test('A01 a link to an unpublished topic shows the neutral page and discloses no
   const owner = await playwright.request.newContext({ baseURL });
   const world = await (await owner.post('/api/test/world')).json();
   expect(
-    (await owner.post('/api/test/signin-as', { data: { email: 'elena@example.test' } })).ok(),
+    (await owner.post('/api/test/signin-as', { data: { email: 'olivia@example.test' } })).ok(),
   ).toBe(true);
-  const draft = await owner.post(`/api/courses/${world.ids.statistics}/topics`, {
+  const draft = await owner.post(`/api/courses/${world.ids.linearModels}/topics`, {
     data: { title: SECRET_TITLE, objective: 'Not yet published to any class.' },
   });
   expect(draft.ok()).toBe(true);
   const { id } = await draft.json();
 
-  await signIn(page, 'sam@example.test');
+  await signIn(page, baseURL, 'sam@example.test');
+  const bodies: string[] = [];
+  page.on('response', async (response) => {
+    if (response.url().includes('/api/')) bodies.push(await response.text().catch(() => ''));
+  });
   await page.goto(`/classes/${world.ids.classA}/topics/${id}/reading`);
   await expect(page.getByRole('heading', { name: 'This page is not available' })).toBeVisible();
+  // The server denies it too: no API answer the page received carries the draft's title.
+  expect(bodies.some((b) => b.includes(SECRET_TITLE))).toBe(false);
   const text = await page.locator('body').innerText();
   expect(text).not.toContain(SECRET_TITLE);
   expect(text).not.toContain('Statistical thinking');
@@ -49,7 +56,7 @@ test('A01 a link into another class shows the same neutral page as an unpublishe
 }) => {
   const setup = await playwright.request.newContext({ baseURL });
   const world = await (await setup.post('/api/test/world')).json();
-  await signIn(page, 'bea@example.test');
+  await signIn(page, baseURL, 'bea@example.test');
   await page.goto(`/classes/${world.ids.classA}/topics/${world.ids.sampling}/reading`);
   await expect(page.getByRole('heading', { name: 'This page is not available' })).toBeVisible();
   const text = await page.locator('body').innerText();

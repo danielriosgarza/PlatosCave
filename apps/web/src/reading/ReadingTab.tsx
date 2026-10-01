@@ -177,7 +177,7 @@ function ReadingView({ classId, topicId, reading, initial, onSearch }: ViewProps
 
   const renew = useCallback(() => renewPdfUrl(classId, revisionId), [classId, revisionId]);
 
-  if (content.error instanceof ApiError && content.error.status === 404 && !content.data) {
+  if (content.error instanceof ApiError && content.error.status === 404) {
     return (
       <div className={page.feedback} role="alert">
         <p>This reading is not available.</p>
