@@ -236,11 +236,17 @@ describe('content releases and revisions', () => {
     ).toMatchObject({ resourceRevisionId: revision.id });
 
     // Conversion jobs may still record derived outputs on an existing revision.
+    const status = {
+      state: 'ready',
+      job: 'slides.convert',
+      jobId: null,
+      updatedAt: '2026-10-01T09:00:00.000Z',
+    };
     await db
       .update(resourceRevisions)
-      .set({ derived: { status: 'ready' } })
+      .set({ derived: { status } })
       .where(eq(resourceRevisions.id, revision.id));
-    expect((await contentOf(revision.id)).derived).toEqual({ status: 'ready' });
+    expect((await contentOf(revision.id)).derived).toEqual({ status });
   });
 
   test('a class can only adopt a release of its own course; resources stay in their topic’s course', async () => {

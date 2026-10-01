@@ -1,18 +1,15 @@
 import type { Scope } from '@parallax/contracts';
-import { eq } from 'drizzle-orm';
-import type { Job, JobPollingOptions, PgBoss, QueueOptions, SendOptions } from 'pg-boss';
+import type {
+  Job,
+  JobFetchOptions,
+  JobPollingOptions,
+  PgBoss,
+  QueueOptions,
+  SendOptions,
+} from 'pg-boss';
 import { z } from 'zod';
-import {
-  type ClassScope,
-  type CourseScope,
-  type Resolution,
-  resolveClass,
-  resolveCourse,
-  type ScopeBase,
-  type ScopeFor,
-} from '../auth/scope';
+import { type ClassScope, type CourseScope, resolveActorScope, type ScopeFor } from '../auth/scope';
 import type { Db } from '../db/client';
-import { users } from '../db/schema';
 import type { Storage } from '../storage/storage';
 
 /** Jobs act on one class or one course; the rule is declared by the job, never by the payload. */
@@ -58,7 +55,9 @@ export type ScopedPayload = z.infer<typeof ScopedPayload>;
 
 /**
  * Enqueues a job for the person and class or course of an already resolved scope, so a job can
- * only be sent from code that itself passed the scope check.
+ * only be sent from code that itself passed the scope check. The input is validated here but
+ * stored as given and parsed once when the job runs, so transforms run once. Resolves to null
+ * when pg-boss drops the send as a duplicate (`singletonKey`, throttling).
  */
 export async function sendScopedJob<R extends JobRule, I extends z.ZodType>(
   boss: PgBoss,
@@ -66,7 +65,8 @@ export async function sendScopedJob<R extends JobRule, I extends z.ZodType>(
   scope: ScopeFor<R>,
   input: z.input<I>,
   options: SendOptions = {},
-): Promise<string> {
+): Promise<string | null> {
+  job.input.parse(input);
   const resolved = scope as ClassScope | CourseScope;
   const payload: ScopedPayload = {
     actorId: resolved.user.id,
@@ -74,11 +74,17 @@ export async function sendScopedJob<R extends JobRule, I extends z.ZodType>(
       job.scope.kind === 'class'
         ? { kind: 'class', classId: (resolved as ClassScope).classId }
         : { kind: 'course', courseId: (resolved as CourseScope).courseId },
-    input: job.input.parse(input),
+    input,
   };
-  const id = await boss.send(job.name, payload, options);
-  if (!id) throw new Error(`pg-boss did not accept a ${job.name} job`);
-  return id;
+  return boss.send(job.name, payload, options);
+}
+
+/**
+ * Creates the queues of these jobs, so an API process can send before any worker has started.
+ * Workers create their own queues in `workScopedJob`.
+ */
+export async function ensureQueues(boss: PgBoss, jobs: readonly ScopedJob[]): Promise<void> {
+  for (const job of jobs) await boss.createQueue(job.name, job.queue);
 }
 
 export type ScopedOutcome =
@@ -87,22 +93,22 @@ export type ScopedOutcome =
 
 const refuse = (reason: string): ScopedOutcome => ({ status: 'refused', reason });
 
-/** Jobs run without a session, so nothing they do can count as a recent sign-in (§3). */
-function jobBase(user: ScopeBase['user']): ScopeBase {
-  return {
-    user,
-    requireRecentAuth: () => {
-      throw Object.assign(new Error('Background jobs cannot make sensitive changes'), {
-        code: 'recent_auth_required',
-      });
-    },
-  };
+/** What `requireRecentAuth()` throws inside a job: a refusal, not an error worth retrying. */
+class JobRecentAuthError extends Error {
+  readonly statusCode = 401;
+  readonly code = 'recent_auth_required';
 }
+
+/** Jobs run without a session, so nothing they do can count as a recent sign-in (§3). */
+const noRecentAuth = () => {
+  throw new JobRecentAuthError('Background jobs cannot make sensitive changes');
+};
 
 /**
  * Runs one job for its actor (ADR-0002): rejects a payload without actor and scope, re-resolves
  * the actor's membership against the job's rule, and only then hands the handler a branded
- * scope. A refusal is final; an error thrown by the handler is left to pg-boss to retry.
+ * scope. A refusal is final, including a handler calling `requireRecentAuth()`; any other error
+ * thrown by the handler is left to pg-boss to retry.
  */
 export async function runScopedJob<R extends JobRule, I extends z.ZodType>(
   db: Db,
@@ -113,57 +119,48 @@ export async function runScopedJob<R extends JobRule, I extends z.ZodType>(
   const payload = ScopedPayload.safeParse(pgJob.data);
   if (!payload.success) return refuse('payload has no valid actorId and scope');
   const { actorId, scope, input } = payload.data;
+  // Checked before any query: a payload of the wrong kind never reaches the database.
+  if (scope.kind !== job.scope.kind) return refuse(`job needs ${job.scope.kind} scope`);
 
-  const [actor] = await db
-    .select({
-      id: users.id,
-      kind: users.kind,
-      name: users.name,
-      email: users.email,
-      ownerUserId: users.ownerUserId,
-    })
-    .from(users)
-    .where(eq(users.id, actorId));
-  if (!actor) return refuse('actor does not exist');
-
-  const base = jobBase(actor);
-  let resolution: Resolution;
-  if (scope.kind === 'class' && job.scope.kind === 'class') {
-    resolution = await resolveClass(db, base, job.scope, scope.classId);
-  } else if (scope.kind === 'course' && job.scope.kind === 'course') {
-    resolution = await resolveCourse(db, base, job.scope, scope.courseId);
-  } else {
-    return refuse(`job needs ${job.scope.kind} scope`);
-  }
+  const targetId = scope.kind === 'class' ? scope.classId : scope.courseId;
+  const resolution = await resolveActorScope(db, actorId, noRecentAuth, job.scope, targetId);
   if (!resolution.ok) return refuse(resolution.reason);
 
   const parsed = job.input.safeParse(input);
   if (!parsed.success) return refuse('input does not match the job');
-  const output = await job.run({
-    scope: resolution.scope as ScopeFor<R>,
-    input: parsed.data as z.output<I>,
-    db,
-    job: pgJob,
-    ...services,
-  });
-  return { status: 'completed', output };
+  try {
+    const output = await job.run({
+      scope: resolution.scope as ScopeFor<R>,
+      input: parsed.data as z.output<I>,
+      db,
+      job: pgJob,
+      ...services,
+    });
+    return { status: 'completed', output };
+  } catch (err) {
+    if (err instanceof JobRecentAuthError) return refuse('a job cannot count as a recent sign-in');
+    throw err;
+  }
 }
 
 export interface WorkLogger {
   warn: (obj: object, msg: string) => void;
+  error: (obj: object, msg: string) => void;
 }
 
 /**
  * Creates the job's queue and starts a worker for it. Refused jobs end terminally
- * (`deadletter`) with the reason as output, so a revoked membership is not retried. Jobs carry
- * pg-boss metadata, so a handler can read the retry limit pg-boss actually applies.
+ * (`deadletter`) with the reason as output, so a revoked membership is not retried. A job that
+ * throws is settled `failed` on its own, so pg-boss retries it without re-running the rest of
+ * its batch. Jobs carry pg-boss metadata, so a
+ * handler can read the retry limit pg-boss actually applies.
  */
 export async function workScopedJob<R extends JobRule, I extends z.ZodType>(
   boss: PgBoss,
   db: Db,
   job: ScopedJob<R, I>,
   log: WorkLogger,
-  polling: JobPollingOptions = {},
+  polling: JobPollingOptions & Pick<JobFetchOptions, 'batchSize'> = {},
   services: JobServices = {},
 ): Promise<string> {
   await boss.createQueue(job.name, job.queue);
@@ -173,7 +170,15 @@ export async function workScopedJob<R extends JobRule, I extends z.ZodType>(
     async (batch) => {
       const results = [];
       for (const pgJob of batch) {
-        const outcome = await runScopedJob(db, job, pgJob, services);
+        let outcome: ScopedOutcome;
+        try {
+          outcome = await runScopedJob(db, job, pgJob, services);
+        } catch (err) {
+          log.error({ job: job.name, jobId: pgJob.id, err }, 'job failed');
+          const message = err instanceof Error ? err.message : String(err);
+          results.push({ id: pgJob.id, status: 'failed' as const, output: { error: message } });
+          continue;
+        }
         if (outcome.status === 'refused') {
           log.warn({ job: job.name, jobId: pgJob.id, reason: outcome.reason }, 'job refused');
           results.push({

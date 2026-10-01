@@ -1,14 +1,17 @@
-import { and, eq, sql } from 'drizzle-orm';
 import type { PgBoss } from 'pg-boss';
 import { z } from 'zod';
 import type { CourseScope } from '../auth/scope';
 import { extractPdfText, PdfReadError } from '../content/pdf-text';
 import { renderReading } from '../content/reading';
 import type { Db } from '../db/client';
-import { resourceRevisions } from '../db/schema';
-import { forCourse } from '../db/scoped';
 import { type Storage, StorageNotFoundError } from '../storage/storage';
-import { type DerivedStatus, setDerivedStatus } from './derived';
+import {
+  type DerivationSource,
+  type DerivedStatus,
+  loadDerivationSource,
+  setDerivedStatus,
+  writeDerivedOutputs,
+} from './derived';
 import { defineScopedJob, sendScopedJob } from './scoped';
 
 export const READING_INGEST = 'reading.ingest';
@@ -33,7 +36,7 @@ const PdfContent = z.object({ objectKey: z.string().optional() });
 /** A problem with the reading itself: retrying cannot help, so the job ends failed at once. */
 export class IngestError extends Error {}
 
-type Revision = Pick<typeof resourceRevisions.$inferSelect, 'type' | 'content' | 'objectKeys'>;
+type Revision = DerivationSource;
 
 async function readObject(storage: Storage | undefined, revision: Revision, key: string) {
   if (!revision.objectKeys.includes(key)) {
@@ -136,14 +139,7 @@ const readingIngest = defineScopedJob({
   input: z.object({ revisionId: z.uuid() }),
   queue: { retryLimit: RETRY_LIMIT, retryDelay: 30, retryBackoff: true },
   run: async ({ scope, input, db, job, storage }) => {
-    const [revision] = await db
-      .select({
-        type: resourceRevisions.type,
-        content: resourceRevisions.content,
-        objectKeys: resourceRevisions.objectKeys,
-      })
-      .from(resourceRevisions)
-      .where(and(eq(resourceRevisions.id, input.revisionId), forCourse(scope, resourceRevisions)));
+    const revision = await loadDerivationSource(db, scope, input.revisionId);
     if (!revision) return { failed: 'revision not found in this course' };
 
     await setDerivedStatus(db, scope, input.revisionId, status('running', job.id));
@@ -167,11 +163,7 @@ const readingIngest = defineScopedJob({
       );
       throw err;
     }
-    const value = JSON.stringify({ ...outputs, status: status('ready', job.id) });
-    await db
-      .update(resourceRevisions)
-      .set({ derived: sql`${resourceRevisions.derived} || ${value}::jsonb` })
-      .where(and(eq(resourceRevisions.id, input.revisionId), forCourse(scope, resourceRevisions)));
+    await writeDerivedOutputs(db, scope, input.revisionId, outputs, status('ready', job.id));
     return { revisionId: input.revisionId, state: 'ready' };
   },
 });

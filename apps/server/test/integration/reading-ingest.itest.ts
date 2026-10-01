@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
 import type { Job, PgBoss } from 'pg-boss';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
-import { type CourseScope, resolveCourse } from '../../src/auth/scope';
+import { type CourseScope, resolveActorScope } from '../../src/auth/scope';
 import { normaliseText } from '../../src/content/reading';
 import { resourceRevisions, resources, topics } from '../../src/db/schema';
 import { createBoss } from '../../src/jobs/boss';
@@ -26,10 +26,10 @@ let topicId: string;
 const bossErrors: Error[] = [];
 
 async function courseScope(actorId: string, courseId: string): Promise<CourseScope> {
-  const user = { id: actorId, kind: 'user' as const, name: '', email: null, ownerUserId: null };
-  const resolution = await resolveCourse(
+  const resolution = await resolveActorScope(
     testDb.db,
-    { user, requireRecentAuth: () => {} },
+    actorId,
+    () => {},
     { kind: 'course', role: 'editor' },
     courseId,
   );
@@ -123,7 +123,11 @@ beforeAll(async () => {
     .returning();
   if (!topic) throw new Error('no topic');
   topicId = topic.id;
-  boss = createBoss(testDb.db.$client, { role: 'api', onError: (err) => bossErrors.push(err) });
+  boss = createBoss(testDb.db.$client, {
+    role: 'api',
+    onError: (err) => bossErrors.push(err),
+    onWarning: () => {},
+  });
   await boss.start();
 });
 
@@ -170,7 +174,7 @@ describe('reading.ingest', () => {
       boss,
       testDb.db,
       readingIngest,
-      { warn: () => {} },
+      { warn: () => {}, error: () => {} },
       { pollingIntervalSeconds: 0.5 },
       { storage },
     );
