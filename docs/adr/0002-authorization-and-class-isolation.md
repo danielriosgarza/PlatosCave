@@ -2,7 +2,7 @@
 
 **Status:** Accepted, 2026-09-30
 
-Refined by [docs/design/runner.md](../design/runner.md) §8.4 (P3-12): the `execution.run`, `execution.result` and `execution.failed` queues in the separate pg-boss schema `pgboss_exec` carry runner messages without `actorId` or `scope`; authorisation for them completes before `bossExec.send` under a resolved class scope and is repeated on every read. Every queue in `pgboss` keeps the rule below.
+Refined by [docs/design/runner.md](../design/runner.md) §8.4 (P3-12): the `execution.run`, `execution.result` and `execution.failed` queues in the separate pg-boss schema `pgboss_exec` carry runner messages without `actorId` or `scope`; authorisation for them completes before `bossExec.send` under a resolved class scope and is repeated on every read. Every queue in `pgboss` keeps the rule below. The same section records the one exception to the scoped-table rule below: `forOwnRows(user, table)` in `apps/server/src/db/scoped.ts` reads a class-scoped table across classes, restricted to the rows owned by the user of a resolved `ClassScope` (`WHERE user_id = scope.user.id`, never a raw id), so that the per-student run cap counts a student's sample runs in every class; it is read-only (the cap counts and writes nothing through it; a row is settled only under its own class scope or by the worker, design §8.5); `scoped.ts` lists the tables that allow it (`execution_jobs`, P3-16) and its introspection test asserts that list, so any further table needs an entry there and a reason here.
 
 ## Context
 

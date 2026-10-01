@@ -7,6 +7,19 @@ import { forCourse } from '../scoped';
 
 export type ResourceType = (typeof resources.$inferSelect)['type'];
 
+/** Whether a revision of the scope's course has a recorded job status; false when it has none. */
+export async function hasDerivedStatus(
+  db: Db,
+  scope: CourseScope,
+  revisionId: string,
+): Promise<boolean> {
+  const [row] = await db
+    .select({ status: sql<unknown>`${resourceRevisions.derived} -> 'status'` })
+    .from(resourceRevisions)
+    .where(and(eq(resourceRevisions.id, revisionId), forCourse(scope, resourceRevisions)));
+  return row?.status !== undefined && row.status !== null;
+}
+
 /**
  * Writes `derived.status` of one revision of the scope's course, leaving other derived outputs
  * untouched. Returns false when no such revision exists in that course.
@@ -71,6 +84,7 @@ export async function writeDerivedOutputs(
 export async function listResourceJobStatus(
   db: Db,
   scope: CourseScope,
+  resourceId?: string,
 ): Promise<ResourceJobStatus[]> {
   const rows = await db
     .select({
@@ -86,7 +100,12 @@ export async function listResourceJobStatus(
     .innerJoin(topics, eq(topics.id, resources.topicId))
     .leftJoin(resourceRevisions, eq(resourceRevisions.id, resources.headRevisionId))
     .where(
-      and(forCourse(scope, resources), isNull(resources.archivedAt), isNull(topics.archivedAt)),
+      and(
+        forCourse(scope, resources),
+        isNull(resources.archivedAt),
+        isNull(topics.archivedAt),
+        ...(resourceId ? [eq(resources.id, resourceId)] : []),
+      ),
     )
     .orderBy(asc(topics.position), asc(resources.position));
   return rows.map(({ status, revisionCreatedAt, ...row }) => ({
