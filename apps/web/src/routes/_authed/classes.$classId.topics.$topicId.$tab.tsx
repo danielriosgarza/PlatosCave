@@ -3,6 +3,7 @@ import { ApiError } from '../../api/client';
 import styles from '../../components/Page.module.css';
 import { type TabDef, TabRow } from '../../components/TabRow';
 import { Unavailable } from '../../components/Unavailable';
+import { ExercisesPanel } from '../../exercises/ExercisesPanel';
 import { useClassContext } from '../../session/classContext';
 import { TopicHeading } from '../../topics/TopicHeading';
 import { isOpen, lockReason, useClassTopics } from '../../topics/topics';
@@ -90,7 +91,11 @@ function TopicWorkspace() {
         // biome-ignore lint/a11y/noNoninteractiveTabindex: panel without focusable content must be reachable
         tabIndex={0}
       >
-        <p className={styles.intro}>Nothing is available under {label} for this topic yet.</p>
+        {tab === 'exercises' ? (
+          <ExercisesPanel classId={classId} topicId={topicId} role={context.role} />
+        ) : (
+          <p className={styles.intro}>Nothing is available under {label} for this topic yet.</p>
+        )}
       </div>
     </main>
   );
