@@ -2,8 +2,9 @@ import { exerciseProblems } from '@parallax/contracts';
 import type { validationIssue, validationReport } from '@parallax/contracts/routes/releases';
 import { and, asc, eq, isNull, lte, max, ne, or, type SQL, sql } from 'drizzle-orm';
 import type { z } from 'zod';
-import type { ClassScope, CourseScope } from '../auth/scope';
-import type { Db } from '../db/client';
+import type { ClassScope, CourseScope } from '../../auth/scope';
+import { derivedReady, readDerivedStatus } from '../../jobs/derived';
+import type { Db } from '../client';
 import {
   auditEvents,
   courseReleases,
@@ -13,9 +14,8 @@ import {
   resourceRevisions,
   resources,
   topics,
-} from '../db/schema';
-import { forCourse } from '../db/scoped';
-import { derivedReady, readDerivedStatus } from '../jobs/derived';
+} from '../schema';
+import { forCourse } from '../scoped';
 
 export type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type Issue = z.infer<typeof validationIssue>;
