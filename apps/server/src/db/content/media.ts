@@ -1,6 +1,6 @@
 import { and, eq, isNull, lte, or, sql } from 'drizzle-orm';
 import type { ClassScope } from '../../auth/scope';
-import { loadClassTopics } from '../classTopics';
+import { findReleaseTopic } from '../classTopics';
 import type { Db } from '../client';
 import { releaseResources, resourceRevisions, storageObjects } from '../schema';
 
@@ -50,15 +50,8 @@ export async function findReleasedObject(
     .limit(1);
   if (!row) return null;
   // The same availability the topic list shows: a locked topic's media is not downloadable (§4).
-  if (scope.role === 'student') {
-    const { topics } = await loadClassTopics(db, scope, now);
-    const topic = topics.find((t) => t.releaseTopicId === row.releaseTopicId);
-    if (
-      !topic ||
-      (topic.availability.state !== 'available' && topic.availability.state !== 'complete')
-    )
-      return null;
-  }
+  const topic = await findReleaseTopic(db, scope, { releaseTopicId: row.releaseTopicId }, now);
+  if (!topic?.open) return null;
   const { releaseTopicId: _topic, ...object } = row;
   return object;
 }

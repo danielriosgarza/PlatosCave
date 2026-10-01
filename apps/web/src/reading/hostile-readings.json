@@ -1,0 +1,60 @@
+{
+  "benign": {
+    "source": "# Why samples vary\n\nInline $a^2$, a [link](https://example.org \"Note: a title\") and a [jump](#why-samples-vary).\n\n$$\n\\frac{1}{2}\n$$\n\n![A histogram](hist.png \"Means: 1000 samples\")\n\n```python\nx = 1\n```\n\n- [x] done\n- [ ] task\n\n> quoted\n\nNote[^1]\n\n| a | b |\n|---|---|\n| 1 | 2 |\n\n[^1]: foot\n",
+    "assets": {
+      "hist.png": "courses/00000000-0000-4000-8000-000000000101/objects/abc123"
+    },
+    "imageUrl": "http://localhost:3100/content/token",
+    "ingested": "<h1 data-block-id=\"0a7399ca41ad\">Why samples vary</h1>\n<p data-block-id=\"ed5855672920\">Inline <span class=\"katex\"><math><semantics><mrow><msup><mi>a</mi><mn>2</mn></msup></mrow><annotation encoding=\"application/x-tex\">a^2</annotation></semantics></math></span>, a <a href=\"https://example.org\" title=\"Note: a title\" rel=\"noopener noreferrer nofollow\">link</a> and a <a href=\"#user-content-why-samples-vary\">jump</a>.</p>\n<div class=\"math-display\" data-block-id=\"49c1f7528e98\"><math display=\"block\"><semantics><mrow><mfrac><mn>1</mn><mn>2</mn></mfrac></mrow><annotation encoding=\"application/x-tex\">\\frac{1}{2}</annotation></semantics></math></div>\n<figure data-figure-id=\"d6cd1e9f7bf2\"><img alt=\"A histogram\" title=\"Means: 1000 samples\" data-object-key=\"courses/00000000-0000-4000-8000-000000000101/objects/abc123\" src=\"http://localhost:3100/content/token\"><figcaption data-block-id=\"e165746c4e8b\">Means: 1000 samples</figcaption></figure>\n<pre data-block-id=\"c3195f9ca333\"><code class=\"hljs language-python\">x = <span class=\"hljs-number\">1</span>\n</code></pre>\n<ul class=\"contains-task-list\">\n<li class=\"task-list-item\" data-block-id=\"bdd72bb5f401\"><input type=\"checkbox\" checked disabled> done</li>\n<li class=\"task-list-item\" data-block-id=\"065bc4e0b79d\"><input type=\"checkbox\" disabled> task</li>\n</ul>\n<blockquote data-block-id=\"7f748d7d3039\">\n<p data-block-id=\"7b8f1d7c23ef\">quoted</p>\n</blockquote>\n<p data-block-id=\"f26453c52437\">Note<sup><a href=\"#user-content-fn-1\" id=\"user-content-fnref-1\" data-footnote-ref=\"\" aria-describedby=\"user-content-footnote-label\">1</a></sup></p>\n<table>\n<thead>\n<tr>\n<th data-block-id=\"0ed32d3352f0\">a</th>\n<th data-block-id=\"c107dfed5b01\">b</th>\n</tr>\n</thead>\n<tbody>\n<tr>\n<td data-block-id=\"a6685f3b62d5\">1</td>\n<td data-block-id=\"e6b190f6cd6f\">2</td>\n</tr>\n</tbody>\n</table>\n<section data-footnotes=\"\" class=\"footnotes\"><h2 class=\"sr-only\" id=\"user-content-footnote-label\" data-block-id=\"5b15645fab2d\">Footnotes</h2>\n<ol>\n<li id=\"user-content-fn-1\" data-block-id=\"d71bfdcec737\">\n<p data-block-id=\"66c3199b90c6\">foot <a href=\"#user-content-fnref-1\" data-footnote-backref=\"\" aria-label=\"Back to reference 1\" class=\"data-footnote-backref\">↩</a></p>\n</li>\n</ol>\n</section>"
+  },
+  "cases": [
+    {
+      "name": "mtext holding HTML (the sanitiser keeps HTML inside a MathML text point)",
+      "format": "html",
+      "source": "<math><mtext><h1><a href=\"javascript:alert(1)\">x</a></h1><img src=\"x\" onerror=\"alert(1)\"><p onclick=\"alert(1)\" style=\"color:red\">text</p></mtext></math>",
+      "ingested": "<math><mtext><h1 data-block-id=\"bb9a93e2157a\"><a>x</a></h1><img><p data-block-id=\"cc35f4906043\">text</p></mtext></math>"
+    },
+    {
+      "name": "mglyph and style inside mtext inside a table (namespace confusion)",
+      "format": "html",
+      "source": "<math><mtext><table><mglyph><style><img src=x onerror=alert(1)></style></mglyph></table></mtext></math>",
+      "ingested": "<math><mtext><table></table></mtext></math>"
+    },
+    {
+      "name": "nested forms closing math early",
+      "format": "html",
+      "source": "<form><math><mtext></form><form><mglyph><style></math><img src onerror=alert(1)>",
+      "ingested": "<math><mtext></mtext></math>"
+    },
+    {
+      "name": "annotation holding HTML and annotation-xml",
+      "format": "html",
+      "source": "<math><semantics><mi>x</mi><annotation encoding=\"text/html\"><img src=x onerror=alert(1)></annotation><annotation-xml encoding=\"text/html\"><script>alert(1)</script><iframe src=\"javascript:alert(1)\"></iframe></annotation-xml></semantics></math>",
+      "ingested": "<math><semantics><mi>x</mi><annotation encoding=\"text/html\"></annotation></semantics></math><img>"
+    },
+    {
+      "name": "svg, script, iframe, object and handlers",
+      "format": "html",
+      "source": "<svg onload=\"alert(1)\"><script>alert(1)</script><a xlink:href=\"javascript:alert(1)\">s</a></svg><iframe srcdoc=\"<script>alert(1)</script>\"></iframe><object data=\"javascript:alert(1)\"></object><details open ontoggle=\"alert(1)\"><summary>s</summary></details>",
+      "ingested": "<details open><summary>s</summary></details>"
+    },
+    {
+      "name": "obfuscated javascript: URLs",
+      "format": "html",
+      "source": "<a href=\"  JaVaScRiPt:alert(1)\">a</a><a href=\"&#106;avascript:alert(1)\">b</a><a href=\"java&#9;script:alert(1)\">c</a><a href=\"data:text/html,<script>alert(1)</script>\">d</a><blockquote cite=\"javascript:alert(1)\">q</blockquote><img src=\"javascript:alert(1)\">",
+      "ingested": "<a>a</a><a>b</a><a>c</a><a>d</a><blockquote data-block-id=\"5b570873c674\">q</blockquote><img>"
+    },
+    {
+      "name": "clobbering ids and names",
+      "format": "html",
+      "source": "<p id=\"cookie\" name=\"location\">x</p><a id=\"user-content-x\" href=\"#x\">y</a>",
+      "ingested": "<p id=\"user-content-cookie\" name=\"user-content-location\" data-block-id=\"bb9a93e2157a\">x</p><a id=\"user-content-user-content-x\" href=\"#user-content-x\">y</a>"
+    },
+    {
+      "name": "Markdown links, raw HTML and KaTeX href",
+      "format": "markdown",
+      "source": "[x](javascript:alert(1)) <img src=x onerror=alert(1)>\n\n$\\href{javascript:alert(1)}{x}$ and $\\htmlStyle{color:red}{y}$\n\n<script>alert(1)</script>",
+      "ingested": "<p data-block-id=\"bb9a93e2157a\"><a>x</a> </p>\n<p data-block-id=\"85844f520087\"><span class=\"katex\"><math><semantics><mrow><mstyle><mtext>\\href</mtext></mstyle></mrow><annotation encoding=\"application/x-tex\">\\href{javascript:alert(1)}{x}</annotation></semantics></math></span> and <span class=\"katex\"><math><semantics><mrow><mstyle><mtext>\\htmlStyle</mtext></mstyle></mrow><annotation encoding=\"application/x-tex\">\\htmlStyle{color:red}{y}</annotation></semantics></math></span></p>"
+    }
+  ]
+}

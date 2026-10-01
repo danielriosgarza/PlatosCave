@@ -24,6 +24,10 @@ export interface TopicAvailability {
   requires: { topicId: string; title: string }[];
 }
 
+/** A topic in this state can be studied; one predicate for the topic list, readings and media. */
+export const topicOpens = (a: TopicAvailability): boolean =>
+  a.state === 'available' || a.state === 'complete';
+
 /** A student can open a resource that is visible and whose release time has passed. */
 export const openToStudent = (r: AvailabilityResource, now: Date): boolean =>
   r.visibility === 'visible' && (r.releaseAt === null || r.releaseAt <= now);

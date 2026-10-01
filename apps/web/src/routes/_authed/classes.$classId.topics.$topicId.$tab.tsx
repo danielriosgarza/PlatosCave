@@ -140,7 +140,11 @@ function OpenTopic({
           tabs={TOPIC_TABS}
           selected={tab}
           panelId="pc-content"
-          onSelect={(next) => navigate({ params: { classId, topicId, tab: next } })}
+          // Moving between a topic's tabs keeps the scroll: a reader restores its own place, and
+          // a reset to the top after it has done so would move the page under it.
+          onSelect={(next) =>
+            navigate({ params: { classId, topicId, tab: next }, resetScroll: false })
+          }
         />
       )}
       <ResourceToolbar

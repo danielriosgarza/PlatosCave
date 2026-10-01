@@ -1,7 +1,24 @@
+import {
+  READING_HTML_ATTRIBUTES,
+  READING_HTML_PROTOCOLS,
+  READING_HTML_TAGS,
+} from '@parallax/contracts';
+import type { Element, Root } from 'hast';
+import rehypeParse from 'rehype-parse';
+import { unified } from 'unified';
+import { visit } from 'unist-util-visit';
 import { describe, expect, test } from 'vitest';
+// Shared with the browser layer's test, which runs these outputs through DOMPurify.
+import hostile from '../../../web/src/reading/hostile-readings.json';
 import { makePdf } from '../../test/fixtures/pdf';
 import { extractPdfText, PdfReadError } from './pdf-text';
-import { blockId, normaliseText, renderReading, resolveReadingImages } from './reading';
+import {
+  blockId,
+  normaliseText,
+  readingSchema,
+  renderReading,
+  resolveReadingImages,
+} from './reading';
 
 const KEY = 'courses/00000000-0000-4000-8000-000000000101/objects/abc123';
 
@@ -246,5 +263,77 @@ describe('PDF readings', () => {
     expect(err).toBeInstanceOf(Error);
     // An abort is not a problem with the file: the job retries it.
     expect(err).not.toBeInstanceOf(PdfReadError);
+  });
+});
+
+/** hast property name → HTML attribute name (`className` → `class`, `ariaLabel` → `aria-label`). */
+const attributeName = (prop: string): string => {
+  const special: Record<string, string> = {
+    className: 'class',
+    htmlFor: 'for',
+    acceptCharset: 'accept-charset',
+  };
+  if (special[prop]) return special[prop];
+  if (/^aria[A-Z]/.test(prop)) return `aria-${prop.slice(4).toLowerCase()}`;
+  if (/^data[A-Z]/.test(prop)) return prop.replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`);
+  return prop.toLowerCase();
+};
+
+/** Attributes the pipeline sets after sanitising (ids, link rel, the display-math class). */
+const ADDED_AFTER_SANITISING: Record<string, string[]> = {
+  '*': ['data-block-id', 'data-figure-id'],
+  a: ['rel'],
+  div: ['class'],
+  img: ['data-object-key'],
+};
+
+/** Script, handlers, styles and script URLs in a parsed (browser-equivalent) tree. */
+function dangers(tree: Root): string[] {
+  const found: string[] = [];
+  visit(tree, 'element', (el: Element) => {
+    if (['script', 'style', 'iframe', 'object', 'embed', 'svg', 'form'].includes(el.tagName)) {
+      found.push(el.tagName);
+    }
+    for (const [prop, value] of Object.entries(el.properties)) {
+      if (/^on/i.test(prop) || prop === 'style') found.push(`${el.tagName}[${prop}]`);
+      // biome-ignore lint/suspicious/noControlCharactersInRegex: browsers drop these in a scheme
+      const compact = String(value).replace(/[\u0000-\u0020\u007f]/g, '');
+      if (/^(?:javascript|vbscript|data):/i.test(compact)) found.push(`${el.tagName}[${prop}]`);
+    }
+  });
+  return found;
+}
+
+describe('reading HTML on the app origin (ADR-0002)', () => {
+  test('the ingestion schema and the browser allow-list name the same elements and attributes', () => {
+    expect([...(readingSchema.tagNames ?? [])].sort()).toEqual([...READING_HTML_TAGS].sort());
+    const schema = readingSchema.attributes ?? {};
+    const allowed = new Set(['*', ...READING_HTML_TAGS]);
+    const tags = [...Object.keys(schema), ...Object.keys(READING_HTML_ATTRIBUTES)];
+    // Attributes of an element the schema drops (`source`) never reach a page.
+    for (const tag of new Set(tags.filter((t) => allowed.has(t)))) {
+      const names = (schema[tag] ?? []).map((a) => attributeName(Array.isArray(a) ? a[0] : a));
+      const expected = [...names, ...(ADDED_AFTER_SANITISING[tag] ?? [])];
+      expect([...new Set(expected)].sort(), tag).toEqual(
+        [...(READING_HTML_ATTRIBUTES[tag] ?? [])].sort(),
+      );
+    }
+    for (const [attribute, schemes] of Object.entries(READING_HTML_PROTOCOLS)) {
+      expect(readingSchema.protocols?.[attribute]).toEqual(schemes);
+    }
+  });
+
+  test.each(hostile.cases)('$name: the shared fixture is what ingestion makes of it', (c) => {
+    const { html } = renderReading(c.source, c.format as 'html' | 'markdown');
+    // On a mismatch, regenerate `ingested` in hostile-readings.json from renderReading.
+    expect(html).toBe(c.ingested);
+    const tree = unified().use(rehypeParse, { fragment: true }).parse(html);
+    expect(dangers(tree)).toEqual([]);
+  });
+
+  test('the benign fixture is what ingestion and image resolution make of it', () => {
+    const { benign } = hostile;
+    const { html } = renderReading(benign.source, 'markdown', benign.assets);
+    expect(resolveReadingImages(html, () => benign.imageUrl)).toBe(benign.ingested);
   });
 });

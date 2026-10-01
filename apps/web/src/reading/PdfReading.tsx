@@ -3,6 +3,7 @@ import { openPdf, type PdfDocument, type RenderHandle } from './pdfjs';
 import styles from './Reading.module.css';
 import { HOLD_MS, READER_INPUT } from './readerInput';
 import type { ReadingPosition } from './readings';
+import { inFullScreen, onScrollerScroll, scrollerOf } from './scroller';
 
 interface Props {
   url: string;
@@ -39,11 +40,15 @@ export function PdfReading({ url, pageCount, renew, initial, onPosition }: Props
   const [page, setPage] = useState(() => Math.min(Math.max(start?.page ?? 1, 1), pageCount));
   const [width, setWidth] = useState(0);
   const [drawn, setDrawn] = useState<{ page: number; width: number } | null>(null);
-  const stage = useRef<HTMLDivElement>(null);
+  // A callback ref, so the width follows whichever element is the stage now, including one a
+  // Try again after a failed load puts in place.
+  const [stage, setStage] = useState<HTMLDivElement | null>(null);
   const sheet = useRef<HTMLDivElement>(null);
   const canvas = useRef<HTMLCanvasElement>(null);
   const text = useRef<HTMLDivElement>(null);
   const restore = useRef<number | null>(start?.offset ?? null);
+  // The share of the page above the window top as last seen, kept across full screen changes.
+  const share = useRef(start?.offset ?? 0);
   const moved = useRef(false);
   const settledAt = useRef<number | null>(null);
   const current = useRef(url);
@@ -76,14 +81,22 @@ export function PdfReading({ url, pageCount, renew, initial, onPosition }: Props
   }, [attempt, renew]);
 
   useLayoutEffect(() => {
-    const el = stage.current;
-    if (!el) return;
-    const measure = () => setWidth(Math.min(el.clientWidth || MAX_WIDTH, MAX_WIDTH));
+    if (!stage) return;
+    const measure = () => setWidth(Math.min(stage.clientWidth || MAX_WIDTH, MAX_WIDTH));
     measure();
     if (typeof ResizeObserver === 'undefined') return;
     const observer = new ResizeObserver(measure);
-    observer.observe(el);
+    observer.observe(stage);
     return () => observer.disconnect();
+  }, [stage]);
+
+  /** Scrolls so `wanted` thousandths of the drawn page are above the top of the window. */
+  const scrollToShare = useCallback((wanted: number) => {
+    const el = sheet.current;
+    if (!el) return;
+    const scroller = scrollerOf(el);
+    const rect = el.getBoundingClientRect();
+    scroller.scrollTo(scroller.top + rect.top - scroller.origin + (wanted / 1000) * rect.height);
   }, []);
 
   const doc = load.state === 'ready' ? load.doc : null;
@@ -103,13 +116,9 @@ export function PdfReading({ url, pageCount, renew, initial, onPosition }: Props
         if (cancelled || !size) return;
         setDrawn({ page, width });
         settledAt.current = performance.now();
-        const share = restore.current;
+        const wanted = restore.current;
         restore.current = null;
-        const el = sheet.current;
-        if (el && share !== null) {
-          const rect = el.getBoundingClientRect();
-          window.scrollTo({ top: window.scrollY + rect.top + (share / 1000) * rect.height });
-        }
+        if (wanted !== null) scrollToShare(wanted);
       })
       .catch(() => {
         if (!cancelled) setLoad({ state: 'failed' });
@@ -118,14 +127,16 @@ export function PdfReading({ url, pageCount, renew, initial, onPosition }: Props
       cancelled = true;
       handle?.cancel();
     };
-  }, [doc, page, width]);
+  }, [doc, page, width, scrollToShare]);
 
   const place = useCallback(() => {
     const el = sheet.current;
     if (!el) return;
     const rect = el.getBoundingClientRect();
-    const through = rect.height > 0 ? Math.min(1, Math.max(0, -rect.top / rect.height)) : 0;
-    onPosition({ page, offset: Math.round(through * 1000) });
+    const above = scrollerOf(el).origin - rect.top;
+    const through = rect.height > 0 ? Math.min(1, Math.max(0, above / rect.height)) : 0;
+    share.current = Math.round(through * 1000);
+    onPosition({ page, offset: share.current });
   }, [page, onPosition]);
 
   // Only a reader's scrolling moves the saved place; the page being drawn or the router
@@ -134,25 +145,35 @@ export function PdfReading({ url, pageCount, renew, initial, onPosition }: Props
     const input = () => {
       moved.current = true;
     };
+    let full = inFullScreen(sheet.current);
     const onScroll = () => {
+      // Entering or leaving full screen scrolls the old container first; that is not the reader.
+      if (inFullScreen(sheet.current) !== full) return;
       const at = settledAt.current;
       // Not before the page is drawn and its place restored, and not in the moment after it.
       if (at === null) return;
       if (moved.current || performance.now() - at > HOLD_MS) place();
     };
+    const onFullScreen = () => {
+      full = inFullScreen(sheet.current);
+      if (settledAt.current !== null) scrollToShare(share.current);
+    };
     for (const type of READER_INPUT) window.addEventListener(type, input, { passive: true });
-    window.addEventListener('scroll', onScroll, { passive: true });
+    const stopScroll = onScrollerScroll(() => sheet.current, onScroll);
+    document.addEventListener('fullscreenchange', onFullScreen);
     return () => {
       for (const type of READER_INPUT) window.removeEventListener(type, input);
-      window.removeEventListener('scroll', onScroll);
+      stopScroll();
+      document.removeEventListener('fullscreenchange', onFullScreen);
     };
-  }, [place]);
+  }, [place, scrollToShare]);
 
   const go = (next: number) => {
     const target = Math.min(Math.max(next, 1), pageCount);
     if (target === page) return;
     setPage(target);
     restore.current = 0;
+    share.current = 0;
     onPosition({ page: target, offset: 0 });
   };
 
@@ -168,7 +189,7 @@ export function PdfReading({ url, pageCount, renew, initial, onPosition }: Props
   }
 
   return (
-    <div className={styles.pdf} ref={stage}>
+    <div className={styles.pdf} ref={setStage}>
       <nav className={styles.pageControls} aria-label="PDF pages">
         <button
           type="button"
@@ -203,7 +224,8 @@ export function PdfReading({ url, pageCount, renew, initial, onPosition }: Props
         style={drawn ? { width: drawn.width } : undefined}
       >
         <canvas ref={canvas} aria-label={`Page ${page}`} />
-        <div ref={text} className="textLayer" />
+        {/* pdf.js finds its text layer by the plain `textLayer` class while a selection is made. */}
+        <div ref={text} className={`${styles.textLayer} textLayer`} />
       </div>
     </div>
   );
