@@ -1,22 +1,28 @@
 import { requestSignInLink, signOut, verifySignInLink } from '@parallax/contracts/routes/auth';
 import type { FastifyInstance } from 'fastify';
-import type { Deps } from '../../app';
+import type { RouteDeps } from '../../app';
 import { defaultDestination, safeDestination } from '../../auth/destination';
 import { EmailLinkProvider } from '../../auth/email-provider';
 import { readSessionToken, SESSION_COOKIE, sessionCookieOptions } from '../../auth/sessions';
-import { userForVerifiedEmail } from '../../db/auth/accounts';
-import { createSession, revokeSession } from '../../db/auth/sessions';
+import { revokeSession, signInWithProof } from '../../db/auth/sessions';
 import { registerRoute } from '../register';
 
 const EXPIRED = '/signin?link=expired';
 
-export default function authRoutes(app: FastifyInstance, deps: Deps): void {
-  const { config, mailer } = app.authDeps;
+export default function authRoutes(app: FastifyInstance, deps: RouteDeps): void {
+  const { config, mailer, background } = deps;
   const now = () => app.resolverDeps.now();
   const cookieOptions = sessionCookieOptions(config.APP_ORIGIN);
   const { db } = deps;
   const provider = db
-    ? new EmailLinkProvider({ db, mailer, now, appOrigin: config.APP_ORIGIN, log: app.log })
+    ? new EmailLinkProvider({
+        db,
+        mailer,
+        now,
+        background,
+        appOrigin: config.APP_ORIGIN,
+        log: app.log,
+      })
     : undefined;
 
   registerRoute(
@@ -36,29 +42,39 @@ export default function authRoutes(app: FastifyInstance, deps: Deps): void {
     verifySignInLink,
     async ({ query, req, reply }) => {
       if (!db || !provider) throw app.httpErrors.serviceUnavailable();
-      const result = query.token ? await provider.complete(query.token) : null;
-      if (!result?.ok) {
-        const keep = safeDestination(result?.destination);
+      // Spending the link, finding the account, ending the old session and starting the new one
+      // are one transaction: a failure after the link is marked used rolls the use back, so the
+      // link still works on retry instead of leaving a dead link and a 500.
+      const signedIn = await signInWithProof(db, {
+        consume: (tx) =>
+          query.token
+            ? provider.complete(query.token, tx)
+            : Promise.resolve({ ok: false as const, destination: null }),
+        previous: readSessionToken(req),
+        now: now(),
+      });
+      if (!signedIn.token) {
+        const keep = safeDestination(signedIn.destination);
         const to = keep ? `${EXPIRED}&next=${encodeURIComponent(keep)}` : EXPIRED;
         return reply.redirect(to) as never;
       }
-      const userId = await userForVerifiedEmail(db, result.email);
-      const at = now();
-      // Rotation: whatever session this browser held before is ended, never upgraded in place.
-      const previous = readSessionToken(req);
-      if (previous) await revokeSession(db, previous, at);
-      const { token } = await createSession(db, userId, { now: at, authTime: at });
-      reply.setCookie(SESSION_COOKIE, token, cookieOptions);
+      reply.setCookie(SESSION_COOKIE, signedIn.token, cookieOptions);
       // Re-checked at use: a stored destination is only ever a same-origin app path.
-      return reply.redirect(safeDestination(result.destination) ?? '/courses') as never;
+      return reply.redirect(safeDestination(signedIn.destination) ?? '/courses') as never;
     },
     { rateLimit: { max: config.AUTH_VERIFY_RATE_LIMIT, timeWindow: '15 minutes' } },
   );
 
   registerRoute(app, signOut, async ({ req, reply }) => {
+    // Only a request carrying a validly signed session cookie ends anything or clears the
+    // cookie. The route is public and Fastify parses text/plain, so a cross-site form post
+    // reaches it without the (SameSite=Lax) cookie; answering Set-Cookie there would sign the
+    // visitor out of their own session.
     const token = readSessionToken(req);
-    if (token && db) await revokeSession(db, token, now());
-    reply.clearCookie(SESSION_COOKIE, cookieOptions);
+    if (token) {
+      if (db) await revokeSession(db, token, now());
+      reply.clearCookie(SESSION_COOKIE, cookieOptions);
+    }
     return { signedOut: true as const };
   });
 }

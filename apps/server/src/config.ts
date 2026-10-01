@@ -32,13 +32,35 @@ const Env = z
     MAIL_TRANSPORT: z.enum(['file', 'smtp']).default('file'),
     /** `file` transport: one JSON file per message (ADR-0001). */
     MAIL_DIR: z.string().default('.local/mail'),
-    MAIL_FROM: z.string().default('Parallax <no-reply@parallax.invalid>'),
+    /** Sender of sign-in mail. Required for `smtp` (relays reject the placeholder). */
+    MAIL_FROM: z.string().optional(),
     /** `smtp` transport, e.g. smtp://user:pass@mail.example.org:587 */
     SMTP_URL: z.string().optional(),
-    /** Sign-in link requests allowed per client IP per 15 minutes. */
-    AUTH_LINK_RATE_LIMIT: z.coerce.number().int().positive().default(10),
+    /**
+     * Sign-in link requests allowed per client IP per 15 minutes. The per-address cap (five
+     * links) is what stops mail floods; this one slows address guessing. Sized for a class
+     * signing in together from one campus NAT (a few dozen people, with retries).
+     */
+    AUTH_LINK_RATE_LIMIT: z.coerce.number().int().positive().default(120),
     /** Sign-in link uses (`/api/auth/verify`) allowed per client IP per 15 minutes. */
-    AUTH_VERIFY_RATE_LIMIT: z.coerce.number().int().positive().default(30),
+    AUTH_VERIFY_RATE_LIMIT: z.coerce.number().int().positive().default(240),
+    /**
+     * Fastify `trustProxy`: which proxies' `X-Forwarded-*` headers to believe, so `req.ip` (the
+     * rate-limit key) and `req.host` name the client and the requested host, not the proxy.
+     * `false` (default), `true` (every hop; only when the app is reachable through the proxy
+     * alone), a hop count, or a comma-separated list of proxy addresses / CIDR ranges.
+     */
+    TRUST_PROXY: z
+      .string()
+      .default('false')
+      .transform((v): boolean | number | string[] => {
+        const value = v.trim().toLowerCase();
+        if (value === 'true') return true;
+        if (value === 'false') return false;
+        if (/^\d+$/.test(value)) return Number(value);
+        return value.split(',').map((a) => a.trim());
+      })
+      .refine((v) => !Array.isArray(v) || v.every((a) => a !== ''), 'empty proxy address'),
     /**
      * Two host names for one server (ADR-0002): the app (API, web) and the content origin,
      * which serves only `/content/:token`. Development defaults match Vite on localhost:5173.
@@ -88,6 +110,9 @@ const Env = z
     if (env.MAIL_TRANSPORT === 'smtp' && !env.SMTP_URL) {
       ctx.addIssue({ code: 'custom', path: ['SMTP_URL'], message: 'required for smtp' });
     }
+    if (env.MAIL_TRANSPORT === 'smtp' && !env.MAIL_FROM) {
+      ctx.addIssue({ code: 'custom', path: ['MAIL_FROM'], message: 'required for smtp' });
+    }
     if (env.APP_HOST === env.CONTENT_HOST) {
       ctx.addIssue({
         code: 'custom',
@@ -120,6 +145,7 @@ const Env = z
   .transform((env) => ({
     ...env,
     SESSION_SECRET: env.SESSION_SECRET ?? DEV_SESSION_SECRET,
+    MAIL_FROM: env.MAIL_FROM ?? 'Parallax <no-reply@parallax.invalid>',
     // The Vite dev server proxies /api, so links open the web app's origin in development.
     APP_ORIGIN: env.APP_ORIGIN ?? 'http://localhost:5173',
     CONTENT_ORIGIN: env.CONTENT_ORIGIN ?? `http://${env.CONTENT_HOST}:${env.PORT}`,

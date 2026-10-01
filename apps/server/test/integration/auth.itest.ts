@@ -1,12 +1,15 @@
 import { mkdtemp, readdir, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { count, eq } from 'drizzle-orm';
+import { count, eq, sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
 import { buildApp } from '../../src/app';
+import { EmailLinkProvider } from '../../src/auth/email-provider';
 import { hashToken } from '../../src/auth/sessions';
+import { BackgroundTasks } from '../../src/background';
 import { loadConfig } from '../../src/config';
+import { createSession } from '../../src/db/auth/sessions';
 import {
   authSessions,
   classMemberships,
@@ -14,7 +17,7 @@ import {
   signinTokens,
   users,
 } from '../../src/db/schema';
-import { buildWorld, ids, type World } from '../fixtures/world';
+import { buildWorld, cookieFor, ids, type World } from '../fixtures/world';
 import { createTestDatabase, type TestDatabase } from './db';
 
 const start = new Date('2026-10-01T09:00:00Z');
@@ -23,6 +26,9 @@ const APP_ORIGIN = 'http://app.parallax.test';
 let t0 = start;
 let clock = start;
 let testIndex = 0;
+
+/** Mail goes out after the 202; every app here shares this so tests can wait for it. */
+const background = new BackgroundTasks();
 
 let testDb: TestDatabase;
 let world: World;
@@ -40,7 +46,7 @@ async function makeApp(env: Record<string, string> = {}): Promise<FastifyInstanc
     AUTH_VERIFY_RATE_LIMIT: '1000',
     ...env,
   });
-  const instance = await buildApp(config, { db: testDb.db, now: () => clock });
+  const instance = await buildApp(config, { db: testDb.db, now: () => clock, background });
   await instance.ready();
   apps.push(instance);
   return instance;
@@ -79,8 +85,12 @@ async function mailsTo(email: string): Promise<Mail[]> {
   return all.filter((m) => m.to === email);
 }
 
-const requestLink = (body: Record<string, unknown>, instance = app) =>
-  instance.inject({ method: 'POST', url: '/api/auth/link', payload: body });
+/** Answers once the request has been answered and any mail it queued has been delivered. */
+async function requestLink(body: Record<string, unknown>, instance = app) {
+  const res = await instance.inject({ method: 'POST', url: '/api/auth/link', payload: body });
+  await background.settled();
+  return res;
+}
 
 /** Requests a link and returns the verify path from the newest email to that address. */
 async function linkFor(email: string, extra: Record<string, unknown> = {}): Promise<string> {
@@ -199,6 +209,80 @@ describe('POST /api/auth/link', () => {
     expect(await mailsTo('rl9@example.test')).toEqual([]);
   });
 
+  test('answers 202 before the mail is delivered, and a hanging relay holds nothing', async () => {
+    let release: () => void = () => {};
+    const sent: string[] = [];
+    const slow = await buildApp(
+      loadConfig({ NODE_ENV: 'test', LOG_LEVEL: 'silent', AUTH_LINK_RATE_LIMIT: '1000' }),
+      {
+        db: testDb.db,
+        now: () => clock,
+        background,
+        mailer: {
+          send: async (m) => {
+            await new Promise<void>((resolve) => {
+              release = resolve;
+            });
+            sent.push(m.to);
+          },
+        },
+      },
+    );
+    apps.push(slow);
+    const email = 'slow@example.test';
+    const res = await slow.inject({ method: 'POST', url: '/api/auth/link', payload: { email } });
+    expect(res.statusCode).toBe(202);
+    expect(sent).toEqual([]);
+    const [stored] = await testDb.db
+      .select()
+      .from(signinTokens)
+      .where(eq(signinTokens.email, email));
+    expect(stored).toBeDefined();
+    release();
+    await background.settled();
+    expect(sent).toEqual([email]);
+  });
+
+  test('a delivery failure that cannot remove its row either still answered 202 and is logged without the address', async () => {
+    const email = 'both-down@example.test';
+    const logged: unknown[] = [];
+    const provider = new EmailLinkProvider({
+      db: testDb.db,
+      now: () => clock,
+      background,
+      appOrigin: APP_ORIGIN,
+      log: { info() {}, error: (...args: unknown[]) => void logged.push(args) } as never,
+      mailer: {
+        send: async () => {
+          // What nodemailer attaches to a rejected send.
+          throw Object.assign(new Error(`550 5.1.1 <${email}> user unknown`), {
+            code: 'EENVELOPE',
+            responseCode: 550,
+            envelope: { to: [email] },
+            rejected: [email],
+          });
+        },
+      },
+    });
+    // The database fails alongside the mail transport: the compensating delete is refused.
+    await testDb.db.execute(
+      sql`create function pc_refuse_delete() returns trigger language plpgsql as $$ begin raise exception 'injected failure'; end $$`,
+    );
+    await testDb.db.execute(
+      sql`create trigger pc_refuse_delete before delete on signin_tokens for each row execute function pc_refuse_delete()`,
+    );
+    try {
+      await expect(provider.begin({ email, destination: '/courses' })).resolves.toBeUndefined();
+      await expect(background.settled()).resolves.toBeUndefined();
+    } finally {
+      await testDb.db.execute(sql`drop trigger pc_refuse_delete on signin_tokens`);
+      await testDb.db.execute(sql`drop function pc_refuse_delete()`);
+    }
+    expect(logged).toHaveLength(2);
+    expect(JSON.stringify(logged)).not.toContain(email);
+    expect(JSON.stringify(logged)).toContain('EENVELOPE');
+  });
+
   test('an undelivered link does not use up one of the address’s five sends', async () => {
     let failing = true;
     const sent: string[] = [];
@@ -207,6 +291,7 @@ describe('POST /api/auth/link', () => {
       {
         db: testDb.db,
         now: () => clock,
+        background,
         mailer: {
           send: async (m) => {
             if (failing) throw new Error('smtp down');
@@ -366,6 +451,33 @@ describe('GET /api/auth/verify', () => {
     expect(res.headers.location).toBe('/courses?view=instructor');
   });
 
+  test('a failure after the link is consumed rolls everything back: the link works on retry', async () => {
+    const path = await linkFor('priya@example.test');
+    // A session of its own: the shared fixture cookie belongs to the rotation test below.
+    const held = await createSession(testDb.db, ids.priya, { now: clock });
+    const before = cookieFor(held.token);
+    await testDb.db.execute(
+      sql`create function pc_refuse_session() returns trigger language plpgsql as $$ begin raise exception 'injected failure'; end $$`,
+    );
+    await testDb.db.execute(
+      sql`create trigger pc_refuse_session before insert on auth_sessions for each row execute function pc_refuse_session()`,
+    );
+    try {
+      const failed = await verify(path, before);
+      expect(failed.statusCode).toBe(500);
+      expect(failed.headers['set-cookie']).toBeUndefined();
+    } finally {
+      await testDb.db.execute(sql`drop trigger pc_refuse_session on auth_sessions`);
+      await testDb.db.execute(sql`drop function pc_refuse_session()`);
+    }
+    // Neither the link nor the person's existing session was spent.
+    expect((await me(before)).statusCode).toBe(200);
+    const retry = await verify(path, before);
+    expect(retry.statusCode).toBe(302);
+    expect(retry.headers.location).toBe('/courses?view=student');
+    expect((await me(sessionCookieFrom(retry))).json().user.id).toBe(ids.priya);
+  });
+
   test('rotates the session: a session held before sign-in is ended', async () => {
     const before = world.cookie.priya;
     expect((await me(before)).statusCode).toBe(200);
@@ -389,9 +501,49 @@ describe('POST /api/auth/signout', () => {
     expect((await me(cookie)).statusCode).toBe(401);
   });
 
-  test('succeeds without a session', async () => {
+  test('succeeds without a session, and clears no cookie', async () => {
     const res = await app.inject({ method: 'POST', url: '/api/auth/signout' });
     expect(res.statusCode).toBe(200);
+    expect(res.headers['set-cookie']).toBeUndefined();
+  });
+
+  test('a cross-site text/plain form post (no cookie sent, or a forged one) does not clear the cookie', async () => {
+    for (const cookie of [undefined, 'pc_session=forged.value']) {
+      const res = await app.inject({
+        method: 'POST',
+        url: '/api/auth/signout',
+        headers: { 'content-type': 'text/plain', ...(cookie ? { cookie } : {}) },
+        payload: 'x=1',
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.headers['set-cookie']).toBeUndefined();
+    }
+  });
+});
+
+describe('rate limits behind a proxy', () => {
+  const from = (instance: FastifyInstance, forwarded: string) =>
+    instance.inject({
+      method: 'POST',
+      url: '/api/auth/link',
+      remoteAddress: '10.0.0.1',
+      headers: { 'x-forwarded-for': forwarded },
+      payload: { email: `proxy-${forwarded}@example.test` },
+    });
+
+  test('with TRUST_PROXY each forwarded client has its own budget', async () => {
+    const proxied = await makeApp({ AUTH_LINK_RATE_LIMIT: '1', TRUST_PROXY: '10.0.0.0/8' });
+    expect((await from(proxied, '203.0.113.1')).statusCode).toBe(202);
+    expect((await from(proxied, '203.0.113.1')).statusCode).toBe(429);
+    expect((await from(proxied, '203.0.113.2')).statusCode).toBe(202);
+    await background.settled();
+  });
+
+  test('without TRUST_PROXY a forwarded address is ignored: the proxy is the client', async () => {
+    const direct = await makeApp({ AUTH_LINK_RATE_LIMIT: '1' });
+    expect((await from(direct, '203.0.113.1')).statusCode).toBe(202);
+    expect((await from(direct, '203.0.113.2')).statusCode).toBe(429);
+    await background.settled();
   });
 });
 

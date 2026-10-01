@@ -45,6 +45,30 @@ describe('config', () => {
     );
   });
 
+  test('smtp needs a sender; the file transport keeps a placeholder', () => {
+    expect(() =>
+      loadConfig({ MAIL_TRANSPORT: 'smtp', SMTP_URL: 'smtp://mail.example.org' }),
+    ).toThrow(/MAIL_FROM/);
+    expect(
+      loadConfig({
+        MAIL_TRANSPORT: 'smtp',
+        SMTP_URL: 'smtp://mail.example.org',
+        MAIL_FROM: 'Parallax <login@example.org>',
+      }).MAIL_FROM,
+    ).toBe('Parallax <login@example.org>');
+    expect(loadConfig({}).MAIL_FROM).toBe('Parallax <no-reply@parallax.invalid>');
+  });
+
+  test('TRUST_PROXY is off by default and reads true, a hop count or proxy addresses', () => {
+    expect(loadConfig({}).TRUST_PROXY).toBe(false);
+    expect(loadConfig({ TRUST_PROXY: 'true' }).TRUST_PROXY).toBe(true);
+    expect(loadConfig({ TRUST_PROXY: '1' }).TRUST_PROXY).toBe(1);
+    expect(loadConfig({ TRUST_PROXY: '10.0.0.0/8, 192.168.1.5' }).TRUST_PROXY).toEqual([
+      '10.0.0.0/8',
+      '192.168.1.5',
+    ]);
+  });
+
   test('the s3 driver needs a bucket and credentials', () => {
     expect(() => loadConfig({ STORAGE_DRIVER: 's3' })).toThrow(/S3_BUCKET/);
     const config = loadConfig({
@@ -88,8 +112,12 @@ test('a short session secret is refused', () => {
 test('the smtp transport needs SMTP_URL', () => {
   expect(() => loadConfig({ NODE_ENV: 'test', MAIL_TRANSPORT: 'smtp' })).toThrow(/SMTP_URL/);
   expect(
-    loadConfig({ NODE_ENV: 'test', MAIL_TRANSPORT: 'smtp', SMTP_URL: 'smtp://localhost:1025' })
-      .MAIL_TRANSPORT,
+    loadConfig({
+      NODE_ENV: 'test',
+      MAIL_TRANSPORT: 'smtp',
+      SMTP_URL: 'smtp://localhost:1025',
+      MAIL_FROM: 'Parallax <login@example.org>',
+    }).MAIL_TRANSPORT,
   ).toBe('smtp');
 });
 

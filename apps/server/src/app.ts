@@ -12,6 +12,7 @@ import {
   validatorCompiler,
 } from 'fastify-type-provider-zod';
 import type { PgBoss } from 'pg-boss';
+import { BackgroundTasks } from './background';
 import type { Config } from './config';
 import { MAX_TOKEN_LENGTH } from './content/tokens';
 import type { Db } from './db/client';
@@ -26,8 +27,6 @@ import type { Storage } from './storage/storage';
 
 declare module 'fastify' {
   interface FastifyInstance {
-    /** Configuration and mail transport for the sign-in routes. */
-    authDeps: { config: Config; mailer: Mailer };
     /** Configuration and object store for content tokens and the content origin (P1-06). */
     contentDeps: { config: Config; storage: Storage };
   }
@@ -45,6 +44,15 @@ export interface Deps {
   storage?: Storage;
   /** Job queue for routes that start background work; absent, such work is not queued. */
   boss?: PgBoss;
+  /** Work that outlives its request (mail delivery); defaults to one the server drains on close. */
+  background?: BackgroundTasks;
+}
+
+/** What every route module receives: the injected `Deps` with the defaults buildApp resolved. */
+export interface RouteDeps extends Deps {
+  config: Config;
+  mailer: Mailer;
+  background: BackgroundTasks;
 }
 
 /** A path segment that could hold a token: encoded, or longer than any id the app routes use. */
@@ -74,6 +82,8 @@ export async function buildApp(config: Config, deps: Deps = {}): Promise<Fastify
   const app = Fastify({
     // Storage keys and content tokens are path parameters longer than the default 100.
     routerOptions: { maxParamLength: MAX_TOKEN_LENGTH },
+    // A hop count is documented Fastify behaviour that its option type omits.
+    trustProxy: config.TRUST_PROXY as boolean | string[],
     logger: {
       level: config.LOG_LEVEL,
       serializers: {
@@ -92,12 +102,20 @@ export async function buildApp(config: Config, deps: Deps = {}): Promise<Fastify
 
   const now = deps.now ?? (() => new Date());
   const storage = deps.storage ?? createStorage(config);
+  const background = deps.background ?? new BackgroundTasks(app.log);
+  // Deliveries in flight finish (or fail and clean up) before the server closes.
+  app.addHook('onClose', () => background.settled());
+  const routeDeps: RouteDeps = {
+    ...deps,
+    config,
+    mailer: deps.mailer ?? createMailer(config, now),
+    background,
+  };
   // Only the store built here is ours to release; an injected one belongs to the caller.
   if (!deps.storage) app.addHook('onClose', async () => storage.destroy?.());
   app.decorate('resolverDeps', { db: deps.db, now });
   app.decorate('contentDeps', { config, storage });
   app.decorate('contracts', [] as RouteContract[]);
-  app.decorate('authDeps', { config, mailer: deps.mailer ?? createMailer(config) });
   app.decorateRequest('parallaxScope', undefined);
 
   // Structural guard (ADR-0002): every /api route must declare a scope via registerRoute().
@@ -156,9 +174,9 @@ export async function buildApp(config: Config, deps: Deps = {}): Promise<Fastify
     if (typeof mod.default !== 'function') {
       throw new Error(`${file} does not default-export a route registrar`);
     }
-    const register = mod.default as (app: FastifyInstance, deps: Deps) => void | Promise<void>;
+    const register = mod.default as (app: FastifyInstance, deps: RouteDeps) => void | Promise<void>;
     await app.register(async (instance) => {
-      await register(instance, deps);
+      await register(instance, routeDeps);
     });
   }
 

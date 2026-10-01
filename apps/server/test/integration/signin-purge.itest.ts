@@ -8,6 +8,7 @@ import {
   purgeSigninTokens,
   SIGNIN_TOKEN_RETENTION_MS,
 } from '../../src/auth/email-provider';
+import { BackgroundTasks } from '../../src/background';
 import { createBoss } from '../../src/db/jobs/boss';
 import { signinTokens } from '../../src/db/schema';
 import { PURGE_SIGNIN_TOKENS, workMaintenance } from '../../src/jobs/maintenance';
@@ -55,10 +56,12 @@ describe('sign-in link purge', () => {
 
   test('the per-address cap still counts live links after a purge', async () => {
     const sent: string[] = [];
+    const background = new BackgroundTasks();
     const provider = new EmailLinkProvider({
       db: testDb.db,
       mailer: { send: async (m) => void sent.push(m.to) },
       now: () => now,
+      background,
       appOrigin: 'http://app.parallax.test',
       log: { info() {}, error() {} } as never,
     });
@@ -67,12 +70,14 @@ describe('sign-in link purge', () => {
     for (let i = 0; i < LINKS_PER_EMAIL; i++) {
       await provider.begin({ email, destination: '/courses' });
     }
+    await background.settled();
     expect(sent).toHaveLength(LINKS_PER_EMAIL);
     await testDb.db
       .insert(signinTokens)
       .values(row(email, 'cap-old', ago(2 * SIGNIN_TOKEN_RETENTION_MS)));
     expect(await purgeSigninTokens(testDb.db, now)).toBe(1);
     await provider.begin({ email, destination: '/courses' });
+    await background.settled();
     expect(sent).toHaveLength(LINKS_PER_EMAIL);
     const [n] = await testDb.db
       .select({ n: count() })

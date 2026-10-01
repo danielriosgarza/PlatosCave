@@ -33,3 +33,17 @@ test('writes one JSON file per message, named in send order, with no partial fil
   });
   expect(Number.isNaN(Date.parse(messages[0].sentAt))).toBe(false);
 });
+
+test('stamps messages and names files from the injected clock', async () => {
+  const at = new Date('2026-10-01T09:30:00Z');
+  const mailer = new FileMailer(
+    join(dir, 'clocked'),
+    'Parallax <no-reply@parallax.invalid>',
+    () => at,
+  );
+  await mailer.send({ to: 'p@example.test', subject: 's', text: 't' });
+  const [file] = await readdir(join(dir, 'clocked'));
+  expect(file?.startsWith(String(at.getTime()).padStart(15, '0'))).toBe(true);
+  const stored = JSON.parse(await readFile(join(dir, 'clocked', file ?? ''), 'utf8'));
+  expect(stored.sentAt).toBe(at.toISOString());
+});

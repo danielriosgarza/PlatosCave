@@ -1,14 +1,14 @@
 import { buildTestWorld, signInAs } from '@parallax/contracts/routes/test';
 import type { FastifyInstance } from 'fastify';
-import type { Deps } from '../../app';
+import type { RouteDeps } from '../../app';
 import { SESSION_COOKIE, sessionCookieOptions } from '../../auth/sessions';
 import { userForVerifiedEmail } from '../../db/auth/accounts';
 import { createSession } from '../../db/auth/sessions';
 import { registerRoute } from '../register';
 
 /** E2E fixture routes (ADR-0006); mounted only when TEST_ROUTES=1, never in production. */
-export default function testRoutes(app: FastifyInstance, deps: Deps): void {
-  const { config } = app.authDeps;
+export default function testRoutes(app: FastifyInstance, deps: RouteDeps): void {
+  const { config } = deps;
   if (!config.TEST_ROUTES || config.NODE_ENV === 'production') return;
   const db = () => {
     if (!deps.db) throw app.httpErrors.serviceUnavailable();
