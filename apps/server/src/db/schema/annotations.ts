@@ -1,7 +1,6 @@
 import type { Anchor } from '@parallax/contracts';
 import { sql } from 'drizzle-orm';
 import {
-  type AnyPgColumn,
   boolean,
   check,
   foreignKey,
@@ -131,7 +130,8 @@ export const posts = pgTable(
       .notNull()
       .references(() => users.id),
     isPreview: boolean().notNull().default(false),
-    parentId: uuid().references((): AnyPgColumn => posts.id),
+    /** The post this one replies to, always in the same thread (composite FK below). */
+    parentId: uuid(),
     body: text(),
     revision: integer().notNull().default(1),
     editedAt: timestamp({ withTimezone: true }),
@@ -149,6 +149,12 @@ export const posts = pgTable(
       columns: [t.threadId, t.classId],
       foreignColumns: [threads.id, threads.classId],
     }).onDelete('cascade'),
+    foreignKey({
+      name: 'posts_parent_fk',
+      columns: [t.parentId, t.threadId],
+      foreignColumns: [t.id, t.threadId],
+    }),
+    unique().on(t.id, t.threadId),
     index().on(t.threadId, t.createdAt),
     check('posts_body_or_tombstone', sql`${t.body} is not null or ${t.deletedAt} is not null`),
   ],

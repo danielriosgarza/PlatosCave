@@ -1,5 +1,5 @@
 {
-  "id": "d61eb8ff-956d-4aab-8fee-322f08f015ba",
+  "id": "c57e4ca6-62b6-4a67-b644-2de2ef5cc9fd",
   "prevId": "baf18185-1b47-4da8-ac91-d98b60a20721",
   "version": "7",
   "dialect": "postgresql",
@@ -547,19 +547,6 @@
           "onDelete": "no action",
           "onUpdate": "no action"
         },
-        "posts_parent_id_posts_id_fk": {
-          "name": "posts_parent_id_posts_id_fk",
-          "tableFrom": "posts",
-          "tableTo": "posts",
-          "columnsFrom": [
-            "parent_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
         "posts_deleted_by_users_id_fk": {
           "name": "posts_deleted_by_users_id_fk",
           "tableFrom": "posts",
@@ -600,10 +587,34 @@
           ],
           "onDelete": "cascade",
           "onUpdate": "no action"
+        },
+        "posts_parent_fk": {
+          "name": "posts_parent_fk",
+          "tableFrom": "posts",
+          "tableTo": "posts",
+          "columnsFrom": [
+            "parent_id",
+            "thread_id"
+          ],
+          "columnsTo": [
+            "id",
+            "thread_id"
+          ],
+          "onDelete": "no action",
+          "onUpdate": "no action"
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
+      "uniqueConstraints": {
+        "posts_id_threadId_unique": {
+          "name": "posts_id_threadId_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "id",
+            "thread_id"
+          ]
+        }
+      },
       "policies": {},
       "checkConstraints": {
         "posts_body_or_tombstone": {

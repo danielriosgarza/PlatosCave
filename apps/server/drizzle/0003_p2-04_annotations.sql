@@ -54,6 +54,7 @@ CREATE TABLE "posts" (
 	"moderated_by" uuid,
 	"moderation_reason" text,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "posts_id_threadId_unique" UNIQUE("id","thread_id"),
 	CONSTRAINT "posts_body_or_tombstone" CHECK ("posts"."body" is not null or "posts"."deleted_at" is not null)
 );
 --> statement-breakpoint
@@ -89,10 +90,10 @@ ALTER TABLE "annotations" ADD CONSTRAINT "annotations_resource_id_resources_id_f
 ALTER TABLE "annotations" ADD CONSTRAINT "annotations_resource_revision_id_resource_revisions_id_fk" FOREIGN KEY ("resource_revision_id") REFERENCES "public"."resource_revisions"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "posts" ADD CONSTRAINT "posts_class_id_classes_id_fk" FOREIGN KEY ("class_id") REFERENCES "public"."classes"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "posts" ADD CONSTRAINT "posts_author_id_users_id_fk" FOREIGN KEY ("author_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "posts" ADD CONSTRAINT "posts_parent_id_posts_id_fk" FOREIGN KEY ("parent_id") REFERENCES "public"."posts"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "posts" ADD CONSTRAINT "posts_deleted_by_users_id_fk" FOREIGN KEY ("deleted_by") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "posts" ADD CONSTRAINT "posts_moderated_by_users_id_fk" FOREIGN KEY ("moderated_by") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "posts" ADD CONSTRAINT "posts_thread_fk" FOREIGN KEY ("thread_id","class_id") REFERENCES "public"."threads"("id","class_id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "posts" ADD CONSTRAINT "posts_parent_fk" FOREIGN KEY ("parent_id","thread_id") REFERENCES "public"."posts"("id","thread_id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "threads" ADD CONSTRAINT "threads_class_id_classes_id_fk" FOREIGN KEY ("class_id") REFERENCES "public"."classes"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "threads" ADD CONSTRAINT "threads_author_id_users_id_fk" FOREIGN KEY ("author_id") REFERENCES "public"."users"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "threads" ADD CONSTRAINT "threads_resource_id_resources_id_fk" FOREIGN KEY ("resource_id") REFERENCES "public"."resources"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint

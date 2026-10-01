@@ -24,7 +24,7 @@ A course holds reusable material; a class pins one immutable release (§1, §12,
 | kind | fields | produced by |
 | --- | --- | --- |
 | `text` | `blockId`, `start`, `end` (code-unit offsets in the block's text content), `quote`, `prefix`, `suffix` (≤ 32 chars each) | native readings, web slides |
-| `pdf` | `page` (0-based), `rect` `{x,y,w,h}` normalised 0..1, optional `quote` | PDF readings and decks |
+| `pdf` | `page` (0-based), `rect` `{x,y,w,h}` normalised 0..1, optional `quote`, optional `strokes` (sketch on the page) | PDF readings and decks |
 | `slide` | `page` | slide notes/discussion |
 | `figure` | `figureId`, `strokes` (drawing) | sketches on native figures |
 | `none` | — | general topic notes |
