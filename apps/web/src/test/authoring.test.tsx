@@ -73,6 +73,8 @@ interface Server {
   conflictWith?: ReturnType<typeof topic>;
   publishStatus?: number;
   uploads: number;
+  /** PATCH of this topic id answers with this status (reorder tests). */
+  otherStatus?: number;
 }
 
 function fresh(over: Partial<Server> = {}): Server {
@@ -143,6 +145,12 @@ function api(me: ReturnType<typeof makeMe>, s: Server) {
         release: { id: COURSE, version: s.latest, createdAt: stamp },
         report: s.report,
       });
+    }
+    if (path === `${base}/topics/${OTHER}` && method === 'PATCH') {
+      const body = JSON.parse(String(init?.body));
+      s.patched.push({ url: path, body });
+      if (s.otherStatus) return json({ error: 'x' }, s.otherStatus);
+      return json(topic({ id: OTHER, position: body.position, revision: 2 }));
     }
     if (path === `${base}/topics/${TOPIC}` && method === 'PATCH') {
       const body = JSON.parse(String(init?.body));
@@ -376,5 +384,57 @@ describe('publishing', () => {
     await open(grant(), fresh({ latest: null, classUses: null }));
     expect(await screen.findByText(/Class A has not adopted a release\./)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Publish release 1' })).toBeInTheDocument();
+  });
+});
+
+describe('publication check stays current', () => {
+  it('A16 drops the blocking problems once the drafts are fixed, without another Publish click', async () => {
+    const user = userEvent.setup();
+    const blocking = {
+      errors: [
+        { code: 'unprocessed_reading', message: '“Why samples vary” is still being processed' },
+      ],
+      warnings: [],
+    };
+    const { s, queryClient } = await open(grant(), fresh({ report: blocking, publishStatus: 422 }));
+    await screen.findByText(/1 blocking problem/);
+    await user.click(screen.getByRole('button', { name: 'Publish release 3' }));
+    await screen.findByText(/1 blocking problem/);
+    // The job finished and the editor fixed the draft: the next check is clean.
+    s.report = { errors: [], warnings: [] };
+    s.processing = { state: 'ready' };
+    await queryClient.invalidateQueries({ queryKey: ['authoring'] });
+    expect(await screen.findByText(/no blocking problems/)).toBeInTheDocument();
+    expect(screen.queryByText('“Why samples vary” is still being processed')).toBeNull();
+  });
+});
+
+describe('course topics', () => {
+  it('A26 a failed reorder puts the first topic back instead of leaving two at one position', async () => {
+    const user = userEvent.setup();
+    const s = fresh({ otherStatus: 409 });
+    api(grant(), s);
+    renderApp(`/courses/${COURSE}/edit`);
+    await user.click(await screen.findByRole('button', { name: 'Move Sampling later' }));
+    await screen.findByText(/Another editor changed the topics/);
+    const writes = s.patched.map((p) => `${p.url.slice(-4)}:${p.body.position}`);
+    // Sampling (0) swapped to 1, Estimation refused, Sampling restored to 0.
+    expect(writes).toEqual([
+      `${TOPIC.slice(-4)}:1`,
+      `${OTHER.slice(-4)}:0`,
+      `${TOPIC.slice(-4)}:0`,
+    ]);
+  });
+});
+
+describe('leaving the editor', () => {
+  it('A26 an edit made just before navigating away is still saved', async () => {
+    const user = userEvent.setup();
+    const { s, router } = await open();
+    await user.type(await screen.findByLabelText('Learning objective'), '!');
+    expect(s.patched).toHaveLength(0);
+    await router.navigate({ to: '/courses/$courseId/edit', params: { courseId: COURSE } });
+    await waitFor(() => expect(s.patched).toHaveLength(1));
+    expect(s.patched[0]?.body.objective).toBe('Explain why estimates differ.!');
   });
 });

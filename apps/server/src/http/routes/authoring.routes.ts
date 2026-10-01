@@ -39,6 +39,8 @@ const entry = (r: ResourceJobStatus) => ({
   updatedAt: r.status?.updatedAt ?? null,
 });
 
+const PDF_MAGIC = '%PDF-';
+
 /** Passes the file through, refusing bytes that are not what its extension claims. */
 async function* checked(
   stream: AsyncIterable<Buffer> & { truncated?: boolean },
@@ -46,10 +48,15 @@ async function* checked(
 ) {
   const decoder = format === 'pdf' ? undefined : new TextDecoder('utf-8', { fatal: true });
   let empty = true;
+  let header = Buffer.alloc(0);
   try {
     for await (const chunk of stream) {
-      if (empty && format === 'pdf' && chunk.subarray(0, 5).toString('latin1') !== '%PDF-') {
-        throw new UploadRejected('The file is not a PDF');
+      if (format === 'pdf' && header.length < PDF_MAGIC.length) {
+        // A slow client may deliver the first bytes in pieces; judge the first five together.
+        header = Buffer.concat([header, chunk]).subarray(0, PDF_MAGIC.length);
+        if (!PDF_MAGIC.startsWith(header.toString('latin1').slice(0, header.length))) {
+          throw new UploadRejected('The file is not a PDF');
+        }
       }
       if (decoder && chunk.includes(0)) throw new UploadRejected('The file is not text');
       decoder?.decode(chunk, { stream: true });
@@ -58,6 +65,9 @@ async function* checked(
     }
     // The parser stops at the limit without an error; refusing here keeps the object unstored.
     if (stream.truncated) throw new UploadTooLarge();
+    if (format === 'pdf' && !empty && header.toString('latin1') !== PDF_MAGIC) {
+      throw new UploadRejected('The file is not a PDF');
+    }
     decoder?.decode();
   } catch (err) {
     if (err instanceof TypeError) throw new UploadRejected('The text is not valid UTF-8');
@@ -80,7 +90,7 @@ export default function authoringRoutes(app: FastifyInstance, deps: Deps): void 
   };
   // Scoped to this module: the parser only exists on the routes that take uploads.
   app.register(multipart, {
-    limits: { fileSize: MAX_UPLOAD_BYTES, files: 1, fields: 0, parts: 1 },
+    limits: { fileSize: MAX_UPLOAD_BYTES, files: 1, fields: 2, parts: 3 },
   });
 
   registerRoute(app, getCourseOverview, async ({ scope }) => {
@@ -91,10 +101,15 @@ export default function authoringRoutes(app: FastifyInstance, deps: Deps): void 
     if (!req.isMultipart()) refuse(400, 'send the file as multipart/form-data');
     const part = await req.file();
     if (part?.fieldname !== 'file') refuse(400, 'the request has no file part');
+    if (!part.filename) refuse(400, 'the file part has no file name');
     const filename = displayName(part.filename);
     const dot = filename.lastIndexOf('.');
     const extension = dot >= 0 ? filename.slice(dot + 1).toLowerCase() : undefined;
-    const format = extension ? uploadFormats[extension as keyof typeof uploadFormats] : undefined;
+    // Own keys only: `constructor` and the like are not extensions.
+    const format =
+      extension && Object.hasOwn(uploadFormats, extension)
+        ? uploadFormats[extension as keyof typeof uploadFormats]
+        : undefined;
     if (!format) refuse(400, 'Upload a Markdown (.md), HTML (.html) or PDF (.pdf) file');
     try {
       const stored = await storeCourseObject(
@@ -121,14 +136,17 @@ export default function authoringRoutes(app: FastifyInstance, deps: Deps): void 
   }));
 
   registerRoute(app, retryProcessing, async ({ scope, params }) => {
-    const find = async () =>
-      (await listResourceJobStatus(db(), scope)).find((r) => r.resourceId === params.resourceId);
-    const found = await find();
+    const [found] = await listResourceJobStatus(db(), scope, params.resourceId);
     if (!found?.revisionId || (found.type !== 'reading_native' && found.type !== 'reading_pdf')) {
       notFound();
     }
+    // Only a failed or never-queued reading is queued again: a running job would race the new one.
+    if (found.status && found.status.state !== 'failed') {
+      refuse(409, 'This reading is already queued, being processed or ready');
+    }
     if (!deps.boss) throw app.httpErrors.serviceUnavailable();
     await enqueueReadingIngest(deps.boss, db(), scope, found.revisionId);
-    return entry((await find()) ?? found);
+    const [now] = await listResourceJobStatus(db(), scope, params.resourceId);
+    return entry(now ?? found);
   });
 }

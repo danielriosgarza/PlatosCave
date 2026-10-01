@@ -68,7 +68,10 @@ export const getProcessing = defineRoute({
   examples: { params: { courseId: exampleCourseId } },
 });
 
-/** 404 when the resource is not a reading or has no revision to process. */
+/**
+ * 404 when the resource is not a reading or has no revision to process; 409 unless the reading's
+ * job failed or was never queued.
+ */
 export const retryProcessing = defineRoute({
   method: 'POST',
   path: '/api/courses/:courseId/resources/:resourceId/processing',

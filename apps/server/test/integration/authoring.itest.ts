@@ -50,6 +50,18 @@ afterAll(async () => {
   if (root) await rm(root, { recursive: true, force: true });
 });
 
+let worker: Promise<unknown> | undefined;
+/** Starts the ingestion worker once; each test that needs processed readings calls it. */
+const ensureWorker = () =>
+  (worker ??= workScopedJob(
+    boss,
+    testDb.db,
+    readingIngest,
+    { warn: () => {}, error: () => {} },
+    { pollingIntervalSeconds: 0.5 },
+    { storage },
+  ));
+
 async function call(who: PersonName, method: 'GET' | 'POST' | 'PATCH', url: string, body?: object) {
   const res = await app.inject({
     method,
@@ -112,6 +124,10 @@ describe('reading upload', () => {
       ['bad.md', new Uint8Array([0xff, 0xfe, 0x41]), /UTF-8/],
       ['nul.html', new Uint8Array([0x3c, 0x00, 0x3e]), /not text/],
       ['empty.md', new Uint8Array(), /empty/],
+      ['notes.constructor', text('# x'), /Upload a Markdown/],
+      ['notes.__proto__', text('# x'), /Upload a Markdown/],
+      ['notes.toString', text('# x'), /Upload a Markdown/],
+      ['short.pdf', text('%PD'), /not a PDF/],
     ] as const) {
       const res = await upload('elena', name, bytes);
       expect(res.statusCode, name).toBe(400);
@@ -123,6 +139,20 @@ describe('reading upload', () => {
     const big = new Uint8Array(26 * MiB).fill(0x61);
     const res = await upload('elena', 'big.md', big);
     expect(res.statusCode).toBe(413);
+  });
+
+  test('A26 a file part without a file name is a 400, not a 500', async () => {
+    const boundary = '----nofilename';
+    const res = await app.inject({
+      method: 'POST',
+      url: `${course}/uploads`,
+      headers: {
+        cookie: world.cookie.elena,
+        'content-type': `multipart/form-data; boundary=${boundary}`,
+      },
+      payload: `--${boundary}\r\nContent-Disposition: form-data; name="file"\r\n\r\n# hi\r\n--${boundary}--\r\n`,
+    });
+    expect(res.statusCode).toBe(400);
   });
 
   test('A26 a request that is not multipart is a 400', async () => {
@@ -158,14 +188,7 @@ describe('authoring flow', () => {
       expect.objectContaining({ code: 'unprocessed_reading', resourceId: resource.id }),
     ]);
 
-    await workScopedJob(
-      boss,
-      testDb.db,
-      readingIngest,
-      { warn: () => {}, error: () => {} },
-      { pollingIntervalSeconds: 0.5 },
-      { storage },
-    );
+    await ensureWorker();
     await settle(resource.id);
 
     const before = await call('elena', 'GET', `${course}/overview`);
@@ -214,6 +237,7 @@ describe('authoring flow', () => {
       objectKeys: [stored.key],
     });
     await storage.delete(stored.key);
+    await ensureWorker();
     const id = created.body.id;
     await settle(id, 'failed');
     const failed = await call('elena', 'GET', `${course}/processing`);
@@ -231,6 +255,8 @@ describe('authoring flow', () => {
     expect(retry.status).toBe(200);
     expect(retry.body.state).toBe('queued');
     expect((await call('sam', 'POST', `${course}/resources/${id}/processing`)).status).toBe(404);
+    // Queued or running work is not queued again.
+    expect((await call('elena', 'POST', `${course}/resources/${id}/processing`)).status).toBe(409);
   });
 });
 

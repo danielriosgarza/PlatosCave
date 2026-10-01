@@ -15,7 +15,7 @@ export const ACCEPT = Object.keys(uploadFormats)
 /** Why the browser can already refuse a file, with the same wording the server uses. */
 export function fileProblem(file: File): string | undefined {
   const extension = file.name.includes('.') ? file.name.split('.').pop()?.toLowerCase() : undefined;
-  if (!extension || !(extension in uploadFormats)) {
+  if (!extension || !Object.hasOwn(uploadFormats, extension)) {
     return 'Upload a Markdown (.md), HTML (.html) or PDF (.pdf) file';
   }
   if (file.size === 0) return 'The file is empty';

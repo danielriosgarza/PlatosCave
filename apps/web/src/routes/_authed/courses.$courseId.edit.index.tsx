@@ -2,7 +2,7 @@ import { createTopic, updateTopic } from '@parallax/contracts/routes/drafts';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { useState } from 'react';
-import { call } from '../../api/client';
+import { ApiError, call } from '../../api/client';
 import local from '../../authoring/Authoring.module.css';
 import { canEdit, grantLabel } from '../../authoring/grants';
 import { PublishPanel } from '../../authoring/PublishPanel';
@@ -55,14 +55,23 @@ function CourseDraft({
       a: { id: string; position: number; revision: number };
       b: { id: string; position: number; revision: number };
     }) => {
-      await call(updateTopic, {
+      const first = await call(updateTopic, {
         params: { courseId, topicId: a.id },
         body: { expectedRevision: a.revision, position: b.position },
       });
-      await call(updateTopic, {
-        params: { courseId, topicId: b.id },
-        body: { expectedRevision: b.revision, position: a.position },
-      });
+      try {
+        await call(updateTopic, {
+          params: { courseId, topicId: b.id },
+          body: { expectedRevision: b.revision, position: a.position },
+        });
+      } catch (err) {
+        // Two topics must never keep the same position: put the first one back.
+        await call(updateTopic, {
+          params: { courseId, topicId: a.id },
+          body: { expectedRevision: first.revision, position: a.position },
+        }).catch(() => undefined);
+        throw err;
+      }
     },
     onSettled: refresh,
   });
@@ -171,7 +180,10 @@ function CourseDraft({
           )}
           {move.isError || archive.isError ? (
             <p role="alert" className={styles.small} style={{ marginTop: 12 }}>
-              The change was not saved: the topic list changed meanwhile. The list is reloaded.
+              {(move.error ?? archive.error) instanceof ApiError &&
+              ((move.error ?? archive.error) as ApiError).status === 409
+                ? 'Another editor changed the topics meanwhile. The list is reloaded; try again.'
+                : 'The change was not saved. Try again.'}
             </p>
           ) : null}
           <form

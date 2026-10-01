@@ -50,6 +50,7 @@ export function useAutosave<V extends object, S extends { revision: number }>({
   const inFlight = useRef(false);
   const pending = useRef(false);
   const stopped = useRef(false);
+  const dirty = useRef(false);
   const saveRef = useRef(save);
   saveRef.current = save;
   const onSavedRef = useRef(onSaved);
@@ -67,6 +68,7 @@ export function useAutosave<V extends object, S extends { revision: number }>({
       const saved = await saveRef.current(sent, revision.current);
       revision.current = saved.revision;
       onSavedRef.current?.(saved);
+      if (latest.current === sent) dirty.current = false;
       if (pending.current || latest.current !== sent) {
         pending.current = false;
         inFlight.current = false;
@@ -100,11 +102,19 @@ export function useAutosave<V extends object, S extends { revision: number }>({
     timer.current = setTimeout(() => void flush(), delayMs);
   }, [delayMs, flush]);
 
-  useEffect(() => () => clearTimeout(timer.current), []);
+  // Leaving the page within the delay must not drop the edit: send what is pending.
+  useEffect(
+    () => () => {
+      clearTimeout(timer.current);
+      if (dirty.current && !stopped.current) void flush();
+    },
+    [flush],
+  );
 
   const change = useCallback(
     (patch: Partial<V>) => {
       latest.current = { ...latest.current, ...patch };
+      dirty.current = true;
       setValues(latest.current);
       if (!stopped.current) setState({ kind: 'dirty' });
       schedule();

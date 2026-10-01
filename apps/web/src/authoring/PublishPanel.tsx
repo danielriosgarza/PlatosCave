@@ -1,12 +1,12 @@
 import { publishRelease, type validationIssue } from '@parallax/contracts/routes/releases';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { z } from 'zod';
 import { ApiError, call } from '../api/client';
 import styles from '../components/Page.module.css';
 import local from './Authoring.module.css';
 import { canPublish } from './grants';
-import { authoringKey, overviewQuery, validationQuery } from './queries';
+import { authoringKey, overviewQuery, processingQuery, validationQuery } from './queries';
 
 type Issue = z.output<typeof validationIssue>;
 
@@ -24,31 +24,36 @@ export function PublishPanel({ courseId, grant }: Props) {
   const overview = useQuery(overviewQuery(courseId));
   const validation = useQuery(validationQuery(courseId));
   const [notice, setNotice] = useState<string | null>(null);
-  const [blocked, setBlocked] = useState<Issue[] | null>(null);
+
+  const processing = useQuery(processingQuery(courseId));
+  // The report depends on processing: when a job finishes or fails, check the drafts again.
+  const processingStates = processing.data?.resources
+    .map((r) => `${r.resourceId}:${r.state}`)
+    .join();
+  useEffect(() => {
+    if (processingStates !== undefined) {
+      void queryClient.invalidateQueries({ queryKey: validationQuery(courseId).queryKey });
+    }
+  }, [processingStates, courseId, queryClient]);
 
   const publish = useMutation({
     mutationFn: () => call(publishRelease, { params: { courseId } }),
-    onMutate: () => {
-      setNotice(null);
-      setBlocked(null);
-    },
+    onMutate: () => setNotice(null),
     onSuccess: async ({ release }) => {
       setNotice(`Release ${release.version} created.`);
       await queryClient.invalidateQueries({ queryKey: authoringKey(courseId) });
     },
     onError: (err) => {
-      const body =
-        err instanceof ApiError ? (err.body as { error?: string; report?: unknown }) : null;
-      if (err instanceof ApiError && err.status === 422 && body?.error === 'validation_failed') {
-        const report = body.report as { errors: Issue[] } | undefined;
-        setBlocked(report?.errors ?? []);
+      // A refusal means the drafts changed since the last check: show the fresh report.
+      if (err instanceof ApiError && err.status === 422) {
+        void queryClient.invalidateQueries({ queryKey: validationQuery(courseId).queryKey });
       }
     },
   });
 
   const latest = overview.data?.latestRelease ?? null;
   const next = (latest?.version ?? 0) + 1;
-  const errors = blocked ?? validation.data?.errors ?? [];
+  const errors = validation.data?.errors ?? [];
   const warnings = validation.data?.warnings ?? [];
   const mayPublish = canPublish(grant);
 
@@ -121,7 +126,7 @@ export function PublishPanel({ courseId, grant }: Props) {
           {notice}
         </p>
       ) : null}
-      {publish.isError && blocked === null ? (
+      {publish.isError && !(publish.error instanceof ApiError && publish.error.status === 422) ? (
         <p className={styles.small} role="alert" style={{ marginTop: 12 }}>
           The release was not created. Try again.
         </p>
@@ -135,8 +140,9 @@ function IssueList({ heading, issues }: { heading: string; issues: Issue[] }) {
     <>
       <h3 style={{ fontSize: 13, marginTop: 16 }}>{heading}</h3>
       <ul className={local.issues}>
-        {issues.map((i) => (
-          <li key={`${i.code}-${i.resourceId ?? i.topicId ?? i.message}`}>{i.message}</li>
+        {issues.map((i, n) => (
+          // biome-ignore lint/suspicious/noArrayIndexKey: two issues can share code and resource
+          <li key={`${i.code}-${i.resourceId ?? i.topicId ?? ''}-${n}`}>{i.message}</li>
         ))}
       </ul>
     </>

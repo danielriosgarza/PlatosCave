@@ -27,7 +27,7 @@ export const derivedReady = (derived: Record<string, unknown>): boolean =>
 export const derivedState = (
   derived: Record<string, unknown>,
 ): DerivedStatus['state'] | undefined =>
-  derived.status === undefined
+  derived.status === undefined || derived.status === null
     ? undefined
     : (DerivedStatus.safeParse(derived.status).data?.state ?? 'failed');
 
@@ -136,6 +136,7 @@ export function readDerivedStatus(raw: unknown, revisionCreatedAt: Date): Derive
 export async function listResourceJobStatus(
   db: Db,
   scope: CourseScope,
+  resourceId?: string,
 ): Promise<ResourceJobStatus[]> {
   const rows = await db
     .select({
@@ -151,7 +152,12 @@ export async function listResourceJobStatus(
     .innerJoin(topics, eq(topics.id, resources.topicId))
     .leftJoin(resourceRevisions, eq(resourceRevisions.id, resources.headRevisionId))
     .where(
-      and(forCourse(scope, resources), isNull(resources.archivedAt), isNull(topics.archivedAt)),
+      and(
+        forCourse(scope, resources),
+        isNull(resources.archivedAt),
+        isNull(topics.archivedAt),
+        ...(resourceId ? [eq(resources.id, resourceId)] : []),
+      ),
     )
     .orderBy(asc(topics.position), asc(resources.position));
   return rows.map(({ status, revisionCreatedAt, ...row }) => ({
