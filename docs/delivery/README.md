@@ -6,7 +6,7 @@ Parallax is built by Claude sessions with minimal human involvement. This page i
 
 | Role | Runs as | Does | Never does |
 | --- | --- | --- | --- |
-| Orchestrator | Hourly routine firing into one persistent Opus 5.5 session that has the repository checked out | Reads GitHub state, merges ready PRs, unblocks issues, launches implementer / reviewer / audit sessions, restarts stuck work, escalates, updates the dashboard issue | Write product code; merge anything that fails the merge rule |
+| Orchestrator | Hourly routine, plus the orchestrator's own follow-up check-ins, firing into one persistent Opus 5.5 session that has the repository checked out | Reads GitHub state, merges ready PRs, unblocks issues, launches implementer / reviewer / audit sessions, restarts stuck work, escalates, updates the dashboard issue | Write product code; merge anything that fails the merge rule |
 | Implementer | One cloud session per issue; model from the issue's `model:` label | Tests and code for exactly one issue, opens the PR, fixes CI and review findings | Merge, approve, widen scope, disable tests |
 | Reviewer | One cloud session per review round; a different model from the implementer | Reviews the PR head against issue, spec and ADRs; runs the checks; posts findings and a verdict label | Push code |
 | Phase auditor | Fable 5.1 session when every issue of phase 1, 2, 3 or 4 is closed | Compares `main` with the spec for that phase, files fix-up issues, writes the phase summary for the human | Change product scope |
@@ -28,7 +28,7 @@ status:blocked ──(all dependencies closed)──► status:ready ──(orch
 
 The issue body contains one line `Depends on: P1-01, P1-03` (plan IDs, or `none`) and, when the plan names them, one line `Touches: path, path` (files the item is likely to edit; the orchestrator avoids running two items that touch the same file). Work discovered later gets a suffixed ID (`P2-04a`); audit findings get `P2-AUD1`, `P2-AUD2`, ….
 
-**Pull requests** are titled like their issue, say `Closes #<issue>`, and carry one review label:
+**Pull requests** are titled like their issue and say `Closes #<issue>`. A process change the owner asks for without an issue says `Closes: none (…)` instead; Fable reviews it and the owner merges it. Every PR carries one review label:
 
 | Label | Meaning |
 | --- | --- |
@@ -57,25 +57,26 @@ A failed implementation attempt is retried once with the same model, then once w
 
 The owner allowed Claude sessions in this repository to merge (`.claude/settings.json` permits `mcp__github__merge_pull_request`). Only the orchestrator uses that permission; implementer and reviewer skills forbid merging, and any PR that changes `.claude/` is reviewed by Fable. If the permission system still refuses a merge, the orchestrator escalates instead of working around it.
 
-The orchestrator squash-merges at most one pull request per hourly run, and only when all of these hold:
+The orchestrator squash-merges every pull request that satisfies all of these at the moment of merging; after each merge the next one must be brought up to date with the new `main` and pass CI again:
 
 1. Label `review:approved`, and the latest `Review verdict: APPROVED` comment names the current head SHA, or the head differs from it only by "update from main" merge commits.
-2. The branch is up to date with `main` (the orchestrator updates it and waits for CI if not), so every merge was tested against the `main` it lands on.
+2. The branch is up to date with `main` (the orchestrator updates it and merges on a later run once CI is green), so every merge was tested against the `main` it lands on.
 3. Every CI check on that head completed with `success`, `skipped` or `neutral`, and there is at least one.
 4. The linked issue is not labelled `needs-human`.
 
 ## Timing
 
-The orchestrator routine (`trig_01GLrhXFVWKkrjAb4DNu7LBX`) runs every hour at :41 as a fallback. To avoid waiting for that tick, sessions wake it early with `fire_trigger`:
-- the implementer, once CI is green on a head labelled `review:pending`;
-- the reviewer, right after posting its verdict;
-- the auditor, after filing its phase summary.
+The orchestrator routine (`trig_01GLrhXFVWKkrjAb4DNu7LBX`) runs every hour at :41 as a fallback. The mechanism relied on between ticks is the orchestrator's own follow-up: at the end of any run with work in flight (an implementer, reviewer or auditor session launched or still working, a branch it updated from `main`, a `review:pending` PR updated in the last hour, or a PR whose CI was queued less than 30 minutes ago), it schedules one check-in into its own session with `send_later`:
+- 10 minutes later after updating a branch from `main`, or while a `review:approved` or unlabelled PR has CI running (CI takes about 2–3 minutes);
+- 20 minutes later otherwise.
 
-A merge and the launch of the next item then happen within minutes. Each early wake-up is one extra orchestrator run.
+Only one follow-up is pending at a time; the dashboard records it as `Next check-in: <ISO> <trigger id>`, and a sooner one replaces it. None is scheduled when the hourly run comes first. After a merge, only the next approved PR is updated from `main`, so later PRs are not re-tested after every merge. With nothing in flight, none is scheduled. A follow-up run follows the same steps, lock and limits as an hourly run.
+
+The orchestrator's own follow-ups are the only early-run mechanism. Sessions must not call `fire_trigger`: it fires the routine into a session without the repository checked out, which cannot run and alerts the owner instead.
 
 ## Limits
 
-- At most **3** issues in `status:in-progress` at once (escalated ones excluded), and at most 3 reviewer sessions launched per orchestrator run.
+- At most **3** issues in `status:in-progress` at once (escalated ones excluded), and at most 3 reviewer sessions launched per orchestrator run (hourly or follow-up). Merges per run are not capped; each one is first brought up to date with `main` and green on CI. At most one follow-up check-in is pending at a time.
 - Three implementation attempts per issue (fresh or continuation): two with the labelled model, one with the next model up; then `needs-human`.
 - Sessions run in `auto` permission mode because nobody is present to answer prompts.
 - The orchestrator stops launching new implementers while 5 or more issues are `needs-human`.
