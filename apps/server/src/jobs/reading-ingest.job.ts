@@ -177,12 +177,16 @@ const readingIngest = defineScopedJob({
 });
 export default readingIngest;
 
-/** Queue creation per pg-boss instance, once per process rather than on every upload. */
+/**
+ * Creates the queue once per pg-boss instance (per process, not per upload) and applies the
+ * current options to it: `createQueue` leaves an existing queue's options unchanged.
+ */
 const queues = new WeakMap<PgBoss, Promise<void>>();
 function ensureQueue(boss: PgBoss): Promise<void> {
   let created = queues.get(boss);
   if (!created) {
-    created = boss.createQueue(readingIngest.name, readingIngest.queue);
+    const { name, queue } = readingIngest;
+    created = boss.createQueue(name, queue).then(() => boss.updateQueue(name, queue));
     queues.set(boss, created);
     created.catch(() => queues.delete(boss));
   }

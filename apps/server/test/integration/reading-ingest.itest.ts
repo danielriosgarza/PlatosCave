@@ -157,6 +157,10 @@ describe('reading.ingest', () => {
     );
     const jobId = await enqueueReadingIngest(boss, testDb.db, elena, revisionId);
     expect(jobId).toEqual(expect.any(String));
+    expect(await boss.getQueue(readingIngest.name)).toMatchObject({
+      retryLimit: 2,
+      retryBackoff: true,
+    });
     expect((await derivedOf(revisionId)).status).toMatchObject({
       state: 'queued',
       job: 'reading.ingest',
