@@ -11,10 +11,14 @@ import { courseObjectPrefix, StorageNotFoundError } from '../../src/storage/stor
 
 /**
  * Runs against the Garage service of infra/compose.yml (profile `s3`), prepared by
- * scripts/garage-init.sh, whose output provides the S3_* variables. Mandatory in CI.
+ * scripts/garage-init.sh, whose output provides the S3_* variables. Skipped without them
+ * locally; mandatory in CI, where the first test fails if they are missing.
  */
 const env = process.env;
-if (env.CI && !env.S3_ENDPOINT) throw new Error('CI must provide S3_ENDPOINT (Garage)');
+
+test.runIf(env.CI)('CI provides the Garage S3 endpoint', () => {
+  expect(env.S3_ENDPOINT).toBeTruthy();
+});
 
 const sha = (b: Buffer | string) => createHash('sha256').update(b).digest('hex');
 
@@ -57,7 +61,9 @@ describe.skipIf(!env.S3_ENDPOINT)('s3 storage (Garage)', () => {
       sha256: sha('hello world'),
       size: 11,
     });
-    expect(await text(await storage.get(stored.key))).toBe('hello world');
+    const got = await storage.get(stored.key);
+    expect(got.size).toBe(11);
+    expect(await text(got.body)).toBe('hello world');
     expect(await storage.head(stored.key)).toEqual({ size: 11 });
   });
 
@@ -68,7 +74,7 @@ describe.skipIf(!env.S3_ENDPOINT)('s3 storage (Garage)', () => {
     const stored = await storage.put(prefix, Readable.from(parts));
     expect(stored).toMatchObject({ sha256: sha(whole), size: whole.length });
     const back: Buffer[] = [];
-    for await (const chunk of await storage.get(stored.key)) back.push(chunk as Buffer);
+    for await (const chunk of (await storage.get(stored.key)).body) back.push(chunk as Buffer);
     expect(sha(Buffer.concat(back))).toBe(sha(whole));
   });
 
@@ -92,6 +98,17 @@ describe.skipIf(!env.S3_ENDPOINT)('s3 storage (Garage)', () => {
     }
   });
 
+  test('a missing bucket is a configuration error, not a missing object', async () => {
+    const misconfigured = new S3Storage({ ...options, bucket: 'no-such-bucket-parallax' });
+    try {
+      const err = await misconfigured.get(`${prefix}/objects/${sha('x')}`).catch((e) => e);
+      expect(err).toBeInstanceOf(Error);
+      expect(err).not.toBeInstanceOf(StorageNotFoundError);
+    } finally {
+      misconfigured.destroy();
+    }
+  });
+
   test('A21 the content origin streams an S3 object for a valid token only', async () => {
     const config = loadConfig({
       NODE_ENV: 'test',
@@ -102,7 +119,7 @@ describe.skipIf(!env.S3_ENDPOINT)('s3 storage (Garage)', () => {
     const app = await buildApp(config, { storage });
     try {
       const stored = await storage.put(prefix, Buffer.from('%PDF-1.7 private'));
-      const token = mintContentToken(
+      const { token } = mintContentToken(
         config.CONTENT_TOKEN_SECRET,
         {
           key: stored.key,

@@ -36,7 +36,12 @@ export function assertKeyInScope(key: string, scopeId: string): void {
   }
 }
 
-export function mintContentToken(secret: string, grant: ContentGrant, now: Date): string {
+/** A signed token and its expiry (seconds since the epoch), the one place `exp` is computed. */
+export function mintContentToken(
+  secret: string,
+  grant: ContentGrant,
+  now: Date,
+): { token: string; exp: number } {
   assertKeyInScope(grant.key, grant.scopeId);
   if (!MEDIA_TYPE.test(grant.contentType)) throw new Error('invalid content type');
   const claims: ContentClaims = {
@@ -44,7 +49,7 @@ export function mintContentToken(secret: string, grant: ContentGrant, now: Date)
     exp: Math.floor(now.getTime() / 1000) + CONTENT_TOKEN_TTL_S,
   };
   const payload = Buffer.from(JSON.stringify(claims)).toString('base64url');
-  return `${payload}.${sign(secret, payload)}`;
+  return { token: `${payload}.${sign(secret, payload)}`, exp: claims.exp };
 }
 
 /** The claims of a genuine, unexpired token; null for anything else. */

@@ -16,8 +16,11 @@ export type Body = Readable | AsyncIterable<Uint8Array> | Uint8Array;
  */
 export interface Storage {
   put(prefix: string, body: Body): Promise<StoredObject>;
-  /** Streams an object; rejects with `StorageNotFoundError` when it does not exist. */
-  get(key: string): Promise<Readable>;
+  /**
+   * Streams an object with its byte length (one backend call); rejects with
+   * `StorageNotFoundError` when it does not exist.
+   */
+  get(key: string): Promise<{ body: Readable; size: number }>;
   head(key: string): Promise<{ size: number } | null>;
   delete(key: string): Promise<void>;
 }

@@ -2,7 +2,27 @@ import { and, eq, isNull, lte, or, sql } from 'drizzle-orm';
 import type { ClassScope, CourseScope } from '../auth/scope';
 import type { Db } from '../db/client';
 import { releaseResources, resourceRevisions, storageObjects } from '../db/schema';
-import { CONTENT_TOKEN_TTL_S, type Disposition, mintContentToken } from './tokens';
+import { type Disposition, mintContentToken } from './tokens';
+
+const EXTENSIONS: Record<string, string> = {
+  'application/pdf': '.pdf',
+  'application/x-ipynb+json': '.ipynb',
+  'image/png': '.png',
+  'image/jpeg': '.jpg',
+  'image/svg+xml': '.svg',
+  'text/csv': '.csv',
+};
+
+/** Longest download base name, in characters: keeps signed tokens well under the router limit. */
+const MAX_NAME = 100;
+
+/** File name for a download: the resource title with filesystem-hostile characters removed. */
+export function downloadName(title: string, contentType: string): string {
+  const cleaned = title.replace(/[\\/:*?"<>|\p{Cc}]+/gu, ' ').trim();
+  const base = [...cleaned].slice(0, MAX_NAME).join('').trim() || 'download';
+  const ext = EXTENSIONS[contentType.split(';')[0]?.trim() ?? ''] ?? '';
+  return base.toLowerCase().endsWith(ext) ? base : `${base}${ext}`;
+}
 
 export interface ContentUrlDeps {
   contentOrigin: string;
@@ -30,7 +50,7 @@ export function mintContentUrl(
   object: { key: string; contentType: string },
   options: { disposition: Disposition; filename?: string },
 ): { url: string; expiresAt: string } {
-  const token = mintContentToken(
+  const { token, exp } = mintContentToken(
     deps.secret,
     {
       key: object.key,
@@ -42,7 +62,6 @@ export function mintContentUrl(
     },
     deps.now,
   );
-  const exp = Math.floor(deps.now.getTime() / 1000) + CONTENT_TOKEN_TTL_S;
   return {
     url: `${deps.contentOrigin}/content/${token}`,
     expiresAt: new Date(exp * 1000).toISOString(),

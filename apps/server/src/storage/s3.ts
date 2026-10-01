@@ -27,9 +27,13 @@ export interface S3Options {
   forcePathStyle: boolean;
 }
 
+/**
+ * Only a missing key counts as "not found" (GetObject: `NoSuchKey`; HeadObject has no body, so
+ * its 404 is `NotFound`). Other 404s such as `NoSuchBucket` are configuration errors and throw.
+ */
 const isMissing = (err: unknown) => {
-  const e = err as { name?: string; $metadata?: { httpStatusCode?: number } };
-  return e.name === 'NoSuchKey' || e.name === 'NotFound' || e.$metadata?.httpStatusCode === 404;
+  const name = (err as { name?: string }).name;
+  return name === 'NoSuchKey' || name === 'NotFound';
 };
 
 /**
@@ -95,11 +99,11 @@ export class S3Storage implements Storage {
     }
   }
 
-  async get(key: string): Promise<Readable> {
+  async get(key: string): Promise<{ body: Readable; size: number }> {
     assertSafeKey(key);
     try {
       const res = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }));
-      return res.Body as Readable;
+      return { body: res.Body as Readable, size: res.ContentLength ?? 0 };
     } catch (err) {
       if (isMissing(err)) throw new StorageNotFoundError(key);
       throw err;

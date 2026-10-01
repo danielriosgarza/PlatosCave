@@ -5,7 +5,9 @@ import { type ContentClaims, verifyContentToken } from '../content/tokens';
 import { type Storage, StorageNotFoundError } from '../storage/storage';
 
 const NOT_FOUND = { error: 'not found' };
-const CONTENT_PATH = /^\/content\//;
+/** The one path the content host serves: a single token segment, optional query. */
+const TOKEN_PATH = /^\/content\/[^/?#]+(\?.*)?$/;
+const CONTENT_PREFIX = /^\/content(\/|\?|$)/;
 
 /** Request URL with any content token replaced, so credentials never reach the logs. */
 export const redactContentUrl = (url: string): string =>
@@ -32,7 +34,12 @@ export function contentSecurityPolicy(contentOrigin: string): string {
 export function contentDisposition(claims: ContentClaims): string {
   if (claims.disposition === 'inline' || !claims.filename) return claims.disposition;
   const ascii = claims.filename.replace(/[^\x20-\x7e]|["\\%]/g, '_');
-  return `attachment; filename="${ascii}"; filename*=UTF-8''${encodeURIComponent(claims.filename)}`;
+  // RFC 8187 ext-value: encodeURIComponent leaves !'()* unescaped, which are not attr-chars.
+  const encoded = encodeURIComponent(claims.filename).replace(
+    /[!'()*]/g,
+    (c) => `%${c.charCodeAt(0).toString(16).toUpperCase()}`,
+  );
+  return `attachment; filename="${ascii}"; filename*=UTF-8''${encoded}`;
 }
 
 export interface ContentOriginDeps {
@@ -52,10 +59,13 @@ const isContentHost = (req: FastifyRequest, config: Config) =>
 export function registerContentOrigin(app: FastifyInstance, deps: ContentOriginDeps): void {
   const { config, storage, now } = deps;
 
+  // On the content host anything but `/content/<token>` is 404 here, before routing, so neither
+  // the API nor the SPA fallback can answer there; on other hosts `/content…` does not exist.
   app.addHook('onRequest', async (req, reply) => {
-    if (isContentHost(req, config) !== CONTENT_PATH.test(req.url)) {
-      return reply.code(404).send(NOT_FOUND);
-    }
+    const allowed = isContentHost(req, config)
+      ? TOKEN_PATH.test(req.url)
+      : !CONTENT_PREFIX.test(req.url);
+    if (!allowed) return reply.code(404).send(NOT_FOUND);
   });
 
   // Not part of the API: kept out of the OpenAPI document.
@@ -65,23 +75,22 @@ export function registerContentOrigin(app: FastifyInstance, deps: ContentOriginD
     async (req, reply) => {
       const claims = verifyContentToken(config.CONTENT_TOKEN_SECRET, req.params.token, now());
       if (!claims) return reply.code(404).send(NOT_FOUND);
-      const head = await storage.head(claims.key);
-      if (!head) return reply.code(404).send(NOT_FOUND);
-      let body: Readable | undefined;
-      if (req.method !== 'HEAD') {
-        try {
-          body = await storage.get(claims.key);
-        } catch (err) {
-          if (err instanceof StorageNotFoundError) return reply.code(404).send(NOT_FOUND);
-          throw err;
-        }
+      // One backend call per request: HEAD needs only the size, GET streams body and size.
+      let object: { body?: Readable; size: number } | null;
+      try {
+        object =
+          req.method === 'HEAD' ? await storage.head(claims.key) : await storage.get(claims.key);
+      } catch (err) {
+        if (!(err instanceof StorageNotFoundError)) throw err;
+        object = null;
       }
+      if (!object) return reply.code(404).send(NOT_FOUND);
 
       const maxAge = Math.max(0, claims.exp - Math.ceil(now().getTime() / 1000));
       return (
         reply
           .header('content-type', claims.contentType)
-          .header('content-length', head.size)
+          .header('content-length', object.size)
           .header('content-disposition', contentDisposition(claims))
           .header('content-security-policy', contentSecurityPolicy(config.CONTENT_ORIGIN))
           .header('x-content-type-options', 'nosniff')
@@ -89,7 +98,7 @@ export function registerContentOrigin(app: FastifyInstance, deps: ContentOriginD
           .header('cross-origin-resource-policy', 'cross-origin')
           .header('referrer-policy', 'no-referrer')
           .header('cache-control', `private, max-age=${maxAge}`)
-          .send(body)
+          .send(object.body)
       );
     },
   );

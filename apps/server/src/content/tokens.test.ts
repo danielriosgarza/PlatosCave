@@ -16,16 +16,14 @@ const later = (s: number) => new Date(now.getTime() + s * 1000);
 
 describe('content tokens', () => {
   test('round-trip: a fresh token yields its claims and expires after five minutes', () => {
-    const token = mintContentToken(secret, grant, now);
-    expect(verifyContentToken(secret, token, later(299))).toMatchObject({
-      ...grant,
-      exp: now.getTime() / 1000 + 300,
-    });
+    const { token, exp } = mintContentToken(secret, grant, now);
+    expect(exp).toBe(now.getTime() / 1000 + 300);
+    expect(verifyContentToken(secret, token, later(299))).toMatchObject({ ...grant, exp });
     expect(verifyContentToken(secret, token, later(300))).toBeNull();
   });
 
   test('A01 tampered, re-signed with another key or malformed tokens are refused', () => {
-    const token = mintContentToken(secret, grant, now);
+    const { token } = mintContentToken(secret, grant, now);
     const [payload, mac] = token.split('.') as [string, string];
     const forged = Buffer.from(
       JSON.stringify({ ...grant, key: `courses/${other}/objects/${'b'.repeat(64)}`, exp: 2e9 }),

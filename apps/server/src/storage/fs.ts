@@ -54,10 +54,14 @@ export class FsStorage implements Storage {
     }
   }
 
-  async get(key: string): Promise<Readable> {
+  async get(key: string): Promise<{ body: Readable; size: number }> {
     try {
       const handle = await open(this.path(key), 'r');
-      return handle.createReadStream();
+      const { size } = await handle.stat().catch(async (err) => {
+        await handle.close();
+        throw err;
+      });
+      return { body: handle.createReadStream(), size };
     } catch (err) {
       if (isMissing(err)) throw new StorageNotFoundError(key);
       throw err;
