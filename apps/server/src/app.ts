@@ -52,14 +52,13 @@ const SUSPECT_SEGMENT = /^(?:[A-Za-z0-9._~-]{41,}|.*[^A-Za-z0-9._~-].*)$/;
 
 /**
  * The URL as logged. Sign-in tokens (query) and content tokens (path) are credentials: the content
- * route logs no token at all. A request no route matched (SPA pages, near-miss spellings of a
- * token URL such as `/content%2F<token>` or `/content\<token>`) keeps its path, with every segment
- * that is encoded, unusual or long enough to be a token replaced.
+ * route logs no token at all. Every other path, routed or not (wildcard routes such as
+ * `/assets/*`, SPA pages, near-miss spellings of a token URL such as `/content%2F<token>` or
+ * `/content\<token>`), keeps its shape, with every segment that is encoded, unusual or long
+ * enough to be a token replaced.
  */
 export function logUrl(req: Pick<FastifyRequest, 'url'> & { routeOptions?: { url?: string } }) {
-  const route = req.routeOptions?.url;
-  if (route === CONTENT_ROUTE) return '/content/[redacted]';
-  if (route !== undefined) return redactUrl(req.url);
+  if (req.routeOptions?.url === CONTENT_ROUTE) return '/content/[redacted]';
   const q = req.url.search(/[?#]/);
   const path = q === -1 ? req.url : req.url.slice(0, q);
   const rest = q === -1 ? '' : redactUrl(req.url.slice(q));
