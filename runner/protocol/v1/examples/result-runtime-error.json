@@ -1,0 +1,33 @@
+{
+  "v": 1,
+  "harnessVersion": "1",
+  "runtime": { "language": "r", "version": "4.6.1" },
+  "checks": [
+    {
+      "name": "Mean and standard deviation of 2 4 6 8",
+      "status": "error",
+      "errorKind": "exit",
+      "durationMs": 412,
+      "expected": "5.0000\n2.5820\n",
+      "actual": "",
+      "message": "Exited with code 1",
+      "exitCode": 1,
+      "stdout": "",
+      "stderr": "Error in mean(y) : object 'y' not found\nExecution halted\n",
+      "truncated": false
+    },
+    {
+      "name": "Big print",
+      "status": "error",
+      "errorKind": "memory",
+      "durationMs": 1830,
+      "message": "Killed: memory limit of 512 MiB exceeded",
+      "signal": 9,
+      "stdout": "",
+      "stderr": "",
+      "truncated": true
+    }
+  ],
+  "truncated": true,
+  "durationMs": 2301
+}

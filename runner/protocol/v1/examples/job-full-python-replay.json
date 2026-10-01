@@ -1,0 +1,62 @@
+{
+  "v": 1,
+  "jobId": "0c9b8a7f-6e5d-4c3b-8a19-f0e1d2c3b4a5",
+  "runtime": {
+    "id": "python-3.12",
+    "language": "python",
+    "image": "ghcr.io/example/parallax-runner-python@sha256:2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae"
+  },
+  "set": "full",
+  "limits": { "wallSeconds": 20, "memoryMiB": 1024, "outputBytes": 1048576 },
+  "files": [
+    {
+      "path": "solution.py",
+      "content": "from statistics import stdev\nfrom math import sqrt\n\n\ndef standard_error(values):\n    if len(values) < 2:\n        raise ValueError('Need at least two values')\n    return stdev(values) / sqrt(len(values))\n"
+    },
+    {
+      "path": "tests/hidden_test.py",
+      "content": "import math\nfrom solution import standard_error\n\nassert math.isclose(standard_error([1, 1, 1, 1]), 0.0)\nassert math.isclose(standard_error(list(range(100))), 2.901149, abs_tol=1e-6)\nprint('hidden checks passed')\n"
+    },
+    { "path": "data/sample.csv", "content": "eCx5CjEsMgoyLDQK", "encoding": "base64" }
+  ],
+  "checks": [
+    {
+      "name": "Four observations",
+      "kind": "call",
+      "visibility": "public",
+      "file": "solution.py",
+      "function": "standard_error",
+      "args": [[2, 4, 6, 8]],
+      "expected": { "value": 1.290994 },
+      "compare": { "mode": "numeric", "abs": 1e-6 }
+    },
+    {
+      "name": "Fewer than two observations",
+      "kind": "call",
+      "visibility": "public",
+      "file": "solution.py",
+      "function": "standard_error",
+      "args": [[4]],
+      "expected": { "raises": { "type": "ValueError", "message": "two" } },
+      "compare": { "mode": "exact" }
+    },
+    {
+      "name": "Constant sample",
+      "kind": "call",
+      "visibility": "hidden",
+      "file": "solution.py",
+      "function": "standard_error",
+      "args": [[3, 3, 3]],
+      "kwargs": {},
+      "expected": { "value": 0 },
+      "compare": { "mode": "numeric", "abs": 1e-9, "rel": 0 }
+    },
+    {
+      "name": "Hidden properties",
+      "kind": "script",
+      "visibility": "hidden",
+      "file": "tests/hidden_test.py",
+      "timeoutSeconds": 5
+    }
+  ]
+}

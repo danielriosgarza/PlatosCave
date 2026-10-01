@@ -1,0 +1,35 @@
+{
+  "v": 1,
+  "jobId": "6f1d2c3a-4b5e-4f60-9a71-82b3c4d5e6f7",
+  "runtime": { "id": "python-3.12", "language": "python" },
+  "set": "public",
+  "limits": { "wallSeconds": 10, "memoryMiB": 512, "outputBytes": 1048576 },
+  "files": [
+    {
+      "path": "solution.py",
+      "content": "from statistics import stdev\nfrom math import sqrt\n\n\ndef standard_error(values):\n    stdev(values) / sqrt(len(values))\n"
+    }
+  ],
+  "checks": [
+    {
+      "name": "Four observations",
+      "kind": "call",
+      "visibility": "public",
+      "file": "solution.py",
+      "function": "standard_error",
+      "args": [[2, 4, 6, 8]],
+      "expected": { "value": 1.290994 },
+      "compare": { "mode": "numeric", "abs": 1e-6 }
+    },
+    {
+      "name": "Fewer than two observations",
+      "kind": "call",
+      "visibility": "public",
+      "file": "solution.py",
+      "function": "standard_error",
+      "args": [[4]],
+      "expected": { "raises": { "type": "ValueError" } },
+      "compare": { "mode": "exact" }
+    }
+  ]
+}
