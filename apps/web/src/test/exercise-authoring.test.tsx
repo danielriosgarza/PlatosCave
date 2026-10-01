@@ -157,6 +157,11 @@ describe('exercise editor', () => {
     ).toBeInTheDocument();
     await waitFor(() => expect(patched).toHaveLength(1), { timeout: 3000 });
     expect(patched[0]).not.toHaveProperty('content');
+    // Only the title and visibility were acknowledged, and the status says so.
+    expect(
+      await screen.findByText('Title and visibility saved; step edits are not saved yet'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Draft saved at/)).not.toBeInTheDocument();
   });
 
   it('still saves title and archive while the steps are invalid', async () => {

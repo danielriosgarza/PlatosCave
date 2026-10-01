@@ -109,6 +109,44 @@ describe('exercise form', () => {
     ]);
   });
 
+  it('prompts added in the editor that name the same choice share one choice', () => {
+    const draft = toDraft(reference);
+    const row = (id: string, label: string, extra: string) => ({
+      id,
+      label,
+      extra,
+      correct: false,
+    });
+    const steps = draft.steps.map((s) =>
+      s.kind === 'matching'
+        ? {
+            ...s,
+            distractors: [],
+            rows: [
+              row('o1', 'Dog', 'Mammal'),
+              row('o2', 'Cat', 'Mammal'),
+              row('o3', 'Eagle', 'Bird'),
+            ],
+          }
+        : s,
+    );
+    const match = exerciseV1
+      .parse(toContent({ ...draft, steps }))
+      .steps.find((s) => s.kind === 'matching');
+    if (match?.kind !== 'matching') throw new Error('no matching step');
+    expect(match.choices.map((c) => c.label)).toEqual(['Mammal', 'Bird']);
+    expect(match.pairs.o1).toBe(match.pairs.o2);
+    expect(match.pairs.o1).not.toBe(match.pairs.o3);
+  });
+
+  it('keeps an ordering step’s stored presentation order apart from the answer order', () => {
+    const step = exerciseV1
+      .parse(toContent(toDraft(reference)))
+      .steps.find((s) => s.kind === 'ordering');
+    expect(step?.kind === 'ordering' && step.items.map((i) => i.id)).toEqual(['a', 'b']);
+    expect(step?.kind === 'ordering' && step.order).toEqual(['b', 'a']);
+  });
+
   it('says why stored content could not be loaded, and nothing for a new exercise', () => {
     expect(toDraft({ schema: 'exercise.v1', steps: [] }).loadProblems.length).toBeGreaterThan(0);
     expect(toDraft(undefined).loadProblems).toEqual([]);

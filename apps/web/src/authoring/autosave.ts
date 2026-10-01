@@ -6,6 +6,7 @@ export type SaveState<S> =
   | { kind: 'dirty' }
   | { kind: 'saving' }
   | { kind: 'saved'; at: Date }
+  | { kind: 'partial'; message: string }
   | { kind: 'error'; message: string }
   | { kind: 'conflict'; current: S };
 
@@ -18,6 +19,11 @@ interface Options<V, S extends { revision: number }> {
   delayMs?: number;
   /** Called with each acknowledged copy, so callers can refresh what depends on it. */
   onSaved?: (saved: S) => void;
+  /**
+   * Says what a successful save left out. While it returns a message the edits still count as
+   * unsaved: the status reports it instead of Saved, and leaving the page resends them.
+   */
+  partial?: (sent: V) => string | undefined;
 }
 
 /** Edits the form itself can see are not worth sending; its message is shown as is. */
@@ -41,6 +47,7 @@ export function useAutosave<V extends object, S extends { revision: number }>({
   save,
   delayMs = 700,
   onSaved,
+  partial,
 }: Options<V, S>) {
   const [values, setValues] = useState<V>(() => toValues(server));
   const [state, setState] = useState<SaveState<S>>({ kind: 'idle' });
@@ -55,6 +62,8 @@ export function useAutosave<V extends object, S extends { revision: number }>({
   saveRef.current = save;
   const onSavedRef = useRef(onSaved);
   onSavedRef.current = onSaved;
+  const partialRef = useRef(partial);
+  partialRef.current = partial;
 
   const flush = useCallback(async () => {
     if (inFlight.current) {
@@ -68,13 +77,14 @@ export function useAutosave<V extends object, S extends { revision: number }>({
       const saved = await saveRef.current(sent, revision.current);
       revision.current = saved.revision;
       onSavedRef.current?.(saved);
-      if (latest.current === sent) dirty.current = false;
+      const left = partialRef.current?.(sent);
+      if (latest.current === sent && !left) dirty.current = false;
       if (pending.current || latest.current !== sent) {
         pending.current = false;
         inFlight.current = false;
         return void (await flush());
       }
-      setState({ kind: 'saved', at: new Date() });
+      setState(left ? { kind: 'partial', message: left } : { kind: 'saved', at: new Date() });
     } catch (err) {
       const current = conflictCopy<S>(err);
       if (current) {

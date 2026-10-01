@@ -17,6 +17,9 @@ export function SaveStatus({ state, onRetry }: { state: SaveState<unknown>; onRe
     case 'saved':
       text = `Draft saved at ${clock(state.at)}`;
       break;
+    case 'partial':
+      text = state.message;
+      break;
     case 'conflict':
       text = 'Not saved: someone else changed this';
       break;

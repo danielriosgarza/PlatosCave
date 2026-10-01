@@ -100,6 +100,10 @@ function ExerciseFields({
       return saved;
     },
     onSaved,
+    partial: (v) =>
+      problemsOf(v.exercise).length
+        ? 'Title and visibility saved; step edits are not saved yet'
+        : undefined,
   });
   const { exercise } = values;
   const problems = problemsOf(exercise);
@@ -432,6 +436,7 @@ function RowList({
   mark,
   single,
   minRows = 2,
+  taken = [],
 }: {
   n: number;
   noun: string;
@@ -442,6 +447,8 @@ function RowList({
   mark?: string;
   single?: boolean;
   minRows?: number;
+  /** Ids already used elsewhere in the step, so a new row never repeats one. */
+  taken?: string[];
 }) {
   const update = (i: number, patch: Partial<Row>) =>
     onChange(
@@ -490,10 +497,7 @@ function RowList({
           onChange([
             ...rows,
             {
-              id: nextId(
-                'o',
-                rows.map((r) => r.id),
-              ),
+              id: nextId('o', [...rows.map((r) => r.id), ...taken]),
               label: '',
               extra: '',
               correct: false,
@@ -581,7 +585,10 @@ function KindFields({
     case 'ordering':
       return (
         <>
-          <p className={local.hint}>List the items in their correct order.</p>
+          <p className={local.hint}>
+            List the items in their correct order.
+            {step.shuffle ? '' : ' Students will see them in the order stored for this step.'}
+          </p>
           <RowList n={n} noun="item" rows={step.rows} onChange={(rows) => set({ rows })} />
           {shuffle}
           {feedback([
@@ -606,6 +613,7 @@ function KindFields({
             noun="extra choice"
             rows={step.distractors}
             minRows={0}
+            taken={step.rows.map((r) => r.choiceId ?? '')}
             onChange={(distractors) => set({ distractors })}
           />
           {shuffle}

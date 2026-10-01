@@ -59,6 +59,8 @@ export interface DraftStep {
   rows: Row[];
   /** Matching: choices no prompt is paired with. */
   distractors: Row[];
+  /** Ordering: item ids in the stored presentation order (used when not shuffled). */
+  presented: string[];
   shuffle: boolean;
   // simulation
   controlName: string;
@@ -120,6 +122,7 @@ export function blankStep(kind: StepKind, taken: string[]): DraftStep {
     unit: '',
     rows: [],
     distractors: [],
+    presented: [],
     shuffle: false,
     controlName: 'value',
     controlLabel: '',
@@ -215,6 +218,7 @@ export function toDraft(content: unknown): DraftExercise {
             correct: step.feedback.correct,
             incorrect: step.feedback.incorrect,
             rows: rowsOf(ordered),
+            presented: step.items.map((i) => i.id),
           };
         }
         case 'matching': {
@@ -269,6 +273,15 @@ export function toDraft(content: unknown): DraftExercise {
   };
 }
 
+/** Items in their stored presentation order; items added since follow in answer order. */
+function presentedItems(s: DraftStep) {
+  const rank = (id: string) => {
+    const i = s.presented.indexOf(id);
+    return i === -1 ? s.presented.length : i;
+  };
+  return labelled([...s.rows].sort((a, b) => rank(a.id) - rank(b.id)));
+}
+
 const num = (v: string) => (v.trim() === '' ? Number.NaN : Number(v));
 const labelled = (rows: Row[]) => rows.map((r) => ({ id: r.id, label: text(r.label) }));
 
@@ -309,7 +322,7 @@ function stepContent(s: DraftStep): unknown {
     case 'ordering':
       return {
         ...common,
-        items: labelled(s.rows),
+        items: presentedItems(s),
         order: s.rows.map((r) => r.id),
         shuffle: s.shuffle,
         feedback: right,
@@ -325,7 +338,10 @@ function stepContent(s: DraftStep): unknown {
       const pairs: Record<string, string> = {};
       for (const r of s.rows) {
         const label = text(r.extra);
-        let choice = choices.find((c) => c.id === r.choiceId && c.label === label);
+        // A prompt with no stored choice (added in the editor) shares a choice of the same label.
+        let choice = choices.find((c) =>
+          r.choiceId ? c.id === r.choiceId && c.label === label : c.label === label,
+        );
         if (!choice) {
           let id = r.choiceId ?? '';
           if (!id || choices.some((c) => c.id === id)) {
