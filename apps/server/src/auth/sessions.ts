@@ -1,10 +1,17 @@
 import { createHash, randomBytes } from 'node:crypto';
+import { type CookieSerializeOptions, sign } from '@fastify/cookie';
 import { and, eq, gt, isNull } from 'drizzle-orm';
+import type { FastifyRequest } from 'fastify';
 import type { Db } from '../db/client';
 import { authSessions, users } from '../db/schema';
 
 export const SESSION_COOKIE = 'pc_session';
-const SESSION_TTL_MS = 14 * 24 * 60 * 60_000;
+export const SESSION_TTL_MS = 14 * 24 * 60 * 60_000;
+
+/** A fresh secret token: 32 random bytes in base64url (43 characters). */
+export const newToken = (): string => randomBytes(32).toString('base64url');
+/** The shape every token from `newToken` has. */
+export const TOKEN_SHAPE = /^[A-Za-z0-9_-]{43}$/;
 
 /** Tokens are stored only as their SHA-256, so a database read cannot be replayed as a cookie. */
 export const hashToken = (token: string): string =>
@@ -25,7 +32,7 @@ export async function createSession(
   userId: string,
   { now = new Date(), authTime = now }: { now?: Date; authTime?: Date } = {},
 ): Promise<{ token: string; sessionId: string }> {
-  const token = randomBytes(32).toString('base64url');
+  const token = newToken();
   const [row] = await db
     .insert(authSessions)
     .values({
@@ -40,15 +47,39 @@ export async function createSession(
   return { token, sessionId: row.id };
 }
 
-/** Reads the session cookie from a raw Cookie header (P1-02 replaces this with @fastify/cookie). */
-export function sessionTokenFrom(cookieHeader: string | undefined): string | undefined {
-  for (const part of cookieHeader?.split(';') ?? []) {
-    const eq = part.indexOf('=');
-    if (eq > 0 && part.slice(0, eq).trim() === SESSION_COOKIE) {
-      return part.slice(eq + 1).trim() || undefined;
-    }
-  }
-  return undefined;
+/**
+ * The session token from the signed `pc_session` cookie (SESSION_SECRET signs it via
+ * @fastify/cookie), or undefined when absent or tampered with.
+ */
+export function readSessionToken(req: FastifyRequest): string | undefined {
+  const raw = req.cookies?.[SESSION_COOKIE];
+  if (!raw) return undefined;
+  const unsigned = req.unsignCookie(raw);
+  return unsigned.valid && unsigned.value ? unsigned.value : undefined;
+}
+
+/** HttpOnly, SameSite=Lax, signed; Secure whenever the app is served over https. */
+export function sessionCookieOptions(appOrigin: string): CookieSerializeOptions {
+  return {
+    httpOnly: true,
+    sameSite: 'lax',
+    path: '/',
+    secure: appOrigin.startsWith('https:'),
+    signed: true,
+    maxAge: SESSION_TTL_MS / 1000,
+  };
+}
+
+/** A Cookie request header carrying `token`, as a browser would send it (fixtures and tests). */
+export const sessionCookieHeader = (token: string, secret: string): string =>
+  `${SESSION_COOKIE}=${encodeURIComponent(sign(token, secret))}`;
+
+/** Ends the session holding `token`, if it is still live. */
+export async function revokeSession(db: Db, token: string, now: Date): Promise<void> {
+  await db
+    .update(authSessions)
+    .set({ revokedAt: now })
+    .where(and(eq(authSessions.tokenHash, hashToken(token)), isNull(authSessions.revokedAt)));
 }
 
 export async function findPrincipal(db: Db, token: string, now: Date): Promise<Principal | null> {

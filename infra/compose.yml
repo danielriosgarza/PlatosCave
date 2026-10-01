@@ -9,4 +9,11 @@ services:
     image: axllent/mailpit:v1.31.3
     profiles: [mail]
     ports: ["8025:8025", "1025:1025"]
-volumes: { pgdata: {} }
+  garage:                        # S3-compatible object store; prepare with scripts/garage-init.sh
+    image: dxflrs/garage:v2.4.1
+    profiles: [s3]
+    ports: ["3900:3900"]
+    volumes:
+      - ./garage/garage.toml:/etc/garage.toml:ro
+      - garage:/var/lib/garage
+volumes: { pgdata: {}, garage: {} }
