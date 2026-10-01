@@ -397,7 +397,7 @@ Tracks: **slides** (P2-01 → P2-02 → P2-03, P2-09), **annotations** (P2-04 �
 - Spec: §10.1, §10.7. Scenarios: A09. Depends on: P1-06, P1-12. Model: opus. Security: yes. Size: M.
 
 ### P2-14 · Colab route and notebook upload submissions
-- Scope: Open in Colab external launch with working-copy instructions and optional launch event, table `notebook_submissions` (versioned, immutable snapshot object, source revision, environment metadata), upload flow with size/type validation and receipt, instructor listing.
+- Scope: Open in Colab external launch with working-copy instructions and optional launch event, table `notebook_submissions` (versioned, immutable snapshot object, source revision, environment metadata), upload flow with size/type validation and receipt, instructor listing. Its migration also adds the index `signin_tokens_email_created_idx` on `signin_tokens (email, created_at)` and the matching `index()` in `db/schema/users.ts` (carried from P1-02a; it keeps the per-address link cap count cheap; the hourly purge job bounds the table to about a day of links).
 - Spec: §10.1, §10.5, §10.7. Scenarios: A10. Depends on: P2-13, P2-10 (migration chain). Model: sonnet. Security: yes. Size: M.
 
 ### P2-15 · Shiny embed and result adapter boundary

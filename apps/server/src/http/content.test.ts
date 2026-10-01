@@ -4,13 +4,12 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
-import { buildApp } from '../app';
+import { buildApp, logUrl } from '../app';
 import { loadConfig } from '../config';
 import { downloadName } from '../content/media';
 import { type ContentGrant, mintContentToken } from '../content/tokens';
 import { FsStorage } from '../storage/fs';
 import { courseObjectPrefix } from '../storage/storage';
-import { redactContentUrl } from './content';
 
 const course = '00000000-0000-4000-8000-000000000101';
 const now = new Date('2026-10-01T09:00:00Z');
@@ -20,6 +19,7 @@ const config = loadConfig({
   APP_HOST: '127.0.0.1',
   CONTENT_HOST: 'localhost',
   CONTENT_ORIGIN: 'http://localhost:3100',
+  APP_ORIGIN: 'http://127.0.0.1:3100',
 });
 const app = { host: '127.0.0.1:3100' };
 const content = { host: 'localhost:3100' };
@@ -29,6 +29,8 @@ let web: string;
 let server: FastifyInstance;
 let clock = now;
 let key: string;
+/** URLs as the request log serializer renders them, for requests the real server handled. */
+const logged: string[] = [];
 
 beforeAll(async () => {
   root = await mkdtemp(join(tmpdir(), 'parallax-content-'));
@@ -40,6 +42,9 @@ beforeAll(async () => {
   await writeFile(join(web, 'index.html'), '<!doctype html><title>Parallax</title>');
   await writeFile(join(web, 'assets', 'app.js'), 'console.log(1)');
   server = await buildApp({ ...config, STATIC_DIR: web }, { storage, now: () => clock });
+  server.addHook('onResponse', async (req) => {
+    logged.push(logUrl(req));
+  });
   await server.ready();
 });
 afterAll(async () => {
@@ -84,6 +89,10 @@ describe('content origin', () => {
     );
     expect(csp).not.toContain('script-src');
     expect(res.headers['set-cookie']).toBeUndefined();
+    // Only the app origin may read the bytes in script (pdf.js, fonts), without credentials.
+    expect(res.headers['access-control-allow-origin']).toBe('http://127.0.0.1:3100');
+    expect(res.headers.vary).toMatch(/origin/i);
+    expect(res.headers['access-control-allow-credentials']).toBeUndefined();
     // The app frames content documents: the app origin's anti-framing header must not apply.
     expect(res.headers['x-frame-options']).toBeUndefined();
 
@@ -138,14 +147,35 @@ describe('content origin', () => {
   test('A01 expired, forged and unknown-object tokens get 404', async () => {
     const valid = token();
     clock = new Date(now.getTime() + 300_000);
-    expect((await get(`/content/${valid}`, content)).statusCode).toBe(404);
+    const expired = await get(`/content/${valid}`, content);
     clock = now;
+    expect(expired.statusCode).toBe(404);
+    // The app's reader can read the refusal and re-mint, instead of seeing a network error.
+    expect(expired.headers['access-control-allow-origin']).toBe('http://127.0.0.1:3100');
     const otherSecret = mintContentToken('z'.repeat(32), { ...grant, key }, now).token;
     expect((await get(`/content/${otherSecret}`, content)).statusCode).toBe(404);
     const missing = token({ key: `courses/${course}/objects/${'f'.repeat(64)}` });
     const res = await get(`/content/${missing}`, content);
     expect(res.statusCode).toBe(404);
     expect(res.json()).toEqual({ error: 'not found' });
+  });
+
+  test('a storage failure answers 500, still readable by the app origin', async () => {
+    const failing = new FsStorage(root);
+    failing.get = () => Promise.reject(new Error('backend down'));
+    const broken = await buildApp(config, { storage: failing, now: () => now });
+    try {
+      const res = await broken.inject({
+        method: 'GET',
+        url: `/content/${token()}`,
+        headers: content,
+      });
+      expect(res.statusCode).toBe(500);
+      expect(res.headers['access-control-allow-origin']).toBe('http://127.0.0.1:3100');
+      expect(res.headers['access-control-allow-credentials']).toBeUndefined();
+    } finally {
+      await broken.close();
+    }
   });
 
   test('the content host serves nothing else and ignores cookies; the app host has no /content', async () => {
@@ -227,11 +257,57 @@ describe('content origin', () => {
     }
   });
 
-  test('tokens are redacted from logged request URLs', () => {
-    expect(redactContentUrl(`/content/${token()}`)).toBe('/content/[redacted]');
-    expect(redactContentUrl('/api/health')).toBe('/api/health');
-    expect(redactContentUrl(`http://x/content/${token()}?a=1`)).toBe(
-      'http://x/content/[redacted]?a=1',
+  test('no spelling of a content token reaches the request log', () => {
+    const t = token();
+    const [payload, mac] = t.split('.') as [string, string];
+    const as = (url: string, route?: string) => logUrl({ url, routeOptions: { url: route } });
+    expect(as(`/content/${t}`, '/content/:token')).toBe('/content/[redacted]');
+    expect(as(`/%63ontent/${t}`, '/content/:token')).toBe('/content/[redacted]');
+    expect(as(`http://x/content/${t}?a=1`, '/content/:token')).toBe('/content/[redacted]');
+    // Spellings no route matched: no part of the token survives.
+    for (const url of [
+      `/content\\${t}`,
+      `/content%2F${t}`,
+      `/%43ontent/${t}`,
+      `//x/content/${t}`,
+      `/${t}`,
+      `/${payload}/${mac}`,
+      `http://x/content/${t}`,
+    ]) {
+      const out = as(url);
+      expect(out, url).not.toContain(payload.slice(0, 12));
+      expect(out, url).not.toContain(mac.slice(0, 12));
+      expect(out, url).toContain('[redacted]');
+    }
+    // SPA pages keep their path; sign-in tokens in the query are redacted on any request.
+    const id = '00000000-0000-4000-8000-000000000101';
+    expect(as(`/classes/${id}/topics/${id}`)).toBe(`/classes/${id}/topics/${id}`);
+    expect(as('/')).toBe('/');
+    expect(as('/sign-in?token=abc')).toBe('/sign-in?token=[redacted]');
+    expect(as('/api/auth/verify?token=abc', '/api/auth/verify')).toBe(
+      '/api/auth/verify?token=[redacted]',
     );
+  });
+
+  test('requests the server handled are logged without their token, on either host', async () => {
+    const t = token();
+    const [payload, mac] = t.split('.') as [string, string];
+    for (const headers of [content, app]) {
+      for (const url of [
+        `/content/${t}`,
+        `/content%2F${t}`,
+        `/content%5C${t}`,
+        `//x/content/${t}`,
+      ]) {
+        logged.length = 0;
+        await get(url, headers);
+        expect(logged, url).toHaveLength(1);
+        expect(logged[0], url).not.toContain(payload.slice(0, 12));
+        expect(logged[0], url).not.toContain(mac.slice(0, 12));
+      }
+    }
+    logged.length = 0;
+    await get('/classes/abc', app);
+    expect(logged).toEqual(['/classes/abc']);
   });
 });

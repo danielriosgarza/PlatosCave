@@ -3,14 +3,10 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { Config } from '../config';
 import { type ContentClaims, verifyContentToken } from '../content/tokens';
 import { type Storage, StorageNotFoundError } from '../storage/storage';
+import { NOT_FOUND } from './register';
 
-const NOT_FOUND = { error: 'not found' };
 /** The route pattern of the content origin; the only one the content host answers. */
 export const CONTENT_ROUTE = '/content/:token';
-
-/** Request URL with any content token replaced, so credentials never reach the logs. */
-export const redactContentUrl = (url: string): string =>
-  url.replace(/\/(content|%63ontent)\/[^/?#]+/gi, '/content/[redacted]');
 
 /**
  * Untrusted bytes run with no script, no plugins, no forms and an opaque origin; they may only
@@ -65,6 +61,13 @@ export function registerContentOrigin(app: FastifyInstance, deps: ContentOriginD
   app.addHook('onRequest', async (req, reply) => {
     const isContentRoute = req.routeOptions.url === CONTENT_ROUTE;
     if (isContentHost(req, config) !== isContentRoute) return reply.code(404).send(NOT_FOUND);
+    if (isContentRoute) {
+      // The app reads content bytes in script (fonts; PDFs, which the reader renders with pdf.js
+      // rather than framing them: the sandbox CSP blocks the browser's PDF viewer). Only the exact
+      // app origin may, without credentials. Set here so refusals (an expired token's 404) and
+      // errors are readable too, and the reader can tell "expired" from "unreachable".
+      reply.header('access-control-allow-origin', config.APP_ORIGIN).header('vary', 'origin');
+    }
   });
 
   // Not part of the API: kept out of the OpenAPI document.
