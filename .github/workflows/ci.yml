@@ -68,6 +68,10 @@ jobs:
           node-version-file: .node-version
           cache: pnpm
       - run: pnpm install --frozen-lockfile
+      - name: Garage (S3)
+        run: |
+          docker compose -f infra/compose.yml --profile s3 up -d garage
+          bash scripts/garage-init.sh >> "$GITHUB_ENV"
       - run: pnpm db:migrate
       - run: pnpm test:integration
 
