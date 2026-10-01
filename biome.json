@@ -23,20 +23,6 @@
       "includes": [
         "apps/server/src/**",
         "!apps/server/src/db/**",
-        "!apps/server/src/auth/accounts.ts",
-        "!apps/server/src/auth/email-provider.ts",
-        "!apps/server/src/auth/scope.ts",
-        "!apps/server/src/auth/sessions.ts",
-        "!apps/server/src/content/adoption.ts",
-        "!apps/server/src/content/drafts.ts",
-        "!apps/server/src/content/media.ts",
-        "!apps/server/src/content/releases.ts",
-        "!apps/server/src/storage/objects.ts",
-        "!apps/server/src/annotations/annotations.ts",
-        "!apps/server/src/annotations/visibility.ts",
-        "!apps/server/src/jobs/boss.ts",
-        "!apps/server/src/jobs/derived.ts",
-        "!apps/server/src/jobs/scoped.ts",
         "!apps/server/src/main.ts",
         "!**/*.test.ts"
       ],
@@ -50,7 +36,7 @@
                 "patterns": [
                   {
                     "group": ["drizzle-orm", "drizzle-orm/**", "pg", "pg/**"],
-                    "message": "Query builders and the database driver are for data-access modules only. Feature modules reach the database only through data-access functions (db/, or the data-access files listed in biome.json) that take a branded ClassScope/CourseScope (ADR-0002, Scoped tables)."
+                    "message": "Query builders and the database driver are for data-access modules only. Feature modules reach the database only through data-access functions in db/ that take a branded ClassScope/CourseScope (ADR-0002, Scoped tables)."
                   },
                   {
                     "group": [
@@ -74,12 +60,12 @@
                       "**/db/reset.ts",
                       "**/db/schema/**"
                     ],
-                    "message": "Tables (including type-only imports) and database administration are for data-access modules only; export row types a feature module needs from a db/ module. Feature modules reach the database only through data-access functions (db/, or the data-access files listed in biome.json) that take a branded ClassScope/CourseScope (ADR-0002, Scoped tables)."
+                    "message": "Tables (including type-only imports) and database administration are for data-access modules only; export row types a feature module needs from a db/ module. Feature modules reach the database only through data-access functions in db/ that take a branded ClassScope/CourseScope (ADR-0002, Scoped tables)."
                   },
                   {
                     "group": ["**/db/client", "**/db/client.js", "**/db/client.ts"],
                     "importNamePattern": "createDb",
-                    "message": "Only the composition root (main.ts) opens the database client. Feature modules reach the database only through data-access functions (db/, or the data-access files listed in biome.json) that take a branded ClassScope/CourseScope (ADR-0002, Scoped tables)."
+                    "message": "Only the composition root (main.ts) opens the database client. Feature modules reach the database only through data-access functions in db/ that take a branded ClassScope/CourseScope (ADR-0002, Scoped tables)."
                   }
                 ]
               }

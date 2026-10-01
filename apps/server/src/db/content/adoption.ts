@@ -1,8 +1,8 @@
 import type { adoptionDiff } from '@parallax/contracts/routes/releases';
 import { and, asc, desc, eq } from 'drizzle-orm';
 import type { z } from 'zod';
-import type { ClassScope } from '../auth/scope';
-import type { Db } from '../db/client';
+import type { ClassScope } from '../../auth/scope';
+import type { Db } from '../client';
 import {
   auditEvents,
   classes,
@@ -11,8 +11,8 @@ import {
   releaseResources,
   releaseTopics,
   users,
-} from '../db/schema';
-import { forClass } from '../db/scoped';
+} from '../schema';
+import { forClass } from '../scoped';
 import type { Tx } from './releases';
 
 export type AdoptionDiff = z.infer<typeof adoptionDiff>;
