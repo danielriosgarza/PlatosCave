@@ -8,25 +8,33 @@ const task = getDocument({
   enableXfa: false,
   disableFontFace: true,
   useSystemFonts: false,
+  // PostScript functions would otherwise be compiled with `new Function`; text needs none.
+  isEvalSupported: false,
   stopAtErrors: false,
   verbosity: 0,
 });
+let reply;
 try {
   const doc = await task.promise;
   const pages = [];
   for (let n = 1; n <= doc.numPages; n++) {
-    const page = await doc.getPage(n);
-    const content = await page.getTextContent();
-    let text = '';
-    for (const item of content.items) {
-      if ('str' in item) text += item.str + (item.hasEOL ? '\n' : '');
+    // One unreadable page leaves that page without text; the rest of the document still counts.
+    try {
+      const page = await doc.getPage(n);
+      const content = await page.getTextContent();
+      let text = '';
+      for (const item of content.items) {
+        if ('str' in item) text += item.str + (item.hasEOL ? '\n' : '');
+      }
+      pages.push(text);
+      page.cleanup();
+    } catch {
+      pages.push(null);
     }
-    pages.push(text);
-    page.cleanup();
   }
-  parentPort?.postMessage({ ok: true, pages });
-} catch (err) {
-  parentPort?.postMessage({ ok: false, error: err instanceof Error ? err.name : 'Error' });
-} finally {
-  await task.destroy();
+  reply = { ok: true, value: { pages } };
+} catch {
+  reply = { ok: false };
 }
+parentPort?.postMessage(reply);
+await task.destroy();

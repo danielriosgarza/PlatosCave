@@ -1,4 +1,6 @@
 import { type Anchor, anchorFits, type ResourceType, textAnchor } from '@parallax/contracts';
+// The one definition ingestion uses for block ids and page hashes, so recomputed ids match.
+import { normaliseText } from '../content/reading';
 
 /**
  * Anchor mapping between two revisions of one resource (ADR-0003, §8, A06). Pure functions:
@@ -70,13 +72,6 @@ export function layoutOf(type: ResourceType, derived: Record<string, unknown>): 
   }
   return { type };
 }
-
-/**
- * Whitespace-collapsed NFC text, as block ids and page hashes are computed (ADR-0003). The
- * same definition as reading ingestion's (PR #104); import that one once it is on main.
- */
-export const normaliseText = (text: string): string =>
-  text.normalize('NFC').replace(/\s+/g, ' ').trim();
 
 /**
  * Edit distance, or `max + 1` once it is certain to exceed `max`. Shared leading and trailing

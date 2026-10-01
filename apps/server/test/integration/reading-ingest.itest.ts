@@ -8,6 +8,7 @@ import { type CourseScope, resolveActorScope } from '../../src/auth/scope';
 import { normaliseText } from '../../src/content/reading';
 import { resourceRevisions, resources, topics } from '../../src/db/schema';
 import { createBoss } from '../../src/jobs/boss';
+import { setDerivedStatus } from '../../src/jobs/derived';
 import readingIngest, { enqueueReadingIngest } from '../../src/jobs/reading-ingest.job';
 import { loadJobs } from '../../src/jobs/registry';
 import { runScopedJob, type ScopedPayload, workScopedJob } from '../../src/jobs/scoped';
@@ -40,7 +41,7 @@ async function courseScope(actorId: string, courseId: string): Promise<CourseSco
 let position = 0;
 /** A reading resource with one revision in Statistical thinking. */
 async function revision(
-  type: 'reading_native' | 'reading_pdf',
+  type: 'reading_native' | 'reading_pdf' | 'slides_pdf',
   content: Record<string, unknown>,
   objectKeys: string[] = [],
 ): Promise<string> {
@@ -96,6 +97,7 @@ const fakeJob = (
   revisionId: string,
   retryCount: number,
   retryLimit?: number,
+  signal: AbortSignal = new AbortController().signal,
 ): Job<unknown> & { retryLimit?: number } => ({
   id: '00000000-0000-4000-8000-00000000beef',
   name: readingIngest.name,
@@ -108,7 +110,15 @@ const fakeJob = (
   heartbeatSeconds: null,
   retryCount,
   ...(retryLimit !== undefined && { retryLimit }),
-  signal: new AbortController().signal,
+  signal,
+});
+
+const OTHER_JOB = '00000000-0000-4000-8000-00000000f00d';
+const statusFor = (jobId: string | null) => ({
+  state: 'queued' as const,
+  job: readingIngest.name,
+  jobId,
+  updatedAt: new Date().toISOString(),
 });
 
 beforeAll(async () => {
@@ -322,5 +332,140 @@ describe('reading.ingest', () => {
       output: { failed: 'revision not found in this course' },
     });
     expect((await derivedOf(revisionId)).status).toBeUndefined();
+  });
+
+  test('every enqueue brings the queue’s options back in line, not only the first', async () => {
+    await boss.updateQueue(readingIngest.name, { retryLimit: 7 });
+    const revisionId = await revision('reading_native', { markdown: '# Options' });
+    await enqueueReadingIngest(boss, testDb.db, elena, revisionId);
+    expect(await boss.getQueue(readingIngest.name)).toMatchObject({ retryLimit: 2 });
+    await settled(revisionId);
+  });
+
+  test('invalid PDF reading content fails at once, as invalid native content does', async () => {
+    const pdf = await storeCourseObject(
+      testDb.db,
+      storage,
+      elena,
+      makePdf(['Ignored']),
+      'application/pdf',
+    );
+    const revisionId = await revision('reading_pdf', { objectKey: 42 }, [pdf.key]);
+    await enqueueReadingIngest(boss, testDb.db, elena, revisionId);
+    const derived = await settled(revisionId);
+    expect(derived.status).toMatchObject({
+      state: 'failed',
+      error: 'The reading content is not valid',
+    });
+    expect(derived.pages).toBeUndefined();
+  });
+
+  test('Markdown and HTML sources are capped well below PDFs, inline or uploaded', async () => {
+    const big = `${'word '.repeat(1_100_000)}`;
+    const inline = await revision('reading_native', { markdown: big });
+    await enqueueReadingIngest(boss, testDb.db, elena, inline);
+    expect((await settled(inline)).status).toMatchObject({
+      state: 'failed',
+      error: 'The reading is larger than 5 MB',
+    });
+    const file = await storeCourseObject(
+      testDb.db,
+      storage,
+      elena,
+      Buffer.from(big),
+      'text/markdown',
+    );
+    const uploaded = await revision('reading_native', { sourceKey: file.key, format: 'markdown' }, [
+      file.key,
+    ]);
+    await enqueueReadingIngest(boss, testDb.db, elena, uploaded);
+    expect((await settled(uploaded)).status).toMatchObject({
+      state: 'failed',
+      error: 'The file is larger than 5 MB',
+    });
+  });
+
+  test('a stopped job writes no status after the stop; pg-boss settles it', async () => {
+    const pdf = await storeCourseObject(
+      testDb.db,
+      storage,
+      elena,
+      makePdf(['Stop']),
+      'application/pdf',
+    );
+    const revisionId = await revision('reading_pdf', { objectKey: pdf.key }, [pdf.key]);
+    const controller = new AbortController();
+    const stopping: Storage = {
+      ...storage,
+      put: storage.put.bind(storage),
+      head: storage.head.bind(storage),
+      delete: storage.delete.bind(storage),
+      get: async () => {
+        controller.abort();
+        throw new Error('connection closed by shutdown');
+      },
+    };
+    await expect(
+      runScopedJob(testDb.db, readingIngest, fakeJob(revisionId, 2, 2, controller.signal), {
+        storage: stopping,
+      }),
+    ).rejects.toThrow('connection closed by shutdown');
+    // Still the attempt's own `running`, not `failed`: the stop is not the reading's outcome.
+    expect((await derivedOf(revisionId)).status).toMatchObject({ state: 'running' });
+  });
+
+  test('a revision that is not a reading is neither queued nor written by this job', async () => {
+    const revisionId = await revision('slides_pdf', {});
+    const converted = { ...statusFor(OTHER_JOB), state: 'ready' as const, job: 'slides.convert' };
+    await setDerivedStatus(testDb.db, elena, revisionId, converted);
+    expect(await enqueueReadingIngest(boss, testDb.db, elena, revisionId)).toBeNull();
+    expect(
+      await runScopedJob(testDb.db, readingIngest, fakeJob(revisionId, 0), { storage }),
+    ).toEqual({ status: 'completed', output: { failed: 'revision is not a reading' } });
+    expect((await derivedOf(revisionId)).status).toEqual(converted);
+  });
+
+  test('a job superseded by a newer one (Retry while it ran) writes neither status nor outputs', async () => {
+    const pdf = await storeCourseObject(
+      testDb.db,
+      storage,
+      elena,
+      makePdf(['Twice']),
+      'application/pdf',
+    );
+    // A newer job already owns the status: the older one does not start.
+    const waiting = await revision('reading_pdf', { objectKey: pdf.key }, [pdf.key]);
+    await setDerivedStatus(testDb.db, elena, waiting, statusFor(OTHER_JOB));
+    expect(await runScopedJob(testDb.db, readingIngest, fakeJob(waiting, 0), { storage })).toEqual({
+      status: 'completed',
+      output: { superseded: true },
+    });
+    expect((await derivedOf(waiting)).status).toMatchObject({ state: 'queued', jobId: OTHER_JOB });
+
+    // A newer job is queued while this one runs: this one's result is dropped.
+    const running = await revision('reading_pdf', { objectKey: pdf.key }, [pdf.key]);
+    const retried: Storage = {
+      ...storage,
+      put: storage.put.bind(storage),
+      head: storage.head.bind(storage),
+      delete: storage.delete.bind(storage),
+      get: async (key) => {
+        await setDerivedStatus(testDb.db, elena, running, statusFor(OTHER_JOB));
+        return storage.get(key);
+      },
+    };
+    expect(
+      await runScopedJob(testDb.db, readingIngest, fakeJob(running, 0), { storage: retried }),
+    ).toEqual({ status: 'completed', output: { superseded: true } });
+    const derived = await derivedOf(running);
+    expect(derived.status).toMatchObject({ state: 'queued', jobId: OTHER_JOB });
+    expect(derived.pages).toBeUndefined();
+  });
+
+  test('an enqueued job is named in the status, so only it may write there', async () => {
+    const revisionId = await revision('reading_native', { markdown: '# Named' });
+    const jobId = await enqueueReadingIngest(boss, testDb.db, elena, revisionId);
+    const derived = await settled(revisionId);
+    expect(derived.status).toMatchObject({ state: 'ready', jobId });
   });
 });

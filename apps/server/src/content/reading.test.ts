@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'vitest';
 import { makePdf } from '../../test/fixtures/pdf';
-import { extractPdfText, PdfReadError } from './pdf-text';
+import { cleanPageText, extractPdfText } from './pdf-text';
 import { blockId, normaliseText, renderReading, resolveReadingImages } from './reading';
+import { renderReadingInThread } from './reading-render';
+import { ThreadInputError } from './thread';
 
 const KEY = 'courses/00000000-0000-4000-8000-000000000101/objects/abc123';
 
@@ -67,6 +69,27 @@ describe('block ids', () => {
     ]);
     expect(blockId('Some text here.', 0)).toMatch(/^[0-9a-f]{12}$/);
     expect(html).toBe(`<p data-block-id="${blockId('Some text here.', 0)}">Some  text\nhere.</p>`);
+  });
+
+  test('A06 a loose list item that gains a paragraph leaves its unchanged paragraph’s id', () => {
+    const before = renderReading('- item\n\n- other', 'markdown').blockMap;
+    const after = renderReading('- item\n\n  para\n\n- other', 'markdown').blockMap;
+    const idOf = (map: typeof before, text: string) => map.find((b) => b.text === text)?.id;
+    expect(idOf(after, 'item')).toBe(idOf(before, 'item'));
+    expect(idOf(after, 'other')).toBe(idOf(before, 'other'));
+    // The list items only wrap paragraphs: the paragraphs carry the ids.
+    expect(after.map((b) => b.tag)).toEqual(['p', 'p', 'p']);
+  });
+
+  test('A06 a blockquote wrapping paragraphs gets no id; a tight list item with text keeps one', () => {
+    const quoted = renderReading('> item\n>\n> more', 'markdown');
+    expect(quoted.blockMap.map((b) => b.tag)).toEqual(['p', 'p']);
+    expect(quoted.html).toMatch(/^<blockquote>/);
+    const nested = renderReading('- item\n  - sub', 'markdown').blockMap;
+    expect(nested.map((b) => [b.tag, normaliseText(b.text)])).toEqual([
+      ['li', 'item sub'],
+      ['li', 'sub'],
+    ]);
   });
 
   test('A06 figure ids follow the image, not the text around it', () => {
@@ -198,6 +221,87 @@ describe('rendering', () => {
     ]);
   });
 
+  test('images whose source the sanitiser removed are reported to the author', () => {
+    const { html, warnings } = renderReading(
+      '<p><img src="data:image/png;base64,AAAA" alt="Inline chart"> ' +
+        '<img src="javascript:alert(1)" alt="Script"></p>',
+      'html',
+    );
+    expect(html).not.toContain('data:');
+    expect(html).not.toContain('javascript:');
+    expect(warnings).toEqual([
+      'Image "Inline chart" has no usable source; upload it as a file of this reading',
+      'Image "Script" has no usable source; upload it as a file of this reading',
+    ]);
+  });
+
+  test('KaTeX MathML presentation attributes survive; links, sources and styles do not', () => {
+    const { html } = renderReading(
+      '<math><mstyle mathcolor="red" mathbackground="#eee" mathsize="1.2em">' +
+        '<mo largeop="true" linebreak="newline">∑</mo><mpadded voffset="1pt"><mi href="https://evil.example" ' +
+        'src="https://evil.example/x" style="position:fixed" xmlns="http://evil.example">x</mi></mpadded>' +
+        '</mstyle></math>',
+      'html',
+    );
+    for (const kept of [
+      'mathcolor="red"',
+      'mathbackground="#eee"',
+      'mathsize="1.2em"',
+      'largeop="true"',
+      'linebreak="newline"',
+      'voffset="1pt"',
+    ]) {
+      expect(html).toContain(kept);
+    }
+    for (const dropped of ['href', 'src=', ' style=', 'position:fixed', 'xmlns', 'evil.example']) {
+      expect(html).not.toContain(dropped);
+    }
+  });
+
+  test('an equation KaTeX cannot parse is reported, and no empty class is left behind', () => {
+    const { html, warnings } = renderReading('Bad $\\frac{$ math', 'markdown');
+    expect(warnings).toEqual([
+      expect.stringMatching(/^An equation could not be rendered: KaTeX parse error: .*\\frac\{$/),
+    ]);
+    expect(html).not.toContain('class=""');
+    expect(html).toContain('\\frac{');
+  });
+
+  test('display math in uploaded HTML becomes a block only where a block may stand', () => {
+    const mixed = renderReading('<p><span class="math-display">x^2</span> in para</p>', 'html');
+    // Inside a paragraph with other text it stays inline: a div would close the paragraph.
+    expect(mixed.html).not.toContain('<div');
+    expect(mixed.blockMap.map((b) => b.tag)).toEqual(['p']);
+
+    const alone = renderReading(
+      '<p> <span class="math-display">x^2</span>\n</p><div><span class="math-display">y</span></div>',
+      'html',
+    );
+    expect(alone.html).not.toContain('<p');
+    expect(alone.blockMap.map((b) => b.tag)).toEqual(['div', 'div']);
+    expect(alone.html).toMatch(
+      /^<div class="math-display" data-block-id="[0-9a-f]{12}"><math display="block">/,
+    );
+  });
+
+  test('a pre whose text starts with a newline keeps it, so the browser’s text matches the block map', () => {
+    const { html, blockMap } = renderReading('<pre>\n\nhello</pre>', 'html');
+    const [block] = blockMap;
+    expect(block?.text).toBe('\nhello');
+    // Parsed again (as a browser and resolveReadingImages do), the text is unchanged.
+    const reparsed = renderReading(html, 'html').blockMap[0];
+    expect(reparsed?.text).toBe(block?.text);
+    const withImage = `${html}<p><img alt="a" data-object-key="${KEY}"></p>`;
+    const resolved = resolveReadingImages(withImage, () => 'https://content.example/t');
+    expect(resolved).toContain(`<pre data-block-id="${block?.id}">\n\nhello</pre>`);
+    expect(resolveReadingImages(resolved, () => 'https://content.example/t')).toBe(resolved);
+  });
+
+  test('rendering again gives the same result (processors are shared, not rebuilt)', () => {
+    const source = '```python\nprint(1)\n```\n\nText $x$.';
+    expect(renderReading(source, 'markdown')).toEqual(renderReading(source, 'markdown'));
+  });
+
   test('raw HTML inside Markdown is dropped', () => {
     const { html } = renderReading('Hi <img src=x onerror=alert(1)> there', 'markdown');
     expect(html).not.toContain('onerror');
@@ -217,6 +321,51 @@ describe('rendering', () => {
     );
     expect(resolved).toContain(`<img alt="b" data-object-key="${KEY}def">`);
   });
+
+  test('HTML without uploaded images is returned as stored, without a parse', () => {
+    const html = '<p data-block-id="abc">Text<br/>more</p >';
+    let called = false;
+    expect(
+      resolveReadingImages(html, () => {
+        called = true;
+        return 'x';
+      }),
+    ).toBe(html);
+    expect(called).toBe(false);
+  });
+});
+
+describe('rendering in a thread', () => {
+  test('renders what renderReading renders, off the calling thread', async () => {
+    const source = '# Title\n\n![a](means.png)\n\nMean $\\bar{x}$.';
+    const assets = { 'means.png': KEY };
+    expect(await renderReadingInThread(source, 'markdown', assets)).toEqual(
+      renderReading(source, 'markdown', assets),
+    );
+  });
+
+  test('a reading the pipeline rejects, or one past the time bound, fails as final', async () => {
+    // Assets that are not a record make the image lookup throw inside the pipeline.
+    const broken = renderReadingInThread('![a](x.png)', 'markdown', null as never);
+    await expect(broken).rejects.toThrow(new ThreadInputError('The reading could not be rendered'));
+    await expect(renderReadingInThread('# Slow', 'markdown', {}, { timeoutMs: 1 })).rejects.toThrow(
+      new ThreadInputError('Rendering the reading took too long'),
+    );
+  });
+
+  test('an abort is not a problem with the reading', async () => {
+    const controller = new AbortController();
+    const pending = renderReadingInThread(
+      '# Stopped',
+      'markdown',
+      {},
+      { signal: controller.signal },
+    );
+    controller.abort();
+    const err = await pending.catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(Error);
+    expect(err).not.toBeInstanceOf(ThreadInputError);
+  });
 });
 
 describe('PDF readings', () => {
@@ -229,15 +378,39 @@ describe('PDF readings', () => {
     expect(again.pages[1]?.textHash).not.toBe(pdf.pages[1]?.textHash);
   });
 
+  test('the file’s bytes are moved into the parsing thread, not copied', async () => {
+    const data = makePdf(['Moved']);
+    const pdf = await extractPdfText(data);
+    expect(pdf.pages.map((p) => p.text)).toEqual(['Moved']);
+    expect(data.byteLength).toBe(0);
+  });
+
+  test('one unreadable page leaves that page empty with a warning; the PDF still reads', async () => {
+    const good = new TextDecoder().decode(makePdf(['One', 'Two', 'Three']));
+    const broken = good.replace(/6 0 obj\n<<[^\n]*>>\nendobj/, '6 0 obj\n42\nendobj');
+    expect(broken).not.toBe(good);
+    const pdf = await extractPdfText(new TextEncoder().encode(broken));
+    expect(pdf.pages[0]?.text).toBe('One');
+    expect(pdf.pages[1]?.text).toBe('');
+    expect(pdf.pageCount).toBe(pdf.pages.length);
+    expect(pdf.warnings).toEqual(['Page 2 could not be read; it has no text']);
+    expect((await extractPdfText(makePdf(['Fine']))).warnings).toEqual([]);
+  });
+
+  test('page text loses NUL characters, which jsonb cannot store', () => {
+    expect(cleanPageText('a\u0000b\u0000')).toBe('ab');
+    expect(JSON.stringify(cleanPageText('x\u0000'))).not.toContain('\\u0000');
+  });
+
   test('a file that is not a PDF is refused', async () => {
     await expect(extractPdfText(new TextEncoder().encode('not a pdf'))).rejects.toThrow(
-      new PdfReadError('The file could not be read as a PDF'),
+      new ThreadInputError('The file could not be read as a PDF'),
     );
   });
 
   test('parsing runs in its own thread, bounded in time and stopped on abort', async () => {
     await expect(extractPdfText(makePdf(['Slow']), { timeoutMs: 1 })).rejects.toThrow(
-      new PdfReadError('Reading the PDF took too long'),
+      new ThreadInputError('Reading the PDF took too long'),
     );
     const controller = new AbortController();
     const pending = extractPdfText(makePdf(['Stopped']), { signal: controller.signal });
@@ -245,6 +418,6 @@ describe('PDF readings', () => {
     const err = await pending.catch((e: unknown) => e);
     expect(err).toBeInstanceOf(Error);
     // An abort is not a problem with the file: the job retries it.
-    expect(err).not.toBeInstanceOf(PdfReadError);
+    expect(err).not.toBeInstanceOf(ThreadInputError);
   });
 });
