@@ -3,11 +3,11 @@ import { exerciseV1 } from '@parallax/contracts';
 import type * as contracts from '@parallax/contracts/routes/drafts';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import type { z } from 'zod';
-import type { CourseScope } from '../auth/scope';
-import type { Db } from '../db/client';
-import { resourceRevisions, resources, storageObjects, topics } from '../db/schema';
-import { forCourse } from '../db/scoped';
-import { invalid, notFound, type Outcome } from '../outcome';
+import type { CourseScope } from '../../auth/scope';
+import { invalid, notFound, type Outcome } from '../../outcome';
+import type { Db } from '../client';
+import { resourceRevisions, resources, storageObjects, topics } from '../schema';
+import { forCourse } from '../scoped';
 
 /**
  * Draft topics and resources of one course (§12, ADR-0003). Every function takes a resolved

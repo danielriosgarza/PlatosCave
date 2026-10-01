@@ -23,20 +23,35 @@ const override = (config.overrides ?? []).find((o) => o.includes?.includes('apps
 const plugins = (override?.plugins ?? []).map((p) => (typeof p === 'string' ? p : p.path));
 const fixture = readFileSync(join(root, 'apps/server/test/lint/raw-db-access.fixture.ts'), 'utf8');
 
+// The override exempts exactly these paths; anything broader would unrestrict future files.
+const exemptPatterns = [
+  'apps/server/src/**',
+  '!apps/server/src/db/**',
+  '!apps/server/src/main.ts',
+  '!**/*.test.ts',
+];
+
+// Feature modules, including those whose queries moved under db/ (P1-01b), which must not regain them.
 const restricted = [
   'apps/server/src/http/routes/fixture.routes.ts',
   'apps/server/src/http/register-fixture.ts',
   'apps/server/src/annotations/fixture.ts',
+  'apps/server/src/annotations/visibility.ts',
   'apps/server/src/auth/fixture.ts',
+  'apps/server/src/auth/scope.ts',
+  'apps/server/src/auth/sessions.ts',
   'apps/server/src/content/fixture.ts',
+  'apps/server/src/content/media.ts',
+  'apps/server/src/jobs/derived.ts',
+  'apps/server/src/jobs/scoped.ts',
   'apps/server/src/storage/fixture.ts',
+  'apps/server/src/storage/objects.ts',
 ];
 const exempt = [
   'apps/server/src/db/fixture.ts',
   'apps/server/src/db/schema/fixture.ts',
-  'apps/server/src/content/drafts.ts',
-  'apps/server/src/auth/scope.ts',
-  'apps/server/src/storage/objects.ts',
+  'apps/server/src/db/content/fixture.ts',
+  'apps/server/src/db/auth/fixture.ts',
   'apps/server/src/main.ts',
   'apps/server/src/http/routes/fixture.routes.test.ts',
 ];
@@ -96,8 +111,8 @@ function lintAt(path: string): { imports: number[]; queries: number[] } {
 }
 
 test('biome.json declares the import rule and the query plugin in one override', () => {
-  expect(override?.includes).toContain('apps/server/src/**');
-  expect(plugins).toEqual(['./apps/server/lint/raw-db-query.grit']);
+  expect(override?.includes).toEqual(exemptPatterns);
+  expect(plugins).toContain('./apps/server/lint/raw-db-query.grit');
   expect(override?.linter?.rules?.style?.noRestrictedImports).toBeDefined();
 });
 
@@ -115,7 +130,7 @@ test.each(restricted)('raw database access is a lint error in feature module %s'
 });
 
 test.each(exempt)(
-  'data-access files, the composition root and tests may use the database: %s',
+  'data-access modules under db/, the composition root and tests may use the database: %s',
   (path) => {
     expect(lintAt(path)).toEqual({ imports: [], queries: [] });
   },

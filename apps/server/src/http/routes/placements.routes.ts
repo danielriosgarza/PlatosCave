@@ -1,7 +1,7 @@
 import { listPlacements, placeMark } from '@parallax/contracts/routes/placements';
 import type { FastifyInstance } from 'fastify';
-import * as placements from '../../annotations/annotations';
 import type { Deps } from '../../app';
+import * as placements from '../../db/annotations/annotations';
 import { registerRoute, settle } from '../register';
 
 export default function placementRoutes(app: FastifyInstance, deps: Deps): void {

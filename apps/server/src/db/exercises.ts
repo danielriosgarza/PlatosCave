@@ -4,7 +4,6 @@ import type * as contracts from '@parallax/contracts/routes/exercises';
 import { and, asc, desc, eq, inArray, isNull } from 'drizzle-orm';
 import type { z } from 'zod';
 import type { ClassScope } from '../auth/scope';
-import { studyableResource, type Tx } from '../content/releases';
 import {
   type Judgement,
   judge,
@@ -14,6 +13,7 @@ import {
 } from '../exercises/evaluate';
 import { invalid, notFound, type Outcome } from '../outcome';
 import type { Db } from './client';
+import { studyableResource, type Tx } from './content/releases';
 import {
   classMemberships,
   exerciseAttempts,

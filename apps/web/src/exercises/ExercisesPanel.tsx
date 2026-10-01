@@ -12,6 +12,12 @@ const lockedUntil = (resource: ReleasedResource, role: 'student' | 'instructor',
     ? resource.releaseAt
     : null;
 
+/** What an exercise card says about its audience and state. */
+const practiceLabel = (resource: ReleasedResource) =>
+  resource.visibility === 'hidden'
+    ? 'Hidden from students · Practice · ungraded'
+    : 'Practice · ungraded';
+
 /** The Exercises tab of a topic: its released exercises, scheduled ones locked with their date. */
 export function ExercisesPanel(props: {
   classId: string;
@@ -65,7 +71,7 @@ function TopicExercises({
       <div>
         <header className={styles.toolbar}>
           <h2>{selected.title}</h2>
-          <span className={`${styles.small} ${styles.muted}`}>Practice · ungraded</span>
+          <span className={`${styles.small} ${styles.muted}`}>{practiceLabel(selected)}</span>
         </header>
         {exercises.length > 1 && (
           <p className={styles.allExercises}>
@@ -88,7 +94,7 @@ function TopicExercises({
               <strong>{r.title}</strong>
               <br />
               <span className={`${styles.small} ${styles.muted}`}>
-                {until ? `Opens ${formatOpens(until)}` : 'Practice · ungraded'}
+                {until ? `Opens ${formatOpens(until)}` : practiceLabel(r)}
               </span>
             </span>
             {until ? (
