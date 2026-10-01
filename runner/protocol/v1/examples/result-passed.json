@@ -1,0 +1,51 @@
+{
+  "v": 1,
+  "harnessVersion": "1",
+  "runtime": { "language": "python", "version": "3.12.8" },
+  "checks": [
+    {
+      "name": "Four observations",
+      "status": "passed",
+      "durationMs": 64,
+      "expected": "1.290994",
+      "actual": "1.2909944487358056",
+      "exitCode": 0,
+      "stdout": "",
+      "stderr": "",
+      "truncated": false
+    },
+    {
+      "name": "Fewer than two observations",
+      "status": "passed",
+      "durationMs": 55,
+      "expected": "ValueError",
+      "actual": "ValueError: Need at least two values",
+      "exitCode": 0,
+      "stdout": "",
+      "stderr": "",
+      "truncated": false
+    },
+    {
+      "name": "Constant sample",
+      "status": "passed",
+      "durationMs": 57,
+      "expected": "0",
+      "actual": "0.0",
+      "exitCode": 0,
+      "stdout": "",
+      "stderr": "",
+      "truncated": false
+    },
+    {
+      "name": "Hidden properties",
+      "status": "passed",
+      "durationMs": 71,
+      "exitCode": 0,
+      "stdout": "hidden checks passed\n",
+      "stderr": "",
+      "truncated": false
+    }
+  ],
+  "truncated": false,
+  "durationMs": 338
+}

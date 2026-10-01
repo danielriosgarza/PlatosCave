@@ -2,6 +2,8 @@
 
 **Status:** Accepted, 2026-09-30
 
+Refined by [docs/design/runner.md](../design/runner.md) (P3-12): the job reaches the sandbox over stdin and the result returns over stdout rather than through `/work`, the harness is baked into the image, and the runner's queues live in their own pg-boss schema `pgboss_exec`. Where the two disagree, the design document is current.
+
 ## Context
 
 Student code runs in "a disposable isolated worker, separate from the application and its database credentials", with networking disabled, filesystem and processes restricted, caps on CPU, memory, wall time, output size and concurrent runs, and the environment destroyed after each job (§11). Defaults: 10 s wall time, 512 MiB, 1 MiB output, two active runs per student, approved versioned Python/R images; course overrides have server-enforced upper bounds. Execution records bind student, attempt, question revision, code hash, image, grader version and job id; infrastructure failure yields **Run unavailable · Retry** without consuming an attempt (A18). Hidden checks never reach the browser (A12); hostile code cannot reach platform credentials (A13). The secure execution service is required independently of notebook connections (§10.7). Cloud sessions have no Docker daemon; CI (GitHub-hosted Ubuntu) and developer machines do.
