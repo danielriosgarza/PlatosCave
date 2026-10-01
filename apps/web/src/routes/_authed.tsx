@@ -1,5 +1,6 @@
 import {
   createFileRoute,
+  type ErrorComponentProps,
   Outlet,
   redirect,
   useLocation,
@@ -15,21 +16,44 @@ import { loadSession, useSession } from '../session/useSession';
 /** Everything below needs a session; the intended address travels in `next` (§3). */
 export const Route = createFileRoute('/_authed')({
   beforeLoad: async ({ context, location }) => {
-    const me = await loadSession(context.queryClient);
+    let me: Awaited<ReturnType<typeof loadSession>>;
+    try {
+      me = await loadSession(context.queryClient);
+    } catch (error) {
+      throw new SessionCheckError(error);
+    }
     if (!me) throw redirect({ to: '/signin', search: { next: location.href } });
   },
   component: Authed,
-  errorComponent: SessionCheckFailed,
+  errorComponent: RouteFailed,
 });
 
-/** The global bar stays (it belongs to the root); the page says what failed and offers Retry (§14). */
-function SessionCheckFailed() {
+/** Marks a failed session check, so its copy is shown for that and nothing else. */
+class SessionCheckError extends Error {
+  constructor(readonly cause: unknown) {
+    super('session check failed');
+  }
+}
+
+/**
+ * The global bar stays (it belongs to the root); the page says what failed and offers Retry (§14).
+ * Child routes have no boundary of their own, so any error under `/_authed` lands here too.
+ */
+function RouteFailed({ error, reset }: ErrorComponentProps) {
   const router = useRouter();
+  const session = error instanceof SessionCheckError;
   return (
     <main className={page.index}>
       <RetryNotice
-        message="Your session could not be checked, so this page is not shown. Nothing was changed."
-        onRetry={() => void router.invalidate()}
+        message={
+          session
+            ? 'Your session could not be checked, so this page is not shown.'
+            : 'This page could not be shown.'
+        }
+        onRetry={() => {
+          reset();
+          void router.invalidate();
+        }}
       />
     </main>
   );

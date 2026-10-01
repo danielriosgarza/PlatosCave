@@ -59,7 +59,10 @@ export function createQueryClient(defaultQueries: { retry?: boolean } = {}): Que
     if (event.type !== 'updated' || event.action.type !== 'success') return;
     if (JSON.stringify(event.query.queryKey) !== JSON.stringify(sessionQuery.queryKey)) return;
     const now = classIds(event.query.state.data as Me | null | undefined);
-    if (event.query.state.data == null) return; // Signed out: the session guard handles it.
+    if (event.query.state.data == null) {
+      known = new Set(); // Signed out: the next person's classes are not compared with this one's.
+      return;
+    }
     for (const id of known) if (!now.has(id)) revokeClass(client, id);
     for (const id of now) client.removeQueries({ queryKey: revokedKey(id), exact: true });
     known = now;

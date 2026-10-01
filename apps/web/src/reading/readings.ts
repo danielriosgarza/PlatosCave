@@ -7,7 +7,7 @@ import {
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback } from 'react';
 import type { z } from 'zod';
-import { call, useApi } from '../api/client';
+import { ApiError, call, useApi } from '../api/client';
 
 export type ReadingList = z.output<typeof listReadings.response>;
 export type ReadingSummary = ReadingList['readings'][number];
@@ -35,9 +35,11 @@ export const useReadingContent = (classId: string, revisionId: string) => {
     staleTime: CONTENT_TTL_MS,
     refetchOnWindowFocus: false,
     refetchOnReconnect: false,
-    // A failed poll (a reading deleted or unpublished mid-ingestion) ends the polling.
+    // A 404 (the reading was deleted or unpublished mid-ingestion) ends the polling; a transient
+    // failure does not, so the next poll recovers.
     refetchInterval: (query) =>
-      query.state.status !== 'error' && query.state.data?.status === 'pending'
+      query.state.data?.status === 'pending' &&
+      !(query.state.error instanceof ApiError && query.state.error.status === 404)
         ? PENDING_POLL_MS
         : false,
   });

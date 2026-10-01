@@ -33,14 +33,16 @@ test('A01 a link to an unpublished topic shows the neutral page and discloses no
   const { id } = await draft.json();
 
   await signIn(page, baseURL, 'sam@example.test');
-  const bodies: string[] = [];
-  page.on('response', async (response) => {
-    if (response.url().includes('/api/')) bodies.push(await response.text().catch(() => ''));
+  const bodies: Promise<string>[] = [];
+  page.on('response', (response) => {
+    if (response.url().includes('/api/')) bodies.push(response.text().catch(() => ''));
   });
   await page.goto(`/classes/${world.ids.classA}/topics/${id}/reading`);
   await expect(page.getByRole('heading', { name: 'This page is not available' })).toBeVisible();
   // The server denies it too: no API answer the page received carries the draft's title.
-  expect(bodies.some((b) => b.includes(SECRET_TITLE))).toBe(false);
+  const received = await Promise.all(bodies);
+  expect(received.length).toBeGreaterThan(0);
+  expect(received.some((b) => b.includes(SECRET_TITLE))).toBe(false);
   const text = await page.locator('body').innerText();
   expect(text).not.toContain(SECRET_TITLE);
   expect(text).not.toContain('Statistical thinking');
