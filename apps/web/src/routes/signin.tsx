@@ -67,7 +67,7 @@ function SignIn() {
             <div className={styles.feedback} role="status">
               <h2>Sign-in link requested</h2>
               <p>
-                Open the link in the email sent to {email.trim()}. It works once and expires after
+                If {email.trim()} can sign in, a link is on its way. It works once and expires after
                 15 minutes.
               </p>
               <p>

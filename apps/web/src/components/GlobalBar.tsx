@@ -3,7 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
 import { useState } from 'react';
 import { ApiError, call } from '../api/client';
-import { sessionQuery, studyingClasses, useSession } from '../session/useSession';
+import { endSession, studyingClasses, useSession } from '../session/useSession';
 import styles from './GlobalBar.module.css';
 
 export function GlobalBar() {
@@ -40,8 +40,7 @@ export function GlobalBar() {
     }
     // Leave the guarded pages first so the signed-out guard does not add a `next` to /signin.
     await navigate({ to: '/signin' });
-    queryClient.clear();
-    queryClient.setQueryData(sessionQuery.queryKey, null);
+    endSession(queryClient);
   };
 
   return (

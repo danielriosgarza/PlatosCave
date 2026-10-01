@@ -60,6 +60,13 @@ function CoursesFor({ me, view }: { me: Me; view: View }) {
           </fieldset>
         ) : null}
       </div>
+      {view === 'student' && teachesAnything && !canSwitch ? (
+        <p className={styles.intro}>
+          <Link to="/courses" search={{ view: 'instructor' }} className={styles.link}>
+            Go to the courses you teach
+          </Link>
+        </p>
+      ) : null}
       {view === 'instructor' ? (
         <InstructorView me={me} teachesAnything={teachesAnything} />
       ) : (

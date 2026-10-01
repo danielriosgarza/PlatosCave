@@ -23,6 +23,12 @@ export const sessionQuery = queryOptions({
 
 export const loadSession = (queryClient: QueryClient) => queryClient.ensureQueryData(sessionQuery);
 
+/** Records the signed-out state where observers can see it, then drops other cached data. */
+export function endSession(queryClient: QueryClient) {
+  queryClient.setQueryData(sessionQuery.queryKey, null);
+  queryClient.removeQueries({ predicate: (q) => q.queryKey[0] !== 'session' });
+}
+
 export type SessionState =
   | { status: 'loading' }
   | { status: 'error' }

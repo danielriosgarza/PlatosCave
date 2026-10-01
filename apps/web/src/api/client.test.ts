@@ -5,7 +5,7 @@ import { ApiError, call } from './client';
 afterEach(() => vi.unstubAllGlobals());
 
 describe('call', () => {
-  it('throws ApiError, never resolves null, when a 2xx JSON response has a malformed body', async () => {
+  it('P1-09 throws ApiError, never resolves null, when a 2xx JSON response has a malformed body', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(

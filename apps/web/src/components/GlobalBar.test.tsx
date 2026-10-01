@@ -17,13 +17,14 @@ afterEach(() => {
 });
 
 describe('GlobalBar', () => {
-  it('links to Courses and to the topics of the class being viewed when signed in', async () => {
+  it('A02 links to Courses and to the topics of the class being viewed when signed in', async () => {
     stubApi(signedIn(makeMe({ classes: [studentIn(CLASS_A, 'Class A')] })));
     renderApp('/courses');
     expect(await screen.findByRole('link', { name: 'Courses' })).toHaveAttribute(
       'href',
       '/courses',
     );
+    expect(screen.getByRole('link', { name: 'Parallax' })).toHaveAttribute('href', '/');
     expect(screen.getByRole('link', { name: 'Topics' })).toHaveAttribute(
       'href',
       `/classes/${CLASS_A}/topics`,
@@ -32,7 +33,7 @@ describe('GlobalBar', () => {
     expect(screen.getByRole('button', { name: 'Sign out' })).toBeInTheDocument();
   });
 
-  it('offers only Sign in when nobody is signed in', async () => {
+  it('A02 offers only Sign in when nobody is signed in', async () => {
     stubApi(() => ({ status: 401, body: { error: 'unauthenticated' } }));
     renderApp('/signin');
     expect(await screen.findByRole('link', { name: 'Sign in' })).toHaveAttribute('href', '/signin');
@@ -40,7 +41,7 @@ describe('GlobalBar', () => {
     expect(screen.queryByRole('button', { name: 'Sign out' })).toBeNull();
   });
 
-  it('shows Topics for an instructor-only account too', async () => {
+  it('A02 shows Topics for an instructor-only account too', async () => {
     stubApi(signedIn(makeMe({ classes: [instructorIn(CLASS_A, 'Class A')] })));
     renderApp('/courses');
     expect(await screen.findByRole('link', { name: 'Topics' })).toBeInTheDocument();
@@ -70,5 +71,8 @@ describe('GlobalBar', () => {
     const { router } = renderApp('/courses');
     await user.click(await screen.findByRole('button', { name: 'Sign out' }));
     await waitFor(() => expect(router.state.location.pathname).toBe('/signin'));
+    expect(await screen.findByRole('link', { name: 'Sign in' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Sign out' })).toBeNull();
+    expect(screen.queryByText('Sam Okafor')).toBeNull();
   });
 });

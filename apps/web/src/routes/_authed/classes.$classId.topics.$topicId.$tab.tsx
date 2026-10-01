@@ -22,6 +22,7 @@ export const Route = createFileRoute('/_authed/classes/$classId/topics/$topicId/
       throw redirect({
         to: '/classes/$classId/topics/$topicId/$tab',
         params: { ...params, tab: 'slides' },
+        search: (previous) => previous,
         replace: true,
       });
     }
@@ -58,7 +59,7 @@ function TopicWorkspace() {
         // biome-ignore lint/a11y/noNoninteractiveTabindex: panel without focusable content must be reachable
         tabIndex={0}
       >
-        <p className={styles.intro}>{label} for this topic are not available yet.</p>
+        <p className={styles.intro}>Nothing is available under {label} for this topic yet.</p>
       </div>
     </main>
   );

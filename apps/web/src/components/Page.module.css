@@ -51,7 +51,7 @@
   border: 0;
   padding: 9px 22px;
   font-weight: 600;
-  border-radius: 24px;
+  border-radius: var(--pc-radius-primary);
 }
 .primary:hover {
   filter: brightness(0.9);
@@ -60,7 +60,7 @@
   border: 1px solid var(--pc-muted);
   padding: 8px 14px;
   background: var(--pc-sheet);
-  border-radius: 4px;
+  border-radius: var(--pc-radius-control);
 }
 .outline[aria-pressed="true"] {
   background: var(--pc-accent);
@@ -89,7 +89,7 @@
   padding: 16px;
   background: var(--pc-soft);
   border: 1px solid var(--pc-rule);
-  border-radius: 4px;
+  border-radius: var(--pc-radius-control);
   margin-top: 20px;
 }
 .feedback p {
@@ -111,7 +111,7 @@
   max-width: 440px;
   border: 1px solid var(--pc-muted);
   background: var(--pc-sheet);
-  border-radius: 4px;
+  border-radius: var(--pc-radius-control);
   padding: 8px 10px;
 }
 .side {

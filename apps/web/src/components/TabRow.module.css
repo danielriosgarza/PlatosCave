@@ -7,6 +7,7 @@
   min-height: 44px;
   /* §14 / A19: the tab strip scrolls on its own at narrow widths, never the page. */
   overflow-x: auto;
+  overflow-y: hidden;
 }
 .tabs > button {
   border: 0;
@@ -30,7 +31,7 @@
 .tabs > button[aria-selected="true"]::after {
   content: "";
   position: absolute;
-  bottom: -1px;
+  bottom: 0;
   left: 0;
   right: 0;
   height: 2px;
