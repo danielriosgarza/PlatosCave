@@ -8,8 +8,8 @@ import {
   shareAnnotation,
 } from '@parallax/contracts/routes/annotations';
 import type { FastifyInstance } from 'fastify';
-import * as annotations from '../../annotations/annotations';
 import type { Deps } from '../../app';
+import * as annotations from '../../db/annotations/annotations';
 import { notFound, registerRoute, settle } from '../register';
 
 export default function annotationRoutes(app: FastifyInstance, deps: Deps): void {

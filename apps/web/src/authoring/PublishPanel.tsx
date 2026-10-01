@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { z } from 'zod';
 import { ApiError, call } from '../api/client';
 import styles from '../components/Page.module.css';
+import { sessionQuery } from '../session/useSession';
 import local from './Authoring.module.css';
 import { canPublish } from './grants';
 import { authoringKey, overviewQuery, processingQuery, validationQuery } from './queries';
@@ -52,6 +53,10 @@ export function PublishPanel({ courseId, grant }: Props) {
       if (err instanceof ApiError && err.status === 422) {
         void queryClient.invalidateQueries({ queryKey: validationQuery(courseId).queryKey });
       }
+      // The publisher grant was revoked since the session loaded: reload it so the panel follows.
+      if (err instanceof ApiError && err.status === 403) {
+        void queryClient.invalidateQueries({ queryKey: sessionQuery.queryKey });
+      }
     },
   });
 
@@ -73,7 +78,8 @@ export function PublishPanel({ courseId, grant }: Props) {
           <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
             {overview.data.classes.map((c) => (
               <li key={c.id} className={styles.muted}>
-                {c.name}{' '}
+                {c.name}
+                {c.archived ? ' (archived)' : ''}{' '}
                 {c.release ? `uses release ${c.release.version}.` : 'has not adopted a release.'}
               </li>
             ))}
@@ -130,13 +136,24 @@ export function PublishPanel({ courseId, grant }: Props) {
           {notice}
         </p>
       ) : null}
-      {publish.isError && !(publish.error instanceof ApiError && publish.error.status === 422) ? (
+      {publish.isError ? (
         <p className={styles.small} role="alert" style={{ marginTop: 12 }}>
-          The release was not created. Try again.
+          {refusal(publish.error)}
         </p>
       ) : null}
     </aside>
   );
+}
+
+function refusal(err: unknown): string {
+  const status = err instanceof ApiError ? err.status : undefined;
+  if (status === 422) {
+    return 'The release was not created because of the blocking problems listed above.';
+  }
+  if (status === 403) {
+    return 'The release was not created. Publishing needs the publisher permission on this course.';
+  }
+  return 'The release was not created. Try again.';
 }
 
 function IssueList({ heading, issues }: { heading: string; issues: Issue[] }) {

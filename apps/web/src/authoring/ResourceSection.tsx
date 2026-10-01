@@ -1,5 +1,6 @@
 import { type processingEntry, retryProcessing } from '@parallax/contracts/routes/authoring';
 import {
+  createResource,
   type draftResource,
   type draftResourceSummary,
   getResource,
@@ -14,6 +15,7 @@ import { AddReading } from './AddReading';
 import local from './Authoring.module.css';
 import { useAutosave } from './autosave';
 import { ConflictView } from './ConflictView';
+import { ExerciseEditor } from './ExerciseEditor';
 import { authoringKey, processingQuery } from './queries';
 import { SaveStatus } from './SaveStatus';
 
@@ -39,6 +41,7 @@ const typeNames: Record<Type, string> = {
   test: 'Test',
 };
 
+const isExercise = (t: Type) => t === 'exercise';
 const isReading = (t: Type) => t === 'reading_native' || t === 'reading_pdf';
 
 interface Props {
@@ -56,6 +59,11 @@ export function ResourceSection({ courseId, topicId, resources }: Props) {
     () => queryClient.invalidateQueries({ queryKey: authoringKey(courseId) }),
     [queryClient, courseId],
   );
+  const lookup: Lookup = processing.data
+    ? { kind: 'known' }
+    : processing.isError
+      ? { kind: 'error', reload: () => void processing.refetch() }
+      : { kind: 'loading' };
   const stateOf = (id: string) => processing.data?.resources.find((r) => r.resourceId === id);
 
   return (
@@ -75,6 +83,7 @@ export function ResourceSection({ courseId, topicId, resources }: Props) {
                 courseId={courseId}
                 resource={r}
                 status={stateOf(r.id)}
+                lookup={lookup}
                 onChanged={() => void refresh()}
               />
             ))}
@@ -97,6 +106,9 @@ export function ResourceSection({ courseId, topicId, resources }: Props) {
                 </div>
               )
             ) : null}
+            {tab.name === 'Exercises' ? (
+              <AddExercise courseId={courseId} topicId={topicId} onAdded={() => void refresh()} />
+            ) : null}
           </section>
         );
       })}
@@ -106,14 +118,19 @@ export function ResourceSection({ courseId, topicId, resources }: Props) {
 
 type Status = z.output<typeof processingEntry>;
 
+/** What is known about a reading's processing: the server's entry, or why there is none yet. */
+type Lookup = { kind: 'loading' } | { kind: 'error'; reload: () => void } | { kind: 'known' };
+
 function StatusLine({
   courseId,
   resource,
   status,
+  lookup,
 }: {
   courseId: string;
   resource: ResourceSummary;
   status?: Status;
+  lookup: Lookup;
 }) {
   const queryClient = useQueryClient();
   const retry = useMutation({
@@ -121,6 +138,22 @@ function StatusLine({
     onSuccess: () => queryClient.invalidateQueries({ queryKey: authoringKey(courseId) }),
   });
   if (!isReading(resource.type) || resource.archived) return null;
+  if (lookup.kind !== 'known') {
+    return (
+      <div className={local.resourceMeta} role="status" aria-busy={lookup.kind === 'loading'}>
+        {lookup.kind === 'loading' ? (
+          'Checking processing…'
+        ) : (
+          <>
+            Processing status could not be loaded.{' '}
+            <button type="button" className={styles.textButton} onClick={lookup.reload}>
+              Reload status
+            </button>
+          </>
+        )}
+      </div>
+    );
+  }
   const state = status?.state ?? null;
   const labels = {
     queued: 'Waiting to be processed',
@@ -157,11 +190,13 @@ function ResourceRow({
   courseId,
   resource,
   status,
+  lookup,
   onChanged,
 }: {
   courseId: string;
   resource: ResourceSummary;
   status?: Status;
+  lookup: Lookup;
   onChanged: () => void;
 }) {
   const [open, setOpen] = useState(false);
@@ -175,9 +210,9 @@ function ResourceRow({
             {resource.visibility === 'hidden' ? 'Hidden from students' : 'Visible to students'}
             {resource.archived ? ' · Archived' : ''}
           </div>
-          <StatusLine courseId={courseId} resource={resource} status={status} />
+          <StatusLine courseId={courseId} resource={resource} status={status} lookup={lookup} />
         </div>
-        {isReading(resource.type) ? (
+        {isReading(resource.type) || isExercise(resource.type) ? (
           <button
             type="button"
             className={styles.textButton}
@@ -188,10 +223,78 @@ function ResourceRow({
           </button>
         ) : null}
       </div>
-      {open ? (
+      {open && isExercise(resource.type) ? (
+        <ExerciseEditor courseId={courseId} resourceId={resource.id} onSaved={onChanged} />
+      ) : null}
+      {open && isReading(resource.type) ? (
         <ReadingEditor courseId={courseId} resourceId={resource.id} onSaved={onChanged} />
       ) : null}
     </div>
+  );
+}
+
+/** Creates an exercise without content; the editor's first valid save makes its first revision. */
+function AddExercise({
+  courseId,
+  topicId,
+  onAdded,
+}: {
+  courseId: string;
+  topicId: string;
+  onAdded: () => void;
+}) {
+  const [adding, setAdding] = useState(false);
+  const [title, setTitle] = useState('');
+  const create = useMutation({
+    mutationFn: () =>
+      call(createResource, {
+        params: { courseId, topicId },
+        body: { type: 'exercise', title: title.trim() },
+      }),
+    onSuccess: () => {
+      setAdding(false);
+      setTitle('');
+      onAdded();
+    },
+  });
+  if (!adding) {
+    return (
+      <div style={{ marginTop: 12 }}>
+        <button type="button" className={styles.outline} onClick={() => setAdding(true)}>
+          Add exercise
+        </button>
+      </div>
+    );
+  }
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (title.trim()) create.mutate();
+      }}
+    >
+      <label className={local.field}>
+        New exercise title
+        <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} />
+      </label>
+      <div className={styles.row} style={{ marginTop: 12 }}>
+        <button
+          type="submit"
+          className={styles.outline}
+          disabled={!title.trim() || create.isPending}
+        >
+          Create exercise
+        </button>
+        <button type="button" className={styles.textButton} onClick={() => setAdding(false)}>
+          Cancel
+        </button>
+      </div>
+      {create.isError ? (
+        <p role="alert" className={styles.small}>
+          Could not create the exercise.
+        </p>
+      ) : null}
+    </form>
   );
 }
 
