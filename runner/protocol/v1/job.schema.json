@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://parallax.invalid/runner/v1/job.schema.json",
   "title": "Parallax runner job (protocol v1)",
-  "description": "What apps/server enqueues as the `execution.run` payload and what the runner writes to the sandbox's stdin after the nonce line; the harness holds it in memory and never writes it to disk. It carries no user, class or attempt identifiers: the runner is a separate trust domain and only needs the code, the checks and the limits. Four rules the schema cannot express (unique check names; a `public` set has no hidden check and no hidden file; a check names only files that exist and a public check names no hidden file; unique paths and at most 2 MiB decoded) are listed in docs/design/runner.md \u00a73.1 with fixtures under examples/rejected/.",
+  "description": "What apps/server enqueues as the `execution.run` payload and what the runner writes to the sandbox's stdin after the nonce line; the harness holds it in memory and never writes it to disk. It carries no user, class or attempt identifiers: the runner is a separate trust domain and only needs the code, the checks and the limits. Four rules the schema cannot express (unique check names; a `public` set has no hidden check and no hidden file; a check names only files that exist and a public check names no hidden file; unique paths, no path a directory prefix of another, and at most 2 MiB decoded) are listed in docs/design/runner.md \u00a73.1 with fixtures under examples/rejected/.",
   "type": "object",
   "required": ["v", "jobId", "runtime", "set", "limits", "files", "checks"],
   "additionalProperties": false,
