@@ -1,4 +1,4 @@
-import type { Anchor, Strokes } from '@parallax/contracts';
+import type { Anchor } from '@parallax/contracts';
 import { sql } from 'drizzle-orm';
 import {
   type AnyPgColumn,
@@ -62,7 +62,6 @@ export const annotations = pgTable(
     anchor: jsonb().$type<Anchor>().notNull(),
     body: text(),
     color: text(),
-    strokes: jsonb().$type<Strokes>(),
     /** Optimistic counter for autosave: every update checks and increments it. */
     revision: integer().notNull().default(1),
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
@@ -83,9 +82,13 @@ export const threads = pgTable(
     classId: uuid()
       .notNull()
       .references(() => classes.id, { onDelete: 'cascade' }),
+    /**
+     * Plain reference, like `createdBy` elsewhere: deleting an account must not take other
+     * members' replies with it; identity removal anonymises instead (plan §8 #23).
+     */
     authorId: uuid()
       .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
+      .references(() => users.id),
     /** Written by a preview principal: visible to that principal only, never to the class. */
     isPreview: boolean().notNull().default(false),
     resourceId: uuid()
@@ -126,7 +129,7 @@ export const posts = pgTable(
       .references(() => classes.id, { onDelete: 'cascade' }),
     authorId: uuid()
       .notNull()
-      .references(() => users.id, { onDelete: 'cascade' }),
+      .references(() => users.id),
     isPreview: boolean().notNull().default(false),
     parentId: uuid().references((): AnyPgColumn => posts.id),
     body: text(),

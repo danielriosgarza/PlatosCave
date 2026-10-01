@@ -1,8 +1,19 @@
+import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { buildApp } from '../../src/app';
 import { loadConfig } from '../../src/config';
-import { buildWorld, ids, type PersonName, type World } from '../fixtures/world';
+import { adoptRelease } from '../../src/content/adoption';
+import { publishRelease } from '../../src/content/releases';
+import { resources } from '../../src/db/schema';
+import {
+  asClassScope,
+  asCourseScope,
+  buildWorld,
+  ids,
+  type PersonName,
+  type World,
+} from '../fixtures/world';
 import { createTestDatabase, type TestDatabase } from './db';
 
 const now = new Date('2026-10-01T09:00:00Z');
@@ -25,6 +36,20 @@ afterAll(async () => {
   await app?.close();
   await testDb?.drop();
 });
+
+const draftId = '00000000-0000-4000-8000-000000000999';
+const drawing = [
+  {
+    tool: 'pen',
+    color: '#1f6feb',
+    width: 2,
+    points: [
+      [0.1, 0.2],
+      [0.3, 0.4],
+    ],
+  },
+];
+const same = (body: unknown) => ({ status: 200, body });
 
 const passage = {
   kind: 'text',
@@ -95,7 +120,7 @@ describe('A05 private annotations and an instructor question', () => {
     });
 
     const own = await list('bea', ids.classB);
-    expect(ids_(own.annotations)).toEqual([highlight.id, note.id]);
+    expect(ids_(own.annotations).sort()).toEqual([highlight.id, note.id].sort());
     expect(ids_(own.threads)).toContain(question.id);
 
     const teacher = await list('marcus', ids.classB);
@@ -175,29 +200,93 @@ describe('A05 private annotations and an instructor question', () => {
     const stale = await call('bea', 'PUT', url, { expectedRevision: 1, body: 'v2' });
     expect(stale.status).toBe(409);
     expect(stale.body).toEqual({ error: 'revision_conflict', current: saved.body });
-    const strokes = [{ tool: 'pen', color: '#000000', width: 2, points: [[0.1, 0.2]] }];
-    expect((await call('bea', 'PUT', url, { expectedRevision: 2, strokes })).status).toBe(400);
+    // A blur without edits, even from a tab holding an older revision, changes nothing.
+    for (const expectedRevision of [2, 1]) {
+      const same = await call('bea', 'PUT', url, { expectedRevision, body: 'v2 longer draft' });
+      expect(same).toEqual({ status: 200, body: saved.body });
+    }
+    expect(await call('bea', 'PUT', url, { expectedRevision: 2 })).toEqual(same(saved.body));
+    const moved = await call('bea', 'PUT', url, { expectedRevision: 2, anchor: { kind: 'none' } });
+    expect(moved.status).toBe(400);
   });
 
-  test('annotations attach only to resources of the class’s release the caller may study', async () => {
+  test('A26 annotations attach only to the class’s adopted release, never to drafts or hidden resources', async () => {
     const note = { kind: 'note', anchor: { kind: 'none' }, body: 'Key?' };
     const hidden = resourceUrl(ids.classB, ids.answerKey);
     expect((await call('bea', 'POST', `${hidden}/annotations`, note)).status).toBe(404);
-    expect((await call('bea', 'GET', `${hidden}/annotations`)).status).toBe(404);
+    expect(
+      (await call('bea', 'POST', `${hidden}/threads`, { ...note, audience: 'class' })).status,
+    ).toBe(404);
     expect((await call('marcus', 'POST', `${hidden}/annotations`, note)).status).toBe(200);
-    const unknown = resourceUrl(ids.classB, '00000000-0000-4000-8000-999999999999');
-    expect((await call('bea', 'POST', `${unknown}/annotations`, note)).status).toBe(404);
+    // An instructor's thread on a hidden resource reaches neither the student's margin nor notifications.
+    const onHidden = await call('marcus', 'POST', `${hidden}/threads`, {
+      audience: 'class',
+      anchor: { kind: 'none' },
+      body: 'Answers for instructors.',
+    });
+    expect(onHidden.status).toBe(200);
+    expect(await call('bea', 'GET', `${hidden}/annotations`)).toEqual({
+      status: 200,
+      body: { annotations: [], threads: [] },
+    });
+    expect(ids_((await call('marcus', 'GET', `${hidden}/annotations`)).body.threads)).toEqual([
+      onHidden.body.id,
+    ]);
+    const items = (await call('bea', 'GET', `/api/classes/${ids.classB}/notifications`)).body.items;
+    expect(items.map((i: { threadId: string }) => i.threadId)).not.toContain(onHidden.body.id);
+
+    // A draft added after the release is not part of any class.
+    await testDb.db.insert(resources).values({
+      id: draftId,
+      courseId: ids.statistics,
+      topicId: ids.sampling,
+      type: 'reading_native',
+      title: 'Draft reading',
+      position: 5,
+      createdBy: ids.elena,
+    });
+    for (const who of ['bea', 'marcus'] as const) {
+      const draft = resourceUrl(ids.classB, draftId);
+      expect((await call(who, 'POST', `${draft}/annotations`, note)).status).toBe(404);
+    }
   });
 
-  test('anchors must fit the annotation kind', async () => {
+  test('anchors must fit the annotation kind and the resource’s material', async () => {
     const url = `${resourceUrl(ids.classB)}/annotations`;
+    const pdf = { kind: 'pdf', page: 0, rect: { x: 0, y: 0, w: 0.5, h: 0.1 } };
     const bad = [
       { kind: 'highlight', anchor: { kind: 'none' } },
       { kind: 'sketch', anchor: passage },
-      { kind: 'note', anchor: passage, strokes: [] },
+      { kind: 'sketch', anchor: { kind: 'figure', figureId: 'fig-1', strokes: [] } },
       { kind: 'note', anchor: { ...passage, end: 2 } },
+      // A native reading has text blocks and figures, not PDF pages or slides.
+      { kind: 'highlight', anchor: pdf },
+      { kind: 'note', anchor: { kind: 'slide', page: 1 } },
     ];
     for (const body of bad) expect((await call('bea', 'POST', url, body)).status).toBe(400);
+    const quiz = resourceUrl(ids.classB, ids.samplingQuiz);
+    const onQuiz = await call('bea', 'POST', `${quiz}/threads`, {
+      audience: 'class',
+      anchor: passage,
+      body: 'q1?',
+    });
+    expect(onQuiz.status).toBe(400);
+  });
+
+  test('sharing a sketch shares its drawing', async () => {
+    const anchor = { kind: 'figure', figureId: 'fig-1', strokes: drawing };
+    const sketch = await create('bea', ids.classB, { kind: 'sketch', anchor, body: 'My curve' });
+    expect(sketch.anchor).toEqual(anchor);
+    const res = await call('bea', 'POST', `${annotationUrl(ids.classB, sketch.id)}/share`, {
+      audience: 'instructor',
+    });
+    expect(res.body).toMatchObject({ anchor, posts: [{ body: 'My curve' }] });
+    const redrawn = { ...anchor, strokes: [...drawing, ...drawing] };
+    const saved = await call('bea', 'PUT', annotationUrl(ids.classB, sketch.id), {
+      expectedRevision: 1,
+      anchor: redrawn,
+    });
+    expect(saved.body).toMatchObject({ anchor: redrawn, revision: 2 });
   });
 
   test('a preview principal’s posts never reach the real class', async () => {
@@ -233,5 +322,52 @@ describe('A21 discussions are per class', () => {
     const own = await ask('sam', ids.classA, 'class', 'Class A only.');
     expect(ids_((await list('priya', ids.classA)).threads)).toContain(own.id);
     expect(ids_((await list('bea', ids.classB)).threads)).not.toContain(own.id);
+  });
+});
+
+describe('work on a resource the class stops using', () => {
+  // Last in the file: moves class B to a release without the quiz.
+  test('a student keeps their own notes after an adoption removes the resource', async () => {
+    const quiz = resourceUrl(ids.classB, ids.samplingQuiz);
+    const created = await call('bea', 'POST', `${quiz}/annotations`, {
+      kind: 'note',
+      anchor: { kind: 'none' },
+    });
+    const note = created.body;
+    expect(created.status).toBe(200);
+    const before = await call('marcus', 'POST', `${quiz}/threads`, {
+      audience: 'class',
+      anchor: { kind: 'none' },
+      body: 'Quiz opens Friday.',
+    });
+    expect(before.status).toBe(200);
+
+    await testDb.db
+      .update(resources)
+      .set({ archivedAt: now })
+      .where(eq(resources.id, ids.samplingQuiz));
+    await testDb.db.delete(resources).where(eq(resources.id, draftId));
+    const v2 = await publishRelease(testDb.db, asCourseScope(ids.statistics, ids.elena));
+    if (!v2.ok) throw new Error(JSON.stringify(v2.report));
+    const adopted = await adoptRelease(
+      testDb.db,
+      asClassScope(ids.classB, ids.statistics, ids.marcus, { releaseId: ids.releaseV1 }),
+      { releaseId: v2.release.id, expectedReleaseId: ids.releaseV1 },
+    );
+    expect(adopted.ok).toBe(true);
+
+    const after = await call('bea', 'GET', `${quiz}/annotations`);
+    expect(after.body).toEqual({ annotations: [note], threads: [] });
+    const saved = await call('bea', 'PUT', annotationUrl(ids.classB, note.id), {
+      expectedRevision: 1,
+      body: 'Still mine',
+    });
+    expect(saved.body).toMatchObject({ body: 'Still mine', revision: 2 });
+    expect(
+      (await call('bea', 'POST', `${quiz}/annotations`, { kind: 'note', anchor: { kind: 'none' } }))
+        .status,
+    ).toBe(404);
+    const items = (await call('bea', 'GET', `/api/classes/${ids.classB}/notifications`)).body.items;
+    expect(items.map((i: { threadId: string }) => i.threadId)).not.toContain(before.body.id);
   });
 });

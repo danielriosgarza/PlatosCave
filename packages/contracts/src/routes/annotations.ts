@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { anchor, strokes } from '../anchors';
+import { anchor } from '../anchors';
 import { conflictBody, defineRoute } from '../define';
 
 /**
@@ -32,7 +32,6 @@ export const annotationView = z.object({
   anchor,
   body: z.string().nullable(),
   color: z.string().nullable(),
-  strokes: strokes.nullable(),
   /** Send back as `expectedRevision` with the next autosave. */
   revision: z.int(),
   createdAt: timestamp,
@@ -64,6 +63,9 @@ export const threadView = z.object({
 });
 
 /** Highlights mark text or PDF regions; sketches sit on a figure or PDF page (§8). */
+const hasDrawing = (a: z.infer<typeof anchor>) =>
+  (a.kind === 'figure' || a.kind === 'pdf') && (a.strokes?.length ?? 0) > 0;
+
 const anchorKinds = {
   highlight: ['text', 'pdf'],
   note: ['text', 'pdf', 'slide', 'figure', 'none'],
@@ -82,15 +84,14 @@ export const createAnnotation = defineRoute({
       anchor,
       body: text.optional(),
       color: color.optional(),
-      strokes: strokes.optional(),
     })
     .refine((b) => (anchorKinds[b.kind] as readonly string[]).includes(b.anchor.kind), {
       message: 'anchor kind does not fit this annotation kind',
       path: ['anchor'],
     })
-    .refine((b) => b.kind === 'sketch' || b.strokes === undefined, {
-      message: 'only sketches carry strokes',
-      path: ['strokes'],
+    .refine((b) => b.kind !== 'sketch' || hasDrawing(b.anchor), {
+      message: 'a sketch needs strokes on its anchor',
+      path: ['anchor'],
     }),
   response: annotationView,
   examples: {
@@ -99,7 +100,11 @@ export const createAnnotation = defineRoute({
   },
 });
 
-/** Autosave (§8): 409 with the server copy when `expectedRevision` is stale. */
+/**
+ * Autosave (§8): 409 with the server copy when `expectedRevision` is stale. A request that
+ * changes nothing returns the stored copy without a new revision. A replacement anchor keeps
+ * the annotation's anchor kind (a redrawn sketch sends its anchor with the new strokes).
+ */
 export const saveAnnotation = defineRoute({
   method: 'PUT',
   path: '/api/classes/:classId/annotations/:annotationId',
@@ -110,7 +115,7 @@ export const saveAnnotation = defineRoute({
     expectedRevision: z.int().positive(),
     body: text.nullable().optional(),
     color: color.nullable().optional(),
-    strokes: strokes.nullable().optional(),
+    anchor: anchor.optional(),
   }),
   response: annotationView,
   errors: { 409: conflictBody(annotationView) },
@@ -130,11 +135,16 @@ export const deleteAnnotation = defineRoute({
   examples: { params: { classId: exampleClass, annotationId: exampleAnnotation } },
 });
 
+/**
+ * Your own annotations are listed even after the resource leaves the class's release or is
+ * hidden (§12: removing a resource never deletes work); its threads only while you may study it.
+ */
 export const listAnnotations = defineRoute({
   method: 'GET',
   path: '/api/classes/:classId/resources/:resourceId/annotations',
   scope: { kind: 'class', role: 'any' },
-  summary: 'Your private annotations and the discussions you may read on one resource',
+  summary:
+    'Your annotations on one resource, and its discussions you may read while the class studies it',
   params: resourceParams,
   response: z.object({ annotations: z.array(annotationView), threads: z.array(threadView) }),
   examples: { params: { classId: exampleClass, resourceId: exampleResource } },

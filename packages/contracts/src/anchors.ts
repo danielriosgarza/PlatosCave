@@ -3,7 +3,8 @@ import { z } from 'zod';
 /**
  * Annotation anchors (ADR-0003): where a note, highlight, sketch or thread sits in one
  * resource revision. Anchors reference blocks and normalised page space, never pixels, so
- * zoom, reflow and Focus cannot detach them.
+ * zoom, reflow and Focus cannot detach them. Drawings are part of the anchor (`figure`, and
+ * `pdf` for sketches on a page), so sharing an annotation shares its drawing.
  */
 
 const unit = z.number().min(0).max(1);
@@ -11,6 +12,22 @@ const context = z.string().max(32);
 
 /** Normalised rectangle on a PDF page: 0..1 of the page width and height. */
 export const rect = z.object({ x: unit, y: unit, w: unit, h: unit });
+
+/** Freehand drawing in coordinates normalised to the anchor's page or figure (§8). */
+export const strokes = z
+  .array(
+    z.object({
+      tool: z.enum(['pen', 'eraser']),
+      color: z.string().regex(/^#[0-9a-f]{6}$/i),
+      width: z.number().positive().max(64),
+      points: z
+        .array(z.tuple([unit, unit]))
+        .min(1)
+        .max(2000),
+    }),
+  )
+  .max(500);
+export type Strokes = z.infer<typeof strokes>;
 
 export const textAnchor = z
   .object({
@@ -30,14 +47,17 @@ export const pdfAnchor = z.object({
   page: z.int().min(0),
   rect,
   quote: z.string().max(2000).optional(),
+  /** A sketch on the page, in coordinates normalised to the page. */
+  strokes: strokes.optional(),
 });
 
 export const slideAnchor = z.object({ kind: z.literal('slide'), page: z.int().min(0) });
 
-/** A native figure or bounded sketch area; the drawing itself is the annotation's `strokes`. */
+/** A native figure or bounded sketch area, with the drawing made on it. */
 export const figureAnchor = z.object({
   kind: z.literal('figure'),
   figureId: z.string().min(1).max(100),
+  strokes,
 });
 
 /** General notes on a resource without a passage (§8 "may exist without a text anchor"). */
@@ -52,18 +72,17 @@ export const anchor = z.discriminatedUnion('kind', [
 ]);
 export type Anchor = z.infer<typeof anchor>;
 
-/** Freehand drawing in coordinates normalised to the anchor's page or figure (§8). */
-export const strokes = z
-  .array(
-    z.object({
-      tool: z.enum(['pen', 'eraser']),
-      color: z.string().regex(/^#[0-9a-f]{6}$/i),
-      width: z.number().positive().max(64),
-      points: z
-        .array(z.tuple([unit, unit]))
-        .min(1)
-        .max(2000),
-    }),
-  )
-  .max(500);
-export type Strokes = z.infer<typeof strokes>;
+/**
+ * Anchor kinds each resource type can place (ADR-0003 "produced by"): text blocks in native
+ * readings and web slides, pages in PDFs, slides in decks, figures in native readings.
+ */
+export const anchorKindsByType: Record<string, readonly Anchor['kind'][]> = {
+  reading_native: ['text', 'figure', 'none'],
+  reading_pdf: ['pdf', 'none'],
+  slides_web: ['text', 'slide', 'none'],
+  slides_pdf: ['pdf', 'slide', 'none'],
+};
+
+/** Whether `anchor` can be placed on a revision of `resourceType`; other types take `none`. */
+export const anchorFits = (resourceType: string, a: Anchor): boolean =>
+  (anchorKindsByType[resourceType] ?? ['none']).includes(a.kind);

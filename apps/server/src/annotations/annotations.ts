@@ -1,11 +1,14 @@
+import { isDeepStrictEqual } from 'node:util';
+import { type Anchor, anchorFits } from '@parallax/contracts';
 import type * as contracts from '@parallax/contracts/routes/annotations';
 import { and, asc, desc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import type { z } from 'zod';
 import type { ClassScope } from '../auth/scope';
-import type { Outcome } from '../content/drafts';
+import { studyableResource, studyVisible } from '../content/releases';
 import type { Db } from '../db/client';
 import { annotations, posts, releaseResources, threads, users } from '../db/schema';
 import { forClass } from '../db/scoped';
+import { invalid, notFound, type Outcome } from '../outcome';
 import { visiblePost, visibleTo } from './visibility';
 
 /**
@@ -24,7 +27,7 @@ type SaveAnnotation = Body<typeof contracts.saveAnnotation>;
 type CreateThread = Body<typeof contracts.createThread>;
 type Share = Body<typeof contracts.shareAnnotation>;
 
-const notFound = { ok: false, reason: 'not_found' } as const;
+const misplaced = invalid('This mark cannot be placed on this kind of material');
 
 const toAnnotation = (row: AnnotationRow): Annotation => ({
   id: row.id,
@@ -35,29 +38,17 @@ const toAnnotation = (row: AnnotationRow): Annotation => ({
   anchor: row.anchor,
   body: row.body,
   color: row.color,
-  strokes: row.strokes,
   revision: row.revision,
   createdAt: row.createdAt.toISOString(),
   updatedAt: row.updatedAt.toISOString(),
 });
 
-/**
- * The revision of `resourceId` pinned by the class's adopted release, if the caller may study
- * it: students never reach hidden resources (A26), and drafts are never reachable here.
- */
-async function releasedRevision(db: Db, scope: ClassScope, resourceId: string) {
-  if (!scope.releaseId) return undefined;
-  const [row] = await db
-    .select({ revisionId: releaseResources.resourceRevisionId })
-    .from(releaseResources)
-    .where(
-      and(
-        eq(releaseResources.releaseId, scope.releaseId),
-        eq(releaseResources.resourceId, resourceId),
-        scope.role === 'student' ? ne(releaseResources.visibility, 'hidden') : sql`true`,
-      ),
-    );
-  return row?.revisionId;
+/** The class's pinned revision of `resourceId`, if the caller may study it and `anchor` fits it. */
+async function placeOn(db: Db, scope: ClassScope, resourceId: string, anchor: Anchor) {
+  const resource = await studyableResource(db, scope, resourceId);
+  if (!resource) return notFound;
+  if (!anchorFits(resource.type, anchor)) return misplaced;
+  return { ok: true, value: resource.revisionId } as const;
 }
 
 /** One of the caller's own annotations in this class. */
@@ -127,18 +118,24 @@ async function loadThreads(db: Db, scope: ClassScope, where: ReturnType<typeof a
   );
 }
 
+/**
+ * The caller's own annotations on a resource, whether or not the class still studies it (§12:
+ * removing a resource never deletes work), and its threads while the caller may study it.
+ */
 export async function listForResource(db: Db, scope: ClassScope, resourceId: string) {
-  if (!(await releasedRevision(db, scope, resourceId))) return undefined;
   const own = await db
     .select()
     .from(annotations)
     .where(and(visibleTo(scope, annotations), eq(annotations.resourceId, resourceId)))
     .orderBy(asc(annotations.createdAt), asc(annotations.id));
-  const discussion = await loadThreads(
-    db,
-    scope,
-    and(visibleTo(scope, threads), eq(threads.resourceId, resourceId)),
-  );
+  const studyable = await studyableResource(db, scope, resourceId);
+  const discussion = studyable
+    ? await loadThreads(
+        db,
+        scope,
+        and(visibleTo(scope, threads), eq(threads.resourceId, resourceId)),
+      )
+    : [];
   return { annotations: own.map(toAnnotation), threads: discussion };
 }
 
@@ -149,20 +146,19 @@ export async function createAnnotation(
   input: CreateAnnotation,
   now: Date,
 ): Promise<Outcome<Annotation>> {
-  const revisionId = await releasedRevision(db, scope, resourceId);
-  if (!revisionId) return notFound;
+  const placed = await placeOn(db, scope, resourceId, input.anchor);
+  if (!placed.ok) return placed;
   const [row] = await db
     .insert(annotations)
     .values({
       classId: scope.classId,
       authorId: scope.user.id,
       resourceId,
-      resourceRevisionId: revisionId,
+      resourceRevisionId: placed.value,
       kind: input.kind,
       anchor: input.anchor,
       body: input.body ?? null,
       color: input.color ?? null,
-      strokes: input.strokes ?? null,
       createdAt: now,
       updatedAt: now,
     })
@@ -171,7 +167,11 @@ export async function createAnnotation(
   return { ok: true, value: toAnnotation(row) };
 }
 
-/** Autosave: applies only if `expectedRevision` is current, otherwise returns the server copy. */
+/**
+ * Autosave. A request equal to the stored copy returns it unchanged, so blurring without edits
+ * never creates a revision or a conflict; otherwise it applies only if `expectedRevision` is
+ * current, and a stale one gets the server copy.
+ */
 export async function saveAnnotation(
   db: Db,
   scope: ClassScope,
@@ -180,12 +180,19 @@ export async function saveAnnotation(
   now: Date,
 ): Promise<Outcome<Annotation>> {
   const { expectedRevision, ...changes } = input;
-  if (changes.strokes != null) {
-    const current = await ownAnnotation(db, scope, annotationId);
-    if (!current) return notFound;
-    if (current.kind !== 'sketch') {
-      return { ok: false, reason: 'invalid', message: 'only sketches carry strokes' };
-    }
+  const current = await ownAnnotation(db, scope, annotationId);
+  if (!current) return notFound;
+  const changed = (Object.keys(changes) as (keyof typeof changes)[]).filter(
+    (key) => changes[key] !== undefined && !isDeepStrictEqual(changes[key], current[key]),
+  );
+  if (changed.length === 0) return { ok: true, value: toAnnotation(current) };
+  if (current.revision !== expectedRevision) {
+    return { ok: false, reason: 'conflict', current: toAnnotation(current) };
+  }
+  if (changes.anchor) {
+    if (changes.anchor.kind !== current.anchor.kind) return misplaced;
+    const drawn = 'strokes' in changes.anchor && (changes.anchor.strokes?.length ?? 0) > 0;
+    if (current.kind === 'sketch' && !drawn) return invalid('A sketch needs strokes');
   }
   const [row] = await db
     .update(annotations)
@@ -200,9 +207,8 @@ export async function saveAnnotation(
     )
     .returning();
   if (row) return { ok: true, value: toAnnotation(row) };
-  const current = await ownAnnotation(db, scope, annotationId);
-  if (!current) return notFound;
-  return { ok: false, reason: 'conflict', current: toAnnotation(current) };
+  const latest = await ownAnnotation(db, scope, annotationId);
+  return latest ? { ok: false, reason: 'conflict', current: toAnnotation(latest) } : notFound;
 }
 
 export async function deleteAnnotation(db: Db, scope: ClassScope, annotationId: string) {
@@ -256,15 +262,19 @@ export async function createThread(
   input: CreateThread,
   now: Date,
 ): Promise<Outcome<Thread>> {
-  const resourceRevisionId = await releasedRevision(db, scope, resourceId);
-  if (!resourceRevisionId) return notFound;
+  const placed = await placeOn(db, scope, resourceId, input.anchor);
+  if (!placed.ok) return placed;
+  const resourceRevisionId = placed.value;
   return {
     ok: true,
     value: await insertThread(db, scope, { ...input, resourceId, resourceRevisionId }, now),
   };
 }
 
-/** Copies only the annotation's anchor (with its quote and context) and text into a thread. */
+/**
+ * Copies only the annotation's anchor (its quote and context, or its drawing) and text into a
+ * new thread; the annotation itself stays private.
+ */
 export async function shareAnnotation(
   db: Db,
   scope: ClassScope,
@@ -273,9 +283,9 @@ export async function shareAnnotation(
   now: Date,
 ): Promise<Outcome<Thread>> {
   const note = await ownAnnotation(db, scope, annotationId);
-  if (!note || !(await releasedRevision(db, scope, note.resourceId))) return notFound;
+  if (!note || !(await studyableResource(db, scope, note.resourceId))) return notFound;
   const body = input.body ?? note.body?.trim();
-  if (!body) return { ok: false, reason: 'invalid', message: 'Write the question to share' };
+  if (!body) return invalid('Write the question to share');
   const value = await insertThread(
     db,
     scope,
@@ -294,13 +304,22 @@ export async function shareAnnotation(
 
 /**
  * Notification list (stub until delivery exists): the newest threads by other people that the
- * caller may read. It applies the same audience rule as every other read (§13).
+ * caller may read, on resources the caller may study now. Same rules as the margin (§13).
  */
 export async function listNotifications(db: Db, scope: ClassScope): Promise<Notification[]> {
+  if (!scope.releaseId) return [];
   const rows = await db
     .select({ thread: threads, authorName: users.name })
     .from(threads)
     .innerJoin(users, eq(users.id, threads.authorId))
+    .innerJoin(
+      releaseResources,
+      and(
+        eq(releaseResources.releaseId, scope.releaseId),
+        eq(releaseResources.resourceId, threads.resourceId),
+        studyVisible(scope),
+      ),
+    )
     .where(and(visibleTo(scope, threads), ne(threads.authorId, scope.user.id)))
     .orderBy(desc(threads.createdAt), desc(threads.id))
     .limit(50);

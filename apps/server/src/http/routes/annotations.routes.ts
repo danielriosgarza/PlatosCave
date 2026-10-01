@@ -10,8 +10,7 @@ import {
 import type { FastifyInstance } from 'fastify';
 import * as annotations from '../../annotations/annotations';
 import type { Deps } from '../../app';
-import type { Outcome } from '../../content/drafts';
-import { notFound, registerRoute } from '../register';
+import { notFound, registerRoute, settle } from '../register';
 
 export default function annotationRoutes(app: FastifyInstance, deps: Deps): void {
   const db = () => {
@@ -19,17 +18,6 @@ export default function annotationRoutes(app: FastifyInstance, deps: Deps): void
     return deps.db;
   };
   const now = () => (deps.now ?? (() => new Date()))();
-
-  function settle<T>(
-    outcome: Outcome<T>,
-    conflict?: (body: { error: 'revision_conflict'; current: T }) => never,
-  ): T {
-    if (outcome.ok) return outcome.value;
-    if (outcome.reason === 'not_found') return notFound();
-    if (outcome.reason === 'invalid') throw app.httpErrors.badRequest(outcome.message);
-    if (!conflict) throw new Error('unexpected revision conflict');
-    return conflict({ error: 'revision_conflict', current: outcome.current });
-  }
 
   registerRoute(app, listAnnotations, async ({ scope, params }) => {
     return (await annotations.listForResource(db(), scope, params.resourceId)) ?? notFound();
