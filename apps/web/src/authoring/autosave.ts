@@ -86,6 +86,9 @@ export function useAutosave<V extends object, S extends { revision: number }>({
       }
       setState(left ? { kind: 'partial', message: left } : { kind: 'saved', at: new Date() });
     } catch (err) {
+      // An edit made during the failed save is still in `latest`; Retry sends it once, so a
+      // remembered request would only resend the same values after Retry succeeds.
+      pending.current = false;
       const current = conflictCopy<S>(err);
       if (current) {
         stopped.current = true;
