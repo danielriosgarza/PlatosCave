@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   CLASS_A,
+  instructorIn,
   makeMe,
   makeTopics,
   renderApp,
@@ -44,6 +45,7 @@ describe('topic index', () => {
     const topics = makeTopics({ resume: null });
     const first = topics.topics[0];
     if (!first) throw new Error('fixture');
+    topics.topics[0] = { ...first, savedTab: null };
     topics.topics[1] = {
       ...first,
       topicId: T_ESTIMATION,
@@ -51,6 +53,7 @@ describe('topic index', () => {
       title: 'Estimation',
       presence: { ...first.presence, slides: true },
       firstTab: 'slides',
+      savedTab: null,
       state: 'available',
       requires: [],
     };
@@ -65,6 +68,53 @@ describe('topic index', () => {
       `/classes/${CLASS_A}/topics/${T_ESTIMATION}/slides`,
     );
     expect(screen.queryByRole('link', { name: 'Resume' })).toBeNull();
+  });
+
+  it('A03 a studied topic that is not the current one still opens on its own saved tab', async () => {
+    const topics = makeTopics({ resume: { topicId: T_ESTIMATION, tab: 'reading', saved: true } });
+    const [first, second] = topics.topics;
+    if (!first || !second) throw new Error('fixture');
+    topics.topics[0] = { ...first, savedTab: 'tests' };
+    topics.topics[1] = {
+      ...second,
+      state: 'available',
+      requires: [],
+      firstTab: 'reading',
+      savedTab: 'reading',
+      presence: { ...second.presence, reading: true },
+    };
+    stubApi(signedInWithTopics(me, topics));
+    renderApp(`/classes/${CLASS_A}/topics`);
+    expect(await screen.findByRole('link', { name: 'Sampling' })).toHaveAttribute(
+      'href',
+      `/classes/${CLASS_A}/topics/${T_SAMPLING}/tests`,
+    );
+    expect(screen.getByRole('link', { name: 'Resume' })).toHaveAttribute(
+      'href',
+      `/classes/${CLASS_A}/topics/${T_ESTIMATION}/reading`,
+    );
+  });
+
+  it('A02 keeps the loaded syllabus when a background refetch fails', async () => {
+    let fail = false;
+    stubApi((url, init) =>
+      fail && url.endsWith('/topics')
+        ? { status: 500, body: { error: 'boom' } }
+        : signedInWithTopics(me)(url, init),
+    );
+    const { queryClient } = renderApp(`/classes/${CLASS_A}/topics`);
+    await screen.findByRole('table');
+    fail = true;
+    await queryClient.invalidateQueries({ queryKey: ['GET', '/api/classes/:classId/topics'] });
+    expect(screen.getByRole('table')).toBeVisible();
+    expect(screen.queryByRole('alert')).toBeNull();
+  });
+
+  it('A02 an instructor sees the class syllabus without a personal reviewed count', async () => {
+    stubApi(signedInWithTopics(makeMe({ classes: [instructorIn(CLASS_A, 'Autumn 2026 A')] })));
+    renderApp(`/classes/${CLASS_A}/topics`);
+    await screen.findByRole('table');
+    expect(screen.queryByText(/topics reviewed/)).toBeNull();
   });
 
   it('A02 labels each presence marker, the legend and the reviewed count in text', async () => {
@@ -146,6 +196,7 @@ describe('topic heading and neighbours', () => {
       state: 'available',
       requires: [],
       firstTab: 'reading',
+      savedTab: null,
       presence: { ...second.presence, reading: true },
     };
     return topics;

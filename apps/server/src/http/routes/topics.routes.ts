@@ -21,6 +21,7 @@ export default function topicRoutes(app: FastifyInstance): void {
         estimatedMinutes: t.estimatedMinutes,
         presence: t.presence,
         firstTab: t.firstTab,
+        savedTab: t.savedTab,
         state: t.availability.state,
         availableAt: t.availability.availableAt?.toISOString() ?? null,
         requires: t.availability.requires,

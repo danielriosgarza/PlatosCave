@@ -35,7 +35,7 @@ export function TopicIndex({ classId }: { classId: string }) {
         <p className={page.intro} role="status">
           Loading topics
         </p>
-      ) : query.isError || !data ? (
+      ) : !data ? (
         <div className={page.feedback} role="alert">
           <p>The topic list could not be loaded.</p>
           <button type="button" className={page.outline} onClick={() => void query.refetch()}>
@@ -45,13 +45,21 @@ export function TopicIndex({ classId }: { classId: string }) {
       ) : data.topics.length === 0 ? (
         <p className={page.intro}>No topics have been published for this class yet.</p>
       ) : (
-        <Syllabus classId={classId} data={data} />
+        <Syllabus classId={classId} data={data} showReviewed={context.role === 'student'} />
       )}
     </main>
   );
 }
 
-function Syllabus({ classId, data }: { classId: string; data: ClassTopics }) {
+function Syllabus({
+  classId,
+  data,
+  showReviewed,
+}: {
+  classId: string;
+  data: ClassTopics;
+  showReviewed: boolean;
+}) {
   return (
     <>
       <section className={styles.wrap} aria-label="Topic syllabus">
@@ -82,9 +90,11 @@ function Syllabus({ classId, data }: { classId: string; data: ClassTopics }) {
             {tab.letter} · {tab.label}
           </span>
         ))}
-        <span className={styles.reviewed}>
-          {data.reviewed.count} of {data.reviewed.total} topics reviewed
-        </span>
+        {showReviewed ? (
+          <span className={styles.reviewed}>
+            {data.reviewed.count} of {data.reviewed.total} topics reviewed
+          </span>
+        ) : null}
       </div>
     </>
   );
@@ -102,7 +112,7 @@ function Row({
   const open = isOpen(topic);
   const current = open && resume?.topicId === topic.topicId;
   const reason = lockReason(topic);
-  const params = { classId, topicId: topic.topicId, tab: tabFor(topic, resume) };
+  const params = { classId, topicId: topic.topicId, tab: tabFor(topic) };
   return (
     <tr className={current ? styles.current : open ? undefined : styles.closed}>
       <td>{topicNumber(topic)}</td>

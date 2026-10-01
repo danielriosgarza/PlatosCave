@@ -23,11 +23,8 @@ export const topicNumber = (topic: ClassTopic) => String(topic.number).padStart(
 export const isOpen = (topic: ClassTopic) =>
   topic.state === 'available' || topic.state === 'complete';
 
-/** Tab a link to this topic opens: the saved one on the current row, else the first-visit rule. */
-export function tabFor(topic: ClassTopic, resume: ClassTopics['resume']): TopicTab {
-  if (resume?.saved && resume.topicId === topic.topicId) return resume.tab;
-  return topic.firstTab ?? 'slides';
-}
+/** Tab a link to this topic opens: its saved tab, else the first-visit rule (§4). */
+export const tabFor = (topic: ClassTopic): TopicTab => topic.savedTab ?? topic.firstTab ?? 'slides';
 
 /** Release time in the viewer's own time zone, named so the zone is never implicit (§14). */
 export function formatOpens(iso: string): string {

@@ -27,6 +27,8 @@ export const classTopic = z.object({
   }),
   /** First-visit tab (§4): Slides when present, else the first populated tab. */
   firstTab: topicTab.nullable(),
+  /** Tab of the caller's latest position in this topic; opening the topic goes there (§4). */
+  savedTab: topicTab.nullable(),
   state: topicState,
   /** When a `scheduled` topic opens. */
   availableAt: z.iso.datetime({ offset: true }).nullable(),

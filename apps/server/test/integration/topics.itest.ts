@@ -55,6 +55,7 @@ interface TopicsView {
     objective: string;
     presence: Record<string, boolean>;
     firstTab: string | null;
+    savedTab: string | null;
     state: string;
     availableAt: string | null;
     requires: { topicId: string; title: string }[];
@@ -159,8 +160,45 @@ describe('topic index', () => {
     });
     const { body } = await get('sam', ids.classA);
     expect(body.resume).toEqual({ topicId: ids.sampling, tab: 'tests', saved: true });
+    expect(body.topics.map((t) => t.savedTab)).toEqual(['tests', null]);
     // Another student's position never leaks into this one's.
     expect((await get('priya', ids.classB)).body.resume?.saved).toBe(false);
+  });
+});
+
+describe('saved tabs per topic', () => {
+  test('A03 a studied topic keeps its own saved tab after the student moves to another topic', async () => {
+    // Bea studies Sampling → Tests, then Sampling → Reading is older: the latest wins per topic.
+    const { db } = testDb;
+    const earlier = new Date('2026-10-01T08:00:00Z');
+    const later = new Date('2026-10-01T08:30:00Z');
+    await db.insert(studyPositions).values([
+      {
+        userId: ids.bea,
+        classId: ids.classB,
+        resourceRevisionId: ids.samplingReadingV1,
+        tab: 'reading',
+        position: {},
+        updatedAt: earlier,
+      },
+      {
+        userId: ids.bea,
+        classId: ids.classB,
+        resourceRevisionId: ids.samplingQuizV1,
+        tab: 'tests',
+        position: {},
+        updatedAt: later,
+      },
+    ]);
+    const { body } = await get('bea', ids.classB);
+    expect(body.topics[0]?.savedTab).toBe('tests');
+    expect(body.resume).toEqual({ topicId: ids.sampling, tab: 'tests', saved: true });
+    // A locked topic never reports a saved tab, and nobody else's positions leak.
+    expect(body.topics[1]?.savedTab).toBeNull();
+    expect((await get('marcus', ids.classB)).body.topics.map((t) => t.savedTab)).toEqual([
+      null,
+      null,
+    ]);
   });
 });
 

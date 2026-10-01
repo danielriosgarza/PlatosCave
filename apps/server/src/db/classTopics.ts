@@ -29,6 +29,8 @@ export interface ClassTopic {
   estimatedMinutes: number | null;
   presence: Record<Tab, boolean>;
   firstTab: Tab | null;
+  /** Tab of the caller's latest position in this topic that they can still open (§4). */
+  savedTab: Tab | null;
   availability: TopicAvailability;
 }
 
@@ -128,6 +130,7 @@ export async function loadClassTopics(db: Db, scope: ClassScope, now: Date): Pro
       estimatedMinutes: t.estimatedMinutes,
       presence,
       firstTab: firstTab(presence),
+      savedTab: null,
       availability: found,
     };
   });
@@ -135,13 +138,14 @@ export async function loadClassTopics(db: Db, scope: ClassScope, now: Date): Pro
   const opens = (t: ClassTopic) =>
     t.availability.state === 'available' || t.availability.state === 'complete';
   const reviewedCount = topics.filter((t) => t.availability.state === 'complete').length;
-  return {
-    ...base,
-    release,
+  const resume = await applySavedPositions(
+    db,
+    scope,
     topics,
-    resume: await resumeLocation(db, scope, topics, opens, revisionTopics(resourceRows, topicRows)),
-    reviewedCount,
-  };
+    opens,
+    revisionTopics(resourceRows, topicRows),
+  );
+  return { ...base, release, topics, resume, reviewedCount };
 }
 
 /** Release topic and tab of each pinned revision, to place a saved study position. */
@@ -159,10 +163,11 @@ function revisionTopics(
 }
 
 /**
- * Where Resume leads: the most recently studied position that still lands on an open topic of
- * the adopted release, else the first open topic that has material (§4).
+ * Places the caller's saved study positions (§4): each open topic gets the tab of its latest
+ * position that is still openable (`savedTab`, mutated in place), and Resume leads to the most
+ * recent such position, else to the first open topic that has material.
  */
-async function resumeLocation(
+async function applySavedPositions(
   db: Db,
   scope: ClassScope,
   topics: ClassTopic[],
@@ -175,13 +180,15 @@ async function resumeLocation(
     .from(studyPositions)
     .where(and(forClass(scope, studyPositions), eq(studyPositions.userId, scope.user.id)))
     .orderBy(desc(studyPositions.updatedAt));
+  let resume: ClassTopics['resume'] = null;
   for (const { revisionId } of saved) {
     const place = placeOf.get(revisionId);
     const topic = place && open.get(place.topicId);
-    if (place && topic && (scope.role !== 'student' || topic.presence[place.tab])) {
-      return { topicId: place.topicId, tab: place.tab, saved: true };
-    }
+    if (!place || !topic?.presence[place.tab] || topic.savedTab) continue;
+    topic.savedTab = place.tab;
+    resume ??= { topicId: place.topicId, tab: place.tab, saved: true };
   }
+  if (resume) return resume;
   const first = topics.find((t) => opens(t) && t.firstTab);
   return first?.firstTab ? { topicId: first.topicId, tab: first.firstTab, saved: false } : null;
 }

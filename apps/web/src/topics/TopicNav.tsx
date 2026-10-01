@@ -25,7 +25,7 @@ export function TopicNav({ classId, topicId }: { classId: string; topicId: strin
     return (
       <Link
         to="/classes/$classId/topics/$topicId/$tab"
-        params={{ classId, topicId: topic.topicId, tab: tabFor(topic, data.resume) }}
+        params={{ classId, topicId: topic.topicId, tab: tabFor(topic) }}
       >
         {label(topic)}
       </Link>
