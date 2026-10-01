@@ -24,7 +24,20 @@ export async function readAnotherClass(deps: { db: Db }, classId: string) {
   await deps.db?.select().from(users); // raw-query
   await deps.db.$client.query('delete from class_memberships'); // raw-query
   client.createDb('postgres://localhost/x'); // raw-query
+  // biome-ignore lint/complexity/useLiteralKeys: the fixture exercises computed member access
+  await deps.db['select']().from(users); // raw-query
   return rows;
+}
+
+export function viaAccessor(deps: { db?: Db }) {
+  const db = () => {
+    if (!deps.db) throw new Error('no database');
+    return deps.db;
+  };
+  return [
+    db().select().from(users), // raw-query
+    db().query.users.findMany(), // raw-query
+  ];
 }
 
 export function notTheDatabase(deps: { ledger: { db: { withdraw(): number } } }) {

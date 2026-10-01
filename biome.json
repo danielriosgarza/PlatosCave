@@ -18,26 +18,6 @@
   },
   "linter": { "enabled": true, "rules": { "recommended": true } },
   "assist": { "actions": { "source": { "organizeImports": "on" } } },
-  "plugins": [
-    {
-      "path": "./apps/server/lint/raw-db-query.grit",
-      "includes": [
-        "**/apps/server/src/**",
-        "!**/apps/server/src/db/**",
-        "!**/apps/server/src/auth/accounts.ts",
-        "!**/apps/server/src/auth/email-provider.ts",
-        "!**/apps/server/src/auth/scope.ts",
-        "!**/apps/server/src/auth/sessions.ts",
-        "!**/apps/server/src/content/adoption.ts",
-        "!**/apps/server/src/content/drafts.ts",
-        "!**/apps/server/src/content/media.ts",
-        "!**/apps/server/src/content/releases.ts",
-        "!**/apps/server/src/storage/objects.ts",
-        "!**/apps/server/src/main.ts",
-        "!**/*.test.ts"
-      ]
-    }
-  ],
   "overrides": [
     {
       "includes": [
@@ -55,6 +35,7 @@
         "!apps/server/src/main.ts",
         "!**/*.test.ts"
       ],
+      "plugins": ["./apps/server/lint/raw-db-query.grit"],
       "linter": {
         "rules": {
           "style": {
@@ -88,7 +69,7 @@
                       "**/db/reset.ts",
                       "**/db/schema/**"
                     ],
-                    "message": "Tables and database administration are for data-access modules only. Feature modules reach the database only through data-access functions (db/, or the data-access files listed in biome.json) that take a branded ClassScope/CourseScope (ADR-0002, Scoped tables)."
+                    "message": "Tables (including type-only imports) and database administration are for data-access modules only; export row types a feature module needs from a db/ module. Feature modules reach the database only through data-access functions (db/, or the data-access files listed in biome.json) that take a branded ClassScope/CourseScope (ADR-0002, Scoped tables)."
                   },
                   {
                     "group": ["**/db/client", "**/db/client.js", "**/db/client.ts"],
