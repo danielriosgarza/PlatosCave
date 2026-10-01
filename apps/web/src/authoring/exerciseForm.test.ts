@@ -56,6 +56,8 @@ const reference = exerciseV1.parse({
       choices: [
         { id: 'c1', label: 'Average' },
         { id: 'c2', label: 'Middle' },
+        { id: 'c3', label: 'Spread' },
+        { id: 'c4', label: 'Average' },
       ],
       pairs: { p1: 'c1', p2: 'c2' },
       shuffle: true,
@@ -94,6 +96,22 @@ const reference = exerciseV1.parse({
 describe('exercise form', () => {
   it('round-trips every step kind, keeping ids and credit', () => {
     expect(exerciseV1.parse(toContent(toDraft(reference)))).toEqual(reference);
+  });
+
+  it('keeps unpaired matching choices, even one that shares a label with a paired choice', () => {
+    const draft = toDraft(reference);
+    const match = exerciseV1.parse(toContent(draft)).steps.find((s) => s.kind === 'matching');
+    expect(match?.kind === 'matching' && match.choices.map((c) => c.id)).toEqual([
+      'c1',
+      'c2',
+      'c3',
+      'c4',
+    ]);
+  });
+
+  it('says why stored content could not be loaded, and nothing for a new exercise', () => {
+    expect(toDraft({ schema: 'exercise.v1', steps: [] }).loadProblems.length).toBeGreaterThan(0);
+    expect(toDraft(undefined).loadProblems).toEqual([]);
   });
 
   it('a new blank step is not valid until its prompt, options and feedback are written', () => {

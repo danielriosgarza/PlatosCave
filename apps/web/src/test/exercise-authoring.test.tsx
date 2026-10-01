@@ -143,7 +143,7 @@ describe('exercise editor', () => {
     expect(await screen.findByText(/Draft saved at/)).toBeInTheDocument();
   });
 
-  it('lists what is wrong and does not save an off-grid comparison value', async () => {
+  it('lists what is wrong and sends no steps, saying the last saved version stays current', async () => {
     const { user, patched } = await editor();
     const compare = screen.getByLabelText(/Step 1 values to compare/);
     await user.clear(compare);
@@ -153,10 +153,22 @@ describe('exercise editor', () => {
       within(problems).getByText(/Step 1 “Inspect”: compare values must be/),
     ).toBeInTheDocument();
     expect(
-      await screen.findByText(/Not saved yet: Step 1 “Inspect”/, undefined, { timeout: 3000 }),
+      within(problems).getByText(/not saved yet; publishing would release the last saved version/),
     ).toBeInTheDocument();
-    expect(patched).toHaveLength(0);
-    expect(screen.queryByText(/Draft saved at/)).not.toBeInTheDocument();
+    await waitFor(() => expect(patched).toHaveLength(1), { timeout: 3000 });
+    expect(patched[0]).not.toHaveProperty('content');
+  });
+
+  it('still saves title and archive while the steps are invalid', async () => {
+    const { user, patched } = await editor();
+    const compare = screen.getByLabelText(/Step 1 values to compare/);
+    await user.clear(compare);
+    await user.type(compare, '25, 102');
+    await user.click(screen.getByRole('button', { name: 'Archive this exercise' }));
+    await waitFor(() => expect(patched.at(-1)).toMatchObject({ archived: true }), {
+      timeout: 3000,
+    });
+    expect(patched.at(-1)).not.toHaveProperty('content');
   });
 
   it('adds a step, which keeps the exercise unpublishable until it is filled in', async () => {

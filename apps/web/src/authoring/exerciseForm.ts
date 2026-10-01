@@ -33,6 +33,8 @@ export interface Row {
   extra: string;
   /** Marks the correct option of a choice step. */
   correct: boolean;
+  /** Matching: id of the choice this prompt is paired with, kept so saves do not renumber it. */
+  choiceId?: string;
 }
 
 export interface DraftStep {
@@ -55,6 +57,8 @@ export interface DraftStep {
   unit: string;
   // choice, ordering, matching, simulation observations
   rows: Row[];
+  /** Matching: choices no prompt is paired with. */
+  distractors: Row[];
   shuffle: boolean;
   // simulation
   controlName: string;
@@ -74,6 +78,8 @@ export type HintPolicy = (typeof hintPolicies)[number];
 
 export interface DraftExercise {
   steps: DraftStep[];
+  /** Why the stored definition could not be loaded; empty when it loaded or there is none. */
+  loadProblems: string[];
   /** Empty for ungraded practice. */
   points: string;
   hintPolicy: HintPolicy;
@@ -113,6 +119,7 @@ export function blankStep(kind: StepKind, taken: string[]): DraftStep {
     tolerance: '0',
     unit: '',
     rows: [],
+    distractors: [],
     shuffle: false,
     controlName: 'value',
     controlLabel: '',
@@ -138,6 +145,7 @@ export function blankStep(kind: StepKind, taken: string[]): DraftStep {
 }
 
 export const blankExercise = (): DraftExercise => ({
+  loadProblems: [],
   steps: [blankStep('single_choice', [])],
   points: '',
   hintPolicy: 'free',
@@ -146,12 +154,19 @@ export const blankExercise = (): DraftExercise => ({
 const rowsOf = (list: { id: string; label: string }[], extra = (_: string) => ''): Row[] =>
   list.map((o) => ({ id: o.id, label: o.label, extra: extra(o.id), correct: false }));
 
-/** Loads stored content into the form; content that is not `exercise.v1` starts blank. */
+/**
+ * Loads stored content into the form. Content that is not valid `exercise.v1` starts blank,
+ * with `loadProblems` saying why, so the author sees that saving replaces a definition.
+ */
 export function toDraft(content: unknown): DraftExercise {
   const parsed = exerciseV1.safeParse(content);
-  if (!parsed.success) return blankExercise();
+  if (!parsed.success) {
+    const problems = content === undefined || content === null ? [] : exerciseProblems(content);
+    return { ...blankExercise(), loadProblems: problems };
+  }
   const { steps, credit } = parsed.data;
   return {
+    loadProblems: [],
     points: credit ? String(credit.points) : '',
     hintPolicy: credit?.hintPolicy ?? 'free',
     steps: steps.map((step) => {
@@ -214,7 +229,11 @@ export function toDraft(content: unknown): DraftExercise {
               label: p.label,
               extra: choices.get(step.pairs[p.id] ?? '') ?? '',
               correct: false,
+              choiceId: step.pairs[p.id] ?? '',
             })),
+            distractors: rowsOf(
+              step.choices.filter((c) => !Object.values(step.pairs).includes(c.id)),
+            ),
           };
         }
         case 'text':
@@ -296,18 +315,29 @@ function stepContent(s: DraftStep): unknown {
         feedback: right,
       };
     case 'matching': {
-      // Each row is a prompt with its own choice; two rows naming one choice share it.
+      // Paired choices keep their stored ids; a prompt whose choice label was edited apart
+      // from another prompt sharing it gets its own choice. Distractors follow, unpaired.
+      const reserved = new Set([
+        ...s.rows.map((r) => r.choiceId ?? ''),
+        ...s.distractors.map((d) => d.id),
+      ]);
       const choices: { id: string; label: string }[] = [];
       const pairs: Record<string, string> = {};
       for (const r of s.rows) {
         const label = text(r.extra);
-        let choice = choices.find((c) => c.label === label);
+        let choice = choices.find((c) => c.id === r.choiceId && c.label === label);
         if (!choice) {
-          choice = { id: `c${choices.length + 1}`, label };
+          let id = r.choiceId ?? '';
+          if (!id || choices.some((c) => c.id === id)) {
+            id = nextId('c', [...reserved, ...choices.map((c) => c.id)]);
+            reserved.add(id);
+          }
+          choice = { id, label };
           choices.push(choice);
         }
         pairs[r.id] = choice.id;
       }
+      choices.push(...labelled(s.distractors));
       return {
         ...common,
         prompts: labelled(s.rows),

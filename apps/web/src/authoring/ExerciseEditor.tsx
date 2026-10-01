@@ -5,7 +5,7 @@ import type { z } from 'zod';
 import { call } from '../api/client';
 import styles from '../components/Page.module.css';
 import local from './Authoring.module.css';
-import { LocalProblem, useAutosave } from './autosave';
+import { useAutosave } from './autosave';
 import { ConflictView } from './ConflictView';
 import {
   blankStep,
@@ -78,23 +78,26 @@ function ExerciseFields({
   server: Full;
   onSaved: () => void;
 }) {
+  const [hasHead, setHasHead] = useState(server.head !== null);
   const { values, change, state, retry, takeTheirs, keepMine } = useAutosave({
     server,
     toValues,
-    save: (v, expectedRevision) => {
-      // A half-finished form stays on screen; only a valid definition becomes a revision.
-      const problems = problemsOf(v.exercise);
-      if (problems.length) throw new LocalProblem(`Not saved yet: ${problems[0]}`);
-      return call(updateResource, {
+    save: async (v, expectedRevision) => {
+      // Title, visibility and archive are saved whatever the steps look like; the steps become
+      // a revision only once the whole definition is valid, so a half-finished form stays here.
+      const valid = problemsOf(v.exercise).length === 0;
+      const saved = await call(updateResource, {
         params: { courseId, resourceId: server.id },
         body: {
           expectedRevision,
           title: v.title.trim() || server.title,
           visibility: v.visibility,
           archived: v.archived,
-          content: toContent(v.exercise) as Record<string, unknown>,
+          ...(valid && { content: toContent(v.exercise) as Record<string, unknown> }),
         },
       });
+      setHasHead(saved.head !== null);
+      return saved;
     },
     onSaved,
   });
@@ -139,9 +142,22 @@ function ExerciseFields({
           onUseTheirs={() => takeTheirs(state.current)}
         />
       ) : null}
+      {exercise.loadProblems.length > 0 ? (
+        <div className={local.hint} role="status" aria-label="Saved definition problems">
+          The saved definition is no longer valid, so this form starts blank. Saving a new
+          definition replaces it; the earlier revision is kept.
+          <ul className={local.issues}>
+            {exercise.loadProblems.map((p) => (
+              <li key={p}>{p}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
       {problems.length > 0 ? (
         <div className={local.hint} role="status" aria-label="Exercise problems">
-          Not valid yet — this exercise cannot be published until these are fixed:
+          {hasHead
+            ? 'These step edits are not saved yet; publishing would release the last saved version. Fix:'
+            : 'This exercise has no content yet and cannot be published. Fix:'}
           <ul className={local.issues}>
             {problems.map((p) => (
               <li key={p}>{p}</li>
@@ -583,6 +599,14 @@ function KindFields({
             rows={step.rows}
             extraLabel="matching choice"
             onChange={(rows) => set({ rows })}
+          />
+          <p className={local.hint}>Choices that match no prompt (optional).</p>
+          <RowList
+            n={n}
+            noun="extra choice"
+            rows={step.distractors}
+            minRows={0}
+            onChange={(distractors) => set({ distractors })}
           />
           {shuffle}
           {feedback([
