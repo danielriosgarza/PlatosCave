@@ -1,0 +1,253 @@
+/* Ported from the wireframe: .pc-toolbar, .pc-stage, .pc-reading, .pc-body, .pc-figure. */
+.toolbar {
+  padding: 6px 40px;
+  border-bottom: 1px solid var(--pc-rule);
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  background: var(--pc-sheet);
+}
+.panel {
+  padding: 0 0 32px;
+}
+.small {
+  font: var(--pc-text-label);
+}
+.picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.picker select {
+  border: 1px solid var(--pc-muted);
+  background: var(--pc-sheet);
+  border-radius: var(--pc-radius-control);
+  padding: 4px 8px;
+  min-height: 32px;
+  max-width: 100%;
+}
+.stage {
+  padding: 32px 40px 64px;
+  min-height: 550px;
+}
+.loading,
+.empty {
+  color: var(--pc-muted);
+  max-width: 700px;
+  margin: 0 auto;
+}
+.empty {
+  font: var(--pc-text-subsection);
+  color: var(--pc-ink);
+  margin-bottom: 12px;
+}
+.notice {
+  max-width: 700px;
+  margin: 0 auto;
+}
+.button {
+  font: inherit;
+  cursor: pointer;
+  min-height: 32px;
+  padding: 4px 12px;
+  border: 1px solid var(--pc-muted);
+  background: var(--pc-sheet);
+  border-radius: var(--pc-radius-control);
+}
+.button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* Native reading: the measure is 720 px; prose uses the reading size. */
+.native {
+  max-width: var(--pc-reading-width);
+  margin: 0 auto;
+  min-width: 0;
+  font-size: var(--pc-reading-size);
+  line-height: 1.65;
+}
+.native h1,
+.native h2,
+.native h3,
+.native h4 {
+  margin: 26px 0 10px;
+}
+.native h1:first-child,
+.native h2:first-child {
+  margin-top: 0;
+}
+.native h1 {
+  font: var(--pc-text-title);
+  letter-spacing: var(--pc-tracking-title);
+}
+.native h2 {
+  font: var(--pc-text-section);
+  letter-spacing: var(--pc-tracking-title);
+}
+.native h3 {
+  font-size: 21px;
+  letter-spacing: var(--pc-tracking-subsection);
+}
+.native p,
+.native li,
+.native dd,
+.native dt {
+  margin-top: 18px;
+}
+.native li {
+  margin-top: 6px;
+}
+.native a {
+  color: var(--pc-ink);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.native img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+.native figure {
+  margin: 22px 0 0;
+  border-top: 1px solid var(--pc-rule);
+  padding-top: 16px;
+}
+.native figcaption {
+  font: var(--pc-text-label);
+  color: var(--pc-muted);
+  margin-top: 8px;
+}
+.native blockquote {
+  margin: 18px 0 0;
+  padding-left: 16px;
+  border-left: 2px solid var(--pc-rule);
+  color: var(--pc-muted);
+}
+.native pre {
+  margin: 18px 0 0;
+  padding: 14px 16px;
+  background: var(--pc-secondary);
+  border: 1px solid var(--pc-rule);
+  border-radius: var(--pc-radius-control);
+  overflow-x: auto;
+  font: var(--pc-text-code);
+}
+.native code {
+  font-family: var(--pc-font-mono);
+  font-size: 0.9em;
+}
+.native pre code {
+  font-size: inherit;
+}
+.native table {
+  display: block;
+  overflow-x: auto;
+  border-collapse: collapse;
+  margin-top: 18px;
+  font-size: 15px;
+  line-height: 1.5;
+}
+.native th,
+.native td {
+  border-bottom: 1px solid var(--pc-rule);
+  padding: 8px 12px;
+  text-align: left;
+}
+.native th {
+  background: var(--pc-secondary);
+}
+/* Equations are MathML only (§8): the serif exception, a display block scrolls rather than clips. */
+.native math {
+  font-family: var(--pc-font-math);
+}
+.native :global(.math-display) {
+  margin: 18px 0 0;
+  overflow-x: auto;
+  text-align: center;
+}
+/* Code stays monochrome (DESIGN.md): emphasis by weight and style, never by a second colour. */
+.native :global(.hljs-keyword),
+.native :global(.hljs-built_in),
+.native :global(.hljs-title) {
+  font-weight: 600;
+}
+.native :global(.hljs-comment),
+.native :global(.hljs-quote) {
+  color: var(--pc-muted);
+  font-style: italic;
+}
+.native :global(.hljs-string),
+.native :global(.hljs-number),
+.native :global(.hljs-literal) {
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+}
+
+/* PDF reading: one page at a time, fitted to the stage. */
+.pdf {
+  max-width: 960px;
+  margin: 0 auto;
+  min-width: 0;
+}
+.pageControls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+.pageCount {
+  font: var(--pc-text-ui);
+  min-width: 96px;
+  text-align: center;
+}
+.sheet {
+  position: relative;
+  margin: 0 auto;
+  border: 1px solid var(--pc-rule);
+  background: #fff;
+  max-width: 100%;
+}
+.sheet canvas {
+  display: block;
+}
+.sheet[hidden] {
+  display: none;
+}
+
+@media (max-width: 1199px) {
+  .toolbar {
+    padding-left: 32px;
+    padding-right: 32px;
+  }
+  .stage {
+    padding: 28px 32px 56px;
+  }
+}
+@media (max-width: 800px) {
+  .toolbar {
+    padding-left: 24px;
+    padding-right: 24px;
+  }
+  .stage {
+    padding: 24px 24px 48px;
+  }
+}
+@media (max-width: 540px) {
+  .toolbar {
+    padding: 6px 16px;
+  }
+  .stage {
+    padding: 24px 16px 40px;
+  }
+  .native {
+    font-size: 17px;
+  }
+  .native pre {
+    font-size: 13px;
+  }
+}
