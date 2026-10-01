@@ -1,15 +1,16 @@
 import { count, eq } from 'drizzle-orm';
 import type { PgBoss } from 'pg-boss';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
-import { EmailLinkProvider, LINK_TTL_MS, LINKS_PER_EMAIL } from '../../src/auth/email-provider';
-import { signinTokens } from '../../src/db/schema';
-import { createBoss } from '../../src/jobs/boss';
 import {
-  PURGE_SIGNIN_TOKENS,
+  EmailLinkProvider,
+  LINK_TTL_MS,
+  LINKS_PER_EMAIL,
   purgeSigninTokens,
   SIGNIN_TOKEN_RETENTION_MS,
-  workMaintenance,
-} from '../../src/jobs/maintenance';
+} from '../../src/auth/email-provider';
+import { signinTokens } from '../../src/db/schema';
+import { createBoss } from '../../src/jobs/boss';
+import { PURGE_SIGNIN_TOKENS, workMaintenance } from '../../src/jobs/maintenance';
 import { createTestDatabase, type TestDatabase } from './db';
 
 const now = new Date('2026-10-01T12:00:00Z');
@@ -80,9 +81,27 @@ describe('sign-in link purge', () => {
     expect(sent).toHaveLength(LINKS_PER_EMAIL);
   });
 
-  test('the worker schedules the purge on pg-boss', async () => {
+  test('the worker schedules the purge and runs it from the queue', async () => {
     await workMaintenance(boss, testDb.db, { info() {}, error() {} });
     const schedules = await boss.getSchedules();
     expect(schedules.map((s) => s.name)).toContain(PURGE_SIGNIN_TOKENS);
+
+    // Real clock: the handler purges against `new Date()`.
+    const stale = new Date(Date.now() - SIGNIN_TOKEN_RETENTION_MS - 3_600_000);
+    await testDb.db.insert(signinTokens).values(row('queue@example.org', 'queue-old', stale));
+    const id = await boss.send(PURGE_SIGNIN_TOKENS);
+    if (!id) throw new Error('pg-boss did not accept the purge job');
+    let job = await boss.getJobById(PURGE_SIGNIN_TOKENS, id);
+    for (let i = 0; i < 60 && job?.state !== 'completed' && job?.state !== 'failed'; i++) {
+      await new Promise((r) => setTimeout(r, 250));
+      job = await boss.getJobById(PURGE_SIGNIN_TOKENS, id);
+    }
+    expect(job?.state).toBe('completed');
+    expect(job?.output).toMatchObject({ purged: 1 });
+    const left = await testDb.db
+      .select({ h: signinTokens.tokenHash })
+      .from(signinTokens)
+      .where(eq(signinTokens.email, 'queue@example.org'));
+    expect(left).toEqual([]);
   });
 });

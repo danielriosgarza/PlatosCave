@@ -381,7 +381,7 @@ Tracks: **slides** (P2-01 → P2-02 → P2-03, P2-09), **annotations** (P2-04 �
 - Spec: §7. Scenarios: A24. Depends on: P2-02, P2-06. Model: sonnet. Security: no. Size: S.
 
 ### P2-10 · Exercise definitions and attempt state machine
-- Scope: zod schema `exercise.v1` (steps: numeric with tolerance, single/multiple choice, ordering/matching, text, simulation control with declared observations, code task placeholder), stored in resource revisions; tables `exercise_attempts`, `exercise_events` (check, hint_shown, solution_revealed, step_completed, restart) append-only; API check/hint/solution/complete/restart with server-side validation, seeded randomness, completion state independent|with_hints|solution_shown, empty explanation rejected. Its migration also adds the index `signin_tokens_email_created_idx` on `signin_tokens (email, created_at)` and the matching `index()` in `db/schema/users.ts` (carried from P1-02a; the purge job filters on `created_at`, so this one index serves both it and the per-address cap). If P2-10 has already merged, the next chain item (P2-14) carries it.
+- Scope: zod schema `exercise.v1` (steps: numeric with tolerance, single/multiple choice, ordering/matching, text, simulation control with declared observations, code task placeholder), stored in resource revisions; tables `exercise_attempts`, `exercise_events` (check, hint_shown, solution_revealed, step_completed, restart) append-only; API check/hint/solution/complete/restart with server-side validation, seeded randomness, completion state independent|with_hints|solution_shown, empty explanation rejected.
 - Spec: §9, §13. Scenarios: A08 (API), A23. Depends on: P2-04 (migration chain). Model: opus. Security: no. Size: M.
 
 ### P2-11 · Exercise UI
@@ -397,7 +397,7 @@ Tracks: **slides** (P2-01 → P2-02 → P2-03, P2-09), **annotations** (P2-04 �
 - Spec: §10.1, §10.7. Scenarios: A09. Depends on: P1-06, P1-12. Model: opus. Security: yes. Size: M.
 
 ### P2-14 · Colab route and notebook upload submissions
-- Scope: Open in Colab external launch with working-copy instructions and optional launch event, table `notebook_submissions` (versioned, immutable snapshot object, source revision, environment metadata), upload flow with size/type validation and receipt, instructor listing.
+- Scope: Open in Colab external launch with working-copy instructions and optional launch event, table `notebook_submissions` (versioned, immutable snapshot object, source revision, environment metadata), upload flow with size/type validation and receipt, instructor listing. Its migration also adds the index `signin_tokens_email_created_idx` on `signin_tokens (email, created_at)` and the matching `index()` in `db/schema/users.ts` (carried from P1-02a; it keeps the per-address link cap count cheap; the hourly purge job bounds the table to about a day of links).
 - Spec: §10.1, §10.5, §10.7. Scenarios: A10. Depends on: P2-13, P2-10 (migration chain). Model: sonnet. Security: yes. Size: M.
 
 ### P2-15 · Shiny embed and result adapter boundary
