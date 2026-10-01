@@ -43,9 +43,25 @@ export function viaAccessor(deps: { db?: Db }) {
   ];
 }
 
-export function notTheDatabase(deps: { ledger: { db: { withdraw(): number } } }) {
+export function wrappedReceivers(deps: { db: Db }) {
+  const { select } = deps.db; // raw-query
+  const { createDb: open } = client; // raw-query
+  return [
+    (deps.db as Db).select(), // raw-query
+    (deps.db satisfies Db).execute(sql`select 1`), // raw-query
+    // biome-ignore lint/complexity/useLiteralKeys: the fixture exercises a computed receiver
+    deps['db'].select(), // raw-query
+    deps.db._.session, // raw-query
+    select,
+    open,
+  ];
+}
+
+// Must not fire: other names on an object called `db`, and destructuring the deps object.
+export function notTheDatabase(deps: { db: Db; ledger: { db: { withdraw(): number } } }) {
+  const { db } = deps;
   const cache = { db: new Map<string, number>() };
-  // Known false positive: any object stored under the name `db` is treated as the handle.
-  cache.db.delete('key'); // raw-query
-  return deps.ledger.db.withdraw();
+  // Documented limit, asserted neither way: any object stored under `db` is treated as the handle.
+  cache.db.delete('key'); // known-false-positive
+  return [deps.ledger.db.withdraw(), db];
 }
