@@ -2,8 +2,14 @@ import type { Scope } from '@parallax/contracts';
 import { and, eq } from 'drizzle-orm';
 import type { FastifyRequest } from 'fastify';
 import type { Db } from '../db/client';
-import { classes, classMemberships, courseMemberships, courses } from '../db/schema';
-import { type Actor, findPrincipal, type Principal, readSessionToken } from './sessions';
+import { classes, classMemberships, courseMemberships, courses, users } from '../db/schema';
+import {
+  type Actor,
+  actorColumns,
+  findPrincipal,
+  type Principal,
+  readSessionToken,
+} from './sessions';
 
 /** §3: sensitive membership changes need an authentication no older than this. */
 export const RECENT_AUTH_MS = 15 * 60_000;
@@ -131,8 +137,28 @@ export async function resolveScope(
 type ClassRule = Extract<Scope, { kind: 'class' }>;
 type CourseRule = Extract<Scope, { kind: 'course' }>;
 
+/**
+ * Resolves the class or course scope of a person acting without a session (a background job,
+ * ADR-0002): loads the actor itself, so a scope comes only from a session token or an actor id.
+ */
+export async function resolveActorScope(
+  db: Db,
+  actorId: string,
+  requireRecentAuth: () => void,
+  rule: ClassRule | CourseRule,
+  targetId: string,
+): Promise<Resolution> {
+  if (!UUID.test(actorId)) return deny(404, 'actor does not exist');
+  const [user] = await db.select(actorColumns).from(users).where(eq(users.id, actorId));
+  if (!user) return deny(404, 'actor does not exist');
+  const base = { user, requireRecentAuth };
+  return rule.kind === 'class'
+    ? resolveClass(db, base, rule, targetId)
+    : resolveCourse(db, base, rule, targetId);
+}
+
 /** A principal's membership in one class, checked against a route's or job's rule. */
-export async function resolveClass(
+async function resolveClass(
   db: Db,
   base: ScopeBase,
   scope: ClassRule,
@@ -209,7 +235,7 @@ export async function resolveClass(
 }
 
 /** A principal's grants on one course, checked against a route's or job's rule. */
-export async function resolveCourse(
+async function resolveCourse(
   db: Db,
   base: ScopeBase,
   scope: CourseRule,

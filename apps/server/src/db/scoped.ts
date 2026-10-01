@@ -10,6 +10,8 @@ import {
   classReleaseHistory,
   courseMemberships,
   courseReleases,
+  exerciseAttempts,
+  exerciseEvents,
   posts,
   resourceRevisions,
   resources,
@@ -33,6 +35,8 @@ export const classScopedTables: PgTable[] = [
   threads,
   posts,
   annotationPlacements,
+  exerciseAttempts,
+  exerciseEvents,
 ];
 export const courseScopedTables: PgTable[] = [
   classes,

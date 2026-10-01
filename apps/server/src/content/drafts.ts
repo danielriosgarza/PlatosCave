@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { exerciseV1 } from '@parallax/contracts';
 import type * as contracts from '@parallax/contracts/routes/drafts';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import type { z } from 'zod';
@@ -68,6 +69,15 @@ const toResource = (row: ResourceRow, head: RevisionRow | undefined): Resource =
       }
     : null,
 });
+
+/** Why `content` is not valid for a resource of `type`; exercises must be `exercise.v1` (§9). */
+function contentProblem(type: string, content: unknown): string | undefined {
+  if (type !== 'exercise') return undefined;
+  const parsed = exerciseV1.safeParse(content);
+  if (parsed.success) return undefined;
+  const [issue] = parsed.error.issues;
+  return `exercise.v1 ${issue?.path.join('.') ?? ''}: ${issue?.message ?? 'invalid'}`;
+}
 
 /** JSON with object keys sorted, so equal content always hashes equally. */
 function canonical(value: unknown): string {
@@ -251,6 +261,8 @@ export async function createResource(
     if (!(await checkObjectKeys(tx, scope, objectKeys))) {
       return invalid('object keys must name objects stored in this course');
     }
+    const problem = content === undefined ? undefined : contentProblem(input.type, content);
+    if (problem) return invalid(problem);
     const [row] = await tx
       .insert(resources)
       .values({
@@ -328,6 +340,8 @@ export async function updateResource(
       if (nextContent === undefined) {
         return invalid('content is required for the first revision');
       }
+      const problem = content === undefined ? undefined : contentProblem(row.type, content);
+      if (problem) return invalid(problem);
       const payload: RevisionPayload = {
         content: nextContent,
         objectKeys: objectKeys ?? head?.objectKeys ?? [],
