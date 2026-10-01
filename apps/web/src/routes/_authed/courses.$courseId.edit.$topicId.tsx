@@ -7,6 +7,7 @@ import { ResourceSection } from '../../authoring/ResourceSection';
 import { TopicForm } from '../../authoring/TopicForm';
 import styles from '../../components/Page.module.css';
 import { Unavailable } from '../../components/Unavailable';
+import { PreviewButton } from '../../preview/PreviewButton';
 import { useSession } from '../../session/useSession';
 
 export const Route = createFileRoute('/_authed/courses/$courseId/edit/$topicId')({
@@ -60,6 +61,9 @@ function EditTopic() {
             Topic {topics.filter((t) => !t.archived).findIndex((t) => t.id === topic.id) + 1 || '–'}{' '}
             of the course draft · your permission: {grantLabel(grant)}
           </p>
+          <div style={{ marginTop: 16 }}>
+            <PreviewButton courseId={courseId} topicId={topic.id} resources={topic.resources} />
+          </div>
           <div className={styles.editGrid}>
             <div>
               {/* A new copy from the server remounts the form only when the topic itself changes. */}

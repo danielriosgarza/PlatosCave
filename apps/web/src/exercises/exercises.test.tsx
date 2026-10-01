@@ -44,6 +44,7 @@ function freshAttempt(number: number): Attempt {
     seed: 7,
     completion: null,
     completedAt: null,
+    credit: null,
     startedAt: '2026-10-01T09:00:00Z',
     steps: [
       {

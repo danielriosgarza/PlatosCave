@@ -1,0 +1,44 @@
+import { z } from 'zod';
+import { defineRoute } from '../define';
+
+const example = '00000000-0000-4000-8000-000000000000';
+
+/**
+ * "Preview as student" of the course draft (§3, §12, ADR-0002): the browser's session becomes
+ * the caller's preview principal in one class they teach, which studies the draft snapshot
+ * with that class's student rules. The instructor's own session is kept aside for the exit.
+ * 404 when the class is not one the caller teaches in this course, or the topic is not in its
+ * draft.
+ */
+export const startPreview = defineRoute({
+  method: 'POST',
+  path: '/api/courses/:courseId/preview',
+  scope: { kind: 'course', role: 'editor' },
+  summary: 'Start a student preview of the course draft in a class the caller teaches',
+  params: z.object({ courseId: z.uuid() }),
+  body: z.object({
+    classId: z.uuid(),
+    /** The topic being edited; leaving the preview returns to its editor. */
+    topicId: z.uuid().optional(),
+  }),
+  response: z.object({
+    classId: z.uuid(),
+    preview: z.object({ id: z.uuid(), name: z.string() }),
+    expiresAt: z.iso.datetime({ offset: true }),
+  }),
+  examples: { params: { courseId: example }, body: { classId: example, topicId: example } },
+});
+
+/**
+ * Leaves the draft preview: ends the preview session and restores the instructor's session
+ * when it is still valid (`restored`), else signs the browser out. `returnTo` is the editor the
+ * preview started from. 409 `not_previewing` outside a preview session.
+ */
+export const exitPreview = defineRoute({
+  method: 'POST',
+  path: '/api/preview/exit',
+  scope: { kind: 'user' },
+  summary: 'Leave the draft preview and return to the instructor session and editor',
+  response: z.object({ restored: z.boolean(), returnTo: z.string() }),
+  examples: {},
+});

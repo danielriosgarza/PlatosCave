@@ -154,21 +154,42 @@ function stepProblem(step: ExerciseStep): string | undefined {
         ? undefined
         : 'pairs name no choice';
     case 'simulation': {
-      const { min, max, initial } = step.control;
+      const { min, max, initial, step: size } = step.control;
       const inRange = (v: number) => v >= min && v <= max;
+      // The control only offers min + k·step, so a value off that grid could never be checked.
+      const onGrid = (v: number) =>
+        Math.abs((v - min) / size - Math.round((v - min) / size)) < 1e-9;
       if (min >= max || !inRange(initial)) return 'control range is invalid';
+      if (!onGrid(initial)) return 'initial value must be one the control offers (min + k·step)';
       if (!unique(step.observations)) return 'observation ids must be unique';
-      return step.compare.every(inRange) ? undefined : 'compare values must be in range';
+      if (!step.compare.every(inRange)) return 'compare values must be in range';
+      return step.compare.every(onGrid)
+        ? undefined
+        : 'compare values must be ones the control offers (min + k·step)';
     }
     default:
       return undefined;
   }
 }
 
+/**
+ * How credit treats help when an exercise is assigned for credit (§9). Practice is ungraded
+ * unless `credit` is present; the policy is shown to the student before starting, and Show
+ * solution always completes a step "with help", never silently as independent work.
+ */
+export const hintPolicies = ['free', 'reduces_credit', 'forfeits_credit'] as const;
+export const exerciseCredit = z.object({
+  points: z.number().positive().max(1000),
+  hintPolicy: z.enum(hintPolicies),
+});
+export type ExerciseCredit = z.output<typeof exerciseCredit>;
+
 export const exerciseV1 = z
   .object({
     schema: z.literal('exercise.v1'),
     steps: z.array(exerciseStep).min(1).max(20),
+    /** Absent for ungraded practice. */
+    credit: exerciseCredit.optional(),
   })
   .superRefine((exercise, ctx) => {
     if (new Set(exercise.steps.map((s) => s.id)).size !== exercise.steps.length) {
@@ -180,6 +201,27 @@ export const exerciseV1 = z
     });
   });
 export type ExerciseV1 = z.output<typeof exerciseV1>;
+
+/**
+ * Every problem that stops `content` from being a valid exercise, in author-readable words
+ * ("Step 2 “Inspect” · compare values …"); empty when it is valid.
+ */
+export function exerciseProblems(content: unknown): string[] {
+  const parsed = exerciseV1.safeParse(content);
+  if (parsed.success) return [];
+  const steps = (content as { steps?: { title?: unknown }[] } | null)?.steps;
+  return parsed.error.issues.map((issue) => {
+    const [head, index, ...rest] = issue.path;
+    if (head !== 'steps' || typeof index !== 'number') {
+      return issue.path.length ? `${issue.path.join(' · ')}: ${issue.message}` : issue.message;
+    }
+    const title = steps?.[index]?.title;
+    const where = `Step ${index + 1}${typeof title === 'string' && title ? ` “${title}”` : ''}`;
+    return rest.length
+      ? `${where} · ${rest.join(' · ')}: ${issue.message}`
+      : `${where}: ${issue.message}`;
+  });
+}
 
 /** Responses per step kind; the server parses a check against its step's kind. */
 export const exerciseResponse = {
