@@ -21,6 +21,10 @@ describe('safeDestination', () => {
     '/\t/evil.example',
     '/api/auth/signout',
     '/api',
+    '/..//evil.example',
+    '/.//evil.example',
+    '/a/..//evil.example/x',
+    '/%2e%2e//evil.example',
     `/${'a'.repeat(2048)}`,
   ])('refuses %j', (input) => {
     expect(safeDestination(input)).toBeNull();

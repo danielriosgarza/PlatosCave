@@ -12,6 +12,9 @@ export const LINK_TTL_MS = 15 * 60_000;
 /** Links issued per address per LINK_TTL_MS; further requests are accepted but send nothing. */
 export const LINKS_PER_EMAIL = 5;
 
+/** 32 random bytes in base64url, as issued by `begin`. */
+const TOKEN_SHAPE = /^[A-Za-z0-9_-]{43}$/;
+
 export interface EmailProviderDeps {
   db: Db;
   mailer: Mailer;
@@ -44,13 +47,16 @@ export class EmailLinkProvider implements IdentityProvider {
       return;
     }
     const token = randomBytes(32).toString('base64url');
-    await db.insert(signinTokens).values({
-      email: address,
-      tokenHash: hashToken(token),
-      destination,
-      createdAt: now,
-      expiresAt: new Date(now.getTime() + LINK_TTL_MS),
-    });
+    const [row] = await db
+      .insert(signinTokens)
+      .values({
+        email: address,
+        tokenHash: hashToken(token),
+        destination,
+        createdAt: now,
+        expiresAt: new Date(now.getTime() + LINK_TTL_MS),
+      })
+      .returning({ id: signinTokens.id });
     const link = new URL('/api/auth/verify', this.deps.appOrigin);
     link.searchParams.set('token', token);
     try {
@@ -68,11 +74,14 @@ export class EmailLinkProvider implements IdentityProvider {
       });
     } catch (err) {
       // The answer stays 202 for every address; a delivery failure is an operator problem.
+      // An undelivered link is removed so it does not use up one of the address's sends.
       log.error({ err }, 'sign-in link could not be sent');
+      if (row) await db.delete(signinTokens).where(eq(signinTokens.id, row.id));
     }
   }
 
   async complete(token: string): Promise<SignInResult> {
+    if (!TOKEN_SHAPE.test(token)) return { ok: false, destination: null };
     const { db, now: clock } = this.deps;
     const now = clock();
     const tokenHash = hashToken(token);

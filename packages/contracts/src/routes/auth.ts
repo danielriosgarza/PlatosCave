@@ -25,7 +25,9 @@ export const verifySignInLink = defineRoute({
   status: 302,
   summary:
     'Use a sign-in link: starts a session and redirects to the preserved destination, or to /signin?link=expired',
-  query: z.object({ token: z.string().max(256).optional() }),
+  // Opened by a browser from an email: a mangled query must still land on the expired-link
+  // page, never a JSON validation error, so anything but one string counts as no token.
+  query: z.object({ token: z.string().optional().catch(undefined) }),
   response: z.null(),
   examples: { query: { token: 'example-token' } },
 });

@@ -16,7 +16,9 @@ export function safeDestination(input: unknown): string | null {
   } catch {
     return null;
   }
-  if (url.origin !== BASE) return null;
+  // Checked after normalisation too: `/..//evil.example` resolves to the path `//evil.example`,
+  // which a browser would follow as a scheme-relative URL.
+  if (url.origin !== BASE || url.pathname.startsWith('//')) return null;
   if (url.pathname === '/api' || url.pathname.startsWith('/api/')) return null;
   return `${url.pathname}${url.search}${url.hash}`;
 }

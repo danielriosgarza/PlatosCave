@@ -28,6 +28,10 @@ declare module 'fastify' {
   interface FastifyRequest {
     parallaxScope: unknown;
   }
+  interface FastifyContextConfig {
+    scope?: Scope;
+    contract?: RouteContract;
+  }
 }
 
 /** Path parameters that name a scope must be resolved by that scope, never read raw. */
@@ -61,6 +65,24 @@ export function registerRoute<C extends RouteContract>(
 ): void {
   checkScopeParams(contract);
   const status = contract.status ?? 200;
+  const routeKey = `${contract.method} ${contract.path}`;
+  // The limiter runs before the scope resolver, so an over-limit request costs no session lookup.
+  // Limiters built this way share one store, so the key names the route as well as the client.
+  const limiter = options.rateLimit
+    ? app.rateLimit({
+        keyGenerator: (req: FastifyRequest) => `${routeKey}|${req.ip}`,
+        ...options.rateLimit,
+      })
+    : undefined;
+  const resolve = async (req: FastifyRequest, reply: FastifyReply) => {
+    const result = await resolveScope(req, contract.scope as Scope, app.resolverDeps);
+    if (!result.ok) {
+      req.log.debug({ reason: result.reason, url: req.url }, 'scope denied');
+      // The typed reply only knows the contract's 200 schema; denials use the shared error body.
+      return reply.code(result.status).send({ error: result.error });
+    }
+    req.parallaxScope = result.scope;
+  };
   app.route({
     method: contract.method,
     url: contract.path,
@@ -71,20 +93,8 @@ export function registerRoute<C extends RouteContract>(
       ...(contract.body && { body: contract.body }),
       response: { [status]: contract.response },
     },
-    config: {
-      scope: contract.scope,
-      contract,
-      ...(options.rateLimit && { rateLimit: options.rateLimit }),
-    },
-    onRequest: async (req, reply) => {
-      const result = await resolveScope(req, contract.scope as Scope, app.resolverDeps);
-      if (!result.ok) {
-        req.log.debug({ reason: result.reason, url: req.url }, 'scope denied');
-        // The typed reply only knows the contract's 200 schema; denials use the shared error body.
-        return (reply as FastifyReply).code(result.status).send({ error: result.error });
-      }
-      req.parallaxScope = result.scope;
-    },
+    config: { scope: contract.scope, contract },
+    onRequest: limiter ? [limiter, resolve] : resolve,
     handler: async (req, reply) => {
       reply.code(status);
       return handler({

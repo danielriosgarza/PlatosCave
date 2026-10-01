@@ -76,6 +76,8 @@ export async function buildApp(config: Config, deps: Deps = {}): Promise<Fastify
   await app.register(sensible);
   await app.register(cookie, { secret: config.SESSION_SECRET });
   // Baseline headers for the app origin; the content origin gets its own policy (P1-06).
+  // Helmet's default Cross-Origin-Resource-Policy is same-origin on every response: P1-06 must
+  // relax it on /content responses, or app-origin <img>/<video>/font loads from it are blocked.
   await app.register(helmet, {
     contentSecurityPolicy: {
       useDefaults: false,

@@ -53,7 +53,7 @@ afterAll(async () => {
 
 beforeEach(() => {
   testIndex += 1;
-  t0 = new Date(t0.getTime() + testIndex * 3_600_000);
+  t0 = new Date(start.getTime() + testIndex * 3_600_000);
   clock = t0;
 });
 
@@ -191,6 +191,30 @@ describe('POST /api/auth/link', () => {
     expect(await mailsTo('rl9@example.test')).toEqual([]);
   });
 
+  test('an undelivered link does not use up one of the address’s five sends', async () => {
+    let failing = true;
+    const sent: string[] = [];
+    const flaky = await buildApp(
+      loadConfig({ NODE_ENV: 'test', LOG_LEVEL: 'silent', AUTH_LINK_RATE_LIMIT: '1000' }),
+      {
+        db: testDb.db,
+        now: () => clock,
+        mailer: {
+          send: async (m) => {
+            if (failing) throw new Error('smtp down');
+            sent.push(m.to);
+          },
+        },
+      },
+    );
+    apps.push(flaky);
+    const email = 'outage@example.test';
+    for (let i = 0; i < 6; i++) expect((await requestLink({ email }, flaky)).statusCode).toBe(202);
+    failing = false;
+    expect((await requestLink({ email }, flaky)).statusCode).toBe(202);
+    expect(sent).toEqual([email]);
+  });
+
   test('sends at most five links per address per 15 minutes, still answering 202', async () => {
     const email = 'flood@example.test';
     for (let i = 0; i < 7; i++) expect((await requestLink({ email })).statusCode).toBe(202);
@@ -268,8 +292,14 @@ describe('GET /api/auth/verify', () => {
     expect((await verify(path)).headers.location).toBe('/courses?view=student');
   });
 
-  test('unknown or missing tokens go to the expired-link page without a destination', async () => {
-    for (const path of ['/api/auth/verify?token=forged', '/api/auth/verify']) {
+  test('unknown, missing or mangled tokens go to the expired-link page without a destination', async () => {
+    for (const path of [
+      '/api/auth/verify?token=forged',
+      '/api/auth/verify',
+      `/api/auth/verify?token=${'a'.repeat(300)}`,
+      '/api/auth/verify?token=a&token=b',
+      '/api/auth/verify?token[]=x',
+    ]) {
       const res = await verify(path);
       expect(res.statusCode).toBe(302);
       expect(res.headers.location).toBe('/signin?link=expired');
@@ -288,6 +318,10 @@ describe('GET /api/auth/verify', () => {
     '/\\evil.example',
     'javascript:alert(1)',
     '/api/auth/signout',
+    '/..//evil.example',
+    '/.//evil.example',
+    '/a/..//evil.example/x',
+    '/%2e%2e//evil.example',
   ])('rejects open redirect destination %j', async (next) => {
     const res = await verify(await linkFor('sam@example.test', { next, entrance: 'instructor' }));
     expect(res.statusCode).toBe(302);
