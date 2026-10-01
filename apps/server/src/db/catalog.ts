@@ -1,4 +1,4 @@
-import { and, count, desc, eq, inArray, isNull } from 'drizzle-orm';
+import { and, count, desc, eq, inArray, isNull, lte, ne, or } from 'drizzle-orm';
 import type { UserScope } from '../auth/scope';
 import type { Db } from './client';
 import { createCourse } from './identity';
@@ -20,7 +20,7 @@ import {
  * user's own memberships; nothing is read for a class or course they are not in. Preview
  * principals are not contexts of their owner and are left out.
  */
-export async function listCourseCards(db: Db, scope: UserScope) {
+export async function listCourseCards(db: Db, scope: UserScope, now: Date) {
   const userId = scope.user.id;
   const classRows = await db
     .select({
@@ -66,7 +66,8 @@ export async function listCourseCards(db: Db, scope: UserScope) {
     for (const r of rows) studentCounts.set(r.classId, r.n);
   }
 
-  // The newest saved position per class, shown against the class's adopted release.
+  // The newest saved position per class that the student can still open in the adopted
+  // release: hidden and not-yet-released resources never show as a resume location (§2, A26).
   const studyingIds = classRows.filter((c) => c.role === 'student').map((c) => c.classId);
   const resumeByClass = new Map<string, Resume>();
   if (studyingIds.length > 0) {
@@ -74,33 +75,39 @@ export async function listCourseCards(db: Db, scope: UserScope) {
       .select({
         classId: studyPositions.classId,
         tab: studyPositions.tab,
-        resourceId: resourceRevisions.resourceId,
+        topicId: releaseTopics.topicId,
+        topicTitle: releaseTopics.title,
+        resourceTitle: releaseResources.title,
       })
       .from(studyPositions)
+      .innerJoin(classes, eq(classes.id, studyPositions.classId))
       .innerJoin(resourceRevisions, eq(resourceRevisions.id, studyPositions.resourceRevisionId))
-      .where(and(eq(studyPositions.userId, userId), inArray(studyPositions.classId, studyingIds)))
+      .innerJoin(
+        releaseResources,
+        and(
+          eq(releaseResources.releaseId, classes.releaseId),
+          eq(releaseResources.resourceId, resourceRevisions.resourceId),
+        ),
+      )
+      .innerJoin(releaseTopics, eq(releaseTopics.id, releaseResources.releaseTopicId))
+      .where(
+        and(
+          eq(studyPositions.userId, userId),
+          inArray(studyPositions.classId, studyingIds),
+          ne(releaseResources.visibility, 'hidden'),
+          or(isNull(releaseResources.releaseAt), lte(releaseResources.releaseAt, now)),
+        ),
+      )
       .orderBy(desc(studyPositions.updatedAt));
-    const releaseOf = new Map(classRows.map((c) => [c.classId, c.releaseId]));
     for (const p of positions) {
-      if (resumeByClass.has(p.classId)) continue;
-      const releaseId = releaseOf.get(p.classId);
-      if (!releaseId) continue;
-      const [found] = await db
-        .select({
-          topicId: releaseTopics.topicId,
-          topicTitle: releaseTopics.title,
-          resourceTitle: releaseResources.title,
-        })
-        .from(releaseResources)
-        .innerJoin(releaseTopics, eq(releaseTopics.id, releaseResources.releaseTopicId))
-        .where(
-          and(
-            eq(releaseResources.releaseId, releaseId),
-            eq(releaseResources.resourceId, p.resourceId),
-          ),
-        );
-      // A position whose resource the adopted release no longer carries cannot be resumed.
-      if (found) resumeByClass.set(p.classId, { ...found, tab: p.tab });
+      if (!resumeByClass.has(p.classId)) {
+        resumeByClass.set(p.classId, {
+          topicId: p.topicId,
+          topicTitle: p.topicTitle,
+          tab: p.tab,
+          resourceTitle: p.resourceTitle,
+        });
+      }
     }
   }
 

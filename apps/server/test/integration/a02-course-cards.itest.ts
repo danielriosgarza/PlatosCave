@@ -127,6 +127,36 @@ describe('GET /api/courses', () => {
     ).toBe(true);
   });
 
+  test('A02 a saved position on a hidden resource is never offered as the resume location', async () => {
+    // The answer key is hidden in release v1; a position saved before it was hidden remains.
+    await testDb.db.insert(studyPositions).values([
+      {
+        userId: ids.sam,
+        classId: ids.classA,
+        resourceRevisionId: ids.answerKeyV1,
+        tab: 'reading',
+        position: {},
+        updatedAt: new Date('2026-10-01T08:30:00Z'),
+      },
+      {
+        userId: ids.bea,
+        classId: ids.classB,
+        resourceRevisionId: ids.answerKeyV1,
+        tab: 'reading',
+        position: {},
+        updatedAt: new Date('2026-10-01T08:30:00Z'),
+      },
+    ]);
+    const sam = await get('sam');
+    // Newest position is the hidden one: the card falls back to the newest visible one.
+    expect(sam.body.classes[0].resume).toMatchObject({ resourceTitle: 'Why samples vary' });
+    expect(JSON.stringify(sam.body)).not.toContain('Answer key');
+    // With only a hidden position, there is nothing to resume.
+    const bea = await get('bea');
+    expect(bea.body.classes[0].resume).toBeNull();
+    expect(JSON.stringify(bea.body)).not.toContain('Answer key');
+  });
+
   test('A02 signed-out requests are refused', async () => {
     const res = await app.inject({ method: 'GET', url: '/api/courses' });
     expect(res.statusCode).toBe(401);

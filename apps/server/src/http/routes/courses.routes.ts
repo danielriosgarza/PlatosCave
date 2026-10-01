@@ -10,7 +10,9 @@ export default function courseRoutes(app: FastifyInstance, deps: Deps): void {
     return deps.db;
   };
 
-  registerRoute(app, listCourses, ({ scope }) => listCourseCards(db(), scope));
+  registerRoute(app, listCourses, ({ scope }) =>
+    listCourseCards(db(), scope, app.resolverDeps.now()),
+  );
 
   registerRoute(app, createCourse, async ({ scope, body }) => {
     const created = await createCourseFor(db(), scope, body.title);
