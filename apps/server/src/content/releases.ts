@@ -14,7 +14,7 @@ import {
   topics,
 } from '../db/schema';
 import { forCourse } from '../db/scoped';
-import { derivedReady } from '../jobs/derived';
+import { derivedReady, readDerivedStatus } from '../jobs/derived';
 
 export type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type Issue = z.infer<typeof validationIssue>;
@@ -114,6 +114,21 @@ export function validate(drafts: Drafts): ValidationReport {
           message: `“${resource.title}” has not been converted for viewing`,
           ...at,
         });
+      }
+      if (revision.type === 'reading_native' || revision.type === 'reading_pdf') {
+        // A reading nobody can open is worse than none: block while its job is unfinished or
+        // failed. A revision with no job on record (older data) is left alone.
+        const state = readDerivedStatus(revision.derived.status, revision.createdAt)?.state;
+        if (state !== undefined && state !== 'ready') {
+          errors.push({
+            code: 'unprocessed_reading',
+            message:
+              state === 'failed'
+                ? `“${resource.title}” could not be processed; upload it again or retry`
+                : `“${resource.title}” is still being processed`,
+            ...at,
+          });
+        }
       }
       if (needsAlternative.has(revision.type) && !revision.accessibleAlternative) {
         const rasterDeck = revision.type === 'slides_pdf' && revision.derived.rasterOnly === true;

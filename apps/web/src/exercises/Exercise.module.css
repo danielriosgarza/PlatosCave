@@ -1,0 +1,358 @@
+/* Ported from the wireframe: .pc-stage, .pc-exercise, .pc-step-track, .pc-exercise-head, .pc-lab,
+   .pc-range, .pc-readout, .pc-options, .pc-option, .pc-feedback, .pc-explain, .pc-inline-error. */
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--pc-rule);
+}
+.toolbar h2 {
+  font: var(--pc-text-subsection);
+  letter-spacing: var(--pc-tracking-subsection);
+}
+.stage {
+  padding: 32px 40px;
+  min-height: 550px;
+}
+.exercise {
+  max-width: 880px;
+  margin: 0 auto;
+}
+.stepLabel {
+  text-align: center;
+  font-size: 12px;
+  color: var(--pc-muted);
+  margin-bottom: 8px;
+}
+.track {
+  display: flex;
+  gap: 5px;
+  margin: 0 auto 28px;
+  max-width: 340px;
+  list-style: none;
+  padding: 0;
+}
+.track li {
+  height: 3px;
+  flex: 1;
+  background: var(--pc-rule);
+}
+.track li[data-done="true"] {
+  background: var(--pc-ink);
+}
+.head {
+  text-align: center;
+  margin-bottom: 24px;
+}
+.head h3 {
+  font: var(--pc-text-section);
+}
+.head p {
+  margin-top: 10px;
+}
+.muted {
+  color: var(--pc-muted);
+}
+.small {
+  font-size: 12px;
+  line-height: 1.5;
+}
+.prompt {
+  text-align: center;
+  font-size: 18px;
+  margin: 0;
+}
+.fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.fieldset legend {
+  display: block;
+  width: 100%;
+  padding: 0;
+  text-align: center;
+  font-size: 18px;
+  font-weight: 600;
+}
+.options {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 18px 0;
+  justify-content: center;
+}
+.option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--pc-rule);
+  padding: 10px 18px;
+  border-radius: var(--pc-radius-choice);
+  min-height: 48px;
+}
+.option input {
+  accent-color: var(--pc-ink);
+}
+.option:has(input:checked) {
+  background: var(--pc-soft);
+  border-color: var(--pc-ink);
+}
+.field {
+  display: grid;
+  gap: 8px;
+  max-width: 320px;
+  margin: 18px auto 0;
+}
+.field input,
+.field select,
+.explain textarea {
+  width: 100%;
+  border: 1px solid var(--pc-muted);
+  background: var(--pc-sheet);
+  color: var(--pc-ink);
+  border-radius: var(--pc-radius-control);
+  padding: 8px 10px;
+  font: var(--pc-text-field);
+}
+.explain {
+  max-width: 640px;
+  margin: 18px auto 0;
+  display: grid;
+  gap: 8px;
+}
+.explain textarea {
+  resize: vertical;
+}
+.code textarea {
+  font: var(--pc-text-code-editor);
+}
+.sortable {
+  list-style: none;
+  padding: 0;
+  margin: 18px auto 0;
+  max-width: 480px;
+  display: grid;
+  gap: 8px;
+}
+.sortable li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid var(--pc-rule);
+  border-radius: var(--pc-radius-control);
+  padding: 8px 12px;
+}
+.pairs {
+  display: grid;
+  gap: 12px;
+  max-width: 560px;
+  margin: 18px auto 0;
+}
+.pairs label {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+}
+.pairs select {
+  border: 1px solid var(--pc-muted);
+  background: var(--pc-sheet);
+  color: var(--pc-ink);
+  border-radius: var(--pc-radius-control);
+  padding: 8px 10px;
+  font: var(--pc-text-field);
+}
+.lab {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 260px;
+  gap: 48px;
+  padding: 8px 0 22px;
+  margin: 18px 0;
+}
+.range {
+  display: grid;
+  gap: 16px;
+  align-content: center;
+}
+.range input[type="range"] {
+  width: 100%;
+  accent-color: var(--pc-ink);
+  padding: 0;
+  min-height: 32px;
+}
+.between {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+.nudge {
+  display: flex;
+  gap: 8px;
+}
+.readout {
+  font-size: 20px;
+  font-variant-numeric: tabular-nums;
+}
+.readout ul {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0;
+  font-size: 14px;
+}
+.actions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 24px;
+}
+.primary,
+.outline,
+.textButton {
+  font: inherit;
+  cursor: pointer;
+  min-height: 36px;
+  text-align: left;
+}
+.primary {
+  color: var(--pc-accent-ink);
+  background: var(--pc-accent);
+  border: 0;
+  padding: 9px 22px;
+  font-weight: 600;
+  border-radius: var(--pc-radius-primary);
+}
+.primary:hover {
+  filter: brightness(0.9);
+}
+.primary:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.outline {
+  border: 1px solid var(--pc-muted);
+  padding: 6px 12px;
+  background: var(--pc-sheet);
+  color: var(--pc-ink);
+  border-radius: var(--pc-radius-control);
+}
+.outline:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.textButton {
+  border: 0;
+  background: none;
+  padding: 2px 0;
+  color: var(--pc-ink);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+}
+.textButton:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.feedback {
+  padding: 16px;
+  background: var(--pc-soft);
+  border: 1px solid var(--pc-rule);
+  border-radius: var(--pc-radius-control);
+  margin-top: 20px;
+}
+.feedback p {
+  margin: 8px 0 0;
+}
+.feedback ol {
+  margin: 8px 0 0;
+  padding-left: 20px;
+}
+.inlineError {
+  margin-top: 12px;
+  color: var(--pc-ink);
+  font-weight: 600;
+  text-align: center;
+}
+.notice {
+  margin-top: 12px;
+  text-align: center;
+  font-size: 14px;
+}
+.summary {
+  list-style: none;
+  padding: 0;
+  margin: 0 auto;
+  max-width: 480px;
+}
+.summary li {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 16px;
+  padding: 10px 0;
+  border-top: 1px solid var(--pc-rule);
+}
+.exerciseList {
+  list-style: none;
+  padding: 0;
+  margin: 24px 0 0;
+}
+.exerciseList li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 0;
+  border-top: 1px solid var(--pc-rule);
+}
+@media (max-width: 900px) {
+  .stage {
+    padding: 28px 32px;
+  }
+  .lab {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 24px;
+  }
+}
+@media (max-width: 540px) {
+  .stage {
+    padding: 24px 16px;
+  }
+  .pairs label {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 4px;
+  }
+}
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+.solutionNote {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 14px;
+}
+.hintsUsed {
+  text-align: center;
+  margin-top: var(--pc-space-12);
+}
+.allExercises {
+  margin-top: var(--pc-space-12);
+}
+.centered {
+  text-align: center;
+}

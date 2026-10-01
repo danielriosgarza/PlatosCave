@@ -10,6 +10,7 @@ import {
   type DerivationSource,
   type DerivedStatus,
   DerivedStatus as DerivedStatusSchema,
+  hasDerivedStatus,
   loadDerivationSource,
   readStatus,
   setDerivedStatus,
@@ -266,4 +267,15 @@ export async function enqueueReadingIngest(
     await setDerivedStatus(db, scope, revisionId, status('queued', jobId), { jobId: null });
   }
   return jobId;
+}
+
+/** Queues ingestion for a revision no job has touched yet; a revision with a status is left as is. */
+export async function enqueueIfUnprocessed(
+  boss: PgBoss,
+  db: Db,
+  scope: CourseScope,
+  revisionId: string,
+): Promise<string | null> {
+  if (await hasDerivedStatus(db, scope, revisionId)) return null;
+  return enqueueReadingIngest(boss, db, scope, revisionId);
 }

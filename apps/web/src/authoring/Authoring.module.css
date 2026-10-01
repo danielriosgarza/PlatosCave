@@ -1,0 +1,126 @@
+/* Ported from the wireframe: .pc-edit-grid, .pc-resource-row, .pc-edit-side, .pc-success, .pc-feedback. */
+.tabHeading {
+  margin: 32px 0 0;
+  font: var(--pc-text-section);
+}
+.resource {
+  border-top: 1px solid var(--pc-rule);
+  padding: 14px 0;
+}
+.resourceHead {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+}
+.resourceMeta {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--pc-muted);
+}
+.empty {
+  border-top: 1px solid var(--pc-rule);
+  padding: 14px 0;
+  font-size: 13px;
+  color: var(--pc-muted);
+}
+.field {
+  display: grid;
+  gap: 8px;
+  margin: 20px 0 0;
+}
+.field input[type="text"],
+.field input[type="number"],
+.field textarea,
+.field select {
+  width: 100%;
+  max-width: 560px;
+  border: 1px solid var(--pc-muted);
+  background: var(--pc-sheet);
+  border-radius: var(--pc-radius-control);
+  padding: 8px 10px;
+}
+.field textarea {
+  min-height: 84px;
+  resize: vertical;
+}
+.hint {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--pc-muted);
+}
+.choices {
+  border: 0;
+  padding: 0;
+  margin: 20px 0 0;
+  display: grid;
+  gap: 8px;
+}
+.choices legend {
+  padding: 0;
+  margin-bottom: 4px;
+}
+.choice {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+}
+.status {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--pc-muted);
+  min-height: 18px;
+}
+.success {
+  color: var(--pc-success);
+}
+.failure {
+  color: var(--pc-ink);
+  font-weight: 600;
+}
+.issues {
+  margin: 12px 0 0;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.conflict {
+  border: 1px solid var(--pc-ink);
+  border-radius: var(--pc-radius-control);
+  padding: 16px;
+  margin-top: 20px;
+  background: var(--pc-sheet);
+}
+.conflict dl {
+  display: grid;
+  grid-template-columns: max-content 1fr 1fr;
+  gap: 6px 20px;
+  margin: 12px 0;
+  font-size: 13px;
+}
+.conflict dt {
+  font-weight: 600;
+}
+.conflict dd {
+  margin: 0;
+}
+.topicRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+  padding: 14px 0;
+  border-top: 1px solid var(--pc-rule);
+}
+.topicRow[data-archived="true"] .topicTitle {
+  color: var(--pc-muted);
+}
+@media (max-width: 540px) {
+  .resourceHead,
+  .topicRow {
+    flex-wrap: wrap;
+  }
+  .conflict dl {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
