@@ -3,7 +3,8 @@
 // errors, and at data-access paths, where none may be. At its own path the file is ordinary code.
 import { eq, sql } from 'drizzle-orm'; // restricted-import
 import pg from 'pg'; // restricted-import
-import * as client from '../../src/db/client';
+import type * as clientNamespace from '../../src/db/client';
+import * as client from '../../src/db/client'; // raw-query
 import { createDb, type Db } from '../../src/db/client'; // restricted-import
 import { classMemberships } from '../../src/db/schema'; // restricted-import
 import { users } from '../../src/db/schema/users'; // restricted-import
@@ -52,6 +53,7 @@ export function viaAccessor(deps: { db?: Db }) {
 }
 
 export type * as clientTypes from '../../src/db/client';
+export type ClientModule = typeof clientNamespace;
 export * as clientModule from '../../src/db/client'; // raw-query
 
 export function viaParameter({
@@ -62,7 +64,7 @@ export function viaParameter({
   return select;
 }
 
-export function wrappedReceivers(deps: { db: Db }) {
+export function wrappedReceivers(deps: { db: Db }, method: 'execute' | 'select') {
   const { select } = deps.db; // raw-query
   const { ...everything } = deps.db; // raw-query
   const {
@@ -70,6 +72,7 @@ export function wrappedReceivers(deps: { db: Db }) {
   } = deps;
   // biome-ignore lint/complexity/useLiteralKeys: the fixture exercises a computed key
   const { ['insert']: insertInto } = deps.db; // raw-query
+  const { [method]: anyMethod } = deps.db; // raw-query
   const {
     createDb: open, // raw-query
   } = client;
@@ -90,6 +93,7 @@ export function wrappedReceivers(deps: { db: Db }) {
     everything,
     transaction,
     insertInto,
+    anyMethod,
     open,
   ];
 }
