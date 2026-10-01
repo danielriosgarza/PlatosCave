@@ -4,6 +4,7 @@ import { loadConfig } from './config';
 import { createDb } from './db/client';
 import { createBoss } from './db/jobs/boss';
 import annotationsMap from './jobs/annotations-map.job';
+import type { JobLogger } from './jobs/logger';
 import { workMaintenance } from './jobs/maintenance';
 import { loadJobs } from './jobs/registry';
 import { ensureQueues, workScopedJob } from './jobs/scoped';
@@ -49,10 +50,7 @@ async function settlesWithin(promise: Promise<unknown>, ms: number): Promise<boo
 }
 
 /** Closes in order and exits; a second signal forces exit if closing hangs. */
-function onSignals(
-  log: { error: (obj: object, msg: string) => void },
-  close: () => Promise<unknown>,
-): void {
+function onSignals(log: JobLogger, close: () => Promise<unknown>): void {
   let stopping = false;
   const stop = () => {
     if (stopping) process.exit(1);

@@ -1,26 +1,18 @@
 import type { PgBoss } from 'pg-boss';
 import { purgeSigninTokens } from '../auth/email-provider';
 import type { Db } from '../db/client';
+import type { JobLogger } from './logger';
 
 export const PURGE_SIGNIN_TOKENS = 'maintenance.purge-signin-tokens';
 /** Hourly, at minute 17. */
 export const PURGE_SIGNIN_TOKENS_CRON = '17 * * * *';
 
-export interface MaintenanceLogger {
-  info: (obj: object, msg: string) => void;
-  error: (obj: object, msg: string) => void;
-}
-
 /**
- * Maintenance jobs act on no class or course, so they sit outside the scoped-job wrapper
- * (ADR-0002): they take no payload and are only ever started by the schedule below.
+ * Registers every maintenance queue and returns their names. Maintenance jobs act on no class
+ * or course, so they sit outside the scoped-job wrapper (ADR-0002): they take no payload and
+ * are only ever started by the schedule below.
  */
-/** Registers every maintenance queue and returns their names. */
-export async function workMaintenance(
-  boss: PgBoss,
-  db: Db,
-  log: MaintenanceLogger,
-): Promise<string[]> {
+export async function workMaintenance(boss: PgBoss, db: Db, log: JobLogger): Promise<string[]> {
   await boss.createQueue(PURGE_SIGNIN_TOKENS);
   await boss.schedule(PURGE_SIGNIN_TOKENS, PURGE_SIGNIN_TOKENS_CRON);
   await boss.work(PURGE_SIGNIN_TOKENS, async () => {
