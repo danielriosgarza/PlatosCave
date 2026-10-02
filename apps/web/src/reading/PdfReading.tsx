@@ -34,7 +34,8 @@ type Load = { state: 'loading' } | { state: 'failed' } | { state: 'ready'; doc: 
 
 /**
  * A PDF reading drawn by pdf.js, one page at a time, fitted to the stage width with a text
- * layer. The place is the page and the share of its height above the window top, in thousandths.
+ * layer. The place is the page and the share of its height above the window top, in thousandths;
+ * none is recorded while the window top is above the page.
  */
 export function PdfReading({ url, pageCount, renew, initial, source, onPosition }: Props) {
   const [load, setLoad] = useState<Load>({ state: 'loading' });
@@ -140,6 +141,9 @@ export function PdfReading({ url, pageCount, renew, initial, source, onPosition 
     if (!el) return;
     const rect = el.getBoundingClientRect();
     const above = scrollerOf(el).origin - rect.top;
+    // The window top is above the page (the tab row or the page controls): not a place, so the
+    // last one stands.
+    if (above < -1) return;
     const through = rect.height > 0 ? Math.min(1, Math.max(0, above / rect.height)) : 0;
     share.current = Math.round(through * 1000);
     onPosition({ page, offset: share.current });
