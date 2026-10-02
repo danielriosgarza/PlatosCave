@@ -10,12 +10,14 @@ import {
 } from '../../src/auth/email-provider';
 import { createBoss } from '../../src/db/jobs/boss';
 import { signinTokens } from '../../src/db/schema';
+import type { JobLogger } from '../../src/jobs/logger';
 import { PURGE_SIGNIN_TOKENS, workMaintenance } from '../../src/jobs/maintenance';
 import { createTestDatabase, type TestDatabase } from './db';
 
 // Real clock: the queue test's handler purges against `new Date()`, so every fixture is relative to it.
 const now = new Date();
 const ago = (ms: number) => new Date(now.getTime() - ms);
+const quietLog = { info() {}, warn() {}, error() {} } as unknown as JobLogger;
 let testDb: TestDatabase;
 let boss: PgBoss;
 
@@ -60,7 +62,7 @@ describe('sign-in link purge', () => {
       mailer: { send: async (m) => void sent.push(m.to) },
       now: () => now,
       appOrigin: 'http://app.parallax.test',
-      log: { info() {}, error() {} } as never,
+      log: quietLog as never,
     });
     const email = 'cap@example.org';
     // The address's live links fill the cap; one old link is purgeable.
@@ -82,7 +84,7 @@ describe('sign-in link purge', () => {
   });
 
   test('the worker schedules the purge and runs it from the queue', async () => {
-    await workMaintenance(boss, testDb.db, { info() {}, error() {} });
+    await workMaintenance(boss, testDb.db, quietLog);
     const schedules = await boss.getSchedules();
     expect(schedules.map((s) => s.name)).toContain(PURGE_SIGNIN_TOKENS);
 
