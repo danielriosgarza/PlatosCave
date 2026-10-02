@@ -23,6 +23,10 @@ export function createDb(url: string, { onError }: CreateDbOptions = {}) {
 }
 
 export type Db = ReturnType<typeof createDb>['db'];
+/** The handle inside `db.transaction(async (tx) => …)`. */
+export type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
+/** Either: queries that may run alone or inside a caller's transaction take this. */
+export type Executor = Db | Tx;
 
 /** Client-side deadline for the health probe; application queries have none. */
 export const PROBE_TIMEOUT_MS = 5000;

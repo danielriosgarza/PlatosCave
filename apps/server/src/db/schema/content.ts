@@ -1,3 +1,4 @@
+import { resourceTypes } from '@parallax/contracts';
 import { sql } from 'drizzle-orm';
 import {
   type AnyPgColumn,
@@ -15,16 +16,7 @@ import {
 import { classes, courses } from './memberships';
 import { users } from './users';
 
-export const resourceType = pgEnum('resource_type', [
-  'slides_pdf',
-  'slides_web',
-  'reading_native',
-  'reading_pdf',
-  'exercise',
-  'notebook',
-  'shiny',
-  'test',
-]);
+export const resourceType = pgEnum('resource_type', resourceTypes);
 export const resourceTab = pgEnum('resource_tab', [
   'slides',
   'reading',

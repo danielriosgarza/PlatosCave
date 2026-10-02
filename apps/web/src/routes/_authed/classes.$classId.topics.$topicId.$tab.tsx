@@ -2,13 +2,16 @@ import { createFileRoute, redirect } from '@tanstack/react-router';
 import { useRef } from 'react';
 import { z } from 'zod';
 import { ApiError } from '../../api/client';
+import { ClassUnavailable } from '../../components/AccessLost';
 import styles from '../../components/Page.module.css';
+import { RetryNotice } from '../../components/RetryNotice';
 import { type TabDef, TabRow } from '../../components/TabRow';
 import { Unavailable } from '../../components/Unavailable';
 import { ExercisesPanel } from '../../exercises/ExercisesPanel';
 import readingStyles from '../../reading/Reading.module.css';
 import { ReadingTab } from '../../reading/ReadingTab';
 import { useClassContext } from '../../session/classContext';
+import type { SessionClass } from '../../session/useSession';
 import { TopicHeading } from '../../topics/TopicHeading';
 import {
   type ClassTopic,
@@ -61,20 +64,33 @@ export const Route = createFileRoute('/_authed/classes/$classId/topics/$topicId/
 function TopicWorkspace() {
   const { classId, topicId, tab } = Route.useParams();
   const context = useClassContext(classId);
+  // No request is made for a class the person is not (or no longer) in (§14).
+  if (!context || !isTab(tab)) return <ClassUnavailable classId={classId} />;
+  return <LoadedWorkspace classId={classId} topicId={topicId} tab={tab} context={context} />;
+}
+
+function LoadedWorkspace({
+  classId,
+  topicId,
+  tab,
+  context,
+}: {
+  classId: string;
+  topicId: string;
+  tab: TabId;
+  context: SessionClass;
+}) {
   const query = useClassTopics(classId);
-  if (!context || !isTab(tab)) return <Unavailable />;
   if (query.error instanceof ApiError && query.error.status === 404) return <Unavailable />;
   const data = query.data;
   if (!data) {
     return (
       <main className={styles.index}>
         {query.isError ? (
-          <div className={styles.feedback} role="alert">
-            <p>This topic could not be loaded.</p>
-            <button type="button" className={styles.outline} onClick={() => void query.refetch()}>
-              Try again
-            </button>
-          </div>
+          <RetryNotice
+            message="This topic could not be loaded."
+            onRetry={() => void query.refetch()}
+          />
         ) : (
           <p className={styles.intro} role="status">
             Loading topic
@@ -140,7 +156,12 @@ function OpenTopic({
           tabs={TOPIC_TABS}
           selected={tab}
           panelId="pc-content"
-          onSelect={(next) => navigate({ params: { classId, topicId, tab: next } })}
+          // Arriving at Reading keeps the scroll: the reader restores its own place, and a reset
+          // to the top after it has done so would move the page under it. Other tabs open at
+          // the top.
+          onSelect={(next) =>
+            navigate({ params: { classId, topicId, tab: next }, resetScroll: next !== 'reading' })
+          }
         />
       )}
       <ResourceToolbar

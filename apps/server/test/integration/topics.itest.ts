@@ -5,10 +5,12 @@ import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { buildApp } from '../../src/app';
+import type { ClassScope } from '../../src/auth/scope';
 import { loadConfig } from '../../src/config';
+import { findReleaseTopic, loadClassTopics } from '../../src/db/classTopics';
 import { adoptRelease } from '../../src/db/content/adoption';
 import { publishRelease } from '../../src/db/content/releases';
-import { resourceRevisions, resources, studyPositions, topics } from '../../src/db/schema';
+import { classes, resourceRevisions, resources, studyPositions, topics } from '../../src/db/schema';
 import { FsStorage } from '../../src/storage/fs';
 import { storeCourseObject } from '../../src/storage/objects';
 import {
@@ -300,5 +302,49 @@ describe('topic locks gate downloads', () => {
     expect(topic?.state).toBe('locked');
     expect(await mintStatus('sam', ids.classA, inference.key, inference.revisionId)).toBe(404);
     expect(await mintStatus('priya', ids.classA, inference.key, inference.revisionId)).toBe(200);
+  });
+
+  test('A01 the per-request topic gate agrees with the topic list for every topic and role', async () => {
+    const { db } = testDb;
+    const contexts = [
+      [ids.classA, ids.sam, 'student', false],
+      [ids.classA, ids.priya, 'instructor', false],
+      [ids.classB, ids.bea, 'student', false],
+      [ids.classB, ids.marcus, 'instructor', false],
+      // Marcus's preview principal studies the course draft, not the adopted release.
+      [ids.classB, ids.previewB, 'student', true],
+    ] as const;
+    let compared = 0;
+    const unknown = '00000000-0000-4000-8000-0000000000ff';
+    for (const [classId, userId, role, isPreview] of contexts) {
+      const [row] = await db
+        .select({ releaseId: classes.releaseId })
+        .from(classes)
+        .where(eq(classes.id, classId));
+      const scope = {
+        ...asClassScope(classId, ids.statistics, userId, {
+          role,
+          releaseId: row?.releaseId ?? null,
+        }),
+        membership: { role, isPreview },
+      } as unknown as ClassScope;
+      const { topics: listed } = await loadClassTopics(db, scope, now);
+      for (const t of listed) {
+        const open = t.availability.state === 'available' || t.availability.state === 'complete';
+        const byTopic = await findReleaseTopic(db, scope, { topicId: t.topicId }, now);
+        const byRelease = await findReleaseTopic(
+          db,
+          scope,
+          { releaseTopicId: t.releaseTopicId },
+          now,
+        );
+        expect(byTopic).toEqual({ topicId: t.topicId, releaseTopicId: t.releaseTopicId, open });
+        expect(byRelease).toEqual(byTopic);
+        compared += 1;
+      }
+      expect(await findReleaseTopic(db, scope, { topicId: unknown }, now)).toBeNull();
+    }
+    // Class A's release and the draft hold a locked and a scheduled topic besides the open one.
+    expect(compared).toBe(4 + 4 + 2 + 2 + 4);
   });
 });

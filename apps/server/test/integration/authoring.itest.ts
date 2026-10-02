@@ -57,7 +57,7 @@ const ensureWorker = () =>
     boss,
     testDb.db,
     readingIngest,
-    { warn: () => {}, error: () => {} },
+    { info: () => {}, warn: () => {}, error: () => {} },
     { pollingIntervalSeconds: 0.5 },
     { storage },
   ));

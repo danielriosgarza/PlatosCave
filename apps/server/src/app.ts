@@ -12,6 +12,7 @@ import {
   validatorCompiler,
 } from 'fastify-type-provider-zod';
 import type { PgBoss } from 'pg-boss';
+import { BackgroundTasks } from './background';
 import type { Config } from './config';
 import { MAX_TOKEN_LENGTH } from './content/tokens';
 import type { Db } from './db/client';
@@ -26,8 +27,6 @@ import type { Storage } from './storage/storage';
 
 declare module 'fastify' {
   interface FastifyInstance {
-    /** Configuration and mail transport for the sign-in routes. */
-    authDeps: { config: Config; mailer: Mailer };
     /** Configuration and object store for content tokens and the content origin (P1-06). */
     contentDeps: { config: Config; storage: Storage };
   }
@@ -45,21 +44,34 @@ export interface Deps {
   storage?: Storage;
   /** Job queue for routes that start background work; absent, such work is not queued. */
   boss?: PgBoss;
+  /** Work that outlives its request (mail delivery); defaults to one the server drains on close. */
+  background?: BackgroundTasks;
 }
+
+/** What every route module receives: the injected `Deps` with the defaults buildApp resolved. */
+export interface RouteDeps extends Deps {
+  config: Config;
+  /** The injected clock, or the system one. */
+  now: () => Date;
+  mailer: Mailer;
+  background: BackgroundTasks;
+}
+
+/** How long close waits for background work, inside the 10 s stop grace main.ts documents. */
+const BACKGROUND_CLOSE_TIMEOUT_MS = 8_000;
 
 /** A path segment that could hold a token: encoded, or longer than any id the app routes use. */
 const SUSPECT_SEGMENT = /^(?:[A-Za-z0-9._~-]{41,}|.*[^A-Za-z0-9._~-].*)$/;
 
 /**
  * The URL as logged. Sign-in tokens (query) and content tokens (path) are credentials: the content
- * route logs no token at all. A request no route matched (SPA pages, near-miss spellings of a
- * token URL such as `/content%2F<token>` or `/content\<token>`) keeps its path, with every segment
- * that is encoded, unusual or long enough to be a token replaced.
+ * route logs no token at all. Every other path, routed or not (wildcard routes such as
+ * `/assets/*`, SPA pages, near-miss spellings of a token URL such as `/content%2F<token>` or
+ * `/content\<token>`), keeps its shape, with every segment that is encoded, unusual or long
+ * enough to be a token replaced.
  */
 export function logUrl(req: Pick<FastifyRequest, 'url'> & { routeOptions?: { url?: string } }) {
-  const route = req.routeOptions?.url;
-  if (route === CONTENT_ROUTE) return '/content/[redacted]';
-  if (route !== undefined) return redactUrl(req.url);
+  if (req.routeOptions?.url === CONTENT_ROUTE) return '/content/[redacted]';
   const q = req.url.search(/[?#]/);
   const path = q === -1 ? req.url : req.url.slice(0, q);
   const rest = q === -1 ? '' : redactUrl(req.url.slice(q));
@@ -74,6 +86,7 @@ export async function buildApp(config: Config, deps: Deps = {}): Promise<Fastify
   const app = Fastify({
     // Storage keys and content tokens are path parameters longer than the default 100.
     routerOptions: { maxParamLength: MAX_TOKEN_LENGTH },
+    trustProxy: config.TRUST_PROXY,
     logger: {
       level: config.LOG_LEVEL,
       serializers: {
@@ -92,12 +105,25 @@ export async function buildApp(config: Config, deps: Deps = {}): Promise<Fastify
 
   const now = deps.now ?? (() => new Date());
   const storage = deps.storage ?? createStorage(config);
+  const background = deps.background ?? new BackgroundTasks(app.log);
+  // Deliveries in flight get most of the 10 s stop grace (main.ts) to finish or clean up; a
+  // stalled relay is abandoned then, and its row expires on its own.
+  app.addHook('onClose', async () => {
+    const left = await background.settled(BACKGROUND_CLOSE_TIMEOUT_MS);
+    if (left > 0) app.log.warn({ left }, 'abandoning background tasks still running at close');
+  });
+  const routeDeps: RouteDeps = {
+    ...deps,
+    config,
+    now,
+    mailer: deps.mailer ?? createMailer(config, now),
+    background,
+  };
   // Only the store built here is ours to release; an injected one belongs to the caller.
   if (!deps.storage) app.addHook('onClose', async () => storage.destroy?.());
   app.decorate('resolverDeps', { db: deps.db, now });
   app.decorate('contentDeps', { config, storage });
   app.decorate('contracts', [] as RouteContract[]);
-  app.decorate('authDeps', { config, mailer: deps.mailer ?? createMailer(config) });
   app.decorateRequest('parallaxScope', undefined);
 
   // Structural guard (ADR-0002): every /api route must declare a scope via registerRoute().
@@ -156,9 +182,9 @@ export async function buildApp(config: Config, deps: Deps = {}): Promise<Fastify
     if (typeof mod.default !== 'function') {
       throw new Error(`${file} does not default-export a route registrar`);
     }
-    const register = mod.default as (app: FastifyInstance, deps: Deps) => void | Promise<void>;
+    const register = mod.default as (app: FastifyInstance, deps: RouteDeps) => void | Promise<void>;
     await app.register(async (instance) => {
-      await register(instance, deps);
+      await register(instance, routeDeps);
     });
   }
 

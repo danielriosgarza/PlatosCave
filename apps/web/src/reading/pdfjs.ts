@@ -1,9 +1,8 @@
-import 'pdfjs-dist/web/pdf_viewer.css';
-
 /**
  * The one place pdf.js is imported. The legacy build is used because the modern one needs
  * `Map.prototype.getOrInsertComputed`, which Chromium 141 (the pinned Playwright browser) and
- * browsers of the same age lack. Loaded on first use so the shell stays light (§14). Tests
+ * browsers of the same age lack. Loaded on first use so the shell stays light (§14); the text
+ * layer's rules live in `Reading.module.css` instead of pdf.js's 164 KB viewer stylesheet. Tests
  * replace this module: pdf.js needs a canvas and a worker, which jsdom does not provide.
  */
 /** A page being drawn: `done` is null when the draw was cancelled before it finished. */

@@ -8,14 +8,17 @@ import {
   purgeSigninTokens,
   SIGNIN_TOKEN_RETENTION_MS,
 } from '../../src/auth/email-provider';
+import { BackgroundTasks } from '../../src/background';
 import { createBoss } from '../../src/db/jobs/boss';
 import { signinTokens } from '../../src/db/schema';
+import type { JobLogger } from '../../src/jobs/logger';
 import { PURGE_SIGNIN_TOKENS, workMaintenance } from '../../src/jobs/maintenance';
 import { createTestDatabase, type TestDatabase } from './db';
 
 // Real clock: the queue test's handler purges against `new Date()`, so every fixture is relative to it.
 const now = new Date();
 const ago = (ms: number) => new Date(now.getTime() - ms);
+const quietLog = { info() {}, warn() {}, error() {} } as unknown as JobLogger;
 let testDb: TestDatabase;
 let boss: PgBoss;
 
@@ -55,24 +58,28 @@ describe('sign-in link purge', () => {
 
   test('the per-address cap still counts live links after a purge', async () => {
     const sent: string[] = [];
+    const background = new BackgroundTasks();
     const provider = new EmailLinkProvider({
       db: testDb.db,
       mailer: { send: async (m) => void sent.push(m.to) },
       now: () => now,
+      background,
       appOrigin: 'http://app.parallax.test',
-      log: { info() {}, error() {} } as never,
+      log: quietLog as never,
     });
     const email = 'cap@example.org';
     // The address's live links fill the cap; one old link is purgeable.
     for (let i = 0; i < LINKS_PER_EMAIL; i++) {
       await provider.begin({ email, destination: '/courses' });
     }
+    await background.settled();
     expect(sent).toHaveLength(LINKS_PER_EMAIL);
     await testDb.db
       .insert(signinTokens)
       .values(row(email, 'cap-old', ago(2 * SIGNIN_TOKEN_RETENTION_MS)));
     expect(await purgeSigninTokens(testDb.db, now)).toBe(1);
     await provider.begin({ email, destination: '/courses' });
+    await background.settled();
     expect(sent).toHaveLength(LINKS_PER_EMAIL);
     const [n] = await testDb.db
       .select({ n: count() })
@@ -82,7 +89,7 @@ describe('sign-in link purge', () => {
   });
 
   test('the worker schedules the purge and runs it from the queue', async () => {
-    await workMaintenance(boss, testDb.db, { info() {}, error() {} });
+    await workMaintenance(boss, testDb.db, quietLog);
     const schedules = await boss.getSchedules();
     expect(schedules.map((s) => s.name)).toContain(PURGE_SIGNIN_TOKENS);
 
