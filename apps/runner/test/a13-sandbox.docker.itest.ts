@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { promisify } from 'node:util';
 import type { RunnerCheck, RunnerJob, RunnerOutcome } from '@parallax/contracts';
 import Docker from 'dockerode';
-import { afterAll, describe, expect, test } from 'vitest';
+import { afterAll, describe, expect, onTestFailed, test } from 'vitest';
 import { DockerExecutor, imageDaemon } from '../src/executor';
 import { RunnerFailure } from '../src/failure';
 import { ImageAllowlist } from '../src/images';
@@ -37,7 +37,37 @@ process.env.RUNNER_DATABASE_URL = `postgres://parallax_runner:${SECRET}@db/paral
 
 const executor = new DockerExecutor(docker);
 const images = new ImageAllowlist({ 'python-3.12': [IMAGE] }, imageDaemon(docker), 'never');
-const run = (job: RunnerJob) => runJob(parseJob(job), { executor, images });
+
+/** What a failing probe prints: statuses, kinds, messages and stream tails, never whole streams. */
+function summary(outcome: RunnerOutcome): string {
+  const tail = (text: string) => text.slice(-600);
+  return JSON.stringify(
+    {
+      status: outcome.status,
+      container: outcome.container,
+      compileError: outcome.result?.compileError,
+      checks: outcome.result?.checks.map((c) => ({
+        name: c.name,
+        status: c.status,
+        errorKind: c.errorKind,
+        exitCode: c.exitCode,
+        signal: c.signal,
+        message: c.message,
+        stdout: tail(c.stdout),
+        stderr: tail(c.stderr),
+      })),
+      harnessLog: tail(outcome.harnessLog),
+    },
+    null,
+    2,
+  );
+}
+
+async function run(job: RunnerJob): Promise<RunnerOutcome> {
+  const outcome = await runJob(parseJob(job), { executor, images });
+  onTestFailed(() => console.error(`outcome of job ${job.jobId}:\n${summary(outcome)}`));
+  return outcome;
+}
 
 type Check = Partial<RunnerCheck> & { name: string };
 
@@ -75,12 +105,8 @@ function checkOf(outcome: RunnerOutcome, index = 0) {
   return check;
 }
 
-/** A failing probe shows what the program said, so a CI failure explains itself. */
 function expectPassed(outcome: RunnerOutcome) {
-  const check = checkOf(outcome);
-  expect({ status: check.status, message: check.message, stderr: check.stderr }).toMatchObject({
-    status: 'passed',
-  });
+  expect(checkOf(outcome).status).toBe('passed');
   expect(outcome.status).toBe('passed');
 }
 
