@@ -91,7 +91,7 @@ def main():
     sys.path.insert(0, os.getcwd())
     outcome = outcome_for(spec)
     with open(spec["outcomePath"], "w", encoding="utf-8") as handle:
-        json.dump(outcome, handle, ensure_ascii=False)
+        json.dump(outcome, handle)  # ASCII escapes: a value with a lone surrogate must still be written
     return 0
 
 

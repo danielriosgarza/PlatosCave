@@ -105,7 +105,17 @@ def parse_frame(stdout, nonce):
     return json.loads(body.decode("utf-8"))
 
 
-def run_harness(job, raw=None, args=(), timeout=180, roots=None, prepare=None):
+# Starts the harness under a lower RLIMIT_NOFILE, as the container's Ulimits do.
+NOFILE_WRAPPER = (
+    "import resource, runpy, sys\n"
+    "limit = int(sys.argv[1])\n"
+    "resource.setrlimit(resource.RLIMIT_NOFILE, (limit, limit))\n"
+    "sys.argv = sys.argv[2:]\n"
+    "runpy.run_path(sys.argv[0], run_name='__main__')\n"
+)
+
+
+def run_harness(job, raw=None, args=(), timeout=180, roots=None, prepare=None, nofile=None):
     """Spawn run.py with temporary roots. `raw` replaces the whole stdin stream."""
     with tempfile.TemporaryDirectory() as base:
         work, tmp, ipc = (os.path.join(base, name) for name in ("work", "tmp", "ipc"))
@@ -116,8 +126,9 @@ def run_harness(job, raw=None, args=(), timeout=180, roots=None, prepare=None):
             prepare(paths)
         if raw is None:
             raw = (NONCE + "\n" + json.dumps(job)).encode("utf-8")
+        launcher = [sys.executable] if nofile is None else [sys.executable, "-c", NOFILE_WRAPPER, str(nofile)]
         completed = subprocess.run(
-            [*HARNESS_PREFIX, sys.executable, os.path.join(HERE, "run.py"), "--work", work, "--tmp", tmp, "--ipc", ipc, *args],
+            [*HARNESS_PREFIX, *launcher, os.path.join(HERE, "run.py"), "--work", work, "--tmp", tmp, "--ipc", ipc, *args],
             input=raw, capture_output=True, timeout=timeout,
         )
         return Outcome(completed, paths)
@@ -684,6 +695,40 @@ class Call(HarnessCase):
         self.assertEqual(outcome.check()["stdout"], "to stdout\n")
         self.assertEqual(outcome.check()["status"], "passed")
 
+    def test_an_outcome_with_a_lone_surrogate_is_a_result_not_a_harness_fault(self):
+        forged = (
+            "import os\n"
+            "def f():\n"
+            "    path = os.path.join(os.environ['HOME'], 'outcome.json')\n"
+            "    with open(path, 'w') as handle:\n"
+            "        handle.write('{\"ok\": false, \"exception\": {\"type\": \"E\", \"bases\": [\"\\\\ud800\"],"
+            " \"message\": \"\\\\ud800\"}}')\n"
+            "    os._exit(0)\n"
+        )
+        job = make_job(
+            {"solution.py": forged},
+            [call("Forged", "f", {"value": 1}), call("Forged raises", "f", {"raises": {"type": "E"}})],
+        )
+        outcome = self.go(job)
+        first, second = outcome.check(0), outcome.check(1)
+        self.assertEqual((first["status"], first["errorKind"]), ("error", "exception"))
+        self.assertEqual(second["status"], "passed")
+
+    def test_a_returned_lone_surrogate_is_compared_not_a_crash(self):
+        source = "import os\ndef f():\n    return os.fsdecode(b'a\\xff')\ndef g():\n    raise ValueError(os.fsdecode(b'\\xff'))\n"
+        job = make_job(
+            {"solution.py": source},
+            [call("Value", "f", {"value": "a?"}), call("Raises", "g", {"raises": {"type": "ValueError"}})],
+        )
+        outcome = self.go(job)
+        self.assertEqual(outcome.check(0)["status"], "passed")  # the lone surrogate became "?"
+        self.assertEqual(outcome.check(1)["status"], "passed")
+
+    def test_a_job_holding_a_lone_surrogate_exits_64(self):
+        job = make_job({"p.py": "x = 1\n"}, [script("A", "p.py")])
+        raw = (NONCE + "\n" + json.dumps(job).replace('"x = 1', '"\\ud800 = 1')).encode()
+        self.assertEqual(run_harness(None, raw=raw).returncode, 64)
+
     def test_driver_runs_outside_the_harness_and_writes_its_outcome(self):
         with tempfile.TemporaryDirectory() as directory:
             with open(os.path.join(directory, "m.py"), "w") as handle:
@@ -966,6 +1011,16 @@ class Sweep(HarnessCase):
         self.assertEqual(outcome.check(0)["stdout"], "stashed\n")
         self.assertEqual(outcome.check(1)["status"], "passed", outcome.check(1))
         self.assertEqual(outcome.check(1)["stdout"], "['c2'] ['c2'] []\n")
+
+    def test_a_tree_deeper_than_the_open_file_limit_is_swept_under_nofile_256(self):
+        source = "import os\nfor _ in range(600):\n    os.mkdir('d')\n    os.chdir('d')\nprint('deep')\n"
+        job = make_job(
+            {"deep.py": source, "ok.py": "print('after')\n"},
+            [stdio("Deep", "deep.py", "deep\n"), stdio("After", "ok.py", "after\n")],
+        )
+        outcome = self.go(job, nofile=256)
+        self.assertEqual(outcome.check(0)["status"], "passed")
+        self.assertEqual(outcome.check(1)["status"], "passed")
 
     def run_with_roots(self, stash_source, probe_source):
         with tempfile.TemporaryDirectory() as base:

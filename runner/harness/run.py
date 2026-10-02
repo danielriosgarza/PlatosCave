@@ -273,6 +273,10 @@ def parse_input(raw):
         job = json.loads(raw[newline + 1 :].decode("utf-8"), parse_constant=reject_constant)
     except (ValueError, RecursionError) as error:
         raise InputError("job is not valid JSON") from error
+    try:
+        json.dumps(job, ensure_ascii=False).encode("utf-8")
+    except (UnicodeEncodeError, RecursionError) as error:
+        raise InputError("job holds text that is not valid Unicode") from error
     validate_job(job)
     return nonce, job
 
@@ -540,45 +544,61 @@ class Exec:
 # --------------------------------------------------------------------------------------
 
 
+def scrub_text(value):
+    """Replace what UTF-8 cannot carry (lone surrogates, which JSON escapes admit) in every string.
+
+    The outcome file is written by student-controlled code, so its strings are untrusted
+    before they are measured, cut or framed.
+    """
+    if isinstance(value, str):
+        return value.encode("utf-8", "replace").decode("utf-8")
+    if isinstance(value, list):
+        return [scrub_text(item) for item in value]
+    if isinstance(value, dict):
+        return {scrub_text(key): scrub_text(item) for key, item in value.items()}
+    return value
+
+
 def clear_directory(path):
     """Remove everything under `path` (not `path` itself), iteratively and by directory fd.
 
-    Student code may leave trees nested deeper than a path can name or a recursion can
-    follow, directories without permissions and special files; none of that may stop the sweep.
+    Student code may leave trees nested deeper than a path can name or a recursion can follow,
+    directories without permissions and special files; none of that may stop the sweep. Only
+    one directory fd is open at a time (the container's nofile limit is 256): the walk goes
+    back up through `..`, which is safe because no student process is alive during a sweep.
     """
     flags = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
     try:
         os.chmod(path, 0o700)
     except OSError:
         pass
-    root = os.open(path, flags)
-    stack = []  # (fd, name in parent, entries, next index)
+    fd = os.open(path, flags)
+    frames = [[None, os.listdir(fd), 0]]  # (name in parent, entries, next index) per level
     try:
-        stack.append([root, None, os.listdir(root), 0])
-        while stack:
-            frame = stack[-1]
-            fd, name, entries, index = frame
-            if index >= len(entries):
-                stack.pop()
-                os.close(fd)
-                if stack:
-                    os.rmdir(name, dir_fd=stack[-1][0])
+        while True:
+            frame = frames[-1]
+            if frame[2] < len(frame[1]):
+                entry = frame[1][frame[2]]
+                frame[2] += 1
+                info = os.lstat(entry, dir_fd=fd)
+                if stat.S_ISDIR(info.st_mode):
+                    os.chmod(entry, 0o700, dir_fd=fd)
+                    child = os.open(entry, flags, dir_fd=fd)
+                    os.close(fd)
+                    fd = child
+                    frames.append([entry, os.listdir(fd), 0])
+                else:
+                    os.unlink(entry, dir_fd=fd)
                 continue
-            frame[3] += 1
-            entry = entries[index]
-            info = os.lstat(entry, dir_fd=fd)
-            if stat.S_ISDIR(info.st_mode):
-                os.chmod(entry, 0o700, dir_fd=fd)
-                child = os.open(entry, flags, dir_fd=fd)
-                stack.append([child, entry, os.listdir(child), 0])
-            else:
-                os.unlink(entry, dir_fd=fd)
+            frames.pop()
+            if not frames:
+                return
+            parent = os.open("..", flags, dir_fd=fd)
+            os.close(fd)
+            fd = parent
+            os.rmdir(frame[0], dir_fd=fd)
     finally:
-        for frame in stack:
-            try:
-                os.close(frame[0])
-            except OSError:
-                pass
+        os.close(fd)
 
 
 def proc_parents():
@@ -751,7 +771,7 @@ class Harness:
             os.close(err_w)
         if proc is not None:
             killer.arm(proc.pid)  # start_new_session: the group id is the pid
-            if threading.active_count() != self.baseline_threads + 3:
+            if threading.active_count() > self.baseline_threads + 3:
                 raise InternalFault("a thread started after the spawn")
             self.wait_child(proc)
             res.returncode = proc.returncode
@@ -830,7 +850,7 @@ class Harness:
         finally:
             os.close(fd)
         try:
-            value = json.loads(data.decode("utf-8"))
+            value = scrub_text(json.loads(data.decode("utf-8")))
         except (ValueError, RecursionError):
             return None
         return value if isinstance(value, dict) else None
