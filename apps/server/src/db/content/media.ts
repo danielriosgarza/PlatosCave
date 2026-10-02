@@ -1,5 +1,5 @@
 import { and, eq, sql } from 'drizzle-orm';
-import type { ClassScope } from '../../auth/scope';
+import { type ClassScope, type DraftPreviewScope, isDraftPreview } from '../../auth/scope';
 import { openToStudent } from '../../content/availability';
 import { findReleaseTopic } from '../classTopics';
 import type { Db } from '../client';
@@ -21,7 +21,7 @@ export async function findReleasedObject(
   now: Date,
 ): Promise<{ key: string; contentType: string; title: string } | null> {
   if (!key.startsWith(`courses/${scope.courseId}/`)) return null;
-  if (scope.membership.isPreview) return findDraftObject(db, scope, revisionId, key, now);
+  if (isDraftPreview(scope)) return findDraftObject(db, scope, revisionId, key, now);
   if (!scope.releaseId) return null;
   const [row] = await db
     .select({
@@ -65,7 +65,7 @@ async function topicOpens(db: Db, scope: ClassScope, releaseTopicId: string, now
  */
 async function findDraftObject(
   db: Db,
-  scope: ClassScope,
+  scope: DraftPreviewScope,
   revisionId: string,
   key: string,
   now: Date,

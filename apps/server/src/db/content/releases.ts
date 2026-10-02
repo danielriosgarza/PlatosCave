@@ -2,7 +2,13 @@ import { exerciseProblems } from '@parallax/contracts';
 import type { validationIssue, validationReport } from '@parallax/contracts/routes/releases';
 import { and, asc, eq, isNull, lte, max, ne, or, type SQL, sql } from 'drizzle-orm';
 import type { z } from 'zod';
-import type { ClassContext, ClassScope, CourseContext, CourseScope } from '../../auth/scope';
+import {
+  type ClassScope,
+  type CourseContext,
+  type CourseScope,
+  type DraftPreviewScope,
+  isDraftPreview,
+} from '../../auth/scope';
 import { openToStudent } from '../../content/availability';
 import { derivedReady, readDerivedStatus } from '../../jobs/derived';
 import type { Db } from '../client';
@@ -40,7 +46,7 @@ export const tabOf: Record<ResourceType, Tab> = {
 const needsAlternative = new Set<ResourceType>(['slides_pdf', 'reading_pdf', 'shiny']);
 
 /** The course's live (not archived) draft topics with their resources and head revisions. */
-async function loadDrafts(tx: Db | Tx, scope: CourseContext) {
+async function loadDrafts(tx: Db | Tx, scope: CourseContext | DraftPreviewScope) {
   const topicRows = await tx
     .select()
     .from(topics)
@@ -297,7 +303,7 @@ export async function studyableResource(
   resourceId: string,
   now: Date,
 ) {
-  if (scope.membership.isPreview) {
+  if (isDraftPreview(scope)) {
     const found = (await draftSnapshot(db, scope)).resources.find(
       (r) => r.resourceId === resourceId && (scope.role !== 'student' || openToStudent(r, now)),
     );
@@ -319,7 +325,7 @@ export async function studyableResource(
  * principals) do not see hidden resources.
  */
 export async function readClassRelease(db: Db, scope: ClassScope) {
-  if (scope.membership.isPreview) {
+  if (isDraftPreview(scope)) {
     const draft = await draftSnapshot(db, scope);
     const visible = draft.resources.filter(
       (r) => scope.role !== 'student' || r.visibility !== 'hidden',
@@ -369,7 +375,7 @@ export async function readClassRelease(db: Db, scope: ClassScope) {
  * still edits the course; real members always read the adopted release. Resources without a
  * revision are left out, as publication would refuse them.
  */
-export async function draftSnapshot(db: Db | Tx, scope: ClassContext) {
+export async function draftSnapshot(db: Db | Tx, scope: DraftPreviewScope) {
   const drafts = await loadDrafts(db, scope);
   const topicRows = drafts.map(({ topic }) => ({
     /** Plays the `release_topics` id: the draft topic id, stable for the snapshot. */

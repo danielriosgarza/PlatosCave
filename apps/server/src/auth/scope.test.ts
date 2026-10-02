@@ -1,7 +1,15 @@
 import cookie from '@fastify/cookie';
 import Fastify from 'fastify';
-import { expect, test } from 'vitest';
-import { assertRecentAuth, RECENT_AUTH_MS } from './scope';
+import { expect, expectTypeOf, test } from 'vitest';
+import {
+  assertRecentAuth,
+  type ClassManagerScope,
+  type ClassScope,
+  type CourseContext,
+  type CourseScope,
+  type DraftPreviewScope,
+  RECENT_AUTH_MS,
+} from './scope';
 import { readSessionToken, sessionCookieHeader } from './sessions';
 
 test('recent authentication is required within 15 minutes', () => {
@@ -29,4 +37,12 @@ test('the session token is read from the signed pc_session cookie only', async (
   expect(await tokenFor('pc_session=')).toBeNull();
   expect(await tokenFor()).toBeNull();
   await app.close();
+});
+
+test('A01 only course and class-manager scopes reach course rows, not a member’s class scope', () => {
+  expectTypeOf<CourseScope>().toExtend<CourseContext>();
+  expectTypeOf<ClassManagerScope>().toExtend<CourseContext>();
+  expectTypeOf<ClassScope>().not.toExtend<CourseContext>();
+  // A class scope reads the course draft only once narrowed to a draft preview (ADR-0003).
+  expectTypeOf<ClassScope>().not.toExtend<DraftPreviewScope>();
 });
