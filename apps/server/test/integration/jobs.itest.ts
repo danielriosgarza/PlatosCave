@@ -485,6 +485,7 @@ describe('derived status of resource revisions', () => {
         type: 'reading_native',
         revisionId: revision.id,
         status,
+        statusTag: expect.stringMatching(/^[0-9a-f]{32}$/),
       },
       {
         resourceId: empty.id,
@@ -493,6 +494,7 @@ describe('derived status of resource revisions', () => {
         type: 'reading_native',
         revisionId: null,
         status: null,
+        statusTag: null,
       },
     ]);
     // Other derived outputs survive the status write.
