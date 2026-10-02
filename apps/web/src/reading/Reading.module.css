@@ -209,7 +209,7 @@
   position: relative;
   margin: 0 auto;
   border: 1px solid var(--pc-rule);
-  background: #fff;
+  background: var(--pc-sheet);
   max-width: 100%;
 }
 .sheet canvas {
@@ -217,6 +217,73 @@
 }
 .sheet[hidden] {
   display: none;
+}
+
+/*
+ * The selectable text pdf.js lays over the page: transparent glyphs placed and scaled to match
+ * the drawing. Ported from the `.textLayer` rules of pdfjs-dist/web/pdf_viewer.css, which is not
+ * loaded; class names inside are the ones pdf.js writes.
+ */
+.textLayer {
+  position: absolute;
+  inset: 0;
+  overflow: clip;
+  text-align: initial;
+  opacity: 1;
+  line-height: 1;
+  letter-spacing: normal;
+  word-spacing: normal;
+  text-size-adjust: none;
+  forced-color-adjust: none;
+  transform-origin: 0 0;
+  caret-color: CanvasText;
+  z-index: 0;
+  --min-font-size: 1;
+  --text-scale-factor: calc(var(--total-scale-factor) * var(--min-font-size));
+  --min-font-size-inv: calc(1 / var(--min-font-size));
+}
+.textLayer span,
+.textLayer br {
+  color: transparent;
+  position: absolute;
+  white-space: pre;
+  cursor: text;
+  transform-origin: 0% 0%;
+  user-select: text;
+}
+.textLayer > :not(:global(.markedContent)),
+.textLayer :global(.markedContent) span:not(:global(.markedContent)) {
+  z-index: 1;
+  --font-height: 0;
+  font-size: calc(var(--text-scale-factor) * var(--font-height));
+  --scale-x: 1;
+  --rotate: 0deg;
+  transform: rotate(var(--rotate)) scaleX(var(--scale-x)) scale(var(--min-font-size-inv));
+}
+.textLayer :global(.markedContent) {
+  display: contents;
+}
+.textLayer span[role="img"] {
+  user-select: none;
+  cursor: default;
+}
+.textLayer ::selection {
+  background: color-mix(in srgb, AccentColor, transparent 50%);
+  color: transparent;
+}
+.textLayer br::selection {
+  background: transparent;
+}
+.textLayer :global(.endOfContent) {
+  display: block;
+  position: absolute;
+  inset: 100% 0 0;
+  z-index: 0;
+  cursor: default;
+  user-select: none;
+}
+.textLayer:global(.selecting) :global(.endOfContent) {
+  top: 0;
 }
 
 @media (max-width: 1199px) {

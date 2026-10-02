@@ -1,7 +1,7 @@
 import { and, eq, sql } from 'drizzle-orm';
 import type { ClassScope } from '../../auth/scope';
 import { openToStudent } from '../../content/availability';
-import { loadClassTopics } from '../classTopics';
+import { findReleaseTopic } from '../classTopics';
 import type { Db } from '../client';
 import { releaseResources, resourceRevisions, storageObjects } from '../schema';
 import { draftSnapshot, studyOpen } from './releases';
@@ -54,10 +54,9 @@ export async function findReleasedObject(
 
 /** The same availability the topic list shows: a locked topic's media is not downloadable (§4). */
 async function topicOpens(db: Db, scope: ClassScope, releaseTopicId: string, now: Date) {
+  // The row came from the caller's release or draft, so for an instructor its topic is open.
   if (scope.role !== 'student') return true;
-  const { topics } = await loadClassTopics(db, scope, now);
-  const topic = topics.find((t) => t.releaseTopicId === releaseTopicId);
-  return topic?.availability.state === 'available' || topic?.availability.state === 'complete';
+  return (await findReleaseTopic(db, scope, { releaseTopicId }, now))?.open ?? false;
 }
 
 /**

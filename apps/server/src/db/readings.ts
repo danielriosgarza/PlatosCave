@@ -5,7 +5,7 @@ import type { ClassScope } from '../auth/scope';
 import { openToStudent } from '../content/availability';
 import { readDerivedStatus } from '../jobs/derived';
 import { invalid, notFound, type Outcome } from '../outcome';
-import { loadClassTopics } from './classTopics';
+import { findReleaseTopic } from './classTopics';
 import type { Db } from './client';
 import { releaseResources, resourceRevisions, storageObjects, studyPositions } from './schema';
 import { forClass } from './scoped';
@@ -49,14 +49,6 @@ interface ReleasedReading {
   createdAt: Date;
 }
 
-/** Whether the topic holding `releaseTopicId` is open to the caller; instructors always see it. */
-async function topicOpen(db: Db, scope: ClassScope, releaseTopicId: string, now: Date) {
-  if (scope.role !== 'student') return true;
-  const { topics } = await loadClassTopics(db, scope, now);
-  const topic = topics.find((t) => t.releaseTopicId === releaseTopicId);
-  return topic?.availability.state === 'available' || topic?.availability.state === 'complete';
-}
-
 /** One pinned revision of the adopted release the caller may open now, or undefined. */
 async function releasedRevision(
   db: Db,
@@ -91,7 +83,11 @@ async function releasedRevision(
     );
   if (!row) return undefined;
   if (scope.role === 'student' && !openToStudent(row, now)) return undefined;
-  if (!(await topicOpen(db, scope, row.releaseTopicId, now))) return undefined;
+  // The row came from the class release, so for an instructor its topic exists and is open.
+  if (scope.role === 'student') {
+    const topic = await findReleaseTopic(db, scope, { releaseTopicId: row.releaseTopicId }, now);
+    if (!topic?.open) return undefined;
+  }
   const { visibility: _visibility, releaseAt: _releaseAt, ...reading } = row;
   return reading;
 }
@@ -112,11 +108,8 @@ export async function listTopicReadings(
   now: Date,
 ): Promise<{ readings: ReadingSummary[]; lastRevisionId: string | null } | null> {
   if (!scope.releaseId) return null;
-  const { topics } = await loadClassTopics(db, scope, now);
-  const topic = topics.find((t) => t.topicId === topicId);
-  const open =
-    topic?.availability.state === 'available' || topic?.availability.state === 'complete';
-  if (!topic || (scope.role === 'student' && !open)) return null;
+  const topic = await findReleaseTopic(db, scope, { topicId }, now);
+  if (!topic?.open) return null;
   const rows = await db
     .select({
       resourceId: releaseResources.resourceId,
