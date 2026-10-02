@@ -399,6 +399,22 @@ describe('reading upload', () => {
   });
 });
 
+describe('deck processing status', () => {
+  it('a finished deck reads Processed, not Ready to publish: publication can still need a text alternative', async () => {
+    await open(
+      grant(),
+      fresh({ resources: [resource({ type: 'slides_pdf', title: 'Lecture 1' })] }),
+    );
+    expect(await screen.findByText('Processed')).toBeInTheDocument();
+    expect(screen.queryByText('Ready to publish')).not.toBeInTheDocument();
+  });
+
+  it('a finished reading still reads Ready to publish', async () => {
+    await open();
+    expect(await screen.findByText('Ready to publish')).toBeInTheDocument();
+  });
+});
+
 describe('processing state while it is not known', () => {
   it('A26 says it is checking while the status loads, and offers no retry for a ready reading', async () => {
     const fetchMock = api(grant(), fresh());

@@ -2,7 +2,7 @@ import type { CookieSerializeOptions } from '@fastify/cookie';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { revokeSession } from '../db/auth/sessions';
-import type { Db } from '../db/client';
+import type { Executor } from '../db/client';
 import { PREVIEW_SESSION_TTL_MS } from '../db/preview';
 import { TOKEN_SHAPE } from './sessions';
 
@@ -60,20 +60,33 @@ export const editorPath = (value: Pick<PreviewReturn, 'courseId' | 'topicId'>): 
     ? `/courses/${value.courseId}/edit/${value.topicId}`
     : `/courses/${value.courseId}/edit`;
 
+/** Ends the kept instructor session, if the browser holds one; takes part in `db`'s transaction. */
+export async function revokePreviewReturn(
+  db: Executor | undefined,
+  req: FastifyRequest,
+  now: Date,
+): Promise<void> {
+  const kept = readPreviewReturn(req);
+  if (kept && db) await revokeSession(db, kept.token, now);
+}
+
+export function clearPreviewReturn(req: FastifyRequest, reply: FastifyReply, appOrigin: string) {
+  if (req.cookies?.[PREVIEW_RETURN_COOKIE]) {
+    reply.clearCookie(PREVIEW_RETURN_COOKIE, returnCookieOptions(appOrigin));
+  }
+}
+
 /**
  * Sign-out and sign-in end the kept instructor session too: a browser that signs out during a
  * preview must not keep a live session in a cookie it cannot see.
  */
 export async function endPreviewReturn(
-  db: Db | undefined,
+  db: Executor | undefined,
   req: FastifyRequest,
   reply: FastifyReply,
   appOrigin: string,
   now: Date,
 ): Promise<void> {
-  const kept = readPreviewReturn(req);
-  if (kept && db) await revokeSession(db, kept.token, now);
-  if (req.cookies?.[PREVIEW_RETURN_COOKIE]) {
-    reply.clearCookie(PREVIEW_RETURN_COOKIE, returnCookieOptions(appOrigin));
-  }
+  await revokePreviewReturn(db, req, now);
+  clearPreviewReturn(req, reply, appOrigin);
 }

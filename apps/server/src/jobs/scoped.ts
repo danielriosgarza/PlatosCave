@@ -17,6 +17,7 @@ import {
 } from '../auth/scope';
 import type { Db } from '../db/client';
 import type { Storage } from '../storage/storage';
+import type { JobLogger } from './logger';
 
 /** Jobs act on one class or one course; the rule is declared by the job, never by the payload. */
 export type JobRule = Extract<Scope, { kind: 'class' } | { kind: 'course' }>;
@@ -152,11 +153,6 @@ export async function runScopedJob<R extends JobRule, I extends z.ZodType>(
   }
 }
 
-export interface WorkLogger {
-  warn: (obj: object, msg: string) => void;
-  error: (obj: object, msg: string) => void;
-}
-
 /**
  * Creates the job's queue and starts a worker for it. Refused jobs end terminally
  * (`deadletter`) with the reason as output, so a revoked membership is not retried. A job that
@@ -168,7 +164,7 @@ export async function workScopedJob<R extends JobRule, I extends z.ZodType>(
   boss: PgBoss,
   db: Db,
   job: ScopedJob<R, I>,
-  log: WorkLogger,
+  log: JobLogger,
   polling: JobPollingOptions & Pick<JobFetchOptions, 'batchSize'> = {},
   services: JobServices = {},
 ): Promise<string> {

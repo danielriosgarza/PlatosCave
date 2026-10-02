@@ -20,14 +20,16 @@ export class FileMailer implements Mailer {
   constructor(
     dir: string,
     private readonly from: string,
+    /** The injected clock (ADR-0006), so file times agree with the rest of the app's. */
+    private readonly now: () => Date = () => new Date(),
   ) {
     this.dir = resolve(dir);
   }
 
   async send(message: MailMessage): Promise<void> {
     await mkdir(this.dir, { recursive: true });
-    const sentAt = new Date();
-    // Wall-clock time plus a per-process sequence keeps messages sent in one millisecond ordered.
+    const sentAt = this.now();
+    // The clock's time plus a per-process sequence keeps messages sent in one millisecond ordered.
     const seq = String(this.sequence++ % 1e6).padStart(6, '0');
     const name = `${String(sentAt.getTime()).padStart(15, '0')}-${seq}-${randomBytes(4).toString('hex')}.json`;
     const stored: StoredMail = { ...message, from: this.from, sentAt: sentAt.toISOString() };
