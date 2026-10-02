@@ -68,8 +68,18 @@ export interface ContentOriginDeps {
   now: () => Date;
 }
 
+/** `host` or `host:port` (also `[v6]:port`) and nothing else: no userinfo, path or spaces. */
+const HOST_HEADER = /^([^\s:/?#@[\]]+|\[[0-9a-f:.]+\])(?::\d{1,5})?$/i;
+
+/**
+ * Compares the raw `Host` header, not `req.hostname`: under TRUST_PROXY Fastify takes the latter
+ * from `X-Forwarded-Host`, which would make this split depend on the proxy stripping client
+ * copies of that header. The app/content origin split must hold whatever the proxy does, so it
+ * reads what the browser sent (a browser never sends `X-Forwarded-Host`; the proxy must still
+ * forward `Host` unchanged, as .env.example asks).
+ */
 export const isContentHost = (req: FastifyRequest, config: Config): boolean =>
-  (req.hostname ?? '').toLowerCase() === config.CONTENT_HOST;
+  (HOST_HEADER.exec(req.headers.host ?? '')?.[1] ?? '').toLowerCase() === config.CONTENT_HOST;
 
 /**
  * The content origin (ADR-0002, §13): on CONTENT_HOST the server answers `/content/:token` and

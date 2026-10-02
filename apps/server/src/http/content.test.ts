@@ -70,6 +70,44 @@ const get = (url: string, headers: Record<string, string>) =>
   server.inject({ method: 'GET', url, headers });
 
 describe('content origin', () => {
+  test('the app/content split reads the raw Host header, never X-Forwarded-Host', async () => {
+    const trusting = await buildApp(
+      loadConfig({
+        NODE_ENV: 'test',
+        LOG_LEVEL: 'silent',
+        APP_HOST: '127.0.0.1',
+        CONTENT_HOST: 'localhost',
+        CONTENT_ORIGIN: 'http://localhost:3100',
+        APP_ORIGIN: 'http://127.0.0.1:3100',
+        TRUST_PROXY: 'true',
+      }),
+    );
+    try {
+      // A client copy of the header must not turn an app-host request into a content-host one,
+      // or the reverse: both are decided by Host alone.
+      const asApp = await trusting.inject({
+        method: 'GET',
+        url: '/api/health',
+        headers: { host: '127.0.0.1:3100', 'x-forwarded-host': 'localhost:3100' },
+      });
+      expect(asApp.statusCode).not.toBe(404);
+      const asContent = await trusting.inject({
+        method: 'GET',
+        url: '/api/health',
+        headers: { host: 'localhost:3100', 'x-forwarded-host': '127.0.0.1:3100' },
+      });
+      expect(asContent.statusCode).toBe(404);
+      const userinfo = await trusting.inject({
+        method: 'GET',
+        url: '/api/health',
+        headers: { host: 'x@localhost:3100' },
+      });
+      expect(userinfo.statusCode).not.toBe(404);
+    } finally {
+      await trusting.close();
+    }
+  });
+
   test('streams a token’s object on the content host with a sandboxed, cross-origin policy', async () => {
     const res = await get(`/content/${token()}`, content);
     expect(res.statusCode).toBe(200);

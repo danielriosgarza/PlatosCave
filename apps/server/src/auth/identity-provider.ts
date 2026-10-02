@@ -9,7 +9,11 @@ export interface IdentityProvider {
    * exists: the caller answers the same way for every address.
    */
   begin(input: { email: string; destination: string }): Promise<void>;
-  /** Finishes a sign-in from the provider's proof (here, the link token). */
+  /**
+   * Finishes a sign-in from the provider's proof (here, the link token). Does not validate the
+   * proof's shape: the caller rejects malformed input first (the verify route does), so
+   * arbitrary input never costs a query.
+   */
   complete(proof: string): Promise<SignInResult>;
 }
 
