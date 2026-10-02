@@ -15,7 +15,7 @@ Spec §16 lists 36 acceptance scenarios; §17 orders the build. PRs are written 
 | Unit | Vitest project `unit` | `*.test.ts` beside the code in `packages/*`, `apps/server/src`, `scripts` | nothing |
 | Component | Vitest project `component` (jsdom, Testing Library) | `apps/web/src/**/*.test.tsx` | nothing |
 | Integration | Vitest project `integration` | `apps/server/test/integration/**/*.itest.ts` | `DATABASE_URL` (compose or `scripts/pg-local.sh`); `fs` storage in a temp dir; `file` mailer |
-| Docker integration | same project, `*.docker.itest.ts` | runner and connector fixtures | Docker; `describe.skipIf(!dockerAvailable())`, mandatory in CI |
+| Docker integration | `*.docker.itest.ts`: in project `integration`, except the runner's `apps/runner/test/**/*.docker.itest.ts`, which run in their own project `runner` (`pnpm test:runner`, CI job `runner`, against the image it builds; [runner design](../design/runner.md) §13 item 6) | runner and connector fixtures | Docker; `describe.skipIf(!dockerAvailable())`, mandatory in CI |
 | End-to-end | Playwright 1.56.1, Chromium only | `e2e/tests/**/*.e2e.ts` | built web + server started by Playwright `webServer`, seeded e2e database |
 | Accessibility | @axe-core/playwright inside e2e | `e2e/tests/a11y/*.e2e.ts` and `expectNoA11yViolations(page)` in feature tests | as e2e |
 | Go | `go test ./...` | `connector/**/*_test.go` | in-process SSH/Jupyter fakes |

@@ -79,6 +79,14 @@ jobs:
           test "$(label org.parallax.runtime)" = python-3.12
           test "$(label org.parallax.harness)" = "$(sed -n 's/^HARNESS_VERSION = "\([0-9]*\)"$/\1/p' runner/harness/run.py)"
           test "$(label org.parallax.content-hash)" = "$(bash scripts/runner-image.sh hash python)"
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: A13 sandbox probes against the image
+        run: pnpm test:runner
 
   integration:
     runs-on: ubuntu-24.04
