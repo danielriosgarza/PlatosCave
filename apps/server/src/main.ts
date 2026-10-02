@@ -6,6 +6,7 @@ import { createBoss } from './db/jobs/boss';
 import annotationsMap from './jobs/annotations-map.job';
 import type { JobLogger } from './jobs/logger';
 import { workMaintenance } from './jobs/maintenance';
+import readingIngest from './jobs/reading-ingest.job';
 import { loadJobs } from './jobs/registry';
 import { ensureQueues, workScopedJob } from './jobs/scoped';
 import { createStorage } from './storage/create';
@@ -82,10 +83,11 @@ if (mode === 'api') {
       onWarning: (warning) => logBossWarning(warning),
     });
   // Without a queue the API still serves; adoptions then queue no mapping (logged at error).
-  // pg-boss refuses sends to a missing queue, so the queue exists before the first adoption.
+  // pg-boss refuses sends to a missing queue, so the queues exist before the first adoption or
+  // reading upload, created once here rather than on every send.
   const started = await boss
     ?.start()
-    .then(() => ensureQueues(boss, [annotationsMap]))
+    .then(() => ensureQueues(boss, [annotationsMap, readingIngest]))
     .then(
       () => true,
       (err) => {
