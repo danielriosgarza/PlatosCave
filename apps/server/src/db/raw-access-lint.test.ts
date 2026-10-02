@@ -37,6 +37,7 @@ const restricted = [
   'apps/server/src/http/register-fixture.ts',
   'apps/server/src/annotations/fixture.ts',
   'apps/server/src/annotations/visibility.ts',
+  'apps/server/src/auth/email-provider.ts',
   'apps/server/src/auth/fixture.ts',
   'apps/server/src/auth/scope.ts',
   'apps/server/src/auth/sessions.ts',

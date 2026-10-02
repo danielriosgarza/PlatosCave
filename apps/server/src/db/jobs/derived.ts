@@ -1,3 +1,4 @@
+import type { ResourceType } from '@parallax/contracts';
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { CourseScope } from '../../auth/scope';
 import { DerivedStatus, type ResourceJobStatus, readDerivedStatus } from '../../jobs/derived';
@@ -5,8 +6,6 @@ import type { Db } from '../client';
 import { resourceRevisions, resources, topics } from '../schema';
 import { forCourse } from '../scoped';
 import { BOSS_SCHEMA } from './boss';
-
-export type ResourceType = (typeof resources.$inferSelect)['type'];
 
 /**
  * Identifies a recorded `derived.status` as read: md5 of its jsonb text, null when there is none

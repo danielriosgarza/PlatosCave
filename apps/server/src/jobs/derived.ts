@@ -1,5 +1,5 @@
+import type { ResourceType } from '@parallax/contracts';
 import { z } from 'zod';
-import type { ResourceType } from '../db/jobs/derived';
 
 /**
  * State of the job deriving outputs (conversions, page text, block maps) from one resource

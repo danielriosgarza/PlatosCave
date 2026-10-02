@@ -69,6 +69,11 @@ export const getReading = defineRoute({
     /** `pending` while the ingestion job runs; `failed` carries its reason. */
     status: z.enum(['ready', 'pending', 'failed']),
     error: z.string().nullable(),
+    /**
+     * Storage key of the uploaded source file, the `:key` of the object route's attachment
+     * download; null for a reading written inline.
+     */
+    sourceKey: z.string().nullable(),
     /** Native readings: ingested HTML, images resolved to content-origin links. */
     html: z.string().nullable(),
     /** PDF readings: the file on the content origin and its page count. */
