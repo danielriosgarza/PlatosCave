@@ -1,0 +1,184 @@
+/* Ported from the wireframe: .pc-slide-stage, .pc-deck-grid, .pc-slide-mat, .pc-slide,
+   .pc-progress, .pc-slide-controls, .pc-slide-index; the slide is a pdf.js canvas, not markup. */
+.label {
+  font: var(--pc-text-label);
+}
+.button {
+  font: inherit;
+  font-size: 12px;
+  min-height: 32px;
+  cursor: pointer;
+  border: 1px solid var(--pc-muted);
+  padding: 4px 12px;
+  background: var(--pc-sheet);
+  color: var(--pc-ink);
+  border-radius: var(--pc-radius-control);
+}
+.button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.button[aria-pressed="true"],
+.button[aria-expanded="true"] {
+  background: var(--pc-soft);
+  font-weight: 600;
+}
+.picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.picker select {
+  border: 1px solid var(--pc-muted);
+  background: var(--pc-sheet);
+  border-radius: var(--pc-radius-control);
+  padding: 4px 8px;
+  min-height: 32px;
+  max-width: 100%;
+}
+
+.stage {
+  padding: 16px 40px 20px;
+  background: var(--pc-sheet);
+  min-height: 400px;
+}
+.stage:focus-visible {
+  outline: 2px solid var(--pc-ink);
+  outline-offset: -2px;
+}
+.stage[data-focus] {
+  padding: 16px 24px;
+}
+.grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 32px;
+  align-items: start;
+}
+.grid.hasNotes {
+  grid-template-columns: minmax(0, 1fr) var(--pc-notes-width);
+}
+.main,
+.notes {
+  min-width: 0;
+}
+
+/*
+ * The mat is the stage the slide is fitted to: the wireframe's viewport rule gives the 16:9
+ * slide 978 x 550 px at 1440 x 900, and 1316 x 740 px in Focus.
+ */
+.mat {
+  background: var(--pc-soft);
+  display: flex;
+  height: max(280px, calc(100dvh - 350px));
+  overflow: hidden;
+}
+.mat[data-focus] {
+  height: max(280px, calc(100dvh - 160px));
+}
+.mat[data-zoomed] {
+  overflow: auto;
+}
+.slide {
+  position: relative;
+  /* Centres a slide smaller than the mat and lets a larger one scroll from its start. */
+  margin: auto;
+  flex: none;
+  background: var(--pc-sheet);
+}
+.slide canvas {
+  display: block;
+}
+.slide[hidden] {
+  display: none;
+}
+.loading {
+  margin: auto;
+  color: var(--pc-muted);
+}
+.progress {
+  height: 2px;
+  background: var(--pc-rule);
+  margin-top: 18px;
+  overflow: hidden;
+}
+.progress > span {
+  display: block;
+  height: 100%;
+  background: var(--pc-ink);
+}
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+.controls .first {
+  margin-left: 0;
+}
+.count {
+  font: var(--pc-text-ui);
+  min-width: 64px;
+  text-align: center;
+}
+.index {
+  margin: 12px 0 0;
+  padding: 12px 0 0;
+  border-top: 1px solid var(--pc-rule);
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  list-style: none;
+}
+.indexButton {
+  font: inherit;
+  font-size: 12px;
+  min-height: 32px;
+  min-width: 32px;
+  cursor: pointer;
+  border: 0;
+  background: none;
+  color: var(--pc-muted);
+}
+.indexButton[aria-current="true"] {
+  color: var(--pc-ink);
+  font-weight: 600;
+}
+.notice {
+  max-width: 700px;
+  margin: 0 auto;
+  padding: 32px 0;
+}
+.empty {
+  font: var(--pc-text-subsection);
+  max-width: 700px;
+  margin: 0 auto;
+  padding: 32px 40px;
+}
+.status {
+  color: var(--pc-muted);
+  max-width: 700px;
+  margin: 0 auto;
+  padding: 32px 40px;
+}
+
+@media (max-width: 1199px) {
+  .stage {
+    padding-left: 24px;
+    padding-right: 24px;
+  }
+  .grid.hasNotes {
+    grid-template-columns: minmax(0, 1fr) 260px;
+  }
+}
+@media (max-width: 800px) {
+  .grid.hasNotes {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 540px) {
+  .stage {
+    padding: 12px 16px;
+  }
+}

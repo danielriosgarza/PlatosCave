@@ -7,6 +7,7 @@ import { pipeline } from 'node:stream/promises';
 import {
   assertSafeKey,
   type Body,
+  type ByteRange,
   hashingMeter,
   objectKey,
   type Storage,
@@ -48,14 +49,14 @@ export class FsStorage implements Storage {
     }
   }
 
-  async get(key: string): Promise<{ body: Readable; size: number }> {
+  async get(key: string, range?: ByteRange): Promise<{ body: Readable; size: number }> {
     try {
       const handle = await open(this.path(key), 'r');
       const { size } = await handle.stat().catch(async (err) => {
         await handle.close();
         throw err;
       });
-      return { body: handle.createReadStream(), size };
+      return { body: handle.createReadStream(range), size };
     } catch (err) {
       if (isMissing(err)) throw new StorageNotFoundError(key);
       throw err;

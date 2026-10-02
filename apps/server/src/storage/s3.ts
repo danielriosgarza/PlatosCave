@@ -13,6 +13,7 @@ import { Upload } from '@aws-sdk/lib-storage';
 import {
   assertSafeKey,
   type Body,
+  type ByteRange,
   hashingMeter,
   objectKey,
   type Storage,
@@ -100,15 +101,27 @@ export class S3Storage implements Storage {
     }
   }
 
-  async get(key: string): Promise<{ body: Readable; size: number }> {
+  async get(key: string, range?: ByteRange): Promise<{ body: Readable; size: number }> {
     assertSafeKey(key);
     try {
-      const res = await this.client.send(new GetObjectCommand({ Bucket: this.bucket, Key: key }));
+      const res = await this.client.send(
+        new GetObjectCommand({
+          Bucket: this.bucket,
+          Key: key,
+          ...(range && { Range: `bytes=${range.start}-${range.end}` }),
+        }),
+      );
       if (res.ContentLength === undefined) {
         (res.Body as Readable).destroy();
         throw new Error(`storage object without a length: ${key}`);
       }
-      return { body: res.Body as Readable, size: res.ContentLength };
+      // A ranged answer's length is the slice's; the whole object's is the end of ContentRange.
+      const total = range ? Number(res.ContentRange?.split('/')[1]) : res.ContentLength;
+      if (!Number.isInteger(total)) {
+        (res.Body as Readable).destroy();
+        throw new Error(`storage object without a total length: ${key}`);
+      }
+      return { body: res.Body as Readable, size: total };
     } catch (err) {
       if (isMissing(err)) throw new StorageNotFoundError(key);
       throw err;

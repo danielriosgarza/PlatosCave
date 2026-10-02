@@ -18,6 +18,8 @@ import { forClass } from './scoped';
  */
 
 const READING_TYPES = ['reading_native', 'reading_pdf'] as const;
+/** Decks share the readings' positions: a PDF is placed by page. */
+const PLACED_TYPES = [...READING_TYPES, 'slides_pdf'] as const;
 type ReadingType = (typeof READING_TYPES)[number];
 const isReading = (type: string): type is ReadingType =>
   (READING_TYPES as readonly string[]).includes(type);
@@ -50,7 +52,7 @@ interface ReleasedReading {
 }
 
 /** One pinned revision of the adopted release the caller may open now, or undefined. */
-async function releasedRevision(
+export async function releasedRevision(
   db: Db,
   scope: ClassScope,
   revisionId: string,
@@ -236,7 +238,7 @@ function sourceKeyOf(
 }
 
 /** The PDF file of a `reading_pdf` revision: `content.objectKey`, else its only object. */
-function pdfKey(content: Record<string, unknown>, objectKeys: string[]): string | null {
+export function pdfKey(content: Record<string, unknown>, objectKeys: string[]): string | null {
   const named = typeof content.objectKey === 'string' ? content.objectKey : undefined;
   const key = named ?? (objectKeys.length === 1 ? objectKeys[0] : undefined);
   return key && objectKeys.includes(key) ? key : null;
@@ -256,7 +258,9 @@ export async function savePosition(
   const row = await releasedRevision(db, scope, input.revisionId, now);
   if (!row) return notFound;
   if (row.tab !== input.tab) return invalid('The resource is not on that tab');
-  if (!isReading(row.type)) return invalid('Positions are only saved for readings here');
+  if (!(PLACED_TYPES as readonly string[]).includes(row.type)) {
+    return invalid('Positions are only saved for readings and slide decks here');
+  }
   const { position } = input;
   if (row.type === 'reading_native') {
     if (!('blockId' in position)) return invalid('A native reading is positioned by block');
@@ -266,7 +270,7 @@ export async function savePosition(
       blocks.some((b) => (b as { id?: unknown } | null)?.id === position.blockId);
     if (!known) return invalid('The block is not part of this reading');
   } else {
-    if (!('page' in position)) return invalid('A PDF reading is positioned by page');
+    if (!('page' in position)) return invalid('A PDF is positioned by page');
     const pages = row.derived.pageCount;
     if (typeof pages === 'number' && position.page > pages) {
       return invalid('The page is past the end of this reading');

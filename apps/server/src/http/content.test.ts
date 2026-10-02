@@ -105,6 +105,49 @@ describe('content origin', () => {
     expect(head.body).toBe('');
   });
 
+  test('serves a byte range with 206, 416 past the end, and a preflight for the Range header', async () => {
+    // "<svg>…</svg>" is 14 bytes: the ellipsis takes three.
+    const ranged = (range: string) =>
+      server.inject({
+        method: 'GET',
+        url: `/content/${token()}`,
+        headers: { ...content, range },
+      });
+    const part = await ranged('bytes=1-3');
+    expect(part.statusCode).toBe(206);
+    expect(part.body).toBe('svg');
+    expect(part.headers).toMatchObject({
+      'content-range': 'bytes 1-3/14',
+      'content-length': '3',
+      'accept-ranges': 'bytes',
+      'access-control-allow-origin': 'http://127.0.0.1:3100',
+    });
+    expect((await ranged('bytes=-6')).body).toBe('…</svg>'.slice(-6));
+    expect((await ranged('bytes=10-')).statusCode).toBe(206);
+    const past = await ranged('bytes=14-20');
+    expect(past.statusCode).toBe(416);
+    expect(past.headers['content-range']).toBe('bytes */14');
+    // A header that is not one range is ignored: the whole object.
+    expect((await ranged('bytes=0-1,3-4')).statusCode).toBe(200);
+
+    const preflight = await server.inject({
+      method: 'OPTIONS',
+      url: `/content/${token()}`,
+      headers: { ...content, origin: 'http://127.0.0.1:3100' },
+    });
+    expect(preflight.statusCode).toBe(204);
+    expect(preflight.headers).toMatchObject({
+      'access-control-allow-origin': 'http://127.0.0.1:3100',
+      'access-control-allow-headers': 'range',
+    });
+    const onApp = await server.inject({
+      method: 'OPTIONS',
+      url: `/content/${token()}`,
+      headers: app,
+    });
+    expect(onApp.statusCode).toBe(404);
+  });
+
   test('the app origin’s CSP lets it embed media, fonts, frames and fetches from the content origin', async () => {
     const csp = String((await get('/api/health', app)).headers['content-security-policy']);
     const directives = Object.fromEntries(

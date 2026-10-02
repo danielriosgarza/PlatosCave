@@ -1,6 +1,12 @@
 import { createHash } from 'node:crypto';
 import { Readable, Transform } from 'node:stream';
 
+/** Inclusive byte offsets, as in an HTTP `Range: bytes=start-end` header. */
+export interface ByteRange {
+  start: number;
+  end: number;
+}
+
 /** Result of storing one object: its content-addressed key, digest and byte length. */
 export interface StoredObject {
   key: string;
@@ -18,10 +24,11 @@ export type Body = Readable | AsyncIterable<Uint8Array> | Uint8Array;
 export interface Storage {
   put(prefix: string, body: Body): Promise<StoredObject>;
   /**
-   * Streams an object with its byte length (one backend call); rejects with
-   * `StorageNotFoundError` when it does not exist.
+   * Streams an object (or only the bytes of `range`, which must lie within it) with the whole
+   * object's byte length (one backend call); rejects with `StorageNotFoundError` when it does
+   * not exist.
    */
-  get(key: string): Promise<{ body: Readable; size: number }>;
+  get(key: string, range?: ByteRange): Promise<{ body: Readable; size: number }>;
   head(key: string): Promise<{ size: number } | null>;
   delete(key: string): Promise<void>;
   /** Releases connections the adapter holds; buildApp calls it on close. */
