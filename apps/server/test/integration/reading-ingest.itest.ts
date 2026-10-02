@@ -14,7 +14,12 @@ import readingIngest, {
   enqueueReadingIngest,
 } from '../../src/jobs/reading-ingest.job';
 import { loadJobs } from '../../src/jobs/registry';
-import { runScopedJob, type ScopedPayload, workScopedJob } from '../../src/jobs/scoped';
+import {
+  ensureQueues,
+  runScopedJob,
+  type ScopedPayload,
+  workScopedJob,
+} from '../../src/jobs/scoped';
 import { FsStorage } from '../../src/storage/fs';
 import { storeCourseObject } from '../../src/storage/objects';
 import type { Storage } from '../../src/storage/storage';
@@ -142,6 +147,8 @@ beforeAll(async () => {
     onWarning: () => {},
   });
   await boss.start();
+  // As the API does at startup: sends never create or reconfigure the queue themselves.
+  await ensureQueues(boss, [readingIngest]);
 });
 
 afterAll(async () => {
@@ -162,7 +169,7 @@ describe('reading.ingest', () => {
   });
 
   test('A06 an uploaded Markdown reading is ingested by the worker with block ids and images', async () => {
-    // Sent before any worker exists: the enqueue creates the queue (pg-boss refuses otherwise).
+    // Sent before any worker exists, into the queue the API created at startup.
     const source = await storeCourseObject(
       testDb.db,
       storage,
@@ -286,10 +293,10 @@ describe('reading.ingest', () => {
     await settled(revisionId);
   });
 
-  test('a queue that cannot be created leaves the revision failed, not queued', async () => {
+  test('a job that cannot be sent leaves the revision failed, not queued', async () => {
     const revisionId = await revision('reading_native', { markdown: '# Queue' });
     const broken = {
-      createQueue: async () => {
+      send: async () => {
         throw new Error('advisory lock timeout');
       },
     } as unknown as PgBoss;
@@ -366,12 +373,51 @@ describe('reading.ingest', () => {
     expect((await derivedOf(revisionId)).status).toBeUndefined();
   });
 
-  test('every enqueue brings the queue’s options back in line, not only the first', async () => {
+  test('the queue is set up once at startup, with the job’s options, not on every enqueue', async () => {
     await boss.updateQueue(readingIngest.name, { retryLimit: 7 });
     const revisionId = await revision('reading_native', { markdown: '# Options' });
     await enqueue(boss, elena, revisionId);
-    expect(await boss.getQueue(readingIngest.name)).toMatchObject({ retryLimit: 2 });
+    // An upload neither creates nor reconfigures the queue (no queue lock per send) …
+    expect(await boss.getQueue(readingIngest.name)).toMatchObject({ retryLimit: 7 });
     await settled(revisionId);
+    // … the startup set-up applies the job's current options over a changed queue.
+    await ensureQueues(boss, [readingIngest]);
+    expect(await boss.getQueue(readingIngest.name)).toMatchObject({ retryLimit: 2 });
+  });
+
+  test('a file the store sends short is retried, not ingested or failed as unreadable', async () => {
+    const source = await storeCourseObject(
+      testDb.db,
+      storage,
+      elena,
+      Buffer.from('# Whole\n\nThe tail that must not go missing.\n'),
+      'text/markdown',
+    );
+    const revisionId = await revision(
+      'reading_native',
+      { sourceKey: source.key, format: 'markdown' },
+      [source.key],
+    );
+    // The store reports more bytes than its stream delivers (a connection dropped mid-body).
+    const short: Storage = {
+      ...storage,
+      put: storage.put.bind(storage),
+      head: storage.head.bind(storage),
+      delete: storage.delete.bind(storage),
+      get: async (key) => {
+        const object = await storage.get(key);
+        return { ...object, size: object.size + 10 };
+      },
+    };
+    await expect(
+      runScopedJob(testDb.db, readingIngest, fakeJob(revisionId, 0), { storage: short }),
+    ).rejects.toThrow(/ended after \d+ of \d+ bytes/);
+    const derived = await derivedOf(revisionId);
+    expect(derived.status).toMatchObject({
+      state: 'queued',
+      error: 'Attempt 1 could not finish; trying again',
+    });
+    expect(derived.html).toBeUndefined();
   });
 
   test('invalid PDF reading content fails at once, as invalid native content does', async () => {
@@ -499,7 +545,7 @@ describe('reading.ingest', () => {
     const running = { ...statusFor(OTHER_JOB), state: 'running' as const };
     await setDerivedStatus(testDb.db, elena, revisionId, running);
     const broken = {
-      createQueue: async () => {
+      send: async () => {
         throw new Error('advisory lock timeout');
       },
     } as unknown as PgBoss;

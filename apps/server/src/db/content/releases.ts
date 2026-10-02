@@ -10,8 +10,9 @@ import {
   isDraftPreview,
 } from '../../auth/scope';
 import { openToStudent } from '../../content/availability';
-import { derivedReady, readDerivedStatus } from '../../jobs/derived';
+import { derivedReady } from '../../jobs/derived';
 import type { Db } from '../client';
+import { resolveDerivedStatuses } from '../jobs/derived';
 import {
   auditEvents,
   courseReleases,
@@ -45,7 +46,10 @@ export const tabOf: Record<ResourceType, Tab> = {
 /** Types whose material is not text, so they need an accessible alternative (§7, §14). */
 const needsAlternative = new Set<ResourceType>(['slides_pdf', 'reading_pdf', 'shiny']);
 
-/** The course's live (not archived) draft topics with their resources and head revisions. */
+/**
+ * The course's live (not archived) draft topics with their resources, head revisions and each
+ * head revision's derived status as the processing list shows it (`resolveDerivedStatuses`).
+ */
 async function loadDrafts(tx: Db | Tx, scope: CourseContext | DraftPreviewScope) {
   const topicRows = await tx
     .select()
@@ -58,9 +62,17 @@ async function loadDrafts(tx: Db | Tx, scope: CourseContext | DraftPreviewScope)
     .leftJoin(resourceRevisions, eq(resourceRevisions.id, resources.headRevisionId))
     .where(and(forCourse(scope, resources), isNull(resources.archivedAt)))
     .orderBy(asc(resources.position), asc(resources.createdAt));
+  const statuses = await resolveDerivedStatuses(
+    tx,
+    resourceRows.map(({ revision }) => ({
+      raw: revision?.derived.status,
+      createdAt: revision?.createdAt ?? null,
+    })),
+  );
+  const withStatus = resourceRows.map((row, i) => ({ ...row, status: statuses[i] ?? null }));
   return topicRows.map((topic) => ({
     topic,
-    resources: resourceRows.filter((r) => r.resource.topicId === topic.id),
+    resources: withStatus.filter((r) => r.resource.topicId === topic.id),
   }));
 }
 type Drafts = Awaited<ReturnType<typeof loadDrafts>>;
@@ -91,7 +103,7 @@ export function validate(drafts: Drafts): ValidationReport {
     if (items.length === 0) {
       warnings.push({ code: 'empty_topic', message: `“${topic.title}” has no resources`, topicId });
     }
-    for (const { resource, revision } of items) {
+    for (const { resource, revision, status } of items) {
       const at = { topicId, resourceId: resource.id };
       if (!revision) {
         errors.push({ code: 'no_revision', message: `“${resource.title}” has no content`, ...at });
@@ -117,8 +129,7 @@ export function validate(drafts: Drafts): ValidationReport {
         continue;
       }
       if (revision.type === 'slides_pdf' && !derivedReady(revision.derived)) {
-        const failed =
-          readDerivedStatus(revision.derived.status, revision.createdAt)?.state === 'failed';
+        const failed = status?.state === 'failed';
         errors.push({
           code: 'unconverted_deck',
           message: failed
@@ -130,7 +141,7 @@ export function validate(drafts: Drafts): ValidationReport {
       if (revision.type === 'reading_native' || revision.type === 'reading_pdf') {
         // A reading nobody can open is worse than none: block while its job is unfinished or
         // failed. A revision with no job on record (older data) is left alone.
-        const state = readDerivedStatus(revision.derived.status, revision.createdAt)?.state;
+        const state = status?.state;
         if (state !== undefined && state !== 'ready') {
           errors.push({
             code: 'unprocessed_reading',
