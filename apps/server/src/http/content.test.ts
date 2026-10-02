@@ -2,14 +2,18 @@ import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { connect } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { Readable } from 'node:stream';
+import { defineRoute } from '@parallax/contracts';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
+import { z } from 'zod';
 import { buildApp, logUrl } from '../app';
 import { loadConfig } from '../config';
 import { downloadName } from '../content/media';
 import { type ContentGrant, mintContentToken } from '../content/tokens';
 import { FsStorage } from '../storage/fs';
 import { courseObjectPrefix } from '../storage/storage';
+import { registerRoute } from './register';
 
 const course = '00000000-0000-4000-8000-000000000101';
 const now = new Date('2026-10-01T09:00:00Z');
@@ -226,6 +230,112 @@ describe('content origin', () => {
     }
   });
 
+  test('a storage error with a 4xx status keeps that status and the default body', async () => {
+    const failing = new FsStorage(root);
+    failing.get = () => Promise.reject(Object.assign(new Error('range'), { status: 416 }));
+    const broken = await buildApp(config, { storage: failing, now: () => now });
+    try {
+      const res = await broken.inject({
+        method: 'GET',
+        url: `/content/${token()}`,
+        headers: content,
+      });
+      expect(res.statusCode).toBe(416);
+      expect(res.json()).toEqual({
+        statusCode: 416,
+        error: 'Range Not Satisfiable',
+        message: 'range',
+      });
+    } finally {
+      await broken.close();
+    }
+  });
+
+  test('a body that fails before its headers flush answers 500 without the object’s headers', async () => {
+    const failing = new FsStorage(root);
+    failing.get = async () => ({
+      size: 14,
+      body: new Readable({
+        read() {
+          this.destroy(new Error('socket hang up s3.internal.example:9000 bucket parallax'));
+        },
+      }),
+    });
+    const broken = await buildApp(config, { storage: failing, now: () => now });
+    try {
+      const res = await broken.inject({
+        method: 'GET',
+        url: `/content/${token({ disposition: 'attachment', filename: 'notes.svg' })}`,
+        headers: content,
+      });
+      expect(res.statusCode).toBe(500);
+      expect(res.json()).toEqual({ error: 'internal error' });
+      expect(res.body).not.toContain('s3.internal');
+      expect(res.headers['content-type']).toBe('application/json; charset=utf-8');
+      // Not saved as the download, and not cached for the token's lifetime.
+      expect(res.headers['content-disposition']).toBeUndefined();
+      expect(res.headers['cache-control']).toBe('no-store');
+      expect(res.headers['access-control-allow-origin']).toBe('http://127.0.0.1:3100');
+      expect(res.headers.vary).toMatch(/origin/i);
+    } finally {
+      await broken.close();
+    }
+  });
+
+  test('an /api route that throws answers 5xx with a fixed body; 4xx keep the default', async () => {
+    const leak = 'relation "secret_table" does not exist at db.internal.example:5432';
+    const broken = await buildApp(config, { now: () => now });
+    const route = (path: `/api/${string}`, fail: () => never) =>
+      registerRoute(
+        broken,
+        defineRoute({
+          method: 'GET',
+          path,
+          scope: { kind: 'public' },
+          summary: path,
+          response: z.object({}),
+          examples: {},
+        }),
+        fail,
+      );
+    route('/api/boom', () => {
+      throw new Error(leak);
+    });
+    route('/api/unavailable', () => {
+      throw Object.assign(new Error(leak), { statusCode: 503 });
+    });
+    route('/api/conflict', () => {
+      throw Object.assign(new Error('already archived'), { statusCode: 409 });
+    });
+    try {
+      const boom = await broken.inject({ method: 'GET', url: '/api/boom', headers: app });
+      expect(boom.statusCode).toBe(500);
+      expect(boom.json()).toEqual({ error: 'internal error' });
+      expect(boom.headers['cache-control']).toBe('no-store');
+      const raw = JSON.stringify({ headers: boom.headers, body: boom.body });
+      expect(raw).not.toContain('secret_table');
+      expect(raw).not.toContain('db.internal');
+
+      const unavailable = await broken.inject({
+        method: 'GET',
+        url: '/api/unavailable',
+        headers: app,
+      });
+      expect(unavailable.statusCode).toBe(503);
+      expect(unavailable.json()).toEqual({ error: 'internal error' });
+
+      const conflict = await broken.inject({ method: 'GET', url: '/api/conflict', headers: app });
+      expect(conflict.statusCode).toBe(409);
+      expect(conflict.json()).toEqual({
+        statusCode: 409,
+        error: 'Conflict',
+        message: 'already archived',
+      });
+    } finally {
+      await broken.close();
+    }
+  });
+
   test('the content host serves nothing else and ignores cookies; the app host has no /content', async () => {
     for (const url of [
       '/api/health',
@@ -331,6 +441,10 @@ describe('content origin', () => {
     const id = '00000000-0000-4000-8000-000000000101';
     expect(as(`/classes/${id}/topics/${id}`)).toBe(`/classes/${id}/topics/${id}`);
     expect(as('/')).toBe('/');
+    // The web app's assets route keeps hashed file names and redacts a token in their place.
+    expect(as('/assets/index-C7_kqXwD.js', '/assets/*')).toBe('/assets/index-C7_kqXwD.js');
+    const asset = as(`/assets/${t}`, '/assets/*');
+    expect(asset).toBe('/assets/[redacted]');
     expect(as('/sign-in?token=abc')).toBe('/sign-in?token=[redacted]');
     expect(as('/api/auth/verify?token=abc', '/api/auth/verify')).toBe(
       '/api/auth/verify?token=[redacted]',
