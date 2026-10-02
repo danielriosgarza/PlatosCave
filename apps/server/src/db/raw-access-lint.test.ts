@@ -1,5 +1,14 @@
 import { spawnSync } from 'node:child_process';
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { afterAll, beforeAll, expect, test } from 'vitest';
@@ -36,14 +45,12 @@ const restricted = [
   'apps/server/src/http/routes/fixture.routes.ts',
   'apps/server/src/http/register-fixture.ts',
   'apps/server/src/annotations/fixture.ts',
-  'apps/server/src/annotations/visibility.ts',
   'apps/server/src/auth/email-provider.ts',
   'apps/server/src/auth/fixture.ts',
   'apps/server/src/auth/scope.ts',
   'apps/server/src/auth/sessions.ts',
   'apps/server/src/content/fixture.ts',
   'apps/server/src/content/media.ts',
-  'apps/server/src/jobs/derived.ts',
   'apps/server/src/jobs/scoped.ts',
   'apps/server/src/storage/fixture.ts',
   'apps/server/src/storage/objects.ts',
@@ -141,3 +148,28 @@ test.each(exempt)(
     expect(lintAt(path)).toEqual({ imports: [], queries: [] });
   },
 );
+
+// Paths named `fixture*` are scratch locations for the fixture copy; every other entry stands for
+// a real module, and a renamed or deleted one would leave the matrix asserting on nothing.
+test.each([...restricted, ...exempt].filter((path) => !/(^|\/)[^/]*fixture[^/]*$/.test(path)))(
+  'the linted path exists: %s',
+  (path) => {
+    expect(existsSync(join(root, path))).toBe(true);
+  },
+);
+
+test('only auth/scope.ts imports db/auth/scope', () => {
+  // The reads there take raw ids, before any scope exists (ADR-0002, Scoped tables).
+  const serverSrc = join(root, 'apps/server/src');
+  const files = readdirSync(serverSrc, { recursive: true, encoding: 'utf8' }).filter((f) =>
+    f.endsWith('.ts'),
+  );
+  const importsScopeReads = (file: string) => {
+    const code = readFileSync(join(serverSrc, file), 'utf8');
+    const sibling = file.startsWith('db/auth/') ? /from '\.\/scope(\.js)?'/ : /(?!)/;
+    return /from '[^']*\/db\/auth\/scope(\.js)?'/.test(code) || sibling.test(code);
+  };
+  expect(files.filter((f) => f !== 'db/auth/scope.ts' && importsScopeReads(f))).toEqual([
+    'auth/scope.ts',
+  ]);
+});

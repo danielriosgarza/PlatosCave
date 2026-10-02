@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { revokeSession } from '../db/auth/sessions';
 import type { Executor } from '../db/client';
 import { PREVIEW_SESSION_TTL_MS } from '../db/preview';
-import { TOKEN_SHAPE } from './sessions';
+import { TOKEN_SHAPE } from './tokens';
 
 /**
  * While a draft preview runs, the browser's session cookie holds the preview principal's

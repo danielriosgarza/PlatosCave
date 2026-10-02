@@ -3,7 +3,18 @@ import type { PgColumn } from 'drizzle-orm/pg-core';
 import type { ClassScope } from '../../auth/scope';
 import { forClass } from '../scoped';
 
-// The SQL form of the audience rule in `annotations/visibility.ts` (ADR-0002, §8, §13).
+/**
+ * The one audience rule for annotations, threads and posts (ADR-0002, §8, §13), in SQL: every
+ * read, count, notification and export of these rows filters through `visibleTo`:
+ *
+ * - `private` → the author only; instructors never see personal study marks (§17 default);
+ * - `instructor` → the author and the class's instructors;
+ * - `class` → every member of the class.
+ *
+ * Rows always belong to one class, so another cohort of the same course never sees them
+ * (A21). Rows written by a preview principal are seen by that principal only, so "Preview as
+ * student" never posts into a real class discussion.
+ */
 
 interface AudiencedTable {
   classId: PgColumn;
@@ -12,7 +23,7 @@ interface AudiencedTable {
   isPreview?: PgColumn;
 }
 
-/** SQL form of `canSee`, including the `class_id` predicate of the caller's scope. */
+/** The audience rule, including the `class_id` predicate of the caller's scope. */
 export function visibleTo(scope: ClassScope, table: AudiencedTable): SQL {
   const shared = or(
     eq(table.audience, 'class'),
@@ -25,7 +36,10 @@ export function visibleTo(scope: ClassScope, table: AudiencedTable): SQL {
   ) as SQL;
 }
 
-/** Posts inside a visible thread: hides other people's preview posts, keeps everything else. */
+/**
+ * Not an audience form: inside a thread that `visibleTo` already admitted, hides other people's
+ * preview posts and keeps everything else.
+ */
 export function visiblePost(
   scope: ClassScope,
   table: { classId: PgColumn; authorId: PgColumn; isPreview: PgColumn },

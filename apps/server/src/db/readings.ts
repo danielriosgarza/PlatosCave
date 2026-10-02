@@ -3,10 +3,10 @@ import { and, asc, desc, eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import type { ClassScope } from '../auth/scope';
 import { openToStudent } from '../content/availability';
-import { readDerivedStatus } from '../jobs/derived';
 import { invalid, notFound, type Outcome } from '../outcome';
 import { findReleaseTopic } from './classTopics';
 import type { Db } from './client';
+import { readDerivedStatus } from './jobs/derived';
 import { releaseResources, resourceRevisions, storageObjects, studyPositions } from './schema';
 import { forClass } from './scoped';
 

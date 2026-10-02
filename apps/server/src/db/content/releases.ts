@@ -1,4 +1,4 @@
-import { exerciseProblems } from '@parallax/contracts';
+import { exerciseProblems, type ResourceType } from '@parallax/contracts';
 import type { validationIssue, validationReport } from '@parallax/contracts/routes/releases';
 import { and, asc, eq, isNull, lte, max, ne, or, type SQL, sql } from 'drizzle-orm';
 import type { z } from 'zod';
@@ -10,8 +10,8 @@ import {
   isDraftPreview,
 } from '../../auth/scope';
 import { openToStudent } from '../../content/availability';
-import { derivedReady, readDerivedStatus } from '../../jobs/derived';
 import type { Db } from '../client';
+import { derivedReady, readDerivedStatus } from '../jobs/derived';
 import {
   auditEvents,
   courseReleases,
@@ -27,7 +27,6 @@ import { forCourse } from '../scoped';
 export type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type Issue = z.infer<typeof validationIssue>;
 export type ValidationReport = z.infer<typeof validationReport>;
-type ResourceType = (typeof resources.$inferSelect)['type'];
 type Tab = (typeof releaseResources.$inferInsert)['tab'];
 
 /** Destination tab of each resource type (§5). */
