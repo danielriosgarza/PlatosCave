@@ -6,7 +6,11 @@ import { authSessions, users } from '../schema';
 export async function createSession(
   db: Db,
   userId: string,
-  { now = new Date(), authTime = now }: { now?: Date; authTime?: Date } = {},
+  {
+    now = new Date(),
+    authTime = now,
+    ttlMs = SESSION_TTL_MS,
+  }: { now?: Date; authTime?: Date; ttlMs?: number } = {},
 ): Promise<{ token: string; sessionId: string }> {
   const token = newToken();
   const [row] = await db
@@ -16,7 +20,7 @@ export async function createSession(
       tokenHash: hashToken(token),
       authTime,
       createdAt: now,
-      expiresAt: new Date(now.getTime() + SESSION_TTL_MS),
+      expiresAt: new Date(now.getTime() + ttlMs),
     })
     .returning({ id: authSessions.id });
   if (!row) throw new Error('session insert returned no row');
