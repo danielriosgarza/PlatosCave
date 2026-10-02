@@ -21,7 +21,10 @@ vi.mock('./pdfjs', () => ({ openPdf }));
 const REV_NATIVE = '00000000-0000-4000-8000-000000000501';
 const REV_PDF = '00000000-0000-4000-8000-000000000502';
 const REV_PENDING = '00000000-0000-4000-8000-000000000503';
+const REV_FAILED = '00000000-0000-4000-8000-000000000504';
+const SOURCE_KEY = `courses/${COURSE}/objects/${'a'.repeat(64)}`;
 const RES = '00000000-0000-4000-8000-000000000401';
+const DOWNLOAD_URL = 'http://localhost:3100/content/download-1';
 const PDF_URL = 'http://localhost:3100/content/token-1';
 const READING = `/classes/${CLASS_A}/topics/${T_SAMPLING}/reading`;
 
@@ -82,6 +85,7 @@ function api(world: World, me = makeMe({ classes: [studentIn(CLASS_A, 'Class A')
           kind: 'native',
           status: 'ready',
           error: null,
+          sourceKey: null,
           html: world.html,
           pdf: null,
         },
@@ -97,6 +101,7 @@ function api(world: World, me = makeMe({ classes: [studentIn(CLASS_A, 'Class A')
           kind: 'pdf',
           status: 'ready',
           error: null,
+          sourceKey: SOURCE_KEY,
           html: null,
           pdf: {
             url: world.contentCalls > 1 ? `${PDF_URL}-renewed` : PDF_URL,
@@ -104,6 +109,39 @@ function api(world: World, me = makeMe({ classes: [studentIn(CLASS_A, 'Class A')
             pageCount: 3,
           },
         },
+      };
+    }
+    if (url === `/api/classes/${CLASS_A}/resources/${REV_FAILED}/reading`) {
+      return {
+        status: 200,
+        body: {
+          revisionId: REV_FAILED,
+          title: 'Broken notes',
+          kind: 'native',
+          status: 'failed',
+          error: 'The file could not be read',
+          sourceKey: SOURCE_KEY,
+          html: null,
+          pdf: null,
+        },
+      };
+    }
+    if (
+      url ===
+      `/api/classes/${CLASS_A}/resources/${REV_FAILED}/objects/${encodeURIComponent(SOURCE_KEY)}?disposition=attachment`
+    ) {
+      return {
+        status: 200,
+        body: { url: DOWNLOAD_URL, expiresAt: '2026-10-01T09:05:00Z' },
+      };
+    }
+    if (
+      url ===
+      `/api/classes/${CLASS_A}/resources/${REV_PDF}/objects/${encodeURIComponent(SOURCE_KEY)}?disposition=attachment`
+    ) {
+      return {
+        status: 200,
+        body: { url: DOWNLOAD_URL, expiresAt: '2026-10-01T09:05:00Z' },
       };
     }
     if (url === `/api/classes/${CLASS_A}/resources/${REV_PENDING}/reading`) {
@@ -115,6 +153,7 @@ function api(world: World, me = makeMe({ classes: [studentIn(CLASS_A, 'Class A')
           kind: 'native',
           status: 'pending',
           error: null,
+          sourceKey: null,
           html: null,
           pdf: null,
         },
@@ -496,6 +535,59 @@ describe('PDF reading', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('This PDF could not be loaded.');
     await user.click(screen.getByRole('button', { name: 'Try again' }));
     expect(await screen.findByText('Page 1 of 3')).toBeVisible();
+  });
+});
+
+describe('reading source download', () => {
+  const assign = vi.fn();
+  beforeEach(() => {
+    assign.mockClear();
+    vi.stubGlobal('location', { ...window.location, assign });
+  });
+
+  it('P1-12b a failed reading offers Try again and a Download of its source file', async () => {
+    const user = userEvent.setup();
+    api(
+      makeWorld({
+        lastRevisionId: null,
+        readings: [summary(REV_FAILED, 'Broken notes', 'native')],
+      }),
+    );
+    renderApp(READING);
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(
+      'Broken notes could not be processed: The file could not be read',
+    );
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Download' }));
+    await waitFor(() => expect(assign).toHaveBeenCalledWith(DOWNLOAD_URL));
+  });
+
+  it('P1-12b a PDF reading has Download beside its page controls', async () => {
+    const user = userEvent.setup();
+    openPdf.mockResolvedValue(pdfDocument());
+    api(
+      makeWorld({
+        lastRevisionId: null,
+        readings: [summary(REV_PDF, 'Sampling paper', 'pdf')],
+      }),
+    );
+    renderApp(READING);
+    expect(await screen.findByText('Page 1 of 3')).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Download' }));
+    await waitFor(() => expect(assign).toHaveBeenCalledWith(DOWNLOAD_URL));
+  });
+
+  it('P1-12b a native reading written inline has no Download', async () => {
+    api(
+      makeWorld({
+        lastRevisionId: null,
+        readings: [summary(REV_NATIVE, 'Why samples vary', 'native')],
+      }),
+    );
+    renderApp(READING);
+    expect(await screen.findByText('Every sample tells a slightly different story.')).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Download' })).toBeNull();
   });
 });
 

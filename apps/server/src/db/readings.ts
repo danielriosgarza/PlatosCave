@@ -170,6 +170,8 @@ export interface ReadingContent {
   html: string | null;
   /** Storage key and page count of a ready PDF reading. */
   pdf: { key: string; pageCount: number } | null;
+  /** Storage key of the uploaded source file (a PDF, or a native reading's Markdown/HTML), if any. */
+  sourceKey: string | null;
   /** Content type of each object the revision owns: the only ones an image may resolve to. */
   objects: Record<string, string>;
 }
@@ -202,6 +204,7 @@ export async function loadReading(
     kind: kindOf(row.type),
     error:
       status?.state === 'failed' ? (status.error ?? 'The reading could not be processed') : null,
+    sourceKey: sourceKeyOf(row.type, row.content, row.objectKeys),
     objects: Object.fromEntries(stored.map((o) => [o.key, o.contentType])),
     html: null,
     pdf: null,
@@ -219,6 +222,17 @@ export async function loadReading(
     return { ...base, status: 'failed', error: 'The reading has no PDF file' };
   }
   return { ...base, status: 'ready', pdf: { key, pageCount } };
+}
+
+/** The uploaded file a reading came from: the PDF, or a native reading's `sourceKey`; null for inline text. */
+function sourceKeyOf(
+  type: ReadingType,
+  content: Record<string, unknown>,
+  objectKeys: string[],
+): string | null {
+  if (type === 'reading_pdf') return pdfKey(content, objectKeys);
+  const key = typeof content.sourceKey === 'string' ? content.sourceKey : undefined;
+  return key && objectKeys.includes(key) ? key : null;
 }
 
 /** The PDF file of a `reading_pdf` revision: `content.objectKey`, else its only object. */

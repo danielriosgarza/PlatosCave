@@ -43,6 +43,8 @@ interface Body {
   readings: { title: string; kind: string; position: unknown }[];
   lastRevisionId: string | null;
   html: string;
+  sourceKey: string | null;
+  url: string;
   pdf: { url: string; expiresAt: string; pageCount: number };
   updatedAt: string;
   topics: { savedTab: string | null }[];
@@ -53,12 +55,19 @@ let testDb: TestDatabase;
 let app: FastifyInstance;
 let world: World;
 let root: string;
-const rev: Record<'native' | 'figures' | 'pdf' | 'pending', string> = {
+const rev: Record<
+  'native' | 'figures' | 'pdf' | 'pending' | 'upload' | 'failed' | 'hidden',
+  string
+> = {
   native: '',
   figures: '',
   pdf: '',
   pending: '',
+  upload: '',
+  failed: '',
+  hidden: '',
 };
+const keys = { pdf: '', source: '' };
 let nativeBlock = '';
 
 function one<T>(rows: T[]): T {
@@ -95,6 +104,15 @@ beforeAll(async () => {
   const elena = asCourseScope(ids.statistics, ids.elena);
   const picture = await storeCourseObject(db, storage, elena, Buffer.from('png'), 'image/png');
   const pdf = await storeCourseObject(db, storage, elena, Buffer.from('%PDF'), 'application/pdf');
+  const source = await storeCourseObject(
+    db,
+    storage,
+    elena,
+    Buffer.from('# Uploaded'),
+    'text/markdown',
+  );
+  keys.pdf = pdf.key;
+  keys.source = source.key;
 
   // The seeded reading becomes an ingested one.
   const rendered = renderReading(
@@ -117,6 +135,8 @@ beforeAll(async () => {
     title: string,
     objectKeys: string[],
     position: number,
+    content?: Record<string, unknown>,
+    visibility: 'visible' | 'hidden' = 'visible',
   ) => {
     const resource = one(
       await db
@@ -127,6 +147,7 @@ beforeAll(async () => {
           type,
           title,
           position,
+          visibility,
           createdBy: ids.elena,
         })
         .returning(),
@@ -138,7 +159,7 @@ beforeAll(async () => {
           resourceId: resource.id,
           courseId: ids.statistics,
           type,
-          content: type === 'reading_pdf' ? { title } : { markdown: 'later' },
+          content: content ?? (type === 'reading_pdf' ? { title } : { markdown: 'later' }),
           ...(type === 'reading_pdf' && { accessibleAlternative: { text: title } }),
           objectKeys,
           contentHash: title,
@@ -173,6 +194,38 @@ beforeAll(async () => {
     ready('reading.ingest'),
   );
   rev.pending = await addReading('reading_native', 'Still converting', [], 6);
+  rev.upload = await addReading('reading_native', 'Uploaded notes', [source.key], 7, {
+    sourceKey: source.key,
+    format: 'markdown',
+  });
+  await writeDerivedOutputs(
+    db,
+    elena,
+    rev.upload,
+    { ...renderReading('# Uploaded', 'markdown', {}) },
+    ready('reading.ingest'),
+  );
+  rev.failed = await addReading('reading_native', 'Broken notes', [source.key], 8, {
+    sourceKey: source.key,
+    format: 'markdown',
+  });
+  await writeDerivedOutputs(db, elena, rev.failed, {}, ready('reading.ingest'));
+  // Owns the source key like the others, but students never see it.
+  rev.hidden = await addReading(
+    'reading_native',
+    'Instructor notes',
+    [source.key],
+    9,
+    { sourceKey: source.key, format: 'markdown' },
+    'hidden',
+  );
+  await writeDerivedOutputs(
+    db,
+    elena,
+    rev.hidden,
+    { ...renderReading('# Instructor notes', 'markdown', {}) },
+    ready('reading.ingest'),
+  );
 
   const published = await publishRelease(db, elena);
   if (!published.ok) throw new Error(JSON.stringify(published.report));
@@ -181,6 +234,20 @@ beforeAll(async () => {
     expectedReleaseId: ids.releaseV1,
   });
   if (!adopted.ok) throw new Error(adopted.reason);
+  // This conversion fails after release, as a re-run of the job can.
+  await writeDerivedOutputs(
+    db,
+    elena,
+    rev.failed,
+    {},
+    {
+      state: 'failed',
+      job: 'reading.ingest',
+      jobId: null,
+      updatedAt: now.toISOString(),
+      error: 'The file could not be read',
+    },
+  );
 });
 
 afterAll(async () => {
@@ -198,6 +265,8 @@ describe('reading list and content', () => {
       ['Figures', 'native', null],
       ['Sampling paper', 'pdf', null],
       ['Still converting', 'native', null],
+      ['Uploaded notes', 'native', null],
+      ['Broken notes', 'native', null],
     ]);
     expect(body.lastRevisionId).toBeNull();
   });
@@ -243,6 +312,36 @@ describe('reading list and content', () => {
   });
 });
 
+describe('reading source download', () => {
+  const object = (who: PersonName, classId: string, revisionId: string, key: string) =>
+    call(
+      who,
+      'GET',
+      `/api/classes/${classId}/resources/${revisionId}/objects/${encodeURIComponent(key)}?disposition=attachment`,
+    );
+
+  test('P1-12b a reading names its uploaded source file, ready or failed, and inline text has none', async () => {
+    expect((await read('sam', ids.classA, rev.pdf)).body.sourceKey).toBe(keys.pdf);
+    expect((await read('sam', ids.classA, rev.upload)).body.sourceKey).toBe(keys.source);
+    const failed = (await read('sam', ids.classA, rev.failed)).body;
+    expect(failed).toMatchObject({ status: 'failed', sourceKey: keys.source });
+    expect((await read('sam', ids.classA, rev.native)).body.sourceKey).toBeNull();
+  });
+
+  test('P1-12b the source key opens an attachment link for a member only; others get 404', async () => {
+    const ok = await object('sam', ids.classA, rev.failed, keys.source);
+    expect(ok.status).toBe(200);
+    expect(ok.body.url).toMatch(/^http:\/\/localhost:3100\/content\//);
+    // A non-member, another class's release and a hidden resource all look the same.
+    expect((await object('bea', ids.classA, rev.failed, keys.source)).status).toBe(404);
+    expect((await object('bea', ids.classB, rev.failed, keys.source)).status).toBe(404);
+    // A hidden resource that owns the very key: only its hiding makes it a 404 for a student.
+    expect((await object('sam', ids.classA, rev.hidden, keys.source)).status).toBe(404);
+    expect((await read('sam', ids.classA, rev.hidden)).status).toBe(404);
+    expect((await object('priya', ids.classA, rev.hidden, keys.source)).status).toBe(200);
+  });
+});
+
 describe('study positions', () => {
   test('A03 a saved position comes back with the list, and the last reading studied is named', async () => {
     const put = await save('sam', ids.classA, {
@@ -279,6 +378,8 @@ describe('study positions', () => {
       null,
       { page: 2, offset: 350 },
       null,
+      null,
+      null,
     ]);
   });
 
@@ -290,7 +391,15 @@ describe('study positions', () => {
 
   test('A03 one person’s place is never shown to another', async () => {
     const { body } = await list('priya', ids.classA, ids.sampling);
-    expect(body.readings.map((r) => r.position)).toEqual([null, null, null, null]);
+    expect(body.readings.map((r) => r.position)).toEqual([
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+    ]);
     expect(body.lastRevisionId).toBeNull();
   });
 
