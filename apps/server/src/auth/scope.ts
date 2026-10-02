@@ -67,10 +67,22 @@ export interface CourseScope extends ScopeBase {
 }
 
 /**
- * What `forCourse` accepts: a course scope, or a class scope (which knows its course), so
- * course-side effects of a class action still go through a resolved scope (ADR-0002).
+ * A course scope, or the scope of a class manager (which knows its course), so course-side
+ * effects of a membership change still go through a resolved scope (ADR-0002). A member's
+ * `ClassScope` is not one: a student's class scope reaches no course rows.
  */
-export type CourseContext = CourseScope | ClassContext;
+export type CourseContext = CourseScope | ClassManagerScope;
+
+/**
+ * The class scope of a preview principal. The resolver admits one only while its owner owns or
+ * edits the course, so it may read the course draft it previews (ADR-0003).
+ */
+export interface DraftPreviewScope extends ClassScope {
+  readonly membership: ClassScope['membership'] & { isPreview: true };
+}
+
+export const isDraftPreview = (scope: ClassScope): scope is DraftPreviewScope =>
+  scope.membership.isPreview;
 
 export type ScopeFor<S extends Scope> = S extends { kind: 'class'; grant: 'manage_members' }
   ? ClassManagerScope

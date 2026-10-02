@@ -104,9 +104,10 @@ export const listMembers = defineRoute({
 });
 
 /**
- * Revoking the grant also revokes the open invitations the instructor issued in the class,
- * unless they own the course. 404 when the user is not a member; 409 `not_instructor`. Needs a
- * recent sign-in.
+ * Revoking the grant also revokes the open instructor invitations the instructor issued in the
+ * class, unless they own the course; granting again restores none. Enrolment codes belong to the
+ * class and keep working. 404 when the user is not a member; 409 `not_instructor`. Needs a recent
+ * sign-in.
  */
 export const setManageMembers = defineRoute({
   method: 'PUT',
@@ -121,8 +122,9 @@ export const setManageMembers = defineRoute({
 
 /**
  * Removing an instructor also removes their preview principal in the class, and their draft
- * editing once they teach no class of the course. Open invitations the person issued in the
- * class are revoked unless they own the course. 404 when not a member. Needs a recent sign-in.
+ * editing once they teach no class of the course. Open instructor invitations they issued in the
+ * class are revoked unless they own the course; enrolment codes belong to the class and keep
+ * working. 404 when not a member. Needs a recent sign-in.
  */
 export const removeMember = defineRoute({
   method: 'DELETE',
