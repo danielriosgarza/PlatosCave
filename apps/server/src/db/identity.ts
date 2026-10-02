@@ -14,8 +14,12 @@ import { forClass } from './scoped';
 export type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type Audit = typeof auditEvents.$inferInsert;
 
-/** Appends one audit event (ADR-0002) inside the transaction making the change. */
-export const audit = (tx: Tx, event: Audit) => tx.insert(auditEvents).values(event);
+/**
+ * Appends audit events (ADR-0002) inside the transaction making the change; several in one
+ * statement when given a non-empty array.
+ */
+export const audit = (tx: Tx, event: Audit | Audit[]) =>
+  tx.insert(auditEvents).values(Array.isArray(event) ? event : [event]);
 
 /** Every class and course context of the signed-in person (§3: contexts they can switch between). */
 export async function listContexts(db: Db, scope: UserScope) {

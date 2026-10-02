@@ -89,8 +89,7 @@ export function setManageMembers(
     });
     if (!granted) {
       const course = await lockCourseMembership(tx, scope, userId);
-      if (!course?.owner)
-        await revokeIssuedBy(tx, scope, userId, now, 'issuer_lost_manage_members');
+      await revokeIssuedBy(tx, scope, userId, course, now, 'issuer_lost_manage_members');
     }
     return { ok: true as const };
   });
@@ -123,7 +122,7 @@ export function removeMember(db: Db, scope: ClassManagerScope, userId: string, n
       await dropPreviews(tx, scope, userId, now);
       const course = await lockCourseMembership(tx, scope, userId);
       await dropEditorIfNotTeaching(tx, scope, userId, course);
-      if (!course?.owner) await revokeIssuedBy(tx, scope, userId, now, 'issuer_removed');
+      await revokeIssuedBy(tx, scope, userId, course, now, 'issuer_removed');
     }
     return { ok: true as const };
   });
@@ -167,7 +166,9 @@ async function dropPreviews(tx: Tx, scope: ClassManagerScope, userId: string, no
 /**
  * Locks the person's course membership row, so a removal deciding whether they still teach the
  * course and an invitation acceptance re-granting draft editing run one after the other. Its
- * owner flag also decides whether the person's invitations outlive their class authority.
+ * owner flag also decides whether the person's invitations outlive their class authority
+ * (`revokeIssuedBy`). The grant toggle reads `owner` through it only to share that one code
+ * path: nothing writes `owner`, so the lock is not what makes that read safe.
  */
 async function lockCourseMembership(tx: Tx, scope: CourseContext, userId: string) {
   const [row] = await tx
@@ -240,23 +241,26 @@ async function tryDeleteEmpty(tx: Tx, scope: CourseContext, userId: string): Pro
 /**
  * Instructor invitations rest on their issuer's authority: once a person can no longer manage
  * the class (removed, or `manage_members` revoked), the open instructor invitations they issued
- * there are revoked. Callers skip a course owner, who keeps that authority through the course.
- * Enrolment codes belong to the class and stay; a manager withdraws one explicitly. Expired and
- * used-up invitations are left as they are, with no event.
+ * there are revoked, except a course owner's, who keeps that authority through the course.
+ * `course` is the person's course membership, read under `lockCourseMembership`. Enrolment codes
+ * belong to the class and stay; a manager withdraws one explicitly. Expired and used-up
+ * invitations are left as they are, with no event.
  */
-function revokeIssuedBy(
+async function revokeIssuedBy(
   tx: Tx,
   scope: ClassManagerScope,
   userId: string,
+  course: Awaited<ReturnType<typeof lockCourseMembership>>,
   now: Date,
   reason: RevokeReason,
-) {
+): Promise<void> {
+  if (course?.owner) return;
   const issued = and(
     eq(classInvites.createdBy, userId),
     eq(classInvites.kind, 'instructor'),
     openInvite(now),
   ) as SQL;
-  return revokeInvites(tx, scope, issued, now, { reason });
+  await revokeInvites(tx, scope, issued, now, { reason });
 }
 
 /** Publication is a course grant only the owner hands out (§3: "If delegated"). */
