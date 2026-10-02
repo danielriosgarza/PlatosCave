@@ -70,7 +70,8 @@ export const getProcessing = defineRoute({
 
 /**
  * 404 when the resource is not a reading or PDF deck, or has no revision to process; 409 unless
- * its job failed or was never queued.
+ * its job failed, was never queued, or stopped without finishing (shown as failed by
+ * `getProcessing`).
  */
 export const retryProcessing = defineRoute({
   method: 'POST',

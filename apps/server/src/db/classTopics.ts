@@ -1,5 +1,5 @@
 import { and, asc, desc, eq, inArray } from 'drizzle-orm';
-import type { ClassScope } from '../auth/scope';
+import { type ClassScope, isDraftPreview } from '../auth/scope';
 import {
   type AvailabilityTopic,
   computeAvailability,
@@ -76,7 +76,7 @@ async function instructorNames(db: Db, scope: ClassScope): Promise<string[]> {
  * preview (ADR-0003: a preview principal reads the draft snapshot, never the adopted release).
  */
 async function syllabusRows(db: Db, scope: ClassScope) {
-  if (scope.membership.isPreview) {
+  if (isDraftPreview(scope)) {
     const draft = await draftSnapshot(db, scope);
     return { release: null, topicRows: draft.topics, resourceRows: draft.resources };
   }
@@ -197,7 +197,7 @@ export async function findReleaseTopic(
   let topic: TopicRow | undefined;
   let resources: ResourceRow[];
   let prerequisites: TopicRow[];
-  if (scope.membership.isPreview) {
+  if (isDraftPreview(scope)) {
     const draft = await draftSnapshot(db, scope);
     topic = draft.topics.find(matches);
     if (!topic) return null;

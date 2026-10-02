@@ -8,18 +8,13 @@ import { BOSS_SCHEMA } from './boss';
 
 export type ResourceType = (typeof resources.$inferSelect)['type'];
 
-/** Whether a revision of the scope's course has a recorded job status; false when it has none. */
-export async function hasDerivedStatus(
-  db: Db,
-  scope: CourseScope,
-  revisionId: string,
-): Promise<boolean> {
-  const [row] = await db
-    .select({ status: sql<unknown>`${resourceRevisions.derived} -> 'status'` })
-    .from(resourceRevisions)
-    .where(and(eq(resourceRevisions.id, revisionId), forCourse(scope, resourceRevisions)));
-  return row?.status !== undefined && row.status !== null;
-}
+/**
+ * Identifies a recorded `derived.status` as read: md5 of its jsonb text, null when there is none
+ * (no key, or JSON null). A guarded write compares it in SQL, so nothing round-trips through JS.
+ */
+const statusTag = sql<
+  string | null
+>`md5(nullif(${resourceRevisions.derived} -> 'status', 'null'::jsonb)::text)`;
 
 /**
  * Which attempt may write: the write happens only while `derived.status.jobId` is `jobId`
@@ -32,13 +27,21 @@ export interface StatusGuard {
   orUnattached?: boolean;
   /** Writes only to revisions of these types, so one job never touches another's status. */
   types?: readonly ResourceType[];
+  /**
+   * Writes only while the status is still the one read with this tag (`statusTag`; null: no
+   * status), so of two callers acting on what they read, one moves the status on.
+   */
+  tag?: string | null;
 }
 
 const currentJobId = sql`${resourceRevisions.derived} -> 'status' ->> 'jobId'`;
 
 function guardCondition(guard: StatusGuard | undefined) {
   if (!guard) return undefined;
-  const types = guard.types ? inArray(resourceRevisions.type, [...guard.types]) : undefined;
+  const types = and(
+    guard.types ? inArray(resourceRevisions.type, [...guard.types]) : undefined,
+    guard.tag === undefined ? undefined : sql`${statusTag} IS NOT DISTINCT FROM ${guard.tag}`,
+  );
   if (guard.jobId === undefined) return types;
   const owner =
     guard.jobId === null
@@ -75,13 +78,20 @@ export async function setDerivedStatus(
   return rows.length > 0;
 }
 
-/** `derived.status` of one revision of the scope's course as stored (not validated), if any. */
-export async function readStatus(db: Db, scope: CourseScope, revisionId: string): Promise<unknown> {
+/**
+ * `derived.status` of one revision of the scope's course as stored (not validated), with its
+ * `tag`; null when there is no such revision.
+ */
+export async function readStatus(
+  db: Db,
+  scope: CourseScope,
+  revisionId: string,
+): Promise<{ raw: unknown; tag: string | null } | null> {
   const [row] = await db
-    .select({ status: sql<unknown>`${resourceRevisions.derived} -> 'status'` })
+    .select({ raw: sql<unknown>`${resourceRevisions.derived} -> 'status'`, tag: statusTag })
     .from(resourceRevisions)
     .where(and(eq(resourceRevisions.id, revisionId), forCourse(scope, resourceRevisions)));
-  return row?.status ?? null;
+  return row ? { raw: row.raw ?? null, tag: row.tag } : null;
 }
 
 /** What a derivation job reads of a revision: its type, content and stored objects. */
@@ -150,6 +160,7 @@ export async function listResourceJobStatus(
       revisionId: resources.headRevisionId,
       revisionCreatedAt: resourceRevisions.createdAt,
       status: sql<unknown>`${resourceRevisions.derived} -> 'status'`,
+      statusTag,
     })
     .from(resources)
     .innerJoin(topics, eq(topics.id, resources.topicId))
