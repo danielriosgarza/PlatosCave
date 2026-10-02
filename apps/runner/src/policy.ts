@@ -12,7 +12,12 @@ export interface ResolvedImage {
 }
 
 const MiB = 1024 * 1024;
-const TMPFS = 'rw,noexec,nosuid,nodev,size=64m';
+/**
+ * Docker mounts a tmpfs root owned by root and not writable by the sandbox user, so the harness
+ * (uid 10001) could not create its per-check directories; both roots belong to that user and to
+ * no one else.
+ */
+const TMPFS = 'rw,noexec,nosuid,nodev,size=64m,uid=10001,gid=10001,mode=0700';
 
 export const SANDBOX_LABEL = 'parallax.runner';
 export const JOB_LABEL = 'parallax.job';

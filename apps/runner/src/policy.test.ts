@@ -31,8 +31,8 @@ describe('container policy (design §7.3)', () => {
         NetworkMode: 'none',
         ReadonlyRootfs: true,
         Tmpfs: {
-          '/work': 'rw,noexec,nosuid,nodev,size=64m',
-          '/tmp': 'rw,noexec,nosuid,nodev,size=64m',
+          '/work': 'rw,noexec,nosuid,nodev,size=64m,uid=10001,gid=10001,mode=0700',
+          '/tmp': 'rw,noexec,nosuid,nodev,size=64m,uid=10001,gid=10001,mode=0700',
         },
         Memory: 512 * MiB,
         MemorySwap: 512 * MiB,
@@ -97,8 +97,8 @@ describe('container policy (design §7.3)', () => {
         expect(host.PidsLimit).toBe(64);
         expect(host.NanoCpus).toBe(1e9);
         expect(host.Tmpfs).toEqual({
-          '/work': 'rw,noexec,nosuid,nodev,size=64m',
-          '/tmp': 'rw,noexec,nosuid,nodev,size=64m',
+          '/work': 'rw,noexec,nosuid,nodev,size=64m,uid=10001,gid=10001,mode=0700',
+          '/tmp': 'rw,noexec,nosuid,nodev,size=64m,uid=10001,gid=10001,mode=0700',
         });
       }
     }
