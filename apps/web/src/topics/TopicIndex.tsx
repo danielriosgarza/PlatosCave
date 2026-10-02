@@ -1,8 +1,10 @@
 import { Link } from '@tanstack/react-router';
 import { ApiError } from '../api/client';
+import { ClassUnavailable } from '../components/AccessLost';
 import page from '../components/Page.module.css';
 import { Unavailable } from '../components/Unavailable';
 import { useClassContext } from '../session/classContext';
+import type { SessionClass } from '../session/useSession';
 import styles from './TopicIndex.module.css';
 import {
   type ClassTopic,
@@ -19,8 +21,16 @@ import {
 /** Compact syllabus for one class (§4): five presence columns, one Resume, legend and count. */
 export function TopicIndex({ classId }: { classId: string }) {
   const context = useClassContext(classId);
+  // No topic request is made for a class the person is not (or no longer) in.
+  return context ? (
+    <ClassSyllabus classId={classId} context={context} />
+  ) : (
+    <ClassUnavailable classId={classId} />
+  );
+}
+
+function ClassSyllabus({ classId, context }: { classId: string; context: SessionClass }) {
   const query = useClassTopics(classId);
-  if (!context) return <Unavailable />;
   if (query.error instanceof ApiError && query.error.status === 404) return <Unavailable />;
   const data = query.data;
   return (
