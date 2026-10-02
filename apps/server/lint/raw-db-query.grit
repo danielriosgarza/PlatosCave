@@ -10,10 +10,15 @@
 // Known limits, not caught: a renamed alias (`const conn = deps.db`); assignment and
 // `for ... of` destructuring of the handle, and parameter destructuring other than through a
 // `db` key; a computed member with a non-literal key (`deps.db[name]()`); the handle reached
-// through an array (`[deps.db][0].select()`); and passing the handle to an untyped helper.
+// through an array (`[deps.db][0].select()`); passing the handle to an untyped helper; and a
+// dynamic import of db/client whose specifier is not a plain literal (`await import(path)`,
+// `import('../db/' + 'client')`, an escape); and parameter destructuring of `createDb`,
+// including inside a default value (`{ open = ({ createDb: c }) => c() }`), which is an
+// expression, not a binding of the declaration.
 // Any other object stored under `db` is treated as the handle when a query method name is used
-// on it or a rest element destructures it (`deps.cache.db.delete(key)` and
-// `const { ...all } = deps.config.db` are flagged).
+// on it, or a rest element or a non-literal computed key destructures it
+// (`deps.cache.db.delete(key)`, `const { ...all } = deps.config.db` and
+// `const { [key]: value } = deps.config.db` are flagged).
 //
 // The plugin runs from the biome.json override that exempts the data-access modules under db/,
 // the composition root main.ts and test files (ADR-0002, Scoped tables); every other server
@@ -38,18 +43,65 @@ pattern db_handle() {
   }
 }
 
-// A destructuring key that names a query method, a computed key (which may name any of them,
-// `{ ['select']: s }`, `{ [name]: s }`), or a rest element that captures them all.
+// A destructuring key named `$name`: plain, quoted, or a computed string literal
+// (`{ select }`, `{ 'select': s }`, `{ ['select']: s }`, but not `{ [select]: s }`). `$key` is
+// bound to the key, for the diagnostic span.
+pattern binding_key($name, $key) {
+  or {
+    JsObjectBindingPatternShorthandProperty(identifier=$key),
+    JsObjectBindingPatternProperty(member=$key)
+  } where {
+    $key <: or {
+      JsLiteralMemberName() as $member where { $member <: $name },
+      JsComputedMemberName(expression=$literal) where {
+        $literal <: string_literal(),
+        $literal <: $name
+      },
+      JsIdentifierBinding() as $binding where { $binding <: $name }
+    }
+  }
+}
+
+// A string or template literal without escapes or substitutions, so its text is exactly the
+// key or path it names. An escaped spelling (`'\x73elect'`) is not one.
+pattern string_literal() {
+  or {
+    JsStringLiteralExpression(),
+    JsTemplateExpression() as $template where {
+      $template <: not contains JsTemplateElement(),
+      $template <: r"(?s)^`.*"
+    }
+  } as $literal where { $literal <: not escaped() }
+}
+
+pattern escaped() { r"(?s).*\\.*" }
+
+// A destructuring key that names a query method; a computed key that is not a plain literal
+// (`{ [name]: s }`, `{ ['\x73elect']: s }`) or a quoted key with an escape
+// (`{ '\x73elect': s }`), either of which may name any of them; or a rest element that
+// captures them all.
 pattern db_binding_key() {
   or {
     JsObjectBindingPatternRest(),
-    JsObjectBindingPatternProperty(member=JsComputedMemberName()),
-    or {
-      JsObjectBindingPatternShorthandProperty(identifier=$key),
-      JsObjectBindingPatternProperty(member=$key)
-    } where { $key <: db_method() }
+    JsObjectBindingPatternProperty(member=JsComputedMemberName(expression=$e)) where {
+      $e <: not or {
+        string_literal(),
+        JsNumberLiteralExpression()
+      }
+    },
+    JsObjectBindingPatternProperty(member=JsLiteralMemberName() as $member) where {
+      $member <: escaped()
+    },
+    binding_key(name=db_method(), key=$_)
   }
 }
+
+// GritQL does not take a regex literal as a pattern argument, so names are patterns.
+pattern db_name() { r"^['\"`]?db['\"`]?$" }
+
+pattern create_db_name() { r"^['\"`]?createDb['\"`]?$" }
+
+pattern db_client_path() { r"^['\"`](?:.*/)?db/client(?:\.js|\.ts)?['\"`]$" }
 
 pattern db_method() {
   r"^['\"`]?(?:select|selectDistinct|selectDistinctOn|insert|update|delete|execute|query|transaction|_|\$client|\$count|\$with|with|refreshMaterializedView)['\"`]?$"
@@ -59,8 +111,10 @@ pattern db_method() {
 // `deps.db['select']`; `_` is drizzle's internals object (`deps.db._.session`).
 //
 // `noRestrictedImports` matches the `db/client` group by import name, so it does not see a
-// namespace import of that module (`import * as client`) or a star re-export of it
-// (`export * from`, `export * as ns from`); those are flagged here unless type-only. Feature
+// namespace import of that module (`import * as client`, `import x, * as client`,
+// `await import('…')` with a literal specifier) or a star re-export of it (`export * from`,
+// `export * as ns from`); those are flagged here unless type-only (`typeof import(...)` is a
+// type). Feature
 // code imports what it needs from db/client by name (`type Db`, `probe`). `createDb` is also
 // flagged as a member (`client.createDb`, `client['createDb']`) and as a key destructured in a
 // variable declaration (`const { createDb } = client`), in case a module object reaches feature
@@ -82,11 +136,7 @@ or {
     register_diagnostic(span=$pattern, message="Destructuring the database handle outside a data-access module. Call a db/ function that takes a branded ClassScope/CourseScope instead (ADR-0002, Scoped tables).")
   },
   // `until` stops at the first nested pattern, so only keys directly under `db` count.
-  JsObjectBindingPatternProperty(member=$name) as $property where {
-    $name <: or {
-      r"^['\"`]?db['\"`]?$",
-      JsComputedMemberName(expression=r"^['\"`]db['\"`]$")
-    },
+  binding_key(name=db_name(), key=$name) as $property where {
     $property <: contains JsObjectBindingPattern(properties=$keys) until JsObjectBindingPattern(),
     $keys <: some db_binding_key(),
     register_diagnostic(span=$name, message="Destructuring the database handle outside a data-access module. Call a db/ function that takes a branded ClassScope/CourseScope instead (ADR-0002, Scoped tables).")
@@ -95,30 +145,30 @@ or {
     JsVariableDeclarator(id=$pattern, initializer=JsInitializerClause()),
     JsForVariableDeclaration(declarator=JsVariableDeclarator(id=$pattern))
   } where {
-    $pattern <: contains or {
-      JsObjectBindingPatternShorthandProperty(identifier=$name),
-      JsObjectBindingPatternProperty(member=$name)
-    } where {
-      $name <: or {
-        r"^['\"`]?createDb['\"`]?$",
-        JsComputedMemberName(expression=r"^['\"`]createDb['\"`]$")
-      }
-    },
-    register_diagnostic(span=$name, message="Only the composition root (main.ts) opens the database client (ADR-0002, Scoped tables).")
+    // Default values are expressions, not bindings: `{ fn = ({ createDb }) => 0 }` is clean.
+    $pattern <: contains binding_key(name=create_db_name(), key=$key) until JsInitializerClause(),
+    register_diagnostic(span=$key, message="Only the composition root (main.ts) opens the database client (ADR-0002, Scoped tables).")
   },
   or {
     member_expression(property=$method),
     subscript_expression(index=$method)
   } where {
-    $method <: r"^['\"`]?createDb['\"`]?$",
+    $method <: create_db_name(),
     register_diagnostic(span=$method, message="Only the composition root (main.ts) opens the database client (ADR-0002, Scoped tables).")
   },
   or {
-    JsExportFromClause(source=$source),
-    JsImportNamespaceClause(source=$source)
-  } as $clause where {
-    $clause <: not r"(?s)^type\b.*",
-    $source <: r"^['\"](?:.*/)?db/client(?:\.js|\.ts)?['\"]$",
+    or {
+      JsExportFromClause(source=$source),
+      JsImportNamespaceClause(source=$source)
+    } as $clause where { $clause <: not r"(?s)^type\b.*" },
+    // A combined clause cannot be type-only (TS1363); `type` here may be the default binding.
+    JsImportCombinedClause(specifier=JsNamespaceImportSpecifier(), source=$source),
+    // `contains` searches for a matching literal, so its position in the argument is irrelevant.
+    JsImportCallExpression(arguments=$args) where {
+      $args <: contains string_literal() as $source where { $source <: db_client_path() }
+    }
+  } where {
+    $source <: db_client_path(),
     register_diagnostic(span=$source, message="Only the composition root (main.ts) opens the database client; import or re-export what a feature module needs by name (ADR-0002, Scoped tables).")
   }
 }

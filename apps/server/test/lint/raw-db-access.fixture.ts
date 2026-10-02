@@ -55,6 +55,15 @@ export function viaAccessor(deps: { db?: Db }) {
 export type * as clientTypes from '../../src/db/client';
 export type ClientModule = typeof clientNamespace;
 export * as clientModule from '../../src/db/client'; // raw-query
+export * from '../../src/db/client'; // raw-query
+// Checked by hand, not here, because db/client has no default export and `tsc` rejects them:
+// `import x, * as client from` and `import type, * as client from` db/client are flagged.
+
+export async function loadsTheClient() {
+  const loaded = await import('../../src/db/client'); // raw-query
+  const typed: typeof import('../../src/db/client') = loaded;
+  return typed;
+}
 
 export function viaParameter({
   db: { select }, // raw-query
@@ -72,6 +81,9 @@ export function wrappedReceivers(deps: { db: Db }, method: 'execute' | 'select')
   } = deps;
   // biome-ignore lint/complexity/useLiteralKeys: the fixture exercises a computed key
   const { ['insert']: insertInto } = deps.db; // raw-query
+  // biome-ignore lint/complexity/useLiteralKeys: the fixture exercises an escaped computed key
+  const { ['\x73elect']: escapedComputed } = deps.db; // raw-query
+  const { '\x73elect': escapedQuoted } = deps.db; // raw-query
   const { [method]: anyMethod } = deps.db; // raw-query
   const {
     createDb: open, // raw-query
@@ -93,6 +105,8 @@ export function wrappedReceivers(deps: { db: Db }, method: 'execute' | 'select')
     everything,
     transaction,
     insertInto,
+    escapedComputed,
+    escapedQuoted,
     anyMethod,
     open,
   ];
@@ -109,6 +123,8 @@ export function notTheDatabase(deps: {
 }) {
   const { db } = deps;
   const { url } = deps.config.db;
+  // biome-ignore lint/complexity/useLiteralKeys: the fixture exercises a computed key
+  const { ['url']: computedUrl } = deps.config.db;
   const {
     db: { url: again },
   } = deps.config;
@@ -123,9 +139,11 @@ export function notTheDatabase(deps: {
   // when a query method is called on it or a rest element destructures it.
   cache.db.delete('key'); // known-false-positive
   const { ...settings } = deps.config.db; // known-false-positive
-  return [deps.ledger.db.withdraw(), db, url, again, select, settings, createDb];
+  return [deps.ledger.db.withdraw(), db, url, computedUrl, again, select, settings, createDb];
 }
 
 export function takesAFactory({ createDb }: { createDb: () => void }) {
+  const { open = ({ createDb: inner }: { createDb: () => void }) => inner() } = {};
   createDb();
+  return open;
 }
