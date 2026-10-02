@@ -68,9 +68,6 @@ export interface ContentOriginDeps {
   now: () => Date;
 }
 
-/** The content route's 5xx body: storage errors name endpoints and buckets, and the app reads it. */
-export const INTERNAL_ERROR = { error: 'internal error' } as const;
-
 export const isContentHost = (req: FastifyRequest, config: Config): boolean =>
   (req.hostname ?? '').toLowerCase() === config.CONTENT_HOST;
 
@@ -119,14 +116,9 @@ export function registerContentOrigin(app: FastifyInstance, deps: ContentOriginD
     CONTENT_ROUTE,
     {
       schema: { hide: true },
-      // The app origin can read this route's responses in script, so a server error must not
-      // carry the storage error's text. The real error is logged; 4xx go to the default handler.
-      errorHandler: (err, req, reply) => {
-        const status = (err as { statusCode?: number }).statusCode ?? 500;
-        if (status < 500) throw err;
-        req.log.error({ err }, 'content request failed');
-        return reply.code(500).send(INTERNAL_ERROR);
-      },
+      // The app origin can read this route's responses in script; a server error, including a
+      // body stream that fails before its headers flush, is answered by the server-wide handler
+      // (http/errors.ts) without the storage error's text or the object's headers.
     },
     async (req, reply) => {
       // Defence in depth: the onRequest hook already refuses other hosts.

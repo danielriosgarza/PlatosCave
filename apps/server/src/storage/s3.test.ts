@@ -35,15 +35,8 @@ function fakeBackend() {
     } else throw new Error(`unexpected command ${(cmd as object).constructor.name}`);
     return {};
   }) as S3Client['send'];
-  const storage = new S3Storage({
-    region: 'test',
-    bucket: 'b',
-    accessKeyId: 'k',
-    secretAccessKey: 's',
-    forcePathStyle: true,
-    client,
-  });
-  return { storage, objects, sent };
+  const storage = new S3Storage({ bucket: 'b', client });
+  return { storage, client, objects, sent };
 }
 
 describe('s3 storage', () => {
@@ -60,5 +53,29 @@ describe('s3 storage', () => {
     expect(sent.filter((s) => s.startsWith('CopyObjectCommand'))).toEqual([]);
     expect(sent).toContain(`HeadObjectCommand ${key}`);
     expect([...objects]).toEqual([key]);
+  });
+
+  test('destroy() leaves an injected client open: it belongs to the caller', () => {
+    const { storage, client } = fakeBackend();
+    let destroyed = 0;
+    client.destroy = () => {
+      destroyed += 1;
+    };
+    storage.destroy();
+    expect(destroyed).toBe(0);
+
+    // A client built from settings is the store's own, and is released with it.
+    const owned = new S3Storage({
+      bucket: 'b',
+      region: 'test',
+      accessKeyId: 'k',
+      secretAccessKey: 's',
+      forcePathStyle: true,
+    });
+    (owned as unknown as { client: S3Client }).client.destroy = () => {
+      destroyed += 1;
+    };
+    owned.destroy();
+    expect(destroyed).toBe(1);
   });
 });
