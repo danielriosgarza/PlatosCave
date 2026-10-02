@@ -48,13 +48,19 @@ export class ImageAllowlist {
     // Every reference is inspected afresh, so a tag rebuilt since the last job is matched by
     // its current id only: a replay of the previous build is `image_not_allowed` (§6.4, §9).
     // A daemon that cannot be reached is retried, never mistaken for a refusal.
+    const missing: RunnerFailure[] = [];
     for (const ref of refs) {
-      await this.inspect(ref, false).catch((error: unknown) => {
+      await this.inspect(ref, ref === pinned).catch((error: unknown) => {
         if (!(error instanceof RunnerFailure) || error.kind !== 'image_unavailable') throw error;
+        if (couldBe(ref, pinned)) missing.push(error);
       });
     }
     const match = this.match(refs, pinned);
     if (match) return match;
+    // An allowlisted image that is absent from the host and may be the pinned one is
+    // `image_unavailable` (retried), never a refusal: only an image no allowlisted reference
+    // can name is `image_not_allowed`.
+    if (missing[0]) throw missing[0];
     throw new RunnerFailure('image_not_allowed', `image ${pinned} is not allowlisted`);
   }
 
@@ -97,6 +103,17 @@ async function daemonCall<T>(
   } catch (error) {
     throw new RunnerFailure(kind, `docker: ${errorMessage(error)}`);
   }
+}
+
+/**
+ * Whether an allowlisted reference that could not be inspected may name the pinned image. A
+ * reference equal to the pin names it. A repository digest reference names only itself, so it
+ * cannot be a different digest reference. Anything else (a tag, or a pin by image id) cannot be
+ * compared without the image, so it may be the pinned one.
+ */
+function couldBe(ref: string, pinned: string): boolean {
+  if (ref === pinned) return true;
+  return !(ref.includes('@sha256:') && pinned.includes('@sha256:'));
 }
 
 function toImage(entry: Entry): ResolvedImage {

@@ -109,6 +109,40 @@ describe('image allowlist (design §6.4)', () => {
     expect(calls.pull).toEqual([]);
   });
 
+  test('a replay pinned to an allowlisted image absent from the host is image_unavailable', async () => {
+    const runtime = { id: 'python-3.12', language: 'python' as const };
+    // The pinned digest reference itself is missing.
+    const { daemon } = fakeDaemon({ [NEW]: { Id: sha('1'), RepoDigests: [NEW] } });
+    const list = new ImageAllowlist({ 'python-3.12': [NEW, OLD] }, daemon, 'never');
+    const byRef = await failureOf(list.resolve({ ...runtime, image: OLD }));
+    expect(byRef.kind).toBe('image_unavailable');
+    expect(byRef.terminal).toBe(false);
+    // A pin by image id cannot be compared with a missing reference.
+    const byId = await failureOf(list.resolve({ ...runtime, image: sha('2') }));
+    expect(byId.kind).toBe('image_unavailable');
+    // A missing tag may be the pinned image too.
+    const tag = fakeDaemon({});
+    const dev = new ImageAllowlist(
+      { 'python-3.12': ['parallax-runner-python:dev'] },
+      tag.daemon,
+      'never',
+    );
+    expect((await failureOf(dev.resolve({ ...runtime, image: sha('d') }))).kind).toBe(
+      'image_unavailable',
+    );
+  });
+
+  test('a replay pinned to an image no allowlisted reference names stays image_not_allowed', async () => {
+    const runtime = { id: 'python-3.12', language: 'python' as const };
+    const other = `ghcr.io/org/parallax-runner-python@sha256:${'7'.repeat(64)}`;
+    // Even with an allowlisted digest reference missing: digest references name only themselves.
+    const { daemon } = fakeDaemon({ [NEW]: { Id: sha('1'), RepoDigests: [NEW] } });
+    const list = new ImageAllowlist({ 'python-3.12': [NEW, OLD] }, daemon, 'never');
+    const failure = await failureOf(list.resolve({ ...runtime, image: other }));
+    expect(failure.kind).toBe('image_not_allowed');
+    expect(failure.terminal).toBe(true);
+  });
+
   test('RUNNER_PULL=missing pulls a missing image', async () => {
     const { daemon, calls } = fakeDaemon({});
     const list = new ImageAllowlist({ 'python-3.12': [NEW] }, daemon, 'missing');
