@@ -302,6 +302,8 @@ describe('scenario checks at the API level', () => {
       expect((await get(getClassUrl(ids.classA), who)).statusCode).toBe(404);
     }
     expect((await get(getClassUrl(ids.classB), 'sam')).statusCode).toBe(404);
+    // HEAD is not exposed on any API route (registerRoute), so it answers the route-not-found
+    // 404 whoever asks; the scope guard itself is driven by the matrix above.
     const head = await app.inject({
       method: 'HEAD',
       url: getClassUrl(ids.classA),

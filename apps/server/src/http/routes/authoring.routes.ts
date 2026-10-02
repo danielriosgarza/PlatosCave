@@ -15,7 +15,7 @@ import type { Deps } from '../../app';
 import { courseOverview } from '../../db/courseOverview';
 import { listResourceJobStatus } from '../../db/jobs/derived';
 import type { ResourceJobStatus } from '../../jobs/derived';
-import { enqueueReadingIngest } from '../../jobs/reading-ingest.job';
+import { enqueueReadingIngest, isProcessed } from '../../jobs/reading-ingest.job';
 import { storeCourseObject } from '../../storage/objects';
 import { notFound, refuse, registerRoute } from '../register';
 
@@ -41,7 +41,7 @@ const entry = (r: ResourceJobStatus) => ({
   updatedAt: r.status?.updatedAt ?? null,
 });
 
-const BUSY = 'This reading is already queued, being processed or ready';
+const BUSY = 'This resource is already queued, being processed or ready';
 
 const PDF_MAGIC = '%PDF-';
 
@@ -155,10 +155,10 @@ export default function authoringRoutes(app: FastifyInstance, deps: Deps): void 
 
   registerRoute(app, retryProcessing, async ({ scope, params }) => {
     const [found] = await listResourceJobStatus(db(), scope, params.resourceId);
-    if (!found?.revisionId || (found.type !== 'reading_native' && found.type !== 'reading_pdf')) {
+    if (!found?.revisionId || !isProcessed(found.type)) {
       notFound();
     }
-    // Only a failed (including stopped) or never-queued reading is queued again: a live job
+    // Only a failed (including stopped) or never-queued resource is queued again: a live job
     // would race the new one.
     if (found.status && found.status.state !== 'failed') refuse(409, BUSY);
     if (!deps.boss) throw app.httpErrors.serviceUnavailable();

@@ -260,9 +260,13 @@ describe('content origin and signed content tokens', () => {
     expect((await mint(ids.classA, fx.hidden, 'priya')).statusCode).toBe(200);
     expect((await mint(ids.classA, fx.scheduled, 'priya')).statusCode).toBe(200);
     expect((await mint(ids.classA, fx.draft, 'priya')).statusCode).toBe(404);
-    // Once the release time passes the student may download it.
-    clock = new Date(tomorrow.getTime() + 1000);
+    // Refused just before the release time, served at it and after it.
     try {
+      clock = new Date(tomorrow.getTime() - 1);
+      expect((await mint(ids.classA, fx.scheduled, 'sam')).statusCode).toBe(404);
+      clock = tomorrow;
+      expect((await mint(ids.classA, fx.scheduled, 'sam')).statusCode).toBe(200);
+      clock = new Date(tomorrow.getTime() + 1000);
       expect((await mint(ids.classA, fx.scheduled, 'sam')).statusCode).toBe(200);
     } finally {
       clock = now;

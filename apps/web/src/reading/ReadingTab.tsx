@@ -1,7 +1,9 @@
 import { Link } from '@tanstack/react-router';
 import { useCallback, useEffect, useRef } from 'react';
 import { ApiError } from '../api/client';
+import { OfflineBanner } from '../components/OfflineBanner';
 import page from '../components/Page.module.css';
+import { RetryNotice } from '../components/RetryNotice';
 import { useSession } from '../session/useSession';
 import { NativeReading } from './NativeReading';
 import { PdfReading } from './PdfReading';
@@ -54,12 +56,10 @@ export function ReadingTab({ classId, courseId, topicId, instructor, search, onS
     return (
       <div className={styles.stage}>
         {list.isError ? (
-          <div className={page.feedback} role="alert">
-            <p>The readings could not be loaded.</p>
-            <button type="button" className={page.outline} onClick={() => void list.refetch()}>
-              Try again
-            </button>
-          </div>
+          <RetryNotice
+            message="The readings could not be loaded."
+            onRetry={() => void list.refetch()}
+          />
         ) : (
           <p className={styles.loading} role="status">
             Loading reading
@@ -180,19 +180,17 @@ function ReadingView({ classId, topicId, reading, initial, onSearch }: ViewProps
   if (content.error instanceof ApiError && content.error.status === 404) {
     return (
       <div className={page.feedback} role="alert">
-        <p>You no longer have access to this reading.</p>
+        <p>This reading is not available.</p>
       </div>
     );
   }
   const data = content.data;
   if (!data) {
     return content.isError ? (
-      <div className={page.feedback} role="alert">
-        <p>This reading could not be loaded.</p>
-        <button type="button" className={page.outline} onClick={() => void content.refetch()}>
-          Try again
-        </button>
-      </div>
+      <RetryNotice
+        message="This reading could not be loaded."
+        onRetry={() => void content.refetch()}
+      />
     ) : (
       <p className={styles.loading} role="status">
         Loading reading
@@ -218,18 +216,31 @@ function ReadingView({ classId, topicId, reading, initial, onSearch }: ViewProps
       </div>
     );
   }
+  const offline = (
+    <OfflineBanner>
+      You are offline. This reading stays open; your place is not saved until you are back online.
+    </OfflineBanner>
+  );
   if (data.html !== null) {
-    return <NativeReading html={data.html} initial={initial} onPosition={report} />;
+    return (
+      <>
+        {offline}
+        <NativeReading html={data.html} initial={initial} onPosition={report} />
+      </>
+    );
   }
   if (data.pdf) {
     return (
-      <PdfReading
-        url={data.pdf.url}
-        pageCount={data.pdf.pageCount}
-        renew={renew}
-        initial={initial}
-        onPosition={report}
-      />
+      <>
+        {offline}
+        <PdfReading
+          url={data.pdf.url}
+          pageCount={data.pdf.pageCount}
+          renew={renew}
+          initial={initial}
+          onPosition={report}
+        />
+      </>
     );
   }
   return null;

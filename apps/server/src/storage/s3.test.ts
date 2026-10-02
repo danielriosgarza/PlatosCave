@@ -4,6 +4,7 @@ import {
   DeleteObjectCommand,
   HeadObjectCommand,
   PutObjectCommand,
+  S3Client,
 } from '@aws-sdk/client-s3';
 import { describe, expect, test } from 'vitest';
 import { S3Storage } from './s3';
@@ -16,17 +17,13 @@ import { courseObjectPrefix } from './storage';
 function fakeBackend() {
   const objects = new Set<string>();
   const sent: string[] = [];
-  const storage = new S3Storage({
+  const client = new S3Client({
     endpoint: 'http://127.0.0.1:1',
     region: 'test',
-    bucket: 'b',
-    accessKeyId: 'k',
-    secretAccessKey: 's',
     forcePathStyle: true,
+    credentials: { accessKeyId: 'k', secretAccessKey: 's' },
   });
-  const client = (storage as unknown as { client: { send: (cmd: unknown) => Promise<unknown> } })
-    .client;
-  client.send = async (cmd: unknown) => {
+  client.send = (async (cmd: unknown) => {
     const input = (cmd as { input: { Key: string } }).input;
     sent.push(`${(cmd as object).constructor.name} ${input.Key}`);
     if (cmd instanceof PutObjectCommand) objects.add(input.Key);
@@ -37,7 +34,15 @@ function fakeBackend() {
       return {};
     } else throw new Error(`unexpected command ${(cmd as object).constructor.name}`);
     return {};
-  };
+  }) as S3Client['send'];
+  const storage = new S3Storage({
+    region: 'test',
+    bucket: 'b',
+    accessKeyId: 'k',
+    secretAccessKey: 's',
+    forcePathStyle: true,
+    client,
+  });
   return { storage, objects, sent };
 }
 

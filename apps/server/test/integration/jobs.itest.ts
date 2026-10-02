@@ -13,6 +13,7 @@ import { validateDrafts } from '../../src/db/content/releases';
 import { createBoss } from '../../src/db/jobs/boss';
 import { listResourceJobStatus, setDerivedStatus } from '../../src/db/jobs/derived';
 import { classMemberships, resourceRevisions, resources, topics } from '../../src/db/schema';
+import type { JobLogger } from '../../src/jobs/logger';
 import {
   defineScopedJob,
   ensureQueues,
@@ -30,7 +31,11 @@ const runs: { classId: string; role: string; actor: string; note: string }[] = [
 const warnings: object[] = [];
 const errors: object[] = [];
 const bossErrors: Error[] = [];
-const log = { warn: (obj: object) => warnings.push(obj), error: (obj: object) => errors.push(obj) };
+const log = {
+  info() {},
+  warn: (obj: object) => warnings.push(obj),
+  error: (obj: object) => errors.push(obj),
+} as unknown as JobLogger;
 
 /** The no-op scoped job: records the scope it was handed and does nothing else. */
 const noop = defineScopedJob({

@@ -129,8 +129,11 @@ export function registerRoute<C extends RouteContract>(
   app.route({
     method: contract.method,
     url: contract.path,
-    // Contracts never declare HEAD: an implicit HEAD route would run the handler, side effects
-    // included (a link checker's HEAD would use up a sign-in link).
+    // HEAD is off for every contract, kept global rather than per route: an implicit HEAD route
+    // runs the handler, side effects included (a link checker's HEAD would use up a sign-in
+    // link), and a flag each side-effecting GET had to remember would fail open. Nothing probes
+    // with HEAD (Playwright and the deploy checks use GET), so HEAD on an API path answers the
+    // not-found 404; isolation-matrix.itest.ts pins that.
     exposeHeadRoute: false,
     schema: {
       summary: contract.summary,

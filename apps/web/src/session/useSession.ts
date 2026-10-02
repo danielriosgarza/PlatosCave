@@ -45,14 +45,23 @@ export function useSession(): SessionState {
   return isError ? { status: 'error' } : { status: 'loading' };
 }
 
+/**
+ * The memberships this session acts through, as the server decides (ADR-0002): a person's real
+ * memberships, or only the preview memberships of a draft-preview session.
+ */
+export function usableClasses(m: Me): SessionClass[] {
+  const preview = m.user.kind === 'preview';
+  return m.classes.filter((c) => c.isPreview === preview);
+}
+
 /** Teaching means an instructor class membership or any course permission (§3). */
 export function teachingContexts(m: Me) {
   return {
-    classes: m.classes.filter((c) => c.role === 'instructor' && !c.isPreview),
+    classes: usableClasses(m).filter((c) => c.role === 'instructor'),
     courses: m.courses,
   };
 }
 
 export function studyingClasses(m: Me): SessionClass[] {
-  return m.classes.filter((c) => c.role === 'student' && !c.isPreview);
+  return usableClasses(m).filter((c) => c.role === 'student');
 }
