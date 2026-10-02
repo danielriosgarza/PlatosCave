@@ -55,13 +55,17 @@ let testDb: TestDatabase;
 let app: FastifyInstance;
 let world: World;
 let root: string;
-const rev: Record<'native' | 'figures' | 'pdf' | 'pending' | 'upload' | 'failed', string> = {
+const rev: Record<
+  'native' | 'figures' | 'pdf' | 'pending' | 'upload' | 'failed' | 'hidden',
+  string
+> = {
   native: '',
   figures: '',
   pdf: '',
   pending: '',
   upload: '',
   failed: '',
+  hidden: '',
 };
 const keys = { pdf: '', source: '' };
 let nativeBlock = '';
@@ -132,6 +136,7 @@ beforeAll(async () => {
     objectKeys: string[],
     position: number,
     content?: Record<string, unknown>,
+    visibility: 'visible' | 'hidden' = 'visible',
   ) => {
     const resource = one(
       await db
@@ -142,6 +147,7 @@ beforeAll(async () => {
           type,
           title,
           position,
+          visibility,
           createdBy: ids.elena,
         })
         .returning(),
@@ -204,6 +210,22 @@ beforeAll(async () => {
     format: 'markdown',
   });
   await writeDerivedOutputs(db, elena, rev.failed, {}, ready('reading.ingest'));
+  // Owns the source key like the others, but students never see it.
+  rev.hidden = await addReading(
+    'reading_native',
+    'Instructor notes',
+    [source.key],
+    9,
+    { sourceKey: source.key, format: 'markdown' },
+    'hidden',
+  );
+  await writeDerivedOutputs(
+    db,
+    elena,
+    rev.hidden,
+    { ...renderReading('# Instructor notes', 'markdown', {}) },
+    ready('reading.ingest'),
+  );
 
   const published = await publishRelease(db, elena);
   if (!published.ok) throw new Error(JSON.stringify(published.report));
@@ -313,7 +335,10 @@ describe('reading source download', () => {
     // A non-member, another class's release and a hidden resource all look the same.
     expect((await object('bea', ids.classA, rev.failed, keys.source)).status).toBe(404);
     expect((await object('bea', ids.classB, rev.failed, keys.source)).status).toBe(404);
-    expect((await object('sam', ids.classA, ids.answerKeyV1, keys.source)).status).toBe(404);
+    // A hidden resource that owns the very key: only its hiding makes it a 404 for a student.
+    expect((await object('sam', ids.classA, rev.hidden, keys.source)).status).toBe(404);
+    expect((await read('sam', ids.classA, rev.hidden)).status).toBe(404);
+    expect((await object('priya', ids.classA, rev.hidden, keys.source)).status).toBe(200);
   });
 });
 
@@ -366,7 +391,15 @@ describe('study positions', () => {
 
   test('A03 one person’s place is never shown to another', async () => {
     const { body } = await list('priya', ids.classA, ids.sampling);
-    expect(body.readings.map((r) => r.position)).toEqual([null, null, null, null, null, null]);
+    expect(body.readings.map((r) => r.position)).toEqual([
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+      null,
+    ]);
     expect(body.lastRevisionId).toBeNull();
   });
 

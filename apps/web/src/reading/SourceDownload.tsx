@@ -42,7 +42,7 @@ export function SourceDownload({ classId, revisionId, sourceKey, className }: Pr
       >
         Download
       </button>
-      {failed && <span role="alert">The file could not be downloaded.</span>}
+      {failed && <span role="status">The file could not be downloaded.</span>}
     </>
   );
 }
