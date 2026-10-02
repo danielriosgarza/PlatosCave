@@ -229,6 +229,25 @@ export const READING_HTML_ATTRIBUTES: Readonly<Record<string, readonly string[]>
   ...Object.fromEntries(MATHML_TAGS.map((t) => [t, MATHML_ATTRIBUTES])),
 };
 
+/**
+ * Class names each element may carry (a string, or a pattern for a whole class name); others are
+ * dropped from the attribute. `div`'s is the display-math block, set after sanitising.
+ */
+export const READING_HTML_CLASSES: Readonly<Record<string, readonly (string | RegExp)[]>> = {
+  a: ['data-footnote-backref'],
+  code: [/^language-./, 'hljs'],
+  div: ['math-display'],
+  h2: ['sr-only'],
+  li: ['task-list-item'],
+  ol: ['contains-task-list'],
+  section: ['footnotes'],
+  span: [/^hljs-[a-z_-]+$/, 'katex'],
+  ul: ['contains-task-list'],
+};
+
+/** The `rel` values ingestion gives outbound links. */
+export const READING_LINK_REL: readonly string[] = ['noopener', 'noreferrer', 'nofollow'];
+
 /** Schemes each URL attribute may use; a URL with no scheme (relative, `#…`) is allowed. */
 export const READING_HTML_PROTOCOLS: Readonly<Record<string, readonly string[]>> = {
   href: ['http', 'https', 'irc', 'ircs', 'mailto', 'xmpp'],

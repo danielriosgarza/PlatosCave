@@ -1,5 +1,6 @@
 import {
   READING_HTML_ATTRIBUTES,
+  READING_HTML_CLASSES,
   READING_HTML_PROTOCOLS,
   READING_HTML_TAGS,
 } from '@parallax/contracts';
@@ -527,6 +528,18 @@ describe('reading HTML on the app origin (ADR-0002)', () => {
         [...(READING_HTML_ATTRIBUTES[tag] ?? [])].sort(),
       );
     }
+    // Class values: the schema's patterns per element, plus the display-math class set later.
+    const classes: Record<string, string[]> = { div: ['math-display'] };
+    for (const [tag, list] of Object.entries(schema)) {
+      for (const a of list) {
+        if (Array.isArray(a) && a[0] === 'className') classes[tag] = a.slice(1).map(String);
+      }
+    }
+    expect(
+      Object.fromEntries(
+        Object.entries(READING_HTML_CLASSES).map(([tag, list]) => [tag, list.map(String)]),
+      ),
+    ).toEqual(classes);
     for (const [attribute, schemes] of Object.entries(READING_HTML_PROTOCOLS)) {
       expect(readingSchema.protocols?.[attribute]).toEqual(schemes);
     }

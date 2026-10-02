@@ -1,8 +1,10 @@
 import {
   READING_HTML_ATTRIBUTES,
+  READING_HTML_CLASSES,
   READING_HTML_PROTOCOLS,
   READING_HTML_TAGS,
   READING_ID_PREFIX,
+  READING_LINK_REL,
 } from '@parallax/contracts';
 import createDOMPurify from 'dompurify';
 
@@ -44,6 +46,14 @@ function urlAllowed(name: string, value: string): boolean {
   return READING_HTML_PROTOCOLS[name]?.includes(scheme) ?? false;
 }
 
+/** The tokens of a class or rel value that are allowed, as the server's schema keeps them. */
+function allowedTokens(tag: string, name: string, value: string): string[] {
+  const tokens = value.split(/\s+/).filter(Boolean);
+  if (name === 'rel') return tokens.filter((t) => READING_LINK_REL.includes(t));
+  const allowed = READING_HTML_CLASSES[tag] ?? [];
+  return tokens.filter((t) => allowed.some((a) => (typeof a === 'string' ? a === t : a.test(t))));
+}
+
 let instance: ReturnType<typeof createDOMPurify> | null = null;
 
 function purifier() {
@@ -57,6 +67,10 @@ function purifier() {
       data.keepAttr = urlAllowed(name, value);
     } else if (ID_ATTRIBUTES.has(name)) {
       data.keepAttr = value.split(/\s+/).every((ref) => ref.startsWith(READING_ID_PREFIX));
+    } else if (name === 'class' || name === 'rel') {
+      const kept = allowedTokens(node.localName, name, value);
+      data.attrValue = kept.join(' ');
+      data.keepAttr = kept.length > 0;
     }
   });
   purify.addHook('afterSanitizeAttributes', (node) => {

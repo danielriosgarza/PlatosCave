@@ -65,6 +65,19 @@ describe('reading HTML on the app origin', () => {
     expect(dangers(parse(sanitizeReading(source)))).toEqual([]);
   });
 
+  test('class and rel keep only the values the server schema allows', () => {
+    const root = parse(
+      sanitizeReading(
+        '<code class="hljs language-r pc-shell">x</code><span class="katex evil">y</span>' +
+          '<p class="anything">z</p><a href="https://ok.example" rel="noopener opener">l</a>',
+      ),
+    );
+    expect(root.querySelector('code')?.className).toBe('hljs language-r');
+    expect(root.querySelector('span')?.className).toBe('katex');
+    expect(root.querySelector('p')?.hasAttribute('class')).toBe(false);
+    expect(root.querySelector('a')?.getAttribute('rel')).toBe('noopener');
+  });
+
   test('HTML inside a MathML text point keeps its text but loses links and handlers', () => {
     const mtext = fixture.cases[0];
     if (!mtext) throw new Error('no mtext case');
