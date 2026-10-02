@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { useState } from 'react';
+import { canEdit, grantLabel } from '../../authoring/grants';
 import page from '../../components/Page.module.css';
 import { CourseMark } from '../../courses/CourseMark';
 import styles from '../../courses/Courses.module.css';
@@ -451,21 +452,37 @@ function InstructorCards({
         <>
           <h2 className={styles.sectionHeading}>Courses</h2>
           <ul className={styles.grid} style={{ marginTop: 20 }} aria-label="Courses you hold">
-            {visibleCourses.map((c) => (
-              <li key={c.courseId} className={styles.card}>
-                <div className={styles.open}>
+            {visibleCourses.map((c) => {
+              const body = (
+                <>
                   <CourseMark seed={c.courseId} className={styles.mark} />
                   <h2>{c.title}</h2>
                   <span className={styles.meta}>
                     {c.topicCount} draft topics · {c.classCount}{' '}
                     {c.classCount === 1 ? 'class' : 'classes'}
                   </span>
-                </div>
-                <div className={styles.status}>
-                  <span>{c.owner ? 'Owner' : c.publisher ? 'Publisher' : 'Editor'}</span>
-                </div>
-              </li>
-            ))}
+                </>
+              );
+              return (
+                <li key={c.courseId} className={styles.card}>
+                  {canEdit(c) ? (
+                    <Link
+                      to="/courses/$courseId/edit"
+                      params={{ courseId: c.courseId }}
+                      className={styles.open}
+                      aria-label={`Edit ${c.title}`}
+                    >
+                      {body}
+                    </Link>
+                  ) : (
+                    <div className={styles.open}>{body}</div>
+                  )}
+                  <div className={styles.status}>
+                    <span>{grantLabel(c)}</span>
+                  </div>
+                </li>
+              );
+            })}
           </ul>
         </>
       ) : null}

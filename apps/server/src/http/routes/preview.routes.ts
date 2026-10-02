@@ -1,5 +1,6 @@
 import { exitPreview, startPreview } from '@parallax/contracts/routes/preview';
 import type { FastifyInstance } from 'fastify';
+import type { RouteDeps } from '../../app';
 import {
   editorPath,
   PREVIEW_RETURN_COOKIE,
@@ -12,8 +13,8 @@ import { findPrincipal, revokeSession } from '../../db/auth/sessions';
 import { PREVIEW_SESSION_TTL_MS, startPreview as start } from '../../db/preview';
 import { notFound, refuse, registerRoute } from '../register';
 
-export default function previewRoutes(app: FastifyInstance): void {
-  const { config } = app.authDeps;
+export default function previewRoutes(app: FastifyInstance, deps: RouteDeps): void {
+  const { config } = deps;
   const origin = config.APP_ORIGIN;
   const sessionCookie = sessionCookieOptions(origin);
   const db = () => {

@@ -38,14 +38,27 @@ const NativeContent = z.object({
 });
 const PdfContent = z.object({ objectKey: z.string().optional() });
 
-/** The revision types this job derives outputs for; it reads and writes no other status. */
-const READING_TYPES = ['reading_native', 'reading_pdf'] as const;
-const isReading = (type: string) => (READING_TYPES as readonly string[]).includes(type);
+/**
+ * A deck is raster-only when fewer than half of its pages carry any text: its slides are
+ * images a screen reader cannot read, so publication requires a text alternative (spec §7).
+ */
+export function isRasterOnly(pages: readonly { text: string }[]): boolean {
+  const withText = pages.filter((page) => page.text.trim() !== '').length;
+  return withText * 2 < pages.length;
+}
+
+/** The revision types this job derives outputs for (readings and PDF decks); it reads and writes no other status. */
+const PROCESSED_TYPES = ['reading_native', 'reading_pdf', 'slides_pdf'] as const;
+export const isProcessed = (type: string): boolean =>
+  (PROCESSED_TYPES as readonly string[]).includes(type);
 
 /** A problem with the reading itself: retrying cannot help, so the job ends failed at once. */
 export class IngestError extends Error {}
 
 type Revision = DerivationSource;
+
+/** What editors call the revision's resource in job messages. */
+const noun = (revision: Revision) => (revision.type === 'slides_pdf' ? 'deck' : 'reading');
 
 const megabytes = (bytes: number) => `${bytes / (1024 * 1024)} MB`;
 
@@ -60,7 +73,7 @@ async function readObject(
   maxBytes: number,
 ): Promise<Uint8Array> {
   if (!revision.objectKeys.includes(key)) {
-    throw new IngestError('The file is not part of this reading');
+    throw new IngestError(`The file is not part of this ${noun(revision)}`);
   }
   if (!storage) throw new IngestError('This server cannot process uploaded files');
   let object: Awaited<ReturnType<Storage['get']>>;
@@ -133,22 +146,26 @@ export async function ingestRevision(
       warnings: rendered.warnings,
     };
   }
-  if (revision.type === 'reading_pdf') {
+  if (revision.type === 'reading_pdf' || revision.type === 'slides_pdf') {
     const content = PdfContent.safeParse(revision.content);
-    if (!content.success) throw new IngestError('The reading content is not valid');
+    if (!content.success) throw new IngestError(`The ${noun(revision)} content is not valid`);
     const key =
       content.data.objectKey ??
       (revision.objectKeys.length === 1 ? revision.objectKeys[0] : undefined);
-    if (!key) throw new IngestError('The reading has no PDF file');
+    if (!key) throw new IngestError(`The ${noun(revision)} has no PDF file`);
     const bytes = await readObject(storage, revision, key, MAX_PDF_BYTES);
+    let text: Awaited<ReturnType<typeof extractPdfText>>;
     try {
-      return { ...(await extractPdfText(bytes, { signal, transfer: true })) };
+      text = await extractPdfText(bytes, { signal, transfer: true });
     } catch (err) {
       if (err instanceof ThreadInputError) throw new IngestError(err.message);
       throw err;
     }
+    if (revision.type === 'reading_pdf') return { ...text };
+    // The original stays downloadable through content tokens; the viewer renders it in the browser.
+    return { ...text, rasterOnly: isRasterOnly(text.pages) };
   }
-  throw new IngestError(`A ${revision.type} resource is not a reading`);
+  throw new IngestError(`A ${revision.type} resource has nothing to process`);
 }
 
 const status = (
@@ -170,7 +187,7 @@ const retryLimitOf = (job: object): number =>
   'retryLimit' in job && typeof job.retryLimit === 'number' ? job.retryLimit : RETRY_LIMIT;
 
 /**
- * Renders a native reading or reads a PDF's pages for one revision of the job's course, and
+ * Renders a native reading or reads a PDF reading's or deck's pages for one revision of the job's course, and
  * records progress in `derived.status`: running, then ready; a failing attempt that pg-boss
  * will retry shows queued with the error, the last one failed. Every write is guarded by the
  * job id in the status, so a superseded job (an editor sent Retry while it ran) writes nothing.
@@ -183,8 +200,8 @@ const readingIngest = defineScopedJob({
   run: async ({ scope, input, db, job, storage }) => {
     const revision = await loadDerivationSource(db, scope, input.revisionId);
     if (!revision) return { failed: 'revision not found in this course' };
-    // Another job type's status (a slide deck's conversion) is not this job's to write.
-    if (!isReading(revision.type)) return { failed: 'revision is not a reading' };
+    // Another job type's status is not this job's to write.
+    if (!isProcessed(revision.type)) return { failed: 'revision has nothing to process' };
 
     const mine = { jobId: job.id };
     const claimed = await setDerivedStatus(db, scope, input.revisionId, status('running', job.id), {
@@ -245,7 +262,7 @@ export async function enqueueReadingIngest(
 ): Promise<string | null> {
   const previous = await readStatus(db, scope, revisionId);
   const marked = await setDerivedStatus(db, scope, revisionId, status('queued', null), {
-    types: READING_TYPES,
+    types: PROCESSED_TYPES,
   });
   if (!marked) return null;
   let jobId: string | null;

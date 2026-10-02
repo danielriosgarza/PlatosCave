@@ -94,6 +94,53 @@ describe('course cards', () => {
     expect(screen.queryByRole('button', { name: 'Join a class' })).toBeNull();
   });
 
+  it('P1-14a course cards open the editor and name the grant as the editor does', async () => {
+    const me = makeMe({ classes: [instructorIn(CLASS_A, 'Autumn 2026 A')] });
+    const course = (n: number, grant: object) => ({
+      courseId: `00000000-0000-4000-8000-00000000010${n}`,
+      title: `Course ${n}`,
+      topicCount: 2,
+      classCount: 1,
+      owner: false,
+      editor: false,
+      publisher: false,
+      ...grant,
+    });
+    serve(me, {
+      classes: [card({ role: 'instructor', studentCount: 3 })],
+      courses: [
+        course(1, { owner: true, editor: true, publisher: true }),
+        course(2, { editor: true, publisher: true }),
+        course(3, { publisher: true }),
+        course(4, { editor: true }),
+      ],
+    } as Cards);
+    renderApp('/courses?view=instructor');
+    const list = await screen.findByRole('list', { name: 'Courses you hold' });
+    const item = (title: string) =>
+      within(list).getByRole('heading', { name: title }).closest('li') as HTMLElement;
+    for (const [n, label] of [
+      [1, 'Owner'],
+      [2, 'Editor and publisher'],
+      [3, 'Publisher'],
+      [4, 'Editor'],
+    ] as const) {
+      expect(within(item(`Course ${n}`)).getByText(label)).toBeInTheDocument();
+    }
+    expect(within(item('Course 1')).getByRole('link', { name: 'Edit Course 1' })).toHaveAttribute(
+      'href',
+      '/courses/00000000-0000-4000-8000-000000000101/edit',
+    );
+    expect(
+      within(item('Course 2')).getByRole('link', { name: 'Edit Course 2' }),
+    ).toBeInTheDocument();
+    expect(
+      within(item('Course 4')).getByRole('link', { name: 'Edit Course 4' }),
+    ).toBeInTheDocument();
+    // A publisher without edit rights cannot open the editor, so the card is not a link.
+    expect(within(item('Course 3')).queryByRole('link')).toBeNull();
+  });
+
   it('A02 the filters and the title search narrow the cards', async () => {
     const user = userEvent.setup();
     const me = makeMe({
