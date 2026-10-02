@@ -899,4 +899,22 @@ describe('reading hardening', () => {
       layout.height = 100;
     }
   });
+
+  it('A03 closing the page sends the place waiting behind a save at once, with keepalive', async () => {
+    const world = makeWorld(two());
+    const fetchMock = api(world);
+    holdPuts(fetchMock);
+    renderApp(READING);
+    await screen.findByText('Every sample tells a slightly different story.');
+    scrollThrough({ 'b-title': -120, 'b-one': -60, 'b-two': 40, 'b-code': 140 });
+    await waitFor(() => expect(putsOf(fetchMock)).toHaveLength(1));
+    scrollThrough({ 'b-title': -220, 'b-one': -160, 'b-two': -60, 'b-code': 40 });
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    expect(putsOf(fetchMock)).toHaveLength(1);
+    window.dispatchEvent(new Event('pagehide'));
+    expect(putsOf(fetchMock)).toHaveLength(2);
+    const [, init] = putsOf(fetchMock)[1] ?? [];
+    expect(init?.keepalive).toBe(true);
+    expect(JSON.parse(String(init?.body))).toMatchObject({ position: { blockId: 'b-two' } });
+  });
 });
