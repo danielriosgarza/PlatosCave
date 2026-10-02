@@ -188,7 +188,7 @@ describe('reading.ingest', () => {
       boss,
       testDb.db,
       readingIngest,
-      { warn: () => {}, error: () => {} },
+      { info: () => {}, warn: () => {}, error: () => {} },
       { pollingIntervalSeconds: 0.5 },
       { storage },
     );

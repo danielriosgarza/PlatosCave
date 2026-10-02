@@ -15,11 +15,13 @@ interface CallArgs {
   params?: Record<string, string | number>;
   query?: Record<string, string | number | boolean | undefined>;
   body?: unknown;
+  /** Lets the request outlive the page (a save sent as it is closed or reloaded). */
+  keepalive?: boolean;
 }
 
 export async function call<C extends RouteContract>(
   contract: C,
-  { params, query, body }: CallArgs = {},
+  { params, query, body, keepalive }: CallArgs = {},
 ): Promise<z.output<C['response']>> {
   const path = contract.path.replace(/:([A-Za-z0-9_]+)/g, (_, k: string) => {
     const v = params?.[k];
@@ -36,6 +38,7 @@ export async function call<C extends RouteContract>(
     credentials: 'same-origin',
     headers: body === undefined ? undefined : { 'content-type': 'application/json' },
     body: body === undefined ? undefined : JSON.stringify(body),
+    ...(keepalive && { keepalive }),
   });
   const isJson = res.headers.get('content-type')?.includes('json') ?? false;
   let json: unknown = null;

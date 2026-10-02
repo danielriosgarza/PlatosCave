@@ -62,8 +62,8 @@ function markedLines(marker: string): number[] {
     .flatMap((line, i) => (line.trimEnd().endsWith(`// ${marker}`) ? [i + 1] : []));
 }
 
-// Lines marked `known-false-positive` document a limit of the rule; the tests accept either
-// outcome there, so a more precise rule may stop flagging them.
+// Lines marked `known-false-positive` document a limit of the rule; in feature modules the tests
+// accept either outcome there, so a more precise rule may stop flagging them.
 const unasserted = new Set(markedLines('known-false-positive'));
 
 interface Diagnostic {
@@ -100,11 +100,16 @@ afterAll(() => {
   if (scratch) rmSync(scratch, { recursive: true, force: true });
 });
 
-function lintAt(path: string): { imports: number[]; queries: number[] } {
+// `skip` drops plugin diagnostics on the given lines; exempt paths pass none, so any diagnostic
+// there fails.
+function lintAt(
+  path: string,
+  skip: ReadonlySet<number> = new Set(),
+): { imports: number[]; queries: number[] } {
   const lines = (category: string) =>
     diagnostics
       .filter((d) => d.category === category && d.location.path === path)
-      .filter((d) => !unasserted.has(d.location.start.line))
+      .filter((d) => category !== 'plugin' || !skip.has(d.location.start.line))
       .map((d) => d.location.start.line)
       .sort((a, b) => a - b);
   return { imports: lines('lint/style/noRestrictedImports'), queries: lines('plugin') };
@@ -118,12 +123,12 @@ test('biome.json declares the import rule and the query plugin in one override',
 
 test('the fixture marks restricted imports and raw queries', () => {
   expect(markedLines('restricted-import')).toHaveLength(7);
-  expect(markedLines('raw-query')).toHaveLength(25);
-  expect(markedLines('known-false-positive')).toHaveLength(1);
+  expect(markedLines('raw-query')).toHaveLength(33);
+  expect(markedLines('known-false-positive')).toHaveLength(2);
 });
 
 test.each(restricted)('raw database access is a lint error in feature module %s', (path) => {
-  expect(lintAt(path)).toEqual({
+  expect(lintAt(path, unasserted)).toEqual({
     imports: markedLines('restricted-import'),
     queries: markedLines('raw-query'),
   });

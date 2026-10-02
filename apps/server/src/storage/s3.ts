@@ -6,6 +6,7 @@ import {
   DeleteObjectCommand,
   GetObjectCommand,
   HeadObjectCommand,
+  type HeadObjectCommandOutput,
   S3Client,
 } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';
@@ -27,6 +28,8 @@ export interface S3Options {
   accessKeyId: string;
   secretAccessKey: string;
   forcePathStyle: boolean;
+  /** A client to use instead of building one from the options above (tests). */
+  client?: S3Client;
 }
 
 /**
@@ -49,12 +52,14 @@ export class S3Storage implements Storage {
 
   constructor(options: S3Options) {
     this.bucket = options.bucket;
-    this.client = new S3Client({
-      region: options.region,
-      forcePathStyle: options.forcePathStyle,
-      credentials: { accessKeyId: options.accessKeyId, secretAccessKey: options.secretAccessKey },
-      ...(options.endpoint && { endpoint: options.endpoint }),
-    });
+    this.client =
+      options.client ??
+      new S3Client({
+        region: options.region,
+        forcePathStyle: options.forcePathStyle,
+        credentials: { accessKeyId: options.accessKeyId, secretAccessKey: options.secretAccessKey },
+        ...(options.endpoint && { endpoint: options.endpoint }),
+      });
   }
 
   async put(prefix: string, body: Body): Promise<StoredObject> {
@@ -112,26 +117,26 @@ export class S3Storage implements Storage {
 
   async head(key: string): Promise<{ size: number } | null> {
     assertSafeKey(key);
-    try {
-      const res = await this.client.send(new HeadObjectCommand({ Bucket: this.bucket, Key: key }));
-      // Same rule as get(): never report a length the backend did not give.
-      if (res.ContentLength === undefined) {
-        throw new Error(`storage object without a length: ${key}`);
-      }
-      return { size: res.ContentLength };
-    } catch (err) {
-      if (isMissing(err)) return null;
-      throw err;
+    const res = await this.headObject(key);
+    if (!res) return null;
+    // Same rule as get(): never report a length the backend did not give.
+    if (res.ContentLength === undefined) {
+      throw new Error(`storage object without a length: ${key}`);
     }
+    return { size: res.ContentLength };
   }
 
   /** Existence only: put() must not depend on the backend reporting a length on HEAD. */
   private async exists(key: string): Promise<boolean> {
+    return (await this.headObject(key)) !== null;
+  }
+
+  /** HeadObject, with a missing key as `null`; any other failure throws. */
+  private async headObject(key: string): Promise<HeadObjectCommandOutput | null> {
     try {
-      await this.client.send(new HeadObjectCommand({ Bucket: this.bucket, Key: key }));
-      return true;
+      return await this.client.send(new HeadObjectCommand({ Bucket: this.bucket, Key: key }));
     } catch (err) {
-      if (isMissing(err)) return false;
+      if (isMissing(err)) return null;
       throw err;
     }
   }
