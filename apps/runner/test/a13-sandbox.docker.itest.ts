@@ -244,7 +244,10 @@ assert 'docker.sock' not in mounts, mounts
             compare: { mode: 'trimmed' },
           },
         ],
-        { wallSeconds: 30 },
+        // Sixty-odd Python interpreters exceed the default 512 MiB before the pids limit is reached
+        // (the memory killer then takes the harness: resource_exhausted); the most memory a job
+        // may ask for leaves the pids limit as the only bound this probe meets.
+        { wallSeconds: 30, memoryMiB: 2048 },
       ),
     );
     expect(outcome.status).toBe('failed');
