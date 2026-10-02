@@ -7,7 +7,6 @@ import { ThreadInputError } from '../content/thread';
 import type { Db } from '../db/client';
 import {
   type DerivationSource,
-  hasDerivedStatus,
   loadDerivationSource,
   readStatus,
   setDerivedStatus,
@@ -248,21 +247,25 @@ const heldByJob = (raw: unknown): boolean => {
 };
 
 /**
- * Queues ingestion of one revision of the scope's course (first run or a retry after failure),
- * marking it queued first so the editor sees the state at once, then naming the new job in the
- * status so that only it may write there. Creates or updates the queue first (pg-boss refuses
- * sends to a missing queue). Returns the job id, or null when the revision does not exist in
- * this course or is not a reading.
+ * Queues ingestion of one revision of the scope's course (first run or a retry), provided its
+ * status is still the one the caller read (`expected`, a `statusTag`; null: none): marking it
+ * queued is one guarded write, so of concurrent saves or retries of one reading, one queues.
+ * Then names the new job in the status so that only it may write there. Creates or updates the
+ * queue first (pg-boss refuses sends to a missing queue). Returns the job id, or null when the
+ * status has changed, the revision does not exist in this course, or its type is not processed.
  */
 export async function enqueueReadingIngest(
   boss: PgBoss,
   db: Db,
   scope: CourseScope,
   revisionId: string,
+  expected: { tag: string | null },
 ): Promise<string | null> {
   const previous = await readStatus(db, scope, revisionId);
+  if (!previous || previous.tag !== expected.tag) return null;
   const marked = await setDerivedStatus(db, scope, revisionId, status('queued', null), {
     types: PROCESSED_TYPES,
+    tag: expected.tag,
   });
   if (!marked) return null;
   let jobId: string | null;
@@ -272,8 +275,8 @@ export async function enqueueReadingIngest(
   } catch (err) {
     // No new job exists. A job that held the status before keeps it, so its result still
     // lands; otherwise the editor sees why nothing is queued.
-    const restored = heldByJob(previous)
-      ? DerivedStatusSchema.parse(previous)
+    const restored = heldByJob(previous.raw)
+      ? DerivedStatusSchema.parse(previous.raw)
       : status('failed', null, 'Could not queue processing');
     await setDerivedStatus(db, scope, revisionId, restored, { jobId: null });
     throw err;
@@ -292,6 +295,5 @@ export async function enqueueIfUnprocessed(
   scope: CourseScope,
   revisionId: string,
 ): Promise<string | null> {
-  if (await hasDerivedStatus(db, scope, revisionId)) return null;
-  return enqueueReadingIngest(boss, db, scope, revisionId);
+  return enqueueReadingIngest(boss, db, scope, revisionId, { tag: null });
 }

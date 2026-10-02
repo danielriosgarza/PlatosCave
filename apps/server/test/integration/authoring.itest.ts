@@ -1,7 +1,9 @@
 import { mkdtemp, rm } from 'node:fs/promises';
+import http from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import type { PgBoss } from 'pg-boss';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
@@ -155,6 +157,71 @@ describe('reading upload', () => {
     expect(res.statusCode).toBe(400);
   });
 
+  test('A26 a file refused on its first bytes answers 400 on a real socket while the client is still sending, and the connection stays usable', async () => {
+    await app.listen({ port: 0, host: '127.0.0.1' });
+    const { port } = app.server.address() as AddressInfo;
+    const agent = new http.Agent({ keepAlive: true, maxSockets: 1 });
+    const boundary = '----parallax-socket-boundary';
+    const send = (filename: string, body: Buffer, chunks: number) =>
+      new Promise<{ status: number; error: string; socket: unknown }>((resolve, reject) => {
+        const head = Buffer.from(
+          `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${filename}"\r\nContent-Type: application/octet-stream\r\n\r\n`,
+        );
+        const tail = Buffer.from(`\r\n--${boundary}--\r\n`);
+        const req = http.request({
+          agent,
+          port,
+          host: '127.0.0.1',
+          method: 'POST',
+          path: `${course}/uploads`,
+          headers: {
+            // The app's host, not the content origin's (127.0.0.1 in tests).
+            host: 'localhost',
+            cookie: world.cookie.elena,
+            'content-type': `multipart/form-data; boundary=${boundary}`,
+            'content-length': head.length + body.length * chunks + tail.length,
+          },
+        });
+        req.on('error', reject);
+        req.on('response', (res) => {
+          let data = '';
+          res.setEncoding('utf8');
+          res.on('data', (d) => {
+            data += d;
+          });
+          res.on('end', () =>
+            resolve({
+              status: res.statusCode ?? 0,
+              error: JSON.parse(data).error,
+              socket: req.socket,
+            }),
+          );
+        });
+        // Larger than the socket buffers: an unread body would hold back the rest of the upload.
+        req.write(head);
+        const write = (i: number): void => {
+          if (i === chunks) {
+            req.end(tail);
+            return;
+          }
+          if (req.write(body)) write(i + 1);
+          else req.once('drain', () => write(i + 1));
+        };
+        write(0);
+      });
+    try {
+      const refused = await send('fake.pdf', Buffer.alloc(MiB, 0x61), 20);
+      expect(refused.status).toBe(400);
+      expect(refused.error).toMatch(/not a PDF/);
+      // The same keep-alive socket carries the next upload.
+      const next = await send('ok.md', Buffer.from('# Fine\n'), 1);
+      expect(next.status).toBe(200);
+      expect(next.socket).toBe(refused.socket);
+    } finally {
+      agent.destroy();
+    }
+  }, 20_000);
+
   test('A26 a request that is not multipart is a 400', async () => {
     const res = await call('elena', 'POST', `${course}/uploads`, { file: 'x' });
     expect(res.status).toBe(400);
@@ -257,6 +324,132 @@ describe('authoring flow', () => {
     expect((await call('sam', 'POST', `${course}/resources/${id}/processing`)).status).toBe(404);
     // Queued or running work is not queued again.
     expect((await call('elena', 'POST', `${course}/resources/${id}/processing`)).status).toBe(409);
+  });
+});
+
+describe('processing recovery', () => {
+  /** A processed reading in a new topic, ready before the test changes its recorded status. */
+  async function processedReading(title: string) {
+    const topic = (await call('elena', 'POST', `${course}/topics`, { title })).body;
+    const created = await call('elena', 'POST', `${course}/topics/${topic.id}/resources`, {
+      type: 'reading_native',
+      title,
+      content: { markdown: `# ${title}` },
+      accessibleAlternative: { text: title },
+    });
+    expect(created.status).toBe(200);
+    await ensureWorker();
+    await settle(created.body.id);
+    return { id: created.body.id as string, revisionId: created.body.headRevisionId as string };
+  }
+
+  /** Records a status as a dead process or worker would have left it. */
+  const leave = (revisionId: string, status: object) =>
+    testDb.db
+      .update(resourceRevisions)
+      .set({
+        derived: sql`jsonb_set(${resourceRevisions.derived}, '{status}', ${JSON.stringify(status)}::jsonb)`,
+      })
+      .where(eq(resourceRevisions.id, revisionId));
+
+  const processing = async (id: string) =>
+    (await call('elena', 'GET', `${course}/processing`)).body.resources.find(
+      (r: { resourceId: string }) => r.resourceId === id,
+    );
+  const retry = (id: string) => call('elena', 'POST', `${course}/resources/${id}/processing`);
+  const jobsFor = async (revisionId: string) =>
+    Number(
+      (
+        await testDb.db.execute<{ n: string }>(
+          sql`select count(*) as n from pgboss.job where name = 'reading.ingest' and data->'input'->>'revisionId' = ${revisionId}`,
+        )
+      ).rows[0]?.n,
+    );
+  const ago = (ms: number) => new Date(Date.now() - ms).toISOString();
+
+  test('A26 a reading left queued or running by work that stopped shows as failed, blocks publishing, and is retried to ready', async () => {
+    const { id, revisionId } = await processedReading('Orphaned');
+    const [row] = await testDb.db
+      .select({ derived: resourceRevisions.derived })
+      .from(resourceRevisions)
+      .where(eq(resourceRevisions.id, revisionId));
+    const finishedJob = (row?.derived as { status?: { jobId?: string } } | undefined)?.status
+      ?.jobId;
+    expect(finishedJob).toEqual(expect.any(String));
+    const base = { job: 'reading.ingest' };
+    for (const [why, status] of [
+      // The process died between marking the revision queued and sending the job.
+      ['never sent', { ...base, state: 'queued', jobId: null, updatedAt: ago(5 * 60_000) }],
+      // A worker died mid-run and the job has since left pg-boss.
+      [
+        'job gone',
+        {
+          ...base,
+          state: 'running',
+          jobId: '00000000-0000-4000-8000-00000000dead',
+          updatedAt: ago(0),
+        },
+      ],
+      // The job finished without the handler recording its outcome.
+      ['job finished', { ...base, state: 'running', jobId: finishedJob, updatedAt: ago(0) }],
+    ] as const) {
+      await leave(revisionId, status);
+      expect(await processing(id), why).toMatchObject({
+        state: 'failed',
+        error: 'Processing stopped without a result',
+      });
+      const publish = await call('elena', 'POST', `${course}/releases`);
+      expect(publish.body.report.errors, why).toContainEqual(
+        expect.objectContaining({ code: 'unprocessed_reading', resourceId: id }),
+      );
+      const retried = await retry(id);
+      expect(retried.status, why).toBe(200);
+      expect(retried.body.state, why).toBe('queued');
+      await settle(id);
+      expect(await processing(id), why).toMatchObject({ state: 'ready', error: null });
+    }
+  });
+
+  test('A26 a reading queued moments ago or waiting on a live job is not queued again', async () => {
+    const { id, revisionId } = await processedReading('Waiting');
+    await leave(revisionId, {
+      job: 'reading.ingest',
+      state: 'queued',
+      jobId: null,
+      updatedAt: ago(1_000),
+    });
+    expect(await processing(id)).toMatchObject({ state: 'queued' });
+    expect((await retry(id)).status).toBe(409);
+
+    // A job pg-boss still holds (here: scheduled for later) is live, however long it takes.
+    const live = await boss.send('reading.ingest', {}, { startAfter: 3600 });
+    await leave(revisionId, {
+      job: 'reading.ingest',
+      state: 'running',
+      jobId: live,
+      updatedAt: ago(60 * 60_000),
+    });
+    expect(await processing(id)).toMatchObject({ state: 'running' });
+    const jobs = await jobsFor(revisionId);
+    expect((await retry(id)).status).toBe(409);
+    expect(await jobsFor(revisionId)).toBe(jobs);
+    if (live) await boss.cancel('reading.ingest', live);
+  });
+
+  test('A26 two retries of one failed reading at once queue one job', async () => {
+    const { id, revisionId } = await processedReading('Double click');
+    await leave(revisionId, {
+      job: 'reading.ingest',
+      state: 'failed',
+      jobId: null,
+      error: 'Could not queue processing',
+      updatedAt: ago(0),
+    });
+    const before = await jobsFor(revisionId);
+    const answers = await Promise.all([retry(id), retry(id), retry(id)]);
+    expect(answers.map((a) => a.status).sort()).toEqual([200, 409, 409]);
+    expect(await jobsFor(revisionId)).toBe(before + 1);
+    await settle(id);
   });
 });
 
