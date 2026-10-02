@@ -1,10 +1,10 @@
 import { READING_HTML_ATTRIBUTES, READING_HTML_TAGS, READING_ID_PREFIX } from '@parallax/contracts';
+import fixture from '@parallax/contracts/fixtures/hostile-readings.json';
 import { describe, expect, test } from 'vitest';
-import fixture from './hostile-readings.json';
 import { sanitizeReading } from './sanitize';
 
 /**
- * `hostile-readings.json` holds what the server's ingestion sanitiser makes of hostile sources
+ * `@parallax/contracts/fixtures/hostile-readings.json` holds what the server's ingestion sanitiser makes of hostile sources
  * (`ingested`); `apps/server/src/content/reading.test.ts` re-renders every case and fails when the
  * file no longer matches the server, so these tests run the real output of the first layer.
  */

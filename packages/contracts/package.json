@@ -4,7 +4,8 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./routes/*": "./src/routes/*.ts"
+    "./routes/*": "./src/routes/*.ts",
+    "./fixtures/*": "./fixtures/*"
   },
   "scripts": {
     "typecheck": "tsc --noEmit"

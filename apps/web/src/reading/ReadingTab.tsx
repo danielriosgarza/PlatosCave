@@ -1,4 +1,4 @@
-import { useQueryClient } from '@tanstack/react-query';
+import { type QueryClient, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { useCallback, useEffect, useRef } from 'react';
 import { ApiError } from '../api/client';
@@ -95,14 +95,15 @@ export function ReadingTab({ classId, courseId, topicId, instructor, search, onS
   }
 
   // The address place wins over the saved one: it is where this history entry was left, unless
-  // the reader moved on from it before leaving (see `LeftAt`).
+  // the reader moved on from it before leaving (see `leftAt`).
   const addressed =
     search.resource === undefined || search.resource === chosen.revisionId
       ? positionFromSearch(search)
       : null;
-  const left = queryClient.getQueryData<LeftAt>(leftAtKey(classId, chosen.revisionId));
-  const initial =
-    (left && left.from === JSON.stringify(addressed) ? left.place : addressed) ?? chosen.position;
+  const left = leftPlaces(queryClient).get(
+    leftAtKey(classId, chosen.revisionId, JSON.stringify(addressed)),
+  );
+  const initial = left ?? addressed ?? chosen.position;
 
   return (
     <>
@@ -150,17 +151,22 @@ export function ReadingTab({ classId, courseId, topicId, instructor, search, onS
 }
 
 /**
- * The place flushed as a reader left a reading (a tab click within the pause before a save),
- * which the address of the entry left behind does not hold: `from` is the place that address
- * names. Back to that entry restores `place` instead. Held in the query cache, so it belongs to
- * this app and session and is dropped with them.
+ * Places flushed as a reader left a reading (a tab click within the pause before a save) that the
+ * address of the entry left behind does not hold. Keyed by the place that address names, so Back
+ * to that entry restores the flushed place instead. One map per QueryClient: it belongs to this
+ * app and session and goes with them, and it never expires while they last.
  */
-interface LeftAt {
-  from: string;
-  place: ReadingPosition;
+const leftAt = new WeakMap<QueryClient, Map<string, ReadingPosition>>();
+const leftAtKey = (classId: string, revisionId: string, from: string) =>
+  `${classId}\n${revisionId}\n${from}`;
+function leftPlaces(client: QueryClient) {
+  let places = leftAt.get(client);
+  if (!places) {
+    places = new Map();
+    leftAt.set(client, places);
+  }
+  return places;
 }
-const LEFT_AT = ['reading', 'left'];
-const leftAtKey = (classId: string, revisionId: string) => [...LEFT_AT, classId, revisionId];
 
 interface ViewProps {
   classId: string;
@@ -176,17 +182,36 @@ function ReadingView({ classId, topicId, reading, initial, addressed, onSearch }
   const content = useReadingContent(classId, reading.revisionId);
   const save = useSavePosition(classId, topicId);
   const { revisionId } = reading;
-  const queryClient = useQueryClient();
-  const left = leftAtKey(classId, revisionId);
+  const places = leftPlaces(useQueryClient());
   const inAddress = useRef(JSON.stringify(addressed));
   const lastSaved = useRef<string>('');
   const saving = useRef(false);
   const next = useRef<ReadingPosition | null>(null);
 
+  const send = useCallback(
+    function send(place: ReadingPosition) {
+      saving.current = true;
+      save(revisionId, place)
+        .catch(() => {
+          // Retried by the next move unless a newer place is already waiting; nothing here
+          // claims it was kept.
+          if (!next.current) lastSaved.current = '';
+        })
+        .finally(() => {
+          saving.current = false;
+          const waiting = next.current;
+          next.current = null;
+          if (waiting) send(waiting);
+        });
+    },
+    [save, revisionId],
+  );
+
   /**
    * One save at a time per reading, so an older PUT cannot land after a newer one; a place that
-   * arrives meanwhile waits and replaces any place already waiting. Only a page being closed
-   * sends at once, since nothing would be left to send the waiting place.
+   * arrives meanwhile waits and replaces any place already waiting. When the page is hidden or
+   * closed (`now`), it is sent at once: the save in flight may never finish, and nothing would be
+   * left to send the waiting place.
    */
   const store = useCallback(
     (position: ReadingPosition, now = false) => {
@@ -199,29 +224,15 @@ function ReadingView({ classId, topicId, reading, initial, addressed, onSearch }
       }
       // A place sent at once supersedes any still waiting, which would otherwise land after it.
       next.current = null;
-      const send = (place: ReadingPosition) => {
-        saving.current = true;
-        save(revisionId, place)
-          .catch(() => {
-            // Retried by the next move unless a newer place is already waiting; nothing here
-            // claims it was kept.
-            if (!next.current) lastSaved.current = '';
-          })
-          .finally(() => {
-            saving.current = false;
-            const waiting = next.current;
-            next.current = null;
-            if (waiting) send(waiting);
-          });
-      };
       send(position);
     },
-    [save, revisionId],
+    [send],
   );
   const report = useReporter(
     (position: ReadingPosition, reason: PlaceReason) => {
-      store(position, reason === 'close');
-      queryClient.removeQueries({ queryKey: left, exact: true });
+      store(position, reason !== 'pause');
+      // This entry's address moves on, so a place flushed from its old address no longer applies.
+      places.delete(leftAtKey(classId, revisionId, inAddress.current));
       inAddress.current = JSON.stringify(position);
       onSearch(searchFor(revisionId, position), 'replace');
     },
@@ -230,10 +241,14 @@ function ReadingView({ classId, topicId, reading, initial, addressed, onSearch }
       // An address without a place falls back to the saved place, which this save updates.
       const from = inAddress.current;
       if (from !== 'null' && from !== JSON.stringify(position)) {
-        // Nothing observes it, so without this the cache would drop it after the default gcTime.
-        queryClient.setQueryDefaults(LEFT_AT, { gcTime: Number.POSITIVE_INFINITY });
-        queryClient.setQueryData<LeftAt>(left, { from, place: position });
+        places.set(leftAtKey(classId, revisionId, from), position);
       }
+    },
+    () => {
+      // Hidden or closing with no new place: a place still waiting behind a save goes now.
+      const waiting = next.current;
+      next.current = null;
+      if (waiting) send(waiting);
     },
   );
 

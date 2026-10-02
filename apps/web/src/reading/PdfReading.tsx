@@ -49,6 +49,8 @@ export function PdfReading({ url, pageCount, renew, initial, onPosition }: Props
   const restore = useRef<number | null>(start?.offset ?? null);
   // The share of the page above the window top as last seen, kept across full screen changes.
   const share = useRef(start?.offset ?? 0);
+  // Set by a full screen change: the next draw (at the new width) re-applies the share as it is then.
+  const reapply = useRef(false);
   const moved = useRef(false);
   const settledAt = useRef<number | null>(null);
   const current = useRef(url);
@@ -116,8 +118,9 @@ export function PdfReading({ url, pageCount, renew, initial, onPosition }: Props
         if (cancelled || !size) return;
         setDrawn({ page, width });
         settledAt.current = performance.now();
-        const wanted = restore.current;
+        const wanted = restore.current ?? (reapply.current ? share.current : null);
         restore.current = null;
+        reapply.current = false;
         if (wanted !== null) scrollToShare(wanted);
       })
       .catch(() => {
@@ -155,12 +158,14 @@ export function PdfReading({ url, pageCount, renew, initial, onPosition }: Props
       if (moved.current || performance.now() - at > HOLD_MS) place();
     };
     const onFullScreen = () => {
+      // Another element entering or leaving full screen does not move this reader.
+      if (inFullScreen(sheet.current) === full) return;
       full = inFullScreen(sheet.current);
       if (settledAt.current === null) return;
       scrollToShare(share.current);
-      // The stage width changes with full screen, so the page is drawn again at a new height;
-      // the draw applies the share once more against that height.
-      restore.current = share.current;
+      // The stage width may change with full screen, so the page may be drawn again at a new
+      // height; that draw applies the share the reader is at by then.
+      reapply.current = true;
     };
     for (const type of READER_INPUT) window.addEventListener(type, input, { passive: true });
     const stopScroll = onScrollerScroll(() => sheet.current, onScroll);

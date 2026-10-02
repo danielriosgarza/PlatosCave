@@ -4,13 +4,13 @@ import {
   READING_HTML_PROTOCOLS,
   READING_HTML_TAGS,
 } from '@parallax/contracts';
+// Shared with the browser layer's test, which runs these outputs through DOMPurify.
+import hostile from '@parallax/contracts/fixtures/hostile-readings.json';
 import type { Element, Root } from 'hast';
 import rehypeParse from 'rehype-parse';
 import { unified } from 'unified';
 import { visit } from 'unist-util-visit';
 import { describe, expect, test } from 'vitest';
-// Shared with the browser layer's test, which runs these outputs through DOMPurify.
-import hostile from '../../../web/src/reading/hostile-readings.json';
 import { makePdf } from '../../test/fixtures/pdf';
 import { cleanPageText, extractPdfText } from './pdf-text';
 import {
@@ -547,7 +547,7 @@ describe('reading HTML on the app origin (ADR-0002)', () => {
 
   test.each(hostile.cases)('$name: the shared fixture is what ingestion makes of it', (c) => {
     const { html } = renderReading(c.source, c.format as 'html' | 'markdown');
-    // On a mismatch, regenerate `ingested` in hostile-readings.json from renderReading.
+    // On a mismatch, regenerate `ingested` in packages/contracts/fixtures/hostile-readings.json from renderReading.
     expect(html).toBe(c.ingested);
     const tree = unified().use(rehypeParse, { fragment: true }).parse(html);
     expect(dangers(tree)).toEqual([]);

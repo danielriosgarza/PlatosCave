@@ -62,6 +62,8 @@ export function NativeReading({ html, initial, onPosition }: Props) {
   // Where the reader is, so new HTML for the same reading (fresh image links after a background
   // refetch) or a move in or out of full screen keeps the place instead of returning to `start`.
   const here = useRef<BlockPlace | null>(start.current);
+  // What the hold keeps in view: the saved place at first, the reader's place after new HTML.
+  const target = useRef<BlockPlace | null>(start.current);
   const restored = useRef(false);
   const shown = useMemo(() => sanitizeReading(html), [html]);
 
@@ -69,9 +71,15 @@ export function NativeReading({ html, initial, onPosition }: Props) {
   useLayoutEffect(() => {
     const root = ref.current;
     if (!root) return;
-    const place = restored.current ? here.current : start.current;
+    if (restored.current) {
+      // New HTML replaces the page under the reader, and its images load again: hold the place
+      // the reader was at, as on first opening.
+      target.current = here.current;
+      moved.current = false;
+      openedAt.current = performance.now();
+    }
     restored.current = true;
-    if (place) scrollToBlock(root, place);
+    if (target.current) scrollToBlock(root, target.current);
   }, [shown]);
 
   useEffect(() => {
@@ -80,7 +88,7 @@ export function NativeReading({ html, initial, onPosition }: Props) {
     let full = inFullScreen(root);
     const settling = () => !moved.current && performance.now() - openedAt.current < HOLD_MS;
     const hold = () => {
-      if (settling() && start.current) scrollToBlock(root, start.current);
+      if (settling() && target.current) scrollToBlock(root, target.current);
     };
     const input = () => {
       moved.current = true;
@@ -95,6 +103,8 @@ export function NativeReading({ html, initial, onPosition }: Props) {
       onPosition(place);
     };
     const onFullScreen = () => {
+      // Another element entering or leaving full screen does not move this reader.
+      if (inFullScreen(root) === full) return;
       full = inFullScreen(root);
       if (here.current) scrollToBlock(root, here.current);
     };

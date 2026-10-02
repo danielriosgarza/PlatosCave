@@ -119,15 +119,7 @@ export async function loadClassTopics(db: Db, scope: ClassScope, now: Date): Pro
   const { release, topicRows, resourceRows } = source;
 
   const forStudent = scope.role === 'student';
-  const inputs: (AvailabilityTopic & { id: string })[] = topicRows.map((t) => ({
-    id: t.id,
-    topicId: t.topicId,
-    title: t.title,
-    prerequisites: t.prerequisites,
-    resources: resourceRows.filter((r) => r.releaseTopicId === t.id),
-  }));
-  const completed = await completedTopics(db, scope);
-  const availability = computeAvailability(inputs, { role: scope.role, now, completed });
+  const availability = await availabilityOf(db, scope, topicRows, resourceRows, now);
 
   const topics: ClassTopic[] = topicRows.map((t, index) => {
     const mine = resourceRows.filter((r) => r.releaseTopicId === t.id);
@@ -164,7 +156,28 @@ export async function loadClassTopics(db: Db, scope: ClassScope, now: Date): Pro
 }
 
 type TopicRow = { id: string; topicId: string; title: string; prerequisites: string[] };
-type ResourceRow = Pick<AvailabilityTopic['resources'][number], 'tab' | 'visibility' | 'releaseAt'>;
+type ResourceRow = AvailabilityTopic['resources'][number] & { releaseTopicId: string };
+
+/**
+ * Availability (§4) of `topicRows` for the caller, each topic judged by its own rows of
+ * `resourceRows`: the one assembly behind `loadClassTopics` and `findReleaseTopic`.
+ */
+async function availabilityOf(
+  db: Db,
+  scope: ClassScope,
+  topicRows: TopicRow[],
+  resourceRows: ResourceRow[],
+  now: Date,
+) {
+  const inputs: AvailabilityTopic[] = topicRows.map((t) => ({
+    topicId: t.topicId,
+    title: t.title,
+    prerequisites: t.prerequisites,
+    resources: resourceRows.filter((r) => r.releaseTopicId === t.id),
+  }));
+  const completed = await completedTopics(db, scope);
+  return computeAvailability(inputs, { role: scope.role, now, completed });
+}
 
 /**
  * One topic of the adopted release (of the draft snapshot for a draft preview), found by its
@@ -183,7 +196,7 @@ export async function findReleaseTopic(
     'topicId' in by ? t.topicId === by.topicId : t.id === by.releaseTopicId;
   let topic: TopicRow | undefined;
   let resources: ResourceRow[];
-  let prerequisites: { topicId: string; title: string }[];
+  let prerequisites: TopicRow[];
   if (scope.membership.isPreview) {
     const draft = await draftSnapshot(db, scope);
     topic = draft.topics.find(matches);
@@ -216,39 +229,43 @@ export async function findReleaseTopic(
     if (scope.role !== 'student') {
       return { topicId: topic.topicId, releaseTopicId: topic.id, open: true };
     }
-    resources = await db
-      .select({
-        tab: releaseResources.tab,
-        visibility: releaseResources.visibility,
-        releaseAt: releaseResources.releaseAt,
-      })
-      .from(releaseResources)
-      .where(
-        and(
-          eq(releaseResources.releaseId, scope.releaseId),
-          eq(releaseResources.releaseTopicId, topic.id),
-        ),
-      );
+    const releaseId = scope.releaseId;
+    const id = topic.id;
     // Prerequisites only need to exist in the release and carry a title; their resources do not
-    // bear on this topic's state.
-    prerequisites = topic.prerequisites.length
-      ? await db
-          .select({ topicId: releaseTopics.topicId, title: releaseTopics.title })
-          .from(releaseTopics)
-          .where(
-            and(
-              eq(releaseTopics.releaseId, scope.releaseId),
-              inArray(releaseTopics.topicId, topic.prerequisites),
-            ),
-          )
-      : [];
+    // bear on this topic's state. The two reads are independent.
+    [resources, prerequisites] = await Promise.all([
+      db
+        .select({
+          releaseTopicId: releaseResources.releaseTopicId,
+          tab: releaseResources.tab,
+          visibility: releaseResources.visibility,
+          releaseAt: releaseResources.releaseAt,
+        })
+        .from(releaseResources)
+        .where(
+          and(eq(releaseResources.releaseId, releaseId), eq(releaseResources.releaseTopicId, id)),
+        ),
+      topic.prerequisites.length
+        ? db
+            .select({
+              id: releaseTopics.id,
+              topicId: releaseTopics.topicId,
+              title: releaseTopics.title,
+              prerequisites: releaseTopics.prerequisites,
+            })
+            .from(releaseTopics)
+            .where(
+              and(
+                eq(releaseTopics.releaseId, releaseId),
+                inArray(releaseTopics.topicId, topic.prerequisites),
+              ),
+            )
+        : Promise.resolve([]),
+    ]);
   }
-  const inputs: AvailabilityTopic[] = [
-    { ...topic, resources },
-    ...prerequisites.map((p) => ({ ...p, prerequisites: [], resources: [] })),
-  ];
-  const completed = await completedTopics(db, scope);
-  const availability = computeAvailability(inputs, { role: scope.role, now, completed });
+  // A prerequisite's own prerequisites and resources do not bear on this topic's state.
+  const shown = prerequisites.map((p) => ({ ...p, prerequisites: [] }));
+  const availability = await availabilityOf(db, scope, [topic, ...shown], resources, now);
   const state = availability.get(topic.topicId);
   return {
     topicId: topic.topicId,

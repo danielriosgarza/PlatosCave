@@ -531,7 +531,7 @@ describe('reading hardening', () => {
     const user = userEvent.setup();
     const world = makeWorld(two());
     const fetchMock = api(world);
-    const { router, queryClient } = renderApp(READING);
+    const { router } = renderApp(READING);
     await screen.findByText('Every sample tells a slightly different story.');
     // A pause on b-one: saved, and written into this entry's address.
     scrollThrough({ 'b-title': -120, 'b-one': -60, 'b-two': 40, 'b-code': 140 });
@@ -546,9 +546,6 @@ describe('reading hardening', () => {
       position: { blockId: 'b-code', offset: Math.round(length['b-code'] * 0.4) },
     });
     for (const [, init] of putsOf(fetchMock)) expect(init?.keepalive).toBe(true);
-    // Nothing observes the record, so it must outlive the cache's default five minutes.
-    const [record] = queryClient.getQueryCache().findAll({ queryKey: ['reading', 'left'] });
-    expect(record?.gcTime).toBe(Number.POSITIVE_INFINITY);
 
     scrollTo.mockClear();
     layout.tops = { 'b-title': 0, 'b-one': 60, 'b-two': 160, 'b-code': 260 };
@@ -745,6 +742,158 @@ describe('reading hardening', () => {
         expect(doc.renderPage).toHaveBeenLastCalledWith(2, expect.anything(), 900),
       );
       await waitFor(() => expect(workspaceScroll).toHaveBeenLastCalledWith({ top: 80 }));
+    } finally {
+      Reflect.deleteProperty(document, 'fullscreenElement');
+      layout.height = 100;
+    }
+  });
+
+  it('A03 hiding the page sends the place at once, and a place waiting behind a save with it', async () => {
+    const world = makeWorld(two());
+    const fetchMock = api(world);
+    holdPuts(fetchMock);
+    renderApp(READING);
+    await screen.findByText('Every sample tells a slightly different story.');
+    scrollThrough({ 'b-title': -120, 'b-one': -60, 'b-two': 40, 'b-code': 140 });
+    await waitFor(() => expect(putsOf(fetchMock)).toHaveLength(1));
+    // Paused again while the first save is still in flight: this place waits behind it.
+    scrollThrough({ 'b-title': -220, 'b-one': -160, 'b-two': -60, 'b-code': 40 });
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    expect(putsOf(fetchMock)).toHaveLength(1);
+    // The tab is hidden (a phone switching apps): the waiting place leaves now, with keepalive.
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
+    try {
+      document.dispatchEvent(new Event('visibilitychange'));
+      expect(putsOf(fetchMock)).toHaveLength(2);
+      const [, init] = putsOf(fetchMock)[1] ?? [];
+      expect(init?.keepalive).toBe(true);
+      expect(JSON.parse(String(init?.body))).toMatchObject({ position: { blockId: 'b-two' } });
+      // A place still in its pause when the tab is hidden also leaves at once.
+      scrollThrough({ 'b-title': -300, 'b-one': -240, 'b-two': -140, 'b-code': -40 });
+      document.dispatchEvent(new Event('visibilitychange'));
+      expect(putsOf(fetchMock)).toHaveLength(3);
+    } finally {
+      Reflect.deleteProperty(document, 'visibilityState');
+    }
+  });
+
+  it('A03 a pause in a later visit to the reading keeps Back to the earlier entry on its flushed place', async () => {
+    const user = userEvent.setup();
+    const world = makeWorld(two());
+    api(world);
+    const { router } = renderApp(READING);
+    await screen.findByText('Every sample tells a slightly different story.');
+    // Entry 1: a pause on b-one, then on to the code and Slides before the next pause.
+    scrollThrough({ 'b-title': -120, 'b-one': -60, 'b-two': 40, 'b-code': 140 });
+    await waitFor(() => expect(router.state.location.search).toMatchObject({ block: 'b:b-one' }));
+    scrollThrough({ 'b-title': -300, 'b-one': -240, 'b-two': -140, 'b-code': -40 });
+    await user.click(screen.getByRole('tab', { name: 'Slides' }));
+    await waitFor(() => expect(world.positions).toHaveLength(2));
+    // Entry 3: Reading again, a pause somewhere else.
+    await user.click(screen.getByRole('tab', { name: 'Reading' }));
+    await screen.findByText('Every sample tells a slightly different story.');
+    scrollThrough({ 'b-title': -220, 'b-one': -160, 'b-two': -60, 'b-code': 40 });
+    await waitFor(() => expect(router.state.location.search).toMatchObject({ block: 'b:b-two' }));
+
+    layout.tops = { 'b-title': 0, 'b-one': 60, 'b-two': 160, 'b-code': 260 };
+    router.history.back();
+    await waitFor(() => expect(router.state.location.pathname).toMatch(/\/slides$/));
+    scrollTo.mockClear();
+    router.history.back();
+    await screen.findByText('Every sample tells a slightly different story.');
+    expect(router.state.location.search).toMatchObject({ block: 'b:b-one' });
+    expect(scrollTo).toHaveBeenCalledWith({ top: 260 + (3 / length['b-code']) * 100 });
+  });
+
+  it('A03 after fresh content the place is held while late images move the page', async () => {
+    const world = makeWorld(two({ blockId: 'b-one', offset: 0 }));
+    api(world);
+    const { queryClient } = renderApp(READING);
+    await screen.findByText('Every sample tells a slightly different story.');
+    const now = performance.now();
+    vi.spyOn(performance, 'now').mockReturnValue(now + 5000);
+    scrollThrough({ 'b-title': -300, 'b-one': -240, 'b-two': -140, 'b-code': -40 });
+    await waitFor(() => expect(world.positions).toHaveLength(1));
+    world.html = `${HTML}<p data-block-id="b-more">A paragraph added at the end.</p>`;
+    await queryClient.refetchQueries();
+    await screen.findByText('A paragraph added at the end.');
+    scrollTo.mockClear();
+    // An image above the reader loads and pushes the text down 50 px; nobody scrolled.
+    layout.tops = { 'b-title': -250, 'b-one': -190, 'b-two': -90, 'b-code': 10 };
+    window.dispatchEvent(new Event('scroll'));
+    expect(scrollTo).toHaveBeenCalledWith({ top: 10 + (3 / length['b-code']) * 100 });
+    expect(world.positions).toHaveLength(1);
+  });
+
+  it('A03 another element entering full screen leaves the reader where it is', async () => {
+    api(makeWorld(two({ blockId: 'b-two', offset: 0 })));
+    renderApp(READING);
+    await screen.findByText('Wider samples vary less than narrow ones do.');
+    await waitFor(() => expect(scrollTo).toHaveBeenCalled());
+    scrollTo.mockClear();
+    const other = document.createElement('div');
+    document.body.append(other);
+    Object.defineProperty(document, 'fullscreenElement', { configurable: true, get: () => other });
+    try {
+      document.dispatchEvent(new Event('fullscreenchange'));
+      expect(scrollTo).not.toHaveBeenCalled();
+    } finally {
+      Reflect.deleteProperty(document, 'fullscreenElement');
+      other.remove();
+    }
+  });
+
+  it('A03 a PDF redraw after a full screen change keeps the place the reader has reached by then', async () => {
+    const observed: { target: Element; callback: () => void }[] = [];
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(private readonly callback: () => void) {}
+        observe(target: Element) {
+          observed.push({ target, callback: this.callback });
+        }
+        disconnect() {}
+      },
+    );
+    const doc = pdfDocument();
+    openPdf.mockResolvedValue(doc);
+    const world = makeWorld({
+      lastRevisionId: REV_PDF,
+      readings: [summary(REV_PDF, 'Sampling paper', 'pdf', { page: 2, offset: 500 })],
+    });
+    api(world);
+    renderApp(READING);
+    await waitFor(() => expect(scrollTo).toHaveBeenCalledWith({ top: 50 }));
+    const workspace = document.querySelector('main');
+    const stage = screen.getByRole('navigation', { name: 'PDF pages' }).parentElement;
+    if (!workspace || !stage) throw new Error('no workspace');
+    const workspaceScroll = vi.fn();
+    workspace.scrollTo = workspaceScroll as never;
+    // The full-screen workspace fills the window: its top is the top of the reading window.
+    workspace.getBoundingClientRect = () => ({ top: 0, bottom: 800, height: 800 }) as DOMRect;
+    Object.defineProperty(document, 'fullscreenElement', {
+      configurable: true,
+      get: () => workspace,
+    });
+    try {
+      // Full screen at the same width: nothing is redrawn yet.
+      document.dispatchEvent(new Event('fullscreenchange'));
+      // The reader reads on to 80 % of the page.
+      window.dispatchEvent(new Event('wheel'));
+      layout.tops = { sheet: -80 };
+      workspace.dispatchEvent(new Event('scroll'));
+      await waitFor(() =>
+        expect(world.positions.at(-1)).toMatchObject({ position: { page: 2, offset: 800 } }),
+      );
+      // Later the window is resized and the page redrawn taller: the reader stays at 80 %.
+      layout.tops = { sheet: 0 };
+      layout.height = 200;
+      Object.defineProperty(stage, 'clientWidth', { configurable: true, value: 700 });
+      for (const o of observed.filter((x) => x.target === stage)) o.callback();
+      await waitFor(() =>
+        expect(doc.renderPage).toHaveBeenLastCalledWith(2, expect.anything(), 700),
+      );
+      await waitFor(() => expect(workspaceScroll).toHaveBeenLastCalledWith({ top: 160 }));
     } finally {
       Reflect.deleteProperty(document, 'fullscreenElement');
       layout.height = 100;
