@@ -8,6 +8,8 @@ interface ResourceToolbarProps {
   notice: string | null;
   onFocus: () => void;
   onFullscreen: () => void;
+  /** Receives the element the open tab's local tools are placed in. */
+  toolsRef?: (element: HTMLElement | null) => void;
   focusButton: RefObject<HTMLButtonElement | null>;
   fullscreenButton: RefObject<HTMLButtonElement | null>;
 }
@@ -20,6 +22,7 @@ export function ResourceToolbar({
   notice,
   onFocus,
   onFullscreen,
+  toolsRef,
   focusButton,
   fullscreenButton,
 }: ResourceToolbarProps) {
@@ -28,6 +31,7 @@ export function ResourceToolbar({
       <div className={styles.toolbar} role="toolbar" aria-label="Resource tools">
         <span className={styles.title}>{title}</span>
         <div className={styles.tools}>
+          <span ref={toolsRef} className={styles.local} />
           <button type="button" ref={fullscreenButton} aria-keyshortcuts="f" onClick={onFullscreen}>
             {fullscreen ? 'Exit full screen' : 'Full screen'}
           </button>

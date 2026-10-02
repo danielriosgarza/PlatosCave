@@ -13,6 +13,8 @@ export interface RenderHandle {
 
 export interface PdfDocument {
   pageCount: number;
+  /** Width over height of page `n` (1-based) at scale 1, which the slide stage fits. */
+  pageRatio(n: number): Promise<number>;
   /** Draws page `n` (1-based) at `width` CSS pixels, with its selectable text layer. */
   renderPage(
     n: number,
@@ -22,14 +24,27 @@ export interface PdfDocument {
   destroy(): void;
 }
 
-export async function openPdf(data: Uint8Array): Promise<PdfDocument> {
+/**
+ * Opens a PDF from its bytes, or from a link on the content origin: pdf.js then asks for byte
+ * ranges (the origin answers them), reads no more of the file than the pages shown need
+ * (`disableAutoFetch`, which works only with streaming off: otherwise the first request is read to the end), and sends no credentials.
+ */
+export async function openPdf(source: Uint8Array | string): Promise<PdfDocument> {
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
   const worker = (await import('pdfjs-dist/legacy/build/pdf.worker.min.mjs?url')).default;
   pdfjs.GlobalWorkerOptions.workerSrc = worker;
-  const task = pdfjs.getDocument({ data });
+  const task = pdfjs.getDocument(
+    typeof source === 'string'
+      ? { url: source, disableAutoFetch: true, disableStream: true, withCredentials: false }
+      : { data: source },
+  );
   const doc = await task.promise;
   return {
     pageCount: doc.numPages,
+    async pageRatio(n) {
+      const { width, height } = (await doc.getPage(n)).getViewport({ scale: 1 });
+      return width / height;
+    },
     renderPage(n, { canvas, text }, width) {
       let cancelled = false;
       const cancels: (() => void)[] = [];

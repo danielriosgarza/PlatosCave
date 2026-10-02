@@ -1,5 +1,5 @@
 import { createFileRoute, redirect } from '@tanstack/react-router';
-import { useRef } from 'react';
+import { useRef, useState } from 'react';
 import { z } from 'zod';
 import { ApiError } from '../../api/client';
 import { ClassUnavailable } from '../../components/AccessLost';
@@ -12,6 +12,7 @@ import readingStyles from '../../reading/Reading.module.css';
 import { ReadingTab } from '../../reading/ReadingTab';
 import { useClassContext } from '../../session/classContext';
 import type { SessionClass } from '../../session/useSession';
+import { SlidesTab } from '../../slides/SlidesTab';
 import { TopicHeading } from '../../topics/TopicHeading';
 import {
   type ClassTopic,
@@ -22,6 +23,7 @@ import {
 } from '../../topics/topics';
 import { useFocusMode } from '../../workspace/focus';
 import { ResourceToolbar } from '../../workspace/ResourceToolbar';
+import { ToolsHost } from '../../workspace/ResourceTools';
 
 export const TOPIC_TABS = [
   { id: 'slides', label: 'Slides' },
@@ -145,6 +147,7 @@ function OpenTopic({
   const navigate = Route.useNavigate();
   const search = Route.useSearch();
   const workspace = useRef<HTMLElement | null>(null);
+  const [toolsHost, setToolsHost] = useState<HTMLElement | null>(null);
   const mode = useFocusMode(workspace);
   const label = TOPIC_TABS.find((t) => t.id === tab)?.label ?? tab;
   return (
@@ -173,38 +176,57 @@ function OpenTopic({
         onFullscreen={() => void mode.toggleFullscreen()}
         focusButton={mode.focusButton}
         fullscreenButton={mode.fullscreenButton}
+        toolsRef={setToolsHost}
       />
-      <div
-        className={tab === 'reading' ? readingStyles.panel : styles.panel}
-        role="tabpanel"
-        id="pc-content"
-        aria-labelledby={`pc-tab-${tab}`}
-        // biome-ignore lint/a11y/noNoninteractiveTabindex: panel without focusable content must be reachable
-        tabIndex={0}
-      >
-        {tab === 'reading' ? (
-          <ReadingTab
-            classId={classId}
-            courseId={courseId}
-            topicId={topicId}
-            instructor={role === 'instructor'}
-            search={search}
-            onSearch={(next, how) =>
-              navigate({
-                params: { classId, topicId, tab },
-                search: next,
-                replace: how === 'replace',
-                // Moving the place is not a visit: the router must not scroll to the top.
-                resetScroll: how !== 'replace',
-              })
-            }
-          />
-        ) : tab === 'exercises' ? (
-          <ExercisesPanel classId={classId} topicId={topicId} role={role} />
-        ) : (
-          <p className={styles.intro}>Nothing is available under {label} for this topic yet.</p>
-        )}
-      </div>
+      <ToolsHost.Provider value={toolsHost}>
+        <div
+          className={tab === 'reading' || tab === 'slides' ? readingStyles.panel : styles.panel}
+          role="tabpanel"
+          id="pc-content"
+          aria-labelledby={`pc-tab-${tab}`}
+          // biome-ignore lint/a11y/noNoninteractiveTabindex: panel without focusable content must be reachable
+          tabIndex={0}
+        >
+          {tab === 'reading' ? (
+            <ReadingTab
+              classId={classId}
+              courseId={courseId}
+              topicId={topicId}
+              instructor={role === 'instructor'}
+              search={search}
+              onSearch={(next, how) =>
+                navigate({
+                  params: { classId, topicId, tab },
+                  search: next,
+                  replace: how === 'replace',
+                  // Moving the place is not a visit: the router must not scroll to the top.
+                  resetScroll: how !== 'replace',
+                })
+              }
+            />
+          ) : tab === 'slides' ? (
+            <SlidesTab
+              classId={classId}
+              courseId={courseId}
+              topicId={topicId}
+              instructor={role === 'instructor'}
+              resource={search.resource}
+              onResource={(resource, how) =>
+                navigate({
+                  params: { classId, topicId, tab },
+                  search: { resource },
+                  replace: how === 'replace',
+                  resetScroll: how !== 'replace',
+                })
+              }
+            />
+          ) : tab === 'exercises' ? (
+            <ExercisesPanel classId={classId} topicId={topicId} role={role} />
+          ) : (
+            <p className={styles.intro}>Nothing is available under {label} for this topic yet.</p>
+          )}
+        </div>
+      </ToolsHost.Provider>
     </main>
   );
 }

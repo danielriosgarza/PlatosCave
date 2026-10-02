@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { buildApp } from '../../src/app';
@@ -9,7 +9,8 @@ import { loadConfig } from '../../src/config';
 import { renderReading } from '../../src/content/reading';
 import { adoptRelease } from '../../src/db/content/adoption';
 import { publishRelease } from '../../src/db/content/releases';
-import { writeDerivedOutputs } from '../../src/db/jobs/derived';
+import { createBoss } from '../../src/db/jobs/boss';
+import { setDerivedStatus, writeDerivedOutputs } from '../../src/db/jobs/derived';
 import { resourceRevisions, resources, studyPositions } from '../../src/db/schema';
 import { FsStorage } from '../../src/storage/fs';
 import { storeCourseObject } from '../../src/storage/objects';
@@ -296,6 +297,40 @@ describe('reading list and content', () => {
     const { status, body } = await read('sam', ids.classA, rev.pending);
     expect(status).toBe(200);
     expect(body).toMatchObject({ status: 'pending', html: null, pdf: null });
+  });
+
+  test('a released reading whose job ended without a result reads as failed, as the processing list shows it', async () => {
+    // pg-boss's tables, so the job named below can be looked up (and found missing).
+    const boss = createBoss(testDb.db.$client, {
+      role: 'api',
+      onError: () => {},
+      onWarning: () => {},
+    });
+    await boss.start();
+    await boss.stop({ graceful: false });
+    const stopped = {
+      state: 'running' as const,
+      job: 'reading.ingest',
+      jobId: '00000000-0000-4000-8000-00000000dead',
+      updatedAt: new Date().toISOString(),
+    };
+    try {
+      const elena = asCourseScope(ids.statistics, ids.elena);
+      await setDerivedStatus(testDb.db, elena, rev.pending, stopped);
+      const { status, body } = await read('sam', ids.classA, rev.pending);
+      expect(status).toBe(200);
+      expect(body).toMatchObject({
+        status: 'failed',
+        error: 'Processing stopped without a result',
+        html: null,
+        pdf: null,
+      });
+    } finally {
+      await testDb.db
+        .update(resourceRevisions)
+        .set({ derived: sql`${resourceRevisions.derived} - 'status'` })
+        .where(eq(resourceRevisions.id, rev.pending));
+    }
   });
 
   test('A01 a reading outside the class release, a locked topic or another class is a 404', async () => {

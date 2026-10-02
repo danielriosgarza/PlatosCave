@@ -27,8 +27,8 @@ try {
       for (const item of content.items) {
         if ('str' in item) text += item.str + (item.hasEOL ? '\n' : '');
       }
-      pages.push(text);
       page.cleanup();
+      pages.push(text);
     } catch {
       pages.push(null);
     }

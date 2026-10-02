@@ -14,7 +14,7 @@ import {
 } from '../db/jobs/derived';
 import { type Storage, StorageNotFoundError } from '../storage/storage';
 import { type DerivedStatus, DerivedStatus as DerivedStatusSchema } from './derived';
-import { defineScopedJob, ensureQueues, sendScopedJob } from './scoped';
+import { defineScopedJob, sendScopedJob } from './scoped';
 
 export const READING_INGEST = 'reading.ingest';
 
@@ -100,8 +100,10 @@ async function readObject(
     bytes.set(part, offset);
     offset += part.byteLength;
   }
-  // A short read (the store reported more than it sent) is copied, so the result owns its buffer.
-  return offset === size ? bytes : bytes.slice(0, offset);
+  // The store sent less than it reported (a connection dropped mid-body): not the file's fault,
+  // so a plain error, which pg-boss retries, rather than ingesting or failing a truncated file.
+  if (offset !== size) throw new Error(`Object ${key} ended after ${offset} of ${size} bytes`);
+  return bytes;
 }
 
 /** Derived outputs of one reading revision (ADR-0003); `status` is written separately. */
@@ -250,9 +252,10 @@ const heldByJob = (raw: unknown): boolean => {
  * Queues ingestion of one revision of the scope's course (first run or a retry), provided its
  * status is still the one the caller read (`expected`, a `statusTag`; null: none): marking it
  * queued is one guarded write, so of concurrent saves or retries of one reading, one queues.
- * Then names the new job in the status so that only it may write there. Creates or updates the
- * queue first (pg-boss refuses sends to a missing queue). Returns the job id, or null when the
- * status has changed, the revision does not exist in this course, or its type is not processed.
+ * Then names the new job in the status so that only it may write there. The queue is created
+ * at API and worker startup (`ensureQueues`, `workScopedJob`), not on every send. Returns the
+ * job id, or null when the status has changed, the revision does not exist in this course, or
+ * its type is not processed.
  */
 export async function enqueueReadingIngest(
   boss: PgBoss,
@@ -270,7 +273,6 @@ export async function enqueueReadingIngest(
   if (!marked) return null;
   let jobId: string | null;
   try {
-    await ensureQueues(boss, [readingIngest]);
     jobId = await sendScopedJob(boss, readingIngest, scope, { revisionId });
   } catch (err) {
     // No new job exists. A job that held the status before keeps it, so its result still

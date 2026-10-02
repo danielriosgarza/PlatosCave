@@ -206,6 +206,7 @@ function pdfDocument(options: { hold?: boolean } = {}) {
   const running: { n: number; settle: (done: boolean) => void }[] = [];
   const doc: PdfDocument = {
     pageCount: 3,
+    pageRatio: async () => 3 / 4,
     renderPage: vi.fn((n: number) => {
       // pdf.js refuses a second render on a canvas that is busy.
       if (running.length > 0)
