@@ -23,8 +23,10 @@ def main():
         raise
     except BaseException:
         etype, error, tb = sys.exc_info()
-        skip = (os.path.abspath(__file__), os.path.abspath(runpy.__file__))
-        while tb is not None and os.path.abspath(tb.tb_frame.f_code.co_filename) in skip:
+        skip = (os.path.abspath(__file__), os.path.abspath(runpy.__file__), "<frozen runpy>")
+        while tb is not None and (
+            tb.tb_frame.f_code.co_filename in skip or os.path.abspath(tb.tb_frame.f_code.co_filename) in skip
+        ):
             tb = tb.tb_next
         traceback.print_exception(etype, error, tb)
         return 1

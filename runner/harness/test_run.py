@@ -515,6 +515,21 @@ class Compile(HarnessCase):
         self.assertNotIn("compileError", outcome.result)
         self.assertEqual(outcome.check()["status"], "passed")
 
+    def test_a_byte_order_mark_or_coding_cookie_is_not_a_compile_error(self):
+        latin = "# -*- coding: latin-1 -*-\nprint('caf\u00e9')\n".encode("latin-1")
+        job = make_job({"bom.py": "\ufeffprint('hi')\n"}, [stdio("Bom", "bom.py", "hi\n"), stdio("Latin", "latin.py", "caf\u00e9\n")])
+        job["files"].append({"path": "latin.py", "content": base64.b64encode(latin).decode(), "encoding": "base64"})
+        outcome = self.go(job)
+        self.assertNotIn("compileError", outcome.result)
+        self.assertEqual([c["status"] for c in outcome.result["checks"]], ["passed", "passed"])
+
+    def test_a_traceback_shows_no_launcher_or_runpy_frames(self):
+        job = make_job({"p.py": "raise RuntimeError('boom')\n"}, [stdio("A", "p.py", "")])
+        stderr = self.go(job).check()["stderr"]
+        self.assertIn("p.py", stderr)
+        self.assertNotIn("runpy", stderr)
+        self.assertNotIn("launch.py", stderr)
+
     def test_runtime_error_is_not_a_compile_error(self):
         job = make_job({"p.py": "raise RuntimeError('boom')\n"}, [stdio("A", "p.py", "")])
         outcome = self.go(job)
@@ -721,8 +736,24 @@ class Call(HarnessCase):
             [call("Value", "f", {"value": "a?"}), call("Raises", "g", {"raises": {"type": "ValueError"}})],
         )
         outcome = self.go(job)
-        self.assertEqual(outcome.check(0)["status"], "passed")  # the lone surrogate became "?"
+        self.assertEqual(outcome.check(0)["status"], "failed")  # it became U+FFFD, never an author's "?"
         self.assertEqual(outcome.check(1)["status"], "passed")
+
+    def test_a_huge_integer_in_a_numeric_comparison_is_a_verdict_not_a_crash(self):
+        source = "def big():\n    return 10 ** 400\ndef bigs():\n    return [10 ** 400]\n"
+        job = make_job(
+            {"solution.py": source},
+            [
+                call("Huge vs float", "big", {"value": 1.5}, "numeric"),
+                call("Huge in list", "bigs", {"value": [1.5]}, "numeric"),
+                call("Float vs huge expected", "big", {"value": 10 ** 400}, "numeric"),
+                call("Huge equals itself", "big", {"value": 10 ** 400}, "exact"),
+            ],
+        )
+        outcome = self.go(job)
+        self.assertEqual(
+            [c["status"] for c in outcome.result["checks"]], ["failed", "failed", "passed", "passed"]
+        )
 
     def test_a_job_holding_a_lone_surrogate_exits_64(self):
         job = make_job({"p.py": "x = 1\n"}, [script("A", "p.py")])
@@ -853,6 +884,14 @@ class Limits(HarnessCase):
         self.assertLessEqual(total, 4096)
         self.assertGreater(total, 4096 - 4)
         self.assertTrue(entry["truncated"])
+
+    def test_a_flooded_stderr_does_not_fail_a_correct_stdio_program(self):
+        source = "import sys\nprint('hi')\nfor _ in range(20000):\n    print('debug line', file=sys.stderr)\n"
+        job = make_job({"p.py": source}, [stdio("A", "p.py", "hi\n")], output=4096)
+        entry = self.go(job).check()
+        self.assertEqual(entry["status"], "passed")
+        self.assertTrue(entry["truncated"])
+        self.assertEqual(entry["actual"], "hi\n")  # compared on stdout's own text, not the shared budget
 
     def test_stdout_larger_than_output_bytes_cannot_pass_a_stdio_comparison(self):
         job = make_job({"p.py": "print('a' * 6000)\n"}, [stdio("A", "p.py", "a" * 6000 + "\n")], output=4096)

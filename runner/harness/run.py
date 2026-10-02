@@ -74,7 +74,7 @@ PY_COMPILE_SCRIPT = (
     "import ast,sys\n"
     "for f in sys.argv[1:]:\n"
     "    try:\n"
-    "        ast.parse(open(f, encoding='utf-8').read(), f)\n"
+    "        ast.parse(open(f, 'rb').read(), f)\n"
     "    except (SyntaxError, ValueError) as e:\n"
     "        sys.stdout.write(f + '\\n' + str(getattr(e, 'lineno', None) or '') + '\\n'"
     " + str(getattr(e, 'msg', None) or e))\n"
@@ -306,7 +306,10 @@ def read_stdin(fd=0, cap=MAX_JOB_BYTES + NONCE_LINE_BYTES, timeout=STDIN_TIMEOUT
 
 
 def numbers_match(actual, expected, abs_tol, rel_tol):
-    return abs(actual - expected) <= abs_tol + rel_tol * abs(expected)
+    try:
+        return abs(actual - expected) <= abs_tol + rel_tol * abs(expected)
+    except OverflowError:  # an int too large for a float on one side: only equality can match
+        return actual == expected
 
 
 def _is_number(value):
@@ -430,6 +433,7 @@ class OutputBudget:
     """What is left of the job's outputBytes, counted by encoded size, shared by all streams."""
 
     def __init__(self, limit):
+        self.limit = limit
         self.left = limit
         self.lock = threading.Lock()
 
@@ -450,15 +454,29 @@ class OutputBudget:
 class Reader(threading.Thread):
     """Drains one pipe until EOF; keeps what fits the budget and discards the rest."""
 
-    def __init__(self, fd, budget):
+    def __init__(self, fd, budget, whole=False):
         super().__init__(daemon=True)
         self.fd = fd
         self.budget = budget
         self.parts = []
         self.truncated = False
+        # With `whole`, the stream's own text is also kept apart from the shared budget (up to
+        # the job's outputBytes), so a stdio comparison does not depend on how much of the budget
+        # the other stream happened to use first.
+        self.whole = whole
+        self.seen = 0
+        self.over = False
+        self.whole_parts = []
         self.decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
 
     def _keep(self, text):
+        if self.whole and text and not self.over:
+            self.seen += encoded_len(text)
+            if self.seen > self.budget.limit:
+                self.over = True
+                self.whole_parts = []
+            else:
+                self.whole_parts.append(text)
         if self.truncated or not text:
             return
         kept, cut = self.budget.take(text)
@@ -534,6 +552,8 @@ class Exec:
         self.stdout = ""
         self.stderr = ""
         self.truncated = False
+        self.stdout_over = False
+        self.stdout_whole = ""
         self.duration_ms = 0
         self.oom = False
         self.outcome = None
@@ -551,7 +571,7 @@ def scrub_text(value):
     before they are measured, cut or framed.
     """
     if isinstance(value, str):
-        return value.encode("utf-8", "replace").decode("utf-8")
+        return value.encode("utf-8", "surrogatepass").decode("utf-8", "replace")
     if isinstance(value, list):
         return [scrub_text(item) for item in value]
     if isinstance(value, dict):
@@ -733,6 +753,8 @@ class Harness:
             res.fired = killer.fired
         if readers:
             res.stdout, res.stderr = readers[0].text, readers[1].text
+            res.stdout_over = readers[0].over
+            res.stdout_whole = "".join(readers[0].whole_parts)
             res.truncated = readers[0].truncated or readers[1].truncated
         if outcome_path is not None and res.spawn_error is None:
             res.outcome = self.read_outcome(outcome_path)
@@ -746,7 +768,7 @@ class Harness:
     def spawn_and_wait(self, res, cwd, home, argv, stdin_path, cap, budget):
         out_r, out_w = os.pipe()
         err_r, err_w = os.pipe()
-        readers = [Reader(out_r, budget), Reader(err_r, budget)]
+        readers = [Reader(out_r, budget, whole=True), Reader(err_r, budget)]
         killer = Killer(cap, self.clock)
         for thread in readers + [killer]:
             thread.start()
@@ -974,13 +996,13 @@ class Harness:
             want_code = expected.get("exitCode", 0)
             if code != want_code:
                 return done("error", "exit", message="Exited with code %d" % code)
-            if res.truncated:
+            if res.stdout_over:
                 return done("failed", expected=expected["stdout"], actual=res.stdout,
                             message="Output exceeds the output limit of the question")
-            ok, message = compare_text(mode, expected["stdout"], res.stdout, abs_tol, rel_tol)
+            ok, message = compare_text(mode, expected["stdout"], res.stdout_whole, abs_tol, rel_tol)
             if ok:
-                return done("passed", expected=expected["stdout"], actual=res.stdout)
-            return done("failed", expected=expected["stdout"], actual=res.stdout, message=message)
+                return done("passed", expected=expected["stdout"], actual=res.stdout_whole)
+            return done("failed", expected=expected["stdout"], actual=res.stdout_whole, message=message)
         return self.judge_call(check, res, mode, abs_tol, rel_tol, done)
 
     @staticmethod
