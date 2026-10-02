@@ -3,6 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
 import { useState } from 'react';
 import { ApiError, call } from '../api/client';
+import { clearDrafts } from '../reading/margin/drafts';
 import { endSession, studyingClasses, usableClasses, useSession } from '../session/useSession';
 import { TopicNav, useTopicRoute } from '../topics/TopicNav';
 import { useFocusActive } from '../workspace/focus';
@@ -41,6 +42,8 @@ export function GlobalBar() {
     }
     // Leave the guarded pages first so the signed-out guard does not add a `next` to /signin.
     await navigate({ to: '/signin' });
+    // Unsent notes on this device belong to the account that just left (§8).
+    await clearDrafts(me?.user.id ?? null);
     endSession(queryClient);
   };
 
