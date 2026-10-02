@@ -1,23 +1,34 @@
 import { requestSignInLink, signOut, verifySignInLink } from '@parallax/contracts/routes/auth';
 import type { FastifyInstance } from 'fastify';
-import type { Deps } from '../../app';
+import type { RouteDeps } from '../../app';
 import { defaultDestination, safeDestination } from '../../auth/destination';
 import { EmailLinkProvider } from '../../auth/email-provider';
-import { endPreviewReturn } from '../../auth/preview';
-import { readSessionToken, SESSION_COOKIE, sessionCookieOptions } from '../../auth/sessions';
-import { userForVerifiedEmail } from '../../db/auth/accounts';
-import { createSession, revokeSession } from '../../db/auth/sessions';
+import { clearPreviewReturn, PREVIEW_RETURN_COOKIE, revokePreviewReturn } from '../../auth/preview';
+import {
+  readSessionToken,
+  SESSION_COOKIE,
+  sessionCookieOptions,
+  TOKEN_SHAPE,
+} from '../../auth/sessions';
+import { revokeSession, signInWithProof } from '../../db/auth/sessions';
 import { registerRoute } from '../register';
 
 const EXPIRED = '/signin?link=expired';
 
-export default function authRoutes(app: FastifyInstance, deps: Deps): void {
-  const { config, mailer } = app.authDeps;
-  const now = () => app.resolverDeps.now();
+export default function authRoutes(app: FastifyInstance, deps: RouteDeps): void {
+  const { config, mailer, background } = deps;
+  const { now } = deps;
   const cookieOptions = sessionCookieOptions(config.APP_ORIGIN);
   const { db } = deps;
   const provider = db
-    ? new EmailLinkProvider({ db, mailer, now, appOrigin: config.APP_ORIGIN, log: app.log })
+    ? new EmailLinkProvider({
+        db,
+        mailer,
+        now,
+        background,
+        appOrigin: config.APP_ORIGIN,
+        log: app.log,
+      })
     : undefined;
 
   registerRoute(
@@ -37,31 +48,51 @@ export default function authRoutes(app: FastifyInstance, deps: Deps): void {
     verifySignInLink,
     async ({ query, req, reply }) => {
       if (!db || !provider) throw app.httpErrors.serviceUnavailable();
-      const result = query.token ? await provider.complete(query.token) : null;
-      if (!result?.ok) {
-        const keep = safeDestination(result?.destination);
+      // A missing or malformed token is decided in memory: no transaction, no pool connection.
+      const { token } = query;
+      if (!token || !TOKEN_SHAPE.test(token)) return reply.redirect(EXPIRED) as never;
+      // Spending the link, finding the account, ending the old session and starting the new one
+      // are one transaction: a failure after the link is marked used rolls the use back, so the
+      // link still works on retry instead of leaving a dead link and a 500.
+      const at = now();
+      const signedIn = await signInWithProof(db, {
+        consume: (tx) => provider.complete(token, tx),
+        previous: readSessionToken(req),
+        // A kept instructor session (a preview in progress) ends with the sign-in or not at all.
+        alsoEnd: (tx) => revokePreviewReturn(tx, req, at),
+        now: at,
+      });
+      if (!signedIn.token) {
+        const keep = safeDestination(signedIn.destination);
         const to = keep ? `${EXPIRED}&next=${encodeURIComponent(keep)}` : EXPIRED;
         return reply.redirect(to) as never;
       }
-      const userId = await userForVerifiedEmail(db, result.email);
-      const at = now();
-      // Rotation: whatever session this browser held before is ended, never upgraded in place.
-      const previous = readSessionToken(req);
-      if (previous) await revokeSession(db, previous, at);
-      await endPreviewReturn(db, req, reply, config.APP_ORIGIN, at);
-      const { token } = await createSession(db, userId, { now: at, authTime: at });
-      reply.setCookie(SESSION_COOKIE, token, cookieOptions);
+      reply.setCookie(SESSION_COOKIE, signedIn.token, cookieOptions);
+      clearPreviewReturn(req, reply, config.APP_ORIGIN);
       // Re-checked at use: a stored destination is only ever a same-origin app path.
-      return reply.redirect(safeDestination(result.destination) ?? '/courses') as never;
+      return reply.redirect(safeDestination(signedIn.destination) ?? '/courses') as never;
     },
     { rateLimit: { max: config.AUTH_VERIFY_RATE_LIMIT, timeWindow: '15 minutes' } },
   );
 
   registerRoute(app, signOut, async ({ req, reply }) => {
-    const token = readSessionToken(req);
-    if (token && db) await revokeSession(db, token, now());
-    reply.clearCookie(SESSION_COOKIE, cookieOptions);
-    await endPreviewReturn(db, req, reply, config.APP_ORIGIN, now());
+    // Only a request that carries one of our cookies ends or clears anything. The route is public
+    // and Fastify parses text/plain, so a cross-site form post reaches it without the
+    // (SameSite=Lax) cookies; answering Set-Cookie there would sign the visitor out of their own
+    // session. Presence is enough (not a valid signature), so a cookie the server can no longer
+    // unsign, such as after a SESSION_SECRET rotation, is still dropped. The preview-return
+    // cookie lives 8 h and the session cookie 14 d, so a browser can hold either one alone.
+    const hasSession = req.cookies?.[SESSION_COOKIE] !== undefined;
+    const hasReturn = req.cookies?.[PREVIEW_RETURN_COOKIE] !== undefined;
+    if (!hasSession && !hasReturn) return { signedOut: true as const };
+    const at = now();
+    if (hasSession) {
+      const token = readSessionToken(req);
+      if (token && db) await revokeSession(db, token, at);
+      reply.clearCookie(SESSION_COOKIE, cookieOptions);
+    }
+    await revokePreviewReturn(db, req, at);
+    clearPreviewReturn(req, reply, config.APP_ORIGIN);
     return { signedOut: true as const };
   });
 }
