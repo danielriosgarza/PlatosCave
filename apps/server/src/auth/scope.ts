@@ -1,9 +1,9 @@
 import type { Scope } from '@parallax/contracts';
 import type { FastifyRequest } from 'fastify';
 import { findActor, findClassAccess, findCourseAccess } from '../db/auth/scope';
-import { findPrincipal } from '../db/auth/sessions';
+import { type Actor, findPrincipal, type Principal } from '../db/auth/sessions';
 import type { Db } from '../db/client';
-import { type Actor, type Principal, readSessionToken } from './sessions';
+import { readSessionToken } from './sessions';
 
 /** §3: sensitive membership changes need an authentication no older than this. */
 export const RECENT_AUTH_MS = 15 * 60_000;

@@ -1,42 +1,40 @@
 import { and, eq } from 'drizzle-orm';
-import type { Actor } from '../../auth/sessions';
 import type { Db } from '../client';
 import { classes, classMemberships, courseMemberships, courses, users } from '../schema';
-import { actorColumns } from './sessions';
+import { type Actor, actorColumns } from './sessions';
 
 // The reads behind scope resolution (`auth/scope.ts`, ADR-0002). They take raw ids because they
-// run before any scope exists, and only `auth/scope.ts` calls them: routes and jobs go through
-// `resolveScope` / `resolveActorScope`, which decide what each row allows.
+// run before any scope exists. Only `auth/scope.ts` imports this module (a lint probe holds it
+// to that): routes and jobs go through `resolveScope` / `resolveActorScope`, which decide what
+// each row allows.
 
-/** One class with its course and the grants the resolver checks. */
-export interface ClassAccess {
-  className: string;
-  courseId: string;
-  courseTitle: string;
-  releaseId: string | null;
-  archivedAt: Date | null;
-  /** The user's class membership; null when they hold none. */
-  id: string | null;
-  role: (typeof classMemberships.$inferSelect)['role'] | null;
-  manageMembers: boolean | null;
-  isPreview: boolean | null;
-  /** Course grants of `courseUserId`; null when they hold none. */
-  ownsCourse: boolean | null;
-  editsCourse: boolean | null;
-}
-
-/** The user's membership and grants in one course. */
-export interface CourseAccess {
-  courseTitle: string;
-  id: string;
-  owner: boolean;
-  editor: boolean;
-  publisher: boolean;
-}
+type ClassRow = typeof classes.$inferSelect;
+type CourseRow = typeof courses.$inferSelect;
+type ClassMembershipRow = typeof classMemberships.$inferSelect;
+type CourseMembershipRow = typeof courseMemberships.$inferSelect;
+/** The columns of a left-joined table: all null when the join found no row. */
+type Nullable<T> = { [K in keyof T]: T[K] | null };
 
 /**
- * The actor with this id, for a background job acting without a session; null when there is
- * none. Takes a raw id: only `auth/scope.ts` calls it.
+ * One class with its course and the grants the resolver checks. `id` onward are the user's class
+ * membership (null when they hold none) and the course grants of `courseUserId` (`ownsCourse`,
+ * `editsCourse`; null when they hold none).
+ */
+export type ClassAccess = Pick<ClassRow, 'courseId' | 'releaseId' | 'archivedAt'> & {
+  className: ClassRow['name'];
+  courseTitle: CourseRow['title'];
+} & Nullable<Pick<ClassMembershipRow, 'id' | 'role' | 'manageMembers' | 'isPreview'>> & {
+    ownsCourse: CourseMembershipRow['owner'] | null;
+    editsCourse: CourseMembershipRow['editor'] | null;
+  };
+
+/** The user's membership and grants in one course. */
+export type CourseAccess = Pick<CourseMembershipRow, 'id' | 'owner' | 'editor' | 'publisher'> & {
+  courseTitle: CourseRow['title'];
+};
+
+/**
+ * The actor with this id, for a background job acting without a session; null when there is none.
  */
 export async function findActor(db: Db, actorId: string): Promise<Actor | null> {
   const [user] = await db.select(actorColumns).from(users).where(eq(users.id, actorId));
@@ -46,7 +44,6 @@ export async function findActor(db: Db, actorId: string): Promise<Actor | null> 
 /**
  * One class with its course, the user's class membership in it, and the course grants of
  * `courseUserId` (the user, or a preview principal's owner); null when no such class exists.
- * Takes raw ids: only `auth/scope.ts` calls it.
  */
 export async function findClassAccess(
   db: Db,
@@ -86,8 +83,8 @@ export async function findClassAccess(
 }
 
 /**
- * The user's membership and grants in one course; null when they hold none. Takes raw ids: only
- * `auth/scope.ts` calls it.
+ * The user's membership and grants in one course; null when there is no such course or the user
+ * holds no membership in it.
  */
 export async function findCourseAccess(
   db: Db,

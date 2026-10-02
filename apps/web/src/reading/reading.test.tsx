@@ -387,6 +387,25 @@ describe('native reading', () => {
     expect(scrollTo).toHaveBeenCalledWith({ top: 260 + (saved.position.offset / 8) * 100 });
   });
 
+  it('A03 reaching the tab row above the reading records no place and the last place is kept', async () => {
+    const user = userEvent.setup();
+    const world = makeWorld(two());
+    const fetchMock = api(world);
+    const { router } = renderApp(READING);
+    await screen.findByText('Every sample tells a slightly different story.');
+    scrollThrough({ 'b-title': -300, 'b-one': -240, 'b-two': -140, 'b-code': -40 });
+    await waitFor(() => expect(world.positions).toHaveLength(1));
+    // The reader scrolls up to the tab row: the reading starts below the window top.
+    scrollThrough({ 'b-title': 400, 'b-one': 460, 'b-two': 560, 'b-code': 660 });
+    await user.click(screen.getByRole('tab', { name: 'Slides' }));
+    await waitFor(() => expect(router.state.location.pathname).toMatch(/\/slides$/));
+    await new Promise((resolve) => setTimeout(resolve, 450));
+    expect(putsOf(fetchMock)).toHaveLength(1);
+    expect((world.positions[0] as { position: { blockId: string } }).position.blockId).toBe(
+      'b-code',
+    );
+  });
+
   it('A03 Back returns to the reading and place the earlier entry showed', async () => {
     const user = userEvent.setup();
     api(makeWorld(two({ blockId: 'b-one', offset: 0 })));
@@ -506,6 +525,29 @@ describe('PDF reading', () => {
     );
     await user.click(screen.getByRole('button', { name: 'Next page' }));
     expect(screen.getByRole('button', { name: 'Next page' })).toBeDisabled();
+  });
+
+  it('A03 a scroll that leaves the window top above the page records no place', async () => {
+    const doc = pdfDocument();
+    openPdf.mockResolvedValue(doc);
+    const world = makeWorld(pdfList({ page: 2, offset: 500 }));
+    const fetchMock = api(world);
+    renderApp(READING);
+    await waitFor(() => expect(scrollTo).toHaveBeenCalledWith({ top: 50 }));
+    await new Promise((resolve) => setTimeout(resolve, 450));
+    // Scrolled up to the tab row: the page starts 300 px below the window top.
+    window.dispatchEvent(new Event('wheel'));
+    layout.tops = { sheet: 300 };
+    window.dispatchEvent(new Event('scroll'));
+    await new Promise((resolve) => setTimeout(resolve, 450));
+    expect(putsOf(fetchMock)).toHaveLength(0);
+    // Back inside the page, the place follows the reader again.
+    window.dispatchEvent(new Event('wheel'));
+    layout.tops = { sheet: -50 };
+    window.dispatchEvent(new Event('scroll'));
+    await waitFor(() =>
+      expect(world.positions.at(-1)).toMatchObject({ position: { page: 2, offset: 500 } }),
+    );
   });
 
   it('A03 fetches the file once more with a renewed link when the first one fails', async () => {

@@ -13,8 +13,7 @@ import {
 import type { FastifyInstance } from 'fastify';
 import type { Deps } from '../../app';
 import { courseOverview } from '../../db/courseOverview';
-import { listResourceJobStatus } from '../../db/jobs/derived';
-import type { ResourceJobStatus } from '../../jobs/derived';
+import { listResourceJobStatus, type ResourceJobStatus } from '../../db/jobs/derived';
 import { enqueueReadingIngest, isProcessed } from '../../jobs/reading-ingest.job';
 import { storeCourseObject } from '../../storage/objects';
 import { notFound, refuse, registerRoute } from '../register';

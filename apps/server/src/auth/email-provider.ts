@@ -10,7 +10,7 @@ import {
 import type { Db, Executor } from '../db/client';
 import type { Mailer } from '../mail/mailer';
 import type { IdentityProvider, SignInResult } from './identity-provider';
-import { hashToken, newToken } from './sessions';
+import { hashToken, newToken } from './tokens';
 
 /** §3: expiring single-use links. */
 export const LINK_TTL_MS = 15 * 60_000;
