@@ -7,13 +7,14 @@ import { ThreadInputError } from '../content/thread';
 import type { Db } from '../db/client';
 import {
   type DerivationSource,
+  type DerivedStatus,
+  DerivedStatus as DerivedStatusSchema,
   loadDerivationSource,
   readStatus,
   setDerivedStatus,
   writeDerivedOutputs,
 } from '../db/jobs/derived';
 import { type Storage, StorageNotFoundError } from '../storage/storage';
-import { type DerivedStatus, DerivedStatus as DerivedStatusSchema } from './derived';
 import { defineScopedJob, sendScopedJob } from './scoped';
 
 export const READING_INGEST = 'reading.ingest';
