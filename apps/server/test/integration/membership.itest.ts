@@ -692,6 +692,28 @@ describe('invitation revocation and membership audit', () => {
       .update(classInvites)
       .set({ expiresAt: new Date(now.getTime() - 1) })
       .where(eq(classInvites.id, expired.body.id));
+    const usedUp = await issue(lead.cookie, ids.classA, {
+      kind: 'instructor',
+      email: 'onboarded@example.test',
+    });
+    expect((await accept(await newcomer('onboarded@example.test'), usedUp.body.code)).status).toBe(
+      200,
+    );
+    // Another manager's open invitation in the same class is not the lead's to lose.
+    const noorsInvite = await issue(as('noor'), ids.classA, {
+      kind: 'instructor',
+      email: 'noors-pick@example.test',
+    });
+    const untouched = async () => {
+      for (const other of [expired, usedUp, noorsInvite]) {
+        expect(await auditFor('invite.revoke', other.body.id)).toEqual([]);
+        const [row] = await testDb.db
+          .select({ revokedAt: classInvites.revokedAt })
+          .from(classInvites)
+          .where(eq(classInvites.id, other.body.id));
+        expect(row?.revokedAt).toBeNull();
+      }
+    };
 
     expect((await call(as('elena'), 'PUT', grantUrl(lead.userId), { granted: false })).status).toBe(
       200,
@@ -720,13 +742,9 @@ describe('invitation revocation and membership audit', () => {
         },
       }),
     ]);
-    // An invitation that had already expired is left as it was, with no event.
-    expect(await auditFor('invite.revoke', expired.body.id)).toEqual([]);
-    const [expiredRow] = await testDb.db
-      .select({ revokedAt: classInvites.revokedAt })
-      .from(classInvites)
-      .where(eq(classInvites.id, expired.body.id));
-    expect(expiredRow?.revokedAt).toBeNull();
+    // Expired and used-up invitations are left as they were, with no event, and so is another
+    // manager's invitation.
+    await untouched();
 
     expect((await call(as('elena'), 'PUT', grantUrl(lead.userId), { granted: true })).status).toBe(
       200,
@@ -748,7 +766,31 @@ describe('invitation revocation and membership audit', () => {
     expect((await auditFor('invite.revoke', secondInvite.body.id))[0]).toMatchObject({
       after: { reason: 'issuer_removed' },
     });
-    expect(await auditFor('invite.revoke', expired.body.id)).toEqual([]);
+    await untouched();
+    expect(
+      (await accept(await newcomer('noors-pick@example.test'), noorsInvite.body.code)).status,
+    ).toBe(200);
+  });
+
+  test('A01 a course owner keeps their instructor invitations when they lose manage_members or leave the class', async () => {
+    const owner = world.cookie.elena;
+    const created = await call(owner, 'POST', `/api/courses/${ids.statistics}/classes`, {
+      name: 'Owner-taught',
+    });
+    const classId = created.body.id as string;
+    // The owner teaches the class too, with the grant on their membership.
+    const self = await issue(owner, classId, { kind: 'instructor', email: 'elena@example.test' });
+    expect((await accept(owner, self.body.code)).status).toBe(200);
+    const grantUrl = `/api/classes/${classId}/members/${ids.elena}/manage-members`;
+    expect((await call(owner, 'PUT', grantUrl, { granted: true })).status).toBe(200);
+    const kept = await issue(owner, classId, { kind: 'instructor', email: 'kept@example.test' });
+
+    expect((await call(owner, 'PUT', grantUrl, { granted: false })).status).toBe(200);
+    expect(
+      (await call(owner, 'DELETE', `/api/classes/${classId}/members/${ids.elena}`)).status,
+    ).toBe(200);
+    expect(await auditFor('invite.revoke', kept.body.id)).toEqual([]);
+    expect((await accept(await newcomer('kept@example.test'), kept.body.code)).status).toBe(200);
   });
 
   test('A01 removal from one class during acceptance into another keeps draft editing', async () => {

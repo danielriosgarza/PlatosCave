@@ -1,8 +1,8 @@
-import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, type SQL } from 'drizzle-orm';
 import type { ClassManagerScope, CourseContext, CourseScope } from '../auth/scope';
 import type { Db } from './client';
 import { audit, type Tx } from './identity';
-import { openInvite, revokeInvites } from './invites';
+import { openInvite, type RevokeReason, revokeInvites } from './invites';
 import {
   authSessions,
   classes,
@@ -87,8 +87,10 @@ export function setManageMembers(
       before: { manageMembers: member.manageMembers },
       after: { manageMembers: granted, via: scope.via },
     });
-    if (!granted && !(await ownsCourse(tx, scope, userId))) {
-      await revokeIssuedBy(tx, scope, userId, now, 'issuer_lost_manage_members');
+    if (!granted) {
+      const course = await lockCourseMembership(tx, scope, userId);
+      if (!course?.owner)
+        await revokeIssuedBy(tx, scope, userId, now, 'issuer_lost_manage_members');
     }
     return { ok: true as const };
   });
@@ -119,8 +121,9 @@ export function removeMember(db: Db, scope: ClassManagerScope, userId: string, n
     });
     if (removed.role === 'instructor') {
       await dropPreviews(tx, scope, userId, now);
-      const { owner } = await dropEditorIfNotTeaching(tx, scope, userId);
-      if (!owner) await revokeIssuedBy(tx, scope, userId, now, 'issuer_removed');
+      const course = await lockCourseMembership(tx, scope, userId);
+      await dropEditorIfNotTeaching(tx, scope, userId, course);
+      if (!course?.owner) await revokeIssuedBy(tx, scope, userId, now, 'issuer_removed');
     }
     return { ok: true as const };
   });
@@ -163,7 +166,8 @@ async function dropPreviews(tx: Tx, scope: ClassManagerScope, userId: string, no
 
 /**
  * Locks the person's course membership row, so a removal deciding whether they still teach the
- * course and an invitation acceptance re-granting draft editing run one after the other.
+ * course and an invitation acceptance re-granting draft editing run one after the other. Its
+ * owner flag also decides whether the person's invitations outlive their class authority.
  */
 async function lockCourseMembership(tx: Tx, scope: CourseContext, userId: string) {
   const [row] = await tx
@@ -178,15 +182,14 @@ async function lockCourseMembership(tx: Tx, scope: CourseContext, userId: string
   return row;
 }
 
-/** Also returns whether the person owns the course, read under the same lock. */
+/** `current` is the person's course membership, read under `lockCourseMembership`. */
 async function dropEditorIfNotTeaching(
   tx: Tx,
   scope: ClassManagerScope,
   userId: string,
-): Promise<{ owner: boolean }> {
-  const current = await lockCourseMembership(tx, scope, userId);
-  const owner = current?.owner ?? false;
-  if (!current?.editor || owner) return { owner };
+  current: Awaited<ReturnType<typeof lockCourseMembership>>,
+) {
+  if (!current?.editor || current.owner) return;
   const [teaching] = await tx
     .select({ id: classMemberships.id })
     .from(classMemberships)
@@ -199,7 +202,7 @@ async function dropEditorIfNotTeaching(
       ),
     )
     .limit(1);
-  if (teaching) return { owner };
+  if (teaching) return;
   await tx
     .update(courseMemberships)
     .set({ editor: false })
@@ -215,7 +218,6 @@ async function dropEditorIfNotTeaching(
     before: { editor: true },
     after: { editor: false, membershipRemoved, via: scope.via },
   });
-  return { owner };
 }
 
 /** A course membership holding no grant carries no meaning; drop it. True when it was dropped. */
@@ -235,20 +237,6 @@ async function tryDeleteEmpty(tx: Tx, scope: CourseContext, userId: string): Pro
   return deleted.length > 0;
 }
 
-async function ownsCourse(tx: Tx, scope: ClassManagerScope, userId: string): Promise<boolean> {
-  const [owner] = await tx
-    .select({ id: courseMemberships.id })
-    .from(courseMemberships)
-    .where(
-      and(
-        forCourse(scope, courseMemberships),
-        eq(courseMemberships.userId, userId),
-        eq(courseMemberships.owner, true),
-      ),
-    );
-  return owner !== undefined;
-}
-
 /**
  * Instructor invitations rest on their issuer's authority: once a person can no longer manage
  * the class (removed, or `manage_members` revoked), the open instructor invitations they issued
@@ -261,13 +249,13 @@ function revokeIssuedBy(
   scope: ClassManagerScope,
   userId: string,
   now: Date,
-  reason: 'issuer_removed' | 'issuer_lost_manage_members',
+  reason: RevokeReason,
 ) {
   const issued = and(
     eq(classInvites.createdBy, userId),
     eq(classInvites.kind, 'instructor'),
     openInvite(now),
-  );
+  ) as SQL;
   return revokeInvites(tx, scope, issued, now, { reason });
 }
 

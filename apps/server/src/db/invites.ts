@@ -269,17 +269,21 @@ export function acceptInstructorInvite(
   });
 }
 
+/** Why a cascade revoked an invitation; absent when a manager revoked it directly. */
+export type RevokeReason = 'issuer_removed' | 'issuer_lost_manage_members';
+
 /**
- * Revokes the not-yet-revoked invitations of the scope's class that match `where`, and records
- * one `invite.revoke` event per invitation, with `extra` added to its `after`. Every revocation
- * goes through here, so the event has one shape. Returns the ids revoked.
+ * Revokes the not-yet-revoked invitations of the scope's class that match `where` (required, so
+ * a caller cannot widen it to the whole class by accident), and records one `invite.revoke`
+ * event per invitation. Every revocation goes through here, so the event has one shape. Returns
+ * the ids revoked.
  */
 export async function revokeInvites(
   tx: Tx,
   scope: ClassManagerScope,
-  where: SQL | undefined,
+  where: SQL,
   now: Date,
-  extra: Record<string, unknown> = {},
+  extra: { reason?: RevokeReason } = {},
 ): Promise<string[]> {
   const revoked = await tx
     .update(classInvites)
@@ -295,7 +299,7 @@ export async function revokeInvites(
       targetType: 'invite',
       targetId: invite.id,
       before: { revokedAt: null },
-      after: { revokedAt: now, via: scope.via, ...extra },
+      after: { ...extra, revokedAt: now, via: scope.via },
     });
   }
   return revoked.map((r) => r.id);
