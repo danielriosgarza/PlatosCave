@@ -2,6 +2,7 @@ import { exitPreview } from '@parallax/contracts/routes/preview';
 import { useState } from 'react';
 import { call } from '../api/client';
 import page from '../components/Page.module.css';
+import { announceSessionChange } from '../session/broadcast';
 import { usableClasses, useSession } from '../session/useSession';
 import { useFocusActive } from '../workspace/focus';
 import { leavePage } from './navigate';
@@ -24,6 +25,7 @@ export function PreviewBanner() {
     setLeaving(true);
     try {
       const { returnTo } = await call(exitPreview);
+      announceSessionChange();
       leavePage(returnTo);
     } catch {
       setFailed(true);
