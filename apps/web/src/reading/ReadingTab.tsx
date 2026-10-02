@@ -1,3 +1,4 @@
+import { type QueryClient, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { useCallback, useEffect, useRef } from 'react';
 import { ApiError } from '../api/client';
@@ -17,7 +18,7 @@ import {
   useReadings,
   useSavePosition,
 } from './readings';
-import { useReporter } from './useReporter';
+import { type PlaceReason, useReporter } from './useReporter';
 
 interface Props {
   classId: string;
@@ -32,6 +33,7 @@ interface Props {
 /** The Reading tab (§5, §8): resource toolbar, then the picked reading in its reader. */
 export function ReadingTab({ classId, courseId, topicId, instructor, search, onSearch }: Props) {
   const list = useReadings(classId, topicId);
+  const queryClient = useQueryClient();
   // Adding a reading is course authoring (§12): an instructor without an editor grant has no page for it.
   const session = useSession();
   const canAdd =
@@ -39,17 +41,21 @@ export function ReadingTab({ classId, courseId, topicId, instructor, search, onS
     session.status === 'signed-in' &&
     session.me.courses.some((c) => c.courseId === courseId && (c.editor || c.owner));
 
+  // The reading the address names, else the one studied last, else the first.
+  const readings = list.data?.readings ?? [];
+  const chosen =
+    readings.find((r) => r.revisionId === search.resource) ??
+    readings.find((r) => r.revisionId === list.data?.lastRevisionId) ??
+    readings[0];
   // An entry opened without a reading in its address is pinned to the one shown, so Back returns
   // to it even after a later save has moved "the reading studied last".
-  const shown =
-    list.data &&
-    (list.data.readings.find((r) => r.revisionId === search.resource) ??
-      list.data.readings.find((r) => r.revisionId === list.data?.lastRevisionId) ??
-      list.data.readings[0]);
-  const shownId = shown?.revisionId;
+  const shownId = chosen?.revisionId;
   // biome-ignore lint/correctness/useExhaustiveDependencies: `onSearch` is a new function every render
   useEffect(() => {
-    if (shownId && search.resource === undefined) onSearch({ resource: shownId }, 'replace');
+    // Keeps any place the address already names: it is what this entry restores.
+    if (shownId && search.resource === undefined) {
+      onSearch({ ...search, resource: shownId }, 'replace');
+    }
   }, [shownId, search.resource]);
 
   if (!list.data) {
@@ -69,8 +75,7 @@ export function ReadingTab({ classId, courseId, topicId, instructor, search, onS
     );
   }
 
-  const { readings, lastRevisionId } = list.data;
-  if (readings.length === 0) {
+  if (!chosen) {
     return (
       <div className={styles.stage}>
         <p className={styles.empty}>No reading has been added</p>
@@ -89,16 +94,16 @@ export function ReadingTab({ classId, courseId, topicId, instructor, search, onS
     );
   }
 
-  const chosen =
-    readings.find((r) => r.revisionId === search.resource) ??
-    readings.find((r) => r.revisionId === lastRevisionId) ??
-    readings[0];
-  if (!chosen) return null;
-  // The address place wins over the saved one: it is where this history entry was left.
-  const initial =
-    (search.resource === undefined || search.resource === chosen.revisionId
+  // The address place wins over the saved one: it is where this history entry was left, unless
+  // the reader moved on from it before leaving (see `leftAt`).
+  const addressed =
+    search.resource === undefined || search.resource === chosen.revisionId
       ? positionFromSearch(search)
-      : null) ?? chosen.position;
+      : null;
+  const left = leftPlaces(queryClient).get(
+    leftAtKey(classId, chosen.revisionId, JSON.stringify(addressed)),
+  );
+  const initial = left ?? addressed ?? chosen.position;
 
   return (
     <>
@@ -137,6 +142,7 @@ export function ReadingTab({ classId, courseId, topicId, instructor, search, onS
           topicId={topicId}
           reading={chosen}
           initial={initial}
+          addressed={addressed}
           onSearch={onSearch}
         />
       </div>
@@ -144,36 +150,107 @@ export function ReadingTab({ classId, courseId, topicId, instructor, search, onS
   );
 }
 
+/**
+ * Places flushed as a reader left a reading (a tab click within the pause before a save) that the
+ * address of the entry left behind does not hold. Keyed by the place that address names, so Back
+ * to that entry restores the flushed place instead. One map per QueryClient: it belongs to this
+ * app and session and goes with them, and it never expires while they last.
+ */
+const leftAt = new WeakMap<QueryClient, Map<string, ReadingPosition>>();
+const leftAtKey = (classId: string, revisionId: string, from: string) =>
+  `${classId}\n${revisionId}\n${from}`;
+function leftPlaces(client: QueryClient) {
+  let places = leftAt.get(client);
+  if (!places) {
+    places = new Map();
+    leftAt.set(client, places);
+  }
+  return places;
+}
+
 interface ViewProps {
   classId: string;
   topicId: string;
   reading: ReadingSummary;
   initial: ReadingPosition | null;
+  /** The place the address names for this reading, if any. */
+  addressed: ReadingPosition | null;
   onSearch: Props['onSearch'];
 }
 
-function ReadingView({ classId, topicId, reading, initial, onSearch }: ViewProps) {
+function ReadingView({ classId, topicId, reading, initial, addressed, onSearch }: ViewProps) {
   const content = useReadingContent(classId, reading.revisionId);
   const save = useSavePosition(classId, topicId);
   const { revisionId } = reading;
+  const places = leftPlaces(useQueryClient());
+  const inAddress = useRef(JSON.stringify(addressed));
   const lastSaved = useRef<string>('');
+  const saving = useRef(false);
+  const next = useRef<ReadingPosition | null>(null);
 
-  const store = useCallback(
-    (position: ReadingPosition) => {
-      const key = JSON.stringify(position);
-      if (key === lastSaved.current) return;
-      lastSaved.current = key;
-      // A save that fails is retried by the next move; nothing here claims it was kept.
-      save(revisionId, position).catch(() => {
-        lastSaved.current = '';
-      });
+  const send = useCallback(
+    function send(place: ReadingPosition) {
+      saving.current = true;
+      save(revisionId, place)
+        .catch(() => {
+          // Retried by the next move unless a newer place is already waiting; nothing here
+          // claims it was kept.
+          if (!next.current) lastSaved.current = '';
+        })
+        .finally(() => {
+          saving.current = false;
+          const waiting = next.current;
+          next.current = null;
+          if (waiting) send(waiting);
+        });
     },
     [save, revisionId],
   );
-  const report = useReporter((position) => {
-    store(position);
-    onSearch(searchFor(revisionId, position), 'replace');
-  }, store);
+
+  /**
+   * One save at a time per reading, so an older PUT cannot land after a newer one; a place that
+   * arrives meanwhile waits and replaces any place already waiting. When the page is hidden or
+   * closed (`now`), it is sent at once: the save in flight may never finish, and nothing would be
+   * left to send the waiting place.
+   */
+  const store = useCallback(
+    (position: ReadingPosition, now = false) => {
+      const key = JSON.stringify(position);
+      if (key === lastSaved.current) return;
+      lastSaved.current = key;
+      if (saving.current && !now) {
+        next.current = position;
+        return;
+      }
+      // A place sent at once supersedes any still waiting, which would otherwise land after it.
+      next.current = null;
+      send(position);
+    },
+    [send],
+  );
+  const report = useReporter(
+    (position: ReadingPosition, reason: PlaceReason) => {
+      store(position, reason !== 'pause');
+      // This entry's address moves on, so a place flushed from its old address no longer applies.
+      places.delete(leftAtKey(classId, revisionId, inAddress.current));
+      inAddress.current = JSON.stringify(position);
+      onSearch(searchFor(revisionId, position), 'replace');
+    },
+    (position) => {
+      store(position);
+      // An address without a place falls back to the saved place, which this save updates.
+      const from = inAddress.current;
+      if (from !== 'null' && from !== JSON.stringify(position)) {
+        places.set(leftAtKey(classId, revisionId, from), position);
+      }
+    },
+    () => {
+      // Hidden or closing with no new place: a place still waiting behind a save goes now.
+      const waiting = next.current;
+      next.current = null;
+      if (waiting) send(waiting);
+    },
+  );
 
   const renew = useCallback(() => renewPdfUrl(classId, revisionId), [classId, revisionId]);
 

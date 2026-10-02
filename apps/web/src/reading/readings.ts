@@ -54,6 +54,7 @@ export async function renewPdfUrl(classId: string, revisionId: string): Promise<
 /**
  * Saves the caller's place and, once the server acknowledges it, patches the cached list so a
  * return to the tab (or to another reading) restores that place, not the one fetched earlier.
+ * Sent with `keepalive`, so a save made as the page is closed or reloaded is not abandoned.
  */
 export function useSavePosition(classId: string, topicId: string) {
   const queryClient = useQueryClient();
@@ -62,6 +63,7 @@ export function useSavePosition(classId: string, topicId: string) {
       await call(putPosition, {
         params: { classId },
         body: { revisionId, tab: 'reading', position },
+        keepalive: true,
       });
       const key = ['GET', listReadings.path, { params: { classId, topicId } }];
       queryClient.setQueryData<ReadingList>(
