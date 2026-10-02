@@ -4,6 +4,7 @@ import type * as contracts from '@parallax/contracts/routes/drafts';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import type { z } from 'zod';
 import type { CourseScope } from '../../auth/scope';
+import { derivedReady } from '../../jobs/derived';
 import { invalid, notFound, type Outcome } from '../../outcome';
 import type { Db } from '../client';
 import { resourceRevisions, resources, storageObjects, topics } from '../schema';
@@ -113,6 +114,21 @@ async function checkObjectKeys(tx: Tx, scope: CourseScope, keys: string[]): Prom
   return rows.length === unique.length;
 }
 
+/**
+ * The head's finished derived outputs, when the new revision has the same source: processing
+ * reads only `content` and `objectKeys` (and the resource type, which never changes), so an
+ * edit of the alternative or provenance alone reuses them instead of queuing the job again.
+ * Unfinished or failed work is not carried: a pending status names a job bound to the old
+ * revision, so the new one is processed afresh.
+ */
+function kept(head: RevisionRow | undefined, next: RevisionPayload): Json | undefined {
+  if (!head || !derivedReady(head.derived)) return undefined;
+  const sameSource =
+    canonical(head.content) === canonical(next.content) &&
+    canonical(head.objectKeys) === canonical(next.objectKeys);
+  return sameSource ? head.derived : undefined;
+}
+
 async function insertRevision(
   tx: Tx,
   scope: CourseScope,
@@ -120,6 +136,7 @@ async function insertRevision(
   payload: RevisionPayload,
   hash: string,
   now: Date,
+  derived?: Json,
 ): Promise<RevisionRow> {
   const [row] = await tx
     .insert(resourceRevisions)
@@ -128,6 +145,7 @@ async function insertRevision(
       courseId: scope.courseId,
       type: resource.type,
       ...payload,
+      ...(derived && { derived }),
       contentHash: hash,
       createdBy: scope.user.id,
       createdAt: now,
@@ -355,7 +373,7 @@ export async function updateResource(
       const hash = revisionHash(row.type, payload);
       // Same content hash as the head: nothing new to record, the head stays.
       if (hash !== head?.contentHash) {
-        newHead = await insertRevision(tx, scope, row, payload, hash, now);
+        newHead = await insertRevision(tx, scope, row, payload, hash, now, kept(head, payload));
       }
     }
 
