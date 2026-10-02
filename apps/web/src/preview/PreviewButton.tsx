@@ -1,31 +1,16 @@
 import { startPreview } from '@parallax/contracts/routes/preview';
 import { useState } from 'react';
 import { call } from '../api/client';
-import { type ResourceSummary, tabs } from '../authoring/ResourceSection';
 import page from '../components/Page.module.css';
+import { announceSessionChange } from '../session/broadcast';
 import { teachingContexts, useSession } from '../session/useSession';
 import { leavePage } from './navigate';
-
-/** First-visit tab of the topic as students will see it (§4): first tab holding material. */
-function firstTab(resources: ResourceSummary[]): string {
-  const live = resources.filter((r) => !r.archived);
-  const tab = tabs.find((t) => live.some((r) => (t.types as readonly string[]).includes(r.type)));
-  return (tab?.name ?? 'Slides').toLowerCase();
-}
 
 /**
  * "Preview student view" of the topic being edited (§12): opens the course draft as a student of
  * a class the instructor teaches, in a separate preview session (ADR-0002).
  */
-export function PreviewButton({
-  courseId,
-  topicId,
-  resources,
-}: {
-  courseId: string;
-  topicId: string;
-  resources: ResourceSummary[];
-}) {
+export function PreviewButton({ courseId, topicId }: { courseId: string; topicId: string }) {
   const session = useSession();
   const classes =
     session.status === 'signed-in'
@@ -37,19 +22,19 @@ export function PreviewButton({
   const classId = chosen ?? classes[0]?.classId;
 
   if (!classId) {
-    return (
-      <p className={`${page.small} ${page.muted}`}>
-        Student preview opens in a class you teach; you teach no class of this course.
-      </p>
-    );
+    return <p className={`${page.small} ${page.muted}`}>You teach no class of this course.</p>;
   }
 
   const start = async () => {
     setFailed(false);
     setStarting(true);
     try {
-      await call(startPreview, { params: { courseId }, body: { classId, topicId } });
-      leavePage(`/classes/${classId}/topics/${topicId}/${firstTab(resources)}`);
+      const { landing } = await call(startPreview, {
+        params: { courseId },
+        body: { classId, topicId },
+      });
+      announceSessionChange();
+      leavePage(landing);
     } catch {
       setFailed(true);
       setStarting(false);

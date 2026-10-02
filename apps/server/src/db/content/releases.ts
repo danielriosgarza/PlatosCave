@@ -4,14 +4,13 @@ import { and, asc, eq, isNull, lte, max, ne, or, type SQL, sql } from 'drizzle-o
 import type { z } from 'zod';
 import {
   type ClassScope,
-  type CourseContext,
   type CourseScope,
   type DraftPreviewScope,
   isDraftPreview,
 } from '../../auth/scope';
 import { openToStudent } from '../../content/availability';
 import type { Db } from '../client';
-import { derivedReady, readDerivedStatus } from '../jobs/derived';
+import { derivedReady, resolveDerivedStatuses } from '../jobs/derived';
 import {
   auditEvents,
   courseReleases,
@@ -44,8 +43,11 @@ export const tabOf: Record<ResourceType, Tab> = {
 /** Types whose material is not text, so they need an accessible alternative (§7, §14). */
 const needsAlternative = new Set<ResourceType>(['slides_pdf', 'reading_pdf', 'shiny']);
 
-/** The course's live (not archived) draft topics with their resources and head revisions. */
-async function loadDrafts(tx: Db | Tx, scope: CourseContext | DraftPreviewScope) {
+/**
+ * The course's live (not archived) draft topics with their resources, head revisions and each
+ * head revision's derived status as the processing list shows it (`resolveDerivedStatuses`).
+ */
+async function loadDrafts(tx: Tx, scope: CourseScope) {
   const topicRows = await tx
     .select()
     .from(topics)
@@ -57,9 +59,17 @@ async function loadDrafts(tx: Db | Tx, scope: CourseContext | DraftPreviewScope)
     .leftJoin(resourceRevisions, eq(resourceRevisions.id, resources.headRevisionId))
     .where(and(forCourse(scope, resources), isNull(resources.archivedAt)))
     .orderBy(asc(resources.position), asc(resources.createdAt));
+  const statuses = await resolveDerivedStatuses(
+    tx,
+    resourceRows.map(({ revision }) => ({
+      raw: revision?.derived.status,
+      createdAt: revision?.createdAt ?? null,
+    })),
+  );
+  const withStatus = resourceRows.map((row, i) => ({ ...row, status: statuses[i] ?? null }));
   return topicRows.map((topic) => ({
     topic,
-    resources: resourceRows.filter((r) => r.resource.topicId === topic.id),
+    resources: withStatus.filter((r) => r.resource.topicId === topic.id),
   }));
 }
 type Drafts = Awaited<ReturnType<typeof loadDrafts>>;
@@ -73,7 +83,10 @@ export function validate(drafts: Drafts): ValidationReport {
   const errors: Issue[] = [];
   const warnings: Issue[] = [];
   if (drafts.length === 0) {
-    errors.push({ code: 'empty_release', message: 'The course has no topics to publish' });
+    errors.push({
+      code: 'empty_release',
+      message: 'The course has no topics to publish',
+    });
   }
   const topicIds = new Set(drafts.map((d) => d.topic.id));
   for (const { topic, resources: items } of drafts) {
@@ -88,12 +101,20 @@ export function validate(drafts: Drafts): ValidationReport {
       }
     }
     if (items.length === 0) {
-      warnings.push({ code: 'empty_topic', message: `“${topic.title}” has no resources`, topicId });
+      warnings.push({
+        code: 'empty_topic',
+        message: `“${topic.title}” has no resources`,
+        topicId,
+      });
     }
-    for (const { resource, revision } of items) {
+    for (const { resource, revision, status } of items) {
       const at = { topicId, resourceId: resource.id };
       if (!revision) {
-        errors.push({ code: 'no_revision', message: `“${resource.title}” has no content`, ...at });
+        errors.push({
+          code: 'no_revision',
+          message: `“${resource.title}” has no content`,
+          ...at,
+        });
         continue;
       }
       // Nothing in the schema ties a head revision to its resource; the immutability
@@ -116,8 +137,7 @@ export function validate(drafts: Drafts): ValidationReport {
         continue;
       }
       if (revision.type === 'slides_pdf' && !derivedReady(revision.derived)) {
-        const failed =
-          readDerivedStatus(revision.derived.status, revision.createdAt)?.state === 'failed';
+        const failed = status?.state === 'failed';
         errors.push({
           code: 'unconverted_deck',
           message: failed
@@ -129,7 +149,7 @@ export function validate(drafts: Drafts): ValidationReport {
       if (revision.type === 'reading_native' || revision.type === 'reading_pdf') {
         // A reading nobody can open is worse than none: block while its job is unfinished or
         // failed. A revision with no job on record (older data) is left alone.
-        const state = readDerivedStatus(revision.derived.status, revision.createdAt)?.state;
+        const state = status?.state;
         if (state !== undefined && state !== 'ready') {
           errors.push({
             code: 'unprocessed_reading',
@@ -168,7 +188,11 @@ export function validateDrafts(db: Db, scope: CourseScope): Promise<ValidationRe
 }
 
 export type PublishResult =
-  | { ok: true; release: typeof courseReleases.$inferSelect; report: ValidationReport }
+  | {
+      ok: true;
+      release: typeof courseReleases.$inferSelect;
+      report: ValidationReport;
+    }
   | { ok: false; report: ValidationReport };
 
 /**
@@ -303,14 +327,15 @@ export async function studyableResource(
   now: Date,
 ) {
   if (isDraftPreview(scope)) {
-    const found = (await draftSnapshot(db, scope)).resources.find(
-      (r) => r.resourceId === resourceId && (scope.role !== 'student' || openToStudent(r, now)),
-    );
+    const found = (await studyableDraft(db, scope, now)).find((r) => r.resourceId === resourceId);
     return found && { revisionId: found.revisionId, type: found.type };
   }
   if (!scope.releaseId) return undefined;
   const [row] = await db
-    .select({ revisionId: releaseResources.resourceRevisionId, type: resourceRevisions.type })
+    .select({
+      revisionId: releaseResources.resourceRevisionId,
+      type: resourceRevisions.type,
+    })
     .from(releaseResources)
     .innerJoin(resourceRevisions, eq(resourceRevisions.id, releaseResources.resourceRevisionId))
     .where(and(studyableRows(scope, now), eq(releaseResources.resourceId, resourceId)));
@@ -362,7 +387,11 @@ export async function readClassRelease(db: Db, scope: ClassScope) {
       ...t,
       resources: resourceRows
         .filter((r) => r.item.releaseTopicId === t.id)
-        .map(({ item, type }) => ({ ...item, revisionId: item.resourceRevisionId, type })),
+        .map(({ item, type }) => ({
+          ...item,
+          revisionId: item.resourceRevisionId,
+          type,
+        })),
     })),
   };
 }
@@ -371,42 +400,83 @@ export async function readClassRelease(db: Db, scope: ClassScope) {
  * What a draft preview studies (ADR-0002, ADR-0003): the snapshot `publishRelease` would take
  * now, shaped like the rows of a release, built from the head revisions (immutable rows) of the
  * live draft. Only preview principals read it, after the resolver checked that their owner
- * still edits the course; real members always read the adopted release. Resources without a
- * revision are left out, as publication would refuse them.
+ * still edits the course; real members always read the adopted release, and any other scope
+ * gets the empty snapshot. Reads only the syllabus columns, never revision content. A resource
+ * is left out unless its head revision passes publication's guard (same resource, course and
+ * type), and so is anything in an archived topic.
  */
-export async function draftSnapshot(db: Db | Tx, scope: DraftPreviewScope) {
-  const drafts = await loadDrafts(db, scope);
-  const topicRows = drafts.map(({ topic }) => ({
-    /** Plays the `release_topics` id: the draft topic id, stable for the snapshot. */
-    id: topic.id,
-    topicId: topic.id,
-    position: topic.position,
-    title: topic.title,
-    objective: topic.objective,
-    prerequisites: topic.prerequisites,
-    completionRule: topic.completionRule,
-    estimatedMinutes: topic.estimatedMinutes,
-  }));
-  const resourceRows = drafts.flatMap(({ topic, resources: items }) =>
-    items.flatMap(({ resource, revision }) =>
-      revision && revision.resourceId === resource.id
-        ? [
-            {
-              /** Plays the `release_resources` id. */
-              id: resource.id,
-              releaseTopicId: topic.id,
-              resourceId: resource.id,
-              revisionId: revision.id,
-              type: revision.type,
-              tab: tabOf[revision.type],
-              position: resource.position,
-              title: resource.title,
-              visibility: resource.visibility,
-              releaseAt: resource.releaseAt,
-            },
-          ]
-        : [],
-    ),
-  );
+export async function draftSnapshot(db: Db | Tx, scope: DraftPreviewScope): Promise<DraftSnapshot> {
+  // Guarded at run time too: no class read may serve drafts to a real member.
+  if (!isDraftPreview(scope)) return { topics: [], resources: [] };
+  return loadSnapshot(db, scope);
+}
+
+async function loadSnapshot(db: Db | Tx, scope: DraftPreviewScope) {
+  const topicRows = await db
+    .select({
+      /** Plays the `release_topics` id: the draft topic id, stable for the snapshot. */
+      id: topics.id,
+      topicId: topics.id,
+      position: topics.position,
+      title: topics.title,
+      objective: topics.objective,
+      prerequisites: topics.prerequisites,
+      completionRule: topics.completionRule,
+      estimatedMinutes: topics.estimatedMinutes,
+    })
+    .from(topics)
+    .where(and(forCourse(scope, topics), isNull(topics.archivedAt)))
+    .orderBy(asc(topics.position), asc(topics.createdAt));
+  const rows = await db
+    .select({
+      /** Plays the `release_resources` id. */
+      id: resources.id,
+      releaseTopicId: resources.topicId,
+      resourceId: resources.id,
+      revisionId: resourceRevisions.id,
+      type: resourceRevisions.type,
+      position: resources.position,
+      title: resources.title,
+      visibility: resources.visibility,
+      releaseAt: resources.releaseAt,
+    })
+    .from(resources)
+    .innerJoin(
+      topics,
+      and(
+        eq(topics.id, resources.topicId),
+        eq(topics.courseId, resources.courseId),
+        isNull(topics.archivedAt),
+      ),
+    )
+    .innerJoin(
+      resourceRevisions,
+      and(
+        eq(resourceRevisions.id, resources.headRevisionId),
+        eq(resourceRevisions.resourceId, resources.id),
+        eq(resourceRevisions.courseId, resources.courseId),
+        eq(resourceRevisions.type, resources.type),
+      ),
+    )
+    .where(and(forCourse(scope, resources), isNull(resources.archivedAt)))
+    .orderBy(asc(resources.position), asc(resources.createdAt));
+  // Ordered by topic as the snapshot lists them, then by resource position within each topic.
+  const order = new Map(topicRows.map((t, i) => [t.id, i]));
+  const resourceRows = rows
+    .map((r) => ({ ...r, tab: tabOf[r.type] }))
+    .sort((a, b) => (order.get(a.releaseTopicId) ?? 0) - (order.get(b.releaseTopicId) ?? 0));
   return { topics: topicRows, resources: resourceRows };
+}
+
+export type DraftSnapshot = Awaited<ReturnType<typeof loadSnapshot>>;
+
+/** Draft resources a preview may study at `now`: the same rule `studyableResource` applies. */
+export async function studyableDraft(
+  db: Db | Tx,
+  scope: DraftPreviewScope,
+  now: Date,
+  draft?: DraftSnapshot,
+): Promise<DraftSnapshot['resources']> {
+  const { resources: rows } = draft ?? (await draftSnapshot(db, scope));
+  return rows.filter((r) => scope.role !== 'student' || openToStudent(r, now));
 }

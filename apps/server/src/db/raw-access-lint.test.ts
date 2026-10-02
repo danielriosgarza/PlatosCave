@@ -10,7 +10,7 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, posix, resolve } from 'node:path';
 import { afterAll, beforeAll, expect, test } from 'vitest';
 
 // ADR-0002, Scoped tables: outside the data-access modules, server code may not import query
@@ -158,18 +158,47 @@ test.each([...restricted, ...exempt].filter((path) => !/(^|\/)[^/]*fixture[^/]*$
   },
 );
 
+// The reads in `db/auth/scope.ts` take raw ids, before any scope exists (ADR-0002, Scoped tables),
+// so one module may import them. Relative specifiers are resolved against the importing file.
+const SCOPE_READS = 'db/auth/scope';
+function importersOfScopeReads(sources: Record<string, string>): string[] {
+  return Object.entries(sources)
+    .filter(([file, code]) =>
+      [...code.matchAll(/(?:from|import)\s*\(?\s*'([^']+)'/g)].some(([, spec]) => {
+        if (!spec?.startsWith('.')) return false;
+        const target = posix.join(posix.dirname(file), spec).replace(/\.(js|ts)$/, '');
+        return target === SCOPE_READS && file !== `${SCOPE_READS}.ts`;
+      }),
+    )
+    .map(([file]) => file)
+    .sort();
+}
+
 test('only auth/scope.ts imports db/auth/scope', () => {
-  // The reads there take raw ids, before any scope exists (ADR-0002, Scoped tables).
   const serverSrc = join(root, 'apps/server/src');
-  const files = readdirSync(serverSrc, { recursive: true, encoding: 'utf8' }).filter((f) =>
-    f.endsWith('.ts'),
+  const sources = Object.fromEntries(
+    readdirSync(serverSrc, { recursive: true, encoding: 'utf8' })
+      .filter((f) => f.endsWith('.ts') && f !== 'db/raw-access-lint.test.ts')
+      .map((f) => [f, readFileSync(join(serverSrc, f), 'utf8')]),
   );
-  const importsScopeReads = (file: string) => {
-    const code = readFileSync(join(serverSrc, file), 'utf8');
-    const sibling = file.startsWith('db/auth/') ? /from '\.\/scope(\.js)?'/ : /(?!)/;
-    return /from '[^']*\/db\/auth\/scope(\.js)?'/.test(code) || sibling.test(code);
-  };
-  expect(files.filter((f) => f !== 'db/auth/scope.ts' && importsScopeReads(f))).toEqual([
+  expect(importersOfScopeReads(sources)).toEqual(['auth/scope.ts']);
+});
+
+test('the scope-reads probe catches every way of reaching db/auth/scope', () => {
+  const found = importersOfScopeReads({
+    'auth/scope.ts': "import { findActor } from '../db/auth/scope';",
+    'db/a.ts': "import { findActor } from './auth/scope';",
+    'db/content/b.ts': "import { findActor } from '../auth/scope.js';",
+    'db/auth/c.ts': "import { findActor } from './scope';",
+    'http/d.ts': "import { findActor } from '../db/auth/scope';",
+    'db/auth/scope.ts': "import { x } from './sessions';",
+    'db/e.ts': "import { Actor } from './auth/sessions';",
+  });
+  expect(found).toEqual([
     'auth/scope.ts',
+    'db/a.ts',
+    'db/auth/c.ts',
+    'db/content/b.ts',
+    'http/d.ts',
   ]);
 });

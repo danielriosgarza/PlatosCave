@@ -255,19 +255,45 @@ export async function listResourceJobStatus(
       ),
     )
     .orderBy(asc(topics.position), asc(resources.position));
-  const pendingJobs = rows.flatMap(({ status }) => {
-    const parsed = DerivedStatus.safeParse(status);
-    const pending = parsed.data?.state === 'queued' || parsed.data?.state === 'running';
-    return pending && parsed.data?.jobId ? [parsed.data.jobId] : [];
-  });
+  const statuses = await resolveDerivedStatuses(
+    db,
+    rows.map(({ status, revisionCreatedAt }) => ({ raw: status, createdAt: revisionCreatedAt })),
+  );
+  return rows.map(({ status: _raw, revisionCreatedAt: _createdAt, ...row }, i) => ({
+    ...row,
+    status: statuses[i] ?? null,
+  }));
+}
+
+/** A revision's recorded `derived.status` (not validated) and when the revision was created. */
+export interface RecordedStatus {
+  raw: unknown;
+  /** Null when there is no revision: its status is then null too. */
+  createdAt: Date | null;
+}
+
+/**
+ * The status of each revision as every view shows it (`readDerivedStatus`), with each pending
+ * status checked against the pg-boss state of the job it names: one that ended without writing
+ * shows as failed. The processing list, release validation and the reader all read statuses
+ * through here, so they never disagree about a job that stopped. One query for all pending jobs.
+ */
+export async function resolveDerivedStatuses(
+  db: Pick<Db, 'execute'>,
+  recorded: readonly RecordedStatus[],
+): Promise<(DerivedStatus | null)[]> {
+  const parsed = recorded.map(({ raw }) => DerivedStatus.safeParse(raw).data);
+  const pendingJobs = parsed.flatMap((written) =>
+    (written?.state === 'queued' || written?.state === 'running') && written.jobId
+      ? [written.jobId]
+      : [],
+  );
   const states = await jobStates(db, pendingJobs);
-  return rows.map(({ status, revisionCreatedAt, ...row }) => {
-    const jobId = DerivedStatus.safeParse(status).data?.jobId;
+  return recorded.map(({ raw, createdAt }, i) => {
+    if (!createdAt) return null;
+    const jobId = parsed[i]?.jobId;
     const jobState = states && jobId && isUuid(jobId) ? (states.get(jobId) ?? null) : undefined;
-    return {
-      ...row,
-      status: revisionCreatedAt ? readDerivedStatus(status, revisionCreatedAt, jobState) : null,
-    };
+    return readDerivedStatus(raw, createdAt, jobState);
   });
 }
 
@@ -278,17 +304,33 @@ const isUuid = (id: string) =>
  * pg-boss's state of each of these jobs (ids it has no row for are absent), or null when its
  * tables do not exist (pg-boss never started on this database), so nothing can be concluded.
  */
-async function jobStates(db: Db, jobIds: string[]): Promise<Map<string, string> | null> {
+async function jobStates(
+  db: Pick<Db, 'execute'>,
+  jobIds: string[],
+): Promise<Map<string, string> | null> {
   const ids = [...new Set(jobIds.filter(isUuid))];
   if (ids.length === 0) return new Map();
-  const table = `${BOSS_SCHEMA}.job`;
-  const { rows: found } = await db.execute<{ exists: boolean }>(
-    sql`select to_regclass(${table}) is not null as exists`,
-  );
-  if (!found[0]?.exists) return null;
+  if (!(await bossTableExists(db))) return null;
   const { rows } = await db.execute<{ id: string; state: string }>(
-    sql`select id::text as id, state::text as state from ${sql.raw(table)}
-        where id = any(${`{${ids.join(',')}}`}::uuid[])`,
+    sql`select id::text as id, state::text as state from ${sql.raw(BOSS_JOB_TABLE)}
+        where id = any(${sql.param(ids)}::uuid[])`,
   );
   return new Map(rows.map((r) => [r.id, r.state]));
+}
+
+const BOSS_JOB_TABLE = `${BOSS_SCHEMA}.job`;
+
+/**
+ * pg-boss's job table, once seen, stays: only a positive answer is remembered, per database
+ * handle (a transaction is a new handle, so it probes again).
+ */
+const bossTableSeen = new WeakSet<object>();
+async function bossTableExists(db: Pick<Db, 'execute'>): Promise<boolean> {
+  if (bossTableSeen.has(db)) return true;
+  const { rows } = await db.execute<{ exists: boolean }>(
+    sql`select to_regclass(${BOSS_JOB_TABLE}) is not null as exists`,
+  );
+  if (!rows[0]?.exists) return false;
+  bossTableSeen.add(db);
+  return true;
 }

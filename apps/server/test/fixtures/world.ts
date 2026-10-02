@@ -64,14 +64,17 @@ export const readingLab = {
   topic: id(311),
   native: id(411), // a long native reading
   pdf: id(412), // a four-page PDF reading
+  deck: id(413), // a six-slide 16:9 PDF deck
   nativeRevision: id(511),
   pdfRevision: id(512),
+  deckRevision: id(513),
   release: id(611),
   authorEmail: 'lab-author@example.test',
   readerEmail: 'lab-reader@example.test',
   /** Paragraphs in the long native reading, each long enough to make the page scroll. */
   paragraphs: 40,
   pdfPages: 4,
+  deckPages: 6,
 } as const;
 
 export type PersonName =
@@ -228,8 +231,8 @@ export async function ensureWorld(db: Db, now: Date, storage?: Storage): Promise
 }
 
 /**
- * Adds the reading lab: course *Reading lab* with one topic holding a long native reading and a
- * four-page PDF reading, both with their derived outputs written as the ingestion job would,
+ * Adds the reading lab: course *Reading lab* with one topic holding a long native reading, a
+ * four-page PDF reading and a six-slide deck, all with their derived outputs written as the ingestion job would,
  * published and adopted by one class with one student. The last data step is adopting the release.
  */
 export async function seedReadingLab(db: Db, storage: Storage, now: Date): Promise<void> {
@@ -276,6 +279,19 @@ export async function seedReadingLab(db: Db, storage: Storage, now: Date): Promi
     Buffer.from(pdfBytes),
     'application/pdf',
   );
+  const deckBytes = makePdf(
+    Array.from({ length: lab.deckPages }, (_, i) => `Sampling slide ${i + 1}`),
+    [960, 540],
+    // Past what pdf.js reads in one go, so the viewer must ask for ranges.
+    300_000,
+  );
+  const deck = await storeCourseObject(
+    db,
+    storage,
+    owner,
+    Buffer.from(deckBytes),
+    'application/pdf',
+  );
   const ready = {
     state: 'ready' as const,
     job: 'reading.ingest',
@@ -303,6 +319,16 @@ export async function seedReadingLab(db: Db, storage: Storage, now: Date): Promi
       objectKeys: [stored.key],
       derived: { ...(await extractPdfText(pdfBytes)) },
     },
+    {
+      id: lab.deck,
+      revisionId: lab.deckRevision,
+      type: 'slides_pdf' as const,
+      title: 'Sampling lecture',
+      position: 2,
+      content: { title: 'Sampling lecture', objectKey: deck.key },
+      objectKeys: [deck.key],
+      derived: { ...(await extractPdfText(deckBytes)), rasterOnly: false },
+    },
   ];
   for (const { revisionId, content, objectKeys, derived, ...resource } of readings) {
     await db
@@ -314,7 +340,9 @@ export async function seedReadingLab(db: Db, storage: Storage, now: Date): Promi
       courseId: lab.course,
       type: resource.type,
       content,
-      ...(resource.type === 'reading_pdf' && { accessibleAlternative: { text: resource.title } }),
+      ...(resource.type !== 'reading_native' && {
+        accessibleAlternative: { text: resource.title },
+      }),
       objectKeys,
       contentHash: sha256(content),
       createdBy: lab.author,

@@ -76,8 +76,8 @@ export default function authRoutes(app: FastifyInstance, deps: RouteDeps): void 
     // and Fastify parses text/plain, so a cross-site form post reaches it without the
     // (SameSite=Lax) cookies; answering Set-Cookie there would sign the visitor out of their own
     // session. Presence is enough (not a valid signature), so a cookie the server can no longer
-    // unsign, such as after a SESSION_SECRET rotation, is still dropped. The preview-return
-    // cookie lives 8 h and the session cookie 14 d, so a browser can hold either one alone.
+    // unsign, such as after a SESSION_SECRET rotation, is still dropped. A browser can hold either
+    // cookie alone: the preview session's cookie lives 8 h, the preview-return cookie 14 d.
     const hasSession = req.cookies?.[SESSION_COOKIE] !== undefined;
     const hasReturn = req.cookies?.[PREVIEW_RETURN_COOKIE] !== undefined;
     if (!hasSession && !hasReturn) return { signedOut: true as const };

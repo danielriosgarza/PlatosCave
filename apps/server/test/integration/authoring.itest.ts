@@ -12,7 +12,7 @@ import { loadConfig } from '../../src/config';
 import { createBoss } from '../../src/db/jobs/boss';
 import { classes, courseReleases, resourceRevisions } from '../../src/db/schema';
 import readingIngest from '../../src/jobs/reading-ingest.job';
-import { workScopedJob } from '../../src/jobs/scoped';
+import { ensureQueues, workScopedJob } from '../../src/jobs/scoped';
 import { FsStorage } from '../../src/storage/fs';
 import { makePdf } from '../fixtures/pdf';
 import { buildWorld, ids, type PersonName, type World } from '../fixtures/world';
@@ -36,6 +36,8 @@ beforeAll(async () => {
   storage = new FsStorage(root);
   boss = createBoss(testDb.db.$client, { role: 'api', onError: () => {}, onWarning: () => {} });
   await boss.start();
+  // As the API does at startup: uploads send into the reading.ingest queue created here.
+  await ensureQueues(boss, [readingIngest]);
   app = await buildApp(loadConfig({ NODE_ENV: 'test', LOG_LEVEL: 'error' }), {
     db: testDb.db,
     now: () => now,
@@ -399,8 +401,13 @@ describe('processing recovery', () => {
         error: 'Processing stopped without a result',
       });
       const publish = await call('elena', 'POST', `${course}/releases`);
+      // Release validation reads the same status as the processing list: failed, not pending.
       expect(publish.body.report.errors, why).toContainEqual(
-        expect.objectContaining({ code: 'unprocessed_reading', resourceId: id }),
+        expect.objectContaining({
+          code: 'unprocessed_reading',
+          resourceId: id,
+          message: '“Orphaned” could not be processed; upload it again or retry',
+        }),
       );
       const retried = await retry(id);
       expect(retried.status, why).toBe(200);
@@ -430,6 +437,13 @@ describe('processing recovery', () => {
       updatedAt: ago(60 * 60_000),
     });
     expect(await processing(id)).toMatchObject({ state: 'running' });
+    expect((await call('elena', 'POST', `${course}/releases`)).body.report.errors).toContainEqual(
+      expect.objectContaining({
+        code: 'unprocessed_reading',
+        resourceId: id,
+        message: '“Waiting” is still being processed',
+      }),
+    );
     const jobs = await jobsFor(revisionId);
     expect((await retry(id)).status).toBe(409);
     expect(await jobsFor(revisionId)).toBe(jobs);

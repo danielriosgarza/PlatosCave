@@ -456,7 +456,7 @@ export async function reviewAttempts(
       and(
         forClass(scope, exerciseAttempts),
         eq(exerciseAttempts.resourceId, resourceId),
-        excludePreview(exerciseAttempts.userId),
+        excludePreview(exerciseAttempts),
         eq(classMemberships.role, 'student'),
       ),
     )

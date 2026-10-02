@@ -20,6 +20,9 @@
   gap: 8px;
   flex-wrap: wrap;
 }
+.local {
+  display: contents;
+}
 .tools button {
   font: inherit;
   font-size: 12px;
