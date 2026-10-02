@@ -18,6 +18,7 @@ import {
   useReadings,
   useSavePosition,
 } from './readings';
+import { SourceDownload } from './SourceDownload';
 import { type PlaceReason, useReporter } from './useReporter';
 
 interface Props {
@@ -290,6 +291,14 @@ function ReadingView({ classId, topicId, reading, initial, addressed, onSearch }
         <button type="button" className={page.outline} onClick={() => void content.refetch()}>
           Try again
         </button>
+        {data.sourceKey && (
+          <SourceDownload
+            classId={classId}
+            revisionId={revisionId}
+            sourceKey={data.sourceKey}
+            className={page.outline}
+          />
+        )}
       </div>
     );
   }
@@ -314,6 +323,7 @@ function ReadingView({ classId, topicId, reading, initial, addressed, onSearch }
           url={data.pdf.url}
           pageCount={data.pdf.pageCount}
           renew={renew}
+          source={{ classId, revisionId, key: data.sourceKey }}
           initial={initial}
           onPosition={report}
         />

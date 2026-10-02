@@ -21,7 +21,7 @@ export default function testRoutes(app: FastifyInstance, deps: RouteDeps): void 
   registerRoute(app, buildTestWorld, async () => {
     // The fixtures live with the tests and are loaded only when these routes are used.
     const { ensureWorld, ids } = await import('../../../test/fixtures/world');
-    building ??= ensureWorld(db(), now());
+    building ??= ensureWorld(db(), now(), app.contentDeps.storage);
     try {
       return { ids, created: await building };
     } catch (err) {

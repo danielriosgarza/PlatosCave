@@ -3,6 +3,7 @@ import { openPdf, type PdfDocument, type RenderHandle } from './pdfjs';
 import styles from './Reading.module.css';
 import { HOLD_MS, READER_INPUT } from './readerInput';
 import type { ReadingPosition } from './readings';
+import { SourceDownload } from './SourceDownload';
 import { inFullScreen, onScrollerScroll, scrollerOf } from './scroller';
 
 interface Props {
@@ -11,6 +12,8 @@ interface Props {
   /** Mints a new content link; the one in hand expires after five minutes (§13). */
   renew: () => Promise<string | null>;
   initial: ReadingPosition | null;
+  /** The class and revision the file belongs to, and its storage key, for the Download action. */
+  source: { classId: string; revisionId: string; key: string | null };
   onPosition: (position: ReadingPosition) => void;
 }
 
@@ -33,7 +36,7 @@ type Load = { state: 'loading' } | { state: 'failed' } | { state: 'ready'; doc: 
  * A PDF reading drawn by pdf.js, one page at a time, fitted to the stage width with a text
  * layer. The place is the page and the share of its height above the window top, in thousandths.
  */
-export function PdfReading({ url, pageCount, renew, initial, onPosition }: Props) {
+export function PdfReading({ url, pageCount, renew, initial, source, onPosition }: Props) {
   const [load, setLoad] = useState<Load>({ state: 'loading' });
   const [attempt, setAttempt] = useState(0);
   const start = initial && 'page' in initial ? initial : null;
@@ -193,6 +196,13 @@ export function PdfReading({ url, pageCount, renew, initial, onPosition }: Props
         <button type="button" className={styles.button} onClick={() => setAttempt((n) => n + 1)}>
           Try again
         </button>
+        {source.key && (
+          <SourceDownload
+            classId={source.classId}
+            revisionId={source.revisionId}
+            sourceKey={source.key}
+          />
+        )}
       </div>
     );
   }
@@ -219,6 +229,13 @@ export function PdfReading({ url, pageCount, renew, initial, onPosition }: Props
         >
           Next page
         </button>
+        {source.key && (
+          <SourceDownload
+            classId={source.classId}
+            revisionId={source.revisionId}
+            sourceKey={source.key}
+          />
+        )}
       </nav>
       {load.state === 'loading' && (
         <p className={styles.loading} role="status">
