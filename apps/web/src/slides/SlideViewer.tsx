@@ -32,9 +32,6 @@ interface Props {
   initialPage: number;
   source: { classId: string; revisionId: string; key: string | null };
   onPage: (page: number) => void;
-  /** The deck picker, shown at the start of the local toolbar when a topic has several decks. */
-  picker?: ReactNode;
-  title: string;
   /** Fills the notes margin for the slide shown (P2-09); without it the viewer has no Notes control. */
   notes?: (context: NotesContext) => ReactNode;
 }
@@ -46,17 +43,7 @@ type Load = { state: 'loading' } | { state: 'failed' } | { state: 'ready'; doc: 
  * with range requests, so a slide costs only the bytes it needs. The slide keeps the file's
  * ratio inside a neutral stage; arrow keys move it only while the stage holds focus.
  */
-export function SlideViewer({
-  url,
-  pageCount,
-  renew,
-  initialPage,
-  source,
-  onPage,
-  picker,
-  title,
-  notes,
-}: Props) {
+export function SlideViewer({ url, pageCount, renew, initialPage, source, onPage, notes }: Props) {
   const focusMode = useFocusActive();
   const [load, setLoad] = useState<Load>({ state: 'loading' });
   const [attempt, setAttempt] = useState(0);
@@ -189,7 +176,6 @@ export function SlideViewer({
 
   const tools = (
     <ResourceTools>
-      {picker ?? <span className={styles.label}>{title}</span>}
       <button
         type="button"
         className={styles.button}
@@ -338,23 +324,26 @@ export function SlideViewer({
                 />
               )}
             </div>
-            {indexOpen && (
-              <ol className={styles.index} id="pc-slide-index" aria-label="Slides">
-                {Array.from({ length: pageCount }, (_, i) => i + 1).map((n) => (
-                  <li key={n}>
-                    <button
-                      type="button"
-                      className={styles.indexButton}
-                      aria-label={`Slide ${n}`}
-                      aria-current={n === page}
-                      onClick={() => go(n)}
-                    >
-                      {n}
-                    </button>
-                  </li>
-                ))}
-              </ol>
-            )}
+            <ol
+              className={styles.index}
+              id="pc-slide-index"
+              aria-label="Slides"
+              hidden={!indexOpen}
+            >
+              {Array.from({ length: pageCount }, (_, i) => i + 1).map((n) => (
+                <li key={n}>
+                  <button
+                    type="button"
+                    className={styles.indexButton}
+                    aria-label={`Slide ${n}`}
+                    aria-current={n === page}
+                    onClick={() => go(n)}
+                  >
+                    {n}
+                  </button>
+                </li>
+              ))}
+            </ol>
           </div>
           {withNotes && (
             <aside className={styles.notes} aria-label="Slide notes">

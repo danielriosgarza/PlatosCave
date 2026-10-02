@@ -203,7 +203,6 @@ describe('slide viewer', () => {
         initialPage={1}
         source={{ classId: CLASS_A, revisionId: REV_A, key: null }}
         onPage={onPage}
-        title="Sampling lecture"
         notes={({ page, revisionId }) => (
           <label>
             Note for slide {page} of {revisionId.slice(-3)}
@@ -330,6 +329,29 @@ describe('several decks and states', () => {
     expect(position()).toHaveTextContent('8 / 12');
     await user.selectOptions(screen.getByRole('combobox', { name: 'Slides' }), 'Sampling lecture');
     await waitFor(() => expect(position()).toHaveTextContent('3 / 12'));
+  });
+
+  it('keeps the deck picker when the deck on show is being prepared or failed', async () => {
+    const user = userEvent.setup();
+    openPdf.mockResolvedValue(pdfDocument());
+    api(makeWorld([deck(REV_PENDING, 'Still converting'), deck(REV_A, 'Sampling lecture')]));
+    renderApp(SLIDES);
+    expect(await screen.findByText('Still converting is being prepared')).toBeVisible();
+    const picker = screen.getByRole('combobox', { name: 'Slides' });
+    await user.selectOptions(picker, 'Sampling lecture');
+    await viewer();
+    expect(position()).toHaveTextContent('1 / 12');
+  });
+
+  it('keeps the deck picker when the deck cannot be opened', async () => {
+    const user = userEvent.setup();
+    openPdf.mockRejectedValueOnce(new Error('bad')).mockRejectedValueOnce(new Error('bad'));
+    api(makeWorld([deck(REV_A, 'Sampling lecture'), deck(REV_B, 'Sampling recap')]));
+    renderApp(SLIDES);
+    expect(await screen.findByRole('alert')).toHaveTextContent('These slides could not be loaded.');
+    openPdf.mockResolvedValue(pdfDocument());
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Slides' }), 'Sampling recap');
+    await viewer();
   });
 
   it('tells a student that no slides have been added and offers an instructor Add slides', async () => {

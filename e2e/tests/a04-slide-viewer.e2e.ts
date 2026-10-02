@@ -84,6 +84,17 @@ test('A24 repeated arrow presses advance a focused viewer, which is remembered a
     if (!res.url().includes('/content/') || res.request().method() !== 'GET') return;
     requests.push({ range: res.request().headers().range, status: res.status() });
   });
+  // Bytes that arrived for content requests, whether or not the request finished.
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send('Network.enable');
+  const contentRequests = new Set<string>();
+  let received = 0;
+  cdp.on('Network.requestWillBeSent', (e) => {
+    if (e.request.url.includes('/content/')) contentRequests.add(e.requestId);
+  });
+  cdp.on('Network.dataReceived', (e) => {
+    if (contentRequests.has(e.requestId)) received += e.dataLength;
+  });
   await page.goto(slides);
   await expect(count(page)).toHaveText('1 / 6');
   const stage = page.getByRole('region', { name: 'Slide viewer' });
@@ -97,14 +108,15 @@ test('A24 repeated arrow presses advance a focused viewer, which is remembered a
   await page.keyboard.press('ArrowLeft');
   await expect(count(page)).toHaveText('3 / 6');
 
-  // The 300 kB deck is read with byte ranges (the origin answers 206 with the slice), not
-  // downloaded whole for every slide.
-  const ranged = requests.filter((r) => r.range !== undefined);
-  expect(ranged.length).toBeGreaterThan(0);
-  for (const request of ranged) {
+  // The deck is 302 kB. pdf.js's first request has no range and is dropped at once; the rest
+  // are ranges answered 206. Together they stay well below the whole file.
+  expect(requests.some((r) => r.range !== undefined)).toBe(true);
+  for (const request of requests.filter((r) => r.range !== undefined)) {
     expect(request.range).toMatch(/^bytes=\d+-\d+$/);
     expect(request.status).toBe(206);
   }
+  expect(received).toBeGreaterThan(0);
+  expect(received).toBeLessThan(302_028);
 
   // The last slide survives a reload.
   await expect

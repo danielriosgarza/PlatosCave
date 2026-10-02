@@ -273,7 +273,7 @@ export async function savePosition(
     if (!('page' in position)) return invalid('A PDF is positioned by page');
     const pages = row.derived.pageCount;
     if (typeof pages === 'number' && position.page > pages) {
-      return invalid('The page is past the end of this reading');
+      return invalid('The page is past the end of this file');
     }
   }
   const values = {

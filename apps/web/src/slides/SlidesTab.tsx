@@ -7,6 +7,7 @@ import { RetryNotice } from '../components/RetryNotice';
 import { SourceDownload } from '../reading/SourceDownload';
 import { useReporter } from '../reading/useReporter';
 import { useSession } from '../session/useSession';
+import { ResourceTools } from '../workspace/ResourceTools';
 import styles from './Slides.module.css';
 import { type NotesContext, SlideViewer } from './SlideViewer';
 import {
@@ -108,14 +109,28 @@ export function SlidesTab({
     ) : undefined;
 
   return (
-    <DeckView
-      key={chosen.revisionId}
-      classId={classId}
-      topicId={topicId}
-      deck={chosen}
-      picker={picker}
-      notes={notes}
-    />
+    <>
+      {/* In the toolbar whatever the deck's state, so another deck stays reachable. */}
+      <ResourceTools>
+        {picker ?? <span className={styles.label}>{chosen.title}</span>}
+        {canAdd && (
+          <Link
+            to="/courses/$courseId/edit/$topicId"
+            params={{ courseId, topicId }}
+            className={page.link}
+          >
+            Add slides
+          </Link>
+        )}
+      </ResourceTools>
+      <DeckView
+        key={chosen.revisionId}
+        classId={classId}
+        topicId={topicId}
+        deck={chosen}
+        notes={notes}
+      />
+    </>
   );
 }
 
@@ -123,11 +138,10 @@ interface ViewProps {
   classId: string;
   topicId: string;
   deck: DeckSummary;
-  picker: ReactNode;
   notes: Props['notes'];
 }
 
-function DeckView({ classId, topicId, deck, picker, notes }: ViewProps) {
+function DeckView({ classId, topicId, deck, notes }: ViewProps) {
   const { revisionId } = deck;
   const content = useDeckContent(classId, revisionId);
   const save = useSaveSlide(classId, topicId);
@@ -241,8 +255,6 @@ function DeckView({ classId, topicId, deck, picker, notes }: ViewProps) {
       initialPage={deck.position && 'page' in deck.position ? deck.position.page : 1}
       source={{ classId, revisionId, key: data.sourceKey }}
       onPage={onPage}
-      picker={picker}
-      title={data.title}
       notes={notes}
     />
   );

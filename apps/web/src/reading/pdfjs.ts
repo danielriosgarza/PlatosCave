@@ -27,7 +27,7 @@ export interface PdfDocument {
 /**
  * Opens a PDF from its bytes, or from a link on the content origin: pdf.js then asks for byte
  * ranges (the origin answers them), reads no more of the file than the pages shown need
- * (`disableAutoFetch`), and sends no credentials.
+ * (`disableAutoFetch`, which works only with streaming off: otherwise the first request is read to the end), and sends no credentials.
  */
 export async function openPdf(source: Uint8Array | string): Promise<PdfDocument> {
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
@@ -35,7 +35,7 @@ export async function openPdf(source: Uint8Array | string): Promise<PdfDocument>
   pdfjs.GlobalWorkerOptions.workerSrc = worker;
   const task = pdfjs.getDocument(
     typeof source === 'string'
-      ? { url: source, disableAutoFetch: true, withCredentials: false }
+      ? { url: source, disableAutoFetch: true, disableStream: true, withCredentials: false }
       : { data: source },
   );
   const doc = await task.promise;

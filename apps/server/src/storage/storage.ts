@@ -25,7 +25,8 @@ export interface Storage {
   put(prefix: string, body: Body): Promise<StoredObject>;
   /**
    * Streams an object (or only the bytes of `range`, which must lie within it) with the whole
-   * object's byte length (one backend call); rejects with `StorageNotFoundError` when it does
+   * object's byte length (one backend call; a ranged read by the content origin first asks
+   * `head` for the size); rejects with `StorageNotFoundError` when it does
    * not exist.
    */
   get(key: string, range?: ByteRange): Promise<{ body: Readable; size: number }>;
