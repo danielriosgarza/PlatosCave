@@ -672,7 +672,7 @@ describe('invitation revocation and membership audit', () => {
     ]);
   });
 
-  test('A01 invitations issued by a manager are revoked when they lose the grant or the class', async () => {
+  test('A01 a manager’s open instructor invitations are revoked when they lose the grant or the class; their codes stay', async () => {
     const grantUrl = (userId: string) =>
       `/api/classes/${ids.classA}/members/${userId}/manage-members`;
     const lead = await instructorOf(ids.classA, 'lead@example.test');
@@ -684,39 +684,71 @@ describe('invitation revocation and membership audit', () => {
       kind: 'instructor',
       email: 'deputy@example.test',
     });
-    const ownersCode = await issue(as('elena'), ids.classA, { kind: 'enrolment' });
+    const expired = await issue(lead.cookie, ids.classA, {
+      kind: 'instructor',
+      email: 'late-deputy@example.test',
+    });
+    await testDb.db
+      .update(classInvites)
+      .set({ expiresAt: new Date(now.getTime() - 1) })
+      .where(eq(classInvites.id, expired.body.id));
 
     expect((await call(as('elena'), 'PUT', grantUrl(lead.userId), { granted: false })).status).toBe(
       200,
     );
-    expect((await join(await newcomer('after@example.test'), code.body.code)).body).toEqual({
-      error: 'invite_revoked',
-    });
+    // The enrolment code belongs to the class: it still joins students.
+    const after = await newcomer('after@example.test');
+    expect((await join(after, code.body.code)).status).toBe(200);
+    expect((await me(after)).classes).toEqual([
+      expect.objectContaining({ classId: ids.classA, role: 'student' }),
+    ]);
+    expect(await auditFor('invite.revoke', code.body.id)).toEqual([]);
     expect((await accept(await newcomer('deputy@example.test'), invite.body.code)).body).toEqual({
       error: 'invite_revoked',
     });
-    expect((await join(await newcomer('after@example.test'), ownersCode.body.code)).status).toBe(
-      200,
-    );
-    expect((await auditFor('invite.revoke', code.body.id))[0]).toMatchObject({
-      actorId: ids.elena,
-      after: { reason: 'issuer_lost_manage_members' },
-    });
+    expect(await auditFor('invite.revoke', invite.body.id)).toEqual([
+      expect.objectContaining({
+        actorId: ids.elena,
+        scopeKind: 'class',
+        scopeId: ids.classA,
+        targetType: 'invite',
+        before: { revokedAt: null },
+        after: {
+          revokedAt: now.toISOString(),
+          via: 'course_owner',
+          reason: 'issuer_lost_manage_members',
+        },
+      }),
+    ]);
+    // An invitation that had already expired is left as it was, with no event.
+    expect(await auditFor('invite.revoke', expired.body.id)).toEqual([]);
+    const [expiredRow] = await testDb.db
+      .select({ revokedAt: classInvites.revokedAt })
+      .from(classInvites)
+      .where(eq(classInvites.id, expired.body.id));
+    expect(expiredRow?.revokedAt).toBeNull();
 
     expect((await call(as('elena'), 'PUT', grantUrl(lead.userId), { granted: true })).status).toBe(
       200,
     );
     const second = await issue(lead.cookie, ids.classA, { kind: 'enrolment' });
+    const secondInvite = await issue(lead.cookie, ids.classA, {
+      kind: 'instructor',
+      email: 'deputy2@example.test',
+    });
     expect(
       (await call(as('elena'), 'DELETE', `/api/classes/${ids.classA}/members/${lead.userId}`))
         .status,
     ).toBe(200);
-    expect((await join(await newcomer('after2@example.test'), second.body.code)).body).toEqual({
-      error: 'invite_revoked',
-    });
-    expect((await auditFor('invite.revoke', second.body.id))[0]).toMatchObject({
+    expect((await join(await newcomer('after2@example.test'), second.body.code)).status).toBe(200);
+    expect(await auditFor('invite.revoke', second.body.id)).toEqual([]);
+    expect(
+      (await accept(await newcomer('deputy2@example.test'), secondInvite.body.code)).body,
+    ).toEqual({ error: 'invite_revoked' });
+    expect((await auditFor('invite.revoke', secondInvite.body.id))[0]).toMatchObject({
       after: { reason: 'issuer_removed' },
     });
+    expect(await auditFor('invite.revoke', expired.body.id)).toEqual([]);
   });
 
   test('A01 removal from one class during acceptance into another keeps draft editing', async () => {

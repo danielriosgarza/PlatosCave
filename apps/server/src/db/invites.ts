@@ -1,6 +1,6 @@
 import { randomInt } from 'node:crypto';
 import type { inviteFailure } from '@parallax/contracts/routes/members';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, gt, isNull, lt, or, type SQL, sql } from 'drizzle-orm';
 import type { z } from 'zod';
 import type { ClassManagerScope, UserScope } from '../auth/scope';
 import { hashToken, newToken } from '../auth/sessions';
@@ -27,6 +27,14 @@ export function newEnrolmentCode(): string {
 
 /** Codes are compared case-insensitively and without separators, as people retype them. */
 export const normaliseCode = (code: string): string => code.toUpperCase().replace(/[^A-Z0-9]/g, '');
+
+/** Open invitations: not revoked, not expired at `now` and not used up. */
+export const openInvite = (now: Date): SQL =>
+  and(
+    isNull(classInvites.revokedAt),
+    or(isNull(classInvites.expiresAt), gt(classInvites.expiresAt, now)),
+    or(isNull(classInvites.maxUses), lt(classInvites.useCount, classInvites.maxUses)),
+  ) as SQL;
 
 const inviteColumns = {
   id: classInvites.id,
@@ -262,6 +270,38 @@ export function acceptInstructorInvite(
 }
 
 /**
+ * Revokes the not-yet-revoked invitations of the scope's class that match `where`, and records
+ * one `invite.revoke` event per invitation, with `extra` added to its `after`. Every revocation
+ * goes through here, so the event has one shape. Returns the ids revoked.
+ */
+export async function revokeInvites(
+  tx: Tx,
+  scope: ClassManagerScope,
+  where: SQL | undefined,
+  now: Date,
+  extra: Record<string, unknown> = {},
+): Promise<string[]> {
+  const revoked = await tx
+    .update(classInvites)
+    .set({ revokedAt: now })
+    .where(and(forClass(scope, classInvites), isNull(classInvites.revokedAt), where))
+    .returning({ id: classInvites.id });
+  for (const invite of revoked) {
+    await audit(tx, {
+      actorId: scope.user.id,
+      action: 'invite.revoke',
+      scopeKind: 'class',
+      scopeId: scope.classId,
+      targetType: 'invite',
+      targetId: invite.id,
+      before: { revokedAt: null },
+      after: { revokedAt: now, via: scope.via, ...extra },
+    });
+  }
+  return revoked.map((r) => r.id);
+}
+
+/**
  * Withdraws one invitation of the class; later uses are refused with `invite_revoked`.
  * Revoking an already revoked invitation changes nothing and records nothing.
  */
@@ -275,17 +315,7 @@ export function revokeInvite(db: Db, scope: ClassManagerScope, inviteId: string,
       .for('update');
     if (!invite) return { ok: false as const };
     if (invite.revokedAt) return { ok: true as const, revokedAt: invite.revokedAt };
-    await tx.update(classInvites).set({ revokedAt: now }).where(where);
-    await audit(tx, {
-      actorId: scope.user.id,
-      action: 'invite.revoke',
-      scopeKind: 'class',
-      scopeId: scope.classId,
-      targetType: 'invite',
-      targetId: inviteId,
-      before: { revokedAt: null },
-      after: { revokedAt: now, via: scope.via },
-    });
+    await revokeInvites(tx, scope, eq(classInvites.id, inviteId), now);
     return { ok: true as const, revokedAt: now };
   });
 }

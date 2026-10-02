@@ -1,7 +1,8 @@
-import { and, asc, eq, gt, inArray, isNull, lt, or } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
 import type { ClassManagerScope, CourseContext, CourseScope } from '../auth/scope';
 import type { Db } from './client';
 import { audit, type Tx } from './identity';
+import { openInvite, revokeInvites } from './invites';
 import {
   authSessions,
   classes,
@@ -40,14 +41,7 @@ export async function listMembers(db: Db, scope: ClassManagerScope, now: Date) {
       createdAt: classInvites.createdAt,
     })
     .from(classInvites)
-    .where(
-      and(
-        forClass(scope, classInvites),
-        isNull(classInvites.revokedAt),
-        or(isNull(classInvites.expiresAt), gt(classInvites.expiresAt, now)),
-        or(isNull(classInvites.maxUses), lt(classInvites.useCount, classInvites.maxUses)),
-      ),
-    )
+    .where(and(forClass(scope, classInvites), openInvite(now)))
     .orderBy(asc(classInvites.createdAt));
   const [members, invites] = await Promise.all([membersQuery, invitesQuery]);
   return { members, invites };
@@ -93,7 +87,9 @@ export function setManageMembers(
       before: { manageMembers: member.manageMembers },
       after: { manageMembers: granted, via: scope.via },
     });
-    if (!granted) await revokeIssuedBy(tx, scope, userId, now, 'issuer_lost_manage_members');
+    if (!granted && !(await ownsCourse(tx, scope, userId))) {
+      await revokeIssuedBy(tx, scope, userId, now, 'issuer_lost_manage_members');
+    }
     return { ok: true as const };
   });
 }
@@ -101,8 +97,8 @@ export function setManageMembers(
 /**
  * Removes one membership. An instructor's preview membership in the class goes with them (its
  * sessions revoked), the draft editing their invitation granted ends once they teach no class of
- * the course, and the open invitations they issued in the class are revoked unless they own the
- * course. Each cascade is audited on its own.
+ * the course, and the open instructor invitations they issued in the class are revoked unless
+ * they own the course. Each cascade is audited on its own. A student has none of these.
  */
 export function removeMember(db: Db, scope: ClassManagerScope, userId: string, now: Date) {
   return db.transaction(async (tx) => {
@@ -123,9 +119,9 @@ export function removeMember(db: Db, scope: ClassManagerScope, userId: string, n
     });
     if (removed.role === 'instructor') {
       await dropPreviews(tx, scope, userId, now);
-      await dropEditorIfNotTeaching(tx, scope, userId);
+      const { owner } = await dropEditorIfNotTeaching(tx, scope, userId);
+      if (!owner) await revokeIssuedBy(tx, scope, userId, now, 'issuer_removed');
     }
-    await revokeIssuedBy(tx, scope, userId, now, 'issuer_removed');
     return { ok: true as const };
   });
 }
@@ -182,9 +178,15 @@ async function lockCourseMembership(tx: Tx, scope: CourseContext, userId: string
   return row;
 }
 
-async function dropEditorIfNotTeaching(tx: Tx, scope: ClassManagerScope, userId: string) {
+/** Also returns whether the person owns the course, read under the same lock. */
+async function dropEditorIfNotTeaching(
+  tx: Tx,
+  scope: ClassManagerScope,
+  userId: string,
+): Promise<{ owner: boolean }> {
   const current = await lockCourseMembership(tx, scope, userId);
-  if (!current?.editor || current.owner) return;
+  const owner = current?.owner ?? false;
+  if (!current?.editor || owner) return { owner };
   const [teaching] = await tx
     .select({ id: classMemberships.id })
     .from(classMemberships)
@@ -197,7 +199,7 @@ async function dropEditorIfNotTeaching(tx: Tx, scope: ClassManagerScope, userId:
       ),
     )
     .limit(1);
-  if (teaching) return;
+  if (teaching) return { owner };
   await tx
     .update(courseMemberships)
     .set({ editor: false })
@@ -213,6 +215,7 @@ async function dropEditorIfNotTeaching(tx: Tx, scope: ClassManagerScope, userId:
     before: { editor: true },
     after: { editor: false, membershipRemoved, via: scope.via },
   });
+  return { owner };
 }
 
 /** A course membership holding no grant carries no meaning; drop it. True when it was dropped. */
@@ -232,18 +235,7 @@ async function tryDeleteEmpty(tx: Tx, scope: CourseContext, userId: string): Pro
   return deleted.length > 0;
 }
 
-/**
- * Invitations rest on their issuer's authority: once a person can no longer manage the class
- * (removed, or `manage_members` revoked), the open invitations they issued there are revoked.
- * A course owner keeps that authority through the course, so theirs stay.
- */
-async function revokeIssuedBy(
-  tx: Tx,
-  scope: ClassManagerScope,
-  userId: string,
-  now: Date,
-  reason: 'issuer_removed' | 'issuer_lost_manage_members',
-) {
+async function ownsCourse(tx: Tx, scope: ClassManagerScope, userId: string): Promise<boolean> {
   const [owner] = await tx
     .select({ id: courseMemberships.id })
     .from(courseMemberships)
@@ -254,30 +246,29 @@ async function revokeIssuedBy(
         eq(courseMemberships.owner, true),
       ),
     );
-  if (owner) return;
-  const revoked = await tx
-    .update(classInvites)
-    .set({ revokedAt: now })
-    .where(
-      and(
-        forClass(scope, classInvites),
-        eq(classInvites.createdBy, userId),
-        isNull(classInvites.revokedAt),
-      ),
-    )
-    .returning({ id: classInvites.id });
-  for (const invite of revoked) {
-    await audit(tx, {
-      actorId: scope.user.id,
-      action: 'invite.revoke',
-      scopeKind: 'class',
-      scopeId: scope.classId,
-      targetType: 'invite',
-      targetId: invite.id,
-      before: { revokedAt: null },
-      after: { revokedAt: now, via: scope.via, reason },
-    });
-  }
+  return owner !== undefined;
+}
+
+/**
+ * Instructor invitations rest on their issuer's authority: once a person can no longer manage
+ * the class (removed, or `manage_members` revoked), the open instructor invitations they issued
+ * there are revoked. Callers skip a course owner, who keeps that authority through the course.
+ * Enrolment codes belong to the class and stay; a manager withdraws one explicitly. Expired and
+ * used-up invitations are left as they are, with no event.
+ */
+function revokeIssuedBy(
+  tx: Tx,
+  scope: ClassManagerScope,
+  userId: string,
+  now: Date,
+  reason: 'issuer_removed' | 'issuer_lost_manage_members',
+) {
+  const issued = and(
+    eq(classInvites.createdBy, userId),
+    eq(classInvites.kind, 'instructor'),
+    openInvite(now),
+  );
+  return revokeInvites(tx, scope, issued, now, { reason });
 }
 
 /** Publication is a course grant only the owner hands out (§3: "If delegated"). */
