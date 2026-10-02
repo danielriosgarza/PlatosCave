@@ -3,10 +3,10 @@ import { and, asc, desc, eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import type { ClassScope } from '../auth/scope';
 import { openToStudent } from '../content/availability';
-import { readDerivedStatus } from '../jobs/derived';
 import { invalid, notFound, type Outcome } from '../outcome';
 import { findReleaseTopic } from './classTopics';
 import type { Db } from './client';
+import { resolveDerivedStatuses } from './jobs/derived';
 import { releaseResources, resourceRevisions, storageObjects, studyPositions } from './schema';
 import { forClass } from './scoped';
 
@@ -185,7 +185,9 @@ export async function loadReading(
 ): Promise<ReadingContent | null> {
   const row = await releasedRevision(db, scope, revisionId, now);
   if (!row || !isReading(row.type)) return null;
-  const status = readDerivedStatus(row.derived.status, row.createdAt);
+  const [status] = await resolveDerivedStatuses(db, [
+    { raw: row.derived.status, createdAt: row.createdAt },
+  ]);
   const state = status?.state === 'ready' ? 'ready' : status?.state === 'failed' ? 'failed' : null;
   const stored = row.objectKeys.length
     ? await db
