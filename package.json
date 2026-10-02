@@ -16,6 +16,7 @@
     "test:e2e": "pnpm --filter @parallax/e2e test",
     "scenarios": "tsx scripts/check-scenarios.ts",
     "test:integration": "vitest run --project integration",
+    "test:runner": "vitest run --project runner",
     "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm scenarios",
     "db:migrate": "pnpm --filter @parallax/server db:migrate",
     "db:generate": "pnpm --filter @parallax/server db:generate",
