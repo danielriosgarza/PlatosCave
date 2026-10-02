@@ -137,7 +137,9 @@ function StatusLine({
     mutationFn: () => call(retryProcessing, { params: { courseId, resourceId: resource.id } }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: authoringKey(courseId) }),
   });
-  if (!isReading(resource.type) || resource.archived) return null;
+  if (!(isReading(resource.type) || resource.type === 'slides_pdf') || resource.archived) {
+    return null;
+  }
   if (lookup.kind !== 'known') {
     return (
       <div className={local.resourceMeta} role="status" aria-busy={lookup.kind === 'loading'}>
@@ -158,7 +160,8 @@ function StatusLine({
   const labels = {
     queued: 'Waiting to be processed',
     running: 'Processing',
-    ready: 'Ready to publish',
+    // A deck can still be blocked at publication (raster-only without a text alternative).
+    ready: resource.type === 'slides_pdf' ? 'Processed' : 'Ready to publish',
     failed: `Processing failed${status?.error ? `: ${status.error}` : ''}`,
   } as const;
   const text = state ? labels[state] : 'Not processed yet';

@@ -111,9 +111,13 @@ export function validate(drafts: Drafts): ValidationReport {
         continue;
       }
       if (revision.type === 'slides_pdf' && !derivedReady(revision.derived)) {
+        const failed =
+          readDerivedStatus(revision.derived.status, revision.createdAt)?.state === 'failed';
         errors.push({
           code: 'unconverted_deck',
-          message: `“${resource.title}” has not been converted for viewing`,
+          message: failed
+            ? `“${resource.title}” could not be processed; upload it again or retry`
+            : `“${resource.title}” has not been converted for viewing`,
           ...at,
         });
       }
