@@ -45,6 +45,17 @@ interface Ask {
 }
 
 const NO_ANCHOR: Anchor = { kind: 'none' };
+
+/** The parts of a stored Ask draft that come from the composer. */
+const askDraft = (ask: Ask) => ({
+  kind: 'ask' as const,
+  annotationId: null,
+  expectedRevision: null,
+  anchor: ask.anchor,
+  body: ask.body,
+  audience: ask.audience,
+  updatedAt: Date.now(),
+});
 const ASK_ID = 'ask';
 /** Side by side below this width the margin stacks under the reading and needs no alignment. */
 const WIDE = '(min-width: 1100px)';
@@ -92,6 +103,7 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
   const [tab, setTab] = useState<Tab>('notes');
   const [activeId, setActiveId] = useState<string | null>(null);
   const [focusId, setFocusId] = useState<string | null>(null);
+  const [deleteProblem, setDeleteProblem] = useState<string | null>(null);
   const [passage, setPassage] = useState<SelectedPassage | null>(null);
   const [toolsProblem, setToolsProblem] = useState<string | null>(null);
   const [ask, setAsk] = useState<Ask>({
@@ -113,7 +125,7 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
   // biome-ignore lint/correctness/useExhaustiveDependencies: restores once per person and reading
   useEffect(() => {
     if (!userId) return;
-    allowDrafts(userId);
+    void allowDrafts(userId);
     const scope = `${userId}|${classId}|${resourceId}`;
     if (restored.current === scope) return;
     let current = true;
@@ -172,6 +184,7 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
         void saveDraft(draft);
       },
       acknowledged: (annotation) => actions.acknowledged(annotation),
+      forget: (id) => actions.forget(id),
     });
     controller.subscribe(touch);
     controllers.current.set(key, controller);
@@ -416,28 +429,29 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
     if (!userId) return;
     const key = draftKey(userId, classId, resourceId, ASK_ID);
     if (next.body.trim() === '') return void removeDraft(key);
-    void saveDraft({
-      key,
-      userId,
-      classId,
-      resourceId,
-      kind: 'ask',
-      annotationId: null,
-      expectedRevision: null,
-      anchor: next.anchor,
-      body: next.body,
-      audience: next.audience,
-      updatedAt: Date.now(),
-    });
+    void saveDraft({ ...askDraft(next), key, userId, classId, resourceId });
   };
+  const askRef = useRef(ask);
+  askRef.current = ask;
   const post = async () => {
-    if (ask.body.trim() === '' || ask.posting) return;
+    const posted = ask.body.trim();
+    if (posted === '' || ask.posting) return;
     setAsk((a) => ({ ...a, posting: true, problem: null }));
-    const result = await actions.ask(ask.audience, ask.anchor, ask.body.trim());
+    const result = await actions.ask(ask.audience, ask.anchor, posted);
     if ('id' in result) {
-      if (userId) void removeDraft(draftKey(userId, classId, resourceId, ASK_ID));
-      setAsk((a) => ({ ...a, anchor: NO_ANCHOR, body: '', posting: false, problem: null }));
       setActiveId(result.id);
+      const latest = askRef.current;
+      // Text typed while the question was posting was never posted: it stays, as a new draft.
+      const next =
+        latest.body.trim() === posted
+          ? { ...latest, anchor: NO_ANCHOR, body: '', posting: false, problem: null }
+          : { ...latest, anchor: NO_ANCHOR, posting: false, problem: null };
+      setAsk(next);
+      if (userId) {
+        const key = draftKey(userId, classId, resourceId, ASK_ID);
+        if (next.body.trim() === '') void removeDraft(key);
+        else void saveDraft({ ...askDraft(next), key, userId, classId, resourceId });
+      }
       return;
     }
     setAsk((a) => ({
@@ -447,15 +461,33 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
     }));
   };
 
-  const removeNote = async (id: string, controller: NoteController | undefined) => {
+  const removeNote = async (entryId: string, controller: NoteController | undefined) => {
+    setDeleteProblem(null);
     // A save still running is waited for, so a note it creates is deleted too and cannot return.
-    const created = controller ? await controller.discard() : null;
-    const stored = created ?? (annotations.some((a) => a.id === id) ? id : null);
+    const left = controller ? await controller.discard() : null;
+    const stored = left?.id ?? (annotations.some((a) => a.id === entryId) ? entryId : null);
+    if (stored && !(await actions.remove(stored))) {
+      // The note is still there: bring back its editor with the text as it stood, edits included.
+      if (controller && left) {
+        if (left.annotation) actions.acknowledged(left.annotation);
+        const saved = (left.annotation ?? annotations.find((a) => a.id === stored))?.body ?? '';
+        make(controller.key, {
+          key: controller.key,
+          anchor: controller.anchor,
+          body: left.body,
+          annotationId: stored,
+          revision: left.revision,
+          unsent: left.body !== saved,
+        });
+      }
+      setDeleteProblem(controller?.key ?? entryId);
+      touch();
+      return;
+    }
     if (controller) {
       controllers.current.delete(controller.key);
       if (userId) void removeDraft(draftKey(userId, classId, resourceId, controller.key));
     }
-    if (stored) await actions.remove(stored);
     setActiveId(null);
     touch();
   };
@@ -522,6 +554,23 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
                   {html === null
                     ? 'No notes on this reading yet.'
                     : 'Select text in the reading to highlight it or add a note.'}
+                </p>
+              ) : null}
+              {deleteProblem ? (
+                <p role="alert" className={styles.empty}>
+                  The note could not be deleted. It is still saved, with your changes.{' '}
+                  <button
+                    type="button"
+                    className={styles.link}
+                    onClick={() => {
+                      const entry = notes.find(
+                        (n) => (n.controller?.key ?? n.id) === deleteProblem,
+                      );
+                      if (entry) void removeNote(entry.id, entry.controller);
+                    }}
+                  >
+                    Try again
+                  </button>
                 </p>
               ) : null}
               {notes.map((n, index) => (
@@ -616,6 +665,7 @@ const idleState: NoteState = {
   conflict: null,
   created: true,
   reason: null,
+  gone: false,
 };
 const noop = () => () => {};
 
@@ -688,7 +738,11 @@ function NoteEntry({
               />
             </label>
           )}
-          <SaveLine state={state} onRetry={() => controller?.retry()} />
+          <SaveLine
+            state={state}
+            onRetry={() => controller?.retry()}
+            onSaveAsNew={() => controller?.saveAsNew()}
+          />
           <button type="button" className={styles.link} onClick={onRemove}>
             Delete note
           </button>
@@ -700,12 +754,29 @@ function NoteEntry({
   );
 }
 
-function SaveLine({ state, onRetry }: { state: NoteState; onRetry: () => void }) {
+function SaveLine({
+  state,
+  onRetry,
+  onSaveAsNew,
+}: {
+  state: NoteState;
+  onRetry: () => void;
+  onSaveAsNew: () => void;
+}) {
   let text: ReactNode = null;
   if (state.status === 'saving') text = 'Saving';
   else if (state.status === 'saved') text = 'Saved';
   else if (state.status === 'offline') text = 'Offline · changes on this device';
-  else if (state.status === 'failed') {
+  else if (state.gone) {
+    text = (
+      <>
+        This note was deleted elsewhere ·{' '}
+        <button type="button" className={styles.link} onClick={onSaveAsNew}>
+          Save as a new note
+        </button>
+      </>
+    );
+  } else if (state.status === 'failed') {
     text = (
       <>
         {state.reason ?? 'Could not save'} ·{' '}

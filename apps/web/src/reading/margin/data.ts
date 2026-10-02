@@ -27,7 +27,7 @@ const listKey = (classId: string, resourceId: string) => [
 ];
 
 /** A refused or unreachable request, in the terms the editor shows (§8, §14). */
-function classify(error: unknown): SendResult {
+function classify(error: unknown, allowGone = false): SendResult {
   if (error instanceof ApiError) {
     const body = error.body as { error?: string; current?: Annotation } | null;
     if (error.status === 409 && body?.error === 'revision_conflict' && body.current) {
@@ -36,7 +36,8 @@ function classify(error: unknown): SendResult {
     if (error.status === 409 && body?.error === 'class_archived') {
       return { kind: 'failed', reason: 'This class is archived, so notes can no longer change.' };
     }
-    if (error.status === 404) return { kind: 'gone' };
+    // Only a save can find its note gone; a create that gets 404 means the reading is unreachable.
+    if (error.status === 404 && allowGone) return { kind: 'gone' };
     return { kind: 'failed', reason: null };
   }
   // fetch rejects when the request never got an answer. Only the browser saying it is offline is
@@ -77,6 +78,8 @@ export interface MarginActions {
   remove(id: string): Promise<boolean>;
   ask(audience: 'instructor' | 'class', anchor: Anchor, body: string): Promise<Thread | SendResult>;
   acknowledged(a: Annotation): void;
+  /** Stops listing an annotation without asking the server (it is already gone there). */
+  forget(id: string): void;
 }
 
 /** Calls the annotation routes and keeps the cached list in step with what the server answered. */
@@ -86,6 +89,7 @@ export function useMarginActions(classId: string, resourceId: string): MarginAct
     const params = { classId, resourceId };
     return {
       acknowledged: (a) => putAnnotation(client, classId, resourceId, a),
+      forget: (id) => dropAnnotation(client, classId, resourceId, id),
       async createNote(anchor, body) {
         if (offline()) return { kind: 'offline' };
         try {
@@ -110,7 +114,7 @@ export function useMarginActions(classId: string, resourceId: string): MarginAct
           putAnnotation(client, classId, resourceId, annotation);
           return { kind: 'ok', annotation };
         } catch (error) {
-          return classify(error);
+          return classify(error, true);
         }
       },
       async highlight(anchor) {

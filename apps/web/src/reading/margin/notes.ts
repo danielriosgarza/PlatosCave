@@ -22,6 +22,8 @@ export interface NoteState {
   created: boolean;
   /** Why the last save failed, in words for the person (e.g. the class is archived). */
   reason: string | null;
+  /** The server no longer has this note (deleted elsewhere); the text can be saved as a new note. */
+  gone: boolean;
 }
 
 export type SendResult =
@@ -42,6 +44,19 @@ export interface NoteDeps {
   ): void;
   /** Tells the page what the server now holds, after an acknowledgement or a chosen server copy. */
   acknowledged(annotation: Annotation): void;
+  /** The page stops listing this annotation (its text now lives in a new note). */
+  forget(id: string): void;
+}
+
+/** What a deleted note leaves behind for the caller to finish (or undo). */
+export interface Discarded {
+  /** The id the server holds for it, if any (a create still running when it was deleted made one). */
+  id: string | null;
+  /** That annotation as the server last answered, for putting it back if the delete fails. */
+  annotation: Annotation | null;
+  revision: number | null;
+  /** The text as it stood, unsent edits included. */
+  body: string;
 }
 
 export interface NoteInit {
@@ -74,6 +89,8 @@ export class NoteController {
   private disposed = false;
   /** Deleted by the person: nothing more is sent, and a send still running changes nothing. */
   private removed = false;
+  /** What the server answered to a create that finished after the note was deleted. */
+  private made: Annotation | null = null;
   private readonly listeners = new Set<() => void>();
   private readonly online = () => {
     if (this.state.status === 'offline') void this.flush();
@@ -94,6 +111,7 @@ export class NoteController {
       conflict: null,
       created: init.annotationId !== null,
       reason: null,
+      gone: false,
     };
     window.addEventListener('online', this.online);
     if (init.unsent) void this.flush();
@@ -137,17 +155,34 @@ export class NoteController {
 
   /**
    * The person deleted the note. Nothing is sent from now on; a save already in flight is waited
-   * for, and its outcome is not shown or kept. Returns the id the server holds for it, if any (a
-   * create that was still running has made one), so the caller can delete it there.
+   * for, and its outcome is not shown or kept. Returns what the caller needs to delete the note on
+   * the server, or to restore it, text included, if that fails. The draft on this device is left
+   * for the caller to drop once the deletion has gone through.
    */
-  async discard(): Promise<string | null> {
+  async discard(): Promise<Discarded> {
     this.removed = true;
     if (this.timer) clearTimeout(this.timer);
     this.timer = null;
     window.removeEventListener('online', this.online);
     await this.inFlight;
-    this.deps.persist(null);
-    return this.annotationId;
+    return {
+      id: this.annotationId,
+      annotation: this.made,
+      revision: this.revision,
+      body: this.state.body,
+    };
+  }
+
+  /** The note is gone from the server: keep the text and create the note again. */
+  saveAsNew() {
+    if (!this.state.gone) return;
+    const old = this.annotationId;
+    this.annotationId = null;
+    this.revision = null;
+    this.serverBody = null;
+    this.set({ gone: false, created: false, status: 'saving', reason: null });
+    if (old) this.deps.forget(old);
+    void this.flush();
   }
 
   async flush(): Promise<void> {
@@ -182,7 +217,11 @@ export class NoteController {
     this.sending = false;
     if (this.removed) {
       // Deleted meanwhile: remember what the server made, so it can be deleted, and say nothing.
-      if (result.kind === 'ok') this.annotationId = result.annotation.id;
+      if (result.kind === 'ok') {
+        this.annotationId = result.annotation.id;
+        this.revision = result.annotation.revision;
+        this.made = result.annotation;
+      }
       return;
     }
     if (result.kind === 'ok') {
@@ -207,8 +246,13 @@ export class NoteController {
     } else if (result.kind === 'conflict') {
       this.set({ status: 'conflict', conflict: result.current });
     } else if (result.kind === 'gone') {
-      this.deps.persist(null);
-      this.set({ status: 'failed', reason: 'This note was deleted elsewhere' });
+      // The text never reached the server, so it stays on this device.
+      this.deps.persist({
+        annotationId: this.annotationId,
+        revision: this.revision,
+        body: this.state.body,
+      });
+      this.set({ status: 'failed', gone: true, reason: null });
     } else if (result.kind === 'offline') {
       this.deps.persist({
         annotationId: this.annotationId,

@@ -8,6 +8,7 @@ import {
   listDrafts,
   removeDraft,
   saveDraft,
+  signedOutKey,
 } from './drafts';
 
 const draft = (user: string, id: string, body: string): Draft => ({
@@ -26,8 +27,8 @@ const draft = (user: string, id: string, body: string): Draft => ({
 
 beforeEach(async () => {
   await clearDrafts(null);
-  allowDrafts('sam');
-  allowDrafts('kim');
+  await allowDrafts('sam');
+  await allowDrafts('kim');
 });
 
 describe('device draft store', () => {
@@ -60,7 +61,29 @@ describe('device draft store', () => {
     expect(await listDrafts('kim', 'class-a', 'res-1')).toEqual([]);
     expect(await saveDraft(draft('sam', 'n2', 'late'))).toBe(false);
     expect(await listDrafts('sam', 'class-a', 'res-1')).toEqual([]);
-    allowDrafts('sam');
+    await allowDrafts('sam');
     expect(await saveDraft(draft('sam', 'n3', 'back'))).toBe(true);
+  });
+
+  it('A03 a sign-out made in another tab refuses this tab’s late save and its text is not kept', async () => {
+    await saveDraft(draft('sam', 'n1', 'typed before'));
+    // Another tab signs out: it clears the store and leaves the marker, and this tab is not told.
+    const db = await new Promise<IDBDatabase>((resolve) => {
+      const open = indexedDB.open('parallax-drafts', 1);
+      open.onsuccess = () => resolve(open.result);
+    });
+    await new Promise<void>((resolve) => {
+      const tx = db.transaction('drafts', 'readwrite');
+      tx.objectStore('drafts').clear();
+      tx.objectStore('drafts').put({ key: signedOutKey('sam'), userId: 'sam', kind: 'signed-out' });
+      tx.oncomplete = () => resolve();
+    });
+    // The reading unmounts here and its pending save fails with 401: the draft is offered again.
+    expect(await saveDraft(draft('sam', 'n1', 'typed after sign-out'))).toBe(false);
+    expect(await listDrafts('sam', 'class-a', 'res-1')).toEqual([]);
+    // Session expiry is not sign-out: someone else's drafts are unaffected, and signing in again works.
+    expect(await saveDraft(draft('kim', 'n1', 'kim note'))).toBe(true);
+    await allowDrafts('sam');
+    expect(await saveDraft(draft('sam', 'n2', 'back again'))).toBe(true);
   });
 });

@@ -28,6 +28,7 @@ function setup(init: Partial<ConstructorParameters<typeof NoteController>[0]> = 
   const sent: string[] = [];
   const persisted: (string | null)[] = [];
   const acknowledged: Annotation[] = [];
+  const forgotten: string[] = [];
   let next: SendResult[] = [];
   let revision = 0;
   const reply = (body: string): SendResult =>
@@ -43,12 +44,20 @@ function setup(init: Partial<ConstructorParameters<typeof NoteController>[0]> = 
     },
     persist: (d) => persisted.push(d ? d.body : null),
     acknowledged: (a) => acknowledged.push(a),
+    forget: (id) => forgotten.push(id),
   };
   const controller = new NoteController(
     { key: 'k', anchor: ANCHOR, body: '', annotationId: null, revision: null, ...init },
     deps,
   );
-  return { controller, sent, persisted, acknowledged, queue: (...r: SendResult[]) => (next = r) };
+  return {
+    controller,
+    sent,
+    persisted,
+    acknowledged,
+    forgotten,
+    queue: (...r: SendResult[]) => (next = r),
+  };
 }
 
 beforeEach(() => vi.useFakeTimers());
@@ -225,10 +234,17 @@ describe('deleting a note', () => {
     controller.blur();
     await vi.advanceTimersByTimeAsync(0);
     const removal = controller.discard();
-    release({ kind: 'ok', annotation: annotation(1, 'Short-lived', 'made-meanwhile') });
-    expect(await removal).toBe('made-meanwhile');
+    const made = annotation(1, 'Short-lived', 'made-meanwhile');
+    release({ kind: 'ok', annotation: made });
+    expect(await removal).toEqual({
+      id: 'made-meanwhile',
+      annotation: made,
+      revision: 1,
+      body: 'Short-lived',
+    });
     expect(acknowledged).toEqual([]);
-    expect(persisted.at(-1)).toBeNull();
+    // The draft stays until the caller has deleted the note: a failed delete must not lose it.
+    expect(persisted.at(-1)).toBe('Short-lived');
     controller.dispose();
     await vi.advanceTimersByTimeAsync(AUTOSAVE_MS * 2);
     expect(controller.state.status).toBe('saving'); // never reports a result for a deleted note
@@ -237,20 +253,30 @@ describe('deleting a note', () => {
   it('A03 a pending timer is cancelled, so nothing is created for a deleted draft', async () => {
     const { controller, sent } = setup();
     controller.edit('Never sent');
-    expect(await controller.discard()).toBeNull();
+    expect(await controller.discard()).toMatchObject({ id: null, body: 'Never sent' });
     controller.dispose();
     await vi.advanceTimersByTimeAsync(AUTOSAVE_MS * 2);
     expect(sent).toEqual([]);
   });
 
-  it('A03 a save that finds the note gone drops the draft instead of retrying forever', async () => {
-    const { controller, queue, persisted } = setup({ annotationId: 'n-1', revision: 1, body: 'x' });
+  it('A03 a save that finds the note gone keeps the text and offers to save it as a new note', async () => {
+    const { controller, queue, persisted, sent, forgotten } = setup({
+      annotationId: 'n-1',
+      revision: 1,
+      body: 'x',
+    });
     queue({ kind: 'gone' });
     controller.edit('xy');
     controller.blur();
     await vi.advanceTimersByTimeAsync(0);
-    expect(controller.state.status).toBe('failed');
-    expect(persisted.at(-1)).toBeNull();
+    expect(controller.state).toMatchObject({ status: 'failed', gone: true, body: 'xy' });
+    expect(persisted.at(-1)).toBe('xy'); // never reached the server, so it stays on this device
+
+    controller.saveAsNew();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(sent.at(-1)).toBe('create:xy');
+    expect(forgotten).toEqual(['n-1']);
+    expect(controller.state).toMatchObject({ status: 'saved', gone: false, created: true });
   });
 
   it('only the flush as the reading goes away is sent so it can outlive the page', async () => {
