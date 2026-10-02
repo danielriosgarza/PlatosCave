@@ -1,4 +1,5 @@
 import { me } from '@parallax/contracts/routes/me';
+import { exitPreview } from '@parallax/contracts/routes/preview';
 import { type QueryClient, queryOptions, useQuery } from '@tanstack/react-query';
 import type { z } from 'zod';
 import { ApiError, call } from '../api/client';
@@ -6,17 +7,31 @@ import { ApiError, call } from '../api/client';
 export type Me = z.output<typeof me.response>;
 export type SessionClass = Me['classes'][number];
 
+/**
+ * Reads the session. A 401 can be a draft preview whose session ended (8 h, or a later start)
+ * while the browser still keeps the instructor's own session: leave the preview once, and read
+ * the session again if that handed the instructor's back. Anything else means signed out.
+ */
+async function readMe(leaveEndedPreview = true): Promise<Me | null> {
+  try {
+    return await call(me);
+  } catch (error) {
+    if (!(error instanceof ApiError && error.status === 401)) throw error;
+  }
+  if (!leaveEndedPreview) return null;
+  try {
+    const { restored } = await call(exitPreview);
+    if (!restored) return null;
+  } catch {
+    return null; // 409: there was no preview to leave.
+  }
+  return readMe(false);
+}
+
 /** `null` means nobody is signed in (the API answered 401); any other failure is an error. */
 export const sessionQuery = queryOptions({
   queryKey: ['session'],
-  queryFn: async (): Promise<Me | null> => {
-    try {
-      return await call(me);
-    } catch (error) {
-      if (error instanceof ApiError && error.status === 401) return null;
-      throw error;
-    }
-  },
+  queryFn: () => readMe(),
   staleTime: 30_000,
   retry: false,
 });

@@ -138,7 +138,12 @@ export function createPreviewPrincipal(
         ),
       );
     if (!teaching) throw new Error('only an instructor of the class can have a preview principal');
-    return insertPreviewPrincipal(tx, { classId: scope.classId, instructorId, id: input.id });
+    const preview = await insertPreviewPrincipal(tx, {
+      classId: scope.classId,
+      instructorId,
+      id: input.id,
+    });
+    return preview.id;
   });
 }
 
@@ -149,7 +154,7 @@ export function createPreviewPrincipal(
 export async function insertPreviewPrincipal(
   tx: Tx,
   input: { classId: string; instructorId: string; id?: string },
-): Promise<string> {
+): Promise<{ id: string; name: string }> {
   const [preview] = await tx
     .insert(users)
     .values({
@@ -158,7 +163,7 @@ export async function insertPreviewPrincipal(
       name: 'Preview student',
       ownerUserId: input.instructorId,
     })
-    .returning({ id: users.id });
+    .returning({ id: users.id, name: users.name });
   if (!preview) throw new Error('preview user insert returned no row');
   await tx
     .insert(classMemberships)
@@ -171,5 +176,5 @@ export async function insertPreviewPrincipal(
     targetType: 'user',
     targetId: preview.id,
   });
-  return preview.id;
+  return preview;
 }

@@ -11,6 +11,19 @@ export class ApiError extends Error {
   }
 }
 
+type RefusalListener = (status: 401 | 404, path: string) => void;
+const refusalListeners = new Set<RefusalListener>();
+
+/**
+ * Hears every 401 and 404 answer, with the contract path that got it. Either can mean the
+ * browser's session changed under this tab (signed out, or a draft preview started or ended in
+ * another tab), so the session layer re-reads it. Returns the unsubscribe function.
+ */
+export function onRefusal(listener: RefusalListener): () => void {
+  refusalListeners.add(listener);
+  return () => refusalListeners.delete(listener);
+}
+
 interface CallArgs {
   params?: Record<string, string | number>;
   query?: Record<string, string | number | boolean | undefined>;
@@ -49,6 +62,9 @@ export async function call<C extends RouteContract>(
     } catch {
       malformed = true;
     }
+  }
+  if (res.status === 401 || res.status === 404) {
+    for (const listener of refusalListeners) listener(res.status, contract.path);
   }
   if (!res.ok) throw new ApiError(res.status, json);
   if (!isJson) throw new ApiError(res.status, 'response is not JSON');

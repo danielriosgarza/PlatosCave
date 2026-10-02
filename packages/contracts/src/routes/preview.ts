@@ -25,6 +25,11 @@ export const startPreview = defineRoute({
     classId: z.uuid(),
     preview: z.object({ id: z.uuid(), name: z.string() }),
     expiresAt: z.iso.datetime({ offset: true }),
+    /**
+     * App path the preview opens on, read as the preview student: the topic's saved tab, else
+     * its first tab with material, else the class's topic list.
+     */
+    landing: z.string(),
   }),
   examples: { params: { courseId: example }, body: { classId: example, topicId: example } },
 });
@@ -32,12 +37,14 @@ export const startPreview = defineRoute({
 /**
  * Leaves the draft preview: ends the preview session and restores the instructor's session
  * when it is still valid (`restored`), else signs the browser out. `returnTo` is the editor the
- * preview started from. 409 `not_previewing` outside a preview session.
+ * preview started from. Public, so a browser whose preview session already ended (expired, or
+ * replaced by a later start) still gets its instructor session back. 409 `not_previewing` when
+ * the browser's session is a person's own, or it holds neither a session nor a kept one.
  */
 export const exitPreview = defineRoute({
   method: 'POST',
   path: '/api/preview/exit',
-  scope: { kind: 'user' },
+  scope: { kind: 'public' },
   summary: 'Leave the draft preview and return to the instructor session and editor',
   response: z.object({ restored: z.boolean(), returnTo: z.string() }),
   examples: {},
