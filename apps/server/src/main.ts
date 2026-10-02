@@ -4,10 +4,12 @@ import { loadConfig } from './config';
 import { createDb } from './db/client';
 import { createBoss } from './db/jobs/boss';
 import annotationsMap from './jobs/annotations-map.job';
+import type { JobLogger } from './jobs/logger';
 import { workMaintenance } from './jobs/maintenance';
 import { loadJobs } from './jobs/registry';
 import { ensureQueues, workScopedJob } from './jobs/scoped';
 import { createStorage } from './storage/create';
+import type { Storage } from './storage/storage';
 
 const mode = process.argv[2] ?? 'api';
 if (mode !== 'api' && mode !== 'worker') {
@@ -49,10 +51,7 @@ async function settlesWithin(promise: Promise<unknown>, ms: number): Promise<boo
 }
 
 /** Closes in order and exits; a second signal forces exit if closing hangs. */
-function onSignals(
-  log: { error: (obj: object, msg: string) => void },
-  close: () => Promise<unknown>,
-): void {
+function onSignals(log: JobLogger, close: () => Promise<unknown>): void {
   let stopping = false;
   const stop = () => {
     if (stopping) process.exit(1);
@@ -116,8 +115,10 @@ if (mode === 'api') {
     onError: (err) => log.error({ err }, 'pg-boss error'),
     onWarning: (warning) => log.warn({ warning }, 'pg-boss warning'),
   });
-  const storage = createStorage(config);
+  let storage: Storage | undefined;
   const started = (async () => {
+    // Inside startup, so a store that cannot be set up is reported as a failed start.
+    storage = createStorage(config);
     await boss.start();
     const jobs = await loadJobs();
     for (const job of jobs) await workScopedJob(boss, database.db, job, log, {}, { storage });
@@ -133,7 +134,7 @@ if (mode === 'api') {
       throw new Error(`worker startup did not settle within ${WORKER_STOP_TIMEOUT_MS} ms`);
     }
     await boss.stop({ graceful: true, timeout: Math.max(deadline - Date.now(), 1) });
-    storage.destroy?.();
+    storage?.destroy?.();
   });
   try {
     await started;

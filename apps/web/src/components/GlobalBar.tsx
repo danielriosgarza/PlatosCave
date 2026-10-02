@@ -3,7 +3,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
 import { useState } from 'react';
 import { ApiError, call } from '../api/client';
-import { endSession, studyingClasses, useSession } from '../session/useSession';
+import { endSession, studyingClasses, usableClasses, useSession } from '../session/useSession';
 import { TopicNav, useTopicRoute } from '../topics/TopicNav';
 import { useFocusActive } from '../workspace/focus';
 import styles from './GlobalBar.module.css';
@@ -21,11 +21,8 @@ export function GlobalBar() {
   const me = session.status === 'signed-in' ? session.me : null;
   // Topics opens the class being viewed, else the first class the person studies or teaches.
   const topicsClassId =
-    me &&
-    (me.classes.some((c) => c.classId === routeClassId && !c.isPreview) ? routeClassId : undefined);
-  const fallback = me
-    ? (studyingClasses(me)[0] ?? me.classes.find((c) => !c.isPreview))
-    : undefined;
+    me && (usableClasses(me).some((c) => c.classId === routeClassId) ? routeClassId : undefined);
+  const fallback = me ? (studyingClasses(me)[0] ?? usableClasses(me)[0]) : undefined;
   const classId = topicsClassId ?? fallback?.classId;
 
   const handleSignOut = async () => {

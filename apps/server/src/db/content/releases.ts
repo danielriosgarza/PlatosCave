@@ -1,7 +1,9 @@
+import { exerciseProblems } from '@parallax/contracts';
 import type { validationIssue, validationReport } from '@parallax/contracts/routes/releases';
 import { and, asc, eq, isNull, lte, max, ne, or, type SQL, sql } from 'drizzle-orm';
 import type { z } from 'zod';
-import type { ClassScope, CourseScope } from '../../auth/scope';
+import type { ClassContext, ClassScope, CourseContext, CourseScope } from '../../auth/scope';
+import { openToStudent } from '../../content/availability';
 import { derivedReady, readDerivedStatus } from '../../jobs/derived';
 import type { Db } from '../client';
 import {
@@ -38,7 +40,7 @@ export const tabOf: Record<ResourceType, Tab> = {
 const needsAlternative = new Set<ResourceType>(['slides_pdf', 'reading_pdf', 'shiny']);
 
 /** The course's live (not archived) draft topics with their resources and head revisions. */
-async function loadDrafts(tx: Tx, scope: CourseScope) {
+async function loadDrafts(tx: Db | Tx, scope: CourseContext) {
   const topicRows = await tx
     .select()
     .from(topics)
@@ -109,9 +111,13 @@ export function validate(drafts: Drafts): ValidationReport {
         continue;
       }
       if (revision.type === 'slides_pdf' && !derivedReady(revision.derived)) {
+        const failed =
+          readDerivedStatus(revision.derived.status, revision.createdAt)?.state === 'failed';
         errors.push({
           code: 'unconverted_deck',
-          message: `“${resource.title}” has not been converted for viewing`,
+          message: failed
+            ? `“${resource.title}” could not be processed; upload it again or retry`
+            : `“${resource.title}” has not been converted for viewing`,
           ...at,
         });
       }
@@ -126,6 +132,15 @@ export function validate(drafts: Drafts): ValidationReport {
               state === 'failed'
                 ? `“${resource.title}” could not be processed; upload it again or retry`
                 : `“${resource.title}” is still being processed`,
+            ...at,
+          });
+        }
+      }
+      if (revision.type === 'exercise') {
+        for (const problem of exerciseProblems(revision.content)) {
+          errors.push({
+            code: 'invalid_exercise',
+            message: `“${resource.title}”: ${problem}`,
             ...at,
           });
         }
@@ -262,7 +277,8 @@ export const studyOpen = (scope: ClassScope, now: Date): SQL =>
  * nothing.
  */
 export function studyableRows(scope: ClassScope, now: Date): SQL {
-  if (!scope.releaseId) return sql`false`;
+  // A draft preview studies the course draft, never the release the class adopted.
+  if (!scope.releaseId || scope.membership.isPreview) return sql`false`;
   const ofCourse = sql`exists (select 1 from ${courseReleases} where ${courseReleases.id} = ${releaseResources.releaseId} and ${courseReleases.courseId} = ${scope.courseId})`;
   return and(
     eq(releaseResources.releaseId, scope.releaseId),
@@ -281,6 +297,12 @@ export async function studyableResource(
   resourceId: string,
   now: Date,
 ) {
+  if (scope.membership.isPreview) {
+    const found = (await draftSnapshot(db, scope)).resources.find(
+      (r) => r.resourceId === resourceId && (scope.role !== 'student' || openToStudent(r, now)),
+    );
+    return found && { revisionId: found.revisionId, type: found.type };
+  }
   if (!scope.releaseId) return undefined;
   const [row] = await db
     .select({ revisionId: releaseResources.resourceRevisionId, type: resourceRevisions.type })
@@ -292,10 +314,24 @@ export async function studyableResource(
 
 /**
  * The class's adopted release: the only path from a class to content (ADR-0003, A26). It reads
- * `class → release → release_resources → resource_revisions` and never touches draft rows.
- * Students (and preview principals) do not see hidden resources.
+ * `class → release → release_resources → resource_revisions` and never touches draft rows,
+ * except for a draft preview, which reads `draftSnapshot` instead. Students (and preview
+ * principals) do not see hidden resources.
  */
 export async function readClassRelease(db: Db, scope: ClassScope) {
+  if (scope.membership.isPreview) {
+    const draft = await draftSnapshot(db, scope);
+    const visible = draft.resources.filter(
+      (r) => scope.role !== 'student' || r.visibility !== 'hidden',
+    );
+    return {
+      release: null,
+      topics: draft.topics.map((t) => ({
+        ...t,
+        resources: visible.filter((r) => r.releaseTopicId === t.id),
+      })),
+    };
+  }
   if (!scope.releaseId) return { release: null, topics: [] };
   const [release] = await db
     .select()
@@ -324,4 +360,48 @@ export async function readClassRelease(db: Db, scope: ClassScope) {
         .map(({ item, type }) => ({ ...item, revisionId: item.resourceRevisionId, type })),
     })),
   };
+}
+
+/**
+ * What a draft preview studies (ADR-0002, ADR-0003): the snapshot `publishRelease` would take
+ * now, shaped like the rows of a release, built from the head revisions (immutable rows) of the
+ * live draft. Only preview principals read it, after the resolver checked that their owner
+ * still edits the course; real members always read the adopted release. Resources without a
+ * revision are left out, as publication would refuse them.
+ */
+export async function draftSnapshot(db: Db | Tx, scope: ClassContext) {
+  const drafts = await loadDrafts(db, scope);
+  const topicRows = drafts.map(({ topic }) => ({
+    /** Plays the `release_topics` id: the draft topic id, stable for the snapshot. */
+    id: topic.id,
+    topicId: topic.id,
+    position: topic.position,
+    title: topic.title,
+    objective: topic.objective,
+    prerequisites: topic.prerequisites,
+    completionRule: topic.completionRule,
+    estimatedMinutes: topic.estimatedMinutes,
+  }));
+  const resourceRows = drafts.flatMap(({ topic, resources: items }) =>
+    items.flatMap(({ resource, revision }) =>
+      revision && revision.resourceId === resource.id
+        ? [
+            {
+              /** Plays the `release_resources` id. */
+              id: resource.id,
+              releaseTopicId: topic.id,
+              resourceId: resource.id,
+              revisionId: revision.id,
+              type: revision.type,
+              tab: tabOf[revision.type],
+              position: resource.position,
+              title: resource.title,
+              visibility: resource.visibility,
+              releaseAt: resource.releaseAt,
+            },
+          ]
+        : [],
+    ),
+  );
+  return { topics: topicRows, resources: resourceRows };
 }
