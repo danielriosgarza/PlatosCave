@@ -62,7 +62,7 @@ function EditTopic() {
             of the course draft · your permission: {grantLabel(grant)}
           </p>
           <div style={{ marginTop: 16 }}>
-            <PreviewButton courseId={courseId} topicId={topic.id} resources={topic.resources} />
+            <PreviewButton courseId={courseId} topicId={topic.id} />
           </div>
           <div className={styles.editGrid}>
             <div>

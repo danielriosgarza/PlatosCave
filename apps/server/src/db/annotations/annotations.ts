@@ -2,15 +2,28 @@ import { isDeepStrictEqual } from 'node:util';
 import { type Anchor, anchorFits } from '@parallax/contracts';
 import type * as contracts from '@parallax/contracts/routes/annotations';
 import type * as placementContracts from '@parallax/contracts/routes/placements';
-import { and, asc, desc, eq, inArray, isNotNull, isNull, ne, or, type SQL, sql } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  exists,
+  inArray,
+  isNotNull,
+  isNull,
+  ne,
+  or,
+  type SQL,
+  sql,
+} from 'drizzle-orm';
 import type { z } from 'zod';
 import { excerpt } from '../../annotations/excerpt';
 import { layoutOf, mapAnchor } from '../../annotations/mapping';
-import type { ClassScope } from '../../auth/scope';
+import { type ClassScope, isDraftPreview } from '../../auth/scope';
 import { classArchived, invalid, notFound, type Outcome } from '../../outcome';
 import type { Db } from '../client';
 import { registerAffectedBy } from '../content/adoption';
-import { studyableResource, studyableRows } from '../content/releases';
+import { studyableDraft, studyableResource, studyableRows } from '../content/releases';
 import {
   annotationPlacements,
   annotations,
@@ -423,16 +436,26 @@ export async function listNotifications(
   scope: ClassScope,
   now: Date,
 ): Promise<Notification[]> {
-  if (!scope.releaseId) return [];
+  // A draft preview studies draft resources (ADR-0003); real members the adopted release.
+  let studyable: SQL;
+  if (isDraftPreview(scope)) {
+    const ids = (await studyableDraft(db, scope, now)).map((r) => r.resourceId);
+    if (ids.length === 0) return [];
+    studyable = inArray(threads.resourceId, ids);
+  } else {
+    if (!scope.releaseId) return [];
+    studyable = exists(
+      db
+        .select({ one: sql`1` })
+        .from(releaseResources)
+        .where(and(eq(releaseResources.resourceId, threads.resourceId), studyableRows(scope, now))),
+    );
+  }
   const rows = await db
     .select({ thread: threads, authorName: users.name })
     .from(threads)
     .innerJoin(users, eq(users.id, threads.authorId))
-    .innerJoin(
-      releaseResources,
-      and(eq(releaseResources.resourceId, threads.resourceId), studyableRows(scope, now)),
-    )
-    .where(and(visibleTo(scope, threads), ne(threads.authorId, scope.user.id)))
+    .where(and(visibleTo(scope, threads), ne(threads.authorId, scope.user.id), studyable))
     .orderBy(desc(threads.createdAt), desc(threads.id))
     .limit(50);
   if (rows.length === 0) return [];
