@@ -17,6 +17,7 @@ import type { Config } from './config';
 import { MAX_TOKEN_LENGTH } from './content/tokens';
 import type { Db } from './db/client';
 import { CONTENT_ROUTE, isContentHost, registerContentOrigin } from './http/content';
+import { handleError } from './http/errors';
 import { redactUrl } from './http/redact';
 import { NOT_FOUND } from './http/register';
 import { isApiPath, registerStatic } from './http/static';
@@ -102,6 +103,8 @@ export async function buildApp(config: Config, deps: Deps = {}): Promise<Fastify
   });
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
+  // No 5xx body carries an error's text (hosts, buckets, SQL); 4xx keep Fastify's default.
+  app.setErrorHandler(handleError);
 
   const now = deps.now ?? (() => new Date());
   const storage = deps.storage ?? createStorage(config);

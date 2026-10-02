@@ -6,7 +6,7 @@ import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
 import { buildApp } from '../../src/app';
 import { EmailLinkProvider } from '../../src/auth/email-provider';
-import { hashToken } from '../../src/auth/sessions';
+import { hashToken } from '../../src/auth/tokens';
 import { BackgroundTasks } from '../../src/background';
 import { loadConfig } from '../../src/config';
 import { createSession } from '../../src/db/auth/sessions';

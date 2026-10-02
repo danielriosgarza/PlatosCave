@@ -22,16 +22,17 @@ import {
   toReadable,
 } from './storage';
 
-export interface S3Options {
-  endpoint?: string;
-  region: string;
-  bucket: string;
-  accessKeyId: string;
-  secretAccessKey: string;
-  forcePathStyle: boolean;
-  /** A client to use instead of building one from the options above (tests). */
-  client?: S3Client;
-}
+/** The bucket, and either a client to use (tests) or the settings to build one from. */
+export type S3Options = { bucket: string } & (
+  | { client: S3Client }
+  | {
+      endpoint?: string;
+      region: string;
+      accessKeyId: string;
+      secretAccessKey: string;
+      forcePathStyle: boolean;
+    }
+);
 
 /**
  * Only a missing key counts as "not found" (GetObject: `NoSuchKey`; HeadObject has no body, so
@@ -50,17 +51,24 @@ const isMissing = (err: unknown) => {
 export class S3Storage implements Storage {
   private readonly client: S3Client;
   private readonly bucket: string;
+  /** Only a client built here is ours to destroy; an injected one belongs to the caller. */
+  private readonly ownsClient: boolean;
 
   constructor(options: S3Options) {
     this.bucket = options.bucket;
+    this.ownsClient = !('client' in options);
     this.client =
-      options.client ??
-      new S3Client({
-        region: options.region,
-        forcePathStyle: options.forcePathStyle,
-        credentials: { accessKeyId: options.accessKeyId, secretAccessKey: options.secretAccessKey },
-        ...(options.endpoint && { endpoint: options.endpoint }),
-      });
+      'client' in options
+        ? options.client
+        : new S3Client({
+            region: options.region,
+            forcePathStyle: options.forcePathStyle,
+            credentials: {
+              accessKeyId: options.accessKeyId,
+              secretAccessKey: options.secretAccessKey,
+            },
+            ...(options.endpoint && { endpoint: options.endpoint }),
+          });
   }
 
   async put(prefix: string, body: Body): Promise<StoredObject> {
@@ -160,6 +168,6 @@ export class S3Storage implements Storage {
   }
 
   destroy(): void {
-    this.client.destroy();
+    if (this.ownsClient) this.client.destroy();
   }
 }

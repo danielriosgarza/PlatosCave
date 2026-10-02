@@ -4,9 +4,9 @@ import type * as contracts from '@parallax/contracts/routes/drafts';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import type { z } from 'zod';
 import type { CourseScope } from '../../auth/scope';
-import { derivedReady } from '../../jobs/derived';
 import { invalid, notFound, type Outcome } from '../../outcome';
 import type { Db } from '../client';
+import { derivedReady } from '../jobs/derived';
 import { resourceRevisions, resources, storageObjects, topics } from '../schema';
 import { forCourse } from '../scoped';
 
