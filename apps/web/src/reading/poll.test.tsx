@@ -16,6 +16,7 @@ const pending = {
   kind: 'native',
   status: 'pending',
   error: null,
+  sourceKey: null,
   html: null,
   pdf: null,
 };
