@@ -69,14 +69,14 @@ export const getProcessing = defineRoute({
 });
 
 /**
- * 404 when the resource is not a reading or has no revision to process; 409 unless the reading's
- * job failed or was never queued.
+ * 404 when the resource is not a reading or PDF deck, or has no revision to process; 409 unless
+ * its job failed or was never queued.
  */
 export const retryProcessing = defineRoute({
   method: 'POST',
   path: '/api/courses/:courseId/resources/:resourceId/processing',
   scope: { kind: 'course', role: 'editor' },
-  summary: 'Queue processing of a reading’s head revision again',
+  summary: 'Queue processing of a reading’s or PDF deck’s head revision again',
   params: courseParams.extend({ resourceId: z.uuid() }),
   response: processingEntry,
   examples: { params: { courseId: exampleCourseId, resourceId: exampleResourceId } },

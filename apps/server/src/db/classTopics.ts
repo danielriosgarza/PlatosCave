@@ -11,6 +11,7 @@ import {
   topicOpens,
 } from '../content/availability';
 import type { Db } from './client';
+import { draftSnapshot } from './content/releases';
 import {
   classMemberships,
   courseReleases,
@@ -71,22 +72,22 @@ async function instructorNames(db: Db, scope: ClassScope): Promise<string[]> {
 }
 
 /**
- * The syllabus of the class's adopted release as the caller may see it (§4). Availability comes
- * from `computeAvailability`, as in `findReleaseTopic`, so a UI lock and a refusal cannot disagree.
- * Reads only the adopted release (ADR-0003); drafts are unreachable from here.
+ * Topic and resource rows of the class's adopted release, or of the course draft for a draft
+ * preview (ADR-0003: a preview principal reads the draft snapshot, never the adopted release).
  */
-export async function loadClassTopics(db: Db, scope: ClassScope, now: Date): Promise<ClassTopics> {
-  const base = { cohort: scope.className, instructors: await instructorNames(db, scope) };
-  const empty = { ...base, release: null, topics: [], resume: null, reviewedCount: 0 };
-  if (!scope.releaseId) return empty;
+async function syllabusRows(db: Db, scope: ClassScope) {
+  if (scope.membership.isPreview) {
+    const draft = await draftSnapshot(db, scope);
+    return { release: null, topicRows: draft.topics, resourceRows: draft.resources };
+  }
+  if (!scope.releaseId) return undefined;
   const [release] = await db
     .select({ id: courseReleases.id, version: courseReleases.version })
     .from(courseReleases)
     .where(
       and(eq(courseReleases.id, scope.releaseId), eq(courseReleases.courseId, scope.courseId)),
     );
-  if (!release) return empty;
-
+  if (!release) return undefined;
   const topicRows = await db
     .select()
     .from(releaseTopics)
@@ -102,6 +103,20 @@ export async function loadClassTopics(db: Db, scope: ClassScope, now: Date): Pro
     })
     .from(releaseResources)
     .where(eq(releaseResources.releaseId, release.id));
+  return { release, topicRows, resourceRows };
+}
+
+/**
+ * The syllabus of the class's adopted release as the caller may see it (§4). Availability comes
+ * from `computeAvailability`, as in `findReleaseTopic`, so a UI lock and a refusal cannot disagree.
+ * Reads only the adopted release (ADR-0003); a draft preview reads the draft snapshot instead.
+ */
+export async function loadClassTopics(db: Db, scope: ClassScope, now: Date): Promise<ClassTopics> {
+  const base = { cohort: scope.className, instructors: await instructorNames(db, scope) };
+  const empty = { ...base, release: null, topics: [], resume: null, reviewedCount: 0 };
+  const source = await syllabusRows(db, scope);
+  if (!source) return empty;
+  const { release, topicRows, resourceRows } = source;
 
   const forStudent = scope.role === 'student';
   const inputs: (AvailabilityTopic & { id: string })[] = topicRows.map((t) => ({
@@ -148,11 +163,15 @@ export async function loadClassTopics(db: Db, scope: ClassScope, now: Date): Pro
   return { ...base, release, topics, resume, reviewedCount };
 }
 
+type TopicRow = { id: string; topicId: string; title: string; prerequisites: string[] };
+type ResourceRow = Pick<AvailabilityTopic['resources'][number], 'tab' | 'visibility' | 'releaseAt'>;
+
 /**
- * One topic of the adopted release, found by its topic id or its release topic id, and whether
- * the caller may open it now. The same availability `loadClassTopics` computes, from only the
- * rows that decide it (the topic, its resources, its prerequisites): the gate for per-request
- * checks such as media downloads and reading positions. Null when the release has no such topic.
+ * One topic of the adopted release (of the draft snapshot for a draft preview), found by its
+ * topic id or its release topic id, and whether the caller may open it now. The same
+ * availability `loadClassTopics` computes, from only the rows that decide it (the topic, its
+ * resources, its prerequisites): the gate for per-request checks such as media downloads and
+ * reading positions. Null when there is no such topic.
  */
 export async function findReleaseTopic(
   db: Db,
@@ -160,62 +179,82 @@ export async function findReleaseTopic(
   by: { topicId: string } | { releaseTopicId: string },
   now: Date,
 ): Promise<{ topicId: string; releaseTopicId: string; open: boolean } | null> {
-  if (!scope.releaseId) return null;
-  const [topic] = await db
-    .select({
-      id: releaseTopics.id,
-      topicId: releaseTopics.topicId,
-      title: releaseTopics.title,
-      prerequisites: releaseTopics.prerequisites,
-    })
-    .from(releaseTopics)
-    .innerJoin(courseReleases, eq(courseReleases.id, releaseTopics.releaseId))
-    .where(
-      and(
-        eq(releaseTopics.releaseId, scope.releaseId),
-        eq(courseReleases.courseId, scope.courseId),
-        'topicId' in by
-          ? eq(releaseTopics.topicId, by.topicId)
-          : eq(releaseTopics.id, by.releaseTopicId),
-      ),
-    );
-  if (!topic) return null;
-  const found = { topicId: topic.topicId, releaseTopicId: topic.id };
-  if (scope.role !== 'student') return { ...found, open: true };
-  const resourceRows = await db
-    .select({
-      tab: releaseResources.tab,
-      visibility: releaseResources.visibility,
-      releaseAt: releaseResources.releaseAt,
-    })
-    .from(releaseResources)
-    .where(
-      and(
-        eq(releaseResources.releaseId, scope.releaseId),
-        eq(releaseResources.releaseTopicId, topic.id),
-      ),
-    );
-  // Prerequisites only need to exist in the release and carry a title; their resources do not
-  // bear on this topic's state.
-  const prerequisites = topic.prerequisites.length
-    ? await db
-        .select({ topicId: releaseTopics.topicId, title: releaseTopics.title })
-        .from(releaseTopics)
-        .where(
-          and(
-            eq(releaseTopics.releaseId, scope.releaseId),
-            inArray(releaseTopics.topicId, topic.prerequisites),
-          ),
-        )
-    : [];
+  const matches = (t: { id: string; topicId: string }) =>
+    'topicId' in by ? t.topicId === by.topicId : t.id === by.releaseTopicId;
+  let topic: TopicRow | undefined;
+  let resources: ResourceRow[];
+  let prerequisites: { topicId: string; title: string }[];
+  if (scope.membership.isPreview) {
+    const draft = await draftSnapshot(db, scope);
+    topic = draft.topics.find(matches);
+    if (!topic) return null;
+    const id = topic.id;
+    const needed = new Set(topic.prerequisites);
+    resources = draft.resources.filter((r) => r.releaseTopicId === id);
+    prerequisites = draft.topics.filter((t) => needed.has(t.topicId));
+  } else {
+    if (!scope.releaseId) return null;
+    [topic] = await db
+      .select({
+        id: releaseTopics.id,
+        topicId: releaseTopics.topicId,
+        title: releaseTopics.title,
+        prerequisites: releaseTopics.prerequisites,
+      })
+      .from(releaseTopics)
+      .innerJoin(courseReleases, eq(courseReleases.id, releaseTopics.releaseId))
+      .where(
+        and(
+          eq(releaseTopics.releaseId, scope.releaseId),
+          eq(courseReleases.courseId, scope.courseId),
+          'topicId' in by
+            ? eq(releaseTopics.topicId, by.topicId)
+            : eq(releaseTopics.id, by.releaseTopicId),
+        ),
+      );
+    if (!topic) return null;
+    if (scope.role !== 'student') {
+      return { topicId: topic.topicId, releaseTopicId: topic.id, open: true };
+    }
+    resources = await db
+      .select({
+        tab: releaseResources.tab,
+        visibility: releaseResources.visibility,
+        releaseAt: releaseResources.releaseAt,
+      })
+      .from(releaseResources)
+      .where(
+        and(
+          eq(releaseResources.releaseId, scope.releaseId),
+          eq(releaseResources.releaseTopicId, topic.id),
+        ),
+      );
+    // Prerequisites only need to exist in the release and carry a title; their resources do not
+    // bear on this topic's state.
+    prerequisites = topic.prerequisites.length
+      ? await db
+          .select({ topicId: releaseTopics.topicId, title: releaseTopics.title })
+          .from(releaseTopics)
+          .where(
+            and(
+              eq(releaseTopics.releaseId, scope.releaseId),
+              inArray(releaseTopics.topicId, topic.prerequisites),
+            ),
+          )
+      : [];
+  }
   const inputs: AvailabilityTopic[] = [
-    { ...topic, resources: resourceRows },
+    { ...topic, resources },
     ...prerequisites.map((p) => ({ ...p, prerequisites: [], resources: [] })),
   ];
   const completed = await completedTopics(db, scope);
   const availability = computeAvailability(inputs, { role: scope.role, now, completed });
   const state = availability.get(topic.topicId);
-  return { ...found, open: state !== undefined && topicOpens(state) };
+  return {
+    topicId: topic.topicId,
+    releaseTopicId: topic.id,
+    open: state !== undefined && topicOpens(state),
+  };
 }
 
 /** Release topic and tab of each pinned revision, to place a saved study position. */

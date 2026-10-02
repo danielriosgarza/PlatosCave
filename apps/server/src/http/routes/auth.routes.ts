@@ -3,6 +3,7 @@ import type { FastifyInstance } from 'fastify';
 import type { Deps } from '../../app';
 import { defaultDestination, safeDestination } from '../../auth/destination';
 import { EmailLinkProvider } from '../../auth/email-provider';
+import { endPreviewReturn } from '../../auth/preview';
 import { readSessionToken, SESSION_COOKIE, sessionCookieOptions } from '../../auth/sessions';
 import { userForVerifiedEmail } from '../../db/auth/accounts';
 import { createSession, revokeSession } from '../../db/auth/sessions';
@@ -47,6 +48,7 @@ export default function authRoutes(app: FastifyInstance, deps: Deps): void {
       // Rotation: whatever session this browser held before is ended, never upgraded in place.
       const previous = readSessionToken(req);
       if (previous) await revokeSession(db, previous, at);
+      await endPreviewReturn(db, req, reply, config.APP_ORIGIN, at);
       const { token } = await createSession(db, userId, { now: at, authTime: at });
       reply.setCookie(SESSION_COOKIE, token, cookieOptions);
       // Re-checked at use: a stored destination is only ever a same-origin app path.
@@ -59,6 +61,7 @@ export default function authRoutes(app: FastifyInstance, deps: Deps): void {
     const token = readSessionToken(req);
     if (token && db) await revokeSession(db, token, now());
     reply.clearCookie(SESSION_COOKIE, cookieOptions);
+    await endPreviewReturn(db, req, reply, config.APP_ORIGIN, now());
     return { signedOut: true as const };
   });
 }

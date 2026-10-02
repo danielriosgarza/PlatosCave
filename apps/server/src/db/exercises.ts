@@ -14,6 +14,7 @@ import {
 import { invalid, notFound, type Outcome } from '../outcome';
 import type { Db } from './client';
 import { studyableResource, type Tx } from './content/releases';
+import { excludePreview } from './preview';
 import {
   classMemberships,
   exerciseAttempts,
@@ -112,6 +113,7 @@ function toView(row: AttemptRow, definition: ExerciseV1, events: EventRow[]): At
     completion: row.completion,
     completedAt: row.completedAt?.toISOString() ?? null,
     startedAt: row.createdAt.toISOString(),
+    credit: definition.credit ?? null,
     steps: definition.steps.map((step) => {
       const s = state.get(step.id) ?? emptyState();
       return {
@@ -409,6 +411,10 @@ export async function completeStep(
 export async function restartExercise(db: Db, scope: ClassScope, attemptId: string, now: Date) {
   return act(db, scope, attemptId, now, async (ctx) => {
     const { tx, attempt } = ctx;
+    // A revision that is not a valid exercise cannot be opened, so it cannot be restarted on.
+    if (!(await definitionOf(tx, ctx.revisionId))) {
+      return invalid('This exercise cannot be restarted: its definition is not valid');
+    }
     await tx
       .update(exerciseAttempts)
       .set({ supersededAt: now })
@@ -450,7 +456,7 @@ export async function reviewAttempts(
       and(
         forClass(scope, exerciseAttempts),
         eq(exerciseAttempts.resourceId, resourceId),
-        eq(exerciseAttempts.isPreview, false),
+        excludePreview(exerciseAttempts.userId),
         eq(classMemberships.role, 'student'),
       ),
     )

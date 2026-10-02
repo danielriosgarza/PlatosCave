@@ -50,8 +50,13 @@ const MATHML_ATTRIBUTES = [
   'encoding',
   'fence',
   'height',
+  'largeop',
+  'linebreak',
   'linethickness',
   'lspace',
+  'mathbackground',
+  'mathcolor',
+  'mathsize',
   'mathvariant',
   'maxsize',
   'minsize',
@@ -64,6 +69,7 @@ const MATHML_ATTRIBUTES = [
   'separator',
   'stretchy',
   'symmetric',
+  'voffset',
   'width',
 ];
 
