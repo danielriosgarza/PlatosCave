@@ -699,13 +699,17 @@ describe('invitation revocation and membership audit', () => {
     expect((await accept(await newcomer('onboarded@example.test'), usedUp.body.code)).status).toBe(
       200,
     );
-    // Another manager's open invitation in the same class is not the lead's to lose.
+    // Other managers' open invitations in the same class are not the lead's to lose.
     const noorsInvite = await issue(as('noor'), ids.classA, {
       kind: 'instructor',
       email: 'noors-pick@example.test',
     });
+    const ownersInvite = await issue(as('elena'), ids.classA, {
+      kind: 'instructor',
+      email: 'owners-pick@example.test',
+    });
     const untouched = async () => {
-      for (const other of [expired, usedUp, noorsInvite]) {
+      for (const other of [expired, usedUp, noorsInvite, ownersInvite]) {
         expect(await auditFor('invite.revoke', other.body.id)).toEqual([]);
         const [row] = await testDb.db
           .select({ revokedAt: classInvites.revokedAt })
@@ -742,8 +746,8 @@ describe('invitation revocation and membership audit', () => {
         },
       }),
     ]);
-    // Expired and used-up invitations are left as they were, with no event, and so is another
-    // manager's invitation.
+    // Expired and used-up invitations are left as they were, with no event, and so are other
+    // managers' invitations.
     await untouched();
 
     expect((await call(as('elena'), 'PUT', grantUrl(lead.userId), { granted: true })).status).toBe(
@@ -767,9 +771,12 @@ describe('invitation revocation and membership audit', () => {
       after: { reason: 'issuer_removed' },
     });
     await untouched();
-    expect(
-      (await accept(await newcomer('noors-pick@example.test'), noorsInvite.body.code)).status,
-    ).toBe(200);
+    for (const [email, other] of [
+      ['noors-pick@example.test', noorsInvite],
+      ['owners-pick@example.test', ownersInvite],
+    ] as const) {
+      expect((await accept(await newcomer(email), other.body.code)).status, email).toBe(200);
+    }
   });
 
   test('A01 a course owner keeps their instructor invitations when they lose manage_members or leave the class', async () => {
