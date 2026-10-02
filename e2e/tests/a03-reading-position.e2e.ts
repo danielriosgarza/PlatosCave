@@ -38,11 +38,35 @@ test.beforeEach(async ({ page }) => {
 });
 
 const scrollTop = (page: Page) => page.evaluate(() => Math.round(window.scrollY));
-/** Waits for the debounced position save to reach the server (§8: the pause before a save). */
-const savedPosition = (page: Page) =>
-  page.waitForResponse(
-    (res) => res.url().includes('/positions') && res.request().method() === 'PUT' && res.ok(),
-  );
+/**
+ * Waits until the server holds the place the address names: the reader writes both together, so
+ * once they agree the last move has been saved (an earlier save, or one still in flight, differs).
+ */
+const placeSaved = async (page: Page, revisionId: string) => {
+  await expect
+    .poll(
+      async () => {
+        const shown = new URL(page.url()).searchParams;
+        const list = await page.request.get(
+          `/api/classes/${lab.class}/topics/${lab.topic}/readings`,
+        );
+        const { readings } = (await list.json()) as {
+          readings: { revisionId: string; position: Record<string, unknown> | null }[];
+        };
+        const saved = readings.find((r) => r.revisionId === revisionId)?.position;
+        if (!saved) return false;
+        const block = shown.get('block')?.replace(/^b:/, '');
+        const pageNumber = shown.get('page');
+        const same =
+          block !== undefined && block !== null
+            ? saved.blockId === block
+            : pageNumber !== null && saved.page === Number(pageNumber);
+        return same && String(saved.offset) === (shown.get('offset') ?? '0');
+      },
+      { timeout: 10_000 },
+    )
+    .toBe(true);
+};
 
 test('A03 a native reading returns to the scrolled place after another tab and after a reload', async ({
   page,
@@ -50,14 +74,22 @@ test('A03 a native reading returns to the scrolled place after another tab and a
   await page.goto(`${reading}?resource=${lab.nativeRevision}`);
   await expect(page.getByText('Paragraph 1.', { exact: false }).first()).toBeVisible();
 
-  const saved = savedPosition(page);
   await page.mouse.move(700, 500);
   await page.mouse.wheel(0, 3000);
   await expect.poll(() => scrollTop(page)).toBeGreaterThan(2000);
-  await saved;
+  await expect
+    .poll(async () => {
+      const before = await scrollTop(page);
+      await page.waitForTimeout(400);
+      return (await scrollTop(page)) === before;
+    })
+    .toBe(true);
+  await placeSaved(page, lab.nativeRevision);
   const placed = await scrollTop(page);
 
-  await page.getByRole('tab', { name: 'Slides' }).click();
+  // Dispatched, not clicked: a click first scrolls the page up to the tab row, which would make
+  // the top of the page the reader's place. This leaves from where the reader is.
+  await page.getByRole('tab', { name: 'Slides' }).dispatchEvent('click');
   await expect(page).toHaveURL(/\/slides/);
   await page.getByRole('tab', { name: 'Reading' }).click();
   await expect(page).toHaveURL(/\/reading/);
@@ -84,14 +116,15 @@ test('A03 a PDF reading returns to its page after another tab and after a reload
   await expect(indicator).toHaveText('Page 1 of 4');
   await expect(page.locator('.textLayer')).toContainText('Sampling paper page 1');
 
-  const saved = savedPosition(page);
   await page.getByRole('button', { name: 'Next page' }).click();
   await page.getByRole('button', { name: 'Next page' }).click();
   await expect(indicator).toHaveText('Page 3 of 4');
   await expect(page.locator('.textLayer')).toContainText('Sampling paper page 3');
-  await saved;
+  await placeSaved(page, lab.pdfRevision);
 
-  await page.getByRole('tab', { name: 'Slides' }).click();
+  // Dispatched, not clicked: a click first scrolls the page up to the tab row, which would make
+  // the top of the page the reader's place. This leaves from where the reader is.
+  await page.getByRole('tab', { name: 'Slides' }).dispatchEvent('click');
   await expect(page).toHaveURL(/\/slides/);
   await page.getByRole('tab', { name: 'Reading' }).click();
   await expect(page.getByText(/Page \d+ of 4/)).toHaveText('Page 3 of 4');
