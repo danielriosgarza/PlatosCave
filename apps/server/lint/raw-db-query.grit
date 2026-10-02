@@ -11,7 +11,10 @@
 // `for ... of` destructuring of the handle, and parameter destructuring other than through a
 // `db` key; a computed member with a non-literal key (`deps.db[name]()`); the handle reached
 // through an array (`[deps.db][0].select()`); passing the handle to an untyped helper; and a
-// dynamic import of db/client whose specifier is not a literal (`await import(path)`).
+// dynamic import of db/client whose specifier is not a plain literal (`await import(path)`,
+// `import('../db/' + 'client')`, an escape); and parameter destructuring of `createDb`,
+// including inside a default value (`{ open = ({ createDb: c }) => c() }`), which is an
+// expression, not a binding of the declaration.
 // Any other object stored under `db` is treated as the handle when a query method name is used
 // on it, or a rest element or a non-literal computed key destructures it
 // (`deps.cache.db.delete(key)`, `const { ...all } = deps.config.db` and
@@ -59,7 +62,8 @@ pattern binding_key($name, $key) {
   }
 }
 
-// A string or substitution-free template literal: its text is the key it names.
+// A string or template literal without escapes or substitutions, so its text is exactly the
+// key or path it names. An escaped spelling (`'\x73elect'`) is not one.
 pattern string_literal() {
   or {
     JsStringLiteralExpression(),
@@ -67,11 +71,15 @@ pattern string_literal() {
       $template <: not contains JsTemplateElement(),
       $template <: r"(?s)^`.*"
     }
-  }
+  } as $literal where { $literal <: not escaped() }
 }
 
-// A destructuring key that names a query method, a computed key that is not a string literal
-// (`{ [name]: s }`, which may name any of them), or a rest element that captures them all.
+pattern escaped() { r"(?s).*\\.*" }
+
+// A destructuring key that names a query method; a computed key that is not a plain literal
+// (`{ [name]: s }`, `{ ['\x73elect']: s }`) or a quoted key with an escape
+// (`{ '\x73elect': s }`), either of which may name any of them; or a rest element that
+// captures them all.
 pattern db_binding_key() {
   or {
     JsObjectBindingPatternRest(),
@@ -80,6 +88,9 @@ pattern db_binding_key() {
         string_literal(),
         JsNumberLiteralExpression()
       }
+    },
+    JsObjectBindingPatternProperty(member=JsLiteralMemberName() as $member) where {
+      $member <: escaped()
     },
     binding_key(name=db_method(), key=$_)
   }
