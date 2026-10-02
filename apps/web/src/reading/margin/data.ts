@@ -36,11 +36,16 @@ function classify(error: unknown): SendResult {
     if (error.status === 409 && body?.error === 'class_archived') {
       return { kind: 'failed', reason: 'This class is archived, so notes can no longer change.' };
     }
+    if (error.status === 404) return { kind: 'gone' };
     return { kind: 'failed', reason: null };
   }
-  // fetch rejects with a TypeError when the network is unreachable.
-  return { kind: 'offline' };
+  // fetch rejects when the request never got an answer. Only the browser saying it is offline is
+  // taken as offline (and an `online` event will follow); anything else offers Retry.
+  return offline() ? { kind: 'offline' } : { kind: 'failed', reason: null };
 }
+
+/** Browsers cap the bodies of keepalive requests at 64 KiB in all; longer text goes without. */
+const KEEPALIVE_MAX_CHARS = 16_000;
 
 const offline = () => typeof navigator !== 'undefined' && navigator.onLine === false;
 
@@ -58,9 +63,16 @@ function putAnnotation(client: QueryClient, classId: string, resourceId: string,
   });
 }
 
+function dropAnnotation(client: QueryClient, classId: string, resourceId: string, id: string) {
+  client.setQueryData<MarginList>(
+    listKey(classId, resourceId),
+    (list) => list && { ...list, annotations: list.annotations.filter((x) => x.id !== id) },
+  );
+}
+
 export interface MarginActions {
   createNote(anchor: Anchor, body: string): Promise<SendResult>;
-  saveNote(id: string, expectedRevision: number, body: string): Promise<SendResult>;
+  saveNote(id: string, expectedRevision: number, body: string, final: boolean): Promise<SendResult>;
   highlight(anchor: Anchor): Promise<SendResult>;
   remove(id: string): Promise<boolean>;
   ask(audience: 'instructor' | 'class', anchor: Anchor, body: string): Promise<Thread | SendResult>;
@@ -87,13 +99,13 @@ export function useMarginActions(classId: string, resourceId: string): MarginAct
           return classify(error);
         }
       },
-      async saveNote(id, expectedRevision, body) {
+      async saveNote(id, expectedRevision, body, final) {
         if (offline()) return { kind: 'offline' };
         try {
           const annotation = await call(saveAnnotation, {
             params: { classId, annotationId: id },
             body: { expectedRevision, body },
-            keepalive: true,
+            keepalive: final && body.length <= KEEPALIVE_MAX_CHARS,
           });
           putAnnotation(client, classId, resourceId, annotation);
           return { kind: 'ok', annotation };
@@ -120,10 +132,7 @@ export function useMarginActions(classId: string, resourceId: string): MarginAct
         } catch (error) {
           if (!(error instanceof ApiError && error.status === 404)) return false;
         }
-        client.setQueryData<MarginList>(
-          listKey(classId, resourceId),
-          (list) => list && { ...list, annotations: list.annotations.filter((x) => x.id !== id) },
-        );
+        dropAnnotation(client, classId, resourceId, id);
         return true;
       },
       async ask(audience, anchor, body) {

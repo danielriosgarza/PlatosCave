@@ -116,11 +116,13 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
     allowDrafts(userId);
     const scope = `${userId}|${classId}|${resourceId}`;
     if (restored.current === scope) return;
-    restored.current = scope;
     let current = true;
     void listDrafts(userId, classId, resourceId).then((drafts) => {
+      // Marked done only once applied: a StrictMode remount cancels the first read, not the restore.
       if (!current) return;
+      restored.current = scope;
       for (const d of drafts) {
+        const id = d.key.split('|')[3] ?? d.key;
         if (d.kind === 'ask') {
           setAsk((a) => ({
             ...a,
@@ -128,8 +130,7 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
             body: d.body,
             audience: d.audience ?? 'instructor',
           }));
-        } else if (!controllers.current.has(d.key)) {
-          const id = d.key.split('|')[3] ?? d.key;
+        } else if (!controllers.current.has(id)) {
           make(id, {
             key: id,
             anchor: d.anchor,
@@ -151,7 +152,7 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
     const scoped = userId ? draftKey(userId, classId, resourceId, key) : null;
     const controller = new NoteController(init, {
       create: (anchor, body) => actions.createNote(anchor, body),
-      save: (id, revision, body) => actions.saveNote(id, revision, body),
+      save: (id, revision, body, final) => actions.saveNote(id, revision, body, final),
       persist: (d) => {
         if (!scoped || !userId) return;
         if (!d) return void removeDraft(scoped);
@@ -410,28 +411,23 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
 
   // --- Ask drafts -------------------------------------------------------------------------------
   const setAskDraft = (patch: Partial<Ask>) => {
-    setAsk((previous) => {
-      const next = { ...previous, ...patch };
-      if (userId) {
-        const key = draftKey(userId, classId, resourceId, ASK_ID);
-        if (next.body.trim() === '') void removeDraft(key);
-        else {
-          void saveDraft({
-            key,
-            userId,
-            classId,
-            resourceId,
-            kind: 'ask',
-            annotationId: null,
-            expectedRevision: null,
-            anchor: next.anchor,
-            body: next.body,
-            audience: next.audience,
-            updatedAt: Date.now(),
-          });
-        }
-      }
-      return next;
+    const next = { ...ask, ...patch };
+    setAsk(next);
+    if (!userId) return;
+    const key = draftKey(userId, classId, resourceId, ASK_ID);
+    if (next.body.trim() === '') return void removeDraft(key);
+    void saveDraft({
+      key,
+      userId,
+      classId,
+      resourceId,
+      kind: 'ask',
+      annotationId: null,
+      expectedRevision: null,
+      anchor: next.anchor,
+      body: next.body,
+      audience: next.audience,
+      updatedAt: Date.now(),
     });
   };
   const post = async () => {
@@ -452,14 +448,14 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
   };
 
   const removeNote = async (id: string, controller: NoteController | undefined) => {
-    if (id && annotations.some((a) => a.id === id)) {
-      if (!(await actions.remove(id))) return;
-    }
+    // A save still running is waited for, so a note it creates is deleted too and cannot return.
+    const created = controller ? await controller.discard() : null;
+    const stored = created ?? (annotations.some((a) => a.id === id) ? id : null);
     if (controller) {
-      controller.dispose();
       controllers.current.delete(controller.key);
       if (userId) void removeDraft(draftKey(userId, classId, resourceId, controller.key));
     }
+    if (stored) await actions.remove(stored);
     setActiveId(null);
     touch();
   };
@@ -468,6 +464,8 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
   useEffect(() => {
     if (!focusId) return;
     const entry = notes.find((n) => n.id === focusId || n.controller?.key === focusId);
+    // A highlight has no editor to focus.
+    if (entry?.annotation?.kind === 'highlight') return setFocusId(null);
     const dom =
       focusId === ASK_ID ? 'margin-question' : `note-${entry?.controller?.key ?? focusId}`;
     const target = document.getElementById(dom);

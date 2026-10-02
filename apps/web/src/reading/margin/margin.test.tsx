@@ -41,6 +41,8 @@ interface World {
   calls: Call[];
   /** Requests for annotations and threads fail like a dropped connection. */
   network: 'up' | 'down';
+  /** Creates and saves wait for this before the server answers. */
+  hold: Promise<void> | null;
   /** Annotation saves answer this status instead of working. */
   refuse: number | null;
   count: number;
@@ -51,6 +53,7 @@ const world = (annotations: Annotation[] = [], threads: Thread[] = []): World =>
   threads,
   calls: [],
   network: 'up',
+  hold: null,
   refuse: null,
   count: 0,
 });
@@ -202,10 +205,20 @@ function api(w: World) {
     if (w.network === 'down' && /\/(annotations|threads)/.test(String(input)) && init?.method) {
       throw new TypeError('Failed to fetch');
     }
+    if (
+      w.hold &&
+      (init?.method === 'POST' || init?.method === 'PUT') &&
+      /\/annotations/.test(String(input))
+    ) {
+      await w.hold;
+    }
     return answer(input, init);
   });
   return mock;
 }
+
+/** The browser's own connectivity signal, as it reports going offline and coming back. */
+const browserOffline = (off: boolean) => vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(!off);
 
 /** What a reader does with the mouse: selects part of one block's text. */
 function select(blockId: string, from: number, to: number) {
@@ -286,7 +299,7 @@ describe('reading margin: selection and marks', () => {
     api(w);
     const user = userEvent.setup();
     await open();
-    w.network = 'down';
+    browserOffline(true);
     select(B3, 0, 13);
     await user.click(within(await toolbar()).getByRole('button', { name: 'Highlight' }));
     expect(await screen.findByText('Offline · not saved')).toBeInTheDocument();
@@ -416,7 +429,7 @@ describe('reading margin: notes and autosave', () => {
     const user = userEvent.setup();
     await open();
     await user.click(await screen.findByRole('button', { name: /^Note 1/ }));
-    w.network = 'down';
+    browserOffline(true);
     await user.type(screen.getByRole('textbox', { name: 'Your note' }), ' offline');
     expect(
       await screen.findByText('Offline · changes on this device', {}, { timeout: 4000 }),
@@ -425,11 +438,90 @@ describe('reading margin: notes and autosave', () => {
     const kept = await listDrafts(SAM_ID, CLASS_A, RES);
     expect(kept.map((d) => d.body)).toEqual(['Draft offline']);
 
-    w.network = 'up';
+    browserOffline(false);
     window.dispatchEvent(new Event('online'));
     expect(await screen.findByText('Saved')).toBeInTheDocument();
     expect(w.annotations[0]?.body).toBe('Draft offline');
     await waitFor(async () => expect(await listDrafts(SAM_ID, CLASS_A, RES)).toEqual([]));
+  });
+
+  it('A03 a request that gets no answer while the browser says it is online offers Retry, not Offline', async () => {
+    const w = world([noteOf(uuid(1), textAnchor(B3, 0, 5, P3), 'Draft')]);
+    api(w);
+    const user = userEvent.setup();
+    await open();
+    await user.click(await screen.findByRole('button', { name: /^Note 1/ }));
+    w.network = 'down';
+    await user.type(screen.getByRole('textbox', { name: 'Your note' }), '!');
+    await user.tab();
+    const retry = await screen.findByRole('button', { name: 'Retry' });
+    expect(screen.queryByText(/^Offline/)).toBeNull();
+    w.network = 'up';
+    await user.click(retry);
+    expect(await screen.findByText('Saved')).toBeInTheDocument();
+  });
+
+  it('A03 deleting a new note while its first save is in flight leaves nothing on the server, in the list or on the device', async () => {
+    const w = world();
+    const mock = api(w);
+    const sent = (method: string) =>
+      mock.mock.calls.some(([, init]) => (init as RequestInit | undefined)?.method === method);
+    const user = userEvent.setup();
+    await open();
+    select(B3, 0, 13);
+    await user.click(within(await toolbar()).getByRole('button', { name: 'Note' }));
+    let release: () => void = () => {};
+    w.hold = new Promise((resolve) => {
+      release = resolve;
+    });
+    await user.type(await screen.findByRole('textbox', { name: 'Your note' }), 'Changed my mind');
+    // Delete blurs the editor first, which sends the create; the answer is still pending.
+    await user.click(screen.getByRole('button', { name: 'Delete note' }));
+    await waitFor(() => expect(sent('POST')).toBe(true));
+    release();
+    await waitFor(() => expect(w.calls.some((c) => c.method === 'DELETE')).toBe(true));
+    await waitFor(() => expect(w.annotations).toEqual([]));
+    await waitFor(() => expect(marks()).toEqual([]));
+    expect(screen.queryByText('Changed my mind')).toBeNull();
+    expect(screen.queryByRole('textbox', { name: 'Your note' })).toBeNull();
+    expect(await listDrafts(SAM_ID, CLASS_A, RES)).toEqual([]);
+  });
+
+  it('A03 deleting a note while its save is in flight removes it for good and keeps no draft', async () => {
+    const w = world([noteOf(uuid(1), textAnchor(B3, 0, 5, P3), 'Draft')]);
+    const mock = api(w);
+    const user = userEvent.setup();
+    await open();
+    await user.click(await screen.findByRole('button', { name: /^Note 1/ }));
+    let release: () => void = () => {};
+    w.hold = new Promise((resolve) => {
+      release = resolve;
+    });
+    await user.type(screen.getByRole('textbox', { name: 'Your note' }), ' more');
+    await user.click(screen.getByRole('button', { name: 'Delete note' }));
+    await waitFor(() =>
+      expect(
+        mock.mock.calls.some(([, i]) => (i as RequestInit | undefined)?.method === 'PUT'),
+      ).toBe(true),
+    );
+    release();
+    await waitFor(() => expect(w.annotations).toEqual([]));
+    await waitFor(() => expect(marks()).toEqual([]));
+    expect(screen.queryByText(/Draft more/)).toBeNull();
+    expect(await listDrafts(SAM_ID, CLASS_A, RES)).toEqual([]);
+  });
+
+  it('A03 a note deleted on another device is reported once and leaves no draft behind', async () => {
+    const w = world([noteOf(uuid(1), textAnchor(B3, 0, 5, P3), 'Draft')]);
+    api(w);
+    const user = userEvent.setup();
+    await open();
+    await user.click(await screen.findByRole('button', { name: /^Note 1/ }));
+    w.annotations = [];
+    await user.type(screen.getByRole('textbox', { name: 'Your note' }), '!');
+    await user.tab();
+    expect(await screen.findByText(/This note was deleted elsewhere/)).toBeInTheDocument();
+    expect(await listDrafts(SAM_ID, CLASS_A, RES)).toEqual([]);
   });
 
   it('A03 a refused save says Could not save with Retry, keeps the text, and retries on request', async () => {
@@ -600,13 +692,37 @@ describe('reading margin: Ask and the audience', () => {
     expect(w.threads).toEqual([]); // never posted on its own
   });
 
+  it('A05 restores an unsent question under React StrictMode, which mounts effects twice', async () => {
+    const w = world();
+    api(w);
+    await saveDraft({
+      key: draftKey(SAM_ID, CLASS_A, RES, 'ask'),
+      userId: SAM_ID,
+      classId: CLASS_A,
+      resourceId: RES,
+      kind: 'ask',
+      annotationId: null,
+      expectedRevision: null,
+      anchor: { kind: 'none' },
+      body: 'Left unsent yesterday',
+      audience: 'class',
+      updatedAt: Date.now(),
+    });
+    const user = userEvent.setup();
+    renderApp(READING, { strict: true });
+    await screen.findByRole('button', { name: 'My notes' });
+    await user.click(screen.getByRole('button', { name: /^Discussion/ }));
+    expect(await screen.findByDisplayValue('Left unsent yesterday')).toBeInTheDocument();
+    expect(screen.getByRole('combobox', { name: 'Visible to' })).toHaveValue('class');
+  });
+
   it('A05 a question that cannot be posted keeps its text and offers Retry', async () => {
     const w = world();
     api(w);
     const user = userEvent.setup();
     await open();
     await user.click(screen.getByRole('button', { name: /^Discussion/ }));
-    w.network = 'down';
+    browserOffline(true);
     await user.type(
       screen.getByRole('textbox', { name: 'Comment or question' }),
       'Is this on the test?',
@@ -615,7 +731,7 @@ describe('reading margin: Ask and the audience', () => {
     expect(
       await screen.findByText(/^Offline · your text is kept on this device/),
     ).toBeInTheDocument();
-    w.network = 'up';
+    browserOffline(false);
     await user.click(screen.getByRole('button', { name: 'Retry' }));
     expect(await screen.findByText('You → Instructor')).toBeInTheDocument();
   });

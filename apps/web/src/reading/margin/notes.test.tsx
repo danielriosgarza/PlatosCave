@@ -37,7 +37,7 @@ function setup(init: Partial<ConstructorParameters<typeof NoteController>[0]> = 
       sent.push(`create:${body}`);
       return reply(body);
     },
-    save: async (id, rev, body) => {
+    save: async (id, rev, body, _final) => {
       sent.push(`save:${id}@${rev}:${body}`);
       return reply(body);
     },
@@ -209,5 +209,64 @@ describe('note autosave', () => {
     controller.dispose();
     await vi.advanceTimersByTimeAsync(0);
     expect(sent).toEqual(['create:Pending']);
+  });
+});
+
+describe('deleting a note', () => {
+  it('A03 waits for a create in flight, reports the id it made and lets nothing of it show', async () => {
+    const { controller, acknowledged, persisted } = setup();
+    let release: (r: SendResult) => void = () => {};
+    const deps = (controller as unknown as { deps: NoteDeps }).deps;
+    deps.create = () =>
+      new Promise((resolve) => {
+        release = resolve;
+      });
+    controller.edit('Short-lived');
+    controller.blur();
+    await vi.advanceTimersByTimeAsync(0);
+    const removal = controller.discard();
+    release({ kind: 'ok', annotation: annotation(1, 'Short-lived', 'made-meanwhile') });
+    expect(await removal).toBe('made-meanwhile');
+    expect(acknowledged).toEqual([]);
+    expect(persisted.at(-1)).toBeNull();
+    controller.dispose();
+    await vi.advanceTimersByTimeAsync(AUTOSAVE_MS * 2);
+    expect(controller.state.status).toBe('saving'); // never reports a result for a deleted note
+  });
+
+  it('A03 a pending timer is cancelled, so nothing is created for a deleted draft', async () => {
+    const { controller, sent } = setup();
+    controller.edit('Never sent');
+    expect(await controller.discard()).toBeNull();
+    controller.dispose();
+    await vi.advanceTimersByTimeAsync(AUTOSAVE_MS * 2);
+    expect(sent).toEqual([]);
+  });
+
+  it('A03 a save that finds the note gone drops the draft instead of retrying forever', async () => {
+    const { controller, queue, persisted } = setup({ annotationId: 'n-1', revision: 1, body: 'x' });
+    queue({ kind: 'gone' });
+    controller.edit('xy');
+    controller.blur();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(controller.state.status).toBe('failed');
+    expect(persisted.at(-1)).toBeNull();
+  });
+
+  it('only the flush as the reading goes away is sent so it can outlive the page', async () => {
+    const finals: boolean[] = [];
+    const { controller } = setup({ annotationId: 'n-1', revision: 1, body: 'x' });
+    const deps = (controller as unknown as { deps: NoteDeps }).deps;
+    deps.save = async (_id, _rev, body, final) => {
+      finals.push(final);
+      return { kind: 'ok', annotation: annotation(2, body) };
+    };
+    controller.edit('xy');
+    controller.blur();
+    await vi.advanceTimersByTimeAsync(0);
+    controller.edit('xyz');
+    controller.dispose();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(finals).toEqual([false, true]);
   });
 });

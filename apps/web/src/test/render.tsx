@@ -1,6 +1,7 @@
 import { QueryClientProvider } from '@tanstack/react-query';
 import { createMemoryHistory, createRouter, RouterProvider } from '@tanstack/react-router';
 import { render } from '@testing-library/react';
+import { StrictMode } from 'react';
 import { vi } from 'vitest';
 import { routeTree } from '../routeTree.gen';
 import { createQueryClient } from '../session/revocation';
@@ -145,17 +146,18 @@ export const signedInWithTopics =
         ? { status: 200, body: topics }
         : { status: 404, body: {} };
 
-export function renderApp(url: string) {
+export function renderApp(url: string, { strict = false }: { strict?: boolean } = {}) {
   const queryClient = createQueryClient({ retry: false });
   const router = createRouter({
     routeTree,
     context: { queryClient },
     history: createMemoryHistory({ initialEntries: [url] }),
   });
-  const view = render(
+  const app = (
     <QueryClientProvider client={queryClient}>
       <RouterProvider router={router} />
-    </QueryClientProvider>,
+    </QueryClientProvider>
   );
+  const view = render(strict ? <StrictMode>{app}</StrictMode> : app);
   return { router, queryClient, ...view };
 }
