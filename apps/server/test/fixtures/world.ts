@@ -3,6 +3,8 @@ import { and, eq } from 'drizzle-orm';
 import type { ClassManagerScope, ClassScope, CourseScope, UserScope } from '../../src/auth/scope';
 import { sessionCookieHeader } from '../../src/auth/sessions';
 import { DEV_SESSION_SECRET } from '../../src/config';
+import { extractPdfText } from '../../src/content/pdf-text';
+import { renderReading } from '../../src/content/reading';
 import { createSession } from '../../src/db/auth/sessions';
 import type { Db } from '../../src/db/client';
 import { adoptRelease } from '../../src/db/content/adoption';
@@ -14,8 +16,12 @@ import {
   createUser,
 } from '../../src/db/identity';
 import { acceptInstructorInvite, issueInvite, joinWithCode } from '../../src/db/invites';
+import { writeDerivedOutputs } from '../../src/db/jobs/derived';
 import { setManageMembers, setPublisher } from '../../src/db/members';
 import { classes, resourceRevisions, resources, topics, users } from '../../src/db/schema';
+import { storeCourseObject } from '../../src/storage/objects';
+import type { Storage } from '../../src/storage/storage';
+import { makePdf } from './pdf';
 
 /** Deterministic fixture ids: `…-4000-8000-0000000000NN`. */
 const id = (n: number) => `00000000-0000-4000-8000-${n.toString().padStart(12, '0')}`;
@@ -43,6 +49,29 @@ export const ids = {
   samplingQuizV1: id(502),
   answerKeyV1: id(503),
   releaseV1: id(601), // Statistical thinking v1, adopted by classes A and B
+} as const;
+
+/**
+ * A separate course with ingested readings for the browser tests of the Reading tab (A03): the
+ * e2e server runs without a worker, so `seedReadingLab` writes the derived outputs itself. Kept
+ * apart from the standard world so the counts and ids other tests assert do not move.
+ */
+export const readingLab = {
+  author: id(21), // owns the course and teaches the class
+  reader: id(22), // student in the class
+  course: id(111),
+  class: id(211),
+  topic: id(311),
+  native: id(411), // a long native reading
+  pdf: id(412), // a four-page PDF reading
+  nativeRevision: id(511),
+  pdfRevision: id(512),
+  release: id(611),
+  authorEmail: 'lab-author@example.test',
+  readerEmail: 'lab-reader@example.test',
+  /** Paragraphs in the long native reading, each long enough to make the page scroll. */
+  paragraphs: 40,
+  pdfPages: 4,
 } as const;
 
 export type PersonName =
@@ -167,10 +196,11 @@ export async function buildWorld(db: Db, now = new Date()): Promise<World> {
  * Builds the world unless it exists (the e2e fixture route, ADR-0006); true when it built it.
  * Throws on a half-built world: adopting v1 in class B is the build's last data step.
  */
-export async function ensureWorld(db: Db, now: Date): Promise<boolean> {
+export async function ensureWorld(db: Db, now: Date, storage?: Storage): Promise<boolean> {
   const [started] = await db.select({ id: users.id }).from(users).where(eq(users.id, ids.elena));
   if (!started) {
     await buildWorld(db, now);
+    if (storage) await seedReadingLab(db, storage, now);
     return true;
   }
   const [done] = await db
@@ -178,7 +208,131 @@ export async function ensureWorld(db: Db, now: Date): Promise<boolean> {
     .from(classes)
     .where(and(eq(classes.id, ids.classB), eq(classes.releaseId, ids.releaseV1)));
   if (!done) throw new Error('the fixture world is half built; reset the e2e database');
+  if (storage) {
+    // A world built without the reading lab (a test that calls buildWorld) gets it on first use.
+    const [started] = await db
+      .select({ id: users.id })
+      .from(users)
+      .where(eq(users.id, readingLab.author));
+    if (!started) {
+      await seedReadingLab(db, storage, now);
+      return false;
+    }
+    const [lab] = await db
+      .select({ id: classes.id })
+      .from(classes)
+      .where(and(eq(classes.id, readingLab.class), eq(classes.releaseId, readingLab.release)));
+    if (!lab) throw new Error('the reading fixtures are half built; reset the e2e database');
+  }
   return false;
+}
+
+/**
+ * Adds the reading lab: course *Reading lab* with one topic holding a long native reading and a
+ * four-page PDF reading, both with their derived outputs written as the ingestion job would,
+ * published and adopted by one class with one student. The last data step is adopting the release.
+ */
+export async function seedReadingLab(db: Db, storage: Storage, now: Date): Promise<void> {
+  const lab = readingLab;
+  await createUser(db, { id: lab.author, email: lab.authorEmail, name: 'Lena Fischer' });
+  await createUser(db, { id: lab.reader, email: lab.readerEmail, name: 'Rui Alves' });
+  await createCourse(db, { id: lab.course, title: 'Reading lab', ownerId: lab.author });
+  const owner = asCourseScope(lab.course, lab.author);
+  await createClass(db, owner, { id: lab.class, name: 'Reading lab 2026' });
+  const manager = asManagerScope(lab.class, lab.course, lab.author);
+  const issued = await issueInvite(db, manager, { kind: 'enrolment' }, now);
+  if (!issued.ok) throw new Error(`lab code: ${issued.reason}`);
+  const joined = await joinWithCode(
+    db,
+    asUserScope(lab.reader, lab.readerEmail),
+    issued.invite.code,
+    now,
+  );
+  if (!joined.ok) throw new Error(`lab join: ${joined.reason}`);
+
+  await db.insert(topics).values({
+    id: lab.topic,
+    courseId: lab.course,
+    position: 0,
+    title: 'Long readings',
+    createdBy: lab.author,
+  });
+  const markdown = [
+    '# Long reading',
+    ...Array.from(
+      { length: lab.paragraphs },
+      (_, i) =>
+        `Paragraph ${i + 1}. ${'Samples of different sizes tell different stories about the same population. '.repeat(6)}`,
+    ),
+  ].join('\n\n');
+  const rendered = renderReading(markdown, 'markdown', {});
+  const pdfBytes = makePdf(
+    Array.from({ length: lab.pdfPages }, (_, i) => `Sampling paper page ${i + 1}`),
+  );
+  const stored = await storeCourseObject(
+    db,
+    storage,
+    owner,
+    Buffer.from(pdfBytes),
+    'application/pdf',
+  );
+  const ready = {
+    state: 'ready' as const,
+    job: 'reading.ingest',
+    jobId: null,
+    updatedAt: now.toISOString(),
+  };
+  const readings = [
+    {
+      id: lab.native,
+      revisionId: lab.nativeRevision,
+      type: 'reading_native' as const,
+      title: 'Long reading',
+      position: 0,
+      content: { markdown },
+      objectKeys: [] as string[],
+      derived: { ...rendered },
+    },
+    {
+      id: lab.pdf,
+      revisionId: lab.pdfRevision,
+      type: 'reading_pdf' as const,
+      title: 'Sampling paper',
+      position: 1,
+      content: { title: 'Sampling paper', objectKey: stored.key },
+      objectKeys: [stored.key],
+      derived: { ...(await extractPdfText(pdfBytes)) },
+    },
+  ];
+  for (const { revisionId, content, objectKeys, derived, ...resource } of readings) {
+    await db
+      .insert(resources)
+      .values({ ...resource, courseId: lab.course, topicId: lab.topic, createdBy: lab.author });
+    await db.insert(resourceRevisions).values({
+      id: revisionId,
+      resourceId: resource.id,
+      courseId: lab.course,
+      type: resource.type,
+      content,
+      ...(resource.type === 'reading_pdf' && { accessibleAlternative: { text: resource.title } }),
+      objectKeys,
+      contentHash: sha256(content),
+      createdBy: lab.author,
+    });
+    await db
+      .update(resources)
+      .set({ headRevisionId: revisionId })
+      .where(eq(resources.id, resource.id));
+    await writeDerivedOutputs(db, owner, revisionId, derived, ready);
+  }
+
+  const published = await publishRelease(db, owner, { id: lab.release });
+  if (!published.ok) throw new Error(`lab release: ${JSON.stringify(published.report)}`);
+  const adopted = await adoptRelease(db, asClassScope(lab.class, lab.course, lab.author), {
+    releaseId: lab.release,
+    expectedReleaseId: null,
+  });
+  if (!adopted.ok) throw new Error(`lab adoption: ${adopted.reason}`);
 }
 
 /**
