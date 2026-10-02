@@ -156,7 +156,11 @@ export function PdfReading({ url, pageCount, renew, initial, onPosition }: Props
     };
     const onFullScreen = () => {
       full = inFullScreen(sheet.current);
-      if (settledAt.current !== null) scrollToShare(share.current);
+      if (settledAt.current === null) return;
+      scrollToShare(share.current);
+      // The stage width changes with full screen, so the page is drawn again at a new height;
+      // the draw applies the share once more against that height.
+      restore.current = share.current;
     };
     for (const type of READER_INPUT) window.addEventListener(type, input, { passive: true });
     const stopScroll = onScrollerScroll(() => sheet.current, onScroll);

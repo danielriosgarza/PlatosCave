@@ -140,10 +140,11 @@ function OpenTopic({
           tabs={TOPIC_TABS}
           selected={tab}
           panelId="pc-content"
-          // Moving between a topic's tabs keeps the scroll: a reader restores its own place, and
-          // a reset to the top after it has done so would move the page under it.
+          // Arriving at Reading keeps the scroll: the reader restores its own place, and a reset
+          // to the top after it has done so would move the page under it. Other tabs open at
+          // the top.
           onSelect={(next) =>
-            navigate({ params: { classId, topicId, tab: next }, resetScroll: false })
+            navigate({ params: { classId, topicId, tab: next }, resetScroll: next !== 'reading' })
           }
         />
       )}

@@ -83,8 +83,11 @@ async function releasedRevision(
     );
   if (!row) return undefined;
   if (scope.role === 'student' && !openToStudent(row, now)) return undefined;
-  const topic = await findReleaseTopic(db, scope, { releaseTopicId: row.releaseTopicId }, now);
-  if (!topic?.open) return undefined;
+  // The row came from the class release, so for an instructor its topic exists and is open.
+  if (scope.role === 'student') {
+    const topic = await findReleaseTopic(db, scope, { releaseTopicId: row.releaseTopicId }, now);
+    if (!topic?.open) return undefined;
+  }
   const { visibility: _visibility, releaseAt: _releaseAt, ...reading } = row;
   return reading;
 }

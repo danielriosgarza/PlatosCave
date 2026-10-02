@@ -66,13 +66,8 @@ function purifier() {
       node.setAttribute('disabled', '');
     }
   });
-  instance = purify;
-  return purify;
-}
-
-/** The reading HTML with anything outside the reading allow-list removed. */
-export function sanitizeReading(html: string): string {
-  return purifier().sanitize(html, {
+  // Set once: a configuration passed to each `sanitize` call is parsed again every time.
+  purify.setConfig({
     ALLOWED_TAGS: [...READING_HTML_TAGS],
     ALLOWED_ATTR: attributes,
     ADD_URI_SAFE_ATTR: URI_SAFE,
@@ -83,4 +78,11 @@ export function sanitizeReading(html: string): string {
     // Ids are already prefixed by the server; DOMPurify's own prefixing would add a second one.
     SANITIZE_NAMED_PROPS: false,
   });
+  instance = purify;
+  return purify;
+}
+
+/** The reading HTML with anything outside the reading allow-list removed. */
+export function sanitizeReading(html: string): string {
+  return purifier().sanitize(html);
 }

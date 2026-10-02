@@ -50,7 +50,10 @@ export function ReadingTab({ classId, courseId, topicId, instructor, search, onS
   const shownId = chosen?.revisionId;
   // biome-ignore lint/correctness/useExhaustiveDependencies: `onSearch` is a new function every render
   useEffect(() => {
-    if (shownId && search.resource === undefined) onSearch({ resource: shownId }, 'replace');
+    // Keeps any place the address already names: it is what this entry restores.
+    if (shownId && search.resource === undefined) {
+      onSearch({ ...search, resource: shownId }, 'replace');
+    }
   }, [shownId, search.resource]);
 
   if (!list.data) {
@@ -156,7 +159,8 @@ interface LeftAt {
   from: string;
   place: ReadingPosition;
 }
-const leftAtKey = (classId: string, revisionId: string) => ['reading', 'left', classId, revisionId];
+const LEFT_AT = ['reading', 'left'];
+const leftAtKey = (classId: string, revisionId: string) => [...LEFT_AT, classId, revisionId];
 
 interface ViewProps {
   classId: string;
@@ -226,6 +230,8 @@ function ReadingView({ classId, topicId, reading, initial, addressed, onSearch }
       // An address without a place falls back to the saved place, which this save updates.
       const from = inAddress.current;
       if (from !== 'null' && from !== JSON.stringify(position)) {
+        // Nothing observes it, so without this the cache would drop it after the default gcTime.
+        queryClient.setQueryDefaults(LEFT_AT, { gcTime: Number.POSITIVE_INFINITY });
         queryClient.setQueryData<LeftAt>(left, { from, place: position });
       }
     },

@@ -531,7 +531,7 @@ describe('reading hardening', () => {
     const user = userEvent.setup();
     const world = makeWorld(two());
     const fetchMock = api(world);
-    const { router } = renderApp(READING);
+    const { router, queryClient } = renderApp(READING);
     await screen.findByText('Every sample tells a slightly different story.');
     // A pause on b-one: saved, and written into this entry's address.
     scrollThrough({ 'b-title': -120, 'b-one': -60, 'b-two': 40, 'b-code': 140 });
@@ -546,6 +546,9 @@ describe('reading hardening', () => {
       position: { blockId: 'b-code', offset: Math.round(length['b-code'] * 0.4) },
     });
     for (const [, init] of putsOf(fetchMock)) expect(init?.keepalive).toBe(true);
+    // Nothing observes the record, so it must outlive the cache's default five minutes.
+    const [record] = queryClient.getQueryCache().findAll({ queryKey: ['reading', 'left'] });
+    expect(record?.gcTime).toBe(Number.POSITIVE_INFINITY);
 
     scrollTo.mockClear();
     layout.tops = { 'b-title': 0, 'b-one': 60, 'b-two': 160, 'b-code': 260 };
@@ -668,5 +671,83 @@ describe('reading hardening', () => {
     Object.defineProperty(stage, 'clientWidth', { configurable: true, value: 480 });
     watching?.callback();
     await waitFor(() => expect(doc.renderPage).toHaveBeenLastCalledWith(1, expect.anything(), 480));
+  });
+
+  it('A03 other tabs open at the top; only arriving at Reading keeps the scroll for the reader', async () => {
+    const user = userEvent.setup();
+    api(makeWorld(two()));
+    renderApp(READING);
+    await screen.findByText('Every sample tells a slightly different story.');
+    const reset = () =>
+      scrollTo.mock.calls.filter(([arg]) => (arg as { left?: number }).left === 0).length;
+    scrollTo.mockClear();
+    await user.click(screen.getByRole('tab', { name: 'Exercises' }));
+    await waitFor(() => expect(reset()).toBeGreaterThan(0));
+    scrollTo.mockClear();
+    await user.click(screen.getByRole('tab', { name: 'Reading' }));
+    await screen.findByText('Every sample tells a slightly different story.');
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(reset()).toBe(0);
+  });
+
+  it('A03 a place in an address without a reading stays in the address once the reading is added', async () => {
+    api(makeWorld(two()));
+    const { router } = renderApp(`${READING}?block=b:b-two&offset=5`);
+    await screen.findByText('Wider samples vary less than narrow ones do.');
+    await waitFor(() =>
+      expect(router.state.location.search).toMatchObject({
+        resource: REV_NATIVE,
+        block: 'b:b-two',
+        offset: 5,
+      }),
+    );
+  });
+
+  it('A03 entering full screen redraws the PDF page at the new width and keeps the share of it', async () => {
+    const observed: { target: Element; callback: () => void }[] = [];
+    vi.stubGlobal(
+      'ResizeObserver',
+      class {
+        constructor(private readonly callback: () => void) {}
+        observe(target: Element) {
+          observed.push({ target, callback: this.callback });
+        }
+        disconnect() {}
+      },
+    );
+    const doc = pdfDocument();
+    openPdf.mockResolvedValue(doc);
+    api(
+      makeWorld({
+        lastRevisionId: REV_PDF,
+        readings: [summary(REV_PDF, 'Sampling paper', 'pdf', { page: 2, offset: 500 })],
+      }),
+    );
+    renderApp(READING);
+    expect(await screen.findByText('Page 2 of 3')).toBeVisible();
+    await waitFor(() => expect(scrollTo).toHaveBeenCalledWith({ top: 50 }));
+    const workspace = document.querySelector('main');
+    const stage = screen.getByRole('navigation', { name: 'PDF pages' }).parentElement;
+    if (!workspace || !stage) throw new Error('no workspace');
+    const workspaceScroll = vi.fn();
+    workspace.scrollTo = workspaceScroll as never;
+    Object.defineProperty(document, 'fullscreenElement', {
+      configurable: true,
+      get: () => workspace,
+    });
+    try {
+      document.dispatchEvent(new Event('fullscreenchange'));
+      // The sheet is taller once drawn wider: the share is applied again after the redraw.
+      layout.height = 160;
+      Object.defineProperty(stage, 'clientWidth', { configurable: true, value: 900 });
+      for (const o of observed.filter((x) => x.target === stage)) o.callback();
+      await waitFor(() =>
+        expect(doc.renderPage).toHaveBeenLastCalledWith(2, expect.anything(), 900),
+      );
+      await waitFor(() => expect(workspaceScroll).toHaveBeenLastCalledWith({ top: 80 }));
+    } finally {
+      Reflect.deleteProperty(document, 'fullscreenElement');
+      layout.height = 100;
+    }
   });
 });
