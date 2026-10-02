@@ -1,6 +1,7 @@
 import cookie from '@fastify/cookie';
 import Fastify from 'fastify';
 import { expect, expectTypeOf, test } from 'vitest';
+import type { forCourse } from '../db/scoped';
 import {
   assertRecentAuth,
   type ClassManagerScope,
@@ -39,10 +40,16 @@ test('the session token is read from the signed pc_session cookie only', async (
   await app.close();
 });
 
-test('A01 only course and class-manager scopes reach course rows, not a member’s class scope', () => {
+// These assertions are checked by `pnpm typecheck` only: at run time `expectTypeOf` does nothing,
+// so this test passes under `pnpm test` whatever the types say. The membership integration tests
+// carry A01 behaviourally.
+test('only course and class-manager scopes reach course rows, not a member’s class scope', () => {
   expectTypeOf<CourseScope>().toExtend<CourseContext>();
   expectTypeOf<ClassManagerScope>().toExtend<CourseContext>();
   expectTypeOf<ClassScope>().not.toExtend<CourseContext>();
-  // A class scope reads the course draft only once narrowed to a draft preview (ADR-0003).
+  // A class scope reads the course draft only once narrowed to a draft preview (ADR-0003), and
+  // a draft preview reads only the draft syllabus (`forDraftCourse`), never any course row.
   expectTypeOf<ClassScope>().not.toExtend<DraftPreviewScope>();
+  expectTypeOf<DraftPreviewScope>().not.toExtend<CourseContext>();
+  expectTypeOf<DraftPreviewScope>().not.toExtend<Parameters<typeof forCourse>[0]>();
 });
