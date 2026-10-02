@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { createFileRoute, Link } from '@tanstack/react-router';
+import { createFileRoute, Link, redirect } from '@tanstack/react-router';
 import { useState } from 'react';
 import { canEdit, grantLabel } from '../../authoring/grants';
 import page from '../../components/Page.module.css';
@@ -7,7 +7,7 @@ import { CourseMark } from '../../courses/CourseMark';
 import styles from '../../courses/Courses.module.css';
 import { CreateCourseForm, Dialog, type Joined, JoinForm } from '../../courses/Dialogs';
 import { type Cards, type ClassCard, type CourseCard, coursesQuery } from '../../courses/queries';
-import { useSession } from '../../session/useSession';
+import { loadSession, usableClasses, useSession } from '../../session/useSession';
 
 type View = 'student' | 'instructor';
 type Filter = 'all' | 'progress' | 'archived';
@@ -21,6 +21,14 @@ export const Route = createFileRoute('/_authed/courses/')({
           ? 'student'
           : undefined,
   }),
+  // A draft preview studies one class and can join none: its Courses page is that class.
+  beforeLoad: async ({ context }) => {
+    const me = await loadSession(context.queryClient);
+    const preview = me?.user.kind === 'preview' ? usableClasses(me)[0] : undefined;
+    if (preview) {
+      throw redirect({ to: '/classes/$classId/topics', params: { classId: preview.classId } });
+    }
+  },
   component: Courses,
 });
 

@@ -1,10 +1,9 @@
 import { and, eq, sql } from 'drizzle-orm';
 import { type ClassScope, type DraftPreviewScope, isDraftPreview } from '../../auth/scope';
-import { openToStudent } from '../../content/availability';
 import { findReleaseTopic } from '../classTopics';
 import type { Db } from '../client';
 import { releaseResources, resourceRevisions, storageObjects } from '../schema';
-import { draftSnapshot, studyOpen } from './releases';
+import { type DraftSnapshot, draftSnapshot, studyableDraft, studyOpen } from './releases';
 
 /**
  * One object of a resource revision pinned in the class's adopted release, if the caller may
@@ -53,10 +52,16 @@ export async function findReleasedObject(
 }
 
 /** The same availability the topic list shows: a locked topic's media is not downloadable (§4). */
-async function topicOpens(db: Db, scope: ClassScope, releaseTopicId: string, now: Date) {
+async function topicOpens(
+  db: Db,
+  scope: ClassScope,
+  releaseTopicId: string,
+  now: Date,
+  draft?: DraftSnapshot,
+) {
   // The row came from the caller's release or draft, so for an instructor its topic is open.
   if (scope.role !== 'student') return true;
-  return (await findReleaseTopic(db, scope, { releaseTopicId }, now))?.open ?? false;
+  return (await findReleaseTopic(db, scope, { releaseTopicId }, now, draft))?.open ?? false;
 }
 
 /**
@@ -70,9 +75,10 @@ async function findDraftObject(
   key: string,
   now: Date,
 ): Promise<{ key: string; contentType: string; title: string } | null> {
+  // Read once: the topic gate below judges availability from the same snapshot.
   const draft = await draftSnapshot(db, scope);
-  const resource = draft.resources.find(
-    (r) => r.revisionId === revisionId && (scope.role !== 'student' || openToStudent(r, now)),
+  const resource = (await studyableDraft(db, scope, now, draft)).find(
+    (r) => r.revisionId === revisionId,
   );
   if (!resource) return null;
   const [row] = await db
@@ -90,6 +96,6 @@ async function findDraftObject(
       ),
     )
     .limit(1);
-  if (!row || !(await topicOpens(db, scope, resource.releaseTopicId, now))) return null;
+  if (!row || !(await topicOpens(db, scope, resource.releaseTopicId, now, draft))) return null;
   return { ...row, title: resource.title };
 }

@@ -1,6 +1,8 @@
+import { updateTopic } from '@parallax/contracts/routes/drafts';
 import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { ApiError, call } from '../api/client';
 import {
   CLASS_A,
   CLASS_B,
@@ -134,6 +136,8 @@ describe('Preview student view in the topic editor', () => {
     ],
   };
   const grant = { courseId: COURSE, title: 'Statistical thinking', owner: false, editor: true };
+  // The server reads the topic as the preview student: here, the tab of its saved position.
+  const landing = `/classes/${CLASS_B}/topics/${T_SAMPLING}/tests`;
 
   function editorApi(me: ReturnType<typeof makeMe>, previews: unknown[]) {
     return stubApi((url, init) => {
@@ -149,6 +153,7 @@ describe('Preview student view in the topic editor', () => {
             classId: CLASS_B,
             preview: { id: PREVIEW_ID, name: 'Preview student' },
             expiresAt: stamp,
+            landing,
           },
         };
       }
@@ -156,7 +161,7 @@ describe('Preview student view in the topic editor', () => {
     });
   }
 
-  it('A26 starts the preview of the edited topic in the class the instructor teaches', async () => {
+  it('A26 starts the preview of the edited topic and opens the tab the server computed', async () => {
     const previews: unknown[] = [];
     editorApi(
       makeMe({
@@ -168,20 +173,103 @@ describe('Preview student view in the topic editor', () => {
     renderApp(editor);
     expect(await screen.findByText('as a student of Autumn 2026 B')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Preview student view' }));
-    await waitFor(() =>
-      expect(leavePage).toHaveBeenCalledWith(`/classes/${CLASS_B}/topics/${T_SAMPLING}/reading`),
-    );
+    await waitFor(() => expect(leavePage).toHaveBeenCalledWith(landing));
     expect(previews).toEqual([{ classId: CLASS_B, topicId: T_SAMPLING }]);
   });
 
-  it('A26 an editor who teaches no class of the course is told why there is no preview', async () => {
+  it('A26 an editor who teaches no class of the course is told so, with no preview button', async () => {
     editorApi(makeMe({ courses: [{ ...grant, owner: true, publisher: true }] }), []);
     renderApp(editor);
-    expect(
-      await screen.findByText(
-        'Student preview opens in a class you teach; you teach no class of this course.',
-      ),
-    ).toBeInTheDocument();
+    expect(await screen.findByText('You teach no class of this course.')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Preview student view' })).toBeNull();
+  });
+});
+
+describe('the session around a draft preview', () => {
+  const MARCUS_ID = '00000000-0000-4000-8000-000000000002';
+  const marcus = makeMe({
+    user: { id: MARCUS_ID, name: 'Marcus Lee', email: 'marcus@example.test', kind: 'user' },
+    classes: [instructorIn(CLASS_B, 'Autumn 2026 B')],
+  });
+  const meCalls = (fetchMock: ReturnType<typeof stubApi>) =>
+    fetchMock.mock.calls.filter(([url]) => String(url) === '/api/me').length;
+
+  it('A26 a 401 after the preview ended leaves it once and keeps the instructor signed in', async () => {
+    let previewEnded = true;
+    const fetchMock = stubApi((url, init) => {
+      if (url === '/api/preview/exit' && init?.method === 'POST') {
+        previewEnded = false;
+        return { status: 200, body: { restored: true, returnTo: editor } };
+      }
+      if (url === '/api/me' && previewEnded) return { status: 401, body: {} };
+      return signedInWithTopics(marcus)(url, init);
+    });
+    const { router } = renderApp(`/classes/${CLASS_B}/topics`);
+    expect(
+      await screen.findByRole('heading', { name: 'Statistical thinking' }),
+    ).toBeInTheDocument();
+    expect(router.state.location.pathname).toBe(`/classes/${CLASS_B}/topics`);
+    expect(screen.queryByRole('region', { name: 'Draft preview' })).toBeNull();
+    expect(
+      fetchMock.mock.calls.filter(([url]) => String(url) === '/api/preview/exit'),
+    ).toHaveLength(1);
+    expect(meCalls(fetchMock)).toBe(2);
+  });
+
+  it('A26 a 401 with no preview to leave signs the browser out', async () => {
+    const fetchMock = stubApi((url) =>
+      url === '/api/preview/exit'
+        ? { status: 409, body: { error: 'not_previewing' } }
+        : { status: 401, body: {} },
+    );
+    const { router } = renderApp(`/classes/${CLASS_B}/topics`);
+    await waitFor(() => expect(router.state.location.pathname).toBe('/signin'));
+    expect(meCalls(fetchMock)).toBe(1);
+  });
+
+  it('A26 another tab starting a preview makes this tab re-read who it is', async () => {
+    let current = marcus;
+    const fetchMock = stubApi((url, init) => signedInWithTopics(current, draftTopics)(url, init));
+    renderApp(`/classes/${CLASS_B}/topics`);
+    expect(
+      await screen.findByRole('heading', { name: 'Statistical thinking' }),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('region', { name: 'Draft preview' })).toBeNull();
+    const before = meCalls(fetchMock);
+
+    // The other tab swapped the browser's session and says so on the session channel.
+    current = previewMe;
+    const other = new BroadcastChannel('parallax-session');
+    other.postMessage('changed');
+    other.close();
+    expect(await screen.findByRole('region', { name: 'Draft preview' })).toBeInTheDocument();
+    expect(meCalls(fetchMock)).toBeGreaterThan(before);
+  });
+
+  it('A26 a refused request outside the cache (an autosave) re-reads the session', async () => {
+    let current = marcus;
+    const fetchMock = stubApi((url, init) => signedInWithTopics(current, draftTopics)(url, init));
+    renderApp(`/classes/${CLASS_B}/topics`);
+    expect(
+      await screen.findByRole('heading', { name: 'Statistical thinking' }),
+    ).toBeInTheDocument();
+    const before = meCalls(fetchMock);
+    current = previewMe;
+    // As the topic editor's autosave would: a course route now answers 404 to the preview.
+    await expect(
+      call(updateTopic, {
+        params: { courseId: COURSE, topicId: T_SAMPLING },
+        body: { expectedRevision: 1, title: 'Sampling' },
+      }),
+    ).rejects.toBeInstanceOf(ApiError);
+    expect(await screen.findByRole('region', { name: 'Draft preview' })).toBeInTheDocument();
+    expect(meCalls(fetchMock)).toBeGreaterThan(before);
+  });
+
+  it('A26 Courses in a preview session opens the preview class', async () => {
+    stubApi(signedInWithTopics(previewMe, draftTopics));
+    const { router } = renderApp('/courses');
+    await waitFor(() => expect(router.state.location.pathname).toBe(`/classes/${CLASS_B}/topics`));
+    expect(screen.queryByRole('textbox', { name: /code/i })).toBeNull();
   });
 });

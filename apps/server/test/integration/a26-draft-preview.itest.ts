@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { sign } from '@fastify/cookie';
 import { and, eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
@@ -7,16 +8,32 @@ import { PREVIEW_RETURN_COOKIE } from '../../src/auth/preview';
 import { SESSION_COOKIE } from '../../src/auth/sessions';
 import { DEV_SESSION_SECRET, loadConfig } from '../../src/config';
 import { createSession } from '../../src/db/auth/sessions';
-import { excludePreview } from '../../src/db/preview';
+import { adoptRelease } from '../../src/db/content/adoption';
+import { createResource } from '../../src/db/content/drafts';
+import { publishRelease } from '../../src/db/content/releases';
+import { excludePreview, PREVIEW_SESSION_TTL_MS } from '../../src/db/preview';
 import {
   annotations,
   auditEvents,
   classes,
   classMemberships,
   courseMemberships,
+  resourceRevisions,
+  resources,
+  storageObjects,
+  threads,
+  topics,
   users,
 } from '../../src/db/schema';
-import { buildWorld, cookieFor, ids, type PersonName, type World } from '../fixtures/world';
+import {
+  asClassScope,
+  asCourseScope,
+  buildWorld,
+  cookieFor,
+  ids,
+  type PersonName,
+  type World,
+} from '../fixtures/world';
 import { createTestDatabase, type TestDatabase } from './db';
 
 const now = new Date('2026-10-01T09:00:00Z');
@@ -26,13 +43,14 @@ const editor = `/courses/${ids.statistics}/edit/${ids.sampling}`;
 let testDb: TestDatabase;
 let app: FastifyInstance;
 let world: World;
+let clock = now;
 
 beforeAll(async () => {
   testDb = await createTestDatabase();
   world = await buildWorld(testDb.db, now);
   app = await buildApp(loadConfig({ NODE_ENV: 'test', LOG_LEVEL: 'error' }), {
     db: testDb.db,
-    now: () => now,
+    now: () => clock,
   });
   await app.ready();
 });
@@ -85,6 +103,8 @@ describe('A26 draft preview', () => {
     expect(started.body).toMatchObject({
       classId: ids.classB,
       preview: { id: ids.previewB, name: 'Preview student' },
+      // Opened as the preview student sees the topic: its first tab with material.
+      landing: `/classes/${ids.classB}/topics/${ids.sampling}/reading`,
     });
     // The browser's session is now the preview principal's; the instructor's is kept aside.
     expect(started.cookies.get(SESSION_COOKIE)?.httpOnly).toBe(true);
@@ -230,12 +250,19 @@ describe('A26 draft preview', () => {
       .from(annotations)
       .where(eq(annotations.id, note.body.id));
     expect(row).toMatchObject({ authorId: ids.previewB, classId: ids.classB });
-    // The review/export hook drops the preview principal's rows.
+    // A shared thread is stamped `is_preview`, so the review/export hook drops it.
+    const thread = await request(
+      started.browser,
+      'POST',
+      `/api/classes/${ids.classB}/resources/${ids.samplingReading}/threads`,
+      { audience: 'class', anchor: { kind: 'none' }, body: 'Preview question.' },
+    );
+    expect(thread.status).toBe(200);
     const reviewed = await testDb.db
-      .select({ id: annotations.id })
-      .from(annotations)
-      .where(excludePreview(annotations.authorId));
-    expect(reviewed.map((r) => r.id)).not.toContain(note.body.id);
+      .select({ id: threads.id })
+      .from(threads)
+      .where(and(eq(threads.classId, ids.classB), excludePreview(threads)));
+    expect(reviewed.map((r) => r.id)).not.toContain(thread.body.id);
     // Class B's real student does not see it.
     const bea = await call(
       'bea',
@@ -243,6 +270,7 @@ describe('A26 draft preview', () => {
       `/api/classes/${ids.classB}/resources/${ids.samplingReading}/annotations`,
     );
     expect(JSON.stringify(bea.body)).not.toContain(note.body.id);
+    expect(JSON.stringify(bea.body)).not.toContain(thread.body.id);
   });
 
   test('A26 a preview ends when its owner can no longer edit the course draft', async () => {
@@ -282,5 +310,247 @@ describe('A26 draft preview', () => {
       .from(auditEvents)
       .where(and(eq(auditEvents.targetId, ids.previewB), eq(auditEvents.action, 'preview.create')));
     expect(created).toHaveLength(1);
+  });
+  test('A26 an ended preview still returns the instructor session; an exit with no cookies is refused', async () => {
+    // Replaced by a later start: the first browser's preview session is revoked.
+    const first = await startAsMarcus();
+    await startAsMarcus();
+    const replaced = await request(first.browser, 'POST', '/api/preview/exit');
+    expect(replaced.status).toBe(200);
+    expect(replaced.body).toEqual({ restored: true, returnTo: editor });
+    expect(jar(replaced.cookies, SESSION_COOKIE)).toBe(world.cookie.marcus);
+    expect(replaced.cookies.get(PREVIEW_RETURN_COOKIE)?.value).toBe('');
+
+    // Expired: the preview session lasts 8 h, the kept instructor session longer.
+    const expired = await startAsMarcus();
+    clock = new Date(now.getTime() + PREVIEW_SESSION_TTL_MS + 60_000);
+    try {
+      expect((await request(expired.browser, 'GET', '/api/me')).status).toBe(401);
+      const exit = await request(expired.browser, 'POST', '/api/preview/exit');
+      expect(exit.body).toEqual({ restored: true, returnTo: editor });
+      const me = await request(jar(exit.cookies, SESSION_COOKIE), 'GET', '/api/me');
+      expect(me.body.user).toMatchObject({ id: ids.marcus, kind: 'user' });
+    } finally {
+      clock = now;
+    }
+    // The kept cookie lives as long as the instructor session it holds.
+    expect(expired.cookies.get(PREVIEW_RETURN_COOKIE)?.maxAge).toBe(14 * 24 * 60 * 60);
+
+    const none = await request('', 'POST', '/api/preview/exit');
+    expect(none.status).toBe(409);
+    expect(none.body).toEqual({ error: 'not_previewing' });
+    expect(none.cookies.size).toBe(0);
+  });
+
+  test('A26 preview is refused for an archived topic and an archived class', async () => {
+    const archive = async (archivedAt: Date | null) => {
+      await testDb.db.update(topics).set({ archivedAt }).where(eq(topics.id, ids.estimation));
+      await testDb.db.update(classes).set({ archivedAt }).where(eq(classes.id, ids.classB));
+    };
+    await testDb.db.update(topics).set({ archivedAt: now }).where(eq(topics.id, ids.estimation));
+    try {
+      const topic = await call('marcus', 'POST', `${course}/preview`, {
+        classId: ids.classB,
+        topicId: ids.estimation,
+      });
+      expect(topic.status).toBe(404);
+      expect(topic.cookies.has(SESSION_COOKIE)).toBe(false);
+      await archive(now);
+      const archived = await call('marcus', 'POST', `${course}/preview`, { classId: ids.classB });
+      expect(archived.status).toBe(404);
+      expect(archived.body).toEqual(topic.body);
+      expect(archived.cookies.has(SESSION_COOKIE)).toBe(false);
+    } finally {
+      await archive(null);
+    }
+  });
+
+  test('A26 a head revision of another type is left out of the preview', async () => {
+    const { db } = testDb;
+    const [resource] = await db
+      .insert(resources)
+      .values({
+        courseId: ids.statistics,
+        topicId: ids.sampling,
+        type: 'reading_native',
+        title: 'Mismatched head',
+        position: 5,
+        createdBy: ids.marcus,
+      })
+      .returning();
+    if (!resource) throw new Error('no resource');
+    const [revision] = await db
+      .insert(resourceRevisions)
+      .values({
+        resourceId: resource.id,
+        courseId: ids.statistics,
+        type: 'exercise',
+        content: {},
+        contentHash: 'mismatch',
+        createdBy: ids.marcus,
+      })
+      .returning();
+    if (!revision) throw new Error('no revision');
+    await db
+      .update(resources)
+      .set({ headRevisionId: revision.id })
+      .where(eq(resources.id, resource.id));
+    try {
+      const started = await startAsMarcus();
+      const release = await request(started.browser, 'GET', `/api/classes/${ids.classB}/release`);
+      expect(release.status).toBe(200);
+      const titles = release.body.topics.flatMap((t: { resources: { title: string }[] }) =>
+        t.resources.map((r) => r.title),
+      );
+      expect(titles).toEqual(['Why samples vary', 'Sampling quiz']);
+      const attempt = await request(
+        started.browser,
+        'POST',
+        `/api/classes/${ids.classB}/resources/${resource.id}/exercise-attempt`,
+      );
+      expect(attempt.status).toBe(404);
+    } finally {
+      await db.update(resources).set({ archivedAt: now }).where(eq(resources.id, resource.id));
+    }
+  });
+
+  test('A26 a class thread reaches the preview notifications', async () => {
+    const thread = await call(
+      'bea',
+      'POST',
+      `/api/classes/${ids.classB}/resources/${ids.samplingReading}/threads`,
+      { audience: 'class', anchor: { kind: 'none' }, body: 'Why does the spread shrink?' },
+    );
+    expect(thread.status).toBe(200);
+    const started = await startAsMarcus();
+    const listed = await request(
+      started.browser,
+      'GET',
+      `/api/classes/${ids.classB}/notifications`,
+    );
+    expect(listed.status).toBe(200);
+    expect(listed.body.items).toEqual([
+      expect.objectContaining({ threadId: thread.body.id, excerpt: 'Why does the spread shrink?' }),
+    ]);
+    // A real member still gets the release rule: Marcus sees the same thread.
+    const marcus = await call('marcus', 'GET', `/api/classes/${ids.classB}/notifications`);
+    expect(marcus.body.items.map((n: { threadId: string }) => n.threadId)).toContain(
+      thread.body.id,
+    );
+  });
+
+  test('A26 a preview media URL follows the draft: visible yes, hidden and locked topics no', async () => {
+    const { db } = testDb;
+    const objectIn = async (topicId: string, title: string, visibility: 'visible' | 'hidden') => {
+      const sha256 = createHash('sha256').update(title).digest('hex');
+      const key = `courses/${ids.statistics}/objects/${sha256}`;
+      await db.insert(storageObjects).values({
+        courseId: ids.statistics,
+        key,
+        sha256,
+        size: 10,
+        contentType: 'application/pdf',
+        createdBy: ids.marcus,
+      });
+      const [resource] = await db
+        .insert(resources)
+        .values({
+          courseId: ids.statistics,
+          topicId,
+          type: 'reading_pdf',
+          title,
+          position: 6,
+          visibility,
+          createdBy: ids.marcus,
+        })
+        .returning();
+      if (!resource) throw new Error('no resource');
+      const [revision] = await db
+        .insert(resourceRevisions)
+        .values({
+          resourceId: resource.id,
+          courseId: ids.statistics,
+          type: 'reading_pdf',
+          content: { title },
+          accessibleAlternative: { text: title },
+          objectKeys: [key],
+          contentHash: sha256,
+          createdBy: ids.marcus,
+        })
+        .returning();
+      if (!revision) throw new Error('no revision');
+      await db
+        .update(resources)
+        .set({ headRevisionId: revision.id })
+        .where(eq(resources.id, resource.id));
+      return {
+        resourceId: resource.id,
+        url: `/api/classes/${ids.classB}/resources/${revision.id}/objects/${encodeURIComponent(key)}`,
+      };
+    };
+    const visible = await objectIn(ids.sampling, 'Sampling handout', 'visible');
+    const hidden = await objectIn(ids.sampling, 'Sampling key', 'hidden');
+    // Estimation needs Sampling first, so it is locked for a student.
+    const locked = await objectIn(ids.estimation, 'Estimation handout', 'visible');
+    try {
+      const started = await startAsMarcus();
+      expect((await request(started.browser, 'GET', visible.url)).status).toBe(200);
+      expect((await request(started.browser, 'GET', hidden.url)).status).toBe(404);
+      expect((await request(started.browser, 'GET', locked.url)).status).toBe(404);
+    } finally {
+      for (const r of [visible, hidden, locked]) {
+        await db.update(resources).set({ archivedAt: now }).where(eq(resources.id, r.resourceId));
+      }
+    }
+  });
+
+  test('A26 a preview exercise attempt stays out of the instructor review route', async () => {
+    const course = asCourseScope(ids.statistics, ids.elena);
+    const created = await createResource(
+      testDb.db,
+      course,
+      ids.sampling,
+      {
+        type: 'exercise',
+        title: 'Spread check',
+        content: {
+          schema: 'exercise.v1',
+          steps: [
+            {
+              id: 'explain',
+              kind: 'text',
+              title: 'Explain',
+              prompt: 'Why do averages vary less?',
+              solution: 'Averaging cancels noise.',
+              feedback: { saved: 'Saved.' },
+            },
+          ],
+        },
+      },
+      now,
+    );
+    if (!created.ok) throw new Error(JSON.stringify(created));
+    const exerciseId = created.value.id;
+    const v2 = await publishRelease(testDb.db, course);
+    if (!v2.ok) throw new Error(JSON.stringify(v2.report));
+    const adopted = await adoptRelease(
+      testDb.db,
+      asClassScope(ids.classB, ids.statistics, ids.marcus, { releaseId: ids.releaseV1 }),
+      { releaseId: v2.release.id, expectedReleaseId: ids.releaseV1 },
+    );
+    if (!adopted.ok) throw new Error(adopted.reason);
+    const attempts = `/api/classes/${ids.classB}/resources/${exerciseId}`;
+
+    const started = await startAsMarcus();
+    const previewed = await request(started.browser, 'POST', `${attempts}/exercise-attempt`);
+    expect(previewed.status).toBe(200);
+    const bea = await call('bea', 'POST', `${attempts}/exercise-attempt`);
+    expect(bea.status).toBe(200);
+
+    const review = await call('marcus', 'GET', `${attempts}/exercise-attempts`);
+    expect(review.status).toBe(200);
+    const reviewed = review.body.attempts.map((a: { id: string }) => a.id);
+    expect(reviewed).toContain(bea.body.id);
+    expect(reviewed).not.toContain(previewed.body.id);
   });
 });

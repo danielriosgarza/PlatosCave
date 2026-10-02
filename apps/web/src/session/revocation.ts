@@ -1,5 +1,8 @@
+import { me as meRoute } from '@parallax/contracts/routes/me';
+import { exitPreview } from '@parallax/contracts/routes/preview';
 import { QueryCache, QueryClient, type QueryKey, useQuery } from '@tanstack/react-query';
-import { ApiError } from '../api/client';
+import { ApiError, onRefusal } from '../api/client';
+import { onSessionChange } from './broadcast';
 import { type Me, sessionQuery } from './useSession';
 
 const revokedKey = (classId: string) => ['access-revoked', classId] as const;
@@ -30,8 +33,9 @@ export function revokeClass(client: QueryClient, classId: string) {
 }
 
 /**
- * A 404 on class data that loaded before may mean access ended: ask the session. If it lost the
- * class, the session subscription in `createQueryClient` revokes it.
+ * A 404 on class data that loaded before may mean access ended, and a 401 or 404 anywhere may
+ * mean another tab changed the session: ask the session. If it lost the class, the session
+ * subscription in `createQueryClient` revokes it; if it is someone else now, it resets.
  */
 async function recheckSession(client: QueryClient) {
   try {
@@ -52,17 +56,36 @@ export function createQueryClient(defaultQueries: { retry?: boolean } = {}): Que
     },
   });
   const client = new QueryClient({ queryCache, defaultOptions: { queries: defaultQueries } });
+  // Any refusal, including an autosave outside the query cache, and any other tab's session
+  // change re-read the session. The session's own reads are left out: they decide it.
+  onRefusal((_status, path) => {
+    if (path !== meRoute.path && path !== exitPreview.path) void recheckSession(client);
+  });
+  onSessionChange(() => void recheckSession(client));
   // Whichever request first sees the loss, a class that leaves the session is revoked, and one
   // that returns is let back in (§14).
   let known = new Set<string>();
+  let knownUser: string | undefined;
   queryCache.subscribe((event) => {
     if (event.type !== 'updated' || event.action.type !== 'success') return;
     if (JSON.stringify(event.query.queryKey) !== JSON.stringify(sessionQuery.queryKey)) return;
-    const now = classIds(event.query.state.data as Me | null | undefined);
-    if (event.query.state.data == null) {
+    const data = event.query.state.data as Me | null | undefined;
+    const now = classIds(data);
+    if (data == null) {
       known = new Set(); // Signed out: the next person's classes are not compared with this one's.
+      knownUser = undefined;
       return;
     }
+    if (knownUser !== undefined && knownUser !== data.user.id) {
+      // Another identity now (a preview started or ended in another tab): nothing cached for the
+      // previous one is kept, and nothing of it counts as a lost class.
+      knownUser = data.user.id;
+      known = now;
+      client.removeQueries({ queryKey: ['access-revoked'] });
+      void client.resetQueries({ predicate: (q) => q.queryKey[0] !== 'session' });
+      return;
+    }
+    knownUser = data.user.id;
     for (const id of known) if (!now.has(id)) revokeClass(client, id);
     for (const id of now) client.removeQueries({ queryKey: revokedKey(id), exact: true });
     known = now;

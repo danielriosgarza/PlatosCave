@@ -3,8 +3,7 @@ import type { FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { revokeSession } from '../db/auth/sessions';
 import type { Executor } from '../db/client';
-import { PREVIEW_SESSION_TTL_MS } from '../db/preview';
-import { TOKEN_SHAPE } from './sessions';
+import { SESSION_TTL_MS, TOKEN_SHAPE } from './sessions';
 
 /**
  * While a draft preview runs, the browser's session cookie holds the preview principal's
@@ -13,15 +12,18 @@ import { TOKEN_SHAPE } from './sessions';
  */
 export const PREVIEW_RETURN_COOKIE = 'pc_preview_return';
 
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
 const ReturnTo = z.object({
   token: z.string().regex(TOKEN_SHAPE),
-  courseId: z.string().regex(UUID),
-  topicId: z.string().regex(UUID).optional(),
+  courseId: z.uuid(),
+  topicId: z.uuid().optional(),
 });
 export type PreviewReturn = z.infer<typeof ReturnTo>;
 
+/**
+ * The kept cookie lives as long as the instructor session it holds can: it is the browser's
+ * only handle on that session while the preview runs, and the exit still needs it after the
+ * preview session has ended.
+ */
 export function returnCookieOptions(appOrigin: string): CookieSerializeOptions {
   return {
     httpOnly: true,
@@ -29,7 +31,7 @@ export function returnCookieOptions(appOrigin: string): CookieSerializeOptions {
     path: '/api',
     secure: appOrigin.startsWith('https:'),
     signed: true,
-    maxAge: PREVIEW_SESSION_TTL_MS / 1000,
+    maxAge: SESSION_TTL_MS / 1000,
   };
 }
 

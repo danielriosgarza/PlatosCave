@@ -11,7 +11,7 @@ import {
   topicOpens,
 } from '../content/availability';
 import type { Db } from './client';
-import { draftSnapshot } from './content/releases';
+import { type DraftSnapshot, draftSnapshot } from './content/releases';
 import {
   classMemberships,
   courseReleases,
@@ -184,13 +184,15 @@ async function availabilityOf(
  * topic id or its release topic id, and whether the caller may open it now. The same
  * availability `loadClassTopics` computes, from only the rows that decide it (the topic, its
  * resources, its prerequisites): the gate for per-request checks such as media downloads and
- * reading positions. Null when there is no such topic.
+ * reading positions. Null when there is no such topic. A draft preview's caller may pass the
+ * snapshot it already read, so one request reads the draft once.
  */
 export async function findReleaseTopic(
   db: Db,
   scope: ClassScope,
   by: { topicId: string } | { releaseTopicId: string },
   now: Date,
+  draftRead?: DraftSnapshot,
 ): Promise<{ topicId: string; releaseTopicId: string; open: boolean } | null> {
   const matches = (t: { id: string; topicId: string }) =>
     'topicId' in by ? t.topicId === by.topicId : t.id === by.releaseTopicId;
@@ -198,7 +200,7 @@ export async function findReleaseTopic(
   let resources: ResourceRow[];
   let prerequisites: TopicRow[];
   if (isDraftPreview(scope)) {
-    const draft = await draftSnapshot(db, scope);
+    const draft = draftRead ?? (await draftSnapshot(db, scope));
     topic = draft.topics.find(matches);
     if (!topic) return null;
     const id = topic.id;
