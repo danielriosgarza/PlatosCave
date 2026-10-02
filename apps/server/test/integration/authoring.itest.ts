@@ -436,6 +436,73 @@ describe('processing recovery', () => {
     if (live) await boss.cancel('reading.ingest', live);
   });
 
+  test('editing only the alternative or provenance of a ready reading keeps it ready and queues nothing', async () => {
+    const { id, revisionId } = await processedReading('Alternative only');
+    const [ready] = await testDb.db
+      .select({ derived: resourceRevisions.derived })
+      .from(resourceRevisions)
+      .where(eq(resourceRevisions.id, revisionId));
+    const current = (await call('elena', 'GET', `${course}/resources/${id}`)).body;
+
+    const edited = await call('elena', 'PATCH', `${course}/resources/${id}`, {
+      expectedRevision: current.revision,
+      accessibleAlternative: { text: 'A longer plain-text version' },
+    });
+    expect(edited.status).toBe(200);
+    const altHead = edited.body.headRevisionId as string;
+    expect(altHead).not.toBe(revisionId);
+    expect(edited.body.head.accessibleAlternative).toEqual({ text: 'A longer plain-text version' });
+    expect(await processing(id)).toMatchObject({ revisionId: altHead, state: 'ready' });
+    expect(await jobsFor(altHead)).toBe(0);
+    const [copied] = await testDb.db
+      .select({ derived: resourceRevisions.derived })
+      .from(resourceRevisions)
+      .where(eq(resourceRevisions.id, altHead));
+    expect(copied?.derived).toEqual(ready?.derived);
+
+    const provenance = await call('elena', 'PATCH', `${course}/resources/${id}`, {
+      expectedRevision: edited.body.revision,
+      provenance: { source: 'Course notes, 2025' },
+    });
+    const provHead = provenance.body.headRevisionId as string;
+    expect(provHead).not.toBe(altHead);
+    expect(await processing(id)).toMatchObject({ revisionId: provHead, state: 'ready' });
+    expect(await jobsFor(provHead)).toBe(0);
+    const publish = await call('elena', 'POST', `${course}/releases`);
+    expect(publish.body.report?.errors ?? []).not.toContainEqual(
+      expect.objectContaining({ code: 'unprocessed_reading', resourceId: id }),
+    );
+
+    // A change of the source itself is processed again.
+    const content = await call('elena', 'PATCH', `${course}/resources/${id}`, {
+      expectedRevision: provenance.body.revision,
+      content: { markdown: '# Alternative only, revised' },
+    });
+    const contentHead = content.body.headRevisionId as string;
+    expect(contentHead).not.toBe(provHead);
+    expect(await jobsFor(contentHead)).toBe(1);
+    await headReady(id);
+  });
+
+  test('editing only the alternative of a reading that is not ready yet queues the new head', async () => {
+    const { id, revisionId } = await processedReading('Alternative while failed');
+    await leave(revisionId, {
+      job: 'reading.ingest',
+      state: 'failed',
+      jobId: null,
+      error: 'Could not queue processing',
+      updatedAt: ago(0),
+    });
+    const current = (await call('elena', 'GET', `${course}/resources/${id}`)).body;
+    const edited = await call('elena', 'PATCH', `${course}/resources/${id}`, {
+      expectedRevision: current.revision,
+      accessibleAlternative: { text: 'Changed while failed' },
+    });
+    const head = edited.body.headRevisionId as string;
+    expect(await jobsFor(head)).toBe(1);
+    await headReady(id);
+  });
+
   test('A26 two retries of one failed reading at once queue one job', async () => {
     const { id, revisionId } = await processedReading('Double click');
     await leave(revisionId, {
