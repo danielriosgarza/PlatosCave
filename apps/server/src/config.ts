@@ -1,3 +1,4 @@
+import { isIP } from 'node:net';
 import { z } from 'zod';
 
 /** Used outside production only, so a fresh checkout runs without configuration. */
@@ -11,6 +12,16 @@ const HostName = z
   .string()
   .regex(/^[A-Za-z0-9.-]+$|^\[[0-9A-Fa-f:]+\]$/, 'a host name without scheme or port')
   .transform((h) => h.toLowerCase());
+
+/** One `trustProxy` entry as proxy-addr reads it: an address, an address/prefix, or a keyword. */
+function isProxyAddress(entry: string): boolean {
+  if (['loopback', 'linklocal', 'uniquelocal'].includes(entry)) return true;
+  const [address = '', prefix, ...rest] = entry.split('/');
+  const family = isIP(address);
+  if (family === 0 || rest.length > 0) return false;
+  if (prefix === undefined) return true;
+  return /^\d{1,3}$/.test(prefix) && Number(prefix) <= (family === 4 ? 32 : 128);
+}
 
 const Env = z
   .object({
@@ -32,13 +43,42 @@ const Env = z
     MAIL_TRANSPORT: z.enum(['file', 'smtp']).default('file'),
     /** `file` transport: one JSON file per message (ADR-0001). */
     MAIL_DIR: z.string().default('.local/mail'),
-    MAIL_FROM: z.string().default('Parallax <no-reply@parallax.invalid>'),
+    /** Sender of sign-in mail. Required for `smtp` (relays reject the placeholder). */
+    MAIL_FROM: z.string().optional(),
     /** `smtp` transport, e.g. smtp://user:pass@mail.example.org:587 */
     SMTP_URL: z.string().optional(),
-    /** Sign-in link requests allowed per client IP per 15 minutes. */
-    AUTH_LINK_RATE_LIMIT: z.coerce.number().int().positive().default(10),
+    /**
+     * Sign-in link requests allowed per client IP per 15 minutes. The per-address cap (five
+     * links) is what stops mail floods; this one slows address guessing. Sized for a class
+     * signing in together from one campus NAT (a few dozen people, with retries).
+     */
+    AUTH_LINK_RATE_LIMIT: z.coerce.number().int().positive().default(120),
     /** Sign-in link uses (`/api/auth/verify`) allowed per client IP per 15 minutes. */
-    AUTH_VERIFY_RATE_LIMIT: z.coerce.number().int().positive().default(30),
+    AUTH_VERIFY_RATE_LIMIT: z.coerce.number().int().positive().default(240),
+    /**
+     * Fastify `trustProxy`: which proxies' `X-Forwarded-*` headers to believe, so `req.ip` (the
+     * rate-limit key) and `req.host` name the client and the requested host, not the proxy.
+     * Prefer a comma-separated list of your proxies' addresses / CIDR ranges: `req.ip` is then
+     * the first address that is not one of them, which the client cannot choose. `true` believes
+     * every hop, so `req.ip` is the leftmost `X-Forwarded-For` entry; a proxy that appends to
+     * the header (nginx's `$proxy_add_x_forwarded_for`) lets a client pick it per request and
+     * void the per-IP limits, so use `true` only when the proxy replaces the header. `false`
+     * (default) ignores the headers. A bare hop count is refused: Fastify 5 treats it as "trust
+     * nobody" because it cannot check the peer.
+     */
+    TRUST_PROXY: z
+      .string()
+      .default('false')
+      .transform((v): boolean | string[] => {
+        const value = v.trim();
+        if (value.toLowerCase() === 'true') return true;
+        if (value.toLowerCase() === 'false') return false;
+        return value.split(',').map((a) => a.trim());
+      })
+      .refine((v) => !Array.isArray(v) || v.every(isProxyAddress), {
+        message:
+          'true, false, or a comma-separated list of proxy addresses, CIDR ranges or loopback / linklocal / uniquelocal',
+      }),
     /**
      * Two host names for one server (ADR-0002): the app (API, web) and the content origin,
      * which serves only `/content/:token`. Development defaults match Vite on localhost:5173.
@@ -88,6 +128,9 @@ const Env = z
     if (env.MAIL_TRANSPORT === 'smtp' && !env.SMTP_URL) {
       ctx.addIssue({ code: 'custom', path: ['SMTP_URL'], message: 'required for smtp' });
     }
+    if (env.MAIL_TRANSPORT === 'smtp' && !env.MAIL_FROM) {
+      ctx.addIssue({ code: 'custom', path: ['MAIL_FROM'], message: 'required for smtp' });
+    }
     if (env.APP_HOST === env.CONTENT_HOST) {
       ctx.addIssue({
         code: 'custom',
@@ -120,6 +163,7 @@ const Env = z
   .transform((env) => ({
     ...env,
     SESSION_SECRET: env.SESSION_SECRET ?? DEV_SESSION_SECRET,
+    MAIL_FROM: env.MAIL_FROM ?? 'Parallax <no-reply@parallax.invalid>',
     // The Vite dev server proxies /api, so links open the web app's origin in development.
     APP_ORIGIN: env.APP_ORIGIN ?? 'http://localhost:5173',
     CONTENT_ORIGIN: env.CONTENT_ORIGIN ?? `http://${env.CONTENT_HOST}:${env.PORT}`,

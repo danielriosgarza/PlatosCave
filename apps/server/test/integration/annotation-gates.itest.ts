@@ -5,7 +5,7 @@ import { buildApp } from '../../src/app';
 import { loadConfig } from '../../src/config';
 import { adoptRelease } from '../../src/db/content/adoption';
 import { publishRelease } from '../../src/db/content/releases';
-import { classes, resources } from '../../src/db/schema';
+import { classes, posts, resources } from '../../src/db/schema';
 import {
   asClassScope,
   asCourseScope,
@@ -85,6 +85,25 @@ describe('notification excerpts', () => {
     expect(res.status).toBe(200);
     const item = (await notified('bea', ids.classB)).find((i) => i.threadId === res.body.id);
     expect(item?.excerpt).toBe(`${'𝑥'.repeat(139)}…`);
+  });
+});
+
+describe('notification excerpts of a removed first post', () => {
+  test('a deleted first post leaves no excerpt', async () => {
+    const res = await call(
+      'marcus',
+      'POST',
+      `${resourceUrl(ids.classB)}/threads`,
+      question('Gone'),
+    );
+    expect(res.status).toBe(200);
+    expect(
+      (await notified('bea', ids.classB)).find((i) => i.threadId === res.body.id)?.excerpt,
+    ).toBe('Gone');
+    await testDb.db.update(posts).set({ deletedAt: start }).where(eq(posts.threadId, res.body.id));
+    expect(
+      (await notified('bea', ids.classB)).find((i) => i.threadId === res.body.id)?.excerpt,
+    ).toBe('');
   });
 });
 

@@ -152,6 +152,7 @@ describe('content origin', () => {
     expect(expired.statusCode).toBe(404);
     // The app's reader can read the refusal and re-mint, instead of seeing a network error.
     expect(expired.headers['access-control-allow-origin']).toBe('http://127.0.0.1:3100');
+    expect(expired.headers.vary).toMatch(/origin/i);
     const otherSecret = mintContentToken('z'.repeat(32), { ...grant, key }, now).token;
     expect((await get(`/content/${otherSecret}`, content)).statusCode).toBe(404);
     const missing = token({ key: `courses/${course}/objects/${'f'.repeat(64)}` });
@@ -162,7 +163,8 @@ describe('content origin', () => {
 
   test('a storage failure answers 500, still readable by the app origin', async () => {
     const failing = new FsStorage(root);
-    failing.get = () => Promise.reject(new Error('backend down'));
+    failing.get = () =>
+      Promise.reject(new Error('connect ECONNREFUSED s3.internal.example:9000 bucket parallax'));
     const broken = await buildApp(config, { storage: failing, now: () => now });
     try {
       const res = await broken.inject({
@@ -172,7 +174,10 @@ describe('content origin', () => {
       });
       expect(res.statusCode).toBe(500);
       expect(res.headers['access-control-allow-origin']).toBe('http://127.0.0.1:3100');
+      expect(res.headers.vary).toMatch(/origin/i);
       expect(res.headers['access-control-allow-credentials']).toBeUndefined();
+      // The app origin can read this body: it names no endpoint, bucket or error text.
+      expect(res.json()).toEqual({ error: 'internal error' });
     } finally {
       await broken.close();
     }
@@ -298,6 +303,9 @@ describe('content origin', () => {
         `/content%2F${t}`,
         `/content%5C${t}`,
         `//x/content/${t}`,
+        // Wildcard routes (the web app's assets) are routed but must not log a token either.
+        `/assets/${t}`,
+        `/assets/content/${t}`,
       ]) {
         logged.length = 0;
         await get(url, headers);
@@ -309,5 +317,8 @@ describe('content origin', () => {
     logged.length = 0;
     await get('/classes/abc', app);
     expect(logged).toEqual(['/classes/abc']);
+    logged.length = 0;
+    await get('/assets/app.js', app);
+    expect(logged).toEqual(['/assets/app.js']);
   });
 });

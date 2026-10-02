@@ -1,14 +1,14 @@
-import { and, eq, isNull, lte, or, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import type { ClassScope } from '../../auth/scope';
 import { openToStudent } from '../../content/availability';
 import { findReleaseTopic } from '../classTopics';
 import type { Db } from '../client';
 import { releaseResources, resourceRevisions, storageObjects } from '../schema';
-import { draftSnapshot } from './releases';
+import { draftSnapshot, studyOpen } from './releases';
 
 /**
  * One object of a resource revision pinned in the class's adopted release, if the caller may
- * see that resource now: students only see visible resources whose release time has passed;
+ * see that resource now: students only see resources that are not hidden and whose release time has passed (`studyOpen`);
  * instructors see every resource of the release. Students also need the topic to be open
  * (not prerequisite-locked or still scheduled). Anything else is null (the route answers 404).
  * A draft preview finds objects of the draft snapshot instead, under the same rules.
@@ -23,13 +23,6 @@ export async function findReleasedObject(
   if (!key.startsWith(`courses/${scope.courseId}/`)) return null;
   if (scope.membership.isPreview) return findDraftObject(db, scope, revisionId, key, now);
   if (!scope.releaseId) return null;
-  const studentView =
-    scope.role === 'student'
-      ? and(
-          eq(releaseResources.visibility, 'visible'),
-          or(isNull(releaseResources.releaseAt), lte(releaseResources.releaseAt, now)),
-        )
-      : undefined;
   const [row] = await db
     .select({
       key: storageObjects.key,
@@ -49,7 +42,7 @@ export async function findReleasedObject(
         eq(releaseResources.resourceRevisionId, revisionId),
         eq(resourceRevisions.courseId, scope.courseId),
         sql`${key} = any(${resourceRevisions.objectKeys})`,
-        studentView,
+        studyOpen(scope, now),
       ),
     )
     .limit(1);

@@ -1,3 +1,16 @@
+.wrap {
+  position: relative;
+}
+.wrap[data-more="true"]::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 1px;
+  width: 32px;
+  pointer-events: none;
+  background: linear-gradient(to right, transparent, var(--pc-paper));
+}
 .tabs {
   display: flex;
   align-items: stretch;

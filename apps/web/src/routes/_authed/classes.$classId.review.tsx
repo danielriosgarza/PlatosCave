@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router';
+import { ClassUnavailable } from '../../components/AccessLost';
 import styles from '../../components/Page.module.css';
-import { Unavailable } from '../../components/Unavailable';
 import { useClassContext } from '../../session/classContext';
 
 export const Route = createFileRoute('/_authed/classes/$classId/review')({ component: Review });
@@ -8,7 +8,7 @@ export const Route = createFileRoute('/_authed/classes/$classId/review')({ compo
 function Review() {
   const { classId } = Route.useParams();
   const context = useClassContext(classId);
-  if (context?.role !== 'instructor') return <Unavailable />;
+  if (context?.role !== 'instructor') return <ClassUnavailable classId={classId} />;
   return (
     <main className={styles.index}>
       <h1>Class review</h1>

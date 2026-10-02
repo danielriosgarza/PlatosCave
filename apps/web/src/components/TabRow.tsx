@@ -1,4 +1,4 @@
-import { type KeyboardEvent, useRef } from 'react';
+import { type KeyboardEvent, useCallback, useEffect, useRef, useState } from 'react';
 import styles from './TabRow.module.css';
 
 export interface TabDef<Id extends string> {
@@ -26,6 +26,18 @@ export function TabRow<Id extends string>({
   idPrefix = 'pc-tab',
 }: TabRowProps<Id>) {
   const refs = useRef(new Map<Id, HTMLButtonElement>());
+  const strip = useRef<HTMLDivElement | null>(null);
+  // At narrow widths the strip scrolls on its own; a fade marks the edge that has more tabs (§5).
+  const [more, setMore] = useState(false);
+  const measure = useCallback(() => {
+    const el = strip.current;
+    if (el) setMore(el.scrollLeft + el.clientWidth < el.scrollWidth - 1);
+  }, []);
+  useEffect(() => {
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, [measure]);
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     const index = tabs.findIndex((t) => t.id === selected);
@@ -43,25 +55,34 @@ export function TabRow<Id extends string>({
   };
 
   return (
-    <div className={styles.tabs} role="tablist" aria-label={label} onKeyDown={onKeyDown}>
-      {tabs.map((tab) => (
-        <button
-          key={tab.id}
-          type="button"
-          role="tab"
-          id={`${idPrefix}-${tab.id}`}
-          aria-selected={tab.id === selected}
-          aria-controls={panelId}
-          tabIndex={tab.id === selected ? 0 : -1}
-          ref={(el) => {
-            if (el) refs.current.set(tab.id, el);
-            else refs.current.delete(tab.id);
-          }}
-          onClick={() => onSelect(tab.id)}
-        >
-          {tab.label}
-        </button>
-      ))}
+    <div className={styles.wrap} data-more={more}>
+      <div
+        ref={strip}
+        className={styles.tabs}
+        role="tablist"
+        aria-label={label}
+        onKeyDown={onKeyDown}
+        onScroll={measure}
+      >
+        {tabs.map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            role="tab"
+            id={`${idPrefix}-${tab.id}`}
+            aria-selected={tab.id === selected}
+            aria-controls={panelId}
+            tabIndex={tab.id === selected ? 0 : -1}
+            ref={(el) => {
+              if (el) refs.current.set(tab.id, el);
+              else refs.current.delete(tab.id);
+            }}
+            onClick={() => onSelect(tab.id)}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </div>
     </div>
   );
 }

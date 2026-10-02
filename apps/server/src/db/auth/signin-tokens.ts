@@ -1,5 +1,5 @@
 import { and, count, eq, gt, isNull, lt, sql } from 'drizzle-orm';
-import type { Db } from '../client';
+import type { Db, Executor } from '../client';
 import { signinTokens } from '../schema';
 
 /** Deletes links that expired before `cutoff`, used or not; returns how many went. */
@@ -50,7 +50,7 @@ export async function deleteSigninToken(db: Db, id: string): Promise<void> {
  * of two concurrent uses, exactly one gets the row back.
  */
 export async function useSigninToken(
-  db: Db,
+  db: Executor,
   tokenHash: string,
   now: Date,
 ): Promise<{ email: string; destination: string | null } | undefined> {
@@ -69,7 +69,10 @@ export async function useSigninToken(
 }
 
 /** The destination of a stored link, used or expired; null when no link has this hash. */
-export async function findSigninDestination(db: Db, tokenHash: string): Promise<string | null> {
+export async function findSigninDestination(
+  db: Executor,
+  tokenHash: string,
+): Promise<string | null> {
   const [known] = await db
     .select({ destination: signinTokens.destination })
     .from(signinTokens)
