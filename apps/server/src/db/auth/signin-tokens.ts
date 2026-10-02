@@ -8,34 +8,33 @@ export async function deleteSigninTokensExpiredBefore(db: Db, cutoff: Date): Pro
   return result.rowCount ?? 0;
 }
 
-export interface NewSigninToken {
-  email: string;
-  tokenHash: string;
-  destination: string;
-  createdAt: Date;
-  expiresAt: Date;
-}
+export type NewSigninToken = Pick<
+  typeof signinTokens.$inferInsert,
+  'email' | 'tokenHash' | 'destination' | 'createdAt' | 'expiresAt'
+>;
 
 /**
  * Stores a link unless its address already has `limit` links created after `since`; returns
  * the new row's id, or undefined when the cap is reached. Count and insert run under a
- * per-address lock, so concurrent requests cannot all pass the cap.
+ * per-address lock, so concurrent requests cannot all pass the cap. The address is lowercased
+ * here, for the lock, the count and the stored row alike.
  */
 export function insertSigninTokenUnderCap(
   db: Db,
   token: NewSigninToken,
   { since, limit }: { since: Date; limit: number },
 ): Promise<{ id: string } | undefined> {
+  const email = token.email.toLowerCase();
   return db.transaction(async (tx) => {
-    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`signin:${token.email}`}))`);
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`signin:${email}`}))`);
     const [recent] = await tx
       .select({ n: count() })
       .from(signinTokens)
-      .where(and(eq(signinTokens.email, token.email), gt(signinTokens.createdAt, since)));
+      .where(and(eq(signinTokens.email, email), gt(signinTokens.createdAt, since)));
     if ((recent?.n ?? 0) >= limit) return undefined;
     const [inserted] = await tx
       .insert(signinTokens)
-      .values(token)
+      .values({ ...token, email })
       .returning({ id: signinTokens.id });
     return inserted;
   });

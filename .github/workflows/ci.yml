@@ -27,6 +27,8 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm scenarios
+      - name: Runner harness
+        run: python3 -m unittest discover -s runner/harness
       - uses: actions/setup-go@v6
         with:
           go-version-file: connector/go.mod
@@ -40,6 +42,43 @@ jobs:
           for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do
             GOOS="${target%/*}" GOARCH="${target#*/}" go build -o /dev/null ./cmd/parallax-connector
           done
+
+  runner:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      IMAGE: parallax-runner-python:dev
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build the Python runner image
+        run: bash scripts/runner-image.sh build python
+      - name: Harness tests inside the image
+        run: >-
+          docker run --rm --network none --user 10001:10001 --pids-limit 64
+          --read-only --tmpfs /tmp:rw,nosuid,nodev,size=64m --ulimit nofile=256
+          --cap-drop ALL --security-opt no-new-privileges
+          "$IMAGE" python3 -m unittest discover -s /opt/parallax/harness
+      - name: Harness as pid 1 on a job
+        run: |
+          nonce=0123456789abcdef0123456789abcdef
+          { echo "$nonce"; cat runner/protocol/v1/examples/job-full-python-replay.json; } \
+            | docker run -i --rm --network none --read-only --user 10001:10001 --pids-limit 64 --memory 512m \
+              --cap-drop ALL --security-opt no-new-privileges --ipc private \
+              --tmpfs /work:rw,noexec,nosuid,nodev,size=64m --tmpfs /tmp:rw,noexec,nosuid,nodev,size=64m \
+              --ulimit core=0 --ulimit nofile=256 --ulimit fsize=33554432 \
+              "$IMAGE" python3 /opt/parallax/harness/run.py > frame.txt
+          grep -qx -- "--parallax-result $nonce" frame.txt
+          grep -qx -- "--parallax-end $nonce" frame.txt
+          python3 -c "import json; r = json.loads(open('frame.txt').read().split('\n')[2]); assert r['v'] == 1 and len(r['checks']) >= 1, r"
+      - name: Image properties
+        run: |
+          test "$(docker run --rm --network none "$IMAGE" id -u)" = 10001
+          test -z "$(docker run --rm --network none --user 0 "$IMAGE" find / -xdev -type f -perm -4000)"
+          label() { docker image inspect --format "{{ index .Config.Labels \"$1\" }}" "$IMAGE"; }
+          test -n "$(label org.opencontainers.image.revision)"
+          test "$(label org.parallax.runtime)" = python-3.12
+          test "$(label org.parallax.harness)" = "$(sed -n 's/^HARNESS_VERSION = "\([0-9]*\)"$/\1/p' runner/harness/run.py)"
+          test "$(label org.parallax.content-hash)" = "$(bash scripts/runner-image.sh hash python)"
 
   integration:
     runs-on: ubuntu-24.04
