@@ -800,6 +800,68 @@ describe('invitation revocation and membership audit', () => {
     expect((await accept(await newcomer('kept@example.test'), kept.body.code)).status).toBe(200);
   });
 
+  test('A01 the cascade stays in the class: the issuer’s instructor invitations in another class of the course survive', async () => {
+    const email = 'roamer@example.test';
+    const roamer = await instructorOf(ids.classA, email);
+    const intoB = await issue(as('elena'), ids.classB, { kind: 'instructor', email });
+    expect((await accept(roamer.cookie, intoB.body.code)).status).toBe(200);
+    for (const classId of [ids.classA, ids.classB]) {
+      const url = `/api/classes/${classId}/members/${roamer.userId}/manage-members`;
+      expect((await call(as('elena'), 'PUT', url, { granted: true })).status).toBe(200);
+    }
+    const inA = await issue(roamer.cookie, ids.classA, {
+      kind: 'instructor',
+      email: 'roamer-a@example.test',
+    });
+    const inB = await issue(roamer.cookie, ids.classB, {
+      kind: 'instructor',
+      email: 'roamer-b@example.test',
+    });
+
+    expect(
+      (await call(as('elena'), 'DELETE', `/api/classes/${ids.classA}/members/${roamer.userId}`))
+        .status,
+    ).toBe(200);
+    expect(await auditFor('invite.revoke', inA.body.id)).toEqual([
+      expect.objectContaining({
+        scopeId: ids.classA,
+        after: expect.objectContaining({ reason: 'issuer_removed' }),
+      }),
+    ]);
+    expect(await auditFor('invite.revoke', inB.body.id)).toEqual([]);
+    expect((await accept(await newcomer('roamer-b@example.test'), inB.body.code)).status).toBe(200);
+  });
+
+  test('A01 a manager revoking an expired or used-up invitation still records it', async () => {
+    const expired = await issue(as('noor'), ids.classA, {
+      kind: 'instructor',
+      email: 'stale@example.test',
+    });
+    await testDb.db
+      .update(classInvites)
+      .set({ expiresAt: new Date(now.getTime() - 1) })
+      .where(eq(classInvites.id, expired.body.id));
+    const usedUp = await issue(as('noor'), ids.classA, {
+      kind: 'instructor',
+      email: 'spent@example.test',
+    });
+    expect((await accept(await newcomer('spent@example.test'), usedUp.body.code)).status).toBe(200);
+    for (const invite of [expired, usedUp]) {
+      expect(await revoke(as('noor'), ids.classA, invite.body.id)).toEqual({
+        status: 200,
+        body: { id: invite.body.id, revokedAt: now.toISOString() },
+      });
+      expect(await auditFor('invite.revoke', invite.body.id)).toEqual([
+        expect.objectContaining({
+          actorId: ids.noor,
+          scopeId: ids.classA,
+          before: { revokedAt: null },
+          after: { revokedAt: now.toISOString(), via: 'manage_members' },
+        }),
+      ]);
+    }
+  });
+
   test('A01 removal from one class during acceptance into another keeps draft editing', async () => {
     for (const n of [1, 2, 3, 4, 5, 6]) {
       const email = `mover${n}@example.test`;

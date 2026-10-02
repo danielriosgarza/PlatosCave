@@ -274,9 +274,9 @@ export type RevokeReason = 'issuer_removed' | 'issuer_lost_manage_members';
 
 /**
  * Revokes the not-yet-revoked invitations of the scope's class that match `where` (required, so
- * a caller cannot widen it to the whole class by accident), and records one `invite.revoke`
- * event per invitation. Every revocation goes through here, so the event has one shape. Returns
- * the ids revoked.
+ * a caller cannot widen it to the whole class by accident; a missing predicate, such as an
+ * `and()` of nothing, throws), and records one `invite.revoke` event per invitation. Every
+ * revocation goes through here, so the event has one shape.
  */
 export async function revokeInvites(
   tx: Tx,
@@ -284,14 +284,17 @@ export async function revokeInvites(
   where: SQL,
   now: Date,
   extra: { reason?: RevokeReason } = {},
-): Promise<string[]> {
+): Promise<void> {
+  if (!where) throw new Error('revokeInvites needs a predicate');
   const revoked = await tx
     .update(classInvites)
     .set({ revokedAt: now })
     .where(and(forClass(scope, classInvites), isNull(classInvites.revokedAt), where))
     .returning({ id: classInvites.id });
-  for (const invite of revoked) {
-    await audit(tx, {
+  if (revoked.length === 0) return;
+  await audit(
+    tx,
+    revoked.map((invite) => ({
       actorId: scope.user.id,
       action: 'invite.revoke',
       scopeKind: 'class',
@@ -300,9 +303,8 @@ export async function revokeInvites(
       targetId: invite.id,
       before: { revokedAt: null },
       after: { ...extra, revokedAt: now, via: scope.via },
-    });
-  }
-  return revoked.map((r) => r.id);
+    })),
+  );
 }
 
 /**
