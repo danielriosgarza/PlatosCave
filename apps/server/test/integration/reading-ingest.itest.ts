@@ -41,7 +41,7 @@ async function courseScope(actorId: string, courseId: string): Promise<CourseSco
 let position = 0;
 /** A reading resource with one revision in Statistical thinking. */
 async function revision(
-  type: 'reading_native' | 'reading_pdf' | 'slides_pdf',
+  type: 'reading_native' | 'reading_pdf' | 'slides_pdf' | 'slides_web',
   content: Record<string, unknown>,
   objectKeys: string[] = [],
 ): Promise<string> {
@@ -414,14 +414,14 @@ describe('reading.ingest', () => {
     expect((await derivedOf(revisionId)).status).toMatchObject({ state: 'running' });
   });
 
-  test('a revision that is not a reading is neither queued nor written by this job', async () => {
-    const revisionId = await revision('slides_pdf', {});
-    const converted = { ...statusFor(OTHER_JOB), state: 'ready' as const, job: 'slides.convert' };
+  test('a revision this job does not process is neither queued nor written by it', async () => {
+    const revisionId = await revision('slides_web', {});
+    const converted = { ...statusFor(OTHER_JOB), state: 'ready' as const, job: 'slides.render' };
     await setDerivedStatus(testDb.db, elena, revisionId, converted);
     expect(await enqueueReadingIngest(boss, testDb.db, elena, revisionId)).toBeNull();
     expect(
       await runScopedJob(testDb.db, readingIngest, fakeJob(revisionId, 0), { storage }),
-    ).toEqual({ status: 'completed', output: { failed: 'revision is not a reading' } });
+    ).toEqual({ status: 'completed', output: { failed: 'revision has nothing to process' } });
     expect((await derivedOf(revisionId)).status).toEqual(converted);
   });
 

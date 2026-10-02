@@ -273,3 +273,105 @@ async function settle(resourceId: string, want: 'ready' | 'failed' = 'ready') {
   }
   throw new Error(`resource ${resourceId} did not become ${want}`);
 }
+
+/** Waits until the head revision's job is ready (the queued state is written when saving). */
+async function headReady(resourceId: string) {
+  for (let i = 0; i < 60; i++) {
+    const { body } = await call('elena', 'GET', `${course}/processing`);
+    const entry = body.resources.find((r: { resourceId: string }) => r.resourceId === resourceId);
+    if (entry?.state === 'ready') return;
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  throw new Error(`resource ${resourceId} head revision did not become ready`);
+}
+
+describe('PDF deck ingestion', () => {
+  const errorsOf = async (resourceId: string) =>
+    (await call('elena', 'POST', `${course}/releases`)).body.report.errors.filter(
+      (e: { resourceId?: string }) => e.resourceId === resourceId,
+    );
+
+  async function addDeck(title: string, topicId: string, pages: string[], extra: object = {}) {
+    const stored = (await upload('elena', `${title}.pdf`, makePdf(pages))).json();
+    const created = await call('elena', 'POST', `${course}/topics/${topicId}/resources`, {
+      type: 'slides_pdf',
+      title,
+      content: { objectKey: stored.key },
+      objectKeys: [stored.key],
+      ...extra,
+    });
+    expect(created.status).toBe(200);
+    return { ...created.body, objectKey: stored.key as string };
+  }
+
+  test('a PDF deck is queued on save, processed with its page count and text, and publishes', async () => {
+    const topic = (await call('elena', 'POST', `${course}/topics`, { title: 'Decks' })).body;
+    const deck = await addDeck('Lecture', topic.id, ['Intro', 'Sampling', 'Bias']);
+
+    const queued = await call('elena', 'GET', `${course}/processing`);
+    expect(
+      queued.body.resources.find((r: { resourceId: string }) => r.resourceId === deck.id),
+    ).toMatchObject({ state: 'queued' });
+    expect(await errorsOf(deck.id)).toEqual([
+      expect.objectContaining({ code: 'unconverted_deck' }),
+    ]);
+
+    await ensureWorker();
+    await settle(deck.id);
+    const [revision] = await testDb.db
+      .select({ derived: resourceRevisions.derived })
+      .from(resourceRevisions)
+      .where(eq(resourceRevisions.id, deck.headRevisionId));
+    expect(revision?.derived).toMatchObject({
+      pageCount: 3,
+      rasterOnly: false,
+      status: { state: 'ready' },
+    });
+    const pages = (revision?.derived.pages ?? []) as { text: string }[];
+    expect(pages.map((page) => page.text)).toEqual(['Intro', 'Sampling', 'Bias']);
+    expect(await errorsOf(deck.id)).toEqual([]);
+  });
+
+  test('a raster-only deck cannot publish without a text alternative', async () => {
+    const topic = (await call('elena', 'POST', `${course}/topics`, { title: 'Scans' })).body;
+    const deck = await addDeck('Scanned', topic.id, ['', '', '']);
+    await ensureWorker();
+    await settle(deck.id);
+    expect(await errorsOf(deck.id)).toEqual([
+      expect.objectContaining({ code: 'missing_alternative' }),
+    ]);
+
+    // Adding the alternative makes a new revision, which is processed again and then publishes.
+    const withText = await call('elena', 'PATCH', `${course}/resources/${deck.id}`, {
+      expectedRevision: deck.revision,
+      content: { objectKey: deck.objectKey },
+      objectKeys: [deck.objectKey],
+      accessibleAlternative: { text: 'Slide 1: title. Slide 2: a histogram of sample means.' },
+    });
+    expect(withText.status).toBe(200);
+    await headReady(deck.id);
+    expect(await errorsOf(deck.id)).toEqual([]);
+  });
+
+  test('a deck that is not a readable PDF fails with the reason and can be retried', async () => {
+    const topic = (await call('elena', 'POST', `${course}/topics`, { title: 'Broken decks' })).body;
+    const stored = (await upload('elena', 'x.pdf', text('%PDF-1.4 not really'))).json();
+    const created = await call('elena', 'POST', `${course}/topics/${topic.id}/resources`, {
+      type: 'slides_pdf',
+      title: 'Broken',
+      content: { objectKey: stored.key },
+      objectKeys: [stored.key],
+    });
+    await ensureWorker();
+    await settle(created.body.id, 'failed');
+    expect(await errorsOf(created.body.id)).toEqual([
+      expect.objectContaining({
+        code: 'unconverted_deck',
+        message: expect.stringContaining('could not be processed'),
+      }),
+    ]);
+    const retry = await call('elena', 'POST', `${course}/resources/${created.body.id}/processing`);
+    expect(retry.status).toBe(200);
+    expect(retry.body.state).toBe('queued');
+  });
+});

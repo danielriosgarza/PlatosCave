@@ -593,7 +593,7 @@ None of these blocks Phases 1–4, which run entirely locally and in GitHub Acti
 | 1 | §17 asks whether instructors may see personal annotations beyond shared work | Private by default; only threads with audience instructor/class are visible to instructors (P2-04) |
 | 2 | What a student sees after choosing the instructor entrance | `/courses?view=teach` shows an access explanation and their enrolled classes; no privilege change (P1-09) |
 | 3 | How "Preview as student" identity is realised | Shadow user (`kind = preview`) per instructor × class with an `is_preview` student membership (ADR-0002) |
-| 4 | Slide rendering: server rasterisation vs client rendering | Client-side pdf.js with HTTP range requests; server extracts page count and text only (P2-01). Raster-only decks require a text alternative at publication |
+| 4 | Slide rendering: server rasterisation vs client rendering | Client-side pdf.js with HTTP range requests; server extracts page count and text only (P2-01). Raster-only decks require a text alternative at publication; a deck is raster-only when fewer than half of its pages carry text (`derived.rasterOnly`, P2-01) |
 | 5 | Format of "instructor-authored web slides" | Markdown deck separated by `---`, rendered through the reading pipeline (P2-03) |
 | 6 | Exercise definition format | Versioned JSON (`exercise.v1`) validated by zod, edited through a form; no DSL (P2-10) |
 | 7 | Hidden-check storage | Inside the test resource revision; student contracts use response schemas without those fields, asserted structurally (P3-16) |
