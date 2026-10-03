@@ -18,6 +18,7 @@ export interface NotebookSummary {
   resourceId: string;
   revisionId: string;
   title: string;
+  type: 'notebook' | 'shiny';
 }
 
 /** The topic's notebooks in authored order; null when the topic is not open to the caller. */
@@ -50,9 +51,12 @@ export async function listTopicNotebooks(
       ),
     )
     .orderBy(asc(releaseResources.position));
-  const notebooks = rows
-    .filter((r) => r.type === 'notebook' && (scope.role !== 'student' || openToStudent(r, now)))
-    .map(({ resourceId, revisionId, title }) => ({ resourceId, revisionId, title }));
+  const notebooks = rows.flatMap((r) =>
+    (r.type === 'notebook' || r.type === 'shiny') &&
+    (scope.role !== 'student' || openToStudent(r, now))
+      ? [{ resourceId: r.resourceId, revisionId: r.revisionId, title: r.title, type: r.type }]
+      : [],
+  );
   return { notebooks };
 }
 
@@ -103,4 +107,39 @@ export async function loadNotebook(
     }
   }
   return { ...base, status: 'ready', notebook: notebook.data, objects };
+}
+
+export interface ShinyContent {
+  revisionId: string;
+  title: string;
+  status: 'ready' | 'unapproved';
+  url: string | null;
+  origin: string | null;
+}
+
+/**
+ * One Shiny resource the caller may open now (§10.7). The address is returned only when its
+ * origin is on the host's approved list; otherwise the resource is neither framed nor linked.
+ */
+export async function loadShiny(
+  db: Db,
+  scope: ClassScope,
+  revisionId: string,
+  now: Date,
+  approvedOrigins: readonly string[],
+): Promise<ShinyContent | null> {
+  const row = await releasedRevision(db, scope, revisionId, now);
+  if (row?.type !== 'shiny' || row.tab !== 'notebooks') return null;
+  const base = { revisionId: row.revisionId, title: row.title };
+  const address = typeof row.content.url === 'string' ? row.content.url : null;
+  let url: URL | null = null;
+  try {
+    url = address ? new URL(address) : null;
+  } catch {
+    url = null;
+  }
+  if (!url || !approvedOrigins.includes(url.origin) || url.username || url.password) {
+    return { ...base, status: 'unapproved', url: null, origin: null };
+  }
+  return { ...base, status: 'ready', url: url.href, origin: url.origin };
 }

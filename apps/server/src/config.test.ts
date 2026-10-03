@@ -144,3 +144,15 @@ test('A01 fixture routes are off by default and refused in production', () => {
   expect(loadConfig(production).TEST_ROUTES).toBe(false);
   expect(() => loadConfig({ ...production, TEST_ROUTES: '1' })).toThrow(/TEST_ROUTES/);
 });
+
+test('A11 approved Shiny origins are origins on https or loopback, and never the app or content origin', () => {
+  expect(loadConfig({}).SHINY_ORIGINS).toEqual([]);
+  expect(
+    loadConfig({ SHINY_ORIGINS: 'https://shiny.example.org/app, http://127.0.0.1:3838' })
+      .SHINY_ORIGINS,
+  ).toEqual(['https://shiny.example.org', 'http://127.0.0.1:3838']);
+  expect(() => loadConfig({ SHINY_ORIGINS: 'http://shiny.example.org' })).toThrow(/https/);
+  expect(() => loadConfig({ SHINY_ORIGINS: 'shiny.example.org' })).toThrow();
+  expect(() => loadConfig({ SHINY_ORIGINS: 'http://localhost:3838' })).toThrow(/app or content/);
+  expect(() => loadConfig({ SHINY_ORIGINS: 'http://127.0.0.1:3000' })).toThrow(/app or content/);
+});

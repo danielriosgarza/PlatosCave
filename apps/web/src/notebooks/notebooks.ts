@@ -1,4 +1,4 @@
-import { getNotebook, listNotebooks } from '@parallax/contracts/routes/notebooks';
+import { getNotebook, getShiny, listNotebooks } from '@parallax/contracts/routes/notebooks';
 import { useQuery } from '@tanstack/react-query';
 import type { z } from 'zod';
 import { ApiError, call, useApi } from '../api/client';
@@ -34,3 +34,8 @@ export const useNotebookContent = (classId: string, revisionId: string) => {
         : false,
   });
 };
+
+export type ShinyContent = z.output<typeof getShiny.response>;
+
+export const useShiny = (classId: string, revisionId: string) =>
+  useApi(getShiny, { params: { classId, revisionId } });

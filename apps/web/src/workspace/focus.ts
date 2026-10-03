@@ -53,8 +53,10 @@ export function useFocusMode(workspace: RefObject<HTMLElement | null>) {
   const focusButton = useRef<HTMLButtonElement | null>(null);
   const fullscreenButton = useRef<HTMLButtonElement | null>(null);
 
+  // An element inside the workspace, such as an embedded app's frame, is the workspace's own
+  // full screen: entering or leaving it must not read as leaving ours.
   const isOurs = useCallback(
-    () => workspace.current !== null && document.fullscreenElement === workspace.current,
+    () => workspace.current?.contains(document.fullscreenElement) === true,
     [workspace],
   );
 
@@ -147,7 +149,7 @@ export function useFocusMode(workspace: RefObject<HTMLElement | null>) {
   useEffect(
     () => () => {
       setFocusOn(false);
-      if (document.fullscreenElement && document.fullscreenElement === workspace.current) {
+      if (workspace.current?.contains(document.fullscreenElement)) {
         void document.exitFullscreen().catch(() => undefined);
       }
     },
