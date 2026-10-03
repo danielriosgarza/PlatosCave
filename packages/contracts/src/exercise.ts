@@ -218,7 +218,9 @@ function issueWords(issue: z.core.$ZodIssue, rest: PropertyKey[]): string {
     return field === 'correct' ? 'tick a correct option' : `needs at least ${issue.minimum}`;
   }
   if (issue.code === 'too_small' && issue.origin === 'number') {
-    return `must be at least ${issue.minimum}`;
+    return issue.inclusive === false
+      ? `must be greater than ${issue.minimum}`
+      : `must be at least ${issue.minimum}`;
   }
   if (issue.code === 'too_big' && issue.origin === 'string') {
     return `must be at most ${issue.maximum} characters`;
@@ -229,7 +231,7 @@ function issueWords(issue: z.core.$ZodIssue, rest: PropertyKey[]): string {
   if (issue.code === 'invalid_format' && issue.format === 'regex') {
     return field === 'correct'
       ? 'tick a correct option'
-      : 'may only use lowercase letters, digits, - and _';
+      : 'must start with a lowercase letter or digit and use only lowercase letters, digits, - and _ (at most 40)';
   }
   return issue.message;
 }
@@ -252,7 +254,12 @@ export function exerciseProblems(content: unknown): string[] {
       !(
         issue.code === 'invalid_format' &&
         issue.path.at(-1) === 'correct' &&
-        all.some((o) => o.code === 'custom' && o.path[1] === issue.path[1])
+        all.some(
+          (o) =>
+            o.code === 'custom' &&
+            o.message === 'tick a correct option' &&
+            o.path[1] === issue.path[1],
+        )
       ),
   );
   return issues.map((issue) => {

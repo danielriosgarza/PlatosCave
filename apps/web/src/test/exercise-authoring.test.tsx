@@ -61,7 +61,8 @@ const full = {
 
 const json = (body: unknown, status = 200) => ({ status, body });
 
-function open() {
+function open(stored: unknown = content) {
+  let current = { ...full, head: { ...full.head, content: stored } };
   const patched: Record<string, unknown>[] = [];
   const me = makeMe({
     courses: [
@@ -104,12 +105,17 @@ function open() {
     if (path === `${base}/processing`) return json({ resources: [] });
     if (path === `${base}/releases/validation`) return json({ errors: [], warnings: [] });
     if (path === `${base}/resources/${EXERCISE}` && (init?.method ?? 'GET') === 'GET') {
-      return json(full);
+      return json(current);
     }
     if (path === `${base}/resources/${EXERCISE}` && init?.method === 'PATCH') {
       const body = JSON.parse(String(init.body));
       patched.push(body);
-      return json({ ...full, revision: 1 + patched.length });
+      current = {
+        ...current,
+        revision: 1 + patched.length,
+        head: body.content ? { ...current.head, content: body.content } : current.head,
+      };
+      return json(current);
     }
     return json({ error: 'not found' }, 404);
   });
@@ -117,9 +123,9 @@ function open() {
   return patched;
 }
 
-const editor = async () => {
+const editor = async (stored: unknown = content) => {
   const user = userEvent.setup();
-  const patched = open();
+  const patched = open(stored);
   await user.click(await screen.findByRole('button', { name: 'Edit Sample size' }));
   await screen.findByLabelText('Exercise title');
   return { user, patched };
@@ -164,6 +170,37 @@ describe('exercise editor', () => {
       ),
     ).toBeInTheDocument();
     expect(screen.queryByText(/Draft saved at/)).not.toBeInTheDocument();
+  });
+
+  it('says publishing is blocked only while the stored head is invalid, not after a valid save', async () => {
+    const invalid = {
+      ...content,
+      steps: [{ ...content.steps[0], compare: [25, 102] }],
+    };
+    const { user, patched } = await editor(invalid);
+    const problems = await screen.findByRole('status', { name: 'Exercise problems' });
+    expect(
+      within(problems).getByText(/Publishing is blocked until a valid definition is saved/),
+    ).toBeInTheDocument();
+    // The invalid head loads as a blank form; filling it in saves a valid definition.
+    for (const [label, text] of [
+      ['Step 1 title', 'Pick'],
+      ['Step 1 prompt', 'Which is wider?'],
+      ['Step 1 option 1', 'Small'],
+      ['Step 1 option 2', 'Large'],
+      ['Step 1 feedback when correct', 'Yes.'],
+      ['Step 1 feedback when incorrect', 'No.'],
+    ] as const) {
+      await user.type(screen.getByLabelText(label), text);
+    }
+    await waitFor(() => expect(patched.at(-1)).toHaveProperty('content'), { timeout: 3000 });
+    const title = screen.getByLabelText('Step 1 title');
+    await user.clear(title);
+    const again = await screen.findByRole('status', { name: 'Exercise problems' });
+    expect(
+      within(again).getByText(/publishing would release the last saved version/),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Publishing is blocked/)).not.toBeInTheDocument();
   });
 
   it('still saves title and archive while the steps are invalid', async () => {

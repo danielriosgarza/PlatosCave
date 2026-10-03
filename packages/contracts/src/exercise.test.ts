@@ -98,4 +98,15 @@ describe('exercise.v1 authoring rules', () => {
       'Step 1 “Pick” · options: needs at least 2',
     );
   });
+
+  test('exclusive minimums and the id rule are worded as they are enforced', () => {
+    expect(exerciseProblems(simulation({ step: 0 }, [25]))).toContain(
+      'Step 1 “Inspect” · control · step: must be greater than 0',
+    );
+    for (const name of ['_x', 'x'.repeat(41)]) {
+      expect(exerciseProblems(simulation({ name }, [25]))).toEqual([
+        expect.stringMatching(/control · name: must start with a lowercase letter or digit/),
+      ]);
+    }
+  });
 });

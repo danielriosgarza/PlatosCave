@@ -70,6 +70,13 @@ const policyNames: Record<HintPolicy, string> = {
   forfeits_credit: 'A step solved with hints earns no credit',
 };
 
+/** Whether the stored head can be published: absent, valid, or stored but no longer valid. */
+type HeadState = 'none' | 'valid' | 'invalid';
+function headOf(server: Full, valid?: boolean): HeadState {
+  if (server.head === null) return 'none';
+  return valid || toValues(server).exercise.loadProblems.length === 0 ? 'valid' : 'invalid';
+}
+
 function ExerciseFields({
   courseId,
   server,
@@ -79,7 +86,7 @@ function ExerciseFields({
   server: Full;
   onSaved: () => void;
 }) {
-  const [hasHead, setHasHead] = useState(server.head !== null);
+  const [head, setHead] = useState(() => headOf(server));
   const { values, change, state, retry, takeTheirs, keepMine } = useAutosave({
     server,
     toValues,
@@ -97,7 +104,8 @@ function ExerciseFields({
           ...(valid && { content: toContent(v.exercise) as Record<string, unknown> }),
         },
       });
-      setHasHead(saved.head !== null);
+      // Content is sent only when valid, so a save that sent it leaves a valid head.
+      setHead((prev) => (valid ? headOf(saved, true) : prev));
       return saved;
     },
     onSaved,
@@ -145,12 +153,12 @@ function ExerciseFields({
           rows={rows(state.current)}
           onKeepMine={() => keepMine(state.current)}
           onUseTheirs={() => {
-            setHasHead(state.current.head !== null);
+            setHead(headOf(state.current));
             takeTheirs(state.current);
           }}
         />
       ) : null}
-      {exercise.loadProblems.length > 0 ? (
+      {head === 'invalid' && exercise.loadProblems.length > 0 ? (
         <div className={local.hint} role="status" aria-label="Saved definition problems">
           The saved definition is no longer valid, so this form starts blank. Saving a new
           definition replaces it; the earlier revision is kept.
@@ -163,9 +171,9 @@ function ExerciseFields({
       ) : null}
       {problems.length > 0 ? (
         <div className={local.hint} role="status" aria-label="Exercise problems">
-          {exercise.loadProblems.length > 0
+          {head === 'invalid'
             ? 'Publishing is blocked until a valid definition is saved. Fix:'
-            : hasHead
+            : head === 'valid'
               ? 'These step edits are not saved yet; publishing would release the last saved version. Fix:'
               : 'This exercise has no content yet and cannot be published. Fix:'}
           <ul className={local.issues}>
