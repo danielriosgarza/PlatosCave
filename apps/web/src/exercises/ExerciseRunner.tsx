@@ -53,6 +53,17 @@ function OpenFailure({ error, retry }: { error: unknown; retry: () => void }) {
       </p>
     );
   }
+  const archived =
+    error instanceof ApiError &&
+    error.status === 409 &&
+    (error.body as { error?: unknown } | null)?.error === 'class_archived';
+  if (archived) {
+    return (
+      <p className={styles.inlineError} role="alert">
+        This class is archived, so practice is read-only. You did not start this exercise.
+      </p>
+    );
+  }
   if (error instanceof ApiError && error.status === 404) {
     return (
       <p className={styles.inlineError} role="alert">

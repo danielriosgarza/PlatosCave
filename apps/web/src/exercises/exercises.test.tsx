@@ -555,6 +555,13 @@ describe('exercise UI follow-ups', () => {
     expect(await screen.findByText(/Hidden from students/)).toBeVisible();
   });
 
+  it('an exercise never opened in an archived class says so, with no Try again', async () => {
+    exerciseApi({ openFails: { status: 409, body: { error: 'class_archived' } } });
+    open();
+    expect(await screen.findByRole('alert')).toHaveTextContent('This class is archived');
+    expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
+  });
+
   it('A08 an exercise that fails to open shows the server message, or offers Try again', async () => {
     exerciseApi({ openFails: { status: 400, body: { message: 'This exercise has no steps.' } } });
     open();
