@@ -1,6 +1,13 @@
 import { exerciseV1 } from '@parallax/contracts';
 import { describe, expect, it } from 'vitest';
-import { blankExercise, blankStep, problemsOf, toContent, toDraft } from './exerciseForm';
+import {
+  blankExercise,
+  blankStep,
+  presentedAsAnswer,
+  problemsOf,
+  toContent,
+  toDraft,
+} from './exerciseForm';
 
 const reference = exerciseV1.parse({
   schema: 'exercise.v1',
@@ -137,6 +144,38 @@ describe('exercise form', () => {
     expect(match.choices.map((c) => c.label)).toEqual(['Mammal', 'Bird']);
     expect(match.pairs.o1).toBe(match.pairs.o2);
     expect(match.pairs.o1).not.toBe(match.pairs.o3);
+  });
+
+  it('a prompt added with the label of an extra choice adopts it instead of duplicating it', () => {
+    const draft = toDraft(reference);
+    const steps = draft.steps.map((s) =>
+      s.kind === 'matching'
+        ? {
+            ...s,
+            rows: [...s.rows, { id: 'o9', label: 'Range', extra: 'Spread', correct: false }],
+          }
+        : s,
+    );
+    const match = exerciseV1
+      .parse(toContent({ ...draft, steps }))
+      .steps.find((s) => s.kind === 'matching');
+    if (match?.kind !== 'matching') throw new Error('no matching step');
+    expect(match.choices.filter((c) => c.label === 'Spread')).toHaveLength(1);
+    expect(match.pairs.o9).toBe('c3');
+    expect(match.choices.map((c) => c.id)).toEqual(['c1', 'c2', 'c3', 'c4']);
+  });
+
+  it('an ordering step created in the editor is shuffled and stores no presentation order', () => {
+    const step = blankStep('ordering', []);
+    expect(step.shuffle).toBe(true);
+    expect(step.presented).toEqual([]);
+  });
+
+  it('tells whether an unshuffled ordering step shows the answer order', () => {
+    const ordering = toDraft(reference).steps.find((s) => s.kind === 'ordering');
+    if (!ordering) throw new Error('no ordering step');
+    expect(presentedAsAnswer(ordering)).toBe(false);
+    expect(presentedAsAnswer({ ...ordering, presented: ['b', 'a'] })).toBe(true);
   });
 
   it('keeps an ordering step’s stored presentation order apart from the answer order', () => {
