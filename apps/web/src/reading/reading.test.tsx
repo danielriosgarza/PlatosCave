@@ -473,6 +473,41 @@ describe('native reading', () => {
     expect(world.positions[0]).toMatchObject({ revisionId: REV_NATIVE });
   });
 
+  it('an older save that fails after a newer one was sent is not resent over it', async () => {
+    const world = makeWorld(two());
+    const fetchMock = api(world);
+    const base = fetchMock.getMockImplementation();
+    if (!base) throw new Error('no fetch stub');
+    let failA: (() => void) | undefined;
+    fetchMock.mockImplementation(async (input, init) => {
+      if (init?.method !== 'PUT') return base(input, init);
+      // Save A waits to fail; save B (sent when the page is hidden) goes through.
+      if (!failA) {
+        return new Promise<Response>((_resolve, reject) => {
+          failA = () => reject(new TypeError('offline'));
+        });
+      }
+      return base(input, init);
+    });
+    renderApp(READING);
+    await screen.findByText('Every sample tells a slightly different story.');
+    scrollThrough({ 'b-title': -120, 'b-one': -60, 'b-two': 40, 'b-code': 140 });
+    await waitFor(() => expect(putsOf(fetchMock)).toHaveLength(1));
+    // A newer place, sent at once because the page is hidden while A is still in flight.
+    scrollThrough({ 'b-title': -300, 'b-one': -240, 'b-two': -140, 'b-code': -40 });
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+    document.dispatchEvent(new Event('visibilitychange'));
+    await waitFor(() => expect(world.positions).toHaveLength(1));
+    // A fails after B has gone through; the connection then returns.
+    failA?.();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    window.dispatchEvent(new Event('online'));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(putsOf(fetchMock)).toHaveLength(2);
+    expect(world.positions).toHaveLength(1);
+    expect(world.positions[0]).toMatchObject({ position: { blockId: 'b-code' } });
+  });
+
   it('A01 a place still waiting when access ends is not sent', async () => {
     const world = makeWorld(two());
     const me = makeMe({ classes: [studentIn(CLASS_A, 'Class A')] });

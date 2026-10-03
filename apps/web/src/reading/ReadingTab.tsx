@@ -219,6 +219,8 @@ function ReadingView({
   const next = useRef<ReadingPosition | null>(null);
   /** The place a failed save left unsent, sent again when the connection returns. */
   const unsaved = useRef<ReadingPosition | null>(null);
+  /** Counts sends, so a failure only counts as the last word while no later send has started. */
+  const sends = useRef(0);
 
   const send = useCallback(
     function send(place: ReadingPosition) {
@@ -230,11 +232,12 @@ function ReadingView({
       }
       saving.current = true;
       unsaved.current = null;
+      const sequence = ++sends.current;
       save(revisionId, place)
         .catch(() => {
           // Retried by the next move or when the connection returns, unless a newer place is
-          // already waiting.
-          if (!next.current) {
+          // already waiting or was sent meanwhile (it would be overwritten by this older one).
+          if (!next.current && sequence === sends.current) {
             lastSaved.current = '';
             unsaved.current = place;
           }
