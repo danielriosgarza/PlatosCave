@@ -4,6 +4,7 @@ export * from './audit';
 export * from './content';
 export * from './exercises';
 export * from './memberships';
+export * from './notebookSubmissions';
 export * from './releases';
 export * from './storage';
 export * from './users';
