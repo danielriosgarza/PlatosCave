@@ -1,0 +1,54 @@
+{
+  "v": 1,
+  "t": "test_result",
+  "requestId": "c0ffee00-1111-4222-8333-444455556666",
+  "outcome": "ready",
+  "stages": [
+    {
+      "name": "workspace",
+      "status": "ok",
+      "data": {
+        "resolvedPath": "/home/student/parallax",
+        "rootDir": "/home/student/parallax"
+      }
+    },
+    {
+      "name": "runtime",
+      "status": "ok",
+      "data": {
+        "state": "running",
+        "version": "2.21.1"
+      }
+    },
+    {
+      "name": "notebook_auth",
+      "status": "ok"
+    },
+    {
+      "name": "kernels",
+      "status": "ok",
+      "data": {
+        "source": "service"
+      }
+    }
+  ],
+  "kernelspecs": [
+    {
+      "name": "python3",
+      "displayName": "Python 3 (ipykernel)",
+      "language": "python"
+    },
+    {
+      "name": "ir",
+      "displayName": "R",
+      "language": "R"
+    }
+  ],
+  "attachable": [
+    {
+      "port": 18888,
+      "pid": 4242,
+      "rootDir": "/home/student/parallax"
+    }
+  ]
+}

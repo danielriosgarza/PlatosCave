@@ -234,6 +234,33 @@ describe('A06 mapping a mark to a changed revision', () => {
     expect(mapAnchor(figure, v1, reading([], ['fig-2'])).status).toBe('needs_reattachment');
   });
 
+  test('A24 a web deck slide maps while its text is unchanged and the slide count is the same', () => {
+    const web = (texts: string[]) =>
+      layoutOf('slides_web', {
+        slides: texts.map((t) => `<p>${t}</p>`),
+        blockMap: texts.map((text, i) => ({
+          id: `${i}`.padStart(12, 'a'),
+          tag: 'p',
+          text,
+          slide: i + 1,
+        })),
+      }) as Layout;
+    const slide: Anchor = { kind: 'slide', page: 1 };
+    const v1 = web(['Intro', 'Sampling  varies']);
+    // Re-wrapped whitespace is the same text; the same slide in a new revision keeps its anchor.
+    expect(mapAnchor(slide, v1, web(['Intro changed', 'Sampling varies']))).toMatchObject({
+      status: 'mapped',
+      anchor: slide,
+    });
+    expect(mapAnchor(slide, v1, web(['Intro', 'Sampling varies a lot'])).status).toBe(
+      'needs_reattachment',
+    );
+    // An added slide shifts the numbering: nothing is guessed.
+    expect(mapAnchor(slide, v1, web(['Intro', 'Sampling varies', 'New'])).status).toBe(
+      'needs_reattachment',
+    );
+  });
+
   test('A06 an anchor that does not fit the new revision type needs reattachment', () => {
     expect(mapAnchor(mark, v1, pdf(['h0'])).status).toBe('needs_reattachment');
     expect(mapAnchor({ kind: 'none' }, v1, pdf(['h0'])).status).toBe('mapped');

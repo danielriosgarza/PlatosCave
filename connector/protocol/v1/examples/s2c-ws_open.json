@@ -1,0 +1,7 @@
+{
+  "v": 1,
+  "t": "ws_open",
+  "streamId": 7,
+  "sessionId": "7b1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f",
+  "path": "/api/kernels/9d3c0a52-6f1e-4c0b-8d57-1a2b3c4d5e6f/channels?session_id=7b1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f"
+}

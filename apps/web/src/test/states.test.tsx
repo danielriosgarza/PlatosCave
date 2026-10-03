@@ -138,7 +138,9 @@ describe('session check on navigation', () => {
     down = true;
     await act(() => router.navigate({ to: '/courses' }));
     await act(() => new Promise((r) => setTimeout(r, 50)));
+    expect(await screen.findByRole('heading', { name: 'Your courses' })).toBeInTheDocument();
     expect(screen.queryByText(/could not be checked/)).toBeNull();
+    expect(screen.queryByText(/could not be shown/)).toBeNull();
     expect(router.state.location.pathname).toBe('/courses');
   });
 });

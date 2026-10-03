@@ -1,0 +1,64 @@
+{
+  "v": 1,
+  "sessions": [
+    {
+      "sessionId": "11111111-2222-4333-8444-555555555555",
+      "owned": true,
+      "state": "stopped",
+      "cause": "sleep",
+      "stoppedAt": "2026-10-03T09:30:00Z",
+      "target": {
+        "kind": "managed",
+        "targetId": "lab-gpu",
+        "subject": "7b1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f"
+      },
+      "lease": {
+        "idleTimeoutMin": 30,
+        "gracePeriodMin": 5
+      },
+      "phase": "detached",
+      "lastActivityAt": "2026-10-03T09:30:00Z",
+      "expiresAt": "2026-10-03T09:30:00Z",
+      "hardDeadline": "2026-10-03T21:30:00Z"
+    },
+    {
+      "sessionId": "7b1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f",
+      "owned": true,
+      "state": "ready",
+      "target": {
+        "kind": "ssh",
+        "host": "gpu01.lab.example.org",
+        "port": 22,
+        "user": "student",
+        "workspace": "/home/student/parallax",
+        "auth": {
+          "method": "agent"
+        },
+        "hostKeys": [
+          {
+            "host": "gpu01.lab.example.org",
+            "port": 22,
+            "sha256": "SHA256:SGuN8fwGXFkUlKZT8ILLvpynWOsg9Y72LtxX1LmpqEM"
+          }
+        ]
+      },
+      "process": {
+        "where": "remote",
+        "pid": 31337,
+        "port": 41873,
+        "startedAt": "2026-10-03T09:30:00Z"
+      },
+      "kernelIds": ["9d3c0a52-6f1e-4c0b-8d57-1a2b3c4d5e6f"],
+      "startedAt": "2026-10-03T09:30:00Z",
+      "hardDeadline": "2026-10-03T21:30:00Z",
+      "lease": {
+        "idleTimeoutMin": 30,
+        "gracePeriodMin": 5
+      },
+      "phase": "detached",
+      "lastActivityAt": "2026-10-03T09:30:00Z",
+      "detachedAt": "2026-10-03T09:31:00Z",
+      "expiresAt": "2026-10-03T09:36:00Z"
+    }
+  ]
+}

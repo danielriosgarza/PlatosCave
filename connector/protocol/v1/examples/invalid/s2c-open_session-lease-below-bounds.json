@@ -1,0 +1,18 @@
+{
+  "v": 1,
+  "t": "open_session",
+  "requestId": "c0ffee00-1111-4222-8333-444455556666",
+  "sessionId": "7b1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f",
+  "target": {
+    "kind": "local",
+    "workspace": "/home/student/parallax"
+  },
+  "runtime": {
+    "mode": "start",
+    "kernelName": "python3"
+  },
+  "lease": {
+    "idleTimeoutMin": 1,
+    "gracePeriodMin": 5
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "v": 1,
+  "t": "session_state",
+  "sessionId": "7b1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f",
+  "state": "disconnected",
+  "owned": true,
+  "phase": "detached",
+  "cause": "sleep",
+  "leaseExpiresAt": "2026-10-03T09:35:00Z",
+  "ts": 1790000000
+}
