@@ -4,12 +4,14 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
 } from 'react';
 import { openPdf, type PdfDocument, type RenderHandle } from '../reading/pdfjs';
 import readingStyles from '../reading/Reading.module.css';
 import { SourceDownload } from '../reading/SourceDownload';
+import { sanitizeReading } from '../reading/sanitize';
 import { isEditable, useFocusActive } from '../workspace/focus';
 import { ResourceTools } from '../workspace/ResourceTools';
 import styles from './Slides.module.css';
@@ -23,11 +25,17 @@ export interface NotesContext {
   page: number;
 }
 
+/** The ratio of a web slide, as the PDF decks of the wireframe. */
+const WEB_RATIO = 16 / 9;
+
 interface Props {
-  url: string;
+  /** A PDF deck's content link; a web deck has `slides` instead. */
+  url?: string;
+  /** A web deck: the HTML of each slide, sanitised at ingestion and once more here. */
+  slides?: string[];
   pageCount: number;
   /** Mints a new content link; the one in hand expires after five minutes (§13). */
-  renew: () => Promise<string | null>;
+  renew?: () => Promise<string | null>;
   /** The slide to open at, 1-based. */
   initialPage: number;
   source: { classId: string; revisionId: string; key: string | null };
@@ -36,16 +44,30 @@ interface Props {
   notes?: (context: NotesContext) => ReactNode;
 }
 
-type Load = { state: 'loading' } | { state: 'failed' } | { state: 'ready'; doc: PdfDocument };
+type Load =
+  | { state: 'loading' }
+  | { state: 'failed' }
+  | { state: 'ready'; doc: PdfDocument }
+  | { state: 'web' };
 
 /**
- * A PDF deck drawn by pdf.js one slide at a time (§7): the file is opened over its content link
- * with range requests, so a slide costs only the bytes it needs. The slide keeps the file's
- * ratio inside a neutral stage; arrow keys move it only while the stage holds focus.
+ * A deck shown one slide at a time (§7). A PDF is drawn by pdf.js: the file is opened over its
+ * content link with range requests, so a slide costs only the bytes it needs. A web deck is the
+ * sanitised HTML of the slide, laid out in a 16:9 box. Either keeps its ratio inside a neutral
+ * stage; arrow keys move it only while the stage holds focus.
  */
-export function SlideViewer({ url, pageCount, renew, initialPage, source, onPage, notes }: Props) {
+export function SlideViewer({
+  url,
+  slides,
+  pageCount,
+  renew,
+  initialPage,
+  source,
+  onPage,
+  notes,
+}: Props) {
   const focusMode = useFocusActive();
-  const [load, setLoad] = useState<Load>({ state: 'loading' });
+  const [load, setLoad] = useState<Load>(slides ? { state: 'web' } : { state: 'loading' });
   const [attempt, setAttempt] = useState(0);
   const [page, setPage] = useState(() => Math.min(Math.max(initialPage, 1), pageCount));
   const [zoom, setZoom] = useState(0);
@@ -59,13 +81,14 @@ export function SlideViewer({ url, pageCount, renew, initialPage, source, onPage
   const canvas = useRef<HTMLCanvasElement>(null);
   const text = useRef<HTMLDivElement>(null);
   const [drawn, setDrawn] = useState<{ width: number; height: number } | null>(null);
-  const current = useRef(url);
-  current.current = url;
+  const current = useRef(url ?? '');
+  current.current = url ?? '';
   // A link that has just been opened and has drawn nothing yet: a failure then is not expiry.
   const fresh = useRef(false);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: `attempt` is the retry trigger
   useEffect(() => {
+    if (slides) return;
     let cancelled = false;
     let opened: PdfDocument | null = null;
     setLoad({ state: 'loading' });
@@ -73,7 +96,7 @@ export function SlideViewer({ url, pageCount, renew, initialPage, source, onPage
       try {
         opened = await openPdf(current.current);
       } catch {
-        const next = await renew();
+        const next = await renew?.();
         if (!next) throw new Error('no link');
         current.current = next;
         opened = await openPdf(next);
@@ -88,7 +111,7 @@ export function SlideViewer({ url, pageCount, renew, initialPage, source, onPage
       cancelled = true;
       opened?.destroy();
     };
-  }, [attempt, renew]);
+  }, [attempt, renew, slides]);
 
   useLayoutEffect(() => {
     if (!mat) return;
@@ -102,6 +125,12 @@ export function SlideViewer({ url, pageCount, renew, initialPage, source, onPage
 
   const doc = load.state === 'ready' ? load.doc : null;
   const level = ZOOMS[zoom] ?? 1;
+  const shown = useMemo(() => {
+    const html = slides?.[page - 1];
+    return html === undefined ? null : sanitizeReading(html);
+  }, [slides, page]);
+  // Fit: the whole slide inside the stage, never distorted.
+  const webWidth = Math.max(1, Math.floor(Math.min(size.width, size.height * WEB_RATIO) * level));
   // Draws run one after another on the one canvas: pdf.js refuses a second render() while one is
   // still running, so a newer draw cancels the older and starts only after it has settled.
   const queue = useRef<Promise<unknown>>(Promise.resolve());
@@ -274,16 +303,32 @@ export function SlideViewer({ url, pageCount, renew, initialPage, source, onPage
                   Loading slides
                 </p>
               )}
-              <div
-                className={styles.slide}
-                data-page={drawn ? page : undefined}
-                hidden={load.state !== 'ready'}
-                style={drawn ? { width: drawn.width, height: drawn.height } : undefined}
-              >
-                <canvas ref={canvas} aria-label={`Slide ${page} of ${pageCount}`} />
-                {/* pdf.js finds its text layer by the plain `textLayer` class while a selection is made. */}
-                <div ref={text} className={`${readingStyles.textLayer} textLayer`} />
-              </div>
+              {shown !== null ? (
+                <div
+                  className={`${styles.slide} ${styles.webBox}`}
+                  data-page={page}
+                  style={{ width: webWidth, height: Math.round(webWidth / WEB_RATIO) }}
+                >
+                  <article
+                    className={styles.webSlide}
+                    aria-roledescription="slide"
+                    aria-label={`Slide ${page} of ${pageCount}`}
+                    // biome-ignore lint/security/noDangerouslySetInnerHtml: sanitised twice with the reading allow-list: at ingestion and by sanitizeReading
+                    dangerouslySetInnerHTML={{ __html: shown }}
+                  />
+                </div>
+              ) : (
+                <div
+                  className={styles.slide}
+                  data-page={drawn ? page : undefined}
+                  hidden={load.state !== 'ready'}
+                  style={drawn ? { width: drawn.width, height: drawn.height } : undefined}
+                >
+                  <canvas ref={canvas} aria-label={`Slide ${page} of ${pageCount}`} />
+                  {/* pdf.js finds its text layer by the plain `textLayer` class while a selection is made. */}
+                  <div ref={text} className={`${readingStyles.textLayer} textLayer`} />
+                </div>
+              )}
             </div>
             <div
               className={styles.progress}

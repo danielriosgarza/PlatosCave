@@ -86,6 +86,92 @@
   flex: none;
   background: var(--pc-sheet);
 }
+/* A web slide: its text scales with the slide, so zoom and fit change size and not the layout. */
+.webBox {
+  /* The sized 16:9 box is the container: the slide's cqw units resolve against it, not the viewport. */
+  container-type: size;
+}
+.webSlide {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  padding: 4cqw 5cqw;
+  font-size: 2.6cqw;
+  line-height: 1.35;
+  color: var(--pc-ink);
+}
+.webSlide > :first-child {
+  margin-top: 0;
+}
+.webSlide h1,
+.webSlide h2,
+.webSlide h3,
+.webSlide h4 {
+  margin: 1.2em 0 0.4em;
+  line-height: 1.15;
+}
+.webSlide h1 {
+  font-size: 2em;
+}
+.webSlide h2 {
+  font-size: 1.5em;
+}
+.webSlide h3 {
+  font-size: 1.2em;
+}
+.webSlide p,
+.webSlide ul,
+.webSlide ol,
+.webSlide dl,
+.webSlide blockquote,
+.webSlide pre,
+.webSlide table,
+.webSlide figure {
+  margin: 0.6em 0 0;
+}
+.webSlide li {
+  margin-top: 0.25em;
+}
+.webSlide a {
+  color: var(--pc-ink);
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+.webSlide img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+.webSlide blockquote {
+  padding-left: 0.8em;
+  border-left: 2px solid var(--pc-rule);
+  color: var(--pc-muted);
+}
+.webSlide pre {
+  padding: 0.6em 0.8em;
+  background: var(--pc-secondary);
+  border: 1px solid var(--pc-rule);
+  border-radius: var(--pc-radius-control);
+  overflow: hidden;
+  font-size: 0.8em;
+}
+.webSlide code {
+  font-family: var(--pc-font-mono);
+  font-size: 0.9em;
+}
+.webSlide pre code {
+  font-size: 1em;
+}
+.webSlide table {
+  border-collapse: collapse;
+}
+.webSlide th,
+.webSlide td {
+  border: 1px solid var(--pc-rule);
+  padding: 0.2em 0.6em;
+  text-align: left;
+}
 .slide canvas {
   display: block;
 }
