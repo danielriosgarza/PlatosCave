@@ -1205,4 +1205,36 @@ describe('reading hardening', () => {
     expect(scrollTo).toHaveBeenCalled();
     for (const [options] of scrollTo.mock.calls) expect(options.top).toBeLessThan(260);
   });
+
+  it("A03 a later entry that pauses at an earlier entry's address place leaves that entry's flushed place", async () => {
+    const world = makeWorld(two());
+    api(world);
+    const { router } = renderApp(READING);
+    await screen.findByText('Every sample tells a slightly different story.');
+    // Entry 1: a pause at b-one, then on to the code and Slides within the pause.
+    scrollThrough({ 'b-title': -120, 'b-one': -60, 'b-two': 40, 'b-code': 140 });
+    await waitFor(() => expect(router.state.location.search).toMatchObject({ block: 'b:b-one' }));
+    scrollThrough({ 'b-title': -300, 'b-one': -240, 'b-two': -140, 'b-code': -40 });
+    fireEvent.click(screen.getByRole('tab', { name: 'Slides' }));
+    await waitFor(() => expect(world.positions).toHaveLength(2));
+    // A later entry pauses at the same place b-one, and leaves with nothing pending.
+    fireEvent.click(screen.getByRole('tab', { name: 'Reading' }));
+    await screen.findByText('Every sample tells a slightly different story.');
+    scrollThrough({ 'b-title': -120, 'b-one': -60, 'b-two': 40, 'b-code': 140 });
+    await waitFor(() => expect(router.state.location.search).toMatchObject({ block: 'b:b-one' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Slides' }));
+    await waitFor(() => expect(router.state.location.pathname).toMatch(/\/slides$/));
+
+    layout.tops = { 'b-title': 0, 'b-one': 60, 'b-two': 160, 'b-code': 260 };
+    router.history.back();
+    await screen.findByText('Every sample tells a slightly different story.');
+    // The later entry shows its own pause, b-one.
+    expect(router.state.location.search).toMatchObject({ block: 'b:b-one' });
+    router.history.back();
+    await waitFor(() => expect(router.state.location.pathname).toMatch(/\/slides$/));
+    router.history.back();
+    await screen.findByText('Every sample tells a slightly different story.');
+    // The first entry shows the place flushed as it was left, the code, not b-one.
+    await waitFor(() => expect(router.state.location.search).toMatchObject({ block: 'b:b-code' }));
+  });
 });
