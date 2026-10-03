@@ -3,7 +3,7 @@ import { z } from 'zod';
 import type { CourseScope } from '../auth/scope';
 import { renderNotebookInThread } from '../content/notebook-render';
 import { extractPdfText } from '../content/pdf-text';
-import { renderReadingInThread } from '../content/reading-render';
+import { renderReadingInThread, renderSlidesInThread } from '../content/reading-render';
 import { ThreadInputError } from '../content/thread';
 import type { Db } from '../db/client';
 import {
@@ -40,6 +40,10 @@ const NativeContent = z.object({
   format: z.enum(['markdown', 'html']).optional(),
   assets: z.record(z.string(), z.string()).default({}),
 });
+/** `content` of a `slides_web` revision: the Markdown deck, slides separated by `---`. */
+const WebSlidesContent = z.object({ markdown: z.string() });
+/** Most slides one deck may have: far beyond a lecture, and the viewer's index lists every one. */
+export const MAX_SLIDES = 500;
 const PdfContent = z.object({ objectKey: z.string().optional() });
 /** `content` of a `notebook` revision: its uploaded `.ipynb` file. */
 const NotebookContent = z.object({ sourceKey: z.string() });
@@ -57,7 +61,13 @@ export function isRasterOnly(pages: readonly { text: string }[]): boolean {
  * The revision types this job derives outputs for (readings, PDF decks and notebooks); it reads
  * and writes no other status.
  */
-const PROCESSED_TYPES = ['reading_native', 'reading_pdf', 'slides_pdf', 'notebook'] as const;
+const PROCESSED_TYPES = [
+  'reading_native',
+  'reading_pdf',
+  'slides_pdf',
+  'slides_web',
+  'notebook',
+] as const;
 export const isProcessed = (type: string): boolean =>
   (PROCESSED_TYPES as readonly string[]).includes(type);
 
@@ -68,7 +78,11 @@ type Revision = DerivationSource;
 
 /** What editors call the revision's resource in job messages. */
 const noun = (revision: Revision) =>
-  revision.type === 'slides_pdf' ? 'deck' : revision.type === 'notebook' ? 'notebook' : 'reading';
+  revision.type === 'slides_pdf' || revision.type === 'slides_web'
+    ? 'deck'
+    : revision.type === 'notebook'
+      ? 'notebook'
+      : 'reading';
 
 const megabytes = (bytes: number) => `${bytes / (1024 * 1024)} MB`;
 
@@ -199,6 +213,32 @@ export async function ingestRevision(
     }
     return {
       html: rendered.html,
+      blockMap: rendered.blockMap,
+      figures: rendered.figures,
+      warnings: rendered.warnings,
+    };
+  }
+  if (revision.type === 'slides_web') {
+    const content = WebSlidesContent.safeParse(revision.content);
+    if (!content.success) throw new IngestError('The deck has no Markdown source');
+    if (Buffer.byteLength(content.data.markdown) > MAX_NATIVE_BYTES) {
+      throw new IngestError(`The deck is larger than ${megabytes(MAX_NATIVE_BYTES)}`);
+    }
+    let rendered: Awaited<ReturnType<typeof renderSlidesInThread>>;
+    try {
+      rendered = await renderSlidesInThread(content.data.markdown, { signal });
+    } catch (err) {
+      if (err instanceof ThreadInputError) throw new IngestError(err.message);
+      throw err;
+    }
+    if (rendered.slides.length === 0) throw new IngestError('The deck has no slides');
+    if (rendered.slides.length > MAX_SLIDES) {
+      throw new IngestError(`The deck has more than ${MAX_SLIDES} slides`);
+    }
+    return {
+      slides: rendered.slides,
+      // The slide count, as a PDF deck has: positions are validated against it.
+      pageCount: rendered.slides.length,
       blockMap: rendered.blockMap,
       figures: rendered.figures,
       warnings: rendered.warnings,

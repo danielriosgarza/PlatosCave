@@ -3,7 +3,7 @@ import { defineRoute } from '../define';
 import { readingPosition } from './readings';
 
 /**
- * The Slides tab (§5, §7): the PDF decks of a topic and one deck's file. A deck's place is saved
+ * The Slides tab (§5, §7): the decks of a topic (PDF files and Markdown web decks) and one deck's content. A deck's place is saved
  * with `PUT /api/classes/:classId/positions` (tab `slides`), by page with offset 0; it belongs
  * to the deck revision, so a replaced deck starts again at its first slide.
  */
@@ -40,7 +40,8 @@ export const getSlides = defineRoute({
   method: 'GET',
   path: '/api/classes/:classId/resources/:revisionId/slides',
   scope: { kind: 'class', role: 'any' },
-  summary: 'One PDF deck of the class release: its short-lived file link and page count',
+  summary:
+    'One deck of the class release: a PDF’s short-lived file link and page count, or a web deck’s slides',
   params: z.object({ classId: z.uuid(), revisionId: z.uuid() }),
   response: z.object({
     revisionId: z.uuid(),
@@ -54,6 +55,8 @@ export const getSlides = defineRoute({
     pdf: z
       .object({ url: z.url(), expiresAt: timestamp, pageCount: z.number().int().min(1) })
       .nullable(),
+    /** A web deck: the sanitised HTML of each slide, in order (the reading allow-list). */
+    web: z.object({ slides: z.array(z.string()).min(1) }).nullable(),
   }),
   examples: { params: { classId: exampleClass, revisionId: exampleRevision } },
 });

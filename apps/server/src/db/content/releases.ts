@@ -149,9 +149,10 @@ export function validate(drafts: Drafts): ValidationReport {
       if (
         revision.type === 'reading_native' ||
         revision.type === 'reading_pdf' ||
+        revision.type === 'slides_web' ||
         revision.type === 'notebook'
       ) {
-        // A reading or notebook nobody can open is worse than none: block while its job is
+        // A reading, web deck or notebook nobody can open is worse than none: block while its job is
         // unfinished or failed. A revision with no job on record (older data) is left alone.
         const state = status?.state;
         if (state !== undefined && state !== 'ready') {
