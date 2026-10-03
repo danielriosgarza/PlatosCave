@@ -55,13 +55,19 @@ export const authSessions = pgTable(
 );
 
 /** Single-use, expiring email sign-in links (§3); used by P1-02. */
-export const signinTokens = pgTable('signin_tokens', {
-  id: uuid().primaryKey().defaultRandom(),
-  email: text().notNull(),
-  tokenHash: text().notNull().unique(),
-  /** Destination preserved through authentication; validated as same-origin path by P1-02. */
-  destination: text(),
-  createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
-  expiresAt: timestamp({ withTimezone: true }).notNull(),
-  usedAt: timestamp({ withTimezone: true }),
-});
+export const signinTokens = pgTable(
+  'signin_tokens',
+  {
+    id: uuid().primaryKey().defaultRandom(),
+    email: text().notNull(),
+    tokenHash: text().notNull().unique(),
+    /** Destination preserved through authentication; validated as same-origin path by P1-02. */
+    destination: text(),
+    createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp({ withTimezone: true }).notNull(),
+    usedAt: timestamp({ withTimezone: true }),
+  },
+  // Keeps the per-address link count cheap; the purge job filters on `expires_at` and relies on
+  // the table staying small, so it needs no index.
+  (t) => [index('signin_tokens_email_created_idx').on(t.email, t.createdAt)],
+);
