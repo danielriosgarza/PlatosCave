@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { defineRoute } from '../define';
+import { exerciseCredit } from '../exercise';
 
 const courseParams = z.object({ courseId: z.uuid() });
 const classParams = z.object({ classId: z.uuid() });
@@ -70,6 +71,8 @@ const releasedResource = z.object({
   /** Always `visible` for students; instructors also see `hidden` resources. */
   visibility: z.enum(['visible', 'hidden']),
   releaseAt: z.iso.datetime({ offset: true }).nullable(),
+  /** Points and hint policy of an exercise assigned for credit; null otherwise (§9). */
+  credit: exerciseCredit.nullable(),
 });
 
 export const getClassRelease = defineRoute({
