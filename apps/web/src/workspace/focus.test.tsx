@@ -187,4 +187,43 @@ describe('focus and full screen', () => {
     expect(bar()).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Exit focus' })).toBeVisible();
   });
+
+  it('A11 an element inside the workspace in full screen, such as the Shiny frame, is the workspace’s own', async () => {
+    const user = userEvent.setup();
+    await open();
+    await user.keyboard('f');
+    await screen.findByRole('button', { name: 'Exit full screen' });
+    const workspace = requestFullscreen.mock.contexts[0] as HTMLElement;
+    const inner = document.createElement('iframe');
+    workspace.append(inner);
+
+    enterFullscreen(inner); // the app inside asks for its own full screen
+    expect(bar()).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Exit full screen' })).toBeVisible();
+
+    enterFullscreen(workspace); // the browser returns to the workspace when the frame exits
+    expect(bar()).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Exit full screen' })).toBeVisible();
+
+    leaveFullscreen();
+    await waitFor(() => expect(bar()).toBeInTheDocument());
+    inner.remove();
+  });
+
+  it('A11 the frame’s own full screen, entered with only Focus on, does not end Focus when it closes', async () => {
+    const user = userEvent.setup();
+    await open();
+    await user.click(screen.getByRole('button', { name: 'Focus' }));
+    const inner = document.createElement('iframe');
+    screen.getByRole('tabpanel').append(inner);
+
+    enterFullscreen(inner);
+    leaveFullscreen();
+    expect(bar()).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Exit focus' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    inner.remove();
+  });
 });

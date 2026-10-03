@@ -16,6 +16,8 @@ export const notebookSummary = z.object({
   resourceId: z.uuid(),
   revisionId: z.uuid(),
   title: z.string(),
+  /** A Jupyter notebook or an embedded Shiny app; the tab shows each its own way. */
+  type: z.enum(['notebook', 'shiny']),
 });
 
 export const listNotebooks = defineRoute({
@@ -43,6 +45,24 @@ export const getNotebook = defineRoute({
     /** Storage key of the `.ipynb` file, the `:key` of the object route's attachment download. */
     sourceKey: z.string().nullable(),
     notebook: notebookView.nullable(),
+  }),
+  examples: { params: { classId: exampleClass, revisionId: exampleRevision } },
+});
+
+export const getShiny = defineRoute({
+  method: 'GET',
+  path: '/api/classes/:classId/resources/:revisionId/shiny',
+  scope: { kind: 'class', role: 'any' },
+  summary: 'A Shiny resource of the class release with its address, if its origin is approved',
+  params: z.object({ classId: z.uuid(), revisionId: z.uuid() }),
+  response: z.object({
+    revisionId: z.uuid(),
+    title: z.string(),
+    /** `unapproved`: the address is on an origin the host has not approved, so it is neither framed nor linked. */
+    status: z.enum(['ready', 'unapproved']),
+    url: z.string().nullable(),
+    /** The origin messages from the frame must come from; null with `unapproved`. */
+    origin: z.string().nullable(),
   }),
   examples: { params: { classId: exampleClass, revisionId: exampleRevision } },
 });

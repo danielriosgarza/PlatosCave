@@ -124,6 +124,7 @@ function api(
             resourceId: RES,
             revisionId,
             title: revisionId === REV ? 'Repeated samples' : 'Still importing',
+            type: 'notebook',
           })),
         },
       };

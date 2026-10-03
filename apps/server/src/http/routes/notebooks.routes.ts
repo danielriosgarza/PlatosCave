@@ -1,10 +1,10 @@
 import type { NotebookOutput, NotebookView, StoredNotebook } from '@parallax/contracts';
-import { getNotebook, listNotebooks } from '@parallax/contracts/routes/notebooks';
+import { getNotebook, getShiny, listNotebooks } from '@parallax/contracts/routes/notebooks';
 import type { FastifyInstance } from 'fastify';
 import type { RouteDeps } from '../../app';
 import { mintContentUrl } from '../../content/media';
 import { resolveReadingImages } from '../../content/reading';
-import { listTopicNotebooks, loadNotebook } from '../../db/notebooks';
+import { listTopicNotebooks, loadNotebook, loadShiny } from '../../db/notebooks';
 import { notFound, registerRoute } from '../register';
 
 /**
@@ -74,5 +74,13 @@ export default function notebookRoutes(app: FastifyInstance, routeDeps: RouteDep
       }
     };
     return { ...rest, notebook: notebook && notebookView(notebook, urlFor) };
+  });
+
+  registerRoute(app, getShiny, async ({ params, scope }) => {
+    const { db, at } = deps();
+    return (
+      (await loadShiny(db, scope, params.revisionId, at, routeDeps.config.SHINY_ORIGINS)) ??
+      notFound()
+    );
   });
 }

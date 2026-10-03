@@ -152,7 +152,7 @@ export async function buildApp(config: Config, deps: Deps = {}): Promise<Fastify
         fontSrc: ["'self'", 'data:', content],
         formAction: ["'self'"],
         frameAncestors: ["'none'"],
-        frameSrc: [content],
+        frameSrc: [content, ...config.SHINY_ORIGINS],
         imgSrc: ["'self'", 'data:', 'blob:', content],
         mediaSrc: ["'self'", 'blob:', content],
         objectSrc: ["'none'"],

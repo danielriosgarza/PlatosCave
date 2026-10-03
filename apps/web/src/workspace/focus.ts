@@ -53,10 +53,16 @@ export function useFocusMode(workspace: RefObject<HTMLElement | null>) {
   const focusButton = useRef<HTMLButtonElement | null>(null);
   const fullscreenButton = useRef<HTMLButtonElement | null>(null);
 
-  const isOurs = useCallback(
-    () => workspace.current !== null && document.fullscreenElement === workspace.current,
-    [workspace],
-  );
+  // Whether the workspace itself is in full screen. An element inside it, such as an embedded
+  // app's frame, counts as ours only then: the frame's own full screen, entered while only Focus
+  // is on, is another element's and must not end Focus when it closes.
+  const workspaceFullscreen = useRef(false);
+  const isOurs = useCallback(() => {
+    const element = document.fullscreenElement;
+    const root = workspace.current;
+    if (!root || !element) return false;
+    return element === root || (workspaceFullscreen.current && root.contains(element));
+  }, [workspace]);
 
   const leaveFullscreen = useCallback(async () => {
     if (isOurs()) {
@@ -103,6 +109,10 @@ export function useFocusMode(workspace: RefObject<HTMLElement | null>) {
   useEffect(() => {
     let wasOurs = isOurs();
     const onChange = () => {
+      const element = document.fullscreenElement;
+      const root = workspace.current;
+      if (element !== null && element === root) workspaceFullscreen.current = true;
+      else if (!element || !root?.contains(element)) workspaceFullscreen.current = false;
       const active = isOurs();
       const changed = active !== wasOurs;
       wasOurs = active;
@@ -117,7 +127,7 @@ export function useFocusMode(workspace: RefObject<HTMLElement | null>) {
     };
     document.addEventListener('fullscreenchange', onChange);
     return () => document.removeEventListener('fullscreenchange', onChange);
-  }, [isOurs]);
+  }, [isOurs, workspace]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -147,7 +157,7 @@ export function useFocusMode(workspace: RefObject<HTMLElement | null>) {
   useEffect(
     () => () => {
       setFocusOn(false);
-      if (document.fullscreenElement && document.fullscreenElement === workspace.current) {
+      if (workspace.current?.contains(document.fullscreenElement)) {
         void document.exitFullscreen().catch(() => undefined);
       }
     },
