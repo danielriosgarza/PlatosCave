@@ -3,6 +3,7 @@ import { ApiError } from '../api/client';
 import pageStyles from '../components/Page.module.css';
 import { formatOpens } from '../topics/topics';
 import { type ReleasedResource, useClassRelease } from './attempt';
+import { creditText } from './credit';
 import styles from './Exercise.module.css';
 import { ExerciseRunner } from './ExerciseRunner';
 
@@ -15,8 +16,8 @@ const lockedUntil = (resource: ReleasedResource, role: 'student' | 'instructor',
 /** What an exercise card says about its audience and state. */
 const practiceLabel = (resource: ReleasedResource) =>
   resource.visibility === 'hidden'
-    ? 'Hidden from students · Practice · ungraded'
-    : 'Practice · ungraded';
+    ? `Hidden from students · ${creditText(resource.credit)}`
+    : creditText(resource.credit);
 
 /** The Exercises tab of a topic: its released exercises, scheduled ones locked with their date. */
 export function ExercisesPanel(props: {

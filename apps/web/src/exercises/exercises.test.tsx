@@ -96,6 +96,10 @@ function exerciseApi(
     offGrid?: boolean;
     /** Visibility of the exercise in the release. */
     visibility?: 'visible' | 'hidden';
+    /** Points and hint policy of the exercise, as the release listing and the attempt carry them. */
+    credit?: Attempt['credit'];
+    /** Adds a second, ungraded exercise so the topic shows the list. */
+    second?: boolean;
     /** Makes the open call fail with this response. */
     openFails?: { status: number; body: unknown };
     /** Answers checks as a stale tab: the attempt was started again elsewhere. */
@@ -112,7 +116,7 @@ function exerciseApi(
     if (options.textLast) return { ...fresh, steps: fresh.steps.slice(2) };
     return options.predictOnly ? { ...fresh, steps: fresh.steps.slice(0, 1) } : fresh;
   };
-  let attempt = begin(1);
+  let attempt = { ...begin(1), credit: options.credit ?? null };
   const calls: { url: string; body: unknown }[] = [];
   const step = (id: string) => attempt.steps.find((s) => s.id === id);
   const set = (id: string, patch: object) => {
@@ -168,7 +172,24 @@ function exerciseApi(
             title: 'Sample size and spread',
             visibility: options.visibility ?? 'visible',
             releaseAt: options.releaseAt ?? null,
+            credit: options.credit ?? null,
           },
+          ...(options.second
+            ? [
+                {
+                  id: uuid(702),
+                  resourceId: uuid(0xe2),
+                  revisionId: uuid(801),
+                  type: 'exercise' as const,
+                  tab: 'exercises' as const,
+                  position: 1,
+                  title: 'Confidence intervals',
+                  visibility: 'visible' as const,
+                  releaseAt: null,
+                  credit: null,
+                },
+              ]
+            : []),
         ],
       },
     ],
@@ -389,6 +410,40 @@ describe('exercise UI', () => {
     expect(await screen.findByRole('heading', { name: 'Predict' })).toBeVisible();
     expect(posted(calls, '/restart')).toHaveLength(1);
     expect(screen.getByRole('radio', { name: 'Narrower' })).not.toBeChecked();
+  });
+
+  it('shows points and hint policy on the list rows before any attempt is opened', async () => {
+    const { calls } = exerciseApi({
+      second: true,
+      credit: { points: 10, hintPolicy: 'reduces_credit' },
+    });
+    open();
+    const list = await screen.findByRole('list', { name: 'Exercises in this topic' });
+    expect(list).toHaveTextContent(
+      'For credit · 10 points · a step solved with hints earns reduced credit',
+    );
+    expect(list).toHaveTextContent('Practice · ungraded');
+    expect(posted(calls, '/exercise-attempt')).toHaveLength(0);
+  });
+
+  it('shows points and hint policy in the toolbar and the completion summary', async () => {
+    const user = userEvent.setup();
+    exerciseApi({
+      predictOnly: true,
+      credit: { points: 1, hintPolicy: 'forfeits_credit' },
+    });
+    open();
+    const credit = 'For credit · 1 point · a step solved with hints earns no credit';
+    expect(await screen.findByRole('heading', { name: 'Sample size and spread' })).toBeVisible();
+    expect(screen.getByText(credit)).toBeVisible();
+    expect(screen.queryByText(/ungraded/)).toBeNull();
+    await user.click(await screen.findByRole('radio', { name: 'Narrower' }));
+    await user.click(screen.getByRole('button', { name: 'Check answer' }));
+    await user.click(await screen.findByRole('button', { name: 'See summary' }));
+    expect(
+      await screen.findByText(/for credit: 1 point; a step solved with hints earns no credit\./),
+    ).toBeVisible();
+    expect(screen.queryByText(/practice is ungraded/)).toBeNull();
   });
 
   it('A23 Show solution on the last step shows the solution before the summary', async () => {

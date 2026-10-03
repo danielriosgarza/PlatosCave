@@ -60,6 +60,7 @@ export default function releaseRoutes(app: FastifyInstance, deps: Deps): void {
           title: r.title,
           visibility: r.visibility,
           releaseAt: r.releaseAt && iso(r.releaseAt),
+          credit: r.credit,
         })),
       })),
     };
