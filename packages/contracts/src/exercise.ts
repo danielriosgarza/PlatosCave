@@ -142,7 +142,8 @@ function stepProblem(step: ExerciseStep): string | undefined {
     case 'multiple_choice': {
       const correct = step.kind === 'single_choice' ? [step.correct] : step.correct;
       if (!unique(step.options)) return 'option ids must be unique';
-      if (!correct.every((c) => ids(step.options).includes(c))) return 'correct names no option';
+      if (!correct.every((c) => ids(step.options).includes(c)))
+        return correct.some((c) => c === '') ? 'tick a correct option' : 'correct names no option';
       return new Set(correct).size === correct.length ? undefined : 'correct repeats an option';
     }
     case 'ordering':
@@ -202,6 +203,41 @@ export const exerciseV1 = z
   });
 export type ExerciseV1 = z.output<typeof exerciseV1>;
 
+/** Author wording for the zod issue shapes an editor form can produce; others pass through. */
+function issueWords(issue: z.core.$ZodIssue, rest: PropertyKey[]): string {
+  const field = rest.filter((k) => typeof k === 'string').at(-1);
+  const inList = typeof rest.at(-1) === 'number';
+  if (issue.code === 'invalid_type' && issue.expected === 'number') {
+    return inList ? 'values must be numbers' : 'must be a number';
+  }
+  if (issue.code === 'invalid_type' && issue.expected === 'string') return 'must be filled in';
+  if (issue.code === 'too_small' && issue.origin === 'string' && Number(issue.minimum) <= 1) {
+    return 'must not be empty';
+  }
+  if (issue.code === 'too_small' && issue.origin === 'array') {
+    return field === 'correct' ? 'tick a correct option' : `needs at least ${issue.minimum}`;
+  }
+  if (issue.code === 'too_small' && issue.origin === 'number') {
+    return `must be at least ${issue.minimum}`;
+  }
+  if (issue.code === 'too_big' && issue.origin === 'string') {
+    return `must be at most ${issue.maximum} characters`;
+  }
+  if (issue.code === 'too_big' && issue.origin === 'array') {
+    return `allows at most ${issue.maximum}`;
+  }
+  if (issue.code === 'invalid_format' && issue.format === 'regex') {
+    return field === 'correct'
+      ? 'tick a correct option'
+      : 'may only use lowercase letters, digits, - and _';
+  }
+  return issue.message;
+}
+
+/** Path segments as an author reads them: names as they are, list positions counted from 1. */
+const where = (path: PropertyKey[]) =>
+  path.map((k) => (typeof k === 'number' ? `#${k + 1}` : String(k))).join(' · ');
+
 /**
  * Every problem that stops `content` from being a valid exercise, in author-readable words
  * ("Step 2 “Inspect” · compare values …"); empty when it is valid.
@@ -210,16 +246,25 @@ export function exerciseProblems(content: unknown): string[] {
   const parsed = exerciseV1.safeParse(content);
   if (parsed.success) return [];
   const steps = (content as { steps?: { title?: unknown }[] } | null)?.steps;
-  return parsed.error.issues.map((issue) => {
+  // An unticked option fails the id pattern and the step's own check; say it once.
+  const issues = parsed.error.issues.filter(
+    (issue, _i, all) =>
+      !(
+        issue.code === 'invalid_format' &&
+        issue.path.at(-1) === 'correct' &&
+        all.some((o) => o.code === 'custom' && o.path[1] === issue.path[1])
+      ),
+  );
+  return issues.map((issue) => {
     const [head, index, ...rest] = issue.path;
+    const words =
+      issue.code === 'custom' ? issue.message : issueWords(issue, rest.length ? rest : issue.path);
     if (head !== 'steps' || typeof index !== 'number') {
-      return issue.path.length ? `${issue.path.join(' · ')}: ${issue.message}` : issue.message;
+      return issue.path.length ? `${where(issue.path)}: ${words}` : issue.message;
     }
     const title = steps?.[index]?.title;
-    const where = `Step ${index + 1}${typeof title === 'string' && title ? ` “${title}”` : ''}`;
-    return rest.length
-      ? `${where} · ${rest.join(' · ')}: ${issue.message}`
-      : `${where}: ${issue.message}`;
+    const step = `Step ${index + 1}${typeof title === 'string' && title ? ` “${title}”` : ''}`;
+    return rest.length ? `${step} · ${where(rest)}: ${words}` : `${step}: ${words}`;
   });
 }
 

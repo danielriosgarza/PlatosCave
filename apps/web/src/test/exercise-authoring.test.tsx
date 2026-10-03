@@ -159,7 +159,9 @@ describe('exercise editor', () => {
     expect(patched[0]).not.toHaveProperty('content');
     // Only the title and visibility were acknowledged, and the status says so.
     expect(
-      await screen.findByText('Title and visibility saved; step edits are not saved yet'),
+      await screen.findByText(
+        'Title, visibility and archive state saved; step and credit edits are not saved yet',
+      ),
     ).toBeInTheDocument();
     expect(screen.queryByText(/Draft saved at/)).not.toBeInTheDocument();
   });
