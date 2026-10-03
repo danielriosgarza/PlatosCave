@@ -17,6 +17,7 @@ import {
 } from '../db/jobs/derived';
 import { storeCourseObject } from '../storage/objects';
 import { courseObjectPrefix, type Storage, StorageNotFoundError } from '../storage/storage';
+import { requeueAnnotationsMap } from './annotations-map.job';
 import { defineScopedJob, sendScopedJob } from './scoped';
 
 export const READING_INGEST = 'reading.ingest';
@@ -295,11 +296,23 @@ const readingIngest = defineScopedJob({
   scope: { kind: 'course', role: 'editor' },
   input: z.object({ revisionId: z.uuid() }),
   queue: { retryLimit: RETRY_LIMIT, retryDelay: 30, retryBackoff: true },
-  run: async ({ scope, input, db, job, storage }) => {
+  run: async ({ scope, input, db, job, storage, boss }) => {
     const revision = await loadDerivationSource(db, scope, input.revisionId);
     if (!revision) return { failed: 'revision not found in this course' };
     // Another job type's status is not this job's to write.
     if (!isProcessed(revision.type)) return { failed: 'revision has nothing to process' };
+
+    // Once the revision's outputs are final, marks waiting on them can be placed (ADR-0003).
+    // Notebooks take no anchors that need derived outputs.
+    const remap = async (): Promise<object> => {
+      if (!boss || revision.type === 'notebook') return {};
+      try {
+        return { mappingQueued: await requeueAnnotationsMap(boss, db, scope, input.revisionId) };
+      } catch (err) {
+        // The outputs are written either way; reprocessing would not queue it any better.
+        return { mappingNotQueued: err instanceof Error ? err.message : String(err) };
+      }
+    };
 
     const mine = { jobId: job.id };
     const claimed = await setDerivedStatus(db, scope, input.revisionId, status('running', job.id), {
@@ -315,22 +328,23 @@ const readingIngest = defineScopedJob({
       if (job.signal.aborted) throw err;
       if (err instanceof IngestError) {
         const failed = status('failed', job.id, err.message);
-        await setDerivedStatus(db, scope, input.revisionId, failed, mine);
-        return { failed: err.message };
+        const written = await setDerivedStatus(db, scope, input.revisionId, failed, mine);
+        return { failed: err.message, ...(written && (await remap())) };
       }
       const retrying = job.retryCount < retryLimitOf(job);
       const message = retrying
         ? `Attempt ${job.retryCount + 1} could not finish; trying again`
         : 'Processing failed. Retry the upload or contact support.';
       const next = status(retrying ? 'queued' : 'failed', job.id, message);
-      await setDerivedStatus(db, scope, input.revisionId, next, mine);
+      const written = await setDerivedStatus(db, scope, input.revisionId, next, mine);
+      if (written && !retrying) await remap();
       throw err;
     }
     const ready = status('ready', job.id);
     if (!(await writeDerivedOutputs(db, scope, input.revisionId, outputs, ready, mine))) {
       return { superseded: true };
     }
-    return { revisionId: input.revisionId, state: 'ready' };
+    return { revisionId: input.revisionId, state: 'ready', ...(await remap()) };
   },
 });
 export default readingIngest;
