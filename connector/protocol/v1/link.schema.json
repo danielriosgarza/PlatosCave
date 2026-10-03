@@ -105,7 +105,7 @@
     },
     "kernelName": {
       "type": "string",
-      "pattern": "^[A-Za-z0-9._-]{1,64}$",
+      "pattern": "^[A-Za-z0-9._][A-Za-z0-9._-]{0,63}$",
       "description": "The kernelspec the person chose; the kernels stage checks it exists (kernelspec_not_found)."
     },
     "hop": {
@@ -414,6 +414,28 @@
         },
         "terminalPrompt": {
           "type": "boolean"
+        },
+        "hops": {
+          "type": "array",
+          "maxItems": 2,
+          "items": {
+            "type": "object",
+            "required": ["hop", "fingerprint"],
+            "additionalProperties": false,
+            "properties": {
+              "hop": {
+                "enum": ["jump", "target"]
+              },
+              "fingerprint": {
+                "$ref": "#/$defs/fingerprint"
+              },
+              "address": {
+                "type": "string",
+                "maxLength": 45
+              }
+            }
+          },
+          "description": "host_identity only: the key of every hop that passed, jump host first. The server persists each of these (design section 5.2)."
         }
       },
       "description": "A closed set of non-secret facts a stage may report. `terminalPrompt` says the connector is waiting for the person in its own terminal (a key passphrase or a second factor)."
@@ -603,13 +625,13 @@
         "origin": {
           "type": "string",
           "maxLength": 255,
-          "pattern": "^https?://[A-Za-z0-9.:\\[\\]-]+$"
+          "pattern": "^https?://[a-z0-9.:\\[\\]-]+$"
         },
         "ts": {
           "$ref": "#/$defs/unixSeconds"
         }
       },
-      "description": "Server to connector, first message. The nonce is single use and expires after 30 seconds."
+      "description": "Server to connector, first message. `origin` is lower case, no trailing slash, default port omitted. The nonce is single use and expires after 30 seconds."
     },
     "msg_auth": {
       "type": "object",
@@ -767,7 +789,7 @@
           }
         }
       },
-      "description": "Connector to server, after auth_ok. Held sessions are reported with one session_state each, right after."
+      "description": "Connector to server, after auth_ok. It is followed at once by heartbeat seq 0, which lists every held session; the server reconciles from that list."
     },
     "msg_test_connection": {
       "type": "object",
@@ -1060,7 +1082,25 @@
           "minimum": 0,
           "maximum": 67108864
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "body": {
+                "const": "stream"
+              }
+            },
+            "required": ["body"]
+          },
+          "then": {
+            "required": ["contentLength"],
+            "properties": {
+              "contentLength": {}
+            }
+          }
+        }
+      ]
     },
     "msg_http_head": {
       "type": "object",
@@ -1236,7 +1276,7 @@
           }
         }
       },
-      "description": "The first heartbeat (seq 0) follows hello at once and lists every session the connector holds, terminal ones included: the server reconciles from it, never from the session_state messages that precede it."
+      "description": "Sent every heartbeatSeconds; seq restarts at 0 on every link. The first one (seq 0) follows hello at once and lists every session the connector holds, terminal ones included: the server reconciles from it, never from session_state messages."
     },
     "msg_heartbeat_ack": {
       "type": "object",

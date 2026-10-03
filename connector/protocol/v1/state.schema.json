@@ -196,7 +196,7 @@
         "server": {
           "type": "string",
           "maxLength": 255,
-          "pattern": "^https?://[A-Za-z0-9.:\\[\\]-]+$"
+          "pattern": "^https?://[a-z0-9.:\\[\\]-]+$"
         },
         "connectorId": {
           "$ref": "#/$defs/uuid"
@@ -289,6 +289,9 @@
                 },
                 "jump": {
                   "$ref": "#/$defs/hop"
+                },
+                "expectedEnd": {
+                  "$ref": "#/$defs/timestamp"
                 },
                 "hostKeys": {
                   "type": "array",
@@ -402,7 +405,7 @@
         "sessions": {
           "type": "integer",
           "minimum": 0,
-          "maximum": 16
+          "maximum": 64
         }
       },
       "description": "runtime.json: what `status` prints while `run` is alive."

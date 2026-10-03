@@ -2,6 +2,26 @@
   "v": 1,
   "sessions": [
     {
+      "sessionId": "11111111-2222-4333-8444-555555555555",
+      "owned": true,
+      "state": "stopped",
+      "cause": "sleep",
+      "stoppedAt": "2026-10-03T09:30:00Z",
+      "target": {
+        "kind": "managed",
+        "targetId": "lab-gpu",
+        "subject": "7b1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f"
+      },
+      "lease": {
+        "idleTimeoutMin": 30,
+        "gracePeriodMin": 5
+      },
+      "phase": "detached",
+      "lastActivityAt": "2026-10-03T09:30:00Z",
+      "expiresAt": "2026-10-03T09:30:00Z",
+      "hardDeadline": "2026-10-03T21:30:00Z"
+    },
+    {
       "sessionId": "7b1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f",
       "owned": true,
       "state": "ready",

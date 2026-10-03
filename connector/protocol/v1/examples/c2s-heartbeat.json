@@ -1,9 +1,14 @@
 {
   "v": 1,
   "t": "heartbeat",
-  "seq": 12,
+  "seq": 0,
   "ts": 1790000000,
   "sessions": [
+    {
+      "sessionId": "11111111-2222-4333-8444-555555555555",
+      "state": "stopped",
+      "cause": "sleep"
+    },
     {
       "sessionId": "7b1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f",
       "state": "ready",
