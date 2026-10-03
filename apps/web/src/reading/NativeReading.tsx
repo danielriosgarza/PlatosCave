@@ -3,7 +3,7 @@ import styles from './Reading.module.css';
 import { HOLD_MS, READER_INPUT } from './readerInput';
 import type { ReadingPosition } from './readings';
 import { sanitizeReading } from './sanitize';
-import { inFullScreen, onScrollerScroll, scrollerOf } from './scroller';
+import { scrollerOf, useReaderScroll } from './scroller';
 
 interface Props {
   /** Sanitised at ingestion (P1-08) and image links resolved by the server at read time. */
@@ -82,46 +82,45 @@ export function NativeReading({ html, initial, onPosition }: Props) {
     if (target.current) scrollToBlock(root, target.current);
   }, [shown]);
 
-  useEffect(() => {
+  const settling = () => !moved.current && performance.now() - openedAt.current < HOLD_MS;
+  const hold = () => {
     const root = ref.current;
-    if (!root) return;
-    let full = inFullScreen(root);
-    const settling = () => !moved.current && performance.now() - openedAt.current < HOLD_MS;
-    const hold = () => {
-      if (settling() && target.current) scrollToBlock(root, target.current);
-    };
-    const input = () => {
-      moved.current = true;
-    };
-    const onScroll = () => {
-      // Entering or leaving full screen scrolls the old container first; that is not the reader.
-      if (inFullScreen(root) !== full) return;
+    if (root && settling() && target.current) scrollToBlock(root, target.current);
+  };
+  useReaderScroll(
+    () => ref.current,
+    () => {
+      const root = ref.current;
+      if (!root) return;
       if (settling()) return hold();
       const place = currentBlock(root);
       if (!place || !('blockId' in place)) return;
       here.current = place;
       onPosition(place);
-    };
-    const onFullScreen = () => {
-      // Another element entering or leaving full screen does not move this reader.
-      if (inFullScreen(root) === full) return;
-      full = inFullScreen(root);
-      if (here.current) scrollToBlock(root, here.current);
+    },
+    () => {
+      const root = ref.current;
+      if (root && here.current) scrollToBlock(root, here.current);
+    },
+  );
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `hold` reads refs only
+  useEffect(() => {
+    const root = ref.current;
+    if (!root) return;
+    const input = () => {
+      moved.current = true;
     };
     for (const type of READER_INPUT) window.addEventListener(type, input, { passive: true });
-    const stopScroll = onScrollerScroll(() => root, onScroll);
-    document.addEventListener('fullscreenchange', onFullScreen);
     root.addEventListener('load', hold, true);
     // The router scrolls to the top once the page has rendered; hold the place after that too.
     const frame = requestAnimationFrame(() => requestAnimationFrame(hold));
     return () => {
       cancelAnimationFrame(frame);
       for (const type of READER_INPUT) window.removeEventListener(type, input);
-      stopScroll();
-      document.removeEventListener('fullscreenchange', onFullScreen);
       root.removeEventListener('load', hold, true);
     };
-  }, [onPosition]);
+  }, []);
 
   return (
     <div

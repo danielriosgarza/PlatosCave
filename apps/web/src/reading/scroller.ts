@@ -1,3 +1,5 @@
+import { useEffect, useRef } from 'react';
+
 /**
  * What a reader scrolls in: the document, or the topic workspace while it is shown full screen
  * (`Page.module.css` makes it the scroll container then). Looked up at each use, because full
@@ -50,3 +52,43 @@ export function onScrollerScroll(reader: () => Element | null, listener: () => v
 
 /** Whether the reader is inside the element shown full screen. */
 export const inFullScreen = (reader: Element | null): boolean => fullScreenAround(reader) !== null;
+
+/**
+ * Follows the reader's scroller for a reader that stays mounted while full screen comes and goes.
+ * `onScroll` is called for the reader's own scrolling only: entering or leaving full screen
+ * scrolls the old container first, and that is not the reader. `onFullScreen` is called when this
+ * reader moves in or out of full screen; another element doing so is ignored.
+ */
+export function useReaderScroll(
+  reader: () => Element | null,
+  onScroll: () => void,
+  onFullScreen: () => void,
+) {
+  const read = useRef(reader);
+  const scrolled = useRef(onScroll);
+  const changed = useRef(onFullScreen);
+  read.current = reader;
+  scrolled.current = onScroll;
+  changed.current = onFullScreen;
+  useEffect(() => {
+    let full = inFullScreen(read.current());
+    const stopScroll = onScrollerScroll(
+      () => read.current(),
+      () => {
+        if (inFullScreen(read.current()) !== full) return;
+        scrolled.current();
+      },
+    );
+    const onChange = () => {
+      const now = inFullScreen(read.current());
+      if (now === full) return;
+      full = now;
+      changed.current();
+    };
+    document.addEventListener('fullscreenchange', onChange);
+    return () => {
+      stopScroll();
+      document.removeEventListener('fullscreenchange', onChange);
+    };
+  }, []);
+}

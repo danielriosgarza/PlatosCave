@@ -144,6 +144,7 @@ export function ReadingTab({ classId, courseId, topicId, instructor, search, onS
           reading={chosen}
           initial={initial}
           addressed={addressed}
+          flushed={left ?? null}
           onSearch={onSearch}
         />
       </div>
@@ -176,22 +177,33 @@ interface ViewProps {
   initial: ReadingPosition | null;
   /** The place the address names for this reading, if any. */
   addressed: ReadingPosition | null;
+  /** The place flushed as the reader left this entry, which the address does not hold. */
+  flushed: ReadingPosition | null;
   onSearch: Props['onSearch'];
 }
 
-function ReadingView({ classId, topicId, reading, initial, addressed, onSearch }: ViewProps) {
+function ReadingView({
+  classId,
+  topicId,
+  reading,
+  initial,
+  addressed,
+  flushed,
+  onSearch,
+}: ViewProps) {
   const content = useReadingContent(classId, reading.revisionId);
   const save = useSavePosition(classId, topicId);
   const { revisionId } = reading;
   const places = leftPlaces(useQueryClient());
   const inAddress = useRef(JSON.stringify(addressed));
   const lastSaved = useRef<string>('');
-  const saving = useRef(false);
+  /** Saves sent and not yet settled: a hide or close flush can run beside one already in flight. */
+  const inFlight = useRef(0);
   const next = useRef<ReadingPosition | null>(null);
 
   const send = useCallback(
     function send(place: ReadingPosition) {
-      saving.current = true;
+      inFlight.current += 1;
       save(revisionId, place)
         .catch(() => {
           // Retried by the next move unless a newer place is already waiting; nothing here
@@ -199,7 +211,9 @@ function ReadingView({ classId, topicId, reading, initial, addressed, onSearch }
           if (!next.current) lastSaved.current = '';
         })
         .finally(() => {
-          saving.current = false;
+          inFlight.current -= 1;
+          // A waiting place goes only once every outstanding save has settled.
+          if (inFlight.current > 0) return;
           const waiting = next.current;
           next.current = null;
           if (waiting) send(waiting);
@@ -219,7 +233,7 @@ function ReadingView({ classId, topicId, reading, initial, addressed, onSearch }
       const key = JSON.stringify(position);
       if (key === lastSaved.current) return;
       lastSaved.current = key;
-      if (saving.current && !now) {
+      if (inFlight.current > 0 && !now) {
         next.current = position;
         return;
       }
@@ -229,11 +243,22 @@ function ReadingView({ classId, topicId, reading, initial, addressed, onSearch }
     },
     [send],
   );
+  // A place restored from the record is written to the address, so a reload or a copied link
+  // names what the reader sees, and the record has done its work.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: only on mount; `onSearch` is new every render
+  useEffect(() => {
+    if (!flushed) return;
+    places.delete(leftAtKey(classId, revisionId, inAddress.current));
+    inAddress.current = JSON.stringify(flushed);
+    onSearch(searchFor(revisionId, flushed), 'replace');
+  }, []);
   const report = useReporter(
     (position: ReadingPosition, reason: PlaceReason) => {
       store(position, reason !== 'pause');
       // This entry's address moves on, so a place flushed from its old address no longer applies.
       places.delete(leftAtKey(classId, revisionId, inAddress.current));
+      // The address now holds this entry's own last place, which no older record may override.
+      places.delete(leftAtKey(classId, revisionId, JSON.stringify(position)));
       inAddress.current = JSON.stringify(position);
       onSearch(searchFor(revisionId, position), 'replace');
     },
