@@ -6,14 +6,7 @@ import {
   useMarginActions,
   useMarginList,
 } from '../reading/margin/data';
-import {
-  allowDrafts,
-  type Draft,
-  draftKey,
-  listDrafts,
-  removeDraft,
-  saveDraft,
-} from '../reading/margin/drafts';
+import { type Draft, draftKey, listDrafts, removeDraft, saveDraft } from '../reading/margin/drafts';
 import margin from '../reading/margin/Margin.module.css';
 import { NoteController, type NoteState } from '../reading/margin/notes';
 import { audienceLabel, ConflictView, SaveLine } from '../reading/margin/ReadingMargin';
@@ -128,7 +121,6 @@ export function SlideNotes({ classId, resourceId, page }: Props) {
   // biome-ignore lint/correctness/useExhaustiveDependencies: restores once per person and deck
   useEffect(() => {
     if (!userId) return setRestoredFor(scope);
-    void allowDrafts(userId);
     let current = true;
     void listDrafts(userId, classId, resourceId).then((drafts) => {
       if (!current) return;

@@ -28,7 +28,7 @@ import {
   useMarginActions,
   useMarginList,
 } from './data';
-import { allowDrafts, type Draft, draftKey, listDrafts, removeDraft, saveDraft } from './drafts';
+import { type Draft, draftKey, listDrafts, removeDraft, saveDraft } from './drafts';
 import styles from './Margin.module.css';
 import { NoteController, type NoteState } from './notes';
 
@@ -107,6 +107,7 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
   const [deleteProblem, setDeleteProblem] = useState<string | null>(null);
   const [passage, setPassage] = useState<SelectedPassage | null>(null);
   const [toolsProblem, setToolsProblem] = useState<string | null>(null);
+  const [highlighting, setHighlighting] = useState(false);
   const [ask, setAsk] = useState<Ask>({
     anchor: NO_ANCHOR,
     body: '',
@@ -126,7 +127,6 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
   // biome-ignore lint/correctness/useExhaustiveDependencies: restores once per person and reading
   useEffect(() => {
     if (!userId) return;
-    void allowDrafts(userId);
     const scope = `${userId}|${classId}|${resourceId}`;
     if (restored.current === scope) return;
     let current = true;
@@ -161,6 +161,25 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
     };
   }, [userId, classId, resourceId]);
 
+  const noteDraft = (
+    scoped: string,
+    user: string,
+    anchor: Anchor,
+    d: { annotationId: string | null; revision: number | null; body: string },
+  ): Draft => ({
+    key: scoped,
+    userId: user,
+    classId,
+    resourceId,
+    kind: 'note',
+    annotationId: d.annotationId,
+    expectedRevision: d.revision,
+    anchor,
+    body: d.body,
+    audience: null,
+    updatedAt: Date.now(),
+  });
+
   const make = (key: string, init: ConstructorParameters<typeof NoteController>[0]) => {
     const scoped = userId ? draftKey(userId, classId, resourceId, key) : null;
     const controller = new NoteController(init, {
@@ -169,20 +188,7 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
       persist: (d) => {
         if (!scoped || !userId) return;
         if (!d) return void removeDraft(scoped);
-        const draft: Draft = {
-          key: scoped,
-          userId,
-          classId,
-          resourceId,
-          kind: 'note',
-          annotationId: d.annotationId,
-          expectedRevision: d.revision,
-          anchor: init.anchor,
-          body: d.body,
-          audience: null,
-          updatedAt: Date.now(),
-        };
-        void saveDraft(draft);
+        void saveDraft(noteDraft(scoped, userId, init.anchor, d));
       },
       acknowledged: (annotation) => actions.acknowledged(annotation),
       forget: (id) => actions.forget(id),
@@ -216,8 +222,13 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
   // --- what the margin lists ------------------------------------------------------------------
   const annotations = list.data?.annotations ?? [];
   const threads = list.data?.threads ?? [];
-  const drafts = [...controllers.current.values()].filter(
-    (c) => c.annotationId === null && (c.state.body.trim() !== '' || c.key === activeId),
+  // A controller the server does not list (a new note, or one deleted elsewhere whose text is
+  // kept) is an entry of its own, so its text and "Save as a new note" stay reachable.
+  const listed = new Set(annotations.map((a) => a.id));
+  const drafts = [...controllers.current.values()].filter((c) =>
+    c.annotationId === null
+      ? c.state.body.trim() !== '' || c.key === activeId
+      : !listed.has(c.annotationId) && (c.state.gone || list.data !== undefined),
   );
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: the blocks change with the html
@@ -314,8 +325,9 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
   };
 
   const highlight = async () => {
-    if (!passage) return;
-    const result = await actions.highlight(passage.anchor);
+    if (!passage || highlighting) return;
+    setHighlighting(true);
+    const result = await actions.highlight(passage.anchor).finally(() => setHighlighting(false));
     if (result.kind === 'ok') {
       clearSelection();
       return;
@@ -442,11 +454,16 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
     if ('id' in result) {
       setActiveId(result.id);
       const latest = askRef.current;
-      // Text typed while the question was posting was never posted: it stays, as a new draft.
-      const next =
-        latest.body.trim() === posted
-          ? { ...latest, anchor: NO_ANCHOR, body: '', posting: false, problem: null }
-          : { ...latest, anchor: NO_ANCHOR, posting: false, problem: null };
+      // Text typed while the question was posting was never posted: only that part stays, as a
+      // new draft. (The posted text is what the body started with when Post was pressed.)
+      const typed = latest.body.startsWith(ask.body) ? latest.body.slice(ask.body.length) : null;
+      const next = {
+        ...latest,
+        anchor: NO_ANCHOR,
+        body: latest.body.trim() === posted ? '' : (typed ?? latest.body),
+        posting: false,
+        problem: null,
+      };
       setAsk(next);
       if (userId) {
         const key = draftKey(userId, classId, resourceId, ASK_ID);
@@ -472,14 +489,29 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
       if (controller && left) {
         if (left.annotation) actions.acknowledged(left.annotation);
         const saved = (left.annotation ?? annotations.find((a) => a.id === stored))?.body ?? '';
+        const unsent = left.body !== saved;
         make(controller.key, {
           key: controller.key,
           anchor: controller.anchor,
           body: left.body,
           annotationId: stored,
           revision: left.revision,
-          unsent: left.body !== saved,
+          unsent,
         });
+        // A save that finished during the delete moved the note on: the device's draft must not
+        // keep the old id and revision (it would create the note twice, or open a false conflict).
+        if (userId) {
+          const scoped = draftKey(userId, classId, resourceId, controller.key);
+          if (unsent) {
+            void saveDraft(
+              noteDraft(scoped, userId, controller.anchor, {
+                annotationId: stored,
+                revision: left.revision,
+                body: left.body,
+              }),
+            );
+          } else void removeDraft(scoped);
+        }
       }
       setDeleteProblem(controller?.key ?? entryId);
       touch();
@@ -513,6 +545,7 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
       ? createPortal(
           <Tools
             problem={toolsProblem}
+            busy={highlighting}
             onHighlight={() => void highlight()}
             onNote={note}
             onAsk={askAbout}
@@ -559,7 +592,7 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
               ) : null}
               {deleteProblem ? (
                 <p role="alert" className={styles.empty}>
-                  The note could not be deleted. It is still saved, with your changes.{' '}
+                  The note could not be deleted. Your text is kept.{' '}
                   <button
                     type="button"
                     className={styles.link}
@@ -618,11 +651,13 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
 
 function Tools({
   problem,
+  busy,
   onHighlight,
   onNote,
   onAsk,
 }: {
   problem: string | null;
+  busy: boolean;
   onHighlight: () => void;
   onNote: () => void;
   onAsk: () => void;
@@ -631,7 +666,7 @@ function Tools({
   const keep = (e: { preventDefault: () => void }) => e.preventDefault();
   return (
     <div className={styles.tools} role="toolbar" aria-label="Selected passage" onMouseDown={keep}>
-      <button type="button" onClick={onHighlight}>
+      <button type="button" disabled={busy} onClick={onHighlight}>
         Highlight
       </button>
       <button type="button" onClick={onNote}>
