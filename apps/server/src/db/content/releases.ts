@@ -159,9 +159,10 @@ export function validate(drafts: Drafts): ValidationReport {
       if (
         revision.type === 'reading_native' ||
         revision.type === 'reading_pdf' ||
+        revision.type === 'slides_web' ||
         revision.type === 'notebook'
       ) {
-        // A reading or notebook nobody can open is worse than none: block while its job is
+        // A reading, web deck or notebook nobody can open is worse than none: block while its job is
         // unfinished or failed. A revision with no job on record (older data) is left alone.
         const state = status?.state;
         if (state !== undefined && state !== 'ready') {
@@ -169,7 +170,9 @@ export function validate(drafts: Drafts): ValidationReport {
             code: 'unprocessed_reading',
             message:
               state === 'failed'
-                ? `“${resource.title}” could not be processed; upload it again or retry`
+                ? `“${resource.title}” could not be processed; ${
+                    revision.type === 'slides_web' ? 'edit it' : 'upload it again'
+                  } or retry`
                 : `“${resource.title}” is still being processed`,
             ...at,
           });

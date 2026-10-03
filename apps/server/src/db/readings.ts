@@ -18,8 +18,8 @@ import { forClass } from './scoped';
  */
 
 const READING_TYPES = ['reading_native', 'reading_pdf'] as const;
-/** Decks share the readings' positions: a PDF is placed by page. */
-const PLACED_TYPES = [...READING_TYPES, 'slides_pdf'] as const;
+/** Decks share the readings' positions: a deck is placed by slide (a PDF's page). */
+const PLACED_TYPES = [...READING_TYPES, 'slides_pdf', 'slides_web'] as const;
 type ReadingType = (typeof READING_TYPES)[number];
 const isReading = (type: string): type is ReadingType =>
   (READING_TYPES as readonly string[]).includes(type);

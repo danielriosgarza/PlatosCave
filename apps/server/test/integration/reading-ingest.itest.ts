@@ -49,7 +49,7 @@ async function courseScope(actorId: string, courseId: string): Promise<CourseSco
 let position = 0;
 /** A reading resource with one revision in Statistical thinking. */
 async function revision(
-  type: 'reading_native' | 'reading_pdf' | 'slides_pdf' | 'slides_web',
+  type: 'reading_native' | 'reading_pdf' | 'slides_pdf' | 'slides_web' | 'test',
   content: Record<string, unknown>,
   objectKeys: string[] = [],
 ): Promise<string> {
@@ -493,7 +493,7 @@ describe('reading.ingest', () => {
   });
 
   test('a revision this job does not process is neither queued nor written by it', async () => {
-    const revisionId = await revision('slides_web', {});
+    const revisionId = await revision('test', {});
     const converted = { ...statusFor(OTHER_JOB), state: 'ready' as const, job: 'slides.render' };
     await setDerivedStatus(testDb.db, elena, revisionId, converted);
     expect(await enqueue(boss, elena, revisionId)).toBeNull();

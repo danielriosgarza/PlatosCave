@@ -3,7 +3,7 @@ import { expect, type Page, test } from '@playwright/test';
 test.use({ colorScheme: 'light', viewport: { width: 1440, height: 900 } });
 
 const id = (n: number) => `00000000-0000-4000-8000-${n.toString().padStart(12, '0')}`;
-const lab = { class: id(211), topic: id(311), deckRevision: id(513) };
+const lab = { class: id(211), topic: id(311), deckRevision: id(513), webRevision: id(515) };
 const slides = `/classes/${lab.class}/topics/${lab.topic}/slides`;
 
 test.beforeAll(async ({ playwright, baseURL }) => {
@@ -131,4 +131,49 @@ test('A24 repeated arrow presses advance a focused viewer, which is remembered a
   await page.reload();
   await expect(count(page)).toHaveText('3 / 6');
   await expect(page.locator('.textLayer')).toContainText('Sampling slide 3');
+});
+
+test('web slides: text scales with Zoom in and the whole slide fits the box at Fit', async ({
+  page,
+}) => {
+  await page.goto(slides);
+  await page
+    .getByRole('combobox', { name: 'Slides' })
+    .selectOption({ label: 'Sampling in slides' });
+  await expect(page.getByText(/^\d+ \/ 3$/)).toHaveText('1 / 3');
+  await page.getByRole('button', { name: 'Slide index' }).click();
+  await page.getByRole('button', { name: 'Slide 3' }).click();
+  const article = page.getByLabel('Slide 3 of 3');
+  await expect(article).toContainText('Every sample tells a slightly different story');
+
+  const measure = () =>
+    article.evaluate((el) => {
+      const box = el.getBoundingClientRect();
+      const last = [...el.querySelectorAll('p, li, h2')].at(-1)?.getBoundingClientRect();
+      return {
+        font: Number.parseFloat(getComputedStyle(el).fontSize),
+        width: box.width,
+        fits: !!last && last.bottom <= box.bottom && last.right <= box.right,
+      };
+    });
+  const fitted = await measure();
+  expect(fitted.fits).toBe(true);
+  expect(fitted.width).toBeGreaterThan(900);
+
+  await page.getByRole('button', { name: 'Zoom in' }).click();
+  await page.getByRole('button', { name: 'Zoom in' }).click();
+  await expect.poll(async () => (await measure()).width).toBeGreaterThan(fitted.width * 1.8);
+  const zoomed = await measure();
+  expect(zoomed.font / fitted.font).toBeCloseTo(zoomed.width / fitted.width, 1);
+
+  await page.getByRole('button', { name: 'Fit' }).click();
+  await expect.poll(async () => Math.round((await measure()).width)).toBe(Math.round(fitted.width));
+  expect((await measure()).font).toBeCloseTo(fitted.font, 1);
+
+  // A narrower stage (notes open, small window) scales the text down with the slide, not clip it.
+  await page.setViewportSize({ width: 900, height: 700 });
+  await expect.poll(async () => (await measure()).width).toBeLessThan(fitted.width);
+  const narrow = await measure();
+  expect(narrow.fits).toBe(true);
+  expect(narrow.font).toBeLessThan(fitted.font);
 });

@@ -19,6 +19,7 @@ import { ConflictView } from './ConflictView';
 import { ExerciseEditor } from './ExerciseEditor';
 import { authoringKey, processingQuery } from './queries';
 import { SaveStatus } from './SaveStatus';
+import { AddWebSlides, WebSlidesEditor } from './WebSlides';
 
 export type ResourceSummary = z.output<typeof draftResourceSummary>;
 type Type = ResourceSummary['type'];
@@ -44,6 +45,7 @@ const typeNames: Record<Type, string> = {
 
 const isExercise = (t: Type) => t === 'exercise';
 const isReading = (t: Type) => t === 'reading_native' || t === 'reading_pdf';
+const isWebSlides = (t: Type) => t === 'slides_web';
 
 interface Props {
   courseId: string;
@@ -60,6 +62,7 @@ export function ResourceSection({ courseId, topicId, resources }: Props) {
   const processing = useQuery(processingQuery(courseId));
   const [adding, setAdding] = useState(false);
   const [addingNotebook, setAddingNotebook] = useState(false);
+  const [addingSlides, setAddingSlides] = useState(false);
   const refresh = useCallback(
     () => queryClient.invalidateQueries({ queryKey: authoringKey(courseId) }),
     [queryClient, courseId],
@@ -92,6 +95,29 @@ export function ResourceSection({ courseId, topicId, resources }: Props) {
                 onChanged={() => void refresh()}
               />
             ))}
+            {tab.name === 'Slides' ? (
+              addingSlides ? (
+                <AddWebSlides
+                  courseId={courseId}
+                  topicId={topicId}
+                  onCancel={() => setAddingSlides(false)}
+                  onAdded={() => {
+                    setAddingSlides(false);
+                    void refresh();
+                  }}
+                />
+              ) : (
+                <div style={{ marginTop: 12 }}>
+                  <button
+                    type="button"
+                    className={styles.outline}
+                    onClick={() => setAddingSlides(true)}
+                  >
+                    Add web slides
+                  </button>
+                </div>
+              )
+            ) : null}
             {tab.name === 'Reading' ? (
               adding ? (
                 <AddReading
@@ -166,7 +192,10 @@ function StatusLine({
     onSuccess: () => queryClient.invalidateQueries({ queryKey: authoringKey(courseId) }),
   });
   const processed =
-    isReading(resource.type) || resource.type === 'slides_pdf' || resource.type === 'notebook';
+    isReading(resource.type) ||
+    isWebSlides(resource.type) ||
+    resource.type === 'slides_pdf' ||
+    resource.type === 'notebook';
   if (!processed || resource.archived) {
     return null;
   }
@@ -245,7 +274,7 @@ function ResourceRow({
           </div>
           <StatusLine courseId={courseId} resource={resource} status={status} lookup={lookup} />
         </div>
-        {isReading(resource.type) || isExercise(resource.type) ? (
+        {isReading(resource.type) || isWebSlides(resource.type) || isExercise(resource.type) ? (
           <button
             type="button"
             className={styles.textButton}
@@ -258,6 +287,9 @@ function ResourceRow({
       </div>
       {open && isExercise(resource.type) ? (
         <ExerciseEditor courseId={courseId} resourceId={resource.id} onSaved={onChanged} />
+      ) : null}
+      {open && isWebSlides(resource.type) ? (
+        <WebSlidesEditor courseId={courseId} resourceId={resource.id} onSaved={onChanged} />
       ) : null}
       {open && isReading(resource.type) ? (
         <ReadingEditor courseId={courseId} resourceId={resource.id} onSaved={onChanged} />

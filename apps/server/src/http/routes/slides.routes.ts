@@ -24,9 +24,10 @@ export default function slideRoutes(app: FastifyInstance, routeDeps: RouteDeps):
     const { config } = routeDeps;
     const deck = await loadDeck(db, scope, params.revisionId, at);
     if (!deck) notFound();
-    const { pdf, ...rest } = deck;
+    const { pdf, web, ...rest } = deck;
     return {
       ...rest,
+      web,
       pdf: pdf && {
         ...mintContentUrl(
           {
