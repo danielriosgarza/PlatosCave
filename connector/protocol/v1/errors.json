@@ -187,7 +187,7 @@
       "summary": "The account cannot write to the working directory."
     },
     "workspace_outside_root": {
-      "stage": "workspace",
+      "stage": "runtime",
       "cause": "workspace",
       "retryable": false,
       "recoveries": ["choose_workspace"],
@@ -208,7 +208,7 @@
       "summary": "The tunnel could not be opened."
     },
     "remote_exec_denied": {
-      "stage": "runtime",
+      "stage": "workspace",
       "cause": "runtime",
       "retryable": false,
       "recoveries": ["contact_host_owner", "start_jupyter_then_attach", "pick_other_target"],
@@ -375,6 +375,20 @@
       "recoveries": ["none"],
       "summary": "The request or response body exceeds the limit for its kind."
     },
+    "not_ready": {
+      "stage": null,
+      "cause": "protocol",
+      "retryable": true,
+      "recoveries": ["wait", "retry"],
+      "summary": "The session or kernel is not ready to run a cell."
+    },
+    "rate_limited": {
+      "stage": null,
+      "cause": "protocol",
+      "retryable": true,
+      "recoveries": ["wait"],
+      "summary": "Too many requests; slow down."
+    },
     "busy": {
       "stage": null,
       "cause": "protocol",
@@ -455,7 +469,17 @@
     },
     "connector_restarted": {
       "recoveries": ["new_session"],
-      "summary": "The connector restarted and could not re-attach."
+      "summary": "The connector restarted and could not re-attach. Set by the server when a returning connector does not know the session.",
+      "origin": "server"
+    },
+    "abandoned": {
+      "recoveries": ["pick_other_target", "new_session"],
+      "summary": "The person gave up on an unreachable session. Server-side; says nothing about the process.",
+      "origin": "server"
+    },
+    "max_lifetime": {
+      "recoveries": ["new_session"],
+      "summary": "Stopped at the maximum session lifetime."
     },
     "link_lost": {
       "recoveries": ["reconnect"],

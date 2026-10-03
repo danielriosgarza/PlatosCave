@@ -31,7 +31,7 @@
   },
   "confirmations": [
     {
-      "host": "bastion.example.org",
+      "host": "gpu01.lab.example.org",
       "port": 22,
       "sha256": "SHA256:CNmGQS0lbyFb7+gGOfxSjwhim0p2KZVFysYVlwS7Rws"
     }

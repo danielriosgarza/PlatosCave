@@ -2,7 +2,7 @@
 
 **Status:** Accepted, 2026-09-30
 
-Refined by [docs/design/connector.md](../design/connector.md) (P3-01): wire schemas and fixtures in `connector/protocol/v1/`, pairing and link authentication (§3, §4.2), stage checks and the error catalogue (§5), the Jupyter allowlist, network scope and leases (§7–§9), the server's tables, endpoints and relay (§10), the OS matrix and MFA policy (§13, §5.3). Where it differs from the text below (paths under `/api/connector/v1`, the signed bytes, the message set, the allowlist, user-owned connections, the token in the environment or on standard input, asynchronous Test connection), §17 of the design lists each change and the design wins.
+Refined by [docs/design/connector.md](../design/connector.md) (P3-01): wire schemas and fixtures in `connector/protocol/v1/`, pairing and link authentication (§3, §4.2), stage checks and the error catalogue (§5), the Jupyter allowlist, network scope and leases (§7–§9), the server's tables, endpoints and relay (§10), the OS matrix and MFA policy (§13, §5.3). Where it differs from the text below (paths under `/api/connector/v1`, the signed bytes, the message set, the allowlist, user-owned connections, the token in the environment or on standard input, asynchronous Test connection, no auto-approve flag), §17 of the design lists each change and the design wins.
 
 ## Context
 

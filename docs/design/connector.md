@@ -23,7 +23,7 @@ Terms. The **connector** is the Go program `parallax-connector`. The **link** is
 | Target computer | nothing | running the person's code with that account's privileges; Parallax does not sandbox it (spec §10.6) |
 | Jupyter Server | the connector (token held in memory) | kernels and files under its root directory |
 
-Neither side alone can widen what a connector does (§7, §8): the relay sends only typed operations it builds itself, and the connector refuses anything outside its allowlist and network scope even when the relay asks. A compromised relay can therefore ask a personal connector to open a session on a target the person configured or could not otherwise reach, within the connector's approved network scope, and to relay allowlisted Jupyter calls for it; it cannot make the connector run an arbitrary command, read an arbitrary file, dial an address outside the scope, or learn a key, passphrase, one-time code or Jupyter token (§14).
+Neither side alone can widen what a connector does (§7, §8): the relay sends only typed operations it builds itself, and the connector refuses anything outside its allowlist and network scope even when the relay asks. **Honest limit:** the relay is trusted with the right to run code. A kernel executes whatever it is sent, so a compromised relay can start a session on any connection a person saved and run code there as that account, and on a `local` target that includes reading the connector's own files. The allowlist and scope do not prevent that; they prevent *everything else*: the relay cannot make the connector run a command of its own choosing, dial an address outside the approved scope, reach a kernel the session did not create, or learn a key, passphrase, one-time code or Jupyter token from the connector (§14). Compensating controls: the connector prints every session it opens (who asked, host, workspace) on its terminal and in its log, `run --confirm-sessions` makes it ask on that terminal before each `open_session` (recommended for a laptop that holds sensitive files), a hard session lifetime applies (§9), and Parallax's one relay process is a single audited component (§10.1).
 
 ## 2. Life of a notebook session
 
@@ -69,7 +69,7 @@ Files: [`link.schema.json`](../../connector/protocol/v1/link.schema.json) (every
 
 ### 4.1 Transport
 
-- `wss://<host>/api/connector/v1/link`, WebSocket subprotocol `parallax.connector.v1`. The connector dials out; it never listens. TLS is required; `http://` and `ws://` are accepted by the CLI only for `127.0.0.1`, `[::1]` and `localhost` (development and CI). `HTTPS_PROXY` is honoured for the link (not for SSH, §13).
+- `wss://<host>/api/connector/v1/link`, WebSocket subprotocol `parallax.connector.v1`. The connector dials out; it never listens. TLS is required; `http://` and `ws://` are accepted by the CLI only for `127.0.0.1`, `[::1]` and `localhost` (development and CI). `HTTPS_PROXY` is honoured for the link (not for SSH, §17). The read limit is raised to `maxControl` plus the frame header (`SetReadLimit`; the library default is 32 KiB).
 - One link per connector. A second link authenticating as the same connector closes the older one with 4409 `replaced`.
 - **Text frames** carry one JSON control message each, at most `maxControl` (64 KiB) bytes, valid against `link.schema.json`. **Binary frames** carry stream data (§4.5). A frame that is not valid JSON, exceeds `maxControl`, or is a known message that fails its schema ends the link with 4400; a message whose `t` is unknown is answered `error unsupported_message` and ignored.
 - The route is registered through `registerRoute` as a `public`-scope route (ADR-0002): authentication is the challenge below, and an unauthenticated socket is closed after 10 seconds.
@@ -104,7 +104,7 @@ The server accepts the link when the connector row exists and is `active`, `|now
 
 `hello.mode` must equal the row's `mode`; `hello.version` below `minVersion` closes with 4426. The server stores `os`, `arch`, `version`, `networkScope` and `last_seen_at` on the row (for display and for early rejection of literal addresses the connector would refuse, §8) and only then marks the link live.
 
-Heartbeat: the connector sends `heartbeat { seq, ts, sessions }` every `heartbeatSeconds`; the server answers `heartbeat_ack { seq }` at once. Three missed acknowledgements (45 s) and the connector closes and redials. The server treats 45 seconds without a heartbeat as a dead link: it closes with 4408 and marks the connector's sessions `unconfirmed` (cause `link_lost`), **never** `stopped` (spec §10.4).
+Heartbeat: the connector sends `heartbeat { seq, ts, sessions }` every `heartbeatSeconds`; the server answers `heartbeat_ack { seq }` at once. Three missed acknowledgements (3 × `heartbeatSeconds`) and the connector closes and redials. The server treats 3 × `heartbeatSeconds` (45 s by default) without a heartbeat as a dead link: it closes with 4408 and marks the connector's sessions `unconfirmed` (cause `link_lost`), **never** `stopped` (spec §10.4).
 
 Reconnect (connector): exponential backoff with full jitter, 1 s doubling to 60 s, reset after a link stays up for 60 s. 4403 `revoked` and 4401 `bad_signature` stop the retries and exit with an explanation; 4403 `pending`, 4429 and 4500 keep retrying.
 
@@ -154,7 +154,7 @@ There is no `ping`/`pong`: WebSocket-level ping keeps proxies awake and `heartbe
 | # | Rule | Fixture in `examples/rejected/` (prefix `s2c-test_connection-` unless shown) |
 | --- | --- | --- |
 | 1 | A host without `:` is a dotted-quad IPv4 (four decimal octets, no leading zeros) or a DNS name whose labels are 1–63 characters of `A-Z a-z 0-9 -`, not starting or ending with `-`, whose last label is neither all digits nor starting with `0x`. A host with `:` parses as an IPv6 literal, with no zone. This closes decimal, hex, octal and short forms (`2852039166`, `0x7f000001`, `127.1`) that a system resolver may still accept | `…host-decimal-ip`, `…host-hex-ip`, `…host-short-ipv4` |
-| 2 | A literal address (after unmapping `::ffff:a.b.c.d`) may not be unspecified, multicast, broadcast or link-local (`169.254.0.0/16`, `fe80::/10`: cloud metadata lives there). Applies to the target and the jump host. These are never allowable by configuration (§8) | `…host-metadata-ip`, `…host-mapped-metadata`, `…host-link-local-v6` |
+| 2 | A literal address (after unwrapping `::ffff:a.b.c.d`, NAT64 `64:ff9b::/96` and 6to4 `2002::/16` to the embedded IPv4 address, the same as §8) may not be unspecified, multicast, broadcast or link-local (`169.254.0.0/16`, `fe80::/10`: cloud metadata lives there). Applies to the target and the jump host. These are never allowable by configuration (§8) | `…host-metadata-ip`, `…host-mapped-metadata`, `…host-link-local-v6` |
 | 3 | `workspace` is absolute (`ssh`: starts with `/`; `local`: `/…` or `X:\…`/`X:/…`) and has no `..` segment | `…workspace-relative`, `…workspace-dotdot` |
 | 4 | `auth.keyPath` is absolute or starts with `~/`, and has no `..` segment | `…keypath-relative` |
 | 5 | `runtime.python` is absolute or starts with `~/` with no `..` segment; `login` is allowed for `ssh` only | `open_session-python-dotdot`, `open_session-login-on-local` |
@@ -179,8 +179,8 @@ Fixtures under `examples/invalid/` and the schema rule each breaks: `c2s-auth-sh
 | --- | --- | --- | --- |
 | 1000 / 1001 | — | either | redial (1001 is a server restart) |
 | 4400 | `protocol_error` | either | fix or update; retry with backoff |
-| 4401 | `bad_signature` / `clock_skew` | server | stop; run `doctor` (the key does not match, or the clocks differ by over 120 s) |
-| 4403 | `pending` / `revoked` / `mode_mismatch` | server | `pending`: retry every 10 s; `revoked`: stop and explain |
+| 4401 | `bad_signature` / `clock_skew` | server | `bad_signature`: stop; run `doctor`. `clock_skew`: retry every 30 s (a waking laptop's clock catches up) and say so |
+| 4403 | `pending` / `revoked` / `mode_mismatch` | server | `pending`: retry every 10 s; `revoked`: stop and explain; `mode_mismatch`: stop and explain |
 | 4408 | `heartbeat_timeout` | server | redial |
 | 4409 | `replaced` | server | do not redial for 60 s (another instance of this connector is running) |
 | 4426 | `upgrade_required` | server | stop and say which version is required |
@@ -200,9 +200,9 @@ Test connection and Connect run the same stages in the same order. A stage repor
 | `reachability` | validate the target (§4.4), resolve, check every answer against the network scope (§8), dial by IP with a 10 s timeout, read the SSH banner; the jump host first when there is one (`data.hop`) | `host_unresolved`, `connection_refused`, `connection_timeout`, `network_scope_denied`, `invalid_target`, `unsupported_target` |
 | `host_identity` | key exchange; compare the presented key with the records using the table of §5.2 | `host_key_unknown` (`needs_action`), `host_key_changed`, `host_key_untrusted_managed` |
 | `ssh_auth` | authenticate each hop as §5.3 says | `key_file_unreadable`, `key_passphrase_required`, `key_passphrase_wrong`, `agent_unavailable`, `agent_no_identity`, `auth_rejected`, `auth_method_unsupported`, `mfa_requires_terminal`, `mfa_failed` |
-| `workspace` | the directory exists, is a directory and is writable (`test -d`, `test -w`; `stat` locally), and its canonical path (`cd -P`) is reported in `data.resolvedPath` so the panel can show the exact destination before any file is copied; in attach mode it also requires the chosen server's `root_dir` to contain the workspace. **Creates nothing** | `workspace_missing`, `workspace_not_directory`, `workspace_not_writable`, `workspace_outside_root` |
+| `workspace` | the directory exists, is a directory and is writable (`test -d`, `test -w`; `stat` locally), and its canonical path (`cd -P`) is reported in `data.resolvedPath` so the panel can show the exact destination before any file is copied; **Creates nothing** | `remote_exec_denied` (the first exec of the connection), `workspace_missing`, `workspace_not_directory`, `workspace_not_writable` |
 | `forwarding` | open a `direct-tcpip` channel to `127.0.0.1` and read why it fails: *administratively prohibited* is `forwarding_denied`; *connect failed* means forwarding works and nothing listens, which is `ok` here | `forwarding_denied`, `tunnel_unavailable` |
-| `runtime` | start mode: exec is permitted, the host is POSIX (`uname -s`), the interpreter runs, `jupyter_server` imports and is at least 2.0; attach mode: find the servers (`jupyter server list --json`) or probe the chosen port and require a loopback listener | `remote_exec_denied`, `shell_unsupported`, `environment_invalid`, `jupyter_missing`, `jupyter_incompatible`, `jupyter_start_failed`, `jupyter_start_timeout`, `attach_none_found`, `attach_port_unreachable`, `attach_not_loopback` |
+| `runtime` | start mode: exec is permitted, the host is POSIX (`uname -s`), the interpreter runs, `jupyter_server` imports and is at least 2.0; attach mode: find the servers (`jupyter server list --json`) or probe the chosen port and require a loopback listener whose `root_dir` contains the workspace (`workspace_outside_root`) | `shell_unsupported`, `environment_invalid`, `jupyter_missing`, `jupyter_incompatible`, `jupyter_start_failed`, `jupyter_start_timeout`, `attach_none_found`, `attach_port_unreachable`, `attach_not_loopback`, `workspace_outside_root` |
 | `notebook_auth` | attach and Connect: `GET /api/status` through the tunnel with the token returns 200. Test connection in start mode: `skipped`, `data.reason: 'not_started'` | `token_unavailable`, `token_rejected`, `notebook_service_unreachable` |
 | `kernels` | start mode before the server runs: `jupyter kernelspec list --json` (`data.source: 'cli'`); otherwise `GET /api/kernelspecs` (`'service'`); at least one kernel, and the chosen one exists | `no_kernelspec`, `kernelspec_not_found`, `kernel_start_failed` |
 
@@ -212,7 +212,7 @@ Test connection and Connect run the same stages in the same order. A stage repor
 
 ### 5.2 Host identity
 
-The connector's own `known_hosts` file (OpenSSH format, written with `golang.org/x/crypto/ssh/knownhosts`; the person's `~/.ssh/known_hosts` is neither read nor written) and the server's `notebook_connections.trusted_host_keys` are two records of what the person trusted. Both are consulted; disagreement is a stop. L = the connector's entry for `host:port`, S = the server's (`target.hostKeys`), C = a confirmation in this request, P = the key presented now.
+The connector's own `known_hosts` file (OpenSSH format, written with `golang.org/x/crypto/ssh/knownhosts`; the person's `~/.ssh/known_hosts` is neither read nor written) and the server's `notebook_connections.trusted_host_keys` are two records of what the person trusted. Both are consulted; a presented key that matches neither record is a stop unless the person replaces the record they hold (rows 2 and 8). L = the connector's entry for `host:port`, S = the server's (`target.hostKeys`), C = a confirmation in this request, P = the key presented now.
 
 | # | L | S | C | Result |
 | --- | --- | --- | --- | --- |
@@ -223,8 +223,11 @@ The connector's own `known_hosts` file (OpenSSH format, written with `golang.org
 | 5 | none | ≠ P | — | `failed` `host_key_changed` with `expected = S`: a different computer answers, or the key changed while this connector's record was lost |
 | 6 | none | none | `sha256 = P` | trust on first use, confirmed by the person: write L, `ok` |
 | 7 | none | none | none | `needs_action` `host_key_unknown`, `data.fingerprint = P` |
+| 8 | none | ≠ P | `sha256 = P`, `replacing = S` | the person replaces the key the server remembers (a new machine, a rotated host key): write L, `ok` |
 
-The negotiated algorithm is restricted to the key types already recorded for the host (`knownhosts.KnownHosts.HostKeyAlgorithms`), so a server that offers an additional key type is not reported as changed. Fingerprints are OpenSSH's `SHA256:` form (`ssh.FingerprintSHA256`).
+The negotiated algorithm is restricted to the key types already recorded for the host (the connector reads its own file and sets `ClientConfig.HostKeyAlgorithms`; `x/crypto` has no helper for it), so a server that offers an additional key type is not reported as changed. Fingerprints are OpenSSH's `SHA256:` form (`ssh.FingerprintSHA256`).
+
+**Trust limit.** `confirmations` and `hostKeys` arrive in the relay's message, so the connector cannot itself tell that a person confirmed: a compromised relay could write a `known_hosts` entry (the same limit as §1). The connector therefore prints every trust write and replacement on its terminal and in its log, `--confirm-sessions` covers it, and the old line is always kept as history.
 
 **Server side.** The server persists a fingerprint into `trusted_host_keys` only from a stage result whose host and port it sent *and* that the person confirmed or that already matched its record; a `host_key_changed` never alters a record. Replacing is a deliberate act: `POST /api/me/connections/:id/test` with `confirmations[{ …, replacing }]` where `replacing` equals the fingerprint the server holds, requires authentication within 15 minutes, and appends audit `connection.host_key_replaced` with both fingerprints. The panel (P3-07) shows both fingerprints, never retries on its own, and puts the replace action behind a confirmation that names the host (A30: the application neither silently accepts the new key nor discards the trust record).
 
@@ -232,9 +235,9 @@ The negotiated algorithm is restricted to the key types already recorded for the
 
 Per hop (jump host, then target), in this order, stopping at the first success:
 
-1. `method: 'agent'`: the identities of the connector computer's SSH agent (`SSH_AUTH_SOCK`; on Windows the OpenSSH agent pipe `\\.\pipe\openssh-ssh-agent`, opened as a file, so no extra dependency). `hint` selects by comment or fingerprint. Hardware-backed keys (`sk-…`) work only through an agent.
+1. `method: 'agent'`: the identities of the connector computer's SSH agent (`SSH_AUTH_SOCK`; on Windows the OpenSSH agent pipe `\\.\pipe\openssh-ssh-agent`, opened as a file, so no extra dependency). `hint` selects by comment or fingerprint; the connector offers identities one at a time and a connection made from a class template must carry a `hint`, so a template host never sees every key in the agent. Hardware-backed keys (`sk-…`) work only through an agent.
 2. `method: 'key'`: the key file at `keyPath`, with the certificate `<keyPath>-cert.pub` when it exists. An encrypted key's passphrase is read from the connector's own terminal without echo (`golang.org/x/term`) when `features.tty` is true, kept only for the duration of the call, and never sent anywhere.
-3. A second factor, only when the host answers publickey with *partial success* and asks `keyboard-interactive`: the host's prompt text is shown in the connector's terminal and the person types the answer there. Prompts and answers **never pass through Parallax**. Three wrong answers or 120 s without one is `mfa_failed`.
+3. A second factor, only when the host answers publickey with *partial success* and asks `keyboard-interactive`: the host's prompt text is shown in the connector's terminal after control characters and escape sequences are stripped, labelled with the host it came from, and the person types the answer there. Prompts and answers **never pass through Parallax**. Three wrong answers or 120 s without one is `mfa_failed`.
 
 **Not supported in v1:** password authentication (the protocol has no field for a password and the connector never asks for a login password), GSSAPI/Kerberos, `ProxyCommand`, agent forwarding (never requested), and storing passphrases in an OS keychain. A host that offers only those fails with `auth_method_unsupported` and the methods it offered in `detail`. Without a terminal (`run` started as a service) a passphrase or second factor fails with `key_passphrase_required` or `mfa_requires_terminal`, whose recovery is to run the connector in a terminal or load the key into an agent. The spec's "OS credential store" is the connector's own state directory (§13); it holds no SSH secrets.
 
@@ -256,7 +259,7 @@ One SSH connection per session is kept and multiplexed (a `direct-tcpip` channel
 | `policy` | Parallax or the connector refuses this destination. |
 | `protocol` | The link itself failed; not caused by the target. |
 
-| Code | Stage | §14 cause | Retry | Recoveries (in order) | Meaning |
+| Code | Stage | Cause (spec §14) | Retry | Recoveries (in order) | Meaning |
 | --- | --- | --- | --- | --- | --- |
 | `host_unresolved` | `reachability` | reachability | yes | check_address, check_network, retry | The host name did not resolve. |
 | `connection_refused` | `reachability` | reachability | yes | check_address, contact_host_owner, retry | The host refused the connection on that port. |
@@ -279,10 +282,10 @@ One SSH connection per session is kept and multiplexed (a `direct-tcpip` channel
 | `workspace_missing` | `workspace` | workspace | no | choose_workspace | The working directory does not exist. |
 | `workspace_not_directory` | `workspace` | workspace | no | choose_workspace | The working directory path is not a directory. |
 | `workspace_not_writable` | `workspace` | workspace | no | choose_workspace, contact_host_owner | The account cannot write to the working directory. |
-| `workspace_outside_root` | `workspace` | workspace | no | choose_workspace | The attached server's root does not contain the working directory. |
+| `workspace_outside_root` | `runtime` | workspace | no | choose_workspace | The attached server's root does not contain the working directory. |
 | `forwarding_denied` | `forwarding` | tunnel | no | enable_forwarding, pick_other_target, download_notebook | The SSH server forbids port forwarding for this account. |
 | `tunnel_unavailable` | `forwarding` | tunnel | yes | retry | The tunnel could not be opened. |
-| `remote_exec_denied` | `runtime` | runtime | no | contact_host_owner, start_jupyter_then_attach, pick_other_target | The account may not run commands over SSH. |
+| `remote_exec_denied` | `workspace` | runtime | no | contact_host_owner, start_jupyter_then_attach, pick_other_target | The account may not run commands over SSH. |
 | `shell_unsupported` | `runtime` | runtime | no | start_jupyter_then_attach | The host is not a POSIX host; start Jupyter there yourself and attach. |
 | `environment_invalid` | `runtime` | runtime | no | choose_environment | The chosen Python interpreter does not exist or cannot run. |
 | `jupyter_missing` | `runtime` | runtime | no | install_jupyter, choose_environment | Jupyter Server is not installed in that environment. |
@@ -306,6 +309,8 @@ One SSH connection per session is kept and multiplexed (a `direct-tcpip` channel
 | `limit_exceeded` | — | protocol | yes | wait, retry | A connector limit (sessions, streams, size) was reached. |
 | `path_not_allowed` | — | policy | no | none | The request is outside the connector's allowlist. |
 | `body_too_large` | — | policy | no | none | The request or response body exceeds the limit for its kind. |
+| `not_ready` | — | protocol | yes | wait, retry | The session or kernel is not ready to run a cell. |
+| `rate_limited` | — | protocol | yes | wait | Too many requests; slow down. |
 | `busy` | — | protocol | yes | wait, retry | The session is busy with a previous request. |
 | `test_timeout` | — | protocol | yes | retry | The test did not finish in time. |
 | `stream_cancelled` | — | protocol | yes | retry | The stream was cancelled by the peer. |
@@ -317,7 +322,7 @@ When a session's transport or process disappears, the connector sends `session_s
 
 | # | Cause | Evidence |
 | --- | --- | --- |
-| 1 | `sleep` | two consecutive ticks of the connector's 1 s ticker are more than 15 s apart by the wall clock since the last healthy check (a sleeping computer runs no ticks, whichever clock the platform's timers count; a clock step of that size is indistinguishable and is reported as sleep too) |
+| 1 | `sleep` | two consecutive ticks of the connector's 1 s ticker are more than 15 s apart by the wall clock (`time.Now().Round(0)`, which carries no monotonic reading) since the last healthy check (a sleeping computer runs no ticks, whichever clock the platform's timers count; a clock step of that size is indistinguishable and is reported as sleep too) |
 | 2 | `allocation_expired` | the target declared `expectedEnd`, now is within 5 minutes of it or later, and the transport closed with a disconnect message or reconnecting is refused or times out |
 | 3 | `vpn` | an interface that looks like a VPN (names `tun*`, `utun*`, `wg*`, `ppp*`, `tap*`, `ipsec*`, `tailscale*`, `zt*`; on Windows adapter descriptions containing VPN, TAP, WireGuard, Tailscale, AnyConnect or GlobalProtect) that existed at the last healthy check is gone, or the interface carrying the route to the host changed |
 | 4 | `network_change` | any other interface or address change since the last healthy check |
@@ -342,7 +347,9 @@ Reconnecting the SSH transport is automatic for as long as a lease is valid: aft
 | `lease_grace` | connector | new_session | Stopped after the grace period with no browser attached. |
 | `user_stop` | connector | new_session | Stopped by the person. |
 | `connector_exit` | connector | new_session | The connector was stopped. |
-| `connector_restarted` | connector | new_session | The connector restarted and could not re-attach. |
+| `connector_restarted` | server | new_session | The connector restarted and could not re-attach. Set by the server when a returning connector does not know the session. |
+| `abandoned` | server | pick_other_target, new_session | The person gave up on an unreachable session. Server-side; says nothing about the process. |
+| `max_lifetime` | connector | new_session | Stopped at the maximum session lifetime. |
 | `link_lost` | server | reconnect | Parallax stopped hearing from the connector. Server-side cause; the connector never sends it. |
 | `connector_offline` | server | reconnect | The connector is not connected to Parallax. Server-side cause. |
 | `connector_revoked` | server | pick_other_target, new_session | The device was revoked or unpaired. Server-side cause. |
@@ -359,20 +366,20 @@ Reconnecting the SSH transport is automatic for as long as a lease is valid: aft
 
 **Versions.** Jupyter Server 2.x (CI: 2.21.1) with ipykernel 6 or 7 (CI: 7.4.0); an older `jupyter_server` is `jupyter_incompatible`. R runs as an installed kernel (`IRkernel`, kernelspec `ir`); nothing in the connector is language specific.
 
-**The token.** The connector generates 32 random bytes per session, hex-encoded, and holds them in memory. It is passed to Jupyter in the `JUPYTER_TOKEN` environment variable (`local`) or as the first line of the exec channel's standard input (`ssh`), **never** in an argument, a URL, a file, a log line, `sessions.json` or a message. Jupyter prints a URL containing the token when it starts: everything the connector reads from Jupyter's output goes through `redact()` (token query values and the token itself) before it is logged or put in a `detail`. Requests carry `Authorization: token <t>`. A restarted connector cannot recover the token of a session it started, which is why it stops such orphans (below).
+**The token.** The connector generates 32 random bytes per session, hex-encoded, and holds them in memory. It is passed to Jupyter in the `JUPYTER_TOKEN` environment variable (`local`) or as the first line of the exec channel's standard input (`ssh`), **never** in an argument, a URL, a log line, `sessions.json` or a message, and the connector never writes it to a file. Jupyter itself writes `jpserver-<pid>.json` (mode 0600) to its runtime directory, which `jupyter server list` reads; the connector sets `JUPYTER_RUNTIME_DIR` to a private per-session directory (0700) that it removes when the session stops. Jupyter prints a URL containing the token when it starts: everything the connector reads from Jupyter's output goes through `redact()` (token query values and the token itself) before it is logged or put in a `detail`. Requests carry `Authorization: token <t>`. A restarted connector cannot recover the token of a session it started, which is why it stops such orphans (below).
 
 **Fixed server flags.** `--ServerApp.ip=127.0.0.1 --ServerApp.port=<P> --ServerApp.port_retries=0 --ServerApp.open_browser=False --ServerApp.root_dir=<workspace> --ServerApp.allow_remote_access=False --ParallaxMarker.session=<sessionId>`. The last is a marker no Jupyter class reads (traitlets ignores configuration for unknown classes); it lets the connector prove that a pid is its own process before signalling it. If a future Jupyter rejects it, the template drops it and the proof falls back to matching the port and root directory in the process arguments. The kernel manager keeps the default `buffer_offline_messages`, which §7 relies on.
 
 **`local` target.** Pick a free port (bind `127.0.0.1:0`, read it, close; retry up to 3 times on a bind race). Run `<python> -m jupyter_server …` (`runtime.python`) or `jupyter server …` from `PATH`, with the workspace as working directory and no stdin. Poll `/api/status` every 250 ms for up to 30 s; an exit before that is `jupyter_start_failed` with the last redacted lines. Children die with the connector where the OS can arrange it: `Pdeathsig` on Linux (the child is spawned from a goroutine locked to its OS thread, because the signal follows the spawning thread), a job object with kill-on-close on Windows. macOS has no such facility, so all platforms also sweep on start-up (below).
 
-**`ssh` target.** After the stages up to `forwarding`: check `uname -s` (a POSIX host; anything else is `shell_unsupported`, attach mode only). Start with this fixed template; every argument is single-quoted by `shellQuote` (wrap in `'…'`, replace `'` with `'\''`), and the only variable parts are the validated workspace, interpreter, port and session id:
+**`ssh` target.** After the stages up to `forwarding`: check `uname -s` (a POSIX host; anything else is `shell_unsupported`, attach mode only). Start with this fixed template; every argument is single-quoted by `shellQuote` (wrap in `'…'`, replace `'` with `'\''`), and the only variable parts are the validated workspace, interpreter, port and session id (a leading `~/` in the interpreter is sent as `"$HOME"/…`, because `~` is not expanded inside quotes):
 
 ```
 sh -c 'cd -- "$1" || exit 70; IFS= read -r JUPYTER_TOKEN || exit 71; export JUPYTER_TOKEN
        echo "PARALLAX_PID=$$"; shift; exec "$@"' sh WORKSPACE PYTHON -m jupyter_server <fixed flags>
 ```
 
-With `login: true` the same script runs under `bash -lc`. The token is written to standard input, which is then closed. The first output line carries the pid (`$$` becomes the Jupyter pid at `exec`). The port is random in 20000–59999, retried up to five times on "address already in use". The tunnel is `ssh.Client.Dial("tcp", "127.0.0.1:<P>")` per stream; the destination is fixed for the session (§8). A Windows host is `shell_unsupported` for start; attach works.
+With `login: true` the same script runs under `bash -lc`. The token is written to standard input, which is then closed. The first output line carries the pid (`$$` becomes the Jupyter pid at `exec`). The port is random in 20000–59999, retried up to five times on "address already in use". The tunnel is `ssh.Client.Dial("tcp", "127.0.0.1:<P>")` per stream; the destination is fixed for the session (§8). A host without a POSIX shell, Windows OpenSSH included, is `shell_unsupported` for every operation in v1.
 
 **Attach.** The connector lists servers with `jupyter server list --json` (locally, or by exec on the target), keeps those that listen on loopback and have a readable token, and reports them in `test_result.attachable` without tokens. `open_session { runtime: { mode: 'attach', port } }` must name one of them (or a port the list shows); a server it cannot read a token for is `token_unavailable` — in v1 no token is typed into Parallax or the connector. The workspace must lie within the attached server's `root_dir` (`workspace_outside_root`); contents calls are confined to it (§7).
 
@@ -394,6 +401,8 @@ The browser never names a Jupyter path, host or port. The relay exposes **typed 
 | `contents` | GET, PUT | `/api/contents/{relpath}` | query keys `content`, `type`, `format`, `hash` only |
 | `contents` | POST | `/api/contents/{reldir}` | |
 | `contents` | DELETE | `/api/contents/{relpath}` | |
+
+**Confinement.** The session records the kernel ids it created (`POST /api/kernels` answers) and the connector accepts a `{uuid}` only from that set, so in attach mode other people's kernels on the same server are out of reach (spec §10.4). A `POST /api/contents/{reldir}` body may hold only `type` and `ext`; `copy_from` and any other key are refused.
 
 Not served, ever: `/api/sessions`, `/api/terminals`, `/api/shutdown` (used by the connector itself), `/api/config`, `/api/me`, `/api/nbconvert`, `/api/events`, `/lab`, `/tree`, `/files`, extensions and kernelspec resources. (ADR-0005 listed `/api/sessions`; the relay tracks kernels itself, so the surface is smaller.)
 
@@ -435,7 +444,9 @@ IPv4-mapped (`::ffff:a.b.c.d`), NAT64 (`64:ff9b::/96`) and 6to4 (`2002::/16`) ad
 
 An **attached** session is never stopped: when its detached deadline passes, the connector closes the tunnel and forgets the session (`stopped`, `lease_grace`, `owned: false`), leaving the person's server running.
 
-**`sessions.json`** (schema `state.schema.json#/$defs/Sessions`) records, per held session: ids, `owned`, target kind/host/port/user/workspace, the process (`where`, pid, port, start time; owned only), the lease, `phase`, `lastActivityAt`, `detachedAt`, `expiresAt`, `state`. It never holds a token, key, passphrase or password. It is written to a temporary file in the same directory and renamed, mode 0600, on every state or phase change and otherwise at most every 5 seconds.
+**Maximum lifetime.** Whatever the relay says, an owned session is stopped 12 hours after it started (`hardDeadline`, cause `max_lifetime`), so a relay fault cannot keep a process alive indefinitely.
+
+**`sessions.json`** (schema `state.schema.json#/$defs/Sessions`) records, per held session: ids, `owned`, the target (kind, host, port, user, workspace and the `auth`, jump host and `hostKeys` references the orphan sweep needs to reconnect), the ids of the kernels the session created, the process (`where`, pid, port, start time; owned only), the lease, `phase`, `lastActivityAt`, `detachedAt`, `expiresAt`, `state`. It never holds a token, key, passphrase or password. It is written to a temporary file in the same directory and renamed, mode 0600, on every state or phase change and otherwise at most every 5 seconds.
 
 **Server view.** `notebook_sessions.lease_expires_at` mirrors `leaseExpiresAt` for display. The server never stops a session itself. It marks a session `unconfirmed` (cause `link_lost`) when 45 s pass without a heartbeat, back to the connector-reported state when the link returns, and `stopped` only on the connector's word, or with cause `connector_restarted` when a returning connector does not know the session. It never marks one completed because a link closed (spec §10.4).
 
@@ -466,12 +477,12 @@ Migrations are added only by chain items: P3-02 (first four tables) and P3-06 (t
 
 | Table | Columns |
 | --- | --- |
-| `notebook_sessions` | `id` pk; `class_id`; `user_id`; `connection_id` → `notebook_connections`; `connector_id` → `connectors`; `resource_revision_id` → `resource_revisions`; `working_copy_id` nullable (P3-09); `state` (`starting`, `ready`, `disconnected`, `unconfirmed`, `stopping`, `stopped`, `failed`); `cause` text nullable; `owned` bool; `runtime` jsonb (mode, kernelspecs); `environment` jsonb nullable; `jupyter_version`; `lease` jsonb; `lease_expires_at` nullable; `kernel_id`, `kernel_name` nullable; `kernel_generation` int default 0; `last_heartbeat_at`, `last_confirmed_at` nullable; `created_at`, `stopped_at` nullable. Unique partial index on `(user_id, class_id, resource_revision_id)` where `state NOT IN ('stopped','failed')`; index on `(connector_id)` for open sessions |
-| `cell_executions` | `id` pk; `session_id`; `client_ref` uuid; `seq` bigint; `cell_id`; `resource_revision_id`; `working_copy_revision` int nullable; `code_hash` bytea (SHA-256); `kernel_id`; `kernel_generation`; `msg_id` uuid unique; `state` (`sent`, `running`, `ok`, `error`, `aborted`, `incomplete`, `unconfirmed`); `execution_count` nullable; `outputs_incomplete` bool; `sent_at`, `finished_at` nullable. Unique `(session_id, client_ref)` and `(session_id, seq)` |
+| `notebook_sessions` | `id` pk; `class_id`; `user_id`; `connection_id` → `notebook_connections`; `connector_id` → `connectors`; `resource_revision_id` → `resource_revisions`; `working_copy_id` nullable (P3-09); `state` (`starting`, `ready`, `disconnected`, `unconfirmed`, `stopping`, `stopped`, `failed`); `cause` text nullable; `owned` bool; `runtime` jsonb (mode, kernelspecs); `environment` jsonb nullable; `jupyter_version`; `lease` jsonb; `lease_expires_at` nullable; `kernel_id`, `kernel_name` nullable; `kernel_generation` int default 0; `last_heartbeat_at`, `last_confirmed_at` nullable; `created_at`, `stopped_at` nullable. Unique partial index on `(user_id, class_id, resource_revision_id)` where `state NOT IN ('stopped','failed')` (a session that cannot be reached is left with **Forget**, §10.7, so it never blocks a new one); index on `(connector_id)` for open sessions |
+| `cell_executions` | `id` pk; `class_id`; `session_id`; `client_ref` uuid; `seq` bigint; `cell_id`; `resource_revision_id`; `working_copy_revision` int nullable; `code_hash` bytea (SHA-256); `kernel_id`; `kernel_generation`; `msg_id` uuid unique; `state` (`sent`, `running`, `ok`, `error`, `aborted`, `incomplete`, `unconfirmed`); `execution_count` nullable; `outputs_incomplete` bool; `sent_at`, `finished_at` nullable. Unique `(session_id, client_ref)` and `(session_id, seq)` |
 | `notebook_working_copies` | `id` pk; `user_id`; `source_revision_id`; `current_revision` int; `created_at`, `updated_at`. Unique `(user_id, class_id, source_revision_id)` |
-| `notebook_working_copy_revisions` | `(working_copy_id, revision)` pk; `storage_object_id`; `sha256`; `size`; `source` (`browser`, `import`, `server`); `created_at` |
-| `file_transfers` | `id` pk; `session_id`; `user_id`; `direction` (`in`, `out`); `path` (relative to the workspace); `sha256`; `size`; `state` (`started`, `done`, `failed`, `conflict`); `storage_object_id` nullable; `conflict` jsonb nullable; `created_at`, `finished_at` |
-| `notebook_submission_files` | `(submission_id, path)` pk; `file_transfer_id`; `sha256`; `size`; `storage_object_id` |
+| `notebook_working_copy_revisions` | `(working_copy_id, revision)` pk; `class_id`; `storage_object_id`; `sha256`; `size`; `source` (`browser`, `import`, `server`); `created_at` |
+| `file_transfers` | `id` pk; `class_id`; `session_id`; `user_id`; `direction` (`in`, `out`); `path` (relative to the workspace); `sha256`; `size`; `state` (`started`, `done`, `failed`, `conflict`); `storage_object_id` nullable; `conflict` jsonb nullable; `created_at`, `finished_at` |
+| `notebook_submission_files` | `(submission_id, path)` pk; `class_id`; `file_transfer_id`; `sha256`; `size`; `storage_object_id` |
 
 P3-06's migration also adds to `notebook_submissions` (created by P2-14) whichever of `working_copy_id`, `working_copy_revision`, `session_id` and `environment` it lacks; the implementer reads the merged P2-14 schema first.
 
@@ -495,6 +506,7 @@ All are registered with `registerRoute`; contracts live in `packages/contracts/s
 | `GET /api/me/connections/:connectionId/tests/:testId` | user | P3-06 | `{ state: 'running' \| 'done', stages, outcome?, kernelspecs?, attachable?, jupyterVersion?, environment? }`; held in memory 10 minutes; the web polls every second |
 | `GET/POST /api/classes/:classId/notebook-sessions`, `GET …/:sessionId` | class, any | P3-06 | create `{ connectionId, revisionId, runtime, lease? }` → `202 { sessionId, state }`; `409 connector_offline`, `409 session_exists` (with the open session's id) |
 | `POST …/:sessionId/close` | class, any | P3-06 | `{ stop }` → `202`; `409 not_owned` |
+| `POST …/:sessionId/forget` | class, any | P3-06 | gives up on a session that is `disconnected` or `unconfirmed`: state `stopped`, cause `abandoned`, nothing sent to the connector, and the interface says it does not know whether the process still runs. Lets the person pick another target (A36) |
 | `POST/GET/DELETE …/:sessionId/kernel`, `POST …/kernel/interrupt`, `…/kernel/restart` | class, any | P3-06a | typed kernel operations; start `{ kernelName }` |
 | `GET …/:sessionId/executions?afterSeq=` | class, any | P3-06a | reconcile after a reload |
 | `GET …/:sessionId/channels` (WebSocket) | class, any | P3-06a | §10.5 |
@@ -519,7 +531,7 @@ JSON text frames over the WebSocket, validated with zod in `packages/contracts/s
 | c→s | `interrupt` | — |
 | s→c | `ready` | `epoch`, `eventSeq`, `session` (state, cause, owned, lease), `kernel` (id, name, state, generation) \| null |
 | s→c | `execution` | `executionId`, `ref`, `cellId`, `seq`, `state`, `executionCount?`, `outputsIncomplete`, `generation` |
-| s→c | `output` | `executionId`, `eventSeq`, `generation`, `output` (an nbformat output object: `stream`, `display_data`, `execute_result`, `error`), `truncated?`; `clear_output` and `input_request` are `kind`s of their own |
+| s→c | `output` | `executionId`, `eventSeq`, `generation`, `kind` (`output`, `clear_output`, `input_request`), `output` (an nbformat output object: `stream`, `display_data`, `execute_result`, `error`; absent for the other kinds), `truncated?` |
 | s→c | `kernel_state` | `state` (`starting`, `idle`, `busy`, `waiting_for_input`, `restarting`, `dead`, `unknown`), `generation` |
 | s→c | `session_state` | `state`, `cause?`, `leaseExpiresAt?` |
 | s→c | `error` | `code`, `detail?` (e.g. `not_ready`, `rate_limited`) |
@@ -534,7 +546,7 @@ JSON text frames over the WebSocket, validated with zod in `packages/contracts/s
 
 **Restart and new kernel.** Restart calls the API, increments `kernel_generation`, moves every `sent`/`running`/`unconfirmed` execution to `aborted`, and announces `kernel_state restarting`; the outputs already shown carry their old `generation`, so the interface labels them as belonging to the previous kernel session (spec §10.4). Nothing is run again.
 
-**Lost link or kernel.** When the link to the connector drops, `sent` and `running` executions become `unconfirmed`. When the link returns the relay asks Jupyter (`GET /api/kernels/{id}`): *404* → the session gets cause `kernel_lost`, the executions become `incomplete`, and the interface offers a new kernel with the warning that variables are gone; *busy* → it reopens the kernel channel with the same `session_id` so Jupyter replays what it buffered, the executions return to `running` with `outputs_incomplete = true` unless the replay closed the gap; *idle* with no `execute_reply` seen after the replay drains (2 s) → `incomplete`: the outcome is unknown and the person decides whether to run the cell again. A dropped **browser** socket changes nothing server-side: the relay keeps receiving and buffering; `resume` replays.
+**Lost link, relay restart or kernel.** When the link to the connector drops, **or the relay process starts** (every non-terminal execution row is then treated the same way), `sent` and `running` executions become `unconfirmed`. When the link returns the relay asks Jupyter (`GET /api/kernels/{id}`): *404* → the session gets cause `kernel_lost`, the executions become `incomplete`, and the interface offers a new kernel with the warning that variables are gone; *busy* → it reopens the kernel channel with the same `session_id` so Jupyter replays what it buffered, the executions return to `running` with `outputs_incomplete = true` unless the replay closed the gap; *idle* with no `execute_reply` seen after the replay drains (2 s) → `incomplete`: the outcome is unknown and the person decides whether to run the cell again. A dropped **browser** socket changes nothing server-side: the relay keeps receiving and buffering; `resume` replays.
 
 **Buffer.** Per execution the last 256 KiB of serialised `output` events (older ones dropped and `truncated` set), 8 MiB per session (finished executions are evicted oldest first). The relay stores no outputs durably: acknowledged outputs are those the browser saved to the working copy (P3-09).
 
@@ -552,6 +564,11 @@ JSON text frames over the WebSocket, validated with zod in `packages/contracts/s
 | any open state | `close` with `stop` accepted | `stopping` |
 | any open state | `session_state stopped` | `stopped` |
 | `unconfirmed` | the returning connector's `hello` and `session_state` list lacks the session | `stopped` (`connector_restarted`) |
+| `disconnected`, `unconfirmed` | the person chooses Forget | `stopped` (`abandoned`) |
+| `unconfirmed` | the link returns and the connector reports `disconnected` | `disconnected` (the connector's cause) |
+| `starting`, `stopping` | the link closes | `unconfirmed` (`link_lost`) |
+| any open state | the connector is revoked | `unconfirmed` (`connector_revoked`) |
+| any state | relay process start | every `sent`/`running` execution becomes `unconfirmed` (§10.6); sessions that were open become `unconfirmed` until their connector reports |
 
 A heartbeat that lists an owned session the server has as `stopped` makes the server send `close_session { stop: true }` (clean-up of a leak). A session still `starting` after 120 s becomes `failed` (`test_timeout`).
 
@@ -591,7 +608,7 @@ Spec §17 asks for the tested connector and target matrix. "Supported" means fix
 | --- | --- | --- | --- |
 | Linux with OpenSSH 8.0 or later and a POSIX `sh` | yes | yes | the `sshd-jupyter` fixture |
 | macOS (Remote Login) | yes | yes | not exercised; same POSIX template |
-| Windows OpenSSH Server | no (`shell_unsupported`) | yes | not exercised |
+| Windows OpenSSH Server | no | no (`shell_unsupported`: the checks need a POSIX shell) | not supported in v1 |
 | Anything without a POSIX shell or without exec permission | no | `remote_exec_denied` | — |
 
 **Software.** Jupyter Server 2.x (CI 2.21.1), ipykernel 6 or 7 (CI 7.4.0), nbformat 5.11.1, Python 3.9 – 3.13 (CI 3.12); the R kernel is a kernelspec like any other, covered in CI by a fake kernelspec listing only (an R fixture image can join the weekly job). Go `go 1.24` with `golang.org/x/crypto v0.48.0` (the newest whose `go.mod` allows 1.24; supplies `ssh`, `ssh/agent`, `ssh/knownhosts`), `golang.org/x/term v0.40.0`, `github.com/coder/websocket v1.8.15`, and the test-only `github.com/santhosh-tekuri/jsonschema/v6 v6.0.3` (read from the Go module proxy on 2026-10-03). The question of plan §8 item 19 is settled: stay on Go 1.24 until the session image ships Go 1.26 or later.
@@ -604,26 +621,26 @@ Spec §17 asks for the tested connector and target matrix. "Supported" means fix
 
 | Threat | Control | Verified by |
 | --- | --- | --- |
-| A pairing code is guessed or leaked | 40 bits, 10 minutes, single use, hashed at rest, per-IP failure budget; a paired device is only *pending* until the owner approves it after comparing fingerprints, and approval needs recent authentication | `pairing.itest`: expired, reused and wrong codes are indistinguishable 404s; rate-limit test |
+| A pairing code is guessed or leaked | 40 bits, 10 minutes, single use, hashed at rest, per-IP failure budget; a paired device is only *pending* until the owner approves it after comparing fingerprints, and approval needs recent authentication | `connectors.itest`: expired, reused and wrong codes are indistinguishable 404s; rate-limit test |
 | A signature is replayed or aimed at another server | server nonce (30 s, single use), `ts` window, label, connector id and origin inside the signed bytes | signing vectors; `link-auth.itest` |
-| A stolen identity key | revocation closes the link within 60 s at most and refuses new ones; the key authenticates only to the server it was paired with; it is not an SSH key | `connectors.itest` revoke while linked |
-| The relay is compromised or buggy and asks a connector for something dangerous | fixed command templates, `validateTarget`, network scope, Jupyter allowlist and fixed forwarding destination enforced **in the connector**; no message can carry a secret or an arbitrary command | Go tests `TestA33_*`, `TestAllowlist*`, `TestCommandTemplates*` |
+| A stolen identity key | revocation closes the link within 60 s at most and refuses new ones; the key authenticates only to the server it was paired with; it is not an SSH key | `link-auth.itest` revoke while linked |
+| The relay is compromised or buggy and asks a connector for something dangerous | fixed command templates, `validateTarget`, network scope, Jupyter allowlist, kernel-id confinement and fixed forwarding destination enforced **in the connector**; no message can carry a secret or an arbitrary command. It *can* run code through a kernel (§1): `--confirm-sessions`, the session log line and the lifetime cap limit and expose that | Go tests `TestA33_*`, `TestAllowlist*`, `TestCommandTemplates*`, `TestConfirmSessionsAsksFirst`, `TestKernelIdsConfinedToSession` |
 | A user-supplied host reaches the database, cloud metadata or the LAN | rules 1–2 of §4.4, §8 classes, every resolved address checked and the connected address re-checked; destinations after `open_session` are fixed | `TestA33_ForbiddenDestinationsRejected` (40 addresses and encodings), `TestDialRechecksConnectedAddress`, server `netpolicy.test.ts` |
 | DNS rebinding between check and use | dial by IP; `Control` hook; one resolution per attempt | `TestDialRechecksConnectedAddress` |
 | A changed or spoofed host key is accepted | decision table of §5.2; the server's record and the connector's must agree; replace needs explicit confirmation and recent authentication; the old key stays in the file as a comment | `TestA30_HostKeyDecisionTable`, `TestA30_ChangedKeyIsAHardStop`, e2e A30 |
-| The Jupyter token leaks | env or stdin only, memory only, redacted from every output, header auth only (never a query), never on the wire to Parallax or in `sessions.json` | `TestTokenNeverInArgvURLOrLog`, `TestRedactsTokenFromJupyterLog`, `sessions.test` |
+| The Jupyter token leaks | env or stdin only, held by the connector in memory (Jupyter's own 0600 runtime file sits in a private per-session directory removed at stop), redacted from every output, header auth only (never a query), never on the wire to Parallax or in `sessions.json` | `TestTokenNeverInArgvURLOrLog`, `TestRedactsTokenFromJupyterLog`, `TestSessionsFileNeverHoldsSecrets` |
 | Command injection through a path or name | validated absolute paths, `shellQuote`, port and uuid forms, no other variable | `TestShellQuoteFuzz`, `TestCommandTemplates` |
 | Another person's session is reached by guessing an id | every route filters by class and owner, 404 for the rest; stream ids are per link and checked against the session | `a33-notebook-isolation.itest`, matrix test |
 | Instructors operate a student's machine | no route exists; templates carry no credentials | matrix test; `a35` itest |
 | Notebook output from a remote kernel runs script in the app | live output passes the same sanitiser as stored output; HTML renders only in the sandboxed content-origin frame | A09 suite extended in P3-08 |
 | A runaway or abandoned session keeps running | leases enforced by the connector from `sessions.json`; orphan sweep; process-death hooks | `TestA32_*`, `TestLeaseSurvivesRestart` |
 | A silent re-execution after a network failure | `client_ref` idempotency; the relay never resends; reconnect only queries | `a31-execution-binding.itest`, e2e A31 |
-| A dead link read as "done" | `unconfirmed`, never `completed`; causes from §5.5 | `a36-session-causes.itest`, `TestA36_*` |
+| A dead link read as "done" | `unconfirmed`, never `completed`; causes from §5.5 | `TestA36_*` |
 | Cross-site WebSocket hijack of the channel | `Origin` check and cookie session on upgrade | `channel.itest` |
 | A tampered connector binary | published checksums; no auto-update; signing deferred (plan §7) | release workflow test |
 | Resource exhaustion through the link | frame, stream, window, session and size limits; rate limits | `framing.test.ts`, `TestWindowEnforced` |
 
-What the design does **not** protect against: code run on the person's own computer or SSH account has that account's privileges (spec §10.6); a person who types their passphrase into a malicious connector binary; a malicious operator of the single relay, who could ask connectors to start Jupyter on the targets people configured (not run arbitrary commands, §1).
+What the design does **not** protect against: a compromised relay running code on the computers people connected (§1); code run on the person's own computer or SSH account has that account's privileges (spec §10.6); a person who types their passphrase into a malicious connector binary; a malicious operator of the single relay, who could ask connectors to start Jupyter on the targets people configured (not run arbitrary commands, §1).
 
 ## 15. CI fixtures and end-to-end design
 
@@ -646,15 +663,15 @@ What the design does **not** protect against: code run on the person's own compu
 Names are the contract: a PR keeps the names it is given here (Go: `TestA30_…` pattern of ADR-0006; TypeScript titles start with the scenario ID).
 
 - **P3-02** `connectors.itest`: pairing happy path; `A33 a foreign connector id is a 404 for approve, revoke, rename and list`; expired, reused and malformed codes answer one body; rate limits; recent auth required to approve; preview principal 403; revoke while pending; the matrix test covers every new contract. `pairing.test` (HMAC code hash, normalisation `O`→`0`).
-- **P3-02a** `link-auth.itest` (valid signature; wrong key, old `ts`, replayed nonce, pending, revoked, wrong mode, unknown id all refused with the right close code); `link-heartbeat.itest` (45 s with fake time → sessions unconfirmed); `framing.test` against `vectors/frames.json`; `connector.test` (zod mirror over every fixture; the named invalid and rejected files; `ERROR_CODES` equals `errors.json` keys; signing vectors verify with `crypto.verify`).
+- **P3-02a** `link-auth.itest` (valid signature; wrong key, old `ts`, replayed nonce, pending, revoked, wrong mode, unknown id all refused with the right close code); `link-heartbeat.itest` (fake time: acknowledgement, 45 s without a heartbeat closes with 4408); `framing.test` against `vectors/frames.json`; `connector.test` (zod mirror over every fixture; the named invalid and rejected files; `ERROR_CODES` equals `errors.json` keys, read from the file at test time).
 - **P3-03** `TestPairWaitsForApproval`, `TestPairRefusesExistingIdentity`, `TestIdentityKeyMode0600`, `TestFingerprintVector`, `TestSigningVectors`, `TestStateDirPerOS`, `TestDoctorReports*`, `TestUnpairKeepsNothing`, `TestA27_PairingHalf`.
 - **P3-03a** `TestSchemaFixtures` (valid / invalid / rejected over the embedded schemas), `TestFrameVectors`, `TestLinkAuthHandshake`, `TestReconnectBackoffWithJitter`, `TestRevokedStopsRetrying`, `TestHeartbeatMissCloses`, `TestWindowEnforced`, `TestOriginMismatchStops`; the release workflow is exercised with a dry run in the PR.
 - **P3-04** `TestA33_ForbiddenDestinationsRejected`, `TestAddressClassification` (table), `TestDialRechecksConnectedAddress`, `TestAllowlist*` (paths, methods, query keys, encodings, `..`, hidden segments, `token=`), `TestHeadersFiltered`, `TestTokenNeverInArgvURLOrLog`, `TestRedactsTokenFromJupyterLog`, `TestLocalStartAndStatus`, `TestA27_LocalRunsCellThroughProxy` (against the `httptest` fake), `TestTestConnectionLocalStages`, `TestAttachListsLoopbackOnly`.
 - **P3-04a** `TestA32_DisconnectKeepsOwnedUntilGrace`, `TestA32_IdleStopsAfterTimeout`, `TestA32_StopConfirmsTermination`, `TestA32_AttachedRuntimeIsNeverStopped`, `TestA32_LinkLossCountsAsDetach`, `TestLeaseSurvivesRestart`, `TestOrphanSweepKillsOnlyMarkedProcess`, `TestSessionsJSONAtomic`, `TestA36_CauseClassification` (one subtest per row of §5.5, fake clock and fake interface snapshots), `TestA36_SleepResumePastDeadlineStops`.
 - **P3-05** `TestA30_HostKeyDecisionTable` (the seven rows), `TestA30_ChangedKeyIsAHardStop`, `TestA30_ReplaceNeedsConfirmationAndKeepsHistory`, `TestHostKeyAlgorithmRestriction`, `TestJumpRouting`, `TestJumpHopKeyChecked`, `TestAuthOrderAgentThenKey`, `TestPassphraseFromTerminalOnly`, `TestMFAKeyboardInteractive`, `TestMFANoTerminal`, `TestUnsupportedMethodsReported`, `TestA29_ForwardingDeniedStage`, `TestStagesBlockedAfterFailure`, `TestA28_StagesOverJump`.
-- **P3-05a** `TestRemoteStartTemplate` (golden), `TestShellQuoteFuzz`, `TestCommandTemplates`, `TestRemoteTokenOnStdinOnly`, `TestA29_JupyterMissing`, `TestA29_JupyterTooOld`, `TestA29_NotebookAuthRejected`, `TestWindowsHostAttachOnly`, `TestStopShutdownThenKillWithMarker`, `TestTunnelDestinationFixed`, `TestSSHReconnectKeepsSession` (A31/A36 half), `TestTestedConnectionReusedForConnect`, `TestA28_AttachNeverStops`.
-- **P3-06** `a33-notebook-isolation.itest` (`A33 two classmates on one template cannot read each other's sessions, kernels or files`, `A33 a guessed session id is a 404 even for the class instructor`, `A33 a forbidden forwarding destination is refused at save and at connect`), `connections.itest`, `session-state.test` (the table of §10.7), `netpolicy.test`, `test-connection.itest` (progress and result with the fake connector), `a32-close.itest` (`A32 stop of an attached session is refused with not_owned`, `A32 detach keeps the session ready`), migration-chain and `scoped.test` updates.
-- **P3-06a** `a31-execution-binding.itest` (`A31 a resent execute with the same ref sends one execute_request`, `A31 reconnect asks the kernel and never executes again`, `A31 output with an unknown parent is dropped`, `A31 lost kernel needs an explicit new session`, `A31 an unrecoverable gap is incomplete`), `restart.itest` (generation bump), `buffer.test` (256 KiB, 8 MiB, replay), `channel.itest` (origin, scope re-validation, revocation closes the socket), `kernel-state.test`.
+- **P3-05a** `TestRemoteStartTemplate` (golden), `TestShellQuoteFuzz`, `TestCommandTemplates`, `TestRemoteTokenOnStdinOnly`, `TestA29_JupyterMissing`, `TestA29_JupyterTooOld`, `TestA29_NotebookAuthRejected`, `TestNonPosixHostUnsupported`, `TestStopShutdownThenKillWithMarker`, `TestTunnelDestinationFixed`, `TestSSHReconnectKeepsSession` (A31/A36 half), `TestTestedConnectionReusedForConnect`, `TestA28_AttachNeverStops`.
+- **P3-06** `a33-notebook-isolation.itest` (`A33 two classmates on one template cannot read each other's sessions, kernels or files`, `A33 a guessed session id is a 404 even for the class instructor`, `A33 a forbidden forwarding destination is refused at save and at connect`), `connections.itest`, `session-state.test` (the table of §10.7, including Forget), `netpolicy.test`, `test-connection.itest` (progress and result with the fake connector), `a32-close.itest` (`A32 stop of an attached session is refused with not_owned`, `A32 detach keeps the session ready`), migration-chain and `scoped.test` updates.
+- **P3-06a** `a31-execution-binding.itest` (`A31 a resent execute with the same ref sends one execute_request`, `A31 reconnect asks the kernel and never executes again`, `A31 output with an unknown parent is dropped`, `A31 output from a restarted kernel generation is dropped`, `A31 lost kernel needs an explicit new session`, `A31 an unrecoverable gap is incomplete`, `A31 a failed write leaves the execution unconfirmed`, `A31 a relay restart makes running executions unconfirmed`), `restart.itest` (generation bump), `buffer.test` (256 KiB, 8 MiB, replay), `channel.itest` (origin, scope re-validation, revocation closes the socket), `kernel-state.test`.
 - **P3-07** component tests: panel states per stage and code; `A29 the failing stage is named and the recovery shown`, `A36 a lost session shows its cause and keeps the notebook editable`, `A27 Ready is not shown before the kernel is idle`; every catalogue code has copy; keyboard path, axe.
 - **P3-08** component tests for the toolbar and output rendering; e2e A27 and A31 and A36 flows as §15; the A09 suite re-run on live output.
 - **P3-09** itest/e2e `A34 …` and `A35 …` (`A34 saving to Parallax does not claim the remote file was uploaded`, `A34 a conflicting remote revision is detected and not overwritten`, `A34 submission contains only acknowledged selected files`, `A35 the instructor opens the snapshot without any connector call`).
@@ -673,8 +690,9 @@ Names are the contract: a PR keeps the names it is given here (Go: `TestA30_…`
 8. **The Jupyter token** travels in the environment (`local`) or on the exec channel's standard input (`ssh`), not in an argument as the ADR's example had it, because arguments are visible to other accounts on a shared host.
 9. **Test connection is asynchronous** with a result per stage (the ADR had one `test_result`), so a second factor can be waited for and every failing stage reported separately.
 10. **`relay` mode serves the full app** and production runs one process (§10.1).
-11. **Managed mode** is specified (§12) and scheduled as P3-05b after the first complete release path.
+11. **No auto-approve flag** exists in the product (the ADR proposed a test-only flag); tests use a `TEST_ROUTES` route that calls the real approval service (§15).
+12. **Managed mode** is specified (§12) and scheduled as P3-05b after the first complete release path.
 
 New plan decisions (recorded in [`plan.md` §8](../delivery/plan.md)): OS and version matrix (§13); MFA and credential policy (§5.3); the Go 1.24 / `x/crypto` v0.48.0 question (§13); one relay process (§10.1).
 
-**Out of scope for v1** (each is a documented limit, not an omission): password and GSSAPI authentication; `ProxyCommand` and SSH through an HTTP proxy; more than one jump host; OS keychain integration; attaching with a token typed by the person; Windows start-up of Jupyter over SSH; HPC scheduler adapters; several relay processes; automatic connector updates and code signing; a persistent store of kernel output beyond the browser's acknowledged saves.
+**Out of scope for v1** (each is a documented limit, not an omission): password and GSSAPI authentication; `ProxyCommand` and SSH through an HTTP proxy; more than one jump host; OS keychain integration; attaching with a token typed by the person; Windows OpenSSH targets; HPC scheduler adapters; several relay processes; automatic connector updates and code signing; a persistent store of kernel output beyond the browser's acknowledged saves.

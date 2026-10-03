@@ -32,7 +32,9 @@
     },
     "path": {
       "type": "string",
-      "pattern": "^[^\\x00-\\x1f\\x7f]{1,1024}$",
+      "minLength": 1,
+      "maxLength": 1024,
+      "pattern": "^[^\\x00-\\x1f\\x7f]+$",
       "description": "A path on the machine the message names. Absolute, free of dot-dot segments and POSIX or drive-rooted: semantic rules."
     },
     "host": {
@@ -92,6 +94,96 @@
         "connector_restarted"
       ]
     },
+    "auth": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["method", "keyPath"],
+          "additionalProperties": false,
+          "properties": {
+            "method": {
+              "const": "key"
+            },
+            "keyPath": {
+              "$ref": "#/$defs/path"
+            }
+          },
+          "description": "A private key file on the connector's machine. A passphrase is asked for in the connector, never sent."
+        },
+        {
+          "type": "object",
+          "required": ["method"],
+          "additionalProperties": false,
+          "properties": {
+            "method": {
+              "const": "agent"
+            },
+            "hint": {
+              "type": "string",
+              "maxLength": 128
+            }
+          },
+          "description": "An identity held by the connector machine's SSH agent; `hint` selects by comment or fingerprint."
+        },
+        {
+          "type": "object",
+          "required": ["method", "keyId"],
+          "additionalProperties": false,
+          "properties": {
+            "method": {
+              "const": "managed_key"
+            },
+            "keyId": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9-]{0,62}$"
+            }
+          },
+          "description": "A key in the managed connector's own secret store (managed mode only)."
+        }
+      ]
+    },
+    "hop": {
+      "type": "object",
+      "required": ["host", "port", "user"],
+      "additionalProperties": false,
+      "properties": {
+        "host": {
+          "$ref": "#/$defs/host"
+        },
+        "port": {
+          "$ref": "#/$defs/port"
+        },
+        "user": {
+          "$ref": "#/$defs/user"
+        },
+        "auth": {
+          "$ref": "#/$defs/auth"
+        }
+      },
+      "description": "A jump host. Its auth defaults to the target's."
+    },
+    "hostKey": {
+      "type": "object",
+      "required": ["host", "port", "sha256"],
+      "additionalProperties": false,
+      "properties": {
+        "host": {
+          "$ref": "#/$defs/host"
+        },
+        "port": {
+          "$ref": "#/$defs/port"
+        },
+        "sha256": {
+          "$ref": "#/$defs/fingerprint"
+        }
+      },
+      "description": "A host key the server remembers as trusted for this connection."
+    },
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^SHA256:[A-Za-z0-9+/]{43}$",
+      "description": "OpenSSH style: SHA256: and the unpadded base64 of a SHA-256 digest."
+    },
     "Config": {
       "type": "object",
       "required": ["v", "server", "connectorId", "name", "pairedAt", "mode"],
@@ -132,7 +224,8 @@
         "lease",
         "phase",
         "lastActivityAt",
-        "expiresAt"
+        "expiresAt",
+        "hardDeadline"
       ],
       "additionalProperties": false,
       "properties": {
@@ -164,8 +257,33 @@
             },
             "workspace": {
               "$ref": "#/$defs/path"
+            },
+            "auth": {
+              "$ref": "#/$defs/auth"
+            },
+            "jump": {
+              "$ref": "#/$defs/hop"
+            },
+            "hostKeys": {
+              "type": "array",
+              "maxItems": 2,
+              "items": {
+                "$ref": "#/$defs/hostKey"
+              }
             }
           }
+        },
+        "kernelIds": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9-]{1,64}$"
+          },
+          "description": "Kernels this session created; the only kernel ids the allowlist accepts."
+        },
+        "startedAt": {
+          "$ref": "#/$defs/timestamp"
         },
         "process": {
           "type": "object",
@@ -201,6 +319,9 @@
           "$ref": "#/$defs/timestamp"
         },
         "expiresAt": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "hardDeadline": {
           "$ref": "#/$defs/timestamp"
         }
       },
