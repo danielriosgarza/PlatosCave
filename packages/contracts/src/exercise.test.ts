@@ -66,4 +66,47 @@ describe('exercise.v1 authoring rules', () => {
       expect.stringContaining('Step 1 “Explain” · prompt'),
     ]);
   });
+
+  test('common mistakes are reported in author words, not validator text', () => {
+    const choice = (patch: object) => ({
+      schema: 'exercise.v1',
+      steps: [
+        {
+          id: 'pick',
+          kind: 'single_choice',
+          title: 'Pick',
+          prompt: 'Which?',
+          options: [
+            { id: 'a', label: 'A' },
+            { id: 'b', label: 'B' },
+          ],
+          correct: 'a',
+          feedback: { correct: 'Yes.', incorrect: 'No.' },
+          ...patch,
+        },
+      ],
+    });
+    expect(exerciseProblems(choice({ correct: '' }))).toEqual([
+      'Step 1 “Pick”: tick a correct option',
+    ]);
+    expect(exerciseProblems(choice({ title: '' }))).toEqual(['Step 1 · title: must not be empty']);
+    const sim = simulation({}, [Number.NaN]);
+    expect(exerciseProblems(sim)).toEqual([
+      'Step 1 “Inspect” · compare · #1: values must be numbers',
+    ]);
+    expect(exerciseProblems(choice({ options: [] }))).toContain(
+      'Step 1 “Pick” · options: needs at least 2',
+    );
+  });
+
+  test('exclusive minimums and the id rule are worded as they are enforced', () => {
+    expect(exerciseProblems(simulation({ step: 0 }, [25]))).toContain(
+      'Step 1 “Inspect” · control · step: must be greater than 0',
+    );
+    for (const name of ['_x', 'x'.repeat(41)]) {
+      expect(exerciseProblems(simulation({ name }, [25]))).toEqual([
+        expect.stringMatching(/control · name: must start with a lowercase letter or digit/),
+      ]);
+    }
+  });
 });
