@@ -45,6 +45,14 @@
   min-height: 36px;
   text-align: left;
 }
+/* The 36 px above would otherwise beat the global coarse-pointer minimum. */
+@media (pointer: coarse) {
+  .primary,
+  .outline,
+  .textButton {
+    min-height: 44px;
+  }
+}
 .primary {
   color: var(--pc-accent-ink);
   background: var(--pc-accent);

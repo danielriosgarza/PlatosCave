@@ -72,3 +72,30 @@ test.describe('320 px', () => {
     expect(await noScroll()).toBe(true);
   });
 });
+
+test.describe('coarse pointer', () => {
+  test.use({ hasTouch: true, isMobile: true });
+
+  test('A20 sign-in and courses controls, bar links and fields are at least 44 px with a touch screen', async ({
+    page,
+  }) => {
+    const small = (selector: string) =>
+      page.locator(selector).evaluateAll((nodes) =>
+        nodes
+          .map((node) => {
+            const box = node.getBoundingClientRect();
+            return { name: node.textContent?.trim() || node.getAttribute('name'), box };
+          })
+          .filter(({ box }) => box.width > 0 && (box.height < 44 || box.width < 44))
+          .map(({ name, box }) => `${name}: ${Math.round(box.width)}x${Math.round(box.height)}`),
+      );
+    await page.goto('/signin');
+    await expect(page.getByRole('link', { name: 'Skip to content' })).toBeAttached();
+    expect(await small('header a:not([class*="skip"]), main button, main input')).toEqual([]);
+
+    await signIn(page, `a20-${Date.now()}@example.test`, 'Student');
+    await expect(page.getByRole('heading', { name: 'Your courses' })).toBeVisible();
+    expect(await small('header a, header button, main button, main input')).toEqual([]);
+    expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+  });
+});

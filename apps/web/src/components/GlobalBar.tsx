@@ -1,13 +1,23 @@
 import { signOut } from '@parallax/contracts/routes/auth';
 import { useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from '@tanstack/react-router';
-import { useState } from 'react';
+import { type MouseEvent, useState } from 'react';
 import { ApiError, call } from '../api/client';
 import { clearDrafts } from '../reading/margin/drafts';
 import { endSession, studyingClasses, usableClasses, useSession } from '../session/useSession';
 import { TopicNav, useTopicRoute } from '../topics/TopicNav';
 import { useFocusActive } from '../workspace/focus';
 import styles from './GlobalBar.module.css';
+
+/** Moves focus to the page's main region; every page renders one `<main id="main">`. */
+function skipToContent(event: MouseEvent<HTMLAnchorElement>) {
+  const main = document.querySelector('main');
+  if (!main) return;
+  event.preventDefault();
+  main.setAttribute('tabindex', '-1');
+  main.focus();
+  main.scrollIntoView?.();
+}
 
 export function GlobalBar() {
   const session = useSession();
@@ -50,27 +60,31 @@ export function GlobalBar() {
   if (focus) return null;
   return (
     <header className={styles.top}>
+      {/* biome-ignore lint/a11y/useValidAnchor: a skip link is a same-page anchor; the handler only adds focus */}
+      <a className={styles.skip} href="#main" onClick={skipToContent}>
+        Skip to content
+      </a>
       <div className={styles.left}>
         <Link className={styles.brand} to="/">
           Parallax
         </Link>
         <span aria-hidden="true" className={styles.divider} />
         {me ? (
-          <>
+          <nav className={styles.primary} aria-label="Primary">
             <Link to="/courses">Courses</Link>
             {classId ? (
               <Link to="/classes/$classId/topics" params={{ classId }}>
                 Topics
               </Link>
             ) : null}
-          </>
+          </nav>
         ) : session.status === 'signed-out' ? (
-          <Link to="/signin">Sign in</Link>
+          <nav className={styles.primary} aria-label="Primary">
+            <Link to="/signin">Sign in</Link>
+          </nav>
         ) : null}
       </div>
-      <nav className={styles.topicNav} aria-label="Neighbouring topics">
-        {me && topicRoute ? <TopicNav {...topicRoute} /> : null}
-      </nav>
+      {me && topicRoute ? <TopicNav {...topicRoute} className={styles.topicNav} /> : null}
       {me ? (
         <div className={styles.account}>
           <span className={styles.who}>{me.user.name}</span>

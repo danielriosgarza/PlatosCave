@@ -3,6 +3,7 @@ import { createFileRoute, Link, redirect } from '@tanstack/react-router';
 import { useState } from 'react';
 import { canEdit, grantLabel } from '../../authoring/grants';
 import page from '../../components/Page.module.css';
+import { usePageTitle } from '../../components/pageTitle';
 import { CourseMark } from '../../courses/CourseMark';
 import styles from '../../courses/Courses.module.css';
 import { CreateCourseForm, Dialog, type Joined, JoinForm } from '../../courses/Dialogs';
@@ -36,10 +37,12 @@ function Courses() {
   const session = useSession();
   const { view } = Route.useSearch();
   const cards = useQuery(coursesQuery);
-  if (session.status !== 'signed-in') return <main className={page.index} aria-busy="true" />;
+  usePageTitle(view === 'instructor' ? 'Courses you teach' : 'Your courses');
+  if (session.status !== 'signed-in')
+    return <main id="main" className={page.index} aria-busy="true" />;
   if (cards.isError && !cards.data) {
     return (
-      <main className={page.index}>
+      <main id="main" className={page.index}>
         <h1>Your courses</h1>
         <div className={page.feedback} role="alert">
           <p>Your courses could not be loaded.</p>
@@ -52,7 +55,7 @@ function Courses() {
       </main>
     );
   }
-  if (!cards.data) return <main className={page.index} aria-busy="true" />;
+  if (!cards.data) return <main id="main" className={page.index} aria-busy="true" />;
   // Without an explicit view, open the context the person actually holds: someone who only
   // teaches starts on Courses you teach, everyone else on Your courses (§3).
   const studying = cards.data.classes.some((c) => c.role === 'student');
@@ -95,7 +98,7 @@ function CoursesFor({ cards, view }: { cards: Cards; view: View }) {
   const hasContent = view === 'instructor' ? teaches : studying.length > 0;
 
   return (
-    <main className={page.index}>
+    <main id="main" className={page.index}>
       <div className={`${page.row} ${page.between}`}>
         <h1>{view === 'instructor' ? 'Courses you teach' : 'Your courses'}</h1>
         <div className={page.row}>

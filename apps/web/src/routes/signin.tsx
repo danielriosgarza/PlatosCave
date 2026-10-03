@@ -4,6 +4,7 @@ import { createFileRoute } from '@tanstack/react-router';
 import { type FormEvent, useState } from 'react';
 import { call } from '../api/client';
 import styles from '../components/Page.module.css';
+import { usePageTitle } from '../components/pageTitle';
 
 type Entrance = 'student' | 'instructor';
 
@@ -26,6 +27,7 @@ const ABOUT: Record<Entrance, string> = {
 };
 
 function SignIn() {
+  usePageTitle('Sign in');
   const { next, link } = Route.useSearch();
   const [entrance, setEntrance] = useState<Entrance>('student');
   const [email, setEmail] = useState('');
@@ -43,7 +45,7 @@ function SignIn() {
   };
 
   return (
-    <main className={styles.index}>
+    <main id="main" className={styles.index}>
       <h1>Sign in</h1>
       {link === 'expired' && !requested ? (
         <div className={styles.feedback} role="alert">

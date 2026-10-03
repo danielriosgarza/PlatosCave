@@ -4,6 +4,7 @@ import { z } from 'zod';
 import { ApiError } from '../../api/client';
 import { ClassUnavailable } from '../../components/AccessLost';
 import styles from '../../components/Page.module.css';
+import { usePageTitle } from '../../components/pageTitle';
 import { RetryNotice } from '../../components/RetryNotice';
 import { type TabDef, TabRow } from '../../components/TabRow';
 import { Unavailable } from '../../components/Unavailable';
@@ -84,11 +85,12 @@ function LoadedWorkspace({
   context: SessionClass;
 }) {
   const query = useClassTopics(classId);
-  if (query.error instanceof ApiError && query.error.status === 404) return <Unavailable />;
   const data = query.data;
+  usePageTitle(data?.topics.find((t) => t.topicId === topicId)?.title);
+  if (query.error instanceof ApiError && query.error.status === 404) return <Unavailable />;
   if (!data) {
     return (
-      <main className={styles.index}>
+      <main id="main" className={styles.index}>
         {query.isError ? (
           <RetryNotice
             message="This topic could not be loaded."
@@ -106,7 +108,7 @@ function LoadedWorkspace({
   if (!topic) return <Unavailable />;
   if (!isOpen(topic)) {
     return (
-      <main>
+      <main id="main">
         <TopicHeading data={data} topic={topic} />
         <div className={styles.panel}>
           <p className={styles.intro}>{lockReason(topic)}</p>
@@ -152,7 +154,7 @@ function OpenTopic({
   const mode = useFocusMode(workspace);
   const label = TOPIC_TABS.find((t) => t.id === tab)?.label ?? tab;
   return (
-    <main ref={workspace} className={styles.workspace}>
+    <main id="main" ref={workspace} className={styles.workspace}>
       {mode.focus ? null : <TopicHeading data={data} topic={topic} />}
       {mode.focus ? null : (
         <TabRow

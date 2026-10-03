@@ -31,7 +31,7 @@ function RouteFailed({ error, reset }: ErrorComponentProps) {
   const router = useRouter();
   const session = error instanceof SessionCheckError;
   return (
-    <main className={page.index}>
+    <main id="main" className={page.index}>
       <RetryNotice
         message={
           session
