@@ -1,11 +1,11 @@
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { buildApp } from '../../src/app';
 import { loadConfig } from '../../src/config';
 import { adoptRelease } from '../../src/db/content/adoption';
 import { publishRelease } from '../../src/db/content/releases';
-import { resources } from '../../src/db/schema';
+import { classReleaseHistory, resources } from '../../src/db/schema';
 import {
   asClassScope,
   asCourseScope,
@@ -372,5 +372,81 @@ describe('work on a resource the class stops using', () => {
     ).toBe(404);
     const items = (await call('bea', 'GET', `/api/classes/${ids.classB}/notifications`)).body.items;
     expect(items.map((i: { threadId: string }) => i.threadId)).not.toContain(before.body.id);
+  });
+});
+
+describe('A05 the adoption diff counts only marks the adopting instructor may see', () => {
+  // After the adoption above: class B is on v2, which still pins the sampling reading.
+  test('A05 A21 A26 private notes, preview marks and the other cohort’s marks stay out of the diff and its history', async () => {
+    // Students' private study marks, in class B and in class A (the other cohort, A21).
+    await create('bea', ids.classB, { kind: 'note', anchor: passage, body: 'Only mine' });
+    await create('bea', ids.classB, { kind: 'highlight', anchor: passage });
+    await create('priya', ids.classB, { kind: 'note', anchor: passage, body: 'Priya studies' });
+    await create('sam', ids.classA, { kind: 'note', anchor: passage, body: 'Class A note' });
+    await ask('sam', ids.classA, 'class', 'Class A discussion.');
+    await ask('sam', ids.classA, 'instructor', 'Class A question.');
+    // A preview principal's marks, private and shared (A26).
+    await create('previewB', ids.classB, { kind: 'note', anchor: passage, body: 'Preview' });
+    await ask('previewB', ids.classB, 'class', 'Preview discussion.');
+    await ask('previewB', ids.classB, 'instructor', 'Preview question.');
+    // Marks the instructor may see: a shared question, a class thread, their own note.
+    const question = await ask('bea', ids.classB, 'instructor', 'Does this change the quiz?');
+    await ask('bea', ids.classB, 'class', 'Shared with the class.');
+    const own = await create('marcus', ids.classB, {
+      kind: 'note',
+      anchor: passage,
+      body: 'Teaching note',
+    });
+
+    // What the instructor's margin shows on the reading is exactly what the diff may count.
+    const margin = await list('marcus', ids.classB);
+    expect(ids_(margin.annotations)).toEqual([own.id]);
+    expect(ids_(margin.threads)).toContain(question.id);
+    const visible = margin.annotations.length + margin.threads.length;
+
+    // v3 drops the sampling reading; class B has not adopted it yet.
+    const current = (await call('marcus', 'GET', `/api/classes/${ids.classB}/releases`)).body
+      .currentReleaseId as string;
+    await testDb.db
+      .update(resources)
+      .set({ archivedAt: now })
+      .where(eq(resources.id, ids.samplingReading));
+    const v3 = await publishRelease(testDb.db, asCourseScope(ids.statistics, ids.elena));
+    if (!v3.ok) throw new Error(JSON.stringify(v3.report));
+
+    const preview = await call(
+      'marcus',
+      'GET',
+      `/api/classes/${ids.classB}/adoption?releaseId=${v3.release.id}`,
+    );
+    expect(preview.status).toBe(200);
+    expect(preview.body.removed).toContainEqual(
+      expect.objectContaining({
+        resourceId: ids.samplingReading,
+        revisionId: ids.samplingReadingV1,
+        affected: { annotations: visible, assignments: 0 },
+      }),
+    );
+    expect(preview.body.totals.annotations).toBe(visible);
+
+    const adopted = await call('marcus', 'POST', `/api/classes/${ids.classB}/adopt`, {
+      releaseId: v3.release.id,
+      expectedReleaseId: current,
+    });
+    expect(adopted.status).toBe(200);
+    expect(adopted.body.diff).toEqual(preview.body);
+    const [stored] = await testDb.db
+      .select({ diff: classReleaseHistory.diff })
+      .from(classReleaseHistory)
+      .where(
+        and(
+          eq(classReleaseHistory.classId, ids.classB),
+          eq(classReleaseHistory.toReleaseId, v3.release.id),
+        ),
+      );
+    expect(stored?.diff).toEqual(preview.body);
+    const history = (await call('marcus', 'GET', `/api/classes/${ids.classB}/releases`)).body
+      .history;
+    expect(history.at(-1).diff).toEqual(preview.body);
   });
 });

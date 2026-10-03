@@ -192,11 +192,11 @@ describe('A06 marks across a changed source revision', () => {
     const v2 = await publishRevision2();
     const preview = await call('priya', 'GET', `${classA}/adoption?releaseId=${v2.releaseId}`);
     expect(preview.status).toBe(200);
-    // Adoption reports the affected anchors: three private marks and one question.
-    expect(preview.body.totals.annotations).toBe(4);
+    // Adoption reports the affected marks Priya may see: the question, not Sam's private notes.
+    expect(preview.body.totals.annotations).toBe(1);
     expect(preview.body.changed[0]).toMatchObject({
       resourceId: ids.samplingReading,
-      affected: { annotations: 4 },
+      affected: { annotations: 1 },
     });
 
     const adopted = await call('priya', 'POST', `${classA}/adopt`, {
@@ -204,7 +204,7 @@ describe('A06 marks across a changed source revision', () => {
       expectedReleaseId: ids.releaseV1,
     });
     expect(adopted.status).toBe(200);
-    expect(adopted.body.diff.totals.annotations).toBe(4);
+    expect(adopted.body.diff.totals.annotations).toBe(1);
     expect(sent.map((s) => s.name)).toEqual([ANNOTATIONS_MAP]);
 
     // Until the job runs, the marks are pending on the new revision, never guessed.
@@ -316,8 +316,8 @@ describe('A06 marks across a changed source revision', () => {
   test('A06 adopting again counts marks placed on the revision the class leaves', async () => {
     const back = await call('priya', 'GET', `${classA}/adoption?releaseId=${ids.releaseV1}`);
     expect(back.status).toBe(200);
-    // Sam's three notes and one question, all placed on revision 2; class B's marks do not count.
-    expect(back.body.totals.annotations).toBe(4);
+    // Sam's question, placed on revision 2; neither his private notes nor class B's marks count.
+    expect(back.body.totals.annotations).toBe(1);
   });
 
   test('A06 a job for a release the class has since left does nothing', async () => {
