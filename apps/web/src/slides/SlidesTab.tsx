@@ -227,7 +227,7 @@ function DeckView({ classId, topicId, deck, notes }: ViewProps) {
       </p>
     );
   }
-  if (data.status === 'failed' || !data.pdf) {
+  if (data.status === 'failed' || (!data.pdf && !data.web)) {
     return (
       <div className={`${page.feedback} ${styles.status}`} role="alert">
         <p>
@@ -247,12 +247,26 @@ function DeckView({ classId, topicId, deck, notes }: ViewProps) {
       </div>
     );
   }
+  const initialPage = deck.position && 'page' in deck.position ? deck.position.page : 1;
+  if (data.web) {
+    return (
+      <SlideViewer
+        slides={data.web.slides}
+        pageCount={data.web.slides.length}
+        initialPage={initialPage}
+        source={{ classId, revisionId, key: null }}
+        onPage={onPage}
+        notes={notes}
+      />
+    );
+  }
+  if (!data.pdf) return null;
   return (
     <SlideViewer
       url={data.pdf.url}
       pageCount={data.pdf.pageCount}
       renew={renew}
-      initialPage={deck.position && 'page' in deck.position ? deck.position.page : 1}
+      initialPage={initialPage}
       source={{ classId, revisionId, key: data.sourceKey }}
       onPage={onPage}
       notes={notes}

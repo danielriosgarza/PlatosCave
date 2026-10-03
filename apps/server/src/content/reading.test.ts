@@ -18,9 +18,10 @@ import {
   normaliseText,
   readingSchema,
   renderReading,
+  renderSlides,
   resolveReadingImages,
 } from './reading';
-import { renderReadingInThread } from './reading-render';
+import { renderReadingInThread, renderSlidesInThread } from './reading-render';
 import { ThreadInputError } from './thread';
 
 const KEY = 'courses/00000000-0000-4000-8000-000000000101/objects/abc123';
@@ -557,5 +558,86 @@ describe('reading HTML on the app origin (ADR-0002)', () => {
     const { benign } = hostile;
     const { html } = renderReading(benign.source, 'markdown', benign.assets);
     expect(resolveReadingImages(html, () => benign.imageUrl)).toBe(benign.ingested);
+  });
+});
+
+describe('web slides', () => {
+  const deck = `# Sampling
+
+Why samples vary
+
+---
+
+## First idea
+
+- one
+- two
+
+---
+A paragraph right above a separator
+---
+
+\`\`\`md
+---
+not a separator
+\`\`\`
+
+***
+
+still the same slide
+`;
+
+  test('a deck is cut at lines holding only ---, outside code fences', () => {
+    const { slides } = renderSlides(deck);
+    expect(slides).toHaveLength(5);
+    expect(slides[0]).toContain('<h1');
+    expect(slides[1]).toContain('<h2');
+    // A separator under a paragraph is a separator, not a heading underline.
+    expect(slides[2]).toContain('A paragraph right above a separator');
+    expect(slides[2]).not.toContain('<h2');
+    expect(slides[3]).toContain('not a separator');
+    // A fenced --- is code; any other Markdown thematic break (***) separates too.
+    expect(slides[4]).toContain('still the same slide');
+  });
+
+  test('a --- inside display math is TeX, not a separator or a blank line in the formula', () => {
+    const { slides, blockMap } = renderSlides('$$\nx\n---\ny\n$$\n\n---\n\nNext');
+    expect(slides).toHaveLength(2);
+    expect(blockMap.find((b) => b.slide === 1)?.text).toContain('x');
+    expect(blockMap.find((b) => b.slide === 1)?.text).not.toContain('\n\n');
+  });
+
+  test('empty slides are dropped', () => {
+    expect(renderSlides('\n---\n\n---\nOnly\n---\n---\n').slides).toHaveLength(1);
+    expect(renderSlides('---\n').slides).toEqual([]);
+  });
+
+  test('block ids are unique across the deck and name their slide', () => {
+    const { slides, blockMap } = renderSlides('Same\n\n---\n\nSame\n\n---\n\nOther');
+    expect(slides).toHaveLength(3);
+    expect(blockMap.map((b) => b.slide)).toEqual([1, 2, 3]);
+    expect(new Set(blockMap.map((b) => b.id)).size).toBe(3);
+    // Same text as in a reading, so ids are those the reading pipeline gives.
+    expect(blockMap.map((b) => b.id)).toEqual(
+      renderReading('Same\n\nSame\n\nOther', 'markdown').blockMap.map((b) => b.id),
+    );
+    for (const [i, slide] of slides.entries()) {
+      const ids = [...slide.matchAll(/data-block-id="([0-9a-f]{12})"/g)].map((m) => m[1]);
+      expect(ids).toEqual(blockMap.filter((b) => b.slide === i + 1).map((b) => b.id));
+    }
+  });
+
+  test('slides carry the reading allow-list: raw HTML, script URLs and remote images are gone', () => {
+    const { slides, warnings } = renderSlides(
+      '<script>alert(1)</script>\n\n[x](javascript:alert(1))\n\n---\n\n![remote](https://example.test/a.png)',
+    );
+    const html = slides.join('');
+    expect(html).not.toMatch(/<script|javascript:|https:\/\/example\.test/);
+    expect(dangers(unified().use(rehypeParse, { fragment: true }).parse(html))).toEqual([]);
+    expect(warnings.some((w) => w.includes('example.test'))).toBe(true);
+  });
+
+  test('rendering in a thread gives the same deck', async () => {
+    expect(await renderSlidesInThread(deck)).toEqual(renderSlides(deck));
   });
 });
