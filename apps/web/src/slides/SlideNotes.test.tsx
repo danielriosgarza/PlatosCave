@@ -3,7 +3,7 @@ import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Annotation, MarginList, Thread } from '../reading/margin/data';
-import { allowDrafts, clearDrafts } from '../reading/margin/drafts';
+import { allowDrafts, clearDrafts, draftKey, saveDraft } from '../reading/margin/drafts';
 import type { PdfDocument } from '../reading/pdfjs';
 import {
   CLASS_A,
@@ -300,5 +300,56 @@ describe('slide notes', () => {
     expect(within(earlier).getByText('Slide 5')).toBeVisible();
     expect(within(earlier).getByText('Needs reattachment')).toBeVisible();
     expect(within(earlier).getByText('Remember the formula')).toBeVisible();
+  });
+
+  it('A24 an unsent note kept on this device (offline) is restored to its slide, on first open and after Hide notes', async () => {
+    const user = userEvent.setup();
+    await saveDraft({
+      key: draftKey(SAM_ID, CLASS_A, RES, 'slide-3'),
+      userId: SAM_ID,
+      classId: CLASS_A,
+      resourceId: RES,
+      kind: 'note',
+      annotationId: null,
+      expectedRevision: null,
+      anchor: { kind: 'slide', page: 2 },
+      body: 'unsent text',
+      audience: null,
+      updatedAt: Date.now(),
+    });
+    api(world());
+    // Offline, so the text stays only on this device and hiding the margin cannot send it.
+    vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    const { stage } = await openNotes(user);
+    expect(await noteField(1)).toHaveValue('');
+    stage.focus();
+    await user.keyboard('{ArrowRight}{ArrowRight}');
+    await waitFor(async () => expect(await noteField(3)).toHaveValue('unsent text'));
+    // Hidden and shown again, with the list already cached.
+    await user.click(screen.getByRole('button', { name: 'Hide notes' }));
+    await user.click(screen.getByRole('button', { name: 'Notes' }));
+    await waitFor(async () => expect(await noteField(3)).toHaveValue('unsent text'));
+  });
+
+  it('A24 an unsent edit of a saved note is restored over the saved text', async () => {
+    const user = userEvent.setup();
+    const saved = note(uuid(60), 0, 'saved text');
+    await saveDraft({
+      key: draftKey(SAM_ID, CLASS_A, RES, saved.id),
+      userId: SAM_ID,
+      classId: CLASS_A,
+      resourceId: RES,
+      kind: 'note',
+      annotationId: saved.id,
+      expectedRevision: 1,
+      anchor: saved.anchor,
+      body: 'saved text, then more',
+      audience: null,
+      updatedAt: Date.now(),
+    });
+    api(world([saved]));
+    vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    await openNotes(user);
+    await waitFor(async () => expect(await noteField(1)).toHaveValue('saved text, then more'));
   });
 });

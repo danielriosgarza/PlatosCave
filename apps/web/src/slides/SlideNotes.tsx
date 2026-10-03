@@ -120,17 +120,18 @@ export function SlideNotes({ classId, resourceId, page }: Props) {
   };
 
   // Unsent text of this person for this deck comes back after a reload, whichever slide it was on.
-  const restored = useRef<string | null>(null);
+  // No editor is made before it has: an editor made first would hold the server's text, and the
+  // next keystroke would overwrite the draft kept on the device.
+  const scope = `${userId ?? 'anonymous'}|${classId}|${resourceId}`;
+  const [restoredFor, setRestoredFor] = useState<string | null>(null);
+  const ready = restoredFor === scope;
   // biome-ignore lint/correctness/useExhaustiveDependencies: restores once per person and deck
   useEffect(() => {
-    if (!userId) return;
+    if (!userId) return setRestoredFor(scope);
     void allowDrafts(userId);
-    const scope = `${userId}|${classId}|${resourceId}`;
-    if (restored.current === scope) return;
     let current = true;
     void listDrafts(userId, classId, resourceId).then((drafts) => {
       if (!current) return;
-      restored.current = scope;
       for (const d of drafts) {
         const id = d.key.split('|')[3] ?? d.key;
         const slide = slideOf(d.anchor);
@@ -149,7 +150,7 @@ export function SlideNotes({ classId, resourceId, page }: Props) {
           });
         }
       }
-      touch();
+      setRestoredFor(scope);
     });
     return () => {
       current = false;
@@ -181,20 +182,27 @@ export function SlideNotes({ classId, resourceId, page }: Props) {
   });
   const earlierThreads = threads.filter((t) => whereIs(t).unmapped);
 
-  // The note of a slide with none yet: its editor exists from the first look, empty, and
-  // creates the note only once something is typed.
+  // Each note has its editor once the drafts are back: one for every note on the slide shown, and,
+  // on a slide with none, an empty one that creates the note only once something is typed.
   const fresh = (slide: number) =>
     [...controllers.current.values()].find(
       (c) => c.annotationId === null && slideOf(c.anchor) === slide,
     );
-  const draftHere = fresh(page);
-  const needsBlank = here.length === 0 && draftHere === undefined;
-  // biome-ignore lint/correctness/useExhaustiveDependencies: made once per slide with no note
+  // biome-ignore lint/correctness/useExhaustiveDependencies: follows the notes on the slide shown
   useEffect(() => {
-    if (!needsBlank || list.isLoading || controllers.current.has(`slide-${page}`)) return;
-    make(`slide-${page}`, page, {});
-    touch();
-  }, [needsBlank, page, list.isLoading]);
+    if (!ready || list.isLoading) return;
+    let made = false;
+    for (const a of here) {
+      if (controllerOf(a.id)) continue;
+      make(a.id, page, { body: a.body ?? '', annotationId: a.id, revision: a.revision });
+      made = true;
+    }
+    if (here.length === 0 && !fresh(page)) {
+      make(`slide-${page}`, page, {});
+      made = true;
+    }
+    if (made) touch();
+  });
 
   const removeNote = async (
     key: string,
@@ -286,13 +294,6 @@ export function SlideNotes({ classId, resourceId, page }: Props) {
       .filter((c) => c.annotationId === null && slideOf(c.anchor) === page)
       .map((c) => ({ key: c.key, annotation: null, controller: c })),
   ];
-  const editorOf = (n: (typeof notesHere)[number]) =>
-    n.controller ??
-    make(n.key, page, {
-      body: n.annotation?.body ?? '',
-      annotationId: n.annotation?.id ?? null,
-      revision: n.annotation?.revision ?? null,
-    });
 
   return (
     <div className={margin.margin}>
@@ -323,7 +324,8 @@ export function SlideNotes({ classId, resourceId, page }: Props) {
             </p>
           ) : null}
           {notesHere.map((n) => {
-            const controller = editorOf(n);
+            const controller = n.controller;
+            if (!controller) return null;
             return (
               <SlideNote
                 key={controller.key}
@@ -368,7 +370,7 @@ export function SlideNotes({ classId, resourceId, page }: Props) {
                   key={t.id}
                   thread={t}
                   userId={userId}
-                  note={`Slide ${slideOf(t.anchor) ?? '?'} · Needs reattachment`}
+                  note={`Slide ${slideOf(t.anchor) ?? '?'} · ${t.placement?.status === 'pending' ? 'Waiting to be placed' : 'Needs reattachment'}`}
                 />
               ))}
             </section>
