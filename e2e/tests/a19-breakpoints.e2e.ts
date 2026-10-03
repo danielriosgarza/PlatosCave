@@ -20,17 +20,23 @@ test.beforeEach(async ({ page }) => {
 
 /** Left and right padding of the first element matched, in px. */
 const sidePadding = (page: Page, selector: string) =>
-  page.locator(selector).first().evaluate((el) => {
-    const style = getComputedStyle(el);
-    return [parseFloat(style.paddingLeft), parseFloat(style.paddingRight)];
-  });
+  page
+    .locator(selector)
+    .first()
+    .evaluate((el) => {
+      const style = getComputedStyle(el);
+      return [parseFloat(style.paddingLeft), parseFloat(style.paddingRight)];
+    });
 
 const columns = (page: Page, selector: string) =>
-  page.locator(selector).first().evaluate((el) =>
-    getComputedStyle(el)
-      .gridTemplateColumns.split(' ')
-      .map((track) => parseFloat(track)),
-  );
+  page
+    .locator(selector)
+    .first()
+    .evaluate((el) =>
+      getComputedStyle(el)
+        .gridTemplateColumns.split(' ')
+        .map((track) => parseFloat(track)),
+    );
 
 // DESIGN.md "Smaller screens": 1199 / 800 / 540, the wireframe's breakpoints.
 const widths = [
