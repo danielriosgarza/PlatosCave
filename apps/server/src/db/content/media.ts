@@ -2,6 +2,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import { type ClassScope, type DraftPreviewScope, isDraftPreview } from '../../auth/scope';
 import { findReleaseTopic } from '../classTopics';
 import type { Db } from '../client';
+import { nativeSourceWithheld } from '../readings';
 import { releaseResources, resourceRevisions, storageObjects } from '../schema';
 import { type DraftSnapshot, draftSnapshot, studyableDraft, studyOpen } from './releases';
 
@@ -9,7 +10,9 @@ import { type DraftSnapshot, draftSnapshot, studyableDraft, studyOpen } from './
  * One object of a resource revision pinned in the class's adopted release, if the caller may
  * see that resource now: students only see resources that are not hidden and whose release time has passed (`studyOpen`);
  * instructors see every resource of the release. Students also need the topic to be open
- * (not prerequisite-locked or still scheduled). Anything else is null (the route answers 404).
+ * (not prerequisite-locked or still scheduled). A native reading's uploaded source is found only
+ * while its conversion has failed (`nativeSourceWithheld`). Anything else is null (the route
+ * answers 404).
  * A draft preview finds objects of the draft snapshot instead, under the same rules.
  */
 export async function findReleasedObject(
@@ -28,6 +31,7 @@ export async function findReleasedObject(
       contentType: storageObjects.contentType,
       title: releaseResources.title,
       releaseTopicId: releaseResources.releaseTopicId,
+      revision: revisionState,
     })
     .from(releaseResources)
     .innerJoin(resourceRevisions, eq(resourceRevisions.id, releaseResources.resourceRevisionId))
@@ -45,11 +49,19 @@ export async function findReleasedObject(
       ),
     )
     .limit(1);
-  if (!row) return null;
+  if (!row || (await nativeSourceWithheld(db, row.revision, key))) return null;
   if (!(await releaseTopicOpens(db, scope, row.releaseTopicId, now))) return null;
-  const { releaseTopicId: _topic, ...object } = row;
+  const { releaseTopicId: _topic, revision: _revision, ...object } = row;
   return object;
 }
+
+/** What `nativeSourceWithheld` reads of the revision an object belongs to. */
+const revisionState = {
+  type: resourceRevisions.type,
+  content: resourceRevisions.content,
+  derived: resourceRevisions.derived,
+  createdAt: resourceRevisions.createdAt,
+};
 
 /** The same availability the topic list shows: a locked topic's media is not downloadable (§4). */
 async function releaseTopicOpens(
@@ -82,7 +94,11 @@ async function findDraftObject(
   );
   if (!resource) return null;
   const [row] = await db
-    .select({ key: storageObjects.key, contentType: storageObjects.contentType })
+    .select({
+      key: storageObjects.key,
+      contentType: storageObjects.contentType,
+      revision: revisionState,
+    })
     .from(resourceRevisions)
     .innerJoin(
       storageObjects,
@@ -96,7 +112,7 @@ async function findDraftObject(
       ),
     )
     .limit(1);
-  if (!row || !(await releaseTopicOpens(db, scope, resource.releaseTopicId, now, draft)))
-    return null;
-  return { ...row, title: resource.title };
+  if (!row || (await nativeSourceWithheld(db, row.revision, key))) return null;
+  if (!(await releaseTopicOpens(db, scope, resource.releaseTopicId, now, draft))) return null;
+  return { key: row.key, contentType: row.contentType, title: resource.title };
 }
