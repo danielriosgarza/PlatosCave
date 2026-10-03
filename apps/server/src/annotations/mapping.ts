@@ -1,6 +1,6 @@
 import { type Anchor, anchorFits, type ResourceType, textAnchor } from '@parallax/contracts';
 // The one definition ingestion uses for block ids and page hashes, so recomputed ids match.
-import { normaliseText } from '../content/text';
+import { normaliseText, sha256 } from '../content/text';
 
 /**
  * Anchor mapping between two revisions of one resource (ADR-0003, §8, A06). Pure functions:
@@ -46,6 +46,24 @@ const array = (value: unknown): unknown[] | undefined => (Array.isArray(value) ?
 const str = (value: unknown): value is string => typeof value === 'string';
 
 /**
+ * Text hash per slide of a web deck, from its block map (each entry carries its 1-based `slide`).
+ * A web deck stores no page hashes, so a slide is compared by the normalised text of its blocks;
+ * a slide without text can never match.
+ */
+function slidePages(derived: Record<string, unknown>): (string | undefined)[] {
+  const slides = array(derived.slides)?.length ?? 0;
+  const texts: string[][] = Array.from({ length: slides }, () => []);
+  for (const entry of array(derived.blockMap) ?? []) {
+    const { text, slide } = (entry ?? {}) as Record<string, unknown>;
+    if (str(text) && typeof slide === 'number') texts[slide - 1]?.push(text);
+  }
+  return texts.map((parts) => {
+    const text = normaliseText(parts.join(' '));
+    return text === '' ? undefined : sha256(text);
+  });
+}
+
+/**
  * The layout of a revision, or undefined while the derived outputs that anchors need are not
  * there yet (ingestion still running). Types that only take `none` anchors need nothing.
  */
@@ -60,6 +78,9 @@ export function layoutOf(type: ResourceType, derived: Record<string, unknown>): 
       const { id } = (f ?? {}) as Record<string, unknown>;
       return str(id) ? [id] : [];
     });
+    if (type === 'slides_web') {
+      return { type, blocks, figures, pages: slidePages(derived) };
+    }
     return { type, blocks, figures };
   }
   if (type === 'reading_pdf' || type === 'slides_pdf') {

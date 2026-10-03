@@ -74,7 +74,8 @@ function shownAnchor(a: Annotation | Thread): Anchor | null {
 const quoteOf = (a: Anchor): string | null =>
   a.kind === 'text' || a.kind === 'pdf' ? (a.quote ?? null) : null;
 
-const audienceLabel = (a: Audience) => (a === 'instructor' ? 'Instructor' : 'Class');
+export const audienceLabel = (a: 'instructor' | 'class') =>
+  a === 'instructor' ? 'Instructor' : 'Class';
 
 interface Props {
   classId: string;
@@ -754,7 +755,7 @@ function NoteEntry({
   );
 }
 
-function SaveLine({
+export function SaveLine({
   state,
   onRetry,
   onSaveAsNew,
@@ -793,7 +794,7 @@ function SaveLine({
   );
 }
 
-function ConflictView({
+export function ConflictView({
   controller,
   mine,
   saved,
