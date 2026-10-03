@@ -409,6 +409,28 @@ export async function seedReadingLab(db: Db, storage: Storage, now: Date): Promi
 }
 
 /**
+ * A live enrolment code and a live instructor invitation for class A, issued by its course owner
+ * (Elena). For tests that present them as a principal who must be refused.
+ */
+export async function issueLiveInvites(
+  db: Db,
+  now: Date,
+  instructorEmail = 'invitee@example.test',
+): Promise<{ enrolmentCode: string; instructorToken: string }> {
+  const manager = asManagerScope(ids.classA, ids.statistics, ids.elena);
+  const code = await issueInvite(db, manager, { kind: 'enrolment' }, now);
+  if (!code.ok) throw new Error(`live code: ${code.reason}`);
+  const invitation = await issueInvite(
+    db,
+    manager,
+    { kind: 'instructor', email: instructorEmail },
+    now,
+  );
+  if (!invitation.ok) throw new Error(`live invitation: ${invitation.reason}`);
+  return { enrolmentCode: code.invite.code, instructorToken: invitation.invite.code };
+}
+
+/**
  * Scope objects for fixture code acting as a person outside a request. The brand is type-only
  * (ADR-0002), so only test code builds them this way; routes get theirs from the resolver.
  */
