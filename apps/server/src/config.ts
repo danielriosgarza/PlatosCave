@@ -49,8 +49,9 @@ const Env = z
     SMTP_URL: z.string().optional(),
     /**
      * Sign-in link requests allowed per client IP per 15 minutes. The per-address cap (five
-     * links) is what stops mail floods; this one slows address guessing. Sized for a class
-     * signing in together from one campus NAT (a few dozen people, with retries).
+     * unused links, then one a minute; auth/email-provider.ts) is what bounds mail floods; this
+     * one slows address guessing. Sized for a class signing in together from one campus NAT (a
+     * few dozen people, with retries).
      */
     AUTH_LINK_RATE_LIMIT: z.coerce.number().int().positive().default(120),
     /** Sign-in link uses (`/api/auth/verify`) allowed per client IP per 15 minutes. */
@@ -63,13 +64,16 @@ const Env = z
      * every hop, so `req.ip` is the leftmost `X-Forwarded-For` entry; a proxy that appends to
      * the header (nginx's `$proxy_add_x_forwarded_for`) lets a client pick it per request and
      * void the per-IP limits, so use `true` only when the proxy replaces the header. `false`
-     * (default) ignores the headers. A bare hop count is refused: Fastify 5 treats it as "trust
-     * nobody" because it cannot check the peer.
+     * (default outside production) ignores the headers. A bare hop count is refused: Fastify 5
+     * treats it as "trust nobody" because it cannot check the peer. Production requires it set
+     * explicitly: behind a proxy, `false` makes every client share the proxy's address and so
+     * one per-IP sign-in budget.
      */
     TRUST_PROXY: z
       .string()
-      .default('false')
-      .transform((v): boolean | string[] => {
+      .optional()
+      .transform((v): boolean | string[] | undefined => {
+        if (v === undefined) return undefined;
         const value = v.trim();
         if (value.toLowerCase() === 'true') return true;
         if (value.toLowerCase() === 'false') return false;
@@ -148,6 +152,14 @@ const Env = z
       ] as const) {
         if (!env[key]) ctx.addIssue({ code: 'custom', path: [key], message: 'required' });
       }
+      if (env.TRUST_PROXY === undefined) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['TRUST_PROXY'],
+          message:
+            "required in production: your proxies' addresses / CIDR ranges, true, or false when no proxy sits in front (otherwise every client shares the proxy's rate limits)",
+        });
+      }
     }
     if (env.NODE_ENV === 'production' && env.TEST_ROUTES) {
       ctx.addIssue({ code: 'custom', path: ['TEST_ROUTES'], message: 'not allowed in production' });
@@ -209,6 +221,7 @@ const Env = z
   .transform((env) => ({
     ...env,
     SESSION_SECRET: env.SESSION_SECRET ?? DEV_SESSION_SECRET,
+    TRUST_PROXY: env.TRUST_PROXY ?? false,
     MAIL_FROM: env.MAIL_FROM ?? 'Parallax <no-reply@parallax.invalid>',
     // The Vite dev server proxies /api, so links open the web app's origin in development.
     APP_ORIGIN: env.APP_ORIGIN ?? 'http://localhost:5173',

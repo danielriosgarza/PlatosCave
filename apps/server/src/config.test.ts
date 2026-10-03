@@ -33,6 +33,7 @@ describe('config', () => {
       CONTENT_HOST: 'content.parallax.example.org',
       CONTENT_ORIGIN: 'https://content.parallax.example.org/',
       CONTENT_TOKEN_SECRET: 's'.repeat(40),
+      TRUST_PROXY: 'false',
     });
     expect(config.CONTENT_ORIGIN).toBe('https://content.parallax.example.org');
   });
@@ -77,6 +78,28 @@ describe('config', () => {
     }
   });
 
+  test('A01 production requires TRUST_PROXY set explicitly; development and test default to false', () => {
+    const production = {
+      NODE_ENV: 'production',
+      SESSION_SECRET: 'x'.repeat(32),
+      APP_ORIGIN: 'https://parallax.example.org',
+      APP_HOST: 'parallax.example.org',
+      CONTENT_HOST: 'content.parallax.example.org',
+      CONTENT_ORIGIN: 'https://content.parallax.example.org',
+      CONTENT_TOKEN_SECRET: 's'.repeat(40),
+    } as const;
+    // Unset, or empty as in .env.example, is refused with a message naming the choice.
+    expect(() => loadConfig(production)).toThrow(/TRUST_PROXY[\s\S]*required in production/);
+    expect(() => loadConfig({ ...production, TRUST_PROXY: '' })).toThrow(/TRUST_PROXY/);
+    expect(loadConfig({ ...production, TRUST_PROXY: 'false' }).TRUST_PROXY).toBe(false);
+    expect(loadConfig({ ...production, TRUST_PROXY: 'true' }).TRUST_PROXY).toBe(true);
+    expect(loadConfig({ ...production, TRUST_PROXY: '10.0.0.0/8' }).TRUST_PROXY).toEqual([
+      '10.0.0.0/8',
+    ]);
+    expect(loadConfig({ NODE_ENV: 'development' }).TRUST_PROXY).toBe(false);
+    expect(loadConfig({ NODE_ENV: 'test' }).TRUST_PROXY).toBe(false);
+  });
+
   test('the s3 driver needs a bucket and credentials', () => {
     expect(() => loadConfig({ STORAGE_DRIVER: 's3' })).toThrow(/S3_BUCKET/);
     const config = loadConfig({
@@ -109,6 +132,7 @@ test('production refuses to start without SESSION_SECRET and APP_ORIGIN', () => 
     CONTENT_HOST: 'content.parallax.example.org',
     CONTENT_ORIGIN: 'https://content.parallax.example.org',
     CONTENT_TOKEN_SECRET: 's'.repeat(40),
+    TRUST_PROXY: 'false',
   });
   expect(config.APP_ORIGIN).toBe('https://parallax.example.org');
 });
@@ -140,6 +164,7 @@ test('A01 fixture routes are off by default and refused in production', () => {
     CONTENT_HOST: 'content.parallax.example.org',
     CONTENT_ORIGIN: 'https://content.parallax.example.org',
     CONTENT_TOKEN_SECRET: 's'.repeat(40),
+    TRUST_PROXY: 'false',
   } as const;
   expect(loadConfig(production).TEST_ROUTES).toBe(false);
   expect(() => loadConfig({ ...production, TEST_ROUTES: '1' })).toThrow(/TEST_ROUTES/);
