@@ -1,0 +1,367 @@
+import { parseNotebook } from '@parallax/contracts';
+import { describe, expect, test } from 'vitest';
+import { buildNotebook, MAX_OUTPUT_CHARS, plainText, renderNotebook } from './notebook';
+
+const prefix = 'courses/00000000-0000-4000-8000-000000000001';
+const PNG =
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+
+const notebook = (cells: unknown[], extra: Record<string, unknown> = {}) =>
+  JSON.stringify({
+    nbformat: 4,
+    nbformat_minor: 5,
+    metadata: {
+      kernelspec: { name: 'python3', display_name: 'Python 3' },
+      language_info: { name: 'python' },
+    },
+    cells,
+    ...extra,
+  });
+
+const code = (id: string, source: string, outputs: unknown[], count: number | null = 1) => ({
+  id,
+  cell_type: 'code',
+  metadata: {},
+  execution_count: count,
+  source,
+  outputs,
+});
+
+const render = (cells: unknown[]) => renderNotebook(notebook(cells), prefix);
+
+const outputsOf = (rendered: ReturnType<typeof render>, index = 0) => {
+  const cell = rendered.notebook.cells[index];
+  if (cell?.type !== 'code') throw new Error('not a code cell');
+  return cell.outputs;
+};
+
+describe('nbformat import contract', () => {
+  test('accepts an nbformat 4.5 notebook', () => {
+    const parsed = parseNotebook(notebook([code('a', 'x = 1', [])]));
+    expect(parsed.ok).toBe(true);
+  });
+
+  test('refuses text that is not JSON, nbformat 3, and cells of an unknown type', () => {
+    expect(parseNotebook('{nope')).toEqual({
+      ok: false,
+      error: expect.stringContaining('not valid JSON'),
+    });
+    expect(parseNotebook(JSON.stringify({ nbformat: 3, worksheets: [] }))).toEqual({
+      ok: false,
+      error: expect.stringContaining('Only nbformat 4'),
+    });
+    const bad = parseNotebook(
+      notebook([{ id: 'a', cell_type: 'widget', metadata: {}, source: '' }]),
+    );
+    expect(bad).toEqual({ ok: false, error: expect.stringContaining('cells.0') });
+  });
+
+  test('refuses a 4.5 notebook whose cells lack ids or share one', () => {
+    const missing = parseNotebook(notebook([{ cell_type: 'markdown', metadata: {}, source: 'x' }]));
+    expect(missing).toEqual({ ok: false, error: expect.stringContaining('no id') });
+    const twice = parseNotebook(
+      notebook([
+        { id: 'a', cell_type: 'markdown', metadata: {}, source: 'x' },
+        { id: 'a', cell_type: 'markdown', metadata: {}, source: 'y' },
+      ]),
+    );
+    expect(twice).toEqual({ ok: false, error: expect.stringContaining('share an id') });
+  });
+
+  test('numbers the cells of an older 4.x notebook, which have no ids', () => {
+    const old = JSON.stringify({
+      nbformat: 4,
+      nbformat_minor: 2,
+      metadata: {},
+      cells: [
+        { cell_type: 'markdown', metadata: {}, source: ['# Title'] },
+        { cell_type: 'code', metadata: {}, execution_count: null, source: [], outputs: [] },
+      ],
+    });
+    const { notebook: nb } = renderNotebook(old, prefix);
+    expect(nb.cells.map((c) => c.id)).toEqual(['cell-0', 'cell-1']);
+    expect(nb.kernel).toBeNull();
+  });
+});
+
+describe('rendering', () => {
+  test('keeps cell order, execution counts, the kernel name and an outline of headings', () => {
+    const rendered = render([
+      {
+        id: 'm1',
+        cell_type: 'markdown',
+        metadata: {},
+        source: ['# Repeated samples\n', '\n', 'The mean $\\bar x$.'],
+      },
+      code(
+        'c1',
+        'means.std(ddof=1)',
+        [
+          {
+            output_type: 'execute_result',
+            execution_count: 2,
+            metadata: {},
+            data: { 'text/plain': '0.60' },
+          },
+        ],
+        2,
+      ),
+      { id: 'm2', cell_type: 'markdown', metadata: {}, source: '## Try a larger sample' },
+      { id: 'r1', cell_type: 'raw', metadata: {}, source: 'raw text' },
+    ]);
+    const { cells, kernel, language, outline } = rendered.notebook;
+    expect(kernel).toBe('Python 3');
+    expect(language).toBe('python');
+    expect(cells.map((c) => c.type)).toEqual(['markdown', 'code', 'markdown', 'raw']);
+    expect(cells[0]).toMatchObject({ type: 'markdown', html: expect.stringContaining('<math') });
+    expect(cells[1]).toMatchObject({ executionCount: 2, source: 'means.std(ddof=1)' });
+    expect(outputsOf(rendered, 1)).toEqual([
+      { type: 'text', executionCount: 2, stream: null, text: '0.60', truncated: false },
+    ]);
+    expect(outline).toEqual([
+      { cellId: 'm1', level: 1, text: 'Repeated samples' },
+      { cellId: 'm2', level: 2, text: 'Try a larger sample' },
+    ]);
+  });
+
+  test('merges consecutive writes to one stream and strips terminal escapes from errors', () => {
+    const outputs = outputsOf(
+      render([
+        code('c', 'print()', [
+          { output_type: 'stream', name: 'stdout', text: ['a\n'] },
+          { output_type: 'stream', name: 'stdout', text: 'b\n' },
+          { output_type: 'stream', name: 'stderr', text: 'warn\n' },
+          {
+            output_type: 'error',
+            ename: 'ValueError',
+            evalue: 'bad value',
+            traceback: ['\u001b[0;31mValueError\u001b[0m: bad value'],
+          },
+        ]),
+      ]),
+    );
+    expect(outputs).toEqual([
+      { type: 'text', executionCount: null, stream: 'stdout', text: 'a\nb\n', truncated: false },
+      { type: 'text', executionCount: null, stream: 'stderr', text: 'warn\n', truncated: false },
+      {
+        type: 'error',
+        executionCount: null,
+        name: 'ValueError',
+        value: 'bad value',
+        traceback: 'ValueError: bad value',
+        truncated: false,
+      },
+    ]);
+  });
+
+  test('cuts very long text and says so', () => {
+    const [out] = outputsOf(
+      render([
+        code('c', 'x', [
+          { output_type: 'stream', name: 'stdout', text: 'x'.repeat(MAX_OUTPUT_CHARS + 10) },
+        ]),
+      ]),
+    );
+    expect(out).toMatchObject({ type: 'text', truncated: true });
+    expect(out?.type === 'text' && out.text.length).toBe(MAX_OUTPUT_CHARS);
+  });
+
+  test('a carriage return overwrites its line, as in a terminal', () => {
+    expect(plainText('10%\r50%\r100%\ndone')).toBe('100%\ndone');
+  });
+
+  test('stores an image output as an object under the course prefix, keyed by its bytes', () => {
+    const rendered = render([
+      code('c', 'plot()', [
+        {
+          output_type: 'display_data',
+          metadata: {},
+          data: { 'image/png': PNG, 'text/plain': '<Figure size 640x480 with 1 Axes>' },
+        },
+      ]),
+    ]);
+    const [out] = outputsOf(rendered);
+    expect(out).toMatchObject({
+      type: 'image',
+      contentType: 'image/png',
+      key: expect.stringMatching(new RegExp(`^${prefix}/objects/[0-9a-f]{64}$`)),
+      alt: '<Figure size 640x480 with 1 Axes>',
+    });
+    expect(rendered.objects).toHaveLength(1);
+    expect(rendered.objects[0]?.contentType).toBe('image/png');
+    expect(Buffer.from(rendered.objects[0]?.bytes ?? []).toString('base64')).toBe(PNG);
+  });
+
+  test('a DataFrame table becomes text rows, with its header and trailing note', () => {
+    const html =
+      '<div><style scoped>.dataframe tbody tr th { vertical-align: top; }</style>' +
+      '<table border="1" class="dataframe"><thead><tr><th></th><th>mean</th></tr></thead>' +
+      '<tbody><tr><th>0</th><td>10.1</td></tr><tr><th>1</th><td>9.<b>8</b></td></tr></tbody></table>' +
+      '<p>2 rows × 1 columns</p></div>';
+    const [out] = outputsOf(
+      render([
+        code(
+          'c',
+          'df',
+          [
+            {
+              output_type: 'execute_result',
+              execution_count: 3,
+              metadata: {},
+              data: { 'text/html': html, 'text/plain': 'df' },
+            },
+          ],
+          3,
+        ),
+      ]),
+    );
+    expect(out).toEqual({
+      type: 'table',
+      executionCount: 3,
+      caption: null,
+      head: [
+        [
+          { text: '', header: true },
+          { text: 'mean', header: true },
+        ],
+      ],
+      body: [
+        [
+          { text: '0', header: true },
+          { text: '10.1', header: false },
+        ],
+        [
+          { text: '1', header: true },
+          { text: '9.8', header: false },
+        ],
+      ],
+      notes: ['2 rows × 1 columns'],
+    });
+  });
+
+  test('outputs that need a live kernel or scripts are named, not rendered', () => {
+    const [out] = outputsOf(
+      render([
+        code('c', 'widget', [
+          {
+            output_type: 'display_data',
+            metadata: {},
+            data: {
+              'application/javascript': 'alert(1)',
+              'application/vnd.jupyter.widget-view+json': { model_id: 'x' },
+            },
+          },
+        ]),
+      ]),
+    );
+    expect(out).toEqual({
+      type: 'unsupported',
+      executionCount: null,
+      mimeTypes: ['application/javascript', 'application/vnd.jupyter.widget-view+json'],
+    });
+  });
+
+  test('honours the notebook’s own collapsed source and output', () => {
+    const { notebook: nb } = render([
+      {
+        ...code('c', 'x', []),
+        metadata: { jupyter: { source_hidden: true, outputs_hidden: true } },
+      },
+    ]);
+    expect(nb.cells[0]).toMatchObject({ sourceHidden: true, outputsHidden: true });
+  });
+
+  test('resolves a Markdown cell’s attached image to an object of the notebook', () => {
+    const rendered = render([
+      {
+        id: 'm',
+        cell_type: 'markdown',
+        metadata: {},
+        source: '![diagram](attachment:diagram.png)',
+        attachments: { 'diagram.png': { 'image/png': PNG } },
+      },
+    ]);
+    const [cell] = rendered.notebook.cells;
+    const key = rendered.objects[0]?.key;
+    expect(key).toBeDefined();
+    expect(cell).toMatchObject({
+      type: 'markdown',
+      html: expect.stringContaining(`data-object-key="${key}"`),
+    });
+  });
+});
+
+describe('A09 stored HTML and JavaScript outputs cannot run script', () => {
+  const hostile =
+    '<div onclick="steal()">Chart<script>fetch("/api/me").then(r=>r.text()).then(t=>parent.postMessage(t,"*"))</script>' +
+    '<img src="x" onerror="alert(1)"><a href="javascript:alert(2)">link</a>' +
+    '<iframe src="https://evil.example"></iframe></div>';
+
+  const rendered = render([
+    code('c', 'display(HTML(...))', [
+      {
+        output_type: 'display_data',
+        metadata: {},
+        data: { 'text/html': hostile, 'text/plain': '<IPython.core.display.HTML object>' },
+      },
+    ]),
+  ]);
+  const [out] = outputsOf(rendered);
+  const doc = new TextDecoder().decode(rendered.objects[0]?.bytes);
+
+  test('A09 an HTML output is a separate document for the content origin, never inline markup', () => {
+    expect(out).toMatchObject({
+      type: 'html',
+      key: expect.stringMatching(new RegExp(`^${prefix}/objects/[0-9a-f]{64}$`)),
+      scriptsRemoved: true,
+    });
+    expect(rendered.objects[0]?.contentType).toBe('text/html; charset=utf-8');
+    // The stored notebook (what the app origin receives) carries no part of the output's markup.
+    expect(JSON.stringify(rendered.notebook)).not.toContain('steal');
+  });
+
+  test('A09 the HTML output document holds no script, event handler, script URL or frame', () => {
+    expect(doc).toContain('Chart');
+    expect(doc).not.toMatch(/<script/i);
+    expect(doc).not.toMatch(/\son[a-z]+=/i);
+    expect(doc).not.toMatch(/javascript:/i);
+    expect(doc).not.toMatch(/<iframe/i);
+  });
+
+  test('A09 Markdown cells cannot carry raw HTML or script into the app origin', () => {
+    const { notebook: nb } = render([
+      {
+        id: 'm',
+        cell_type: 'markdown',
+        metadata: {},
+        source:
+          'Text <script>alert(1)</script><img src=x onerror=alert(2)> [x](javascript:alert(3))',
+      },
+    ]);
+    const [cell] = nb.cells;
+    const html = cell?.type === 'markdown' ? cell.html : '';
+    expect(html).toContain('Text');
+    expect(html).not.toMatch(/<script|onerror|javascript:/i);
+  });
+
+  test('A09 an HTML output with a static image alternative shows the image instead', () => {
+    const [img] = outputsOf(
+      render([
+        code('c', 'fig', [
+          {
+            output_type: 'display_data',
+            metadata: {},
+            data: { 'text/html': '<script>draw()</script>', 'image/png': PNG },
+          },
+        ]),
+      ]),
+    );
+    expect(img).toMatchObject({ type: 'image' });
+  });
+});
+
+test('buildNotebook names only objects it was given bytes for', () => {
+  const parsed = parseNotebook(notebook([code('c', 'x', [])]));
+  if (!parsed.ok) throw new Error(parsed.error);
+  expect(buildNotebook(parsed.notebook, prefix).objects).toEqual([]);
+});

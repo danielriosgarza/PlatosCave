@@ -399,6 +399,49 @@ describe('reading upload', () => {
   });
 });
 
+describe('notebook upload', () => {
+  it('A09 adds a notebook from an .ipynb file on the Notebooks tab', async () => {
+    const user = userEvent.setup();
+    const { s } = await open();
+    const notebooks = await screen.findByRole('region', { name: 'Notebooks resources' });
+    await user.click(within(notebooks).getByRole('button', { name: 'Add notebook' }));
+    const form = screen.getByRole('form', { name: 'Add notebook' });
+    await user.upload(
+      within(form).getByLabelText(/File/),
+      new File(['{"nbformat": 4}'], 'Repeated samples.ipynb', { type: 'application/json' }),
+    );
+    expect(within(form).getByLabelText('Title')).toHaveValue('Repeated samples');
+    await user.click(within(form).getByRole('button', { name: 'Add notebook' }));
+    await waitFor(() => expect(s.uploads).toBe(1));
+    const created = s.patched.find((p) => p.url.endsWith('/resources'))?.body;
+    expect(created).toEqual({
+      type: 'notebook',
+      title: 'Repeated samples',
+      content: { sourceKey: `courses/${COURSE}/objects/${'a'.repeat(64)}` },
+      objectKeys: [`courses/${COURSE}/objects/${'a'.repeat(64)}`],
+    });
+  });
+
+  it('A09 refuses a file that is not a notebook before sending it, and a reading refuses .ipynb', async () => {
+    const user = userEvent.setup({ applyAccept: false });
+    const { s } = await open();
+    const notebooks = await screen.findByRole('region', { name: 'Notebooks resources' });
+    await user.click(within(notebooks).getByRole('button', { name: 'Add notebook' }));
+    const form = screen.getByRole('form', { name: 'Add notebook' });
+    await user.upload(within(form).getByLabelText(/File/), new File(['# x'], 'notes.md'));
+    expect(await within(form).findByRole('alert')).toHaveTextContent(
+      'Upload a Jupyter notebook (.ipynb) file',
+    );
+    expect(within(form).getByRole('button', { name: 'Add notebook' })).toBeDisabled();
+
+    await user.click(screen.getByRole('button', { name: 'Add reading' }));
+    const reading = screen.getByRole('form', { name: 'Add reading' });
+    await user.upload(within(reading).getByLabelText(/File/), new File(['{}'], 'lab.ipynb'));
+    expect(await within(reading).findByRole('alert')).toHaveTextContent('Upload a Markdown');
+    expect(s.uploads).toBe(0);
+  });
+});
+
 describe('deck processing status', () => {
   it('a finished deck reads Processed, not Ready to publish: publication can still need a text alternative', async () => {
     await open(

@@ -1,4 +1,4 @@
-import { exerciseProblems, type ResourceType } from '@parallax/contracts';
+import { exerciseCredit, exerciseProblems, type ResourceType } from '@parallax/contracts';
 import type { validationIssue, validationReport } from '@parallax/contracts/routes/releases';
 import { and, asc, eq, isNull, lte, max, ne, or, type SQL, sql } from 'drizzle-orm';
 import type { z } from 'zod';
@@ -27,6 +27,16 @@ export type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type Issue = z.infer<typeof validationIssue>;
 export type ValidationReport = z.infer<typeof validationReport>;
 type Tab = (typeof releaseResources.$inferInsert)['tab'];
+
+/**
+ * The credit an exercise revision declares (§9), read from its content without loading the
+ * rest of it; null for ungraded practice, other resource types and unreadable values.
+ */
+const creditColumn = sql<unknown>`case when ${resourceRevisions.type} = 'exercise' then ${resourceRevisions.content} -> 'credit' end`;
+const creditOf = (raw: unknown) => {
+  const parsed = exerciseCredit.safeParse(raw);
+  return parsed.success ? parsed.data : null;
+};
 
 /** Destination tab of each resource type (§5). */
 export const tabOf: Record<ResourceType, Tab> = {
@@ -146,9 +156,13 @@ export function validate(drafts: Drafts): ValidationReport {
           ...at,
         });
       }
-      if (revision.type === 'reading_native' || revision.type === 'reading_pdf') {
-        // A reading nobody can open is worse than none: block while its job is unfinished or
-        // failed. A revision with no job on record (older data) is left alone.
+      if (
+        revision.type === 'reading_native' ||
+        revision.type === 'reading_pdf' ||
+        revision.type === 'notebook'
+      ) {
+        // A reading or notebook nobody can open is worse than none: block while its job is
+        // unfinished or failed. A revision with no job on record (older data) is left alone.
         const state = status?.state;
         if (state !== undefined && state !== 'ready') {
           errors.push({
@@ -376,7 +390,7 @@ export async function readClassRelease(db: Db, scope: ClassScope) {
     .where(eq(releaseTopics.releaseId, release.id))
     .orderBy(asc(releaseTopics.position));
   const resourceRows = await db
-    .select({ item: releaseResources, type: resourceRevisions.type })
+    .select({ item: releaseResources, type: resourceRevisions.type, credit: creditColumn })
     .from(releaseResources)
     .innerJoin(resourceRevisions, eq(resourceRevisions.id, releaseResources.resourceRevisionId))
     .where(and(eq(releaseResources.releaseId, release.id), studyVisible(scope)))
@@ -387,10 +401,11 @@ export async function readClassRelease(db: Db, scope: ClassScope) {
       ...t,
       resources: resourceRows
         .filter((r) => r.item.releaseTopicId === t.id)
-        .map(({ item, type }) => ({
+        .map(({ item, type, credit }) => ({
           ...item,
           revisionId: item.resourceRevisionId,
           type,
+          credit: creditOf(credit),
         })),
     })),
   };
@@ -401,7 +416,7 @@ export async function readClassRelease(db: Db, scope: ClassScope) {
  * now, shaped like the rows of a release, built from the head revisions (immutable rows) of the
  * live draft. Only preview principals read it, after the resolver checked that their owner
  * still edits the course; real members always read the adopted release, and any other scope
- * gets the empty snapshot. Reads only the syllabus columns, never revision content. A resource
+ * gets the empty snapshot. Reads the syllabus columns and an exercise's declared credit, never other revision content. A resource
  * is left out unless its head revision passes publication's guard (same resource, course and
  * type), and so is anything in an archived topic.
  */
@@ -435,6 +450,7 @@ async function loadSnapshot(db: Db | Tx, scope: DraftPreviewScope) {
       resourceId: resources.id,
       revisionId: resourceRevisions.id,
       type: resourceRevisions.type,
+      credit: creditColumn,
       position: resources.position,
       title: resources.title,
       visibility: resources.visibility,
@@ -463,7 +479,7 @@ async function loadSnapshot(db: Db | Tx, scope: DraftPreviewScope) {
   // Ordered by topic as the snapshot lists them, then by resource position within each topic.
   const order = new Map(topicRows.map((t, i) => [t.id, i]));
   const resourceRows = rows
-    .map((r) => ({ ...r, tab: tabOf[r.type] }))
+    .map((r) => ({ ...r, tab: tabOf[r.type], credit: creditOf(r.credit) }))
     .sort((a, b) => (order.get(a.releaseTopicId) ?? 0) - (order.get(b.releaseTopicId) ?? 0));
   return { topics: topicRows, resources: resourceRows };
 }

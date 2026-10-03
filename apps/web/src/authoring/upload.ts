@@ -8,15 +8,28 @@ import { ApiError } from '../api/client';
 
 export type Uploaded = z.output<typeof uploadedFile>;
 
-export const ACCEPT = Object.keys(uploadFormats)
+type Kind = 'reading' | 'notebook';
+
+const extensionsOf = (kind: Kind) =>
+  Object.entries(uploadFormats)
+    .filter(([, format]) => (format === 'notebook') === (kind === 'notebook'))
+    .map(([extension]) => extension);
+
+/** File types a reading accepts; a notebook is added on the Notebooks tab. */
+export const ACCEPT = extensionsOf('reading')
+  .map((e) => `.${e}`)
+  .join(',');
+export const NOTEBOOK_ACCEPT = extensionsOf('notebook')
   .map((e) => `.${e}`)
   .join(',');
 
 /** Why the browser can already refuse a file, with the same wording the server uses. */
-export function fileProblem(file: File): string | undefined {
+export function fileProblem(file: File, kind: Kind = 'reading'): string | undefined {
   const extension = file.name.includes('.') ? file.name.split('.').pop()?.toLowerCase() : undefined;
-  if (!extension || !Object.hasOwn(uploadFormats, extension)) {
-    return 'Upload a Markdown (.md), HTML (.html) or PDF (.pdf) file';
+  if (!extension || !extensionsOf(kind).includes(extension)) {
+    return kind === 'notebook'
+      ? 'Upload a Jupyter notebook (.ipynb) file'
+      : 'Upload a Markdown (.md), HTML (.html) or PDF (.pdf) file';
   }
   if (file.size === 0) return 'The file is empty';
   if (file.size > MAX_UPLOAD_BYTES) {
@@ -25,8 +38,8 @@ export function fileProblem(file: File): string | undefined {
   return undefined;
 }
 
-/** Sends one reading file to the course's storage; rejects with ApiError carrying the reason. */
-export async function uploadReadingFile(courseId: string, file: File): Promise<Uploaded> {
+/** Sends one reading or notebook file to the course's storage; rejects with ApiError carrying the reason. */
+export async function uploadFile(courseId: string, file: File): Promise<Uploaded> {
   const form = new FormData();
   form.append('file', file, file.name);
   const res = await fetch(`/api/courses/${encodeURIComponent(courseId)}/uploads`, {
