@@ -46,13 +46,13 @@ export async function findReleasedObject(
     )
     .limit(1);
   if (!row) return null;
-  if (!(await topicOpens(db, scope, row.releaseTopicId, now))) return null;
+  if (!(await releaseTopicOpens(db, scope, row.releaseTopicId, now))) return null;
   const { releaseTopicId: _topic, ...object } = row;
   return object;
 }
 
 /** The same availability the topic list shows: a locked topic's media is not downloadable (§4). */
-async function topicOpens(
+async function releaseTopicOpens(
   db: Db,
   scope: ClassScope,
   releaseTopicId: string,
@@ -96,6 +96,7 @@ async function findDraftObject(
       ),
     )
     .limit(1);
-  if (!row || !(await topicOpens(db, scope, resource.releaseTopicId, now, draft))) return null;
+  if (!row || !(await releaseTopicOpens(db, scope, resource.releaseTopicId, now, draft)))
+    return null;
   return { ...row, title: resource.title };
 }
