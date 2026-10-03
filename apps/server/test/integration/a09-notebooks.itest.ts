@@ -252,7 +252,7 @@ describe('A09 rendered notebook', () => {
     );
     expect(list.status).toBe(200);
     expect(list.body.notebooks).toEqual([
-      { resourceId: expect.any(String), revisionId, title: 'Repeated samples' },
+      { resourceId: expect.any(String), revisionId, title: 'Repeated samples', type: 'notebook' },
     ]);
 
     const { status, body } = await notebookOf('sam');
