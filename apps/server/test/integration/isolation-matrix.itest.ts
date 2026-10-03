@@ -6,9 +6,17 @@ import { z } from 'zod';
 import { buildApp } from '../../src/app';
 import { loadConfig } from '../../src/config';
 import { createSession } from '../../src/db/auth/sessions';
-import { authSessions } from '../../src/db/schema';
+import { authSessions, classMemberships, courseMemberships, courses } from '../../src/db/schema';
 import { registerRoute } from '../../src/http/register';
-import { buildWorld, cookieFor, ids, type PersonName, people, type World } from '../fixtures/world';
+import {
+  buildWorld,
+  cookieFor,
+  ids,
+  issueLiveInvites,
+  type PersonName,
+  people,
+  type World,
+} from '../fixtures/world';
 import { createTestDatabase, type TestDatabase } from './db';
 
 const now = new Date('2026-10-01T09:00:00Z');
@@ -91,6 +99,23 @@ const courseGrants: Record<string, Partial<Record<PersonName, Grant[]>>> = {
   },
   [ids.linearModels]: { olivia: ['owner'] },
 };
+
+/**
+ * Every `scope: 'public'` contract, reviewed. A public route has no principal, so it must not
+ * return or change anyone's data; adding one here is a security decision for the PR's reviewer.
+ * The `/api/test/*` routes exist only when TEST_ROUTES=1 and never in production.
+ */
+const publicAllowlist = new Set([
+  'GET /api/health',
+  'GET /api/openapi.json',
+  'POST /api/auth/link',
+  'GET /api/auth/verify',
+  'POST /api/auth/signout',
+  'POST /api/preview/exit',
+  'POST /api/test/world',
+  'POST /api/test/signin-as',
+]);
+const routeKey = (c: RouteContract) => `${c.method} ${c.path}`;
 
 /** What the resolver must answer: 'pass' means the request reached the handler stage. */
 function expected(contract: RouteContract, scopeId: string, who: PersonName): 'pass' | 403 | 404 {
@@ -210,6 +235,17 @@ describe('isolation matrix over every registered scoped contract', () => {
     }
   });
 
+  test('A01 every public contract is on the reviewed allowlist', () => {
+    const unlisted = app.contracts
+      .filter((c) => c.scope.kind === 'public' && !publicAllowlist.has(routeKey(c)))
+      .map(
+        (c) =>
+          `${routeKey(c)} is scope: 'public' but not on publicAllowlist in isolation-matrix.itest.ts; ` +
+          `make it user- or class-scoped, or review it and list it`,
+      );
+    expect(unlisted).toEqual([]);
+  });
+
   test('preview principal never reaches instructor or course routes', async () => {
     for (const contract of app.contracts) {
       const { scope } = contract;
@@ -221,6 +257,70 @@ describe('isolation matrix over every registered scoped contract', () => {
         }
       }
     }
+  });
+});
+
+describe('A02 A26 preview principal on user-scope contracts', () => {
+  const sizes = async () => ({
+    memberships: (await testDb.db.select().from(classMemberships)).length,
+    grants: (await testDb.db.select().from(courseMemberships)).length,
+    courses: (await testDb.db.select().from(courses)).length,
+  });
+  const asPreview = (contract: RouteContract, body?: unknown) =>
+    app.inject({
+      method: contract.method,
+      url: requestFor(contract, {}).url,
+      headers: { cookie: world.cookie.previewB },
+      ...(body !== undefined && { payload: body as object }),
+    });
+
+  test('every user-scope contract has a preview case that neither sees nor changes real records', async () => {
+    const invites = await issueLiveInvites(testDb.db, now);
+    const cases: Record<string, (c: RouteContract) => Promise<void>> = {
+      // The preview principal sees only itself and its own class, never a person's records.
+      'GET /api/me': async (c) => {
+        const res = await asPreview(c);
+        expect(res.statusCode).toBe(200);
+        const body = res.json();
+        expect(body.user).toMatchObject({ id: ids.previewB, kind: 'preview', email: null });
+        expect(body.classes.map((k: { classId: string }) => k.classId)).toEqual([ids.classB]);
+        expect(body.courses).toEqual([]);
+      },
+      'GET /api/courses': async (c) => {
+        const res = await asPreview(c);
+        expect(res.statusCode).toBe(200);
+        const body = res.json();
+        expect(body.courses).toEqual([]);
+        expect(body.classes.map((k: { classId: string }) => k.classId)).toEqual([]);
+      },
+      'POST /api/courses': async (c) => {
+        const res = await asPreview(c, { title: 'Created by a preview' });
+        expect(res.statusCode).toBe(403);
+        expect(res.json()).toMatchObject({ error: 'not_instructor' });
+      },
+      'POST /api/join': async (c) => {
+        const res = await asPreview(c, { code: invites.enrolmentCode });
+        expect(res.statusCode).toBe(404);
+        expect(res.json()).toMatchObject({ error: 'invite_not_found' });
+      },
+      'POST /api/invitations/accept': async (c) => {
+        const res = await asPreview(c, { token: invites.instructorToken });
+        expect(res.statusCode).toBe(403);
+        expect(res.json()).toMatchObject({ error: 'invite_other_account' });
+      },
+    };
+    const userContracts = app.contracts.filter((c) => c.scope.kind === 'user');
+    expect(userContracts.length).toBeGreaterThan(0);
+    const before = await sizes();
+    for (const contract of userContracts) {
+      const run = cases[routeKey(contract)];
+      expect(
+        run,
+        `${routeKey(contract)} is user-scoped but has no preview case here`,
+      ).toBeDefined();
+      await run?.(contract);
+    }
+    expect(await sizes()).toEqual(before);
   });
 });
 

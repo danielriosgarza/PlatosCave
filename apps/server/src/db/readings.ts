@@ -3,7 +3,7 @@ import { and, asc, desc, eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import type { ClassScope } from '../auth/scope';
 import { openToStudent } from '../content/availability';
-import { invalid, notFound, type Outcome } from '../outcome';
+import { classArchived, invalid, notFound, type Outcome } from '../outcome';
 import { findReleaseTopic } from './classTopics';
 import type { Db } from './client';
 import { resolveDerivedStatuses } from './jobs/derived';
@@ -283,6 +283,7 @@ export async function savePosition(
 ): Promise<Outcome<{ updatedAt: string }>> {
   const row = await releasedRevision(db, scope, input.revisionId, now);
   if (!row) return notFound;
+  if (scope.archived) return classArchived;
   if (row.tab !== input.tab) return invalid('The resource is not on that tab');
   if (!(PLACED_TYPES as readonly string[]).includes(row.type)) {
     return invalid('Positions are only saved for readings and slide decks here');
