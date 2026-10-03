@@ -1,0 +1,53 @@
+{
+  "v": 1,
+  "t": "test_result",
+  "requestId": "c0ffee00-1111-4222-8333-444455556666",
+  "outcome": "ready_to_start",
+  "stages": [
+    {
+      "name": "workspace",
+      "status": "ok",
+      "data": {
+        "resolvedPath": "/home/student/parallax"
+      },
+      "ms": 3
+    },
+    {
+      "name": "runtime",
+      "status": "ok",
+      "data": {
+        "state": "startable",
+        "version": "2.21.1"
+      },
+      "ms": 410
+    },
+    {
+      "name": "notebook_auth",
+      "status": "skipped",
+      "data": {
+        "reason": "not_started"
+      }
+    },
+    {
+      "name": "kernels",
+      "status": "ok",
+      "data": {
+        "source": "cli"
+      },
+      "ms": 380
+    }
+  ],
+  "kernelspecs": [
+    {
+      "name": "python3",
+      "displayName": "Python 3 (ipykernel)",
+      "language": "python"
+    }
+  ],
+  "jupyterVersion": "2.21.1",
+  "environment": {
+    "os": "linux",
+    "arch": "amd64",
+    "runtime": "Python 3.12.8"
+  }
+}

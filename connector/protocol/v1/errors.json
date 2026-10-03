@@ -1,0 +1,505 @@
+{
+  "description": "Error and cause catalogue of connector protocol v1 (docs/design/connector.md section 5). The single source of truth for codes: Go emits them, the server and the web app render them, and tests assert every code used or shown is a key here. `stage` is the Test connection stage that reports the code, null for request-level errors; `cause` is the spec section 14 word.",
+  "v": 1,
+  "causes": {
+    "reachability": "The connector cannot reach the host.",
+    "host_key": "The host's identity is unknown or has changed.",
+    "authentication": "The host or the notebook service refused the credentials.",
+    "workspace": "The working directory is missing or not usable.",
+    "tunnel": "SSH works but forwarding to the notebook service is not.",
+    "runtime": "Jupyter is missing, incompatible or would not start.",
+    "kernel": "No usable kernel.",
+    "policy": "Parallax or the connector refuses this destination.",
+    "protocol": "The link itself failed; not caused by the target."
+  },
+  "recoveries": [
+    "retry",
+    "wait",
+    "check_address",
+    "check_network",
+    "start_vpn",
+    "verify_host_key",
+    "replace_host_key",
+    "contact_host_owner",
+    "use_agent",
+    "unlock_key",
+    "choose_key",
+    "run_in_terminal",
+    "enable_forwarding",
+    "install_jupyter",
+    "choose_environment",
+    "start_jupyter_then_attach",
+    "choose_workspace",
+    "pick_other_target",
+    "download_notebook",
+    "reconnect",
+    "new_session",
+    "update_connector",
+    "allow_network",
+    "none"
+  ],
+  "codes": {
+    "host_unresolved": {
+      "stage": "reachability",
+      "cause": "reachability",
+      "retryable": true,
+      "recoveries": ["check_address", "check_network", "retry"],
+      "summary": "The host name did not resolve."
+    },
+    "connection_refused": {
+      "stage": "reachability",
+      "cause": "reachability",
+      "retryable": true,
+      "recoveries": ["check_address", "contact_host_owner", "retry"],
+      "summary": "The host refused the connection on that port."
+    },
+    "connection_timeout": {
+      "stage": "reachability",
+      "cause": "reachability",
+      "retryable": true,
+      "recoveries": ["check_network", "start_vpn", "retry"],
+      "summary": "The host did not answer in time."
+    },
+    "network_scope_denied": {
+      "stage": "reachability",
+      "cause": "policy",
+      "retryable": false,
+      "recoveries": ["allow_network", "pick_other_target"],
+      "summary": "This connector is not allowed to reach that address."
+    },
+    "unsupported_target": {
+      "stage": "reachability",
+      "cause": "policy",
+      "retryable": false,
+      "recoveries": ["pick_other_target", "update_connector"],
+      "summary": "This connector does not support that kind of target."
+    },
+    "invalid_target": {
+      "stage": "reachability",
+      "cause": "policy",
+      "retryable": false,
+      "recoveries": ["check_address"],
+      "summary": "The target fails Parallax's validation."
+    },
+    "host_key_unknown": {
+      "stage": "host_identity",
+      "cause": "host_key",
+      "retryable": false,
+      "recoveries": ["verify_host_key"],
+      "summary": "First connection to this host: confirm its fingerprint."
+    },
+    "host_key_changed": {
+      "stage": "host_identity",
+      "cause": "host_key",
+      "retryable": false,
+      "recoveries": ["contact_host_owner", "replace_host_key", "pick_other_target"],
+      "summary": "The host's key differs from the trusted one. Connection stopped."
+    },
+    "host_key_untrusted_managed": {
+      "stage": "host_identity",
+      "cause": "host_key",
+      "retryable": false,
+      "recoveries": ["contact_host_owner"],
+      "summary": "A managed connector only connects to hosts its operator has pinned."
+    },
+    "key_file_unreadable": {
+      "stage": "ssh_auth",
+      "cause": "authentication",
+      "retryable": false,
+      "recoveries": ["choose_key", "use_agent"],
+      "summary": "The key file is missing or not readable by the connector."
+    },
+    "key_passphrase_required": {
+      "stage": "ssh_auth",
+      "cause": "authentication",
+      "retryable": false,
+      "recoveries": ["run_in_terminal", "use_agent"],
+      "summary": "The key needs a passphrase and the connector has no terminal to ask in."
+    },
+    "key_passphrase_wrong": {
+      "stage": "ssh_auth",
+      "cause": "authentication",
+      "retryable": true,
+      "recoveries": ["unlock_key", "retry"],
+      "summary": "The passphrase did not unlock the key."
+    },
+    "agent_unavailable": {
+      "stage": "ssh_auth",
+      "cause": "authentication",
+      "retryable": false,
+      "recoveries": ["use_agent", "choose_key"],
+      "summary": "The connector found no SSH agent."
+    },
+    "agent_no_identity": {
+      "stage": "ssh_auth",
+      "cause": "authentication",
+      "retryable": false,
+      "recoveries": ["use_agent", "choose_key"],
+      "summary": "The agent holds no matching identity."
+    },
+    "auth_rejected": {
+      "stage": "ssh_auth",
+      "cause": "authentication",
+      "retryable": false,
+      "recoveries": ["choose_key", "contact_host_owner"],
+      "summary": "The host rejected every credential offered."
+    },
+    "auth_method_unsupported": {
+      "stage": "ssh_auth",
+      "cause": "authentication",
+      "retryable": false,
+      "recoveries": ["contact_host_owner", "pick_other_target"],
+      "summary": "The host accepts only methods the connector does not support (password, Kerberos)."
+    },
+    "mfa_requires_terminal": {
+      "stage": "ssh_auth",
+      "cause": "authentication",
+      "retryable": false,
+      "recoveries": ["run_in_terminal"],
+      "summary": "The host asks for a second factor and the connector has no terminal to ask in."
+    },
+    "mfa_failed": {
+      "stage": "ssh_auth",
+      "cause": "authentication",
+      "retryable": true,
+      "recoveries": ["retry"],
+      "summary": "The second factor was not accepted or not given in time."
+    },
+    "workspace_missing": {
+      "stage": "workspace",
+      "cause": "workspace",
+      "retryable": false,
+      "recoveries": ["choose_workspace"],
+      "summary": "The working directory does not exist."
+    },
+    "workspace_not_directory": {
+      "stage": "workspace",
+      "cause": "workspace",
+      "retryable": false,
+      "recoveries": ["choose_workspace"],
+      "summary": "The working directory path is not a directory."
+    },
+    "workspace_not_writable": {
+      "stage": "workspace",
+      "cause": "workspace",
+      "retryable": false,
+      "recoveries": ["choose_workspace", "contact_host_owner"],
+      "summary": "The account cannot write to the working directory."
+    },
+    "workspace_outside_root": {
+      "stage": "runtime",
+      "cause": "workspace",
+      "retryable": false,
+      "recoveries": ["choose_workspace"],
+      "summary": "The attached server's root does not contain the working directory."
+    },
+    "forwarding_denied": {
+      "stage": "forwarding",
+      "cause": "tunnel",
+      "retryable": false,
+      "recoveries": ["enable_forwarding", "pick_other_target", "download_notebook"],
+      "summary": "The SSH server forbids port forwarding for this account."
+    },
+    "tunnel_unavailable": {
+      "stage": "forwarding",
+      "cause": "tunnel",
+      "retryable": true,
+      "recoveries": ["retry"],
+      "summary": "The tunnel could not be opened."
+    },
+    "remote_exec_denied": {
+      "stage": "workspace",
+      "cause": "runtime",
+      "retryable": false,
+      "recoveries": ["contact_host_owner", "start_jupyter_then_attach", "pick_other_target"],
+      "summary": "The account may not run commands over SSH."
+    },
+    "shell_unsupported": {
+      "stage": "runtime",
+      "cause": "runtime",
+      "retryable": false,
+      "recoveries": ["start_jupyter_then_attach"],
+      "summary": "The host is not a POSIX host; start Jupyter there yourself and attach."
+    },
+    "environment_invalid": {
+      "stage": "runtime",
+      "cause": "runtime",
+      "retryable": false,
+      "recoveries": ["choose_environment"],
+      "summary": "The chosen Python interpreter does not exist or cannot run."
+    },
+    "jupyter_missing": {
+      "stage": "runtime",
+      "cause": "runtime",
+      "retryable": false,
+      "recoveries": ["install_jupyter", "choose_environment"],
+      "summary": "Jupyter Server is not installed in that environment."
+    },
+    "jupyter_incompatible": {
+      "stage": "runtime",
+      "cause": "runtime",
+      "retryable": false,
+      "recoveries": ["install_jupyter", "choose_environment"],
+      "summary": "Jupyter Server is older than 2.0."
+    },
+    "jupyter_start_failed": {
+      "stage": "runtime",
+      "cause": "runtime",
+      "retryable": true,
+      "recoveries": ["retry", "choose_environment"],
+      "summary": "Jupyter exited while starting."
+    },
+    "jupyter_start_timeout": {
+      "stage": "runtime",
+      "cause": "runtime",
+      "retryable": true,
+      "recoveries": ["retry", "wait"],
+      "summary": "Jupyter did not become ready within 30 seconds."
+    },
+    "attach_none_found": {
+      "stage": "runtime",
+      "cause": "runtime",
+      "retryable": false,
+      "recoveries": ["start_jupyter_then_attach", "choose_environment"],
+      "summary": "No running Jupyter server was found to attach to."
+    },
+    "attach_port_unreachable": {
+      "stage": "runtime",
+      "cause": "runtime",
+      "retryable": true,
+      "recoveries": ["start_jupyter_then_attach", "retry"],
+      "summary": "Nothing answered on the port to attach to."
+    },
+    "attach_not_loopback": {
+      "stage": "runtime",
+      "cause": "policy",
+      "retryable": false,
+      "recoveries": ["pick_other_target"],
+      "summary": "Only a server listening on loopback may be attached."
+    },
+    "token_unavailable": {
+      "stage": "notebook_auth",
+      "cause": "authentication",
+      "retryable": false,
+      "recoveries": ["start_jupyter_then_attach", "choose_environment"],
+      "summary": "The connector cannot read the server's token, so it cannot attach."
+    },
+    "token_rejected": {
+      "stage": "notebook_auth",
+      "cause": "authentication",
+      "retryable": false,
+      "recoveries": ["choose_environment", "contact_host_owner"],
+      "summary": "Jupyter rejected the connector's token."
+    },
+    "notebook_service_unreachable": {
+      "stage": "notebook_auth",
+      "cause": "tunnel",
+      "retryable": true,
+      "recoveries": ["retry", "start_jupyter_then_attach"],
+      "summary": "The tunnel is up but nothing answers from Jupyter."
+    },
+    "no_kernelspec": {
+      "stage": "kernels",
+      "cause": "kernel",
+      "retryable": false,
+      "recoveries": ["install_jupyter", "choose_environment"],
+      "summary": "Jupyter lists no kernel."
+    },
+    "kernelspec_not_found": {
+      "stage": "kernels",
+      "cause": "kernel",
+      "retryable": false,
+      "recoveries": ["choose_environment"],
+      "summary": "The chosen kernel is not installed."
+    },
+    "kernel_start_failed": {
+      "stage": "kernels",
+      "cause": "kernel",
+      "retryable": true,
+      "recoveries": ["retry", "choose_environment"],
+      "summary": "The kernel process would not start."
+    },
+    "unsupported_message": {
+      "stage": null,
+      "cause": "protocol",
+      "retryable": false,
+      "recoveries": ["update_connector"],
+      "summary": "The peer sent a message type this side does not know."
+    },
+    "invalid_message": {
+      "stage": null,
+      "cause": "protocol",
+      "retryable": false,
+      "recoveries": ["update_connector"],
+      "summary": "The peer sent a message that fails the protocol schema."
+    },
+    "unknown_session": {
+      "stage": null,
+      "cause": "protocol",
+      "retryable": false,
+      "recoveries": ["new_session"],
+      "summary": "The session id is not known here."
+    },
+    "unknown_stream": {
+      "stage": null,
+      "cause": "protocol",
+      "retryable": false,
+      "recoveries": ["retry"],
+      "summary": "The stream id is not open."
+    },
+    "not_owned": {
+      "stage": null,
+      "cause": "policy",
+      "retryable": false,
+      "recoveries": ["none"],
+      "summary": "The session was attached, not started by Parallax, so it cannot be stopped."
+    },
+    "limit_exceeded": {
+      "stage": null,
+      "cause": "protocol",
+      "retryable": true,
+      "recoveries": ["wait", "retry"],
+      "summary": "A connector limit (sessions, streams, size) was reached."
+    },
+    "path_not_allowed": {
+      "stage": null,
+      "cause": "policy",
+      "retryable": false,
+      "recoveries": ["none"],
+      "summary": "The request is outside the connector's allowlist."
+    },
+    "body_too_large": {
+      "stage": null,
+      "cause": "policy",
+      "retryable": false,
+      "recoveries": ["none"],
+      "summary": "The request or response body exceeds the limit for its kind."
+    },
+    "not_ready": {
+      "stage": null,
+      "cause": "protocol",
+      "retryable": true,
+      "recoveries": ["wait", "retry"],
+      "summary": "The session or kernel is not ready to run a cell."
+    },
+    "rate_limited": {
+      "stage": null,
+      "cause": "protocol",
+      "retryable": true,
+      "recoveries": ["wait"],
+      "summary": "Too many requests; slow down."
+    },
+    "busy": {
+      "stage": null,
+      "cause": "protocol",
+      "retryable": true,
+      "recoveries": ["wait", "retry"],
+      "summary": "The session is busy with a previous request."
+    },
+    "test_timeout": {
+      "stage": null,
+      "cause": "protocol",
+      "retryable": true,
+      "recoveries": ["retry"],
+      "summary": "The test did not finish in time."
+    },
+    "stream_cancelled": {
+      "stage": null,
+      "cause": "protocol",
+      "retryable": true,
+      "recoveries": ["retry"],
+      "summary": "The stream was cancelled by the peer."
+    },
+    "internal": {
+      "stage": null,
+      "cause": "protocol",
+      "retryable": true,
+      "recoveries": ["retry"],
+      "summary": "The connector failed unexpectedly; see its log."
+    }
+  },
+  "loss": {
+    "sleep": {
+      "recoveries": ["reconnect", "new_session"],
+      "summary": "This computer was asleep. Its processes were paused or ended."
+    },
+    "vpn": {
+      "recoveries": ["start_vpn", "reconnect", "pick_other_target"],
+      "summary": "A VPN-like network interface went away or the route to the host moved."
+    },
+    "network_change": {
+      "recoveries": ["check_network", "reconnect"],
+      "summary": "The computer's network changed."
+    },
+    "ssh_timeout": {
+      "recoveries": ["reconnect", "pick_other_target"],
+      "summary": "The SSH connection stopped answering."
+    },
+    "service_stopped": {
+      "recoveries": ["new_session", "reconnect"],
+      "summary": "SSH works but the Jupyter service is no longer running."
+    },
+    "allocation_expired": {
+      "recoveries": ["pick_other_target", "new_session"],
+      "summary": "The time-limited allocation ended."
+    },
+    "host_unreachable": {
+      "recoveries": ["check_network", "reconnect", "pick_other_target"],
+      "summary": "The host cannot be reached now."
+    },
+    "process_exited": {
+      "recoveries": ["new_session"],
+      "summary": "The Jupyter process ended on its own."
+    },
+    "lease_idle": {
+      "recoveries": ["new_session"],
+      "summary": "Stopped after the idle timeout."
+    },
+    "lease_grace": {
+      "recoveries": ["new_session"],
+      "summary": "Stopped after the grace period with no browser attached."
+    },
+    "user_stop": {
+      "recoveries": ["new_session"],
+      "summary": "Stopped by the person."
+    },
+    "connector_exit": {
+      "recoveries": ["new_session"],
+      "summary": "The connector was stopped."
+    },
+    "connector_restarted": {
+      "recoveries": ["new_session"],
+      "summary": "The connector restarted and could not re-attach. Set by the server when a returning connector does not know the session.",
+      "origin": "server"
+    },
+    "abandoned": {
+      "recoveries": ["pick_other_target", "new_session"],
+      "summary": "The person gave up on an unreachable session. Server-side; says nothing about the process.",
+      "origin": "server"
+    },
+    "max_lifetime": {
+      "recoveries": ["new_session"],
+      "summary": "Stopped at the maximum session lifetime."
+    },
+    "link_lost": {
+      "recoveries": ["reconnect"],
+      "summary": "Parallax stopped hearing from the connector. Server-side cause; the connector never sends it.",
+      "origin": "server"
+    },
+    "connector_offline": {
+      "recoveries": ["reconnect"],
+      "summary": "The connector is not connected to Parallax. Server-side cause.",
+      "origin": "server"
+    },
+    "connector_revoked": {
+      "recoveries": ["pick_other_target", "new_session"],
+      "summary": "The device was revoked or unpaired. Server-side cause.",
+      "origin": "server"
+    },
+    "kernel_lost": {
+      "recoveries": ["new_session"],
+      "summary": "The kernel no longer exists; variables are gone. Server-side cause.",
+      "origin": "server"
+    }
+  }
+}

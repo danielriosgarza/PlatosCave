@@ -1,0 +1,7 @@
+{
+  "connectorId": "3f2a6c1e-8b7d-4e5f-9a10-2c4d6e8f0a1b",
+  "fingerprint": "SHA256:Vkdap1RjR0wChd9dvyvKtz2mUTWIOem3dIGy6rEHcIw",
+  "status": "pending",
+  "pollAfterSeconds": 2,
+  "approveBy": "2026-10-03T09:45:00Z"
+}

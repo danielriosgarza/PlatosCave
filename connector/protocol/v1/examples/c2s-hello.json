@@ -1,0 +1,18 @@
+{
+  "v": 1,
+  "t": "hello",
+  "version": "0.1.0",
+  "os": "linux",
+  "arch": "amd64",
+  "mode": "personal",
+  "targets": ["local", "ssh"],
+  "features": {
+    "tty": true,
+    "agent": true,
+    "wsl": false
+  },
+  "networkScope": {
+    "cidrs": ["127.0.0.0/8", "10.20.0.0/16"],
+    "hosts": []
+  }
+}

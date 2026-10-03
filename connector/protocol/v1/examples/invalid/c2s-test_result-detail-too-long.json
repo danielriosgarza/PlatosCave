@@ -1,0 +1,70 @@
+{
+  "v": 1,
+  "t": "test_result",
+  "requestId": "c0ffee00-1111-4222-8333-444455556666",
+  "outcome": "failed",
+  "stages": [
+    {
+      "name": "reachability",
+      "status": "ok",
+      "data": {
+        "hop": "target",
+        "address": "203.0.113.7"
+      },
+      "ms": 40
+    },
+    {
+      "name": "host_identity",
+      "status": "ok",
+      "data": {
+        "hop": "target",
+        "fingerprint": "SHA256:SGuN8fwGXFkUlKZT8ILLvpynWOsg9Y72LtxX1LmpqEM"
+      },
+      "ms": 60
+    },
+    {
+      "name": "ssh_auth",
+      "status": "ok",
+      "ms": 120
+    },
+    {
+      "name": "workspace",
+      "status": "ok",
+      "data": {
+        "resolvedPath": "/home/student/parallax"
+      },
+      "ms": 30
+    },
+    {
+      "name": "forwarding",
+      "status": "failed",
+      "code": "forwarding_denied",
+      "detail": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "ms": 25
+    },
+    {
+      "name": "runtime",
+      "status": "skipped",
+      "data": {
+        "reason": "blocked",
+        "blockedBy": "forwarding"
+      }
+    },
+    {
+      "name": "notebook_auth",
+      "status": "skipped",
+      "data": {
+        "reason": "blocked",
+        "blockedBy": "forwarding"
+      }
+    },
+    {
+      "name": "kernels",
+      "status": "skipped",
+      "data": {
+        "reason": "blocked",
+        "blockedBy": "forwarding"
+      }
+    }
+  ]
+}

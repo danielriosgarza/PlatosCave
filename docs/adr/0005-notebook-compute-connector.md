@@ -2,6 +2,8 @@
 
 **Status:** Accepted, 2026-09-30
 
+Refined by [docs/design/connector.md](../design/connector.md) (P3-01): wire schemas and fixtures in `connector/protocol/v1/`, pairing and link authentication (§3, §4.2), stage checks and the error catalogue (§5), the Jupyter allowlist, network scope and leases (§7–§9), the server's tables, endpoints and relay (§10), the OS matrix and MFA policy (§13, §5.3). Where it differs from the text below (paths under `/api/connector/v1`, the signed bytes, the message set, the allowlist, user-owned connections, the token in the environment or on standard input, asynchronous Test connection, no auto-approve flag), §17 of the design lists each change and the design wins.
+
 ## Context
 
 Notebook cells execute on a computer the learner is authorised to use: this computer, a LAN/lab machine, or an SSH server, optionally via a jump host (§10). The browser speaks only HTTPS/WSS to Parallax; an authorised **compute connector** performs SSH, runtime start/attach and the tunnel to a loopback Jupyter server, and Parallax relays only the authorised notebook session, not a raw TCP proxy (§10.2). Pairing uses a short-lived code and explicit device approval; **Test connection** reports each stage separately; Ready appears only after the notebook service and kernel are verified (§10.3); execution requests are bound to notebook revision, cell, code hash, kernel and message id; reconnect must not re-execute; leases govern idle sessions (§10.4); credentials and tokens never reach documents, URLs, browser storage or logs (§10.6). Scenarios A27–A36. This ADR fixes enough to plan and to test in CI; item P3-01 refines the wire schema and OS matrix.
@@ -40,7 +42,7 @@ Notebook cells execute on a computer the learner is authorised to use: this comp
 - One binary, one protocol, three targets (local, SSH, SSH via jump); institution-managed connectors reuse it later.
 - Ed25519 challenge auth avoids long-lived bearer tokens; losing the state directory means re-pairing.
 - Kernel WebSocket traffic crosses two hops (browser→server→connector→Jupyter); latency is acceptable for interactive cells and the server sees message ids, which the binding requires.
-- Windows/WSL routes, MFA (`keyboard-interactive`), HPC scheduler adapters and the managed-connector network policy are refined in P3-01 (fable).
+- Windows/WSL routes, MFA (`keyboard-interactive`), HPC scheduler adapters and the managed-connector network policy were refined in P3-01 (`docs/design/connector.md` §5.3, §12, §13); scheduler adapters stay an extension.
 
 ## Alternatives considered
 
