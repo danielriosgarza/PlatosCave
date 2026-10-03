@@ -1,6 +1,6 @@
 import { type Anchor, anchorFits, type ResourceType, textAnchor } from '@parallax/contracts';
 // The one definition ingestion uses for block ids and page hashes, so recomputed ids match.
-import { normaliseText } from '../content/text';
+import { normaliseText, sha256 } from '../content/text';
 
 /**
  * Anchor mapping between two revisions of one resource (ADR-0003, §8, A06). Pure functions:
@@ -45,11 +45,43 @@ const exact = (anchor: Anchor): Mapping => ({ status: 'mapped', anchor, confiden
 const array = (value: unknown): unknown[] | undefined => (Array.isArray(value) ? value : undefined);
 const str = (value: unknown): value is string => typeof value === 'string';
 
+/** The state of the job deriving a revision's outputs, if one is recorded (`DerivedStatus`). */
+const stateOf = (derived: Record<string, unknown>): unknown =>
+  (derived.status as { state?: unknown } | null | undefined)?.state;
+
 /**
- * The layout of a revision, or undefined while the derived outputs that anchors need are not
- * there yet (ingestion still running). Types that only take `none` anchors need nothing.
+ * Text hash per slide of a web deck, from its block map (each entry carries its 1-based `slide`).
+ * A web deck stores no page hashes, so a slide is compared by the normalised text of its blocks;
+ * a slide without text can never match.
  */
-export function layoutOf(type: ResourceType, derived: Record<string, unknown>): Layout | undefined {
+function slidePages(derived: Record<string, unknown>): (string | undefined)[] {
+  const slides = array(derived.slides)?.length ?? 0;
+  const texts: string[][] = Array.from({ length: slides }, () => []);
+  for (const entry of array(derived.blockMap) ?? []) {
+    const { text, slide } = (entry ?? {}) as Record<string, unknown>;
+    if (str(text) && typeof slide === 'number') texts[slide - 1]?.push(text);
+  }
+  return texts.map((parts) => {
+    const text = normaliseText(parts.join(' '));
+    return text === '' ? undefined : sha256(text);
+  });
+}
+
+/**
+ * The layout of a revision, or `pending` while the job producing the derived outputs anchors
+ * need is queued or running, so mapping waits for it. When no job will produce them (it
+ * failed, or none was ever recorded), the layout has none: those marks need reattachment
+ * rather than waiting forever. Types that only take `none` anchors need nothing.
+ */
+export function layoutOf(type: ResourceType, derived: Record<string, unknown>): Layout | 'pending' {
+  const layout = outputsOf(type, derived);
+  if (layout) return layout;
+  const state = stateOf(derived);
+  return state === 'queued' || state === 'running' ? 'pending' : { type };
+}
+
+/** The layout from derived outputs (P1-08, P2-01, P2-03), or undefined when they are missing. */
+function outputsOf(type: ResourceType, derived: Record<string, unknown>): Layout | undefined {
   if (type === 'reading_native' || type === 'slides_web') {
     const blocks = array(derived.blockMap)?.flatMap((b) => {
       const { id, text } = (b ?? {}) as Record<string, unknown>;
@@ -60,6 +92,9 @@ export function layoutOf(type: ResourceType, derived: Record<string, unknown>): 
       const { id } = (f ?? {}) as Record<string, unknown>;
       return str(id) ? [id] : [];
     });
+    if (type === 'slides_web') {
+      return { type, blocks, figures, pages: slidePages(derived) };
+    }
     return { type, blocks, figures };
   }
   if (type === 'reading_pdf' || type === 'slides_pdf') {
@@ -136,25 +171,30 @@ export function similarity(a: string, b: string, atLeast = 0): number {
 }
 
 /**
- * The whitespace-collapsed, trimmed form of `text` with, for each of its characters, the
- * offset of the raw character it came from, so a match found there maps back to raw offsets.
+ * `text` with every whitespace run collapsed to one space, as block ids are computed (ADR-0003),
+ * and for each of its characters the raw offset it came from, so a match `[start, end)` found
+ * in `norm` maps back to raw `[raw[start], raw[end - 1] + 1)` (`toRaw`).
  */
-function collapse(text: string): { norm: string; raw: number[] } {
+interface Collapsed {
+  norm: string;
+  raw: number[];
+}
+function collapse(text: string): Collapsed {
   let norm = '';
   const raw: number[] = [];
-  for (const match of text.matchAll(/\S+|\s+/g)) {
-    const at = match.index ?? 0;
-    if (/^\s/.test(match[0])) {
-      if (norm.length > 0 && at + match[0].length < text.length) {
-        norm += ' ';
-        raw.push(at);
-      }
-      continue;
-    }
-    for (let i = 0; i < match[0].length; i++) raw.push(at + i);
-    norm += match[0];
+  for (let i = 0; i < text.length; i++) {
+    const space = /\s/.test(text.charAt(i));
+    if (space && i > 0 && /\s/.test(text.charAt(i - 1))) continue;
+    norm += space ? ' ' : text.charAt(i);
+    raw.push(i);
   }
   return { norm, raw };
+}
+
+/** Raw offsets of the non-empty collapsed range `[start, end)`. */
+function toRaw({ raw }: Collapsed, start: number, end: number): [number, number] | undefined {
+  const [first, last] = [raw[start], raw[end - 1]];
+  return first === undefined || last === undefined || end <= start ? undefined : [first, last + 1];
 }
 
 function occurrences(text: string, needle: string, limit: number): number[] {
@@ -176,38 +216,52 @@ interface Candidate {
 }
 
 /**
- * Positions that could hold the quote: every exact occurrence in any block, or, when the quote
- * itself was edited, the text between an occurrence of its prefix and the next suffix.
+ * Positions that could hold the quote, found in whitespace-collapsed text so a re-wrapped
+ * paragraph still matches: every exact occurrence, and, as the quote may have been edited, the
+ * text between each occurrence of its prefix and each reachable occurrence of its suffix. Both
+ * kinds are always collected, so an edited passage in its own context competes with a verbatim
+ * copy elsewhere and scoring decides. Offsets are raw. Null when either kind is too common to
+ * be identifying.
  */
-function candidates(anchor: TextAnchor, blocks: Block[]): Candidate[] {
-  const { quote, prefix, suffix } = anchor;
-  const found: Candidate[] = [];
-  for (const block of blocks) {
-    for (const start of occurrences(block.text, quote, MAX_CANDIDATES + 1 - found.length)) {
-      found.push({ block, start, end: start + quote.length, key: `${block.id}:${start}` });
-    }
-    if (found.length > MAX_CANDIDATES) return found;
-  }
-  if (found.length > 0 || (prefix === '' && suffix === '')) return found;
+function candidates(anchor: TextAnchor, blocks: Block[]): Candidate[] | null {
+  const [quote, prefix, suffix] = [anchor.quote, anchor.prefix, anchor.suffix].map(
+    (t) => collapse(t).norm,
+  ) as [string, string, string];
   const longest = Math.min(Math.ceil(quote.length / MAP_THRESHOLD), MAX_QUOTE);
+  const found: Candidate[] = [];
+  let [exactCount, contextCount] = [0, 0];
   for (const block of blocks) {
-    const { text } = block;
+    const c = collapse(block.text);
+    const add = (start: number, end: number) => {
+      const range = toRaw(c, start, end);
+      if (range)
+        found.push({ block, start: range[0], end: range[1], key: `${block.id}:${range[0]}` });
+    };
+    if (quote !== '') {
+      for (const start of occurrences(c.norm, quote, MAX_CANDIDATES + 1)) {
+        add(start, start + quote.length);
+        exactCount += 1;
+      }
+      if (exactCount > MAX_CANDIDATES) return null;
+    }
+    if (prefix === '' && suffix === '') continue;
     const starts = prefix
-      ? occurrences(text, prefix, MAX_CANDIDATES).map((i) => i + prefix.length)
+      ? occurrences(c.norm, prefix, MAX_CANDIDATES + 1).map((i) => i + prefix.length)
       : [0];
     for (const start of starts) {
       // Every suffix occurrence in reach: the edited quote may itself contain the suffix text.
       const ends = suffix
         ? occurrences(
-            text.slice(start + 1, start + longest + suffix.length),
+            c.norm.slice(start + 1, start + longest + suffix.length),
             suffix,
             MAX_CANDIDATES,
           )
             .map((i) => start + 1 + i)
             .filter((end) => end - start <= longest)
-        : [text.length].filter((end) => end > start && end - start <= longest);
-      for (const end of ends) found.push({ block, start, end, key: `${block.id}:${start}` });
-      if (found.length > MAX_CANDIDATES) return found;
+        : [c.norm.length].filter((end) => end > start && end - start <= longest);
+      for (const end of ends) add(start, end);
+      contextCount += ends.length;
+      if (contextCount > MAX_CANDIDATES) return null;
     }
   }
   return found;
@@ -247,12 +301,14 @@ function textAt(block: Block, start: number, end: number): Anchor | undefined {
  * only whitespace may differ, as when a Markdown paragraph is re-wrapped.
  */
 function withinSameBlock(anchor: TextAnchor, block: Block): Anchor | undefined {
-  const { norm, raw } = collapse(block.text);
+  const collapsed = collapse(block.text);
   const quote = collapse(anchor.quote).norm;
-  const at = norm.indexOf(quote);
-  if (quote === '' || at === -1 || norm.indexOf(quote, at + 1) !== -1) return undefined;
-  const [start, last] = [raw[at], raw[at + quote.length - 1]];
-  return start === undefined || last === undefined ? undefined : textAt(block, start, last + 1);
+  const at = collapsed.norm.indexOf(quote);
+  if (quote.trim() === '' || at === -1 || collapsed.norm.indexOf(quote, at + 1) !== -1) {
+    return undefined;
+  }
+  const range = toRaw(collapsed, at, at + quote.length);
+  return range ? textAt(block, ...range) : undefined;
 }
 
 function mapText(anchor: TextAnchor, blocks: Block[]): Mapping {
@@ -264,7 +320,7 @@ function mapText(anchor: TextAnchor, blocks: Block[]): Mapping {
   }
 
   const found = candidates(anchor, blocks);
-  if (found.length === 0 || found.length > MAX_CANDIDATES) return needs;
+  if (!found || found.length === 0) return needs;
   const best = new Map<string, Candidate & { score: number }>();
   for (const c of found) {
     const scored = { ...c, score: score(anchor, c) };
