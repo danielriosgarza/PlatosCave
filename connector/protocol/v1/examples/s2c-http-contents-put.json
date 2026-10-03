@@ -1,0 +1,14 @@
+{
+  "v": 1,
+  "t": "http",
+  "streamId": 3,
+  "sessionId": "7b1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f",
+  "purpose": "contents",
+  "method": "PUT",
+  "path": "/api/contents/data/sample.csv",
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": "stream",
+  "contentLength": 2048
+}

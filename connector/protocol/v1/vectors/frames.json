@@ -1,0 +1,77 @@
+{
+  "description": "Binary frame vectors for docs/design/connector.md section 4.5. A frame is a 4-byte big-endian stream id, a 1-byte flags field (0x01 END, 0x02 TEXT, other bits must be zero) and the payload. `payloadText` is UTF-8; `repeat` expands to `count` copies of the byte `byte` (hex).",
+  "maxPayload": 65536,
+  "valid": [
+    {
+      "name": "http body chunk",
+      "hex": "000000010068656c6c6f",
+      "streamId": 1,
+      "flags": 0,
+      "payloadText": "hello"
+    },
+    {
+      "name": "http body end, empty",
+      "hex": "0000000101",
+      "streamId": 1,
+      "flags": 1,
+      "payloadText": ""
+    },
+    {
+      "name": "websocket text message, one frame",
+      "hex": "00000007037b2261223a317d",
+      "streamId": 7,
+      "flags": 3,
+      "payloadText": "{\"a\":1}"
+    },
+    {
+      "name": "websocket binary message, first of two frames",
+      "hex": "0000000700dead",
+      "streamId": 7,
+      "flags": 0,
+      "payloadHex": "dead"
+    },
+    {
+      "name": "largest stream id",
+      "hex": "ffffffff01",
+      "streamId": 4294967295,
+      "flags": 1,
+      "payloadText": ""
+    },
+    {
+      "name": "payload at the limit",
+      "streamId": 1,
+      "flags": 0,
+      "repeat": {
+        "byte": "61",
+        "count": 65536
+      }
+    }
+  ],
+  "invalid": [
+    {
+      "name": "shorter than the header",
+      "hex": "00000001",
+      "rule": "frame_too_short"
+    },
+    {
+      "name": "stream id zero",
+      "hex": "0000000001",
+      "rule": "stream_id_zero"
+    },
+    {
+      "name": "reserved flag bit set",
+      "hex": "0000000180",
+      "rule": "reserved_flags"
+    },
+    {
+      "name": "payload over the limit",
+      "streamId": 1,
+      "flags": 0,
+      "repeat": {
+        "byte": "61",
+        "count": 65537
+      },
+      "rule": "payload_too_large"
+    }
+  ]
+}

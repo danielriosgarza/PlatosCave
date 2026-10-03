@@ -1,0 +1,13 @@
+{
+  "v": 1,
+  "t": "auth_ok",
+  "heartbeatSeconds": 15,
+  "limits": {
+    "maxStreams": 32,
+    "maxPayload": 65536,
+    "initialWindow": 262144,
+    "maxControl": 65536,
+    "maxSessions": 4
+  },
+  "minVersion": "0.1.0"
+}

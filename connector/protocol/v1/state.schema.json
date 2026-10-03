@@ -1,0 +1,262 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://parallax.invalid/connector/v1/state.schema.json",
+  "title": "Parallax connector state files (protocol v1)",
+  "description": "The JSON files in the connector state directory (docs/design/connector.md sections 3 and 9). identity.key and known_hosts are not JSON.",
+  "anyOf": [
+    {
+      "$ref": "#/$defs/Config"
+    },
+    {
+      "$ref": "#/$defs/Sessions"
+    },
+    {
+      "$ref": "#/$defs/Runtime"
+    }
+  ],
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "description": "Lower-case UUID."
+    },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?Z$",
+      "description": "RFC 3339, UTC, with the Z suffix."
+    },
+    "port": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 65535
+    },
+    "path": {
+      "type": "string",
+      "pattern": "^[^\\x00-\\x1f\\x7f]{1,1024}$",
+      "description": "A path on the machine the message names. Absolute, free of dot-dot segments and POSIX or drive-rooted: semantic rules."
+    },
+    "host": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 253,
+      "pattern": "^[A-Za-z0-9.:-]+$",
+      "description": "Host name or IP literal. Syntax and range rules beyond this pattern are the semantic rules of docs/design/connector.md section 4.4."
+    },
+    "user": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.@\\\\-]{0,63}$",
+      "description": "Account name; never starts with a dash."
+    },
+    "semver": {
+      "type": "string",
+      "maxLength": 32,
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]+)?$"
+    },
+    "cidr": {
+      "type": "string",
+      "maxLength": 49,
+      "pattern": "^[0-9A-Fa-f:.]+/[0-9]{1,3}$"
+    },
+    "lease": {
+      "type": "object",
+      "required": ["idleTimeoutMin", "gracePeriodMin"],
+      "additionalProperties": false,
+      "properties": {
+        "idleTimeoutMin": {
+          "type": "integer",
+          "minimum": 5,
+          "maximum": 240
+        },
+        "gracePeriodMin": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 60
+        }
+      },
+      "description": "Shown before Connect and enforced by the connector (design section 9)."
+    },
+    "cause": {
+      "enum": [
+        "sleep",
+        "vpn",
+        "network_change",
+        "ssh_timeout",
+        "service_stopped",
+        "allocation_expired",
+        "host_unreachable",
+        "process_exited",
+        "lease_idle",
+        "lease_grace",
+        "user_stop",
+        "connector_exit",
+        "connector_restarted"
+      ]
+    },
+    "Config": {
+      "type": "object",
+      "required": ["v", "server", "connectorId", "name", "pairedAt", "mode"],
+      "additionalProperties": false,
+      "properties": {
+        "v": {
+          "const": 1
+        },
+        "server": {
+          "type": "string",
+          "maxLength": 255,
+          "pattern": "^https?://[A-Za-z0-9.:\\[\\]-]+$"
+        },
+        "connectorId": {
+          "$ref": "#/$defs/uuid"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 60
+        },
+        "pairedAt": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "mode": {
+          "enum": ["personal", "managed"]
+        }
+      },
+      "description": "config.json in the state directory."
+    },
+    "SessionRecord": {
+      "type": "object",
+      "required": [
+        "sessionId",
+        "owned",
+        "state",
+        "target",
+        "lease",
+        "phase",
+        "lastActivityAt",
+        "expiresAt"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "sessionId": {
+          "$ref": "#/$defs/uuid"
+        },
+        "owned": {
+          "type": "boolean"
+        },
+        "state": {
+          "enum": ["starting", "ready", "disconnected", "stopping"]
+        },
+        "target": {
+          "type": "object",
+          "required": ["kind", "workspace"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "enum": ["local", "ssh", "managed"]
+            },
+            "host": {
+              "$ref": "#/$defs/host"
+            },
+            "port": {
+              "$ref": "#/$defs/port"
+            },
+            "user": {
+              "$ref": "#/$defs/user"
+            },
+            "workspace": {
+              "$ref": "#/$defs/path"
+            }
+          }
+        },
+        "process": {
+          "type": "object",
+          "required": ["where", "pid", "port", "startedAt"],
+          "additionalProperties": false,
+          "properties": {
+            "where": {
+              "enum": ["local", "remote"]
+            },
+            "pid": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 4194304
+            },
+            "port": {
+              "$ref": "#/$defs/port"
+            },
+            "startedAt": {
+              "$ref": "#/$defs/timestamp"
+            }
+          }
+        },
+        "lease": {
+          "$ref": "#/$defs/lease"
+        },
+        "phase": {
+          "enum": ["attached", "detached"]
+        },
+        "lastActivityAt": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "detachedAt": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "expiresAt": {
+          "$ref": "#/$defs/timestamp"
+        }
+      },
+      "description": "One session the connector holds. Never a token, key, passphrase or password. `process` is absent for an attached session the connector did not start."
+    },
+    "Sessions": {
+      "type": "object",
+      "required": ["v", "sessions"],
+      "additionalProperties": false,
+      "properties": {
+        "v": {
+          "const": 1
+        },
+        "sessions": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/SessionRecord"
+          }
+        }
+      },
+      "description": "sessions.json: written atomically (temporary file, then rename) with mode 0600."
+    },
+    "Runtime": {
+      "type": "object",
+      "required": ["v", "pid", "startedAt", "link", "since", "sessions"],
+      "additionalProperties": false,
+      "properties": {
+        "v": {
+          "const": 1
+        },
+        "pid": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4194304
+        },
+        "startedAt": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "link": {
+          "enum": ["connecting", "authenticating", "up", "down", "pending", "revoked", "rejected"]
+        },
+        "since": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "lastError": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "sessions": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 16
+        }
+      },
+      "description": "runtime.json: what `status` prints while `run` is alive."
+    }
+  }
+}

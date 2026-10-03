@@ -1,0 +1,32 @@
+{
+  "v": 1,
+  "sessions": [
+    {
+      "sessionId": "7b1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f",
+      "owned": true,
+      "state": "ready",
+      "target": {
+        "kind": "ssh",
+        "host": "gpu01.lab.example.org",
+        "port": 22,
+        "user": "student",
+        "workspace": "/home/student/parallax"
+      },
+      "process": {
+        "where": "remote",
+        "pid": 31337,
+        "port": 41873,
+        "startedAt": "2026-10-03T09:30:00Z"
+      },
+      "lease": {
+        "idleTimeoutMin": 30,
+        "gracePeriodMin": 5
+      },
+      "phase": "detached",
+      "lastActivityAt": "2026-10-03T09:30:00Z",
+      "detachedAt": "2026-10-03T09:31:00Z",
+      "expiresAt": "2026-10-03T09:36:00Z",
+      "token": "abc"
+    }
+  ]
+}

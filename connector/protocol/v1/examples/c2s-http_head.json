@@ -1,0 +1,10 @@
+{
+  "v": 1,
+  "t": "http_head",
+  "streamId": 1,
+  "status": 201,
+  "headers": {
+    "content-type": "application/json"
+  },
+  "body": "stream"
+}

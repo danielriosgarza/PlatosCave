@@ -1,0 +1,43 @@
+{
+  "v": 1,
+  "t": "open_session",
+  "requestId": "c0ffee00-1111-4222-8333-444455556666",
+  "sessionId": "7b1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f",
+  "target": {
+    "kind": "ssh",
+    "host": "gpu01.lab.example.org",
+    "port": 22,
+    "user": "student",
+    "auth": {
+      "method": "key",
+      "keyPath": "~/.ssh/id_ed25519"
+    },
+    "workspace": "/home/student/parallax",
+    "hostKeys": [
+      {
+        "host": "gpu01.lab.example.org",
+        "port": 22,
+        "sha256": "SHA256:SGuN8fwGXFkUlKZT8ILLvpynWOsg9Y72LtxX1LmpqEM"
+      },
+      {
+        "host": "bastion.example.org",
+        "port": 22,
+        "sha256": "SHA256:CNmGQS0lbyFb7+gGOfxSjwhim0p2KZVFysYVlwS7Rws"
+      }
+    ],
+    "jump": {
+      "host": "bastion.example.org",
+      "port": 22,
+      "user": "student"
+    }
+  },
+  "runtime": {
+    "mode": "start",
+    "python": "/opt/../tmp/python",
+    "login": true
+  },
+  "lease": {
+    "idleTimeoutMin": 30,
+    "gracePeriodMin": 5
+  }
+}

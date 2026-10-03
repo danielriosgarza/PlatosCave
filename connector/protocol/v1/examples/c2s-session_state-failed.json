@@ -1,0 +1,11 @@
+{
+  "v": 1,
+  "t": "session_state",
+  "sessionId": "7b1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f",
+  "requestId": "c0ffee00-1111-4222-8333-444455556666",
+  "state": "failed",
+  "owned": false,
+  "code": "jupyter_missing",
+  "detail": "no module named jupyter_server",
+  "ts": 1790000000
+}

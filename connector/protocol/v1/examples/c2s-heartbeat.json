@@ -1,0 +1,21 @@
+{
+  "v": 1,
+  "t": "heartbeat",
+  "seq": 12,
+  "ts": 1790000000,
+  "sessions": [
+    {
+      "sessionId": "7b1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f",
+      "state": "ready",
+      "phase": "attached",
+      "leaseExpiresAt": "2026-10-03T10:00:00Z",
+      "kernels": [
+        {
+          "id": "9d3c0a52-6f1e-4c0b-8d57-1a2b3c4d5e6f",
+          "executionState": "busy",
+          "lastActivity": "2026-10-03T09:30:00Z"
+        }
+      ]
+    }
+  ]
+}

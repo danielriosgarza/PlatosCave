@@ -1,0 +1,32 @@
+{
+  "v": 1,
+  "t": "open_session",
+  "requestId": "c0ffee00-1111-4222-8333-444455556666",
+  "sessionId": "7b1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f",
+  "target": {
+    "kind": "ssh",
+    "host": "gpu01.lab.example.org",
+    "port": 22,
+    "user": "student",
+    "auth": {
+      "method": "agent"
+    },
+    "workspace": "/home/student/parallax",
+    "hostKeys": [
+      {
+        "host": "gpu01.lab.example.org",
+        "port": 22,
+        "sha256": "SHA256:SGuN8fwGXFkUlKZT8ILLvpynWOsg9Y72LtxX1LmpqEM"
+      }
+    ]
+  },
+  "runtime": {
+    "mode": "attach",
+    "port": 18888,
+    "pid": 4242
+  },
+  "lease": {
+    "idleTimeoutMin": 60,
+    "gracePeriodMin": 15
+  }
+}
