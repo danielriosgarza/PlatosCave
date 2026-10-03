@@ -827,8 +827,10 @@ export async function listMapping(db: Db, scope: ClassScope): Promise<MappingLis
 }
 
 /**
- * Adoption diff (ADR-0003): how many of the class's annotations and threads sit on each
- * revision the class stops using, by their original revision or a placement on it.
+ * Adoption diff (ADR-0003): how many of the class's annotations and threads the adopting
+ * instructor may see sit on each revision the class stops using, by their original revision or
+ * a placement on it. Counts go through `visibleTo` like every other read (ADR-0002): students'
+ * private notes and preview principals' marks are never counted (§8, §17, A05).
  */
 registerAffectedBy('annotations', async (ex, scope, revisionIds) => {
   const counts = new Map<string, number>();
@@ -842,7 +844,7 @@ registerAffectedBy('annotations', async (ex, scope, revisionIds) => {
       await ex
         .select({ revisionId: t.resourceRevisionId, n: sql<number>`count(*)` })
         .from(t)
-        .where(and(forClass(scope, t), inArray(t.resourceRevisionId, revisionIds)))
+        .where(and(visibleTo(scope, t), inArray(t.resourceRevisionId, revisionIds)))
         .groupBy(t.resourceRevisionId),
     );
     // Marks made on an older revision and placed on one the class now leaves.
@@ -854,6 +856,7 @@ registerAffectedBy('annotations', async (ex, scope, revisionIds) => {
         .where(
           and(
             forClass(scope, annotationPlacements),
+            visibleTo(scope, t),
             inArray(annotationPlacements.resourceRevisionId, revisionIds),
             sql`${t.resourceRevisionId} <> ${annotationPlacements.resourceRevisionId}`,
           ),

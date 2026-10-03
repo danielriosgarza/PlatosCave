@@ -71,7 +71,9 @@ export const getReading = defineRoute({
     error: z.string().nullable(),
     /**
      * Storage key of the uploaded source file, the `:key` of the object route's attachment
-     * download; null for a reading written inline.
+     * download, present only while it is downloadable: always for a PDF reading, and for a
+     * native reading only when its conversion has failed (§14). Null otherwise, and for a
+     * reading written inline.
      */
     sourceKey: z.string().nullable(),
     /** Native readings: ingested HTML, images resolved to content-origin links. */

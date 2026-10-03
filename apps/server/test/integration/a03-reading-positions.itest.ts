@@ -235,20 +235,22 @@ beforeAll(async () => {
     expectedReleaseId: ids.releaseV1,
   });
   if (!adopted.ok) throw new Error(adopted.reason);
-  // This conversion fails after release, as a re-run of the job can.
-  await writeDerivedOutputs(
-    db,
-    elena,
-    rev.failed,
-    {},
-    {
-      state: 'failed',
-      job: 'reading.ingest',
-      jobId: null,
-      updatedAt: now.toISOString(),
-      error: 'The file could not be read',
-    },
-  );
+  // These conversions fail after release, as a re-run of the job can.
+  for (const failed of [rev.failed, rev.hidden]) {
+    await writeDerivedOutputs(
+      db,
+      elena,
+      failed,
+      {},
+      {
+        state: 'failed',
+        job: 'reading.ingest',
+        jobId: null,
+        updatedAt: now.toISOString(),
+        error: 'The file could not be read',
+      },
+    );
+  }
 });
 
 afterAll(async () => {
@@ -355,9 +357,11 @@ describe('reading source download', () => {
       `/api/classes/${classId}/resources/${revisionId}/objects/${encodeURIComponent(key)}?disposition=attachment`,
     );
 
-  test('P1-12b a reading names its uploaded source file, ready or failed, and inline text has none', async () => {
+  test('P1-12b a reading names its uploaded source file when it may be downloaded: a PDF always, a native upload only once its conversion failed', async () => {
     expect((await read('sam', ids.classA, rev.pdf)).body.sourceKey).toBe(keys.pdf);
-    expect((await read('sam', ids.classA, rev.upload)).body.sourceKey).toBe(keys.source);
+    // Only the ingested HTML of a converted native reading is served (ADR-0002).
+    expect((await read('sam', ids.classA, rev.upload)).body.sourceKey).toBeNull();
+    expect((await object('sam', ids.classA, rev.upload, keys.source)).status).toBe(404);
     const failed = (await read('sam', ids.classA, rev.failed)).body;
     expect(failed).toMatchObject({ status: 'failed', sourceKey: keys.source });
     expect((await read('sam', ids.classA, rev.native)).body.sourceKey).toBeNull();
@@ -370,7 +374,8 @@ describe('reading source download', () => {
     // A non-member, another class's release and a hidden resource all look the same.
     expect((await object('bea', ids.classA, rev.failed, keys.source)).status).toBe(404);
     expect((await object('bea', ids.classB, rev.failed, keys.source)).status).toBe(404);
-    // A hidden resource that owns the very key: only its hiding makes it a 404 for a student.
+    // A hidden resource that owns the very key and also failed: only its hiding makes it a 404
+    // for a student.
     expect((await object('sam', ids.classA, rev.hidden, keys.source)).status).toBe(404);
     expect((await read('sam', ids.classA, rev.hidden)).status).toBe(404);
     expect((await object('priya', ids.classA, rev.hidden, keys.source)).status).toBe(200);
