@@ -1,6 +1,7 @@
 import type { NotebookOutput, NotebookView, StoredNotebook } from '@parallax/contracts';
 import { getNotebook, listNotebooks } from '@parallax/contracts/routes/notebooks';
 import type { FastifyInstance } from 'fastify';
+import type { RouteDeps } from '../../app';
 import { mintContentUrl } from '../../content/media';
 import { resolveReadingImages } from '../../content/reading';
 import { listTopicNotebooks, loadNotebook } from '../../db/notebooks';
@@ -39,7 +40,7 @@ export function notebookView(
   };
 }
 
-export default function notebookRoutes(app: FastifyInstance): void {
+export default function notebookRoutes(app: FastifyInstance, routeDeps: RouteDeps): void {
   const deps = () => {
     const { db, now } = app.resolverDeps;
     if (!db) throw app.httpErrors.serviceUnavailable();
@@ -53,7 +54,7 @@ export default function notebookRoutes(app: FastifyInstance): void {
 
   registerRoute(app, getNotebook, async ({ params, scope }) => {
     const { db, at } = deps();
-    const { config } = app.contentDeps;
+    const { config } = routeDeps;
     const found = await loadNotebook(db, scope, params.revisionId, at);
     if (!found) notFound();
     const { objects, notebook, ...rest } = found;
