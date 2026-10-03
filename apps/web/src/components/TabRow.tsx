@@ -33,11 +33,19 @@ export function TabRow<Id extends string>({
     const el = strip.current;
     if (el) setMore(el.scrollLeft + el.clientWidth < el.scrollWidth - 1);
   }, []);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a changed set of tabs changes the width to measure
   useEffect(() => {
     measure();
     window.addEventListener('resize', measure);
-    return () => window.removeEventListener('resize', measure);
-  }, [measure]);
+    const el = strip.current;
+    const observer =
+      el && typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : undefined;
+    if (el) observer?.observe(el);
+    return () => {
+      window.removeEventListener('resize', measure);
+      observer?.disconnect();
+    };
+  }, [measure, tabs]);
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     const index = tabs.findIndex((t) => t.id === selected);

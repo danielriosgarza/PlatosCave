@@ -5,6 +5,7 @@ import { ApiError } from '../api/client';
 import { OfflineBanner } from '../components/OfflineBanner';
 import page from '../components/Page.module.css';
 import { RetryNotice } from '../components/RetryNotice';
+import { isRevoked } from '../session/revocation';
 import { useSession } from '../session/useSession';
 import { ReadingMargin } from './margin/ReadingMargin';
 import { NativeReading } from './NativeReading';
@@ -210,20 +211,33 @@ function ReadingView({
   const content = useReadingContent(classId, reading.revisionId);
   const save = useSavePosition(classId, topicId);
   const { revisionId } = reading;
-  const places = leftPlaces(useQueryClient());
+  const queryClient = useQueryClient();
+  const places = leftPlaces(queryClient);
   const inAddress = useRef(JSON.stringify(addressed));
   const lastSaved = useRef<string>('');
   const saving = useRef(false);
   const next = useRef<ReadingPosition | null>(null);
+  /** The place a failed save left unsent, sent again when the connection returns. */
+  const unsaved = useRef<ReadingPosition | null>(null);
 
   const send = useCallback(
     function send(place: ReadingPosition) {
+      // Once access ended nothing more is written for the class (§14), whatever was pending.
+      if (isRevoked(queryClient, classId)) {
+        next.current = null;
+        unsaved.current = null;
+        return;
+      }
       saving.current = true;
+      unsaved.current = null;
       save(revisionId, place)
         .catch(() => {
-          // Retried by the next move unless a newer place is already waiting; nothing here
-          // claims it was kept.
-          if (!next.current) lastSaved.current = '';
+          // Retried by the next move or when the connection returns, unless a newer place is
+          // already waiting.
+          if (!next.current) {
+            lastSaved.current = '';
+            unsaved.current = place;
+          }
         })
         .finally(() => {
           saving.current = false;
@@ -232,7 +246,7 @@ function ReadingView({
           if (waiting) send(waiting);
         });
     },
-    [save, revisionId],
+    [save, revisionId, queryClient, classId],
   );
 
   /**
@@ -256,6 +270,14 @@ function ReadingView({
     },
     [send],
   );
+  useEffect(() => {
+    const retry = () => {
+      const place = unsaved.current;
+      if (place && !saving.current) store(place);
+    };
+    window.addEventListener('online', retry);
+    return () => window.removeEventListener('online', retry);
+  }, [store]);
   const report = useReporter(
     (position: ReadingPosition, reason: PlaceReason) => {
       store(position, reason !== 'pause');

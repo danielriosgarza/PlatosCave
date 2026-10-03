@@ -1,5 +1,6 @@
 import { cleanup, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   CLASS_A,
@@ -456,6 +457,37 @@ describe('native reading', () => {
     scrollThrough({ 'b-title': -50, 'b-one': 10, 'b-two': 110, 'b-code': 210 });
     await waitFor(() => expect(world.positions).toHaveLength(1));
     expect(screen.queryByText(/saved/i)).toBeNull();
+  });
+
+  it('A03 a place whose save failed offline is sent again when the connection returns', async () => {
+    const world = makeWorld(two());
+    world.failPut = true;
+    const fetchMock = api(world);
+    renderApp(READING);
+    await screen.findByText('Every sample tells a slightly different story.');
+    scrollThrough({ 'b-title': -50, 'b-one': 10, 'b-two': 110, 'b-code': 210 });
+    await waitFor(() => expect(putsOf(fetchMock)).toHaveLength(1));
+    world.failPut = false;
+    window.dispatchEvent(new Event('online'));
+    await waitFor(() => expect(world.positions).toHaveLength(1));
+    expect(world.positions[0]).toMatchObject({ revisionId: REV_NATIVE });
+  });
+
+  it('A01 a place still waiting when access ends is not sent', async () => {
+    const world = makeWorld(two());
+    const me = makeMe({ classes: [studentIn(CLASS_A, 'Class A')] });
+    const fetchMock = api(world, me);
+    const { queryClient } = renderApp(READING);
+    await screen.findByText('Every sample tells a slightly different story.');
+    // A place is reported, and the session loses the class before the pause has passed.
+    scrollThrough({ 'b-title': -50, 'b-one': 10, 'b-two': 110, 'b-code': 210 });
+    me.classes = [];
+    await act(() => queryClient.refetchQueries({ queryKey: ['session'] }));
+    expect(
+      await screen.findByRole('heading', { name: 'Your access to this class has ended' }),
+    ).toBeVisible();
+    await act(() => new Promise((r) => setTimeout(r, 500)));
+    expect(putsOf(fetchMock)).toHaveLength(0);
   });
 
   it('A03 says a reading is still being prepared instead of showing it empty', async () => {
