@@ -5,8 +5,12 @@ import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { buildApp } from '../../src/app';
 import { loadConfig } from '../../src/config';
 import { resourceRevisions, resources } from '../../src/db/schema';
-import annotationsMap, { ANNOTATIONS_MAP } from '../../src/jobs/annotations-map.job';
-import { runScopedJob } from '../../src/jobs/scoped';
+import annotationsMap, {
+  ANNOTATIONS_MAP,
+  MappingPending,
+} from '../../src/jobs/annotations-map.job';
+import readingIngest from '../../src/jobs/reading-ingest.job';
+import { runScopedJob, type ScopedPayload } from '../../src/jobs/scoped';
 import { buildWorld, ids, type PersonName, type World } from '../fixtures/world';
 import { createTestDatabase, type TestDatabase } from './db';
 
@@ -17,9 +21,14 @@ let app: FastifyInstance;
 let world: World;
 /** Jobs the adoption route sent; the test runs them as a worker would. */
 const sent: { name: string; data: unknown }[] = [];
+/** Set to make sends fail, as a lost queue connection would. */
+let sendFails = false;
+/** What request handlers logged at error level. */
+const loggedErrors: unknown[][] = [];
 const boss = {
   createQueue: async () => {},
   send: async (name: string, data: unknown) => {
+    if (sendFails) throw new Error('queue unavailable');
     sent.push({ name, data });
     return `00000000-0000-4000-8000-00000000f0${String(sent.length).padStart(2, '0')}`;
   },
@@ -69,6 +78,13 @@ beforeAll(async () => {
     now: () => now,
     boss,
   });
+  app.addHook('onRequest', async (req) => {
+    const error = req.log.error.bind(req.log);
+    req.log.error = ((...args: Parameters<typeof error>) => {
+      loggedErrors.push(args);
+      error(...args);
+    }) as typeof error;
+  });
   await app.ready();
 });
 
@@ -108,8 +124,8 @@ async function listed(who: PersonName, classPath = classA) {
   return { annotations: byId(res.body.annotations), threads: byId(res.body.threads) };
 }
 
-/** A second revision of the reading, published as release 2 by the course owner. */
-async function publishRevision2() {
+/** A new revision of the reading, published as the next release by the course owner. */
+async function publishRevision2(contentHash = 'reading-v2') {
   const { db } = testDb;
   const [rev] = await db
     .insert(resourceRevisions)
@@ -127,7 +143,7 @@ async function publishRevision2() {
         ],
         figures: [],
       },
-      contentHash: 'reading-v2',
+      contentHash,
       createdBy: ids.elena,
     })
     .returning();
@@ -141,9 +157,9 @@ async function publishRevision2() {
   return { revisionId: rev.id, releaseId: published.body.release.id as string };
 }
 
-const workerJob = (data: unknown): Job<unknown> => ({
+const workerJob = (data: unknown, name = ANNOTATIONS_MAP): Job<unknown> => ({
   id: '00000000-0000-4000-8000-00000000fa11',
-  name: ANNOTATIONS_MAP,
+  name,
   data,
   expireInSeconds: 60,
   heartbeatSeconds: null,
@@ -308,5 +324,113 @@ describe('A06 marks across a changed source revision', () => {
     const stale = { ...(sent[0]?.data as object), input: { releaseId: ids.releaseV1 } };
     const outcome = await runScopedJob(testDb.db, annotationsMap, workerJob(stale));
     expect(outcome).toEqual({ status: 'completed', output: { skipped: 'release changed' } });
+  });
+});
+
+describe('A06 marks while a revision is still being converted', () => {
+  let v3: { revisionId: string; releaseId: string };
+  const converting = {
+    state: 'running',
+    job: 'reading.ingest',
+    jobId: '00000000-0000-4000-8000-00000000c0de',
+    updatedAt: now.toISOString(),
+  };
+  const statuses = async (who: PersonName, classPath: string) =>
+    [...(await listed(who, classPath)).annotations.values()].map((a) => a.placement?.status);
+
+  test('A06 marks wait as pending while the pinned revision converts, and the job retries', async () => {
+    v3 = await publishRevision2('reading-v3');
+    // Its outputs are being produced again (an editor's Retry): none are there yet.
+    await testDb.db
+      .update(resourceRevisions)
+      .set({ derived: { status: converting } })
+      .where(eq(resourceRevisions.id, v3.revisionId));
+
+    const current = await call('priya', 'GET', `${classA}/releases`);
+    const adopted = await call('priya', 'POST', `${classA}/adopt`, {
+      releaseId: v3.releaseId,
+      expectedReleaseId: current.body.currentReleaseId,
+    });
+    expect(adopted.status).toBe(200);
+    const job = sent.at(-1);
+    expect(job?.name).toBe(ANNOTATIONS_MAP);
+
+    // Nothing is guessed: the job leaves every mark pending and fails, so pg-boss retries it.
+    await expect(runScopedJob(testDb.db, annotationsMap, workerJob(job?.data))).rejects.toThrow(
+      MappingPending,
+    );
+    expect(await statuses('sam', classA)).toEqual(['pending', 'pending', 'pending']);
+  });
+
+  test('A06 an adoption whose mapping cannot be queued still succeeds; marks stay pending', async () => {
+    const classB = `/api/classes/${ids.classB}`;
+    const queued = sent.length;
+    loggedErrors.length = 0;
+    sendFails = true;
+    try {
+      const adopted = await call('marcus', 'POST', `${classB}/adopt`, {
+        releaseId: v3.releaseId,
+        expectedReleaseId: ids.releaseV1,
+      });
+      expect(adopted.status).toBe(200);
+    } finally {
+      sendFails = false;
+    }
+    expect(sent.length).toBe(queued);
+    expect(loggedErrors.map(([, message]) => message)).toEqual([
+      'could not queue annotation mapping',
+    ]);
+    expect((await call('marcus', 'GET', `${classB}/releases`)).body.currentReleaseId).toBe(
+      v3.releaseId,
+    );
+    // Bea's highlight, made on revision 1, waits on revision 3.
+    expect(await statuses('bea', classB)).toEqual(['pending']);
+  });
+
+  test('A06 once conversion finishes, mapping is queued again for each class and places the pending marks', async () => {
+    const classB = `/api/classes/${ids.classB}`;
+    // Ingestion runs as the course editor; when the outputs are written it queues mapping for
+    // every class whose release pins this reading, as the instructor who adopted it.
+    const queued = sent.length;
+    const ingest: ScopedPayload = {
+      actorId: ids.elena,
+      scope: { kind: 'course', courseId: ids.statistics },
+      input: { revisionId: v3.revisionId },
+    };
+    const ingested = await runScopedJob(
+      testDb.db,
+      readingIngest,
+      { ...workerJob(ingest, readingIngest.name), id: converting.jobId },
+      { boss },
+    );
+    expect(ingested).toEqual({
+      status: 'completed',
+      output: { revisionId: v3.revisionId, state: 'ready', mappingQueued: 2 },
+    });
+    const requeued = sent.slice(queued);
+    expect(requeued.map((s) => s.name)).toEqual([ANNOTATIONS_MAP, ANNOTATIONS_MAP]);
+    const payloads = requeued.map((s) => s.data as ScopedPayload);
+    expect(
+      payloads.map((p) => [p.actorId, p.scope, p.input]).sort((a, b) => (a < b ? -1 : 1)),
+    ).toEqual(
+      [
+        [ids.priya, { kind: 'class', classId: ids.classA }, { releaseId: v3.releaseId }],
+        [ids.marcus, { kind: 'class', classId: ids.classB }, { releaseId: v3.releaseId }],
+      ].sort((a, b) => (a < b ? -1 : 1)),
+    );
+
+    for (const payload of payloads) {
+      const outcome = await runScopedJob(testDb.db, annotationsMap, workerJob(payload));
+      expect(outcome).toMatchObject({ status: 'completed', output: { pending: 0 } });
+    }
+    // The rendered revision 3 keeps revision 2's passages: Sam's notes map again, the manual
+    // placement on revision 2 is the starting point for the reattached highlight.
+    expect(await statuses('sam', classA)).toEqual(['mapped', 'mapped', 'mapped']);
+    const story = [...(await listed('sam', classA)).annotations.values()].find(
+      (a) => a.anchor.quote === 'tells a slightly different story',
+    );
+    expect(story?.placement?.anchor).toMatchObject({ quote: 'tells a slightly different story' });
+    // Bea's highlight on a passage revision 3 no longer has: Needs reattachment, not pending.
+    expect(await statuses('bea', classB)).toEqual(['needs_reattachment']);
   });
 });
