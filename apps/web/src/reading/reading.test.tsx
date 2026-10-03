@@ -459,7 +459,7 @@ describe('native reading', () => {
     expect(screen.queryByText(/saved/i)).toBeNull();
   });
 
-  it('A03 a place whose save failed offline is sent again when the connection returns', async () => {
+  it('a place whose save failed offline is sent again when the connection returns', async () => {
     const world = makeWorld(two());
     world.failPut = true;
     const fetchMock = api(world);

@@ -273,7 +273,7 @@ function ReadingView({
   useEffect(() => {
     const retry = () => {
       const place = unsaved.current;
-      if (place && !saving.current) store(place);
+      if (place) store(place);
     };
     window.addEventListener('online', retry);
     return () => window.removeEventListener('online', retry);
