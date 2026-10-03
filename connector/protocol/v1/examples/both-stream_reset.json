@@ -1,0 +1,7 @@
+{
+  "v": 1,
+  "t": "stream_reset",
+  "streamId": 1,
+  "code": "stream_cancelled",
+  "detail": "peer cancelled"
+}

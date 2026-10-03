@@ -1,0 +1,44 @@
+{
+  "v": 1,
+  "t": "test_connection",
+  "requestId": "c0ffee00-1111-4222-8333-444455556666",
+  "target": {
+    "kind": "ssh",
+    "host": "169.254.169.254",
+    "port": 22,
+    "user": "student",
+    "auth": {
+      "method": "key",
+      "keyPath": "~/.ssh/id_ed25519"
+    },
+    "workspace": "/home/student/parallax",
+    "hostKeys": [
+      {
+        "host": "169.254.169.254",
+        "port": 22,
+        "sha256": "SHA256:SGuN8fwGXFkUlKZT8ILLvpynWOsg9Y72LtxX1LmpqEM"
+      },
+      {
+        "host": "bastion.example.org",
+        "port": 22,
+        "sha256": "SHA256:CNmGQS0lbyFb7+gGOfxSjwhim0p2KZVFysYVlwS7Rws"
+      }
+    ],
+    "jump": {
+      "host": "bastion.example.org",
+      "port": 22,
+      "user": "student"
+    }
+  },
+  "runtime": {
+    "mode": "start",
+    "python": "/opt/conda/bin/python"
+  },
+  "confirmations": [
+    {
+      "host": "bastion.example.org",
+      "port": 22,
+      "sha256": "SHA256:CNmGQS0lbyFb7+gGOfxSjwhim0p2KZVFysYVlwS7Rws"
+    }
+  ]
+}
