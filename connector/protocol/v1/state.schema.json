@@ -91,7 +91,8 @@
         "lease_grace",
         "user_stop",
         "connector_exit",
-        "connector_restarted"
+        "connector_restarted",
+        "max_lifetime"
       ]
     },
     "auth": {
@@ -236,42 +237,69 @@
           "type": "boolean"
         },
         "state": {
-          "enum": ["starting", "ready", "disconnected", "stopping"]
+          "enum": ["starting", "ready", "disconnected", "stopping", "stopped"]
+        },
+        "cause": {
+          "$ref": "#/$defs/cause"
+        },
+        "stoppedAt": {
+          "$ref": "#/$defs/timestamp"
         },
         "target": {
-          "type": "object",
-          "required": ["kind", "workspace"],
-          "additionalProperties": false,
-          "properties": {
-            "kind": {
-              "enum": ["local", "ssh", "managed"]
+          "oneOf": [
+            {
+              "type": "object",
+              "required": ["kind", "targetId", "subject"],
+              "additionalProperties": false,
+              "properties": {
+                "kind": {
+                  "const": "managed"
+                },
+                "targetId": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-z0-9-]{0,62}$"
+                },
+                "subject": {
+                  "$ref": "#/$defs/uuid"
+                }
+              }
             },
-            "host": {
-              "$ref": "#/$defs/host"
-            },
-            "port": {
-              "$ref": "#/$defs/port"
-            },
-            "user": {
-              "$ref": "#/$defs/user"
-            },
-            "workspace": {
-              "$ref": "#/$defs/path"
-            },
-            "auth": {
-              "$ref": "#/$defs/auth"
-            },
-            "jump": {
-              "$ref": "#/$defs/hop"
-            },
-            "hostKeys": {
-              "type": "array",
-              "maxItems": 2,
-              "items": {
-                "$ref": "#/$defs/hostKey"
+            {
+              "type": "object",
+              "required": ["kind", "workspace"],
+              "additionalProperties": false,
+              "properties": {
+                "kind": {
+                  "enum": ["local", "ssh"]
+                },
+                "host": {
+                  "$ref": "#/$defs/host"
+                },
+                "port": {
+                  "$ref": "#/$defs/port"
+                },
+                "user": {
+                  "$ref": "#/$defs/user"
+                },
+                "workspace": {
+                  "$ref": "#/$defs/path"
+                },
+                "auth": {
+                  "$ref": "#/$defs/auth"
+                },
+                "jump": {
+                  "$ref": "#/$defs/hop"
+                },
+                "hostKeys": {
+                  "type": "array",
+                  "maxItems": 2,
+                  "items": {
+                    "$ref": "#/$defs/hostKey"
+                  }
+                }
               }
             }
-          }
+          ]
         },
         "kernelIds": {
           "type": "array",
@@ -325,7 +353,7 @@
           "$ref": "#/$defs/timestamp"
         }
       },
-      "description": "One session the connector holds. Never a token, key, passphrase or password. `process` is absent for an attached session the connector did not start."
+      "description": "One session the connector holds, or has stopped and not yet reported (`state: stopped` with `cause` and `stoppedAt`, kept until a `session_state stopped` was sent on a live link). Never a token, key, passphrase or password. `process` is absent for an attached session the connector did not start."
     },
     "Sessions": {
       "type": "object",
@@ -337,7 +365,7 @@
         },
         "sessions": {
           "type": "array",
-          "maxItems": 16,
+          "maxItems": 64,
           "items": {
             "$ref": "#/$defs/SessionRecord"
           }

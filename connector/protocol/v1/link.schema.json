@@ -103,6 +103,11 @@
     "arch": {
       "enum": ["amd64", "arm64"]
     },
+    "kernelName": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._-]{1,64}$",
+      "description": "The kernelspec the person chose; the kernels stage checks it exists (kernelspec_not_found)."
+    },
     "hop": {
       "type": "object",
       "required": ["host", "port", "user"],
@@ -298,6 +303,9 @@
             },
             "login": {
               "type": "boolean"
+            },
+            "kernelName": {
+              "$ref": "#/$defs/kernelName"
             }
           },
           "description": "Start a Jupyter server owned by this session. `python` selects the interpreter that has Jupyter; `login` runs the remote command in a login shell for its PATH."
@@ -319,6 +327,9 @@
               "type": "integer",
               "minimum": 1,
               "maximum": 4194304
+            },
+            "kernelName": {
+              "$ref": "#/$defs/kernelName"
             }
           },
           "description": "Attach to a Jupyter server somebody else started. Never stopped by Parallax."
@@ -507,7 +518,8 @@
         "lease_grace",
         "user_stop",
         "connector_exit",
-        "connector_restarted"
+        "connector_restarted",
+        "max_lifetime"
       ]
     },
     "sessionState": {
@@ -544,6 +556,9 @@
         },
         "phase": {
           "enum": ["attached", "detached"]
+        },
+        "cause": {
+          "$ref": "#/$defs/cause"
         },
         "leaseExpiresAt": {
           "$ref": "#/$defs/timestamp"
@@ -1215,12 +1230,13 @@
         },
         "sessions": {
           "type": "array",
-          "maxItems": 16,
+          "maxItems": 64,
           "items": {
             "$ref": "#/$defs/heartbeatSession"
           }
         }
-      }
+      },
+      "description": "The first heartbeat (seq 0) follows hello at once and lists every session the connector holds, terminal ones included: the server reconciles from it, never from the session_state messages that precede it."
     },
     "msg_heartbeat_ack": {
       "type": "object",

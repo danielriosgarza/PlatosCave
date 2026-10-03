@@ -8,7 +8,8 @@
     "workspace": "/home/student/parallax"
   },
   "runtime": {
-    "mode": "start"
+    "mode": "start",
+    "kernelName": "python3"
   },
   "lease": {
     "idleTimeoutMin": 1,
