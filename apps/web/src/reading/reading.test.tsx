@@ -1,4 +1,4 @@
-import { cleanup, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -757,7 +757,13 @@ describe('reading hardening', () => {
     layout.tops = { 'b-title': 0, 'b-one': 60, 'b-two': 160, 'b-code': 260 };
     router.history.back();
     await screen.findByText('Every sample tells a slightly different story.');
-    expect(router.state.location.search).toMatchObject({ block: 'b:b-one' });
+    // The address holds what the reader sees: the place flushed on leaving.
+    await waitFor(() =>
+      expect(router.state.location.search).toMatchObject({
+        block: 'b:b-code',
+        offset: Math.round(length['b-code'] * 0.4),
+      }),
+    );
     expect(scrollTo).toHaveBeenCalledWith({ top: 260 + (3 / length['b-code']) * 100 });
   });
 
@@ -1007,7 +1013,13 @@ describe('reading hardening', () => {
     scrollTo.mockClear();
     router.history.back();
     await screen.findByText('Every sample tells a slightly different story.');
-    expect(router.state.location.search).toMatchObject({ block: 'b:b-one' });
+    // The address holds what the reader sees: the place flushed on leaving.
+    await waitFor(() =>
+      expect(router.state.location.search).toMatchObject({
+        block: 'b:b-code',
+        offset: Math.round(length['b-code'] * 0.4),
+      }),
+    );
     expect(scrollTo).toHaveBeenCalledWith({ top: 260 + (3 / length['b-code']) * 100 });
   });
 
@@ -1122,5 +1134,75 @@ describe('reading hardening', () => {
     const [, init] = putsOf(fetchMock)[1] ?? [];
     expect(init?.keepalive).toBe(true);
     expect(JSON.parse(String(init?.body))).toMatchObject({ position: { blockId: 'b-two' } });
+  });
+
+  it('A03 a pause after a hide flush waits for every save still in flight', async () => {
+    const world = makeWorld(two());
+    const fetchMock = api(world);
+    const base = fetchMock.getMockImplementation();
+    if (!base) throw new Error('no fetch stub');
+    // Each PUT waits for its own release.
+    const releases: Array<() => void> = [];
+    fetchMock.mockImplementation(async (input, init) => {
+      if (init?.method === 'PUT') {
+        await new Promise<void>((resolve) => releases.push(resolve));
+      }
+      return base(input, init);
+    });
+    renderApp(READING);
+    await screen.findByText('Every sample tells a slightly different story.');
+    scrollThrough({ 'b-title': -120, 'b-one': -60, 'b-two': 40, 'b-code': 140 });
+    await waitFor(() => expect(putsOf(fetchMock)).toHaveLength(1));
+    // A place waits behind the first save; hiding the tab sends it at once as a second save.
+    scrollThrough({ 'b-title': -220, 'b-one': -160, 'b-two': -60, 'b-code': 40 });
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
+    try {
+      document.dispatchEvent(new Event('visibilitychange'));
+    } finally {
+      Reflect.deleteProperty(document, 'visibilityState');
+    }
+    expect(putsOf(fetchMock)).toHaveLength(2);
+    // The first save settles; the tab is back and the reader pauses at a third place.
+    releases[0]?.();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    scrollThrough({ 'b-title': -300, 'b-one': -240, 'b-two': -140, 'b-code': -40 });
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    expect(putsOf(fetchMock)).toHaveLength(2);
+    // Only once the second has settled does the third go.
+    releases[1]?.();
+    await waitFor(() => expect(putsOf(fetchMock)).toHaveLength(3));
+    expect(JSON.parse(String(putsOf(fetchMock)[2]?.[1]?.body))).toMatchObject({
+      position: { blockId: 'b-code' },
+    });
+  });
+
+  it('A03 a later entry that pauses at the same address place does not inherit a flushed place', async () => {
+    const world = makeWorld(two());
+    api(world);
+    const { router } = renderApp(READING);
+    await screen.findByText('Every sample tells a slightly different story.');
+    // Entry 1: a pause at b-one, then on to the code and Slides within the pause.
+    scrollThrough({ 'b-title': -120, 'b-one': -60, 'b-two': 40, 'b-code': 140 });
+    await waitFor(() => expect(router.state.location.search).toMatchObject({ block: 'b:b-one' }));
+    scrollThrough({ 'b-title': -300, 'b-one': -240, 'b-two': -140, 'b-code': -40 });
+    fireEvent.click(screen.getByRole('tab', { name: 'Slides' }));
+    await waitFor(() => expect(world.positions).toHaveLength(2));
+    // A later entry pauses at the same place b-one, and leaves with nothing pending.
+    fireEvent.click(screen.getByRole('tab', { name: 'Reading' }));
+    await screen.findByText('Every sample tells a slightly different story.');
+    scrollThrough({ 'b-title': -120, 'b-one': -60, 'b-two': 40, 'b-code': 140 });
+    await waitFor(() => expect(router.state.location.search).toMatchObject({ block: 'b:b-one' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Slides' }));
+    await waitFor(() => expect(router.state.location.pathname).toMatch(/\/slides$/));
+
+    layout.tops = { 'b-title': 0, 'b-one': 60, 'b-two': 160, 'b-code': 260 };
+    scrollTo.mockClear();
+    router.history.back();
+    await screen.findByText('Every sample tells a slightly different story.');
+    // Back shows b-one, where that entry paused, not the code.
+    expect(router.state.location.search).toMatchObject({ block: 'b:b-one' });
+    expect(scrollTo).toHaveBeenCalled();
+    for (const [options] of scrollTo.mock.calls) expect(options.top).toBeLessThan(260);
   });
 });

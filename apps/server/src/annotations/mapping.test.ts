@@ -128,6 +128,57 @@ describe('A06 mapping a mark to a changed revision', () => {
     expect(edited.slice(result.anchor.start, result.anchor.end)).toBe('the mean. and the median');
   });
 
+  test('A06 an edited passage maps although its quote also appears verbatim elsewhere', () => {
+    const anchor = textAnchor('aaaaaaaaaaaa', paragraph, 'the sampling distribution collects');
+    // The anchored passage, with a typo in the quote, in its own (edited) paragraph...
+    const edited = paragraph.replace('distribution', 'distributon');
+    // ...and the unedited quote once more in an unrelated paragraph, with different context.
+    const elsewhere = 'As we saw, the sampling distribution collects estimates from many samples.';
+    const result = mapAnchor(
+      anchor,
+      v1,
+      reading([
+        { id: '888888888888', text: elsewhere },
+        { id: '999999999999', text: edited },
+      ]),
+    );
+    expect(result).toMatchObject({ status: 'mapped', anchor: { blockId: '999999999999' } });
+    if (result.status !== 'mapped' || result.anchor.kind !== 'text') throw new Error('unmapped');
+    expect(edited.slice(result.anchor.start, result.anchor.end)).toBe(
+      'the sampling distributon collects',
+    );
+    expect(result.confidence).toBeGreaterThanOrEqual(MAP_THRESHOLD);
+  });
+
+  test('A06 an edited quote whose context now holds a moved line break still maps', () => {
+    const anchor = textAnchor('aaaaaaaaaaaa', paragraph, 'sampling distribution collects');
+    // Edited (a new block id: the quote itself changed) and re-wrapped: a line break and an
+    // indent now sit inside the prefix, so only a whitespace-insensitive search finds it.
+    const edited =
+      'Every sample tells a slightly different story, and\n  the sampling distribution collect them.';
+    const result = mapAnchor(anchor, v1, reading([{ id: 'abababababab', text: edited }]));
+    expect(result).toMatchObject({ status: 'mapped', anchor: { blockId: 'abababababab' } });
+    if (result.status !== 'mapped' || result.anchor.kind !== 'text') throw new Error('unmapped');
+    expect(edited.slice(result.anchor.start, result.anchor.end)).toBe(
+      'sampling distribution collect',
+    );
+  });
+
+  test('A06 an edited passage and an equally close copy elsewhere are still ambiguous', () => {
+    const anchor = textAnchor('aaaaaaaaaaaa', paragraph, 'the sampling distribution collects');
+    const edited = paragraph.replace('distribution', 'distributon');
+    // Both places score above the threshold: the spec says not to guess (§8).
+    const result = mapAnchor(
+      anchor,
+      v1,
+      reading([
+        { id: '888888888888', text: edited },
+        { id: '999999999999', text: `${paragraph} Again.` },
+      ]),
+    );
+    expect(result).toEqual({ status: 'needs_reattachment' });
+  });
+
   test('A06 a mapped quote never exceeds the anchor contract', () => {
     const long = 'x'.repeat(995);
     const text = `Lead in. ${long} middle ${long} Tail out.`;
@@ -160,8 +211,11 @@ describe('A06 mapping a mark to a changed revision', () => {
       status: 'needs_reattachment',
     });
     // A page whose hash is missing on both sides is not a match.
-    const unhashed = layoutOf('reading_pdf', { pages: [{ text: '' }, { text: '' }] });
-    expect(mapAnchor(pageMark, unhashed, unhashed as Layout).status).toBe('needs_reattachment');
+    const unhashed = layoutOf('reading_pdf', { pages: [{ text: '' }, { text: '' }] }) as Layout;
+    expect(mapAnchor(pageMark, unhashed, unhashed).status).toBe('needs_reattachment');
+    // A conversion that failed leaves nothing to compare.
+    const failed = layoutOf('reading_pdf', { status: { state: 'failed' } }) as Layout;
+    expect(mapAnchor(pageMark, pdf(['h0', 'h1']), failed).status).toBe('needs_reattachment');
     // Without the original page hashes nothing can be compared.
     expect(mapAnchor(pageMark, undefined, pdf(['h0', 'h1'])).status).toBe('needs_reattachment');
   });
@@ -180,6 +234,33 @@ describe('A06 mapping a mark to a changed revision', () => {
     expect(mapAnchor(figure, v1, reading([], ['fig-2'])).status).toBe('needs_reattachment');
   });
 
+  test('A24 a web deck slide maps while its text is unchanged and the slide count is the same', () => {
+    const web = (texts: string[]) =>
+      layoutOf('slides_web', {
+        slides: texts.map((t) => `<p>${t}</p>`),
+        blockMap: texts.map((text, i) => ({
+          id: `${i}`.padStart(12, 'a'),
+          tag: 'p',
+          text,
+          slide: i + 1,
+        })),
+      }) as Layout;
+    const slide: Anchor = { kind: 'slide', page: 1 };
+    const v1 = web(['Intro', 'Sampling  varies']);
+    // Re-wrapped whitespace is the same text; the same slide in a new revision keeps its anchor.
+    expect(mapAnchor(slide, v1, web(['Intro changed', 'Sampling varies']))).toMatchObject({
+      status: 'mapped',
+      anchor: slide,
+    });
+    expect(mapAnchor(slide, v1, web(['Intro', 'Sampling varies a lot'])).status).toBe(
+      'needs_reattachment',
+    );
+    // An added slide shifts the numbering: nothing is guessed.
+    expect(mapAnchor(slide, v1, web(['Intro', 'Sampling varies', 'New'])).status).toBe(
+      'needs_reattachment',
+    );
+  });
+
   test('A06 an anchor that does not fit the new revision type needs reattachment', () => {
     expect(mapAnchor(mark, v1, pdf(['h0'])).status).toBe('needs_reattachment');
     expect(mapAnchor({ kind: 'none' }, v1, pdf(['h0'])).status).toBe('mapped');
@@ -187,7 +268,7 @@ describe('A06 mapping a mark to a changed revision', () => {
 });
 
 describe('layouts and similarity', () => {
-  test('layoutOf reads P1-08 derived outputs and reports missing ones as not ready', () => {
+  test('layoutOf reads derived outputs; missing ones wait only while a job may produce them', () => {
     expect(
       layoutOf('reading_native', {
         blockMap: [{ id: 'aaaaaaaaaaaa', tag: 'p', text: 'x' }],
@@ -201,8 +282,18 @@ describe('layouts and similarity', () => {
     expect(
       layoutOf('reading_pdf', { pageCount: 1, pages: [{ text: 'x', textHash: 'h' }] }),
     ).toEqual({ type: 'reading_pdf', pages: ['h'] });
-    expect(layoutOf('reading_native', {})).toBeUndefined();
-    expect(layoutOf('slides_pdf', { status: { state: 'running' } })).toBeUndefined();
+    // Being converted: mapping waits.
+    expect(layoutOf('reading_native', { status: { state: 'queued' } })).toBe('pending');
+    expect(layoutOf('slides_pdf', { status: { state: 'running' } })).toBe('pending');
+    // Conversion failed, or no job is on record: no outputs will come, so nothing to wait for.
+    expect(layoutOf('reading_pdf', { status: { state: 'failed' } })).toEqual({
+      type: 'reading_pdf',
+    });
+    expect(layoutOf('slides_web', {})).toEqual({ type: 'slides_web' });
+    // Outputs already there (a re-run in progress keeps them) are used.
+    expect(
+      layoutOf('slides_pdf', { status: { state: 'running' }, pages: [{ textHash: 'h' }] }),
+    ).toEqual({ type: 'slides_pdf', pages: ['h'] });
     expect(layoutOf('exercise', {})).toEqual({ type: 'exercise' });
   });
 
