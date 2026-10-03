@@ -231,7 +231,13 @@
   border-top: 1px solid var(--pc-rule);
 }
 
-@media (max-width: 1099px) {
+@media (max-width: 1199px) {
+  .grid {
+    grid-template-columns: minmax(0, 1fr) 260px;
+    gap: 32px;
+  }
+}
+@media (max-width: 800px) {
   .grid,
   .grid.noMargin {
     grid-template-columns: minmax(0, var(--pc-reading-width));
