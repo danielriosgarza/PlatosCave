@@ -9,7 +9,8 @@ import { ResourceTools } from '../workspace/ResourceTools';
 import { ColabSubmission } from './ColabSubmission';
 import styles from './Notebook.module.css';
 import { NotebookView } from './NotebookView';
-import { type NotebookSummary, useNotebookContent, useNotebooks } from './notebooks';
+import { type NotebookSummary, useNotebookContent, useNotebooks, useShiny } from './notebooks';
+import { ShinyEmbed } from './ShinyEmbed';
 
 interface Props {
   classId: string;
@@ -97,6 +98,17 @@ export function NotebooksTab({
     ) : (
       <span className={styles.label}>{chosen.title}</span>
     );
+  if (chosen.type === 'shiny') {
+    return (
+      <ShinyPanel
+        key={chosen.revisionId}
+        classId={classId}
+        notebook={chosen}
+        picker={picker}
+        add={add}
+      />
+    );
+  }
   return (
     <NotebookPanel
       key={chosen.revisionId}
@@ -106,6 +118,50 @@ export function NotebooksTab({
       picker={picker}
       add={add}
     />
+  );
+}
+
+/** A Shiny app: embedded from an approved origin, with an external route (§10.7). */
+function ShinyPanel({
+  classId,
+  notebook,
+  picker,
+  add,
+}: {
+  classId: string;
+  notebook: NotebookSummary;
+  picker: ReactNode;
+  add: ReactNode;
+}) {
+  const shiny = useShiny(classId, notebook.revisionId);
+  let body: ReactNode;
+  if (shiny.error instanceof ApiError && shiny.error.status === 404) {
+    body = (
+      <div className={`${page.feedback} ${styles.status}`} role="alert">
+        <p>This app is not available.</p>
+      </div>
+    );
+  } else if (!shiny.data) {
+    body = shiny.isError ? (
+      <div className={styles.status}>
+        <RetryNotice message="This app could not be loaded." onRetry={() => void shiny.refetch()} />
+      </div>
+    ) : (
+      <p className={styles.status} role="status">
+        Loading app
+      </p>
+    );
+  } else {
+    body = <ShinyEmbed title={shiny.data.title} url={shiny.data.url} origin={shiny.data.origin} />;
+  }
+  return (
+    <>
+      <ResourceTools>
+        {picker}
+        {add}
+      </ResourceTools>
+      {body}
+    </>
   );
 }
 

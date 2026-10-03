@@ -90,6 +90,33 @@ const Env = z
       .url()
       .transform((u) => new URL(u).origin)
       .optional(),
+    /**
+     * Origins a Shiny resource may be embedded from (§10.7), comma-separated. A resource whose
+     * address is on another origin is neither framed nor linked. Each entry is https, or http on
+     * a loopback host for development.
+     */
+    SHINY_ORIGINS: z
+      .string()
+      .default('')
+      .transform((v) =>
+        v
+          .split(',')
+          .map((o) => o.trim())
+          .filter(Boolean),
+      )
+      .pipe(
+        z.array(
+          z.url().transform((u, ctx) => {
+            const url = new URL(u);
+            const local =
+              url.protocol === 'http:' && (LOOPBACK.has(url.hostname) || url.hostname === '[::1]');
+            if (url.protocol !== 'https:' && !local) {
+              ctx.addIssue({ code: 'custom', message: 'https, or http on a loopback host' });
+            }
+            return url.origin;
+          }),
+        ),
+      ),
     /** HMAC key for content tokens. Required in production and off loopback. */
     CONTENT_TOKEN_SECRET: z.string().min(32).optional(),
     STORAGE_DRIVER: z.enum(['fs', 's3']).default('fs'),
@@ -153,6 +180,25 @@ const Env = z
         path: ['CONTENT_ORIGIN'],
         message: 'host must be CONTENT_HOST',
       });
+    }
+    // A Shiny frame keeps its own origin's scripts and storage; the app's origin or host would
+    // hand it the session and /api.
+    const own = new Set(
+      [
+        env.APP_ORIGIN ?? 'http://localhost:5173',
+        env.CONTENT_ORIGIN ?? `http://${env.CONTENT_HOST}:${env.PORT}`,
+      ].map((o) => new URL(o).origin),
+    );
+    for (const origin of env.SHINY_ORIGINS) {
+      const { hostname } = new URL(origin);
+      // Cookies ignore ports: the app's host on any port would receive the session cookie.
+      if (own.has(origin) || hostname === env.APP_HOST) {
+        ctx.addIssue({
+          code: 'custom',
+          path: ['SHINY_ORIGINS'],
+          message: `${origin} is the app or content origin`,
+        });
+      }
     }
     if (env.STORAGE_DRIVER === 's3') {
       for (const key of ['S3_BUCKET', 'S3_ACCESS_KEY_ID', 'S3_SECRET_ACCESS_KEY'] as const) {
