@@ -63,6 +63,10 @@ function api(world: World, me = makeMe({ classes: [studentIn(CLASS_A, 'Class A')
     if (url === `/api/classes/${CLASS_A}/topics/${T_SAMPLING}/readings`) {
       return { status: 200, body: world.readings };
     }
+    if (url === `/api/classes/${CLASS_A}/resources/${RES}/annotations`) {
+      // The margin of the reading: nothing noted yet (its own behaviour is tested in margin/).
+      return { status: 200, body: { annotations: [], threads: [] } };
+    }
     if (url === `/api/classes/${CLASS_A}/positions` && init?.method === 'PUT') {
       if (world.failPut) return { status: 503, body: { error: 'down' } };
       const body = JSON.parse(String(init.body)) as { revisionId: string; position: never };
