@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { ApiError } from '../api/client';
 import { type Attempt, type AttemptStep, useAttempt, useAttemptActions } from './attempt';
+import { creditSummary } from './credit';
 import styles from './Exercise.module.css';
 import { type Draft, initialDraft, StepForm, toResponse } from './StepForm';
 
@@ -334,7 +335,8 @@ function Summary({
         <h3>Exercise complete.</h3>
         <p className={styles.muted}>
           {completion ? `Completed ${HELP_LABEL[completion]}. ` : ''}
-          Your answers are saved for review; practice is ungraded.
+          Your answers are saved for review;{' '}
+          {attempt.credit ? creditSummary(attempt.credit) : 'practice is ungraded'}.
         </p>
       </div>
       <ul className={styles.summary} aria-label="How each step was completed">
