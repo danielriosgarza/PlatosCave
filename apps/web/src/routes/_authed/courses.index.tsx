@@ -7,7 +7,7 @@ import { CourseMark } from '../../courses/CourseMark';
 import styles from '../../courses/Courses.module.css';
 import { CreateCourseForm, Dialog, type Joined, JoinForm } from '../../courses/Dialogs';
 import { type Cards, type ClassCard, type CourseCard, coursesQuery } from '../../courses/queries';
-import { loadSession, usableClasses, useSession } from '../../session/useSession';
+import { loadSessionOrCached, usableClasses, useSession } from '../../session/useSession';
 
 type View = 'student' | 'instructor';
 type Filter = 'all' | 'progress' | 'archived';
@@ -23,7 +23,7 @@ export const Route = createFileRoute('/_authed/courses/')({
   }),
   // A draft preview studies one class and can join none: its Courses page is that class.
   beforeLoad: async ({ context }) => {
-    const me = await loadSession(context.queryClient);
+    const me = await loadSessionOrCached(context.queryClient);
     const preview = me?.user.kind === 'preview' ? usableClasses(me)[0] : undefined;
     if (preview) {
       throw redirect({ to: '/classes/$classId/topics', params: { classId: preview.classId } });

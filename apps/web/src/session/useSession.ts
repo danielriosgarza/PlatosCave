@@ -39,6 +39,27 @@ export const sessionQuery = queryOptions({
 /** Serves a fresh cached session and waits for a refetch when it is stale, so guards re-check it. */
 export const loadSession = (queryClient: QueryClient) => queryClient.fetchQuery(sessionQuery);
 
+/** Marks a failed session check, so its copy is shown for that and nothing else. */
+export class SessionCheckError extends Error {
+  constructor(readonly reason: unknown) {
+    super('session check failed');
+  }
+}
+
+/**
+ * For route guards: re-checks a stale session, and when that fails keeps the last good answer
+ * (a cached `null` still means signed out). With nothing cached the page cannot be shown.
+ */
+export async function loadSessionOrCached(queryClient: QueryClient): Promise<Me | null> {
+  try {
+    return await loadSession(queryClient);
+  } catch (error) {
+    const cached = queryClient.getQueryData<Me | null>(sessionQuery.queryKey);
+    if (cached === undefined) throw new SessionCheckError(error);
+    return cached;
+  }
+}
+
 /** Records the signed-out state where observers can see it, then drops other cached data. */
 export function endSession(queryClient: QueryClient) {
   queryClient.setQueryData(sessionQuery.queryKey, null);
