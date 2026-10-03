@@ -380,6 +380,16 @@ describe('who sees what', () => {
       expect(refused.body).toEqual({ error: 'class_archived' });
       const own = await call('sam', 'GET', `${base(ids.classA)}/notebook-submissions/mine`);
       expect(own.body.submissions).toHaveLength(2);
+      const launches = () =>
+        testDb.db
+          .select()
+          .from(auditEvents)
+          .where(eq(auditEvents.action, 'notebook.colab_launched'));
+      const before = (await launches()).length;
+      const launch = await call('sam', 'POST', `${base(ids.classA)}/colab-launch`);
+      expect(launch.status).toBe(409);
+      expect(launch.body).toEqual({ error: 'class_archived' });
+      expect(await launches()).toHaveLength(before);
     } finally {
       await testDb.db.update(classes).set({ archivedAt: null }).where(eq(classes.id, ids.classA));
     }

@@ -11,7 +11,7 @@ import {
   savedByComplete,
   viewStep,
 } from '../exercises/evaluate';
-import { invalid, notFound, type Outcome } from '../outcome';
+import { classArchived, invalid, notFound, type Outcome } from '../outcome';
 import type { Db } from './client';
 import { studyableResource, type Tx } from './content/releases';
 import { excludePreview } from './preview';
@@ -207,12 +207,13 @@ export async function openExercise(
 ): Promise<Outcome<AttemptView>> {
   const resource = await studyableResource(db, scope, resourceId, now);
   if (resource?.type !== 'exercise') return notFound;
+  const current = await currentAttempt(db, scope, resourceId);
+  // An archived class keeps read access: resume what exists, but start nothing (§4).
+  if (!current && scope.archived) return classArchived;
   if (!(await definitionOf(db, resource.revisionId))) {
     return invalid('This exercise cannot be opened: its definition is not valid');
   }
-  const row =
-    (await currentAttempt(db, scope, resourceId)) ??
-    (await startAttempt(db, scope, resourceId, resource.revisionId, 1, now));
+  const row = current ?? (await startAttempt(db, scope, resourceId, resource.revisionId, 1, now));
   if (!row) throw new Error('exercise attempt insert returned no row');
   return { ok: true, value: await viewOf(db, scope, row) };
 }
@@ -249,6 +250,7 @@ async function act(
     if (!attempt) return notFound;
     const resource = await studyableResource(tx, scope, attempt.resourceId, now);
     if (!resource) return notFound;
+    if (scope.archived) return classArchived;
     if (attempt.supersededAt) {
       const current = await currentAttempt(tx, scope, attempt.resourceId);
       if (!current) return notFound;

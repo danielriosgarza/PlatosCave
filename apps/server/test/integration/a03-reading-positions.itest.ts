@@ -11,7 +11,7 @@ import { adoptRelease } from '../../src/db/content/adoption';
 import { publishRelease } from '../../src/db/content/releases';
 import { createBoss } from '../../src/db/jobs/boss';
 import { setDerivedStatus, writeDerivedOutputs } from '../../src/db/jobs/derived';
-import { resourceRevisions, resources, studyPositions } from '../../src/db/schema';
+import { classes, resourceRevisions, resources, studyPositions } from '../../src/db/schema';
 import { FsStorage } from '../../src/storage/fs';
 import { storeCourseObject } from '../../src/storage/objects';
 import {
@@ -465,5 +465,29 @@ describe('study positions', () => {
     expect((await at(rev.pdf, 'bea', ids.classB)).status).toBe(404);
     expect((await at(rev.native, 'bea', ids.classA)).status).toBe(404);
     expect((await at('00000000-0000-4000-8000-0000000000ff')).status).toBe(404);
+  });
+
+  test('an archived class keeps its positions readable and refuses saving one', async () => {
+    const place = {
+      revisionId: rev.native,
+      tab: 'reading',
+      position: { blockId: nativeBlock, offset: 1 },
+    };
+    expect((await save('sam', ids.classA, place)).status).toBe(200);
+    await testDb.db.update(classes).set({ archivedAt: now }).where(eq(classes.id, ids.classA));
+    try {
+      const refused = await save('sam', ids.classA, {
+        ...place,
+        position: { blockId: nativeBlock, offset: 2 },
+      });
+      expect(refused.status).toBe(409);
+      expect(refused.body).toEqual({ error: 'class_archived' });
+      const topic = await list('sam', ids.classA, ids.sampling);
+      expect(topic.status).toBe(200);
+      expect(topic.body.readings.find((r) => r.position)?.position).toEqual(place.position);
+      expect((await read('sam', ids.classA, rev.native)).status).toBe(200);
+    } finally {
+      await testDb.db.update(classes).set({ archivedAt: null }).where(eq(classes.id, ids.classA));
+    }
   });
 });
