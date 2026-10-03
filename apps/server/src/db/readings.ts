@@ -172,7 +172,10 @@ export interface ReadingContent {
   html: string | null;
   /** Storage key and page count of a ready PDF reading. */
   pdf: { key: string; pageCount: number } | null;
-  /** Storage key of the uploaded source file (a PDF, or a native reading's Markdown/HTML), if any. */
+  /**
+   * Storage key of the uploaded source file the caller may download: a PDF reading's file, or a
+   * native reading's Markdown/HTML only while its conversion has failed (`nativeSourceWithheld`).
+   */
   sourceKey: string | null;
   /** Content type of each object the revision owns: the only ones an image may resolve to. */
   objects: Record<string, string>;
@@ -208,7 +211,10 @@ export async function loadReading(
     kind: kindOf(row.type),
     error:
       status?.state === 'failed' ? (status.error ?? 'The reading could not be processed') : null,
-    sourceKey: sourceKeyOf(row.type, row.content, row.objectKeys),
+    sourceKey:
+      row.type === 'reading_native' && status?.state !== 'failed'
+        ? null
+        : sourceKeyOf(row.type, row.content, row.objectKeys),
     objects: Object.fromEntries(stored.map((o) => [o.key, o.contentType])),
     html: null,
     pdf: null,
@@ -237,6 +243,24 @@ function sourceKeyOf(
   if (type === 'reading_pdf') return pdfKey(content, objectKeys);
   const key = typeof content.sourceKey === 'string' ? content.sourceKey : undefined;
   return key && objectKeys.includes(key) ? key : null;
+}
+
+/**
+ * Whether `key` is a native reading's uploaded source that may not be downloaded now: only the
+ * ingested HTML is served, and the source only as the permitted download of a failed conversion
+ * (§14, ADR-0002 "Readings on the app origin"). The state is resolved as the reading shows it, so
+ * the route and the reading's `sourceKey` agree. Other objects and resource types are unaffected.
+ */
+export async function nativeSourceWithheld(
+  db: Db,
+  revision: Pick<ReleasedReading, 'type' | 'content' | 'derived' | 'createdAt'>,
+  key: string,
+): Promise<boolean> {
+  if (revision.type !== 'reading_native' || revision.content.sourceKey !== key) return false;
+  const [status] = await resolveDerivedStatuses(db, [
+    { raw: revision.derived.status, createdAt: revision.createdAt },
+  ]);
+  return status?.state !== 'failed';
 }
 
 /** The PDF file of a `reading_pdf` revision: `content.objectKey`, else its only object. */
