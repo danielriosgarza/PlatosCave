@@ -188,7 +188,6 @@ export function SlideNotes({ classId, resourceId, page }: Props) {
     [...controllers.current.values()].find(
       (c) => c.annotationId === null && slideOf(c.anchor) === slide,
     );
-  // biome-ignore lint/correctness/useExhaustiveDependencies: follows the notes on the slide shown
   useEffect(() => {
     if (!ready || list.isLoading) return;
     let made = false;
@@ -318,7 +317,7 @@ export function SlideNotes({ classId, resourceId, page }: Props) {
         </p>
       ) : tab === 'notes' ? (
         <div className={margin.entries}>
-          {deleteProblem ? (
+          {deleteProblem && notesHere.some((n) => n.key === deleteProblem) ? (
             <p role="alert" className={margin.empty}>
               The note could not be deleted. It is still saved, with your changes.
             </p>
