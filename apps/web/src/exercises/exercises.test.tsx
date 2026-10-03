@@ -98,6 +98,8 @@ function exerciseApi(
     visibility?: 'visible' | 'hidden';
     /** Points and hint policy of the exercise, as the release listing and the attempt carry them. */
     credit?: Attempt['credit'];
+    /** The attempt's own credit when it differs from the listing (it started on an older revision). */
+    attemptCredit?: Attempt['credit'];
     /** Adds a second, ungraded exercise so the topic shows the list. */
     second?: boolean;
     /** Makes the open call fail with this response. */
@@ -116,7 +118,10 @@ function exerciseApi(
     if (options.textLast) return { ...fresh, steps: fresh.steps.slice(2) };
     return options.predictOnly ? { ...fresh, steps: fresh.steps.slice(0, 1) } : fresh;
   };
-  let attempt = { ...begin(1), credit: options.credit ?? null };
+  let attempt = {
+    ...begin(1),
+    credit: options.attemptCredit !== undefined ? options.attemptCredit : (options.credit ?? null),
+  };
   const calls: { url: string; body: unknown }[] = [];
   const step = (id: string) => attempt.steps.find((s) => s.id === id);
   const set = (id: string, patch: object) => {
@@ -444,6 +449,14 @@ describe('exercise UI', () => {
       await screen.findByText(/for credit: 1 point; a step solved with hints earns no credit\./),
     ).toBeVisible();
     expect(screen.queryByText(/practice is ungraded/)).toBeNull();
+  });
+
+  it("the toolbar states the credit of the attempt in progress, not of the class's current revision", async () => {
+    exerciseApi({ credit: { points: 10, hintPolicy: 'reduces_credit' }, attemptCredit: null });
+    open();
+    expect(await screen.findByRole('heading', { name: 'Predict' })).toBeVisible();
+    expect(screen.getByText('Practice · ungraded')).toBeVisible();
+    expect(screen.queryByText(/For credit/)).toBeNull();
   });
 
   it('A23 Show solution on the last step shows the solution before the summary', async () => {

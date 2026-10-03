@@ -412,7 +412,7 @@ export async function readClassRelease(db: Db, scope: ClassScope) {
  * now, shaped like the rows of a release, built from the head revisions (immutable rows) of the
  * live draft. Only preview principals read it, after the resolver checked that their owner
  * still edits the course; real members always read the adopted release, and any other scope
- * gets the empty snapshot. Reads only the syllabus columns, never revision content. A resource
+ * gets the empty snapshot. Reads the syllabus columns and an exercise's declared credit, never other revision content. A resource
  * is left out unless its head revision passes publication's guard (same resource, course and
  * type), and so is anything in an archived topic.
  */
