@@ -209,4 +209,21 @@ describe('focus and full screen', () => {
     await waitFor(() => expect(bar()).toBeInTheDocument());
     inner.remove();
   });
+
+  it('A11 the frame’s own full screen, entered with only Focus on, does not end Focus when it closes', async () => {
+    const user = userEvent.setup();
+    await open();
+    await user.click(screen.getByRole('button', { name: 'Focus' }));
+    const inner = document.createElement('iframe');
+    screen.getByRole('tabpanel').append(inner);
+
+    enterFullscreen(inner);
+    leaveFullscreen();
+    expect(bar()).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Exit focus' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    inner.remove();
+  });
 });

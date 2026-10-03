@@ -82,9 +82,9 @@ describe('Shiny embed', () => {
   it('A11 a blocked iframe, which never answers, shows the external-open route', async () => {
     embed();
     expect(screen.getByRole('status')).toHaveTextContent('Loading app');
-    const alert = await screen.findByRole('alert');
-    expect(alert).toHaveTextContent('may not allow embedding');
-    expect(screen.getByRole('status')).toHaveTextContent('Not embedded');
+    expect(await screen.findByText(/may not allow embedding/)).toBeVisible();
+    expect(screen.getByText('No ready message from the app')).toBeVisible();
+    expect(screen.queryByRole('alert')).toBeNull();
     expect(screen.getByRole('link', { name: 'Open externally' })).toHaveAttribute('href', URL_);
   });
 
@@ -93,7 +93,7 @@ describe('Shiny embed', () => {
     post(screen.getByTitle('Sampling lab'), { type: 'ready' });
     await waitFor(() => expect(screen.getByRole('status')).toHaveTextContent('App reported ready'));
     await new Promise((r) => setTimeout(r, 120));
-    expect(screen.queryByRole('alert')).toBeNull();
+    expect(screen.queryByText(/may not allow embedding/)).toBeNull();
   });
 
   it('A11 a message from another origin or another window is ignored', async () => {
@@ -103,7 +103,7 @@ describe('Shiny embed', () => {
     post(frame, { type: 'ready' }, ORIGIN, window);
     post(frame, { type: 'ready' }, ORIGIN, null);
     expect(screen.getByRole('status')).toHaveTextContent('Loading app');
-    await screen.findByRole('alert');
+    await screen.findByText(/may not allow embedding/);
   });
 
   it('A11 a resize message sets the frame height within limits', () => {

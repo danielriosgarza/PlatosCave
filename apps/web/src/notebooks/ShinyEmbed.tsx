@@ -19,13 +19,14 @@ type FrameState = 'loading' | 'ready' | 'blocked';
 const LABEL: Record<FrameState, string> = {
   loading: 'Loading app',
   ready: 'App reported ready',
-  blocked: 'Not embedded',
+  blocked: 'No ready message from the app',
 };
 
 /**
  * An approved Shiny app in a frame with an external route (§10.7). A cross-origin frame cannot
- * be inspected, so a blocked embed (framing refused, sign-in page, app that never answers) is
- * recognised by the absence of the `ready` message. "Open externally" is always offered. The
+ * be inspected, so a possibly blocked embed (framing refused, sign-in page, app that never answers)
+ * is flagged by the absence of the `ready` message, which many working apps never send; the label
+ * says only that none arrived. "Open externally" is always offered. The
  * state label never says "Connected": nothing here verifies a live session, and nothing the
  * frame sends is a result.
  */
@@ -99,8 +100,8 @@ export function ShinyEmbed({ title, url, origin, blockedAfterMs = BLOCKED_AFTER_
         </a>
       </header>
       {state === 'blocked' ? (
-        <p className={styles.notice} role="alert">
-          The app did not respond here. It may not allow embedding on this site, or may need you to
+        <p className={styles.notice} role="status">
+          If the app does not appear, it may not allow embedding on this site or may need you to
           sign in. Open it in its own tab, or Restart to try again.
         </p>
       ) : null}
