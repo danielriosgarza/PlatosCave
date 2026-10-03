@@ -1,5 +1,6 @@
 import { cleanup, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   CLASS_A,
@@ -456,6 +457,72 @@ describe('native reading', () => {
     scrollThrough({ 'b-title': -50, 'b-one': 10, 'b-two': 110, 'b-code': 210 });
     await waitFor(() => expect(world.positions).toHaveLength(1));
     expect(screen.queryByText(/saved/i)).toBeNull();
+  });
+
+  it('a place whose save failed offline is sent again when the connection returns', async () => {
+    const world = makeWorld(two());
+    world.failPut = true;
+    const fetchMock = api(world);
+    renderApp(READING);
+    await screen.findByText('Every sample tells a slightly different story.');
+    scrollThrough({ 'b-title': -50, 'b-one': 10, 'b-two': 110, 'b-code': 210 });
+    await waitFor(() => expect(putsOf(fetchMock)).toHaveLength(1));
+    world.failPut = false;
+    window.dispatchEvent(new Event('online'));
+    await waitFor(() => expect(world.positions).toHaveLength(1));
+    expect(world.positions[0]).toMatchObject({ revisionId: REV_NATIVE });
+  });
+
+  it('an older save that fails after a newer one was sent is not resent over it', async () => {
+    const world = makeWorld(two());
+    const fetchMock = api(world);
+    const base = fetchMock.getMockImplementation();
+    if (!base) throw new Error('no fetch stub');
+    let failA: (() => void) | undefined;
+    fetchMock.mockImplementation(async (input, init) => {
+      if (init?.method !== 'PUT') return base(input, init);
+      // Save A waits to fail; save B (sent when the page is hidden) goes through.
+      if (!failA) {
+        return new Promise<Response>((_resolve, reject) => {
+          failA = () => reject(new TypeError('offline'));
+        });
+      }
+      return base(input, init);
+    });
+    renderApp(READING);
+    await screen.findByText('Every sample tells a slightly different story.');
+    scrollThrough({ 'b-title': -120, 'b-one': -60, 'b-two': 40, 'b-code': 140 });
+    await waitFor(() => expect(putsOf(fetchMock)).toHaveLength(1));
+    // A newer place, sent at once because the page is hidden while A is still in flight.
+    scrollThrough({ 'b-title': -300, 'b-one': -240, 'b-two': -140, 'b-code': -40 });
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+    document.dispatchEvent(new Event('visibilitychange'));
+    await waitFor(() => expect(world.positions).toHaveLength(1));
+    // A fails after B has gone through; the connection then returns.
+    failA?.();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    window.dispatchEvent(new Event('online'));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(putsOf(fetchMock)).toHaveLength(2);
+    expect(world.positions).toHaveLength(1);
+    expect(world.positions[0]).toMatchObject({ position: { blockId: 'b-code' } });
+  });
+
+  it('A01 a place still waiting when access ends is not sent', async () => {
+    const world = makeWorld(two());
+    const me = makeMe({ classes: [studentIn(CLASS_A, 'Class A')] });
+    const fetchMock = api(world, me);
+    const { queryClient } = renderApp(READING);
+    await screen.findByText('Every sample tells a slightly different story.');
+    // A place is reported, and the session loses the class before the pause has passed.
+    scrollThrough({ 'b-title': -50, 'b-one': 10, 'b-two': 110, 'b-code': 210 });
+    me.classes = [];
+    await act(() => queryClient.refetchQueries({ queryKey: ['session'] }));
+    expect(
+      await screen.findByRole('heading', { name: 'Your access to this class has ended' }),
+    ).toBeVisible();
+    await act(() => new Promise((r) => setTimeout(r, 500)));
+    expect(putsOf(fetchMock)).toHaveLength(0);
   });
 
   it('A03 says a reading is still being prepared instead of showing it empty', async () => {

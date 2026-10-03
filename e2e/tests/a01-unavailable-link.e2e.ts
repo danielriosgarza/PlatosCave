@@ -9,8 +9,12 @@ test.use({ colorScheme: 'light' });
  */
 async function signIn(page: Page, baseURL: string | undefined, email: string) {
   const client = await request.newContext({ baseURL });
-  expect((await client.post('/api/test/signin-as', { data: { email } })).ok()).toBe(true);
-  await page.context().addCookies((await client.storageState()).cookies);
+  try {
+    expect((await client.post('/api/test/signin-as', { data: { email } })).ok()).toBe(true);
+    await page.context().addCookies((await client.storageState()).cookies);
+  } finally {
+    await client.dispose();
+  }
 }
 
 const SECRET_TITLE = 'Unreleased Bayesian methods';
@@ -31,6 +35,7 @@ test('A01 a link to an unpublished topic shows the neutral page and discloses no
   });
   expect(draft.ok()).toBe(true);
   const { id } = await draft.json();
+  await owner.dispose();
 
   await signIn(page, baseURL, 'sam@example.test');
   const bodies: Promise<string>[] = [];
@@ -58,6 +63,7 @@ test('A01 a link into another class shows the same neutral page as an unpublishe
 }) => {
   const setup = await playwright.request.newContext({ baseURL });
   const world = await (await setup.post('/api/test/world')).json();
+  await setup.dispose();
   await signIn(page, baseURL, 'bea@example.test');
   await page.goto(`/classes/${world.ids.classA}/topics/${world.ids.sampling}/reading`);
   await expect(page.getByRole('heading', { name: 'This page is not available' })).toBeVisible();
