@@ -1,0 +1,7 @@
+{
+  "v": 1,
+  "t": "error",
+  "requestId": "c0ffee00-1111-4222-8333-444455556666",
+  "code": "network_scope_denied",
+  "detail": "10.0.0.5 is outside the approved network scope"
+}

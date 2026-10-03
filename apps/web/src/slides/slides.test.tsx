@@ -195,17 +195,34 @@ describe('slide viewer', () => {
     expect(position()).toHaveTextContent('4 / 12');
   });
 
-  it('A24 arrows change nothing while the viewer does not hold focus; without a notes slot there is no Notes control', async () => {
+  it('A24 arrows change nothing while the viewer does not hold focus', async () => {
     const user = userEvent.setup();
     openPdf.mockResolvedValue(pdfDocument());
     api(makeWorld([deck(REV_A, 'Sampling lecture', 5)]));
     renderApp(SLIDES);
     await viewer();
-    expect(screen.queryByRole('button', { name: 'Notes' })).toBeNull();
     expect(position()).toHaveTextContent('5 / 12');
     await user.click(document.body);
     await user.keyboard('{ArrowRight}{ArrowLeft}{ArrowLeft}');
     expect(position()).toHaveTextContent('5 / 12');
+  });
+
+  it('A24 a viewer given no notes slot has no Notes control', async () => {
+    openPdf.mockResolvedValue(pdfDocument());
+    api(makeWorld([deck(REV_A, 'Sampling lecture')]));
+    const { SlideViewer } = await import('./SlideViewer');
+    const { render } = await import('@testing-library/react');
+    render(
+      <SlideViewer
+        url={DECK_URL}
+        pageCount={PAGES}
+        initialPage={1}
+        source={{ classId: CLASS_A, revisionId: REV_A, key: null }}
+        onPage={vi.fn()}
+      />,
+    );
+    await viewer();
+    expect(screen.queryByRole('button', { name: 'Notes' })).toBeNull();
   });
 
   it('A24 the notes slot follows the slide shown and is not reached by arrow keys typed in it', async () => {

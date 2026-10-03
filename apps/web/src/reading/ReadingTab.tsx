@@ -1,5 +1,5 @@
 import { type QueryClient, useQueryClient } from '@tanstack/react-query';
-import { Link } from '@tanstack/react-router';
+import { Link, useRouter } from '@tanstack/react-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiError } from '../api/client';
 import { OfflineBanner } from '../components/OfflineBanner';
@@ -37,6 +37,7 @@ interface Props {
 export function ReadingTab({ classId, courseId, topicId, instructor, search, onSearch }: Props) {
   const list = useReadings(classId, topicId);
   const queryClient = useQueryClient();
+  const entryKey = historyKey(useRouter());
   // The margin (My notes, Discussion) is open unless the reader hides it.
   const [marginOpen, setMarginOpen] = useState(true);
   const openMargin = useCallback(() => setMarginOpen(true), []);
@@ -106,9 +107,7 @@ export function ReadingTab({ classId, courseId, topicId, instructor, search, onS
     search.resource === undefined || search.resource === chosen.revisionId
       ? positionFromSearch(search)
       : null;
-  const left = leftPlaces(queryClient).get(
-    leftAtKey(classId, chosen.revisionId, JSON.stringify(addressed)),
-  );
+  const left = leftPlaces(queryClient).get(leftAtKey(classId, chosen.revisionId, entryKey));
   const initial = left ?? addressed ?? chosen.position;
 
   return (
@@ -171,13 +170,16 @@ export function ReadingTab({ classId, courseId, topicId, instructor, search, onS
 
 /**
  * Places flushed as a reader left a reading (a tab click within the pause before a save) that the
- * address of the entry left behind does not hold. Keyed by the place that address names, so Back
- * to that entry restores the flushed place instead. One map per QueryClient: it belongs to this
+ * address of the entry left behind does not hold. Keyed by the history entry (the router's location
+ * key), so Back to that entry restores the flushed place instead and no other entry inherits it. One map per QueryClient: it belongs to this
  * app and session and goes with them, and it never expires while they last.
  */
 const leftAt = new WeakMap<QueryClient, Map<string, ReadingPosition>>();
-const leftAtKey = (classId: string, revisionId: string, from: string) =>
-  `${classId}\n${revisionId}\n${from}`;
+/** The router's key for the history entry now shown; a replaced address gets a new one. */
+const historyKey = (router: ReturnType<typeof useRouter>) =>
+  router.history.location.state.__TSR_key ?? '';
+const leftAtKey = (classId: string, revisionId: string, entryKey: string) =>
+  `${classId}\n${revisionId}\n${entryKey}`;
 function leftPlaces(client: QueryClient) {
   let places = leftAt.get(client);
   if (!places) {
@@ -218,6 +220,9 @@ function ReadingView({
   const queryClient = useQueryClient();
   const places = leftPlaces(queryClient);
   const inAddress = useRef(JSON.stringify(addressed));
+  const router = useRouter();
+  /** This entry's history key as of the last place reported: the router replaces it with each new address. */
+  const entry = useRef(historyKey(router));
   const lastSaved = useRef<string>('');
   /** Saves sent and not yet settled: a hide or close flush can run beside one already in flight. */
   const inFlight = useRef(0);
@@ -285,7 +290,7 @@ function ReadingView({
   // biome-ignore lint/correctness/useExhaustiveDependencies: only on mount; `onSearch` is new every render
   useEffect(() => {
     if (!flushed) return;
-    places.delete(leftAtKey(classId, revisionId, inAddress.current));
+    places.delete(leftAtKey(classId, revisionId, entry.current));
     inAddress.current = JSON.stringify(flushed);
     onSearch(searchFor(revisionId, flushed), 'replace');
   }, []);
@@ -297,13 +302,11 @@ function ReadingView({
     window.addEventListener('online', retry);
     return () => window.removeEventListener('online', retry);
   }, [store]);
-  const report = useReporter(
+  const reportAtPlace = useReporter(
     (position: ReadingPosition, reason: PlaceReason) => {
       store(position, reason !== 'pause');
       // This entry's address moves on, so a place flushed from its old address no longer applies.
-      places.delete(leftAtKey(classId, revisionId, inAddress.current));
-      // The address now holds this entry's own last place, which no older record may override.
-      places.delete(leftAtKey(classId, revisionId, JSON.stringify(position)));
+      places.delete(leftAtKey(classId, revisionId, entry.current));
       inAddress.current = JSON.stringify(position);
       onSearch(searchFor(revisionId, position), 'replace');
     },
@@ -312,7 +315,7 @@ function ReadingView({
       // An address without a place falls back to the saved place, which this save updates.
       const from = inAddress.current;
       if (from !== 'null' && from !== JSON.stringify(position)) {
-        places.set(leftAtKey(classId, revisionId, from), position);
+        places.set(leftAtKey(classId, revisionId, entry.current), position);
       }
     },
     () => {
@@ -321,6 +324,16 @@ function ReadingView({
       next.current = null;
       if (waiting) send(waiting);
     },
+  );
+
+  // Sampled as the reader moves, while this entry is the one shown: once they leave, the router
+  // has already moved on to the next entry's key.
+  const report = useCallback(
+    (position: ReadingPosition) => {
+      entry.current = historyKey(router);
+      reportAtPlace(position);
+    },
+    [router, reportAtPlace],
   );
 
   const renew = useCallback(() => renewPdfUrl(classId, revisionId), [classId, revisionId]);
