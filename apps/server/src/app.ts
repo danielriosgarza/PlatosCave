@@ -26,13 +26,6 @@ import { loadModules } from './modules';
 import { createStorage } from './storage/create';
 import type { Storage } from './storage/storage';
 
-declare module 'fastify' {
-  interface FastifyInstance {
-    /** Configuration and object store for content tokens and the content origin (P1-06). */
-    contentDeps: { config: Config; storage: Storage };
-  }
-}
-
 export interface Deps {
   db?: Db;
   /** Injected clock (ADR-0006); defaults to the system time. */
@@ -56,6 +49,8 @@ export interface RouteDeps extends Deps {
   now: () => Date;
   mailer: Mailer;
   background: BackgroundTasks;
+  /** The injected object store, or the one STORAGE_DRIVER selects. */
+  storage: Storage;
 }
 
 /** How long close waits for background work, inside the 10 s stop grace main.ts documents. */
@@ -121,11 +116,11 @@ export async function buildApp(config: Config, deps: Deps = {}): Promise<Fastify
     now,
     mailer: deps.mailer ?? createMailer(config, now),
     background,
+    storage,
   };
   // Only the store built here is ours to release; an injected one belongs to the caller.
   if (!deps.storage) app.addHook('onClose', async () => storage.destroy?.());
   app.decorate('resolverDeps', { db: deps.db, now });
-  app.decorate('contentDeps', { config, storage });
   app.decorate('contracts', [] as RouteContract[]);
   app.decorateRequest('parallaxScope', undefined);
 

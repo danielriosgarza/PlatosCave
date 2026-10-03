@@ -48,16 +48,15 @@ export default function previewRoutes(app: FastifyInstance, deps: RouteDeps): vo
   const origin = config.APP_ORIGIN;
   const sessionCookie = sessionCookieOptions(origin);
   const db = () => {
-    const { db } = app.resolverDeps;
-    if (!db) throw app.httpErrors.serviceUnavailable();
-    return db;
+    if (!deps.db) throw app.httpErrors.serviceUnavailable();
+    return deps.db;
   };
 
   registerRoute(app, startPreview, async ({ scope, body, req, reply }) => {
     const own = readSessionToken(req);
     // The resolver let a session through, so its token is present.
     if (!own) throw new Error('course scope resolved without a session token');
-    const now = app.resolverDeps.now();
+    const now = deps.now();
     // The preview session carries the authentication time of the session that started it.
     const principal = await findPrincipal(db(), own, now);
     if (!principal) throw app.httpErrors.unauthorized();
@@ -87,7 +86,7 @@ export default function previewRoutes(app: FastifyInstance, deps: RouteDeps): vo
    * browser holds is revoked.
    */
   registerRoute(app, exitPreview, async ({ req, reply }) => {
-    const now = app.resolverDeps.now();
+    const now = deps.now();
     const token = readSessionToken(req);
     const current = token ? await findPrincipal(db(), token, now) : null;
     const kept = readPreviewReturn(req);
@@ -100,6 +99,9 @@ export default function previewRoutes(app: FastifyInstance, deps: RouteDeps): vo
     if (restored) reply.setCookie(SESSION_COOKIE, restored.token, sessionCookie);
     else reply.clearCookie(SESSION_COOKIE, sessionCookie);
     clearPreviewReturn(req, reply, origin);
-    return { restored: Boolean(restored), returnTo: kept ? editorPath(kept) : '/courses' };
+    return {
+      restored: Boolean(restored),
+      returnTo: kept ? editorPath(kept) : '/courses',
+    };
   });
 }

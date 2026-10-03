@@ -1,10 +1,11 @@
 import { getSlides, listSlides } from '@parallax/contracts/routes/slides';
 import type { FastifyInstance } from 'fastify';
+import type { RouteDeps } from '../../app';
 import { mintContentUrl } from '../../content/media';
 import { listTopicDecks, loadDeck } from '../../db/slides';
 import { notFound, registerRoute } from '../register';
 
-export default function slideRoutes(app: FastifyInstance): void {
+export default function slideRoutes(app: FastifyInstance, routeDeps: RouteDeps): void {
   const deps = () => {
     const { db, now } = app.resolverDeps;
     if (!db) throw app.httpErrors.serviceUnavailable();
@@ -20,7 +21,7 @@ export default function slideRoutes(app: FastifyInstance): void {
 
   registerRoute(app, getSlides, async ({ params, scope }) => {
     const { db, at } = deps();
-    const { config } = app.contentDeps;
+    const { config } = routeDeps;
     const deck = await loadDeck(db, scope, params.revisionId, at);
     if (!deck) notFound();
     const { pdf, ...rest } = deck;
@@ -28,7 +29,11 @@ export default function slideRoutes(app: FastifyInstance): void {
       ...rest,
       pdf: pdf && {
         ...mintContentUrl(
-          { contentOrigin: config.CONTENT_ORIGIN, secret: config.CONTENT_TOKEN_SECRET, now: at },
+          {
+            contentOrigin: config.CONTENT_ORIGIN,
+            secret: config.CONTENT_TOKEN_SECRET,
+            now: at,
+          },
           scope,
           { key: pdf.key, contentType: 'application/pdf' },
           { disposition: 'inline' },
