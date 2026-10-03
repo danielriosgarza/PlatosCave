@@ -81,6 +81,8 @@ interface Server {
   otherStatus?: number;
   /** The Markdown a web deck's head revision holds. */
   deckMarkdown?: string;
+  /** The next PATCH of the deck answers 409 with a copy holding this Markdown. */
+  deckConflict?: string;
 }
 
 function fresh(over: Partial<Server> = {}): Server {
@@ -193,6 +195,18 @@ function api(me: ReturnType<typeof makeMe>, s: Server) {
       if (method === 'PATCH') {
         const body = JSON.parse(String(init?.body));
         s.patched.push({ url: path, body });
+        if (s.deckConflict !== undefined) {
+          const theirs = s.deckConflict;
+          s.deckConflict = undefined;
+          s.deckMarkdown = theirs;
+          return json(
+            {
+              error: 'revision_conflict',
+              current: { ...found, revision: found.revision + 1, head: head(s) },
+            },
+            409,
+          );
+        }
         if ('content' in body) s.deckMarkdown = (body.content as { markdown: string }).markdown;
         return json({ ...found, ...body, revision: found.revision + 1, head: head(s) });
       }
@@ -493,16 +507,15 @@ describe('web slides', () => {
     expect(await screen.findAllByText('Waiting to be processed')).toHaveLength(2);
   });
 
-  it('edits the Markdown of a deck: only changed Markdown is sent as content, Saved follows the acknowledgement', async () => {
+  it('edits the Markdown of a deck and shows Saved only after the server acknowledged it', async () => {
     const user = userEvent.setup();
     const { s } = await open(grant(), deck());
     await user.click(await screen.findByRole('button', { name: 'Edit Sampling in slides' }));
     const markdown = await screen.findByLabelText('Slides (Markdown)');
     expect(markdown).toHaveValue('# Sampling\n\n---\n\nSlide two');
-    // A title edit alone makes no new revision.
     await user.type(screen.getByLabelText('Slides title'), '!');
     await waitFor(() => expect(s.patched).toHaveLength(1), { timeout: 4000 });
-    expect(s.patched[0]?.body).not.toHaveProperty('content');
+    expect(s.patched[0]?.body).toMatchObject({ title: 'Sampling in slides!' });
     expect(await screen.findByText(/Draft saved at/)).toBeInTheDocument();
 
     await user.type(markdown, '{enter}---{enter}Slide three');
@@ -512,6 +525,26 @@ describe('web slides', () => {
       expectedRevision: 2,
       content: { markdown: '# Sampling\n\n---\n\nSlide two\n---\nSlide three' },
     });
+  });
+
+  it('Keep mine after a conflict sends the Markdown on screen, not the copy the form started from', async () => {
+    const user = userEvent.setup();
+    const s = deck();
+    s.deckConflict = '# Theirs';
+    await open(grant(), s);
+    await user.click(await screen.findByRole('button', { name: 'Edit Sampling in slides' }));
+    await screen.findByLabelText('Slides (Markdown)');
+    // Only the title is edited; the Markdown on screen is the one the form started with.
+    await user.type(screen.getByLabelText('Slides title'), '!');
+    const conflict = await screen.findByRole('alert', {}, { timeout: 4000 });
+    expect(conflict).toHaveTextContent('Someone else changed this deck');
+    await user.click(within(conflict).getByRole('button', { name: 'Keep my version' }));
+    await waitFor(() => expect(s.patched).toHaveLength(2), { timeout: 4000 });
+    expect(s.patched[1]?.body).toMatchObject({
+      expectedRevision: 2,
+      content: { markdown: '# Sampling\n\n---\n\nSlide two' },
+    });
+    expect(s.deckMarkdown).toBe('# Sampling\n\n---\n\nSlide two');
   });
 
   it('a finished web deck reads Ready to publish', async () => {

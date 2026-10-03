@@ -305,7 +305,7 @@ export function SlideViewer({
               )}
               {shown !== null ? (
                 <div
-                  className={styles.slide}
+                  className={`${styles.slide} ${styles.webBox}`}
                   data-page={page}
                   style={{ width: webWidth, height: Math.round(webWidth / WEB_RATIO) }}
                 >

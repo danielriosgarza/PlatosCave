@@ -160,7 +160,9 @@ export function validate(drafts: Drafts): ValidationReport {
             code: 'unprocessed_reading',
             message:
               state === 'failed'
-                ? `“${resource.title}” could not be processed; upload it again or retry`
+                ? `“${resource.title}” could not be processed; ${
+                    revision.type === 'slides_web' ? 'edit it' : 'upload it again'
+                  } or retry`
                 : `“${resource.title}” is still being processed`,
             ...at,
           });

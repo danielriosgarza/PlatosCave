@@ -390,16 +390,22 @@ export interface RenderedSlides {
 const FENCE_OPEN = /^ {0,3}(`{3,}|~{3,})/;
 const FENCE_CLOSE = /^ {0,3}(`{3,}|~{3,})\s*$/;
 const SEPARATOR = /^ {0,3}---\s*$/;
+const MATH_FENCE = /^ {0,3}\$\$\s*$/;
 
 /**
  * A line holding only `---` separates slides. Markdown reads the same line under a paragraph
- * as a heading underline, so a blank line goes before every separator outside code fences.
+ * as a heading underline, so a blank line goes before every separator outside code fences
+ * and `$$` math blocks.
  */
 function isolateSeparators(source: string): string {
   const out: string[] = [];
   let fence: string | null = null;
+  let math = false;
   for (const line of source.split(/\r\n|\r|\n/)) {
-    if (fence === null) {
+    if (fence === null && MATH_FENCE.test(line)) math = !math;
+    else if (math) {
+      // Inside display math a --- is TeX, not a separator.
+    } else if (fence === null) {
       const open = FENCE_OPEN.exec(line);
       if (open?.[1]) fence = open[1];
       else if (SEPARATOR.test(line) && (out.at(-1) ?? '').trim() !== '') out.push('');

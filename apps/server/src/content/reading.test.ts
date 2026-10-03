@@ -600,6 +600,13 @@ still the same slide
     expect(slides[4]).toContain('still the same slide');
   });
 
+  test('a --- inside display math is TeX, not a separator or a blank line in the formula', () => {
+    const { slides, blockMap } = renderSlides('$$\nx\n---\ny\n$$\n\n---\n\nNext');
+    expect(slides).toHaveLength(2);
+    expect(blockMap.find((b) => b.slide === 1)?.text).toContain('x');
+    expect(blockMap.find((b) => b.slide === 1)?.text).not.toContain('\n\n');
+  });
+
   test('empty slides are dropped', () => {
     expect(renderSlides('\n---\n\n---\nOnly\n---\n---\n').slides).toHaveLength(1);
     expect(renderSlides('---\n').slides).toEqual([]);

@@ -87,8 +87,11 @@
   background: var(--pc-sheet);
 }
 /* A web slide: its text scales with the slide, so zoom and fit change size and not the layout. */
-.webSlide {
+.webBox {
+  /* The sized 16:9 box is the container: the slide's cqw units resolve against it, not the viewport. */
   container-type: size;
+}
+.webSlide {
   box-sizing: border-box;
   width: 100%;
   height: 100%;

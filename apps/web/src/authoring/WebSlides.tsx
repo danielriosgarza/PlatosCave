@@ -19,7 +19,7 @@ import { failureMessage } from './upload';
 type Full = z.output<typeof draftResource>;
 
 const FORMAT_HINT =
-  'Markdown. A line holding only --- starts the next slide. Images are not shown; describe diagrams in text.';
+  'Markdown. A line holding only --- (or *** or ___) starts the next slide. Images are not shown; describe diagrams in text.';
 
 interface AddProps {
   courseId: string;
@@ -152,8 +152,9 @@ function WebSlidesFields({
           title: v.title.trim() || server.title,
           visibility: v.visibility,
           archived: v.archived,
-          // Only changed Markdown makes a new revision (and a new processing job).
-          ...(v.markdown !== markdownOf(server) && { content: { markdown: v.markdown } }),
+          // Always sent: the server keeps the head when the content is unchanged, and after a
+          // conflict the copy this form started from is stale, so no comparison here is safe.
+          content: { markdown: v.markdown },
         },
       }),
     onSaved,

@@ -4,7 +4,7 @@ import type { ClassManagerScope, ClassScope, CourseScope, UserScope } from '../.
 import { sessionCookieHeader } from '../../src/auth/sessions';
 import { DEV_SESSION_SECRET } from '../../src/config';
 import { extractPdfText } from '../../src/content/pdf-text';
-import { renderReading } from '../../src/content/reading';
+import { renderReading, renderSlides } from '../../src/content/reading';
 import { createSession } from '../../src/db/auth/sessions';
 import type { Db } from '../../src/db/client';
 import { adoptRelease } from '../../src/db/content/adoption';
@@ -67,10 +67,12 @@ export const readingLab = {
   pdf: id(412), // a four-page PDF reading
   deck: id(413), // a six-slide 16:9 PDF deck
   notebook: id(414), // a rendered notebook with stored outputs (A09)
+  webDeck: id(415), // a three-slide Markdown deck
   nativeRevision: id(511),
   pdfRevision: id(512),
   deckRevision: id(513),
   notebookRevision: id(514),
+  webDeckRevision: id(515),
   release: id(611),
   authorEmail: 'lab-author@example.test',
   readerEmail: 'lab-reader@example.test',
@@ -303,6 +305,17 @@ export async function seedReadingLab(db: Db, storage: Storage, now: Date): Promi
     Buffer.from(labNotebookFile),
     'application/x-ipynb+json',
   );
+  const webDeckMarkdown = [
+    '# Sampling in slides',
+    'Why estimates differ from sample to sample',
+    '---',
+    '## Two ideas',
+    '- the sample mean moves around the true mean\n- the spread of those means shrinks with the sample size',
+    '---',
+    '## The last slide',
+    'Every sample tells a slightly different story, and the sampling distribution describes it.',
+  ].join('\n\n');
+  const webDeck = renderSlides(webDeckMarkdown);
   const ready = {
     state: 'ready' as const,
     job: 'reading.ingest',
@@ -341,6 +354,16 @@ export async function seedReadingLab(db: Db, storage: Storage, now: Date): Promi
       derived: { ...(await extractPdfText(deckBytes)), rasterOnly: false },
     },
     {
+      id: lab.webDeck,
+      revisionId: lab.webDeckRevision,
+      type: 'slides_web' as const,
+      title: 'Sampling in slides',
+      position: 4,
+      content: { markdown: webDeckMarkdown },
+      objectKeys: [] as string[],
+      derived: { ...webDeck, pageCount: webDeck.slides.length },
+    },
+    {
       id: lab.notebook,
       revisionId: lab.notebookRevision,
       type: 'notebook' as const,
@@ -361,9 +384,10 @@ export async function seedReadingLab(db: Db, storage: Storage, now: Date): Promi
       courseId: lab.course,
       type: resource.type,
       content,
-      ...(resource.type !== 'reading_native' && {
-        accessibleAlternative: { text: resource.title },
-      }),
+      ...(resource.type !== 'reading_native' &&
+        resource.type !== 'slides_web' && {
+          accessibleAlternative: { text: resource.title },
+        }),
       objectKeys,
       contentHash: sha256(content),
       createdBy: lab.author,
