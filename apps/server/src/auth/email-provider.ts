@@ -14,8 +14,26 @@ import { hashToken, newToken } from './tokens';
 
 /** §3: expiring single-use links. */
 export const LINK_TTL_MS = 15 * 60_000;
-/** Links issued per address per LINK_TTL_MS; further requests are accepted but send nothing. */
+/**
+ * The per-address cap. Anyone can ask for a link to any address, so the cap has two jobs that
+ * pull apart: keep a stranger from flooding the address with mail, and keep that stranger from
+ * using the cap to stop the owner signing in (§3).
+ *
+ * - At most LINKS_PER_EMAIL unused links per LINK_TTL_MS (a link younger than LINK_TTL_MS is
+ *   also unexpired). Used links do not count, so an owner who signs in repeatedly is never
+ *   capped by their own sign-ins.
+ * - Past the cap, one more link once the address's newest link is LINK_FLOOR_MS old. Requests
+ *   inside the floor are accepted but send nothing.
+ *
+ * Trade-off: a stranger can make the address receive LINKS_PER_EMAIL links at once and then one
+ * a minute (about 19 per 15 minutes per address, each an ordinary link to the owner's own
+ * inbox), and an owner whose request lands inside a stranger's minute waits at most a minute
+ * for the next. In return a stranger can no longer silence the address: each link mailed to it,
+ * whoever asked, signs its owner in. Every request answers the same 202 either way, so neither
+ * branch tells a known address from an unknown one.
+ */
 export const LINKS_PER_EMAIL = 5;
+export const LINK_FLOOR_MS = 60_000;
 /**
  * Links stay this long after expiry, then go. Until then an expired link keeps its destination
  * for the expired-link page (§3); after it, that page loses `next`.
@@ -126,7 +144,11 @@ export class EmailLinkProvider implements IdentityProvider {
         createdAt: now,
         expiresAt: new Date(now.getTime() + LINK_TTL_MS),
       },
-      { since: new Date(now.getTime() - LINK_TTL_MS), limit: LINKS_PER_EMAIL },
+      {
+        since: new Date(now.getTime() - LINK_TTL_MS),
+        limit: LINKS_PER_EMAIL,
+        floorSince: new Date(now.getTime() - LINK_FLOOR_MS),
+      },
     );
     if (!row) {
       log.info('sign-in link not sent: per-address limit reached');
