@@ -1,12 +1,18 @@
-// Command parallax-connector is the compute connector. Phase 0 only prints its version.
+// Command parallax-connector is the Parallax compute connector (docs/design/connector.md).
 package main
 
 import (
-	"fmt"
+	"context"
+	"os"
+	"os/signal"
+	"syscall"
 
-	"parallax/connector/internal/version"
+	"parallax/connector/internal/cli"
 )
 
 func main() {
-	fmt.Println(version.String())
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	code := cli.Main(ctx, os.Args[1:], cli.DefaultEnv())
+	stop()
+	os.Exit(code)
 }
