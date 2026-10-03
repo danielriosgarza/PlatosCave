@@ -6,7 +6,7 @@ import { loadConfig } from '../../src/config';
 import { adoptRelease } from '../../src/db/content/adoption';
 import { createResource } from '../../src/db/content/drafts';
 import { publishRelease } from '../../src/db/content/releases';
-import { classes } from '../../src/db/schema';
+import { classes, exerciseAttempts } from '../../src/db/schema';
 import {
   asClassScope,
   asCourseScope,
@@ -377,17 +377,20 @@ describe('exercise attempts', () => {
     expect(reading.status).toBe(404);
   });
 
-  test('an archived class keeps its attempts readable and refuses opening and every action', async () => {
+  test('an archived class resumes existing attempts, starts none, and refuses every action', async () => {
     const attempt = await open('sam', ids.classA);
     await testDb.db.update(classes).set({ archivedAt: now }).where(eq(classes.id, ids.classA));
     try {
       const refused = { status: 409, body: { error: 'class_archived' } };
-      const opened = await call(
-        'sam',
-        'POST',
-        `/api/classes/${ids.classA}/resources/${exerciseId}/exercise-attempt`,
-      );
-      expect(opened).toEqual(refused);
+      const openUrl = `/api/classes/${ids.classA}/resources/${exerciseId}/exercise-attempt`;
+      const resumed = await call('sam', 'POST', openUrl);
+      expect(resumed.status).toBe(200);
+      expect(resumed.body).toEqual(attempt);
+      const attemptRows = () =>
+        testDb.db.select().from(exerciseAttempts).where(eq(exerciseAttempts.classId, ids.classA));
+      const before = (await attemptRows()).length;
+      expect(await call('priya', 'POST', openUrl)).toEqual(refused);
+      expect(await attemptRows()).toHaveLength(before);
       const step = { stepId: 'predict' };
       for (const [action, body] of [
         ['check', { ...step, response: { optionId: 'narrower' } }],
