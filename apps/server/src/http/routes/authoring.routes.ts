@@ -12,7 +12,7 @@ import {
   uploadFormats,
 } from '@parallax/contracts/routes/authoring';
 import type { FastifyInstance } from 'fastify';
-import type { Deps } from '../../app';
+import type { RouteDeps } from '../../app';
 import { courseOverview } from '../../db/courseOverview';
 import { listResourceJobStatus, type ResourceJobStatus } from '../../db/jobs/derived';
 import { enqueueReadingIngest, isProcessed } from '../../jobs/reading-ingest.job';
@@ -107,7 +107,7 @@ const displayName = (name: string) =>
     .join('')
     .slice(0, 200);
 
-export default function authoringRoutes(app: FastifyInstance, deps: Deps): void {
+export default function authoringRoutes(app: FastifyInstance, deps: RouteDeps): void {
   const db = () => {
     if (!deps.db) throw app.httpErrors.serviceUnavailable();
     return deps.db;
@@ -139,12 +139,18 @@ export default function authoringRoutes(app: FastifyInstance, deps: Deps): void 
     try {
       const stored = await storeCourseObject(
         db(),
-        app.contentDeps.storage,
+        deps.storage,
         scope,
         checked(part.file, format),
         contentTypes[format],
       );
-      return { key: stored.key, sha256: stored.sha256, size: stored.size, format, filename };
+      return {
+        key: stored.key,
+        sha256: stored.sha256,
+        size: stored.size,
+        format,
+        filename,
+      };
     } catch (err) {
       // Read the rest of a refused file and discard it before answering: unread, it stops the
       // request body and holds the connection until the client gives up.
