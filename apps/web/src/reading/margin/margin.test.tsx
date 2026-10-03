@@ -556,7 +556,11 @@ describe('reading margin: notes and autosave', () => {
     );
     await user.click(screen.getByRole('button', { name: 'Delete note' }));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent('The note could not be deleted');
+    const problem = await screen.findByRole('alert');
+    expect(problem).toHaveTextContent('The note could not be deleted. Your text is kept.');
+    // The editor's status line says what is saved; this message does not claim a save.
+    expect(problem).not.toHaveTextContent(/saved/i);
+    expect(screen.getByText('Offline · changes on this device')).toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: 'Your note' })).toHaveValue('Draft edited offline');
     expect((await listDrafts(SAM_ID, CLASS_A, RES)).map((d) => d.body)).toEqual([
       'Draft edited offline',
@@ -765,7 +769,7 @@ describe('reading margin: Ask and the audience', () => {
     expect(screen.getByRole('combobox', { name: 'Visible to' })).toHaveValue('class');
   });
 
-  it('A05 text typed while a question is posting is kept as a new draft, not wiped', async () => {
+  it('A05 text typed while a question is posting is kept as a new draft without the posted part', async () => {
     const w = world();
     api(w);
     const user = userEvent.setup();
@@ -791,10 +795,8 @@ describe('reading margin: Ask and the audience', () => {
     release();
     expect(await screen.findByText('You → Instructor')).toBeInTheDocument();
     expect(w.threads[0]?.posts[0]?.body).toBe('First question');
-    expect(box).toHaveValue('First question and then more');
-    expect((await listDrafts(SAM_ID, CLASS_A, RES)).map((d) => d.body)).toEqual([
-      'First question and then more',
-    ]);
+    expect(box).toHaveValue(' and then more');
+    expect((await listDrafts(SAM_ID, CLASS_A, RES)).map((d) => d.body)).toEqual([' and then more']);
   });
 
   it('A05 a question that cannot be posted keeps its text and offers Retry', async () => {
@@ -931,5 +933,193 @@ describe('reading margin: layout and sign-out', () => {
     await waitFor(async () => expect(await listDrafts(SAM_ID, CLASS_A, RES)).toHaveLength(1));
     await user.click(screen.getByRole('button', { name: 'Sign out' }));
     await waitFor(async () => expect(await listDrafts(SAM_ID, CLASS_A, RES)).toEqual([]));
+  });
+});
+
+describe('reading margin: follow-ups to the first review', () => {
+  const sent = (mock: ReturnType<typeof api>, method: string) =>
+    mock.mock.calls.some(([, i]) => (i as RequestInit | undefined)?.method === method);
+  const refuseDelete = (mock: ReturnType<typeof api>) => {
+    const answer = mock.getMockImplementation() as (
+      i: RequestInfo | URL,
+      n?: RequestInit,
+    ) => Promise<Response>;
+    mock.mockImplementation(async (input, init) =>
+      init?.method === 'DELETE'
+        ? new Response(JSON.stringify({ error: 'down' }), {
+            status: 503,
+            headers: { 'content-type': 'application/json' },
+          })
+        : answer(input, init),
+    );
+  };
+
+  it('A03 a note deleted elsewhere is still listed after a reload, with its text and Save as a new note', async () => {
+    const w = world([noteOf(uuid(1), textAnchor(B3, 0, 5, P3), 'Draft')]);
+    api(w);
+    const user = userEvent.setup();
+    await open();
+    await user.click(await screen.findByRole('button', { name: /^Note 1/ }));
+    w.annotations = [];
+    await user.type(screen.getByRole('textbox', { name: 'Your note' }), '!');
+    await user.tab();
+    expect(await screen.findByText(/This note was deleted elsewhere/)).toBeInTheDocument();
+
+    cleanup(); // a reload: the page's memory is gone, the draft on the device stays
+    api(w);
+    Element.prototype.scrollIntoView = vi.fn();
+    await open();
+    const entry = await screen.findByRole('button', { name: /^Note 1/ });
+    expect(screen.getByText('Draft!')).toBeInTheDocument();
+    await user.click(entry);
+    expect(await screen.findByText(/This note was deleted elsewhere/)).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'Your note' })).toHaveValue('Draft!');
+    await user.click(screen.getByRole('button', { name: 'Save as a new note' }));
+    expect(await screen.findByText('Saved')).toBeInTheDocument();
+    expect(w.annotations.map((a) => a.body)).toEqual(['Draft!']);
+    expect(screen.getAllByRole('button', { name: /^Note \d/ })).toHaveLength(1);
+  });
+
+  it('A03 a failed delete after a save that finished during it keeps no stale draft', async () => {
+    const w = world();
+    const mock = api(w);
+    const user = userEvent.setup();
+    await open();
+    select(B3, 0, 13);
+    await user.click(within(await toolbar()).getByRole('button', { name: 'Note' }));
+    let release: () => void = () => {};
+    w.hold = new Promise((resolve) => {
+      release = resolve;
+    });
+    await user.type(await screen.findByRole('textbox', { name: 'Your note' }), 'Created meanwhile');
+    refuseDelete(mock);
+    await user.click(screen.getByRole('button', { name: 'Delete note' }));
+    await waitFor(() => expect(sent(mock, 'POST')).toBe(true));
+    release();
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('The note could not be deleted');
+    expect(screen.getByRole('textbox', { name: 'Your note' })).toHaveValue('Created meanwhile');
+    expect(w.annotations.map((a) => a.body)).toEqual(['Created meanwhile']);
+    // Nothing is unsent, so no draft remains to create the note a second time on reload.
+    await waitFor(async () => expect(await listDrafts(SAM_ID, CLASS_A, RES)).toEqual([]));
+  });
+
+  it('A03 a failed delete with unsent edits rewrites the draft with the saved id and revision', async () => {
+    const w = world();
+    const mock = api(w);
+    const user = userEvent.setup();
+    await open();
+    select(B3, 0, 13);
+    await user.click(within(await toolbar()).getByRole('button', { name: 'Note' }));
+    const editor = await screen.findByRole('textbox', { name: 'Your note' });
+    await user.type(editor, 'First');
+    await screen.findByText('Saved', {}, { timeout: 4000 });
+    let release: () => void = () => {};
+    w.hold = new Promise((resolve) => {
+      release = resolve;
+    });
+    await user.type(editor, ' second');
+    await user.tab(); // the save of the second part is sent and held
+    await waitFor(() => expect(sent(mock, 'PUT')).toBe(true));
+    refuseDelete(mock);
+    w.hold = null;
+    await user.click(screen.getByRole('button', { name: 'Delete note' }));
+    release();
+    expect(await screen.findByRole('alert')).toHaveTextContent('The note could not be deleted');
+    const drafts = await listDrafts(SAM_ID, CLASS_A, RES);
+    for (const d of drafts) {
+      expect(d.annotationId).toBe(w.annotations[0]?.id);
+      expect(d.expectedRevision).toBe(w.annotations[0]?.revision);
+    }
+  });
+
+  it('A03 a tab that still shows a signed-out session does not undo the sign-out', async () => {
+    const w = world();
+    const mock = api(w);
+    const { router } = renderApp(READING);
+    await screen.findByRole('button', { name: 'My notes' });
+    // Another tab signs the person out; this tab cannot re-check its session (the server is
+    // unreachable) and keeps showing the cached one.
+    await clearDrafts(SAM_ID);
+    const answer = mock.getMockImplementation() as (
+      i: RequestInfo | URL,
+      n?: RequestInit,
+    ) => Promise<Response>;
+    mock.mockImplementation(async (input, init) => {
+      if (String(input) === '/api/me') throw new TypeError('Failed to fetch');
+      return answer(input, init);
+    });
+    router.history.push('/courses');
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'My notes' })).toBeNull());
+    router.history.push(READING);
+    await screen.findByRole('button', { name: 'My notes' });
+    await waitFor(() => expect(document.querySelector(`[data-block-id="${B2}"]`)).not.toBeNull());
+    const refused = await saveDraft({
+      key: draftKey(SAM_ID, CLASS_A, RES, 'ask'),
+      userId: SAM_ID,
+      classId: CLASS_A,
+      resourceId: RES,
+      kind: 'ask',
+      annotationId: null,
+      expectedRevision: null,
+      anchor: { kind: 'none' },
+      body: 'Must not be kept',
+      audience: 'instructor',
+      updatedAt: Date.now(),
+    });
+    expect(refused).toBe(false);
+    expect(await listDrafts(SAM_ID, CLASS_A, RES)).toEqual([]);
+  });
+
+  it('A05 text typed while a question posts is kept without the part already posted', async () => {
+    const w = world();
+    const mock = api(w);
+    const user = userEvent.setup();
+    await open();
+    await user.click(screen.getByRole('button', { name: /^Discussion/ }));
+    let release: () => void = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const answer = mock.getMockImplementation() as (
+      i: RequestInfo | URL,
+      n?: RequestInit,
+    ) => Promise<Response>;
+    mock.mockImplementation(async (input, init) => {
+      if (init?.method === 'POST' && /\/threads/.test(String(input))) await held;
+      return answer(input, init);
+    });
+    const box = screen.getByRole('textbox', { name: 'Comment or question' });
+    await user.type(box, 'First question');
+    await user.click(screen.getByRole('button', { name: 'Post' }));
+    await user.type(box, ' and a second');
+    release();
+    await waitFor(() => expect(w.threads).toHaveLength(1));
+    await waitFor(() => expect(box).toHaveValue(' and a second'));
+    expect(w.threads[0]?.posts[0]?.body).toBe('First question');
+    // Posting again sends only the new part.
+    await user.click(screen.getByRole('button', { name: 'Post' }));
+    await waitFor(() => expect(w.threads).toHaveLength(2));
+    expect(w.threads[1]?.posts[0]?.body).toBe('and a second');
+  });
+
+  it('A05 a second press on Highlight while the first is saving creates one highlight', async () => {
+    const w = world();
+    api(w);
+    const user = userEvent.setup();
+    await open();
+    select(B3, 0, 13);
+    const button = within(await toolbar()).getByRole('button', { name: 'Highlight' });
+    let release: () => void = () => {};
+    w.hold = new Promise((resolve) => {
+      release = resolve;
+    });
+    await user.click(button);
+    expect(button).toBeDisabled();
+    await user.click(button);
+    release();
+    await waitFor(() => expect(marks()).toHaveLength(1));
+    expect(w.calls.filter((c) => c.method === 'POST')).toHaveLength(1);
+    expect(w.annotations).toHaveLength(1);
   });
 });
