@@ -4,7 +4,7 @@ import { useState } from 'react';
 import { call } from '../api/client';
 import styles from '../components/Page.module.css';
 import local from './Authoring.module.css';
-import { ACCEPT, failureMessage, fileProblem, uploadReadingFile } from './upload';
+import { ACCEPT, failureMessage, fileProblem, uploadFile } from './upload';
 
 interface Props {
   courseId: string;
@@ -23,7 +23,7 @@ export function AddReading({ courseId, topicId, onAdded, onCancel }: Props) {
   const add = useMutation({
     mutationFn: async () => {
       if (!file) throw new Error('no file');
-      const stored = await uploadReadingFile(courseId, file);
+      const stored = await uploadFile(courseId, file);
       const pdf = stored.format === 'pdf';
       return call(createResource, {
         params: { courseId, topicId },

@@ -158,6 +158,15 @@ describe('exercise authoring', () => {
       asClassScope(ids.classA, ids.statistics, ids.priya, { releaseId: ids.releaseV1 }),
       { releaseId: published.release.id, expectedReleaseId: ids.releaseV1 },
     );
+    // The release listing carries it, so the list can show it before any attempt exists.
+    const listing = await call('sam', `/api/classes/${ids.classA}/release`, 'GET');
+    const listed = (
+      listing.body.topics as { resources: { resourceId: string; credit: unknown }[] }[]
+    )
+      .flatMap((t) => t.resources)
+      .reduce((byId, r) => byId.set(r.resourceId, r.credit), new Map<string, unknown>());
+    expect(listed.get(credit.id)).toEqual({ points: 12, hintPolicy: 'reduces_credit' });
+    expect(listed.get(practice.id)).toBeNull();
     const open = (id: string) =>
       call('sam', `/api/classes/${ids.classA}/resources/${id}/exercise-attempt`);
     expect((await open(credit.id)).body.credit).toEqual({

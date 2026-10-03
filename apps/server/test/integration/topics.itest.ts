@@ -37,6 +37,7 @@ let testDb: TestDatabase;
 let app: FastifyInstance;
 let world: World;
 let root: string;
+let storage: FsStorage;
 let inference: { revisionId: string; key: string };
 
 function one<T>(rows: T[]): T {
@@ -88,7 +89,8 @@ beforeAll(async () => {
   testDb = await createTestDatabase();
   world = await buildWorld(testDb.db, now);
   root = await mkdtemp(join(tmpdir(), 'parallax-topics-'));
-  app = await buildApp(config, { db: testDb.db, storage: new FsStorage(root), now: () => now });
+  storage = new FsStorage(root);
+  app = await buildApp(config, { db: testDb.db, storage, now: () => now });
   await app.ready();
 });
 
@@ -130,7 +132,13 @@ describe('topic index', () => {
       title: 'Sampling',
       state: 'available',
       firstTab: 'reading',
-      presence: { slides: false, reading: true, exercises: false, notebooks: false, tests: true },
+      presence: {
+        slides: false,
+        reading: true,
+        exercises: false,
+        notebooks: false,
+        tests: true,
+      },
     });
     // Estimation holds only a hidden resource: nothing to show, and it waits on Sampling.
     expect(estimation).toMatchObject({
@@ -139,17 +147,31 @@ describe('topic index', () => {
       state: 'locked',
       firstTab: null,
       requires: [{ topicId: ids.sampling, title: 'Sampling' }],
-      presence: { slides: false, reading: false, exercises: false, notebooks: false, tests: false },
+      presence: {
+        slides: false,
+        reading: false,
+        exercises: false,
+        notebooks: false,
+        tests: false,
+      },
     });
     expect(body.reviewed).toEqual({ count: 0, total: 2 });
 
     const teacher = (await get('priya', ids.classA)).body.topics[1];
-    expect(teacher).toMatchObject({ state: 'available', requires: [], firstTab: 'reading' });
+    expect(teacher).toMatchObject({
+      state: 'available',
+      requires: [],
+      firstTab: 'reading',
+    });
   });
 
   test('A03 with nothing studied yet Resume points at the first open topic, not yet saved', async () => {
     const { body } = await get('bea', ids.classB);
-    expect(body.resume).toEqual({ topicId: ids.sampling, tab: 'reading', saved: false });
+    expect(body.resume).toEqual({
+      topicId: ids.sampling,
+      tab: 'reading',
+      saved: false,
+    });
   });
 
   test('A03 the saved study position decides the resume topic and tab', async () => {
@@ -161,7 +183,11 @@ describe('topic index', () => {
       position: { question: 1 },
     });
     const { body } = await get('sam', ids.classA);
-    expect(body.resume).toEqual({ topicId: ids.sampling, tab: 'tests', saved: true });
+    expect(body.resume).toEqual({
+      topicId: ids.sampling,
+      tab: 'tests',
+      saved: true,
+    });
     expect(body.topics.map((t) => t.savedTab)).toEqual(['tests', null]);
     // Another student's position never leaks into this one's.
     expect((await get('priya', ids.classB)).body.resume?.saved).toBe(false);
@@ -194,7 +220,11 @@ describe('saved tabs per topic', () => {
     ]);
     const { body } = await get('bea', ids.classB);
     expect(body.topics[0]?.savedTab).toBe('tests');
-    expect(body.resume).toEqual({ topicId: ids.sampling, tab: 'tests', saved: true });
+    expect(body.resume).toEqual({
+      topicId: ids.sampling,
+      tab: 'tests',
+      saved: true,
+    });
     // A locked topic never reports a saved tab, and nobody else's positions leak.
     expect(body.topics[1]?.savedTab).toBeNull();
     expect((await get('marcus', ids.classB)).body.topics.map((t) => t.savedTab)).toEqual([
@@ -224,7 +254,7 @@ describe('topic locks gate downloads', () => {
     const addPdf = async (topicId: string, title: string, bytes: string, releaseAt?: Date) => {
       const stored = await storeCourseObject(
         db,
-        app.contentDeps.storage,
+        storage,
         elena,
         Buffer.from(bytes),
         'application/pdf',
@@ -338,7 +368,11 @@ describe('topic locks gate downloads', () => {
           { releaseTopicId: t.releaseTopicId },
           now,
         );
-        expect(byTopic).toEqual({ topicId: t.topicId, releaseTopicId: t.releaseTopicId, open });
+        expect(byTopic).toEqual({
+          topicId: t.topicId,
+          releaseTopicId: t.releaseTopicId,
+          open,
+        });
         expect(byRelease).toEqual(byTopic);
         compared += 1;
       }

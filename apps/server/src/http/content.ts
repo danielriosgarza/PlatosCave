@@ -68,11 +68,18 @@ export interface ContentOriginDeps {
   now: () => Date;
 }
 
-/** The content route's 5xx body: storage errors name endpoints and buckets, and the app reads it. */
-export const INTERNAL_ERROR = { error: 'internal error' } as const;
+/** `host` or `host:port` (also `[v6]:port`) and nothing else: no userinfo, path or spaces. */
+const HOST_HEADER = /^([^\s:/?#@[\]]+|\[[0-9a-f:.]+\])(?::\d{1,5})?$/i;
 
+/**
+ * Compares the raw `Host` header, not `req.hostname`: under TRUST_PROXY Fastify takes the latter
+ * from `X-Forwarded-Host`, which would make this split depend on the proxy stripping client
+ * copies of that header. The app/content origin split must hold whatever the proxy does, so it
+ * reads what the browser sent (a browser never sends `X-Forwarded-Host`; the proxy must still
+ * forward `Host` unchanged, as .env.example asks).
+ */
 export const isContentHost = (req: FastifyRequest, config: Config): boolean =>
-  (req.hostname ?? '').toLowerCase() === config.CONTENT_HOST;
+  (HOST_HEADER.exec(req.headers.host ?? '')?.[1] ?? '').toLowerCase() === config.CONTENT_HOST;
 
 /**
  * The content origin (ADR-0002, §13): on CONTENT_HOST the server answers `/content/:token` and
@@ -119,14 +126,9 @@ export function registerContentOrigin(app: FastifyInstance, deps: ContentOriginD
     CONTENT_ROUTE,
     {
       schema: { hide: true },
-      // The app origin can read this route's responses in script, so a server error must not
-      // carry the storage error's text. The real error is logged; 4xx go to the default handler.
-      errorHandler: (err, req, reply) => {
-        const status = (err as { statusCode?: number }).statusCode ?? 500;
-        if (status < 500) throw err;
-        req.log.error({ err }, 'content request failed');
-        return reply.code(500).send(INTERNAL_ERROR);
-      },
+      // The app origin can read this route's responses in script; a server error, including a
+      // body stream that fails before its headers flush, is answered by the server-wide handler
+      // (http/errors.ts) without the storage error's text or the object's headers.
     },
     async (req, reply) => {
       // Defence in depth: the onRequest hook already refuses other hosts.

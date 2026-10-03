@@ -1,32 +1,8 @@
-import { createHash, randomBytes } from 'node:crypto';
 import { type CookieSerializeOptions, sign } from '@fastify/cookie';
 import type { FastifyRequest } from 'fastify';
+import { SESSION_TTL_MS } from '../db/auth/sessions';
 
 export const SESSION_COOKIE = 'pc_session';
-export const SESSION_TTL_MS = 14 * 24 * 60 * 60_000;
-
-/** A fresh secret token: 32 random bytes in base64url (43 characters). */
-export const newToken = (): string => randomBytes(32).toString('base64url');
-/** The shape every token from `newToken` has. */
-export const TOKEN_SHAPE = /^[A-Za-z0-9_-]{43}$/;
-
-/** Tokens are stored only as their SHA-256, so a database read cannot be replayed as a cookie. */
-export const hashToken = (token: string): string =>
-  createHash('sha256').update(token).digest('hex');
-
-/** A person who can act: a signed-in session's user, or the actor of a background job. */
-export interface Actor {
-  id: string;
-  kind: 'user' | 'preview';
-  name: string;
-  email: string | null;
-  ownerUserId: string | null;
-}
-
-export interface Principal extends Actor {
-  sessionId: string;
-  authTime: Date;
-}
 
 /**
  * The session token from the signed `pc_session` cookie (SESSION_SECRET signs it via

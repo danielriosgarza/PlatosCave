@@ -13,8 +13,10 @@ describe('isRasterOnly', () => {
 });
 
 describe('isProcessed', () => {
-  test('readings and PDF decks have a job; other types do not', () => {
-    expect(['reading_native', 'reading_pdf', 'slides_pdf'].every(isProcessed)).toBe(true);
-    expect(['slides_web', 'test', 'shiny'].some(isProcessed)).toBe(false);
+  test('readings, decks and notebooks have a job; other types do not', () => {
+    expect(
+      ['reading_native', 'reading_pdf', 'slides_pdf', 'slides_web', 'notebook'].every(isProcessed),
+    ).toBe(true);
+    expect(['exercise', 'test', 'shiny'].some(isProcessed)).toBe(false);
   });
 });

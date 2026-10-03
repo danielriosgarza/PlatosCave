@@ -14,6 +14,7 @@ import {
   type HintPolicy,
   kindNames,
   nextId,
+  presentedAsAnswer,
   problemsOf,
   type Row,
   type StepKind,
@@ -69,6 +70,13 @@ const policyNames: Record<HintPolicy, string> = {
   forfeits_credit: 'A step solved with hints earns no credit',
 };
 
+/** Whether the stored head can be published: absent, valid, or stored but no longer valid. */
+type HeadState = 'none' | 'valid' | 'invalid';
+function headOf(server: Full, valid?: boolean): HeadState {
+  if (server.head === null) return 'none';
+  return valid || toValues(server).exercise.loadProblems.length === 0 ? 'valid' : 'invalid';
+}
+
 function ExerciseFields({
   courseId,
   server,
@@ -78,7 +86,7 @@ function ExerciseFields({
   server: Full;
   onSaved: () => void;
 }) {
-  const [hasHead, setHasHead] = useState(server.head !== null);
+  const [head, setHead] = useState(() => headOf(server));
   const { values, change, state, retry, takeTheirs, keepMine } = useAutosave({
     server,
     toValues,
@@ -96,13 +104,14 @@ function ExerciseFields({
           ...(valid && { content: toContent(v.exercise) as Record<string, unknown> }),
         },
       });
-      setHasHead(saved.head !== null);
+      // Content is sent only when valid, so a save that sent it leaves a valid head.
+      setHead((prev) => (valid ? headOf(saved, true) : prev));
       return saved;
     },
     onSaved,
     partial: (v) =>
       problemsOf(v.exercise).length
-        ? 'Title and visibility saved; step edits are not saved yet'
+        ? 'Title, visibility and archive state saved; step and credit edits are not saved yet'
         : undefined,
   });
   const { exercise } = values;
@@ -143,10 +152,13 @@ function ExerciseFields({
           what="exercise"
           rows={rows(state.current)}
           onKeepMine={() => keepMine(state.current)}
-          onUseTheirs={() => takeTheirs(state.current)}
+          onUseTheirs={() => {
+            setHead(headOf(state.current));
+            takeTheirs(state.current);
+          }}
         />
       ) : null}
-      {exercise.loadProblems.length > 0 ? (
+      {head === 'invalid' && exercise.loadProblems.length > 0 ? (
         <div className={local.hint} role="status" aria-label="Saved definition problems">
           The saved definition is no longer valid, so this form starts blank. Saving a new
           definition replaces it; the earlier revision is kept.
@@ -159,9 +171,11 @@ function ExerciseFields({
       ) : null}
       {problems.length > 0 ? (
         <div className={local.hint} role="status" aria-label="Exercise problems">
-          {hasHead
-            ? 'These step edits are not saved yet; publishing would release the last saved version. Fix:'
-            : 'This exercise has no content yet and cannot be published. Fix:'}
+          {head === 'invalid'
+            ? 'Publishing is blocked until a valid definition is saved. Fix:'
+            : head === 'valid'
+              ? 'These step edits are not saved yet; publishing would release the last saved version. Fix:'
+              : 'This exercise has no content yet and cannot be published. Fix:'}
           <ul className={local.issues}>
             {problems.map((p) => (
               <li key={p}>{p}</li>
@@ -436,6 +450,7 @@ function RowList({
   mark,
   single,
   minRows = 2,
+  maxRows = 12,
   taken = [],
 }: {
   n: number;
@@ -447,6 +462,8 @@ function RowList({
   mark?: string;
   single?: boolean;
   minRows?: number;
+  /** The schema's limit on this list; Add is disabled at it. */
+  maxRows?: number;
   /** Ids already used elsewhere in the step, so a new row never repeats one. */
   taken?: string[];
 }) {
@@ -493,6 +510,7 @@ function RowList({
       <button
         type="button"
         className={styles.textButton}
+        disabled={rows.length >= maxRows}
         onClick={() =>
           onChange([
             ...rows,
@@ -587,10 +605,16 @@ function KindFields({
         <>
           <p className={local.hint}>
             List the items in their correct order.
-            {step.shuffle ? '' : ' Students will see them in the order stored for this step.'}
+            {step.presented.length === 0
+              ? ' Students see them in a different order for each attempt.'
+              : step.shuffle
+                ? ''
+                : presentedAsAnswer(step)
+                  ? ' Students will see them in this order, which is the correct order.'
+                  : ' Students will see them in the order stored for this step, which is not the correct order.'}
           </p>
           <RowList n={n} noun="item" rows={step.rows} onChange={(rows) => set({ rows })} />
-          {shuffle}
+          {step.presented.length > 0 ? shuffle : null}
           {feedback([
             ['correct', 'feedback when correct'],
             ['incorrect', 'feedback when incorrect'],
@@ -613,6 +637,7 @@ function KindFields({
             noun="extra choice"
             rows={step.distractors}
             minRows={0}
+            maxRows={12 - new Set(step.rows.map((r) => r.extra.trim()).filter(Boolean)).size}
             taken={step.rows.map((r) => r.choiceId ?? '')}
             onChange={(distractors) => set({ distractors })}
           />
@@ -674,6 +699,7 @@ function KindFields({
             rows={step.rows}
             extraLabel="unit (optional)"
             minRows={0}
+            maxRows={10}
             onChange={(rows) => set({ rows })}
           />
           {feedback([

@@ -1,11 +1,13 @@
 import { type QueryClient, useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiError } from '../api/client';
 import { OfflineBanner } from '../components/OfflineBanner';
 import page from '../components/Page.module.css';
 import { RetryNotice } from '../components/RetryNotice';
+import { isRevoked } from '../session/revocation';
 import { useSession } from '../session/useSession';
+import { ReadingMargin } from './margin/ReadingMargin';
 import { NativeReading } from './NativeReading';
 import { PdfReading } from './PdfReading';
 import { positionFromSearch, type ReadingSearch, searchFor } from './place';
@@ -35,6 +37,9 @@ interface Props {
 export function ReadingTab({ classId, courseId, topicId, instructor, search, onSearch }: Props) {
   const list = useReadings(classId, topicId);
   const queryClient = useQueryClient();
+  // The margin (My notes, Discussion) is open unless the reader hides it.
+  const [marginOpen, setMarginOpen] = useState(true);
+  const openMargin = useCallback(() => setMarginOpen(true), []);
   // Adding a reading is course authoring (§12): an instructor without an editor grant has no page for it.
   const session = useSession();
   const canAdd =
@@ -126,15 +131,25 @@ export function ReadingTab({ classId, courseId, topicId, instructor, search, onS
         ) : (
           <span className={styles.small}>{chosen.title}</span>
         )}
-        {canAdd && (
-          <Link
-            to="/courses/$courseId/edit/$topicId"
-            params={{ courseId, topicId }}
-            className={page.link}
+        <span className={styles.toolbarActions}>
+          <button
+            type="button"
+            className={styles.button}
+            aria-pressed={marginOpen}
+            onClick={() => setMarginOpen((open) => !open)}
           >
-            Add reading
-          </Link>
-        )}
+            {marginOpen ? 'Hide notes' : 'Notes'}
+          </button>
+          {canAdd && (
+            <Link
+              to="/courses/$courseId/edit/$topicId"
+              params={{ courseId, topicId }}
+              className={page.link}
+            >
+              Add reading
+            </Link>
+          )}
+        </span>
       </div>
       <div className={styles.stage}>
         <ReadingView
@@ -146,6 +161,8 @@ export function ReadingTab({ classId, courseId, topicId, instructor, search, onS
           addressed={addressed}
           flushed={left ?? null}
           onSearch={onSearch}
+          marginOpen={marginOpen}
+          onOpenMargin={openMargin}
         />
       </div>
     </>
@@ -180,6 +197,8 @@ interface ViewProps {
   /** The place flushed as the reader left this entry, which the address does not hold. */
   flushed: ReadingPosition | null;
   onSearch: Props['onSearch'];
+  marginOpen: boolean;
+  onOpenMargin: () => void;
 }
 
 function ReadingView({
@@ -190,25 +209,43 @@ function ReadingView({
   addressed,
   flushed,
   onSearch,
+  marginOpen,
+  onOpenMargin,
 }: ViewProps) {
   const content = useReadingContent(classId, reading.revisionId);
   const save = useSavePosition(classId, topicId);
   const { revisionId } = reading;
-  const places = leftPlaces(useQueryClient());
+  const queryClient = useQueryClient();
+  const places = leftPlaces(queryClient);
   const inAddress = useRef(JSON.stringify(addressed));
   const lastSaved = useRef<string>('');
   /** Saves sent and not yet settled: a hide or close flush can run beside one already in flight. */
   const inFlight = useRef(0);
   const next = useRef<ReadingPosition | null>(null);
+  /** The place a failed save left unsent, sent again when the connection returns. */
+  const unsaved = useRef<ReadingPosition | null>(null);
+  /** Counts sends, so a failure only counts as the last word while no later send has started. */
+  const sends = useRef(0);
 
   const send = useCallback(
     function send(place: ReadingPosition) {
+      // Once access ended nothing more is written for the class (§14), whatever was pending.
+      if (isRevoked(queryClient, classId)) {
+        next.current = null;
+        unsaved.current = null;
+        return;
+      }
       inFlight.current += 1;
+      unsaved.current = null;
+      const sequence = ++sends.current;
       save(revisionId, place)
         .catch(() => {
-          // Retried by the next move unless a newer place is already waiting; nothing here
-          // claims it was kept.
-          if (!next.current) lastSaved.current = '';
+          // Retried by the next move or when the connection returns, unless a newer place is
+          // already waiting or was sent meanwhile (it would be overwritten by this older one).
+          if (!next.current && sequence === sends.current) {
+            lastSaved.current = '';
+            unsaved.current = place;
+          }
         })
         .finally(() => {
           inFlight.current -= 1;
@@ -219,7 +256,7 @@ function ReadingView({
           if (waiting) send(waiting);
         });
     },
-    [save, revisionId],
+    [save, revisionId, queryClient, classId],
   );
 
   /**
@@ -252,6 +289,14 @@ function ReadingView({
     inAddress.current = JSON.stringify(flushed);
     onSearch(searchFor(revisionId, flushed), 'replace');
   }, []);
+  useEffect(() => {
+    const retry = () => {
+      const place = unsaved.current;
+      if (place) store(place);
+    };
+    window.addEventListener('online', retry);
+    return () => window.removeEventListener('online', retry);
+  }, [store]);
   const report = useReporter(
     (position: ReadingPosition, reason: PlaceReason) => {
       store(position, reason !== 'pause');
@@ -336,7 +381,22 @@ function ReadingView({
     return (
       <>
         {offline}
-        <NativeReading html={data.html} initial={initial} onPosition={report} />
+        <ReadingMargin
+          classId={classId}
+          resourceId={reading.resourceId}
+          html={data.html}
+          open={marginOpen}
+          onOpen={onOpenMargin}
+        >
+          {(setRoot) => (
+            <NativeReading
+              html={data.html as string}
+              initial={initial}
+              onPosition={report}
+              onRoot={setRoot}
+            />
+          )}
+        </ReadingMargin>
       </>
     );
   }
@@ -344,14 +404,24 @@ function ReadingView({
     return (
       <>
         {offline}
-        <PdfReading
-          url={data.pdf.url}
-          pageCount={data.pdf.pageCount}
-          renew={renew}
-          source={{ classId, revisionId, key: data.sourceKey }}
-          initial={initial}
-          onPosition={report}
-        />
+        <ReadingMargin
+          classId={classId}
+          resourceId={reading.resourceId}
+          html={null}
+          open={marginOpen}
+          onOpen={onOpenMargin}
+        >
+          {() => (
+            <PdfReading
+              url={(data.pdf as { url: string }).url}
+              pageCount={(data.pdf as { pageCount: number }).pageCount}
+              renew={renew}
+              source={{ classId, revisionId, key: data.sourceKey }}
+              initial={initial}
+              onPosition={report}
+            />
+          )}
+        </ReadingMargin>
       </>
     );
   }

@@ -29,15 +29,24 @@ export function TabRow<Id extends string>({
   const strip = useRef<HTMLDivElement | null>(null);
   // At narrow widths the strip scrolls on its own; a fade marks the edge that has more tabs (§5).
   const [more, setMore] = useState(false);
+  const tabIds = tabs.map((t) => t.id).join('\n');
   const measure = useCallback(() => {
     const el = strip.current;
     if (el) setMore(el.scrollLeft + el.clientWidth < el.scrollWidth - 1);
   }, []);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a changed set of tabs (`tabIds`) changes the width to measure
   useEffect(() => {
     measure();
     window.addEventListener('resize', measure);
-    return () => window.removeEventListener('resize', measure);
-  }, [measure]);
+    const el = strip.current;
+    const observer =
+      el && typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : undefined;
+    if (el) observer?.observe(el);
+    return () => {
+      window.removeEventListener('resize', measure);
+      observer?.disconnect();
+    };
+  }, [measure, tabIds]);
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     const index = tabs.findIndex((t) => t.id === selected);

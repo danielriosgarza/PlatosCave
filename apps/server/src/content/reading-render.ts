@@ -1,4 +1,4 @@
-import type { ReadingFormat, RenderedReading } from './reading';
+import type { ReadingFormat, RenderedReading, RenderedSlides } from './reading';
 import { runInThread } from './thread';
 
 export interface RenderOptions {
@@ -26,6 +26,23 @@ export function renderReadingInThread(
       failed: 'The reading could not be rendered',
       timeout: 'Rendering the reading took too long',
       outOfMemory: 'The reading is too complex to render',
+    },
+    { timeoutMs, maxHeapMb: 256, signal },
+  );
+}
+
+/** `renderSlides` in the same bounded thread, for a Markdown slide deck. */
+export function renderSlidesInThread(
+  source: string,
+  { timeoutMs = 60_000, signal }: RenderOptions = {},
+): Promise<RenderedSlides> {
+  return runInThread<RenderedSlides>(
+    new URL('./reading.worker.mjs', import.meta.url),
+    { source, format: 'markdown', assets: {}, deck: true },
+    {
+      failed: 'The slides could not be rendered',
+      timeout: 'Rendering the slides took too long',
+      outOfMemory: 'The slides are too complex to render',
     },
     { timeoutMs, maxHeapMb: 256, signal },
   );

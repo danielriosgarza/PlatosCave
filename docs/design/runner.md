@@ -267,7 +267,8 @@ pg-boss is created with `schema: 'pgboss_exec'`, `migrate: false`, `supervise: f
   AttachStdin: true, OpenStdin: true, StdinOnce: true, AttachStdout: true, AttachStderr: true, Tty: false,
   HostConfig: {
     NetworkMode: 'none', ReadonlyRootfs: true,
-    Tmpfs: { '/work': 'rw,noexec,nosuid,nodev,size=64m', '/tmp': 'rw,noexec,nosuid,nodev,size=64m' },
+    Tmpfs: { '/work': 'rw,noexec,nosuid,nodev,size=64m,uid=10001,gid=10001,mode=0700',
+             '/tmp': 'rw,noexec,nosuid,nodev,size=64m,uid=10001,gid=10001,mode=0700' },   // Docker mounts a tmpfs root-owned; the harness (uid 10001) must create its check directories
     Memory: memoryMiB * 1024 * 1024, MemorySwap: memoryMiB * 1024 * 1024,   // never a shift: 2048 << 20 overflows int32
     PidsLimit: 64, NanoCpus: 1e9,
     CapDrop: ['ALL'], SecurityOpt: ['no-new-privileges'], Init: false, IpcMode: 'private',   // the harness is pid 1 (§4.4)

@@ -14,14 +14,14 @@ export default function testRoutes(app: FastifyInstance, deps: RouteDeps): void 
     if (!deps.db) throw app.httpErrors.serviceUnavailable();
     return deps.db;
   };
-  const now = () => app.resolverDeps.now();
+  const now = deps.now;
   // One server process serves every Playwright worker: build the world at most once.
   let building: Promise<boolean> | undefined;
 
   registerRoute(app, buildTestWorld, async () => {
     // The fixtures live with the tests and are loaded only when these routes are used.
     const { ensureWorld, ids } = await import('../../../test/fixtures/world');
-    building ??= ensureWorld(db(), now(), app.contentDeps.storage);
+    building ??= ensureWorld(db(), now(), deps.storage);
     try {
       return { ids, created: await building };
     } catch (err) {
