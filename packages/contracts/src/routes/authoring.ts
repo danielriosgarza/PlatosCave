@@ -8,15 +8,16 @@ const exampleResourceId = '00000000-0000-4000-8000-0000000000bb';
 const courseParams = z.object({ courseId: z.uuid() });
 const timestamp = z.iso.datetime({ offset: true });
 
-/** Largest reading upload; the ingestion job refuses anything over 50 MiB regardless. */
+/** Largest reading or notebook upload; the ingestion job refuses anything over 50 MiB regardless. */
 export const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 
-/** Reading formats an editor may upload, by file extension. */
+/** Formats an editor may upload, by file extension: readings, and notebooks (`.ipynb`). */
 export const uploadFormats = {
   md: 'markdown',
   markdown: 'markdown',
   html: 'html',
   pdf: 'pdf',
+  ipynb: 'notebook',
 } as const;
 export type UploadFormat = (typeof uploadFormats)[keyof typeof uploadFormats];
 
@@ -25,21 +26,22 @@ export const uploadedFile = z.object({
   key: z.string(),
   sha256: z.string(),
   size: z.int(),
-  format: z.enum(['markdown', 'html', 'pdf']),
+  format: z.enum(['markdown', 'html', 'pdf', 'notebook']),
   filename: z.string(),
 });
 
 /**
- * Multipart body with one `file` part (Markdown, HTML or PDF, up to MAX_UPLOAD_BYTES). The scope
- * is resolved before the body is read, so a non-member never reaches the parser. 400 names the
- * problem for an unsupported type, an empty or oversized file, or text that is not valid UTF-8;
- * 413 for a file over the limit.
+ * Multipart body with one `file` part (Markdown, HTML, PDF or a Jupyter notebook, up to
+ * MAX_UPLOAD_BYTES). The scope is resolved before the body is read, so a non-member never reaches
+ * the parser. 400 names the problem for an unsupported type, an empty or oversized file, text
+ * that is not valid UTF-8, or a notebook that is not valid nbformat 4 (§10.7); 413 for a file
+ * over the limit.
  */
 export const uploadCourseFile = defineRoute({
   method: 'POST',
   path: '/api/courses/:courseId/uploads',
   scope: { kind: 'course', role: 'editor' },
-  summary: 'Store a reading file in the course’s content-addressed storage',
+  summary: 'Store a reading or notebook file in the course’s content-addressed storage',
   params: courseParams,
   response: uploadedFile,
   examples: { params: { courseId: exampleCourseId } },

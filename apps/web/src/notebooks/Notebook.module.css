@@ -1,0 +1,225 @@
+/* Ported from the wireframe: .pc-stage, .pc-notebook, .pc-notebook-intro, .pc-cell,
+   .pc-cell-num, pre, .pc-output, .pc-mode-select. Material stays unboxed (DESIGN.md). */
+.stage {
+  padding: 32px 40px 64px;
+  min-height: 550px;
+}
+.status {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 32px 40px;
+}
+.empty {
+  font: var(--pc-text-subsection);
+}
+.label {
+  font: var(--pc-text-label);
+}
+.mode {
+  font: var(--pc-text-label);
+  color: var(--pc-muted);
+}
+.picker {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.picker select {
+  border: 1px solid var(--pc-muted);
+  background: var(--pc-sheet);
+  border-radius: var(--pc-radius-control);
+  padding: 4px 6px;
+  font-size: 12px;
+  min-height: 32px;
+  max-width: 240px;
+}
+.button {
+  font: inherit;
+  font-size: 12px;
+  min-height: 32px;
+  cursor: pointer;
+  border: 1px solid var(--pc-muted);
+  padding: 4px 12px;
+  background: var(--pc-sheet);
+  color: var(--pc-ink);
+  border-radius: var(--pc-radius-control);
+}
+.button[aria-pressed="true"],
+.button[aria-expanded="true"] {
+  background: var(--pc-soft);
+  font-weight: 600;
+}
+.textButton {
+  font: var(--pc-text-label);
+  color: var(--pc-muted);
+  background: none;
+  border: 0;
+  padding: 4px 0;
+  cursor: pointer;
+  text-decoration: underline;
+}
+.textButton:hover {
+  color: var(--pc-ink);
+}
+
+.notebook {
+  max-width: 1160px;
+  margin: 0 auto;
+}
+.outline {
+  max-width: var(--pc-reading-width);
+  padding: 0 0 24px 44px;
+}
+.outline ol {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+.outline li {
+  margin: 4px 0;
+}
+.outline li[data-level="2"] {
+  padding-left: 16px;
+}
+.outline li[data-level="3"],
+.outline li[data-level="4"],
+.outline li[data-level="5"],
+.outline li[data-level="6"] {
+  padding-left: 32px;
+}
+.outline button {
+  font: var(--pc-text-ui);
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  color: var(--pc-ink);
+  text-align: left;
+}
+.outline button:hover {
+  text-decoration: underline;
+}
+.prose {
+  max-width: var(--pc-reading-width);
+  padding: 0 0 8px 44px;
+}
+.cell {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  gap: 8px;
+  margin: 16px 0;
+  align-items: start;
+}
+.num {
+  font-size: 12px;
+  color: var(--pc-muted);
+  padding-top: 12px;
+  font-family: var(--pc-font-mono);
+}
+.code {
+  margin: 0;
+  padding: 16px 20px;
+  background: var(--pc-secondary);
+  border: 1px solid var(--pc-rule);
+  border-radius: var(--pc-radius-control);
+  font: var(--pc-text-code);
+  overflow: auto;
+  max-width: 100%;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.outputs {
+  min-width: 0;
+}
+.output {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--pc-rule);
+  min-width: 0;
+  overflow-x: auto;
+}
+.text {
+  margin: 0;
+  font: var(--pc-text-code);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.stderr {
+  border-left: 2px solid var(--pc-muted);
+  padding-left: 12px;
+}
+.error {
+  border-left: 2px solid var(--pc-ink);
+  padding-left: 12px;
+}
+.errorName {
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.image {
+  max-width: 100%;
+  height: auto;
+}
+.table {
+  border-collapse: collapse;
+  font: var(--pc-text-ui);
+  font-variant-numeric: tabular-nums;
+}
+.table caption {
+  text-align: left;
+  margin-bottom: 8px;
+}
+.table th,
+.table td {
+  padding: 4px 12px;
+  border-bottom: 1px solid var(--pc-rule);
+  text-align: right;
+}
+.table th {
+  font-weight: 600;
+}
+.frameBox {
+  resize: vertical;
+  overflow: hidden;
+  min-height: 64px;
+  border: 1px solid var(--pc-rule);
+  border-radius: var(--pc-radius-control);
+  background: var(--pc-sheet);
+}
+.frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+.provenance {
+  font: var(--pc-text-label);
+  color: var(--pc-muted);
+  margin-top: 8px;
+}
+.raw {
+  margin: 0;
+  font: var(--pc-text-code);
+  white-space: pre-wrap;
+  color: var(--pc-muted);
+}
+
+@media (max-width: 760px) {
+  .stage {
+    padding: 24px 16px 48px;
+  }
+  .prose,
+  .outline {
+    padding-left: 0;
+  }
+  .cell {
+    grid-template-columns: 26px minmax(0, 1fr);
+    gap: 4px;
+  }
+  .code {
+    padding: 12px;
+    font-size: 13px;
+  }
+  .output {
+    padding: 12px;
+  }
+}

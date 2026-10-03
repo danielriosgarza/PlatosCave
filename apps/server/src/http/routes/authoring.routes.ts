@@ -1,6 +1,7 @@
 import { basename } from 'node:path';
 import { finished, type Readable } from 'node:stream';
 import multipart from '@fastify/multipart';
+import { parseNotebook } from '@parallax/contracts';
 import {
   getCourseOverview,
   getProcessing,
@@ -22,6 +23,7 @@ const contentTypes: Record<UploadFormat, string> = {
   markdown: 'text/markdown',
   html: 'text/html',
   pdf: 'application/pdf',
+  notebook: 'application/x-ipynb+json',
 };
 
 /** A problem with the uploaded file itself, reported to the editor as a 400. */
@@ -52,6 +54,8 @@ async function* checked(stream: Readable & { truncated?: boolean }, format: Uplo
   const decoder = format === 'pdf' ? undefined : new TextDecoder('utf-8', { fatal: true });
   let empty = true;
   let header = Buffer.alloc(0);
+  // A notebook is checked whole against the import contract before it is kept (§10.7).
+  const notebook: string[] | undefined = format === 'notebook' ? [] : undefined;
   try {
     for await (const chunk of stream.iterator({
       destroyOnReturn: false,
@@ -64,7 +68,8 @@ async function* checked(stream: Readable & { truncated?: boolean }, format: Uplo
         }
       }
       if (decoder && chunk.includes(0)) throw new UploadRejected('The file is not text');
-      decoder?.decode(chunk, { stream: true });
+      const decoded = decoder?.decode(chunk, { stream: true });
+      if (decoded !== undefined) notebook?.push(decoded);
       empty = false;
       yield chunk;
     }
@@ -73,12 +78,17 @@ async function* checked(stream: Readable & { truncated?: boolean }, format: Uplo
     if (format === 'pdf' && !empty && header.toString('latin1') !== PDF_MAGIC) {
       throw new UploadRejected('The file is not a PDF');
     }
-    decoder?.decode();
+    const rest = decoder?.decode();
+    if (rest !== undefined) notebook?.push(rest);
   } catch (err) {
     if (err instanceof TypeError) throw new UploadRejected('The text is not valid UTF-8');
     throw err;
   }
   if (empty) throw new UploadRejected('The file is empty');
+  if (notebook) {
+    const parsed = parseNotebook(notebook.join(''));
+    if (!parsed.ok) throw new UploadRejected(parsed.error);
+  }
 }
 
 /** Reads a stream to its end, discarding the bytes; stops quietly if it fails or is destroyed. */
@@ -124,7 +134,8 @@ export default function authoringRoutes(app: FastifyInstance, deps: Deps): void 
       extension && Object.hasOwn(uploadFormats, extension)
         ? uploadFormats[extension as keyof typeof uploadFormats]
         : undefined;
-    if (!format) refuse(400, 'Upload a Markdown (.md), HTML (.html) or PDF (.pdf) file');
+    if (!format)
+      refuse(400, 'Upload a Markdown (.md), HTML (.html), PDF (.pdf) or notebook (.ipynb) file');
     try {
       const stored = await storeCourseObject(
         db(),
