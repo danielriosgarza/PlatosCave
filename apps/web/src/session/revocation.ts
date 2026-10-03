@@ -14,8 +14,19 @@ export function useRevoked(classId: string): boolean {
     queryFn: () => true,
     enabled: false,
     staleTime: Number.POSITIVE_INFINITY,
+    gcTime: Number.POSITIVE_INFINITY,
   });
   return data === true;
+}
+
+/**
+ * True when this session lost the class: flagged by `revokeClass`, or already absent from the
+ * session it holds (the unmount that follows a refetch can run before the flag is read).
+ */
+export function isRevoked(client: QueryClient, classId: string): boolean {
+  if (client.getQueryData(revokedKey(classId)) === true) return true;
+  const me = client.getQueryData<Me | null>(sessionQuery.queryKey);
+  return me != null && !me.classes.some((c) => c.classId === classId);
 }
 
 const mentions = (key: QueryKey, classId: string) => JSON.stringify(key).includes(classId);
@@ -56,6 +67,8 @@ export function createQueryClient(defaultQueries: { retry?: boolean } = {}): Que
     },
   });
   const client = new QueryClient({ queryCache, defaultOptions: { queries: defaultQueries } });
+  // The flag is the only record that access ended: it is never collected while the app lives.
+  client.setQueryDefaults(['access-revoked'], { gcTime: Number.POSITIVE_INFINITY });
   // Any refusal, including an autosave outside the query cache, and any other tab's session
   // change re-read the session. The session's own reads are left out: they decide it.
   onRefusal((_status, path) => {
