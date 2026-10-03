@@ -77,18 +77,3 @@ export function clearPreviewReturn(req: FastifyRequest, reply: FastifyReply, app
     reply.clearCookie(PREVIEW_RETURN_COOKIE, returnCookieOptions(appOrigin));
   }
 }
-
-/**
- * Sign-out and sign-in end the kept instructor session too: a browser that signs out during a
- * preview must not keep a live session in a cookie it cannot see.
- */
-export async function endPreviewReturn(
-  db: Executor | undefined,
-  req: FastifyRequest,
-  reply: FastifyReply,
-  appOrigin: string,
-  now: Date,
-): Promise<void> {
-  await revokePreviewReturn(db, req, now);
-  clearPreviewReturn(req, reply, appOrigin);
-}

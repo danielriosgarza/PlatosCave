@@ -3,15 +3,31 @@
 // errors, and at data-access paths, where none may be. At its own path the file is ordinary code.
 import { eq, sql } from 'drizzle-orm'; // restricted-import
 import pg from 'pg'; // restricted-import
+import { probe as escapedProbe } from '../../src/db/cl\x69ent'; // raw-query
 import type * as clientNamespace from '../../src/db/client';
 import * as client from '../../src/db/client'; // raw-query
+// @ts-expect-error db/client has no default export; the combined form is checked regardless
+import clientDefault, * as combined from '../../src/db/client'; // raw-query
+// @ts-expect-error as above, with a default binding named `type`
+import type, * as combinedTyped from '../../src/db/client'; // raw-query
 import { createDb, type Db } from '../../src/db/client'; // restricted-import
 import { classMemberships } from '../../src/db/schema'; // restricted-import
 import { users } from '../../src/db/schema/users'; // restricted-import
 import { classScopedTables } from '../../src/db/scoped'; // restricted-import
 import { courseScopedTables } from '../../src/db/scoped.js'; // restricted-import
 
-export const imported = [pg, createDb, users, classScopedTables, courseScopedTables];
+export const imported = [
+  pg,
+  createDb,
+  users,
+  classScopedTables,
+  courseScopedTables,
+  clientDefault,
+  combined,
+  type,
+  combinedTyped,
+  escapedProbe,
+];
 
 export async function readAnotherClass(deps: { db: Db }, classId: string) {
   const db = deps.db;
@@ -28,6 +44,8 @@ export async function readAnotherClass(deps: { db: Db }, classId: string) {
   // biome-ignore lint/complexity/useLiteralKeys: the fixture exercises computed namespace access
   // biome-ignore lint/performance/noDynamicNamespaceImportAccess: as above
   client['createDb']('postgres://localhost/x'); // raw-query
+  // biome-ignore lint/performance/noDynamicNamespaceImportAccess: the fixture exercises an escaped subscript
+  client['create\x44b']('postgres://localhost/x'); // raw-query
   // biome-ignore lint/complexity/useLiteralKeys: the fixture exercises computed member access
   await deps.db['select']().from(users); // raw-query
   await deps.db.insert(users).values([]); // raw-query
@@ -54,13 +72,13 @@ export function viaAccessor(deps: { db?: Db }) {
 
 export type * as clientTypes from '../../src/db/client';
 export type ClientModule = typeof clientNamespace;
+export * from '../../src/db/cl\x69ent'; // raw-query
 export * as clientModule from '../../src/db/client'; // raw-query
 export * from '../../src/db/client'; // raw-query
-// Checked by hand, not here, because db/client has no default export and `tsc` rejects them:
-// `import x, * as client from` and `import type, * as client from` db/client are flagged.
 
 export async function loadsTheClient() {
   const loaded = await import('../../src/db/client'); // raw-query
+  await import('../../src/db/clie\x6et'); // raw-query
   const typed: typeof import('../../src/db/client') = loaded;
   return typed;
 }
@@ -86,8 +104,16 @@ export function wrappedReceivers(deps: { db: Db }, method: 'execute' | 'select')
   const { '\x73elect': escapedQuoted } = deps.db; // raw-query
   const { [method]: anyMethod } = deps.db; // raw-query
   const {
+    'd\x62': { select: viaEscapedDb }, // raw-query
+  } = deps;
+  const {
+    // biome-ignore lint/complexity/useLiteralKeys: the fixture exercises an escaped computed key
+    ['d\x62']: { select: viaComputedEscapedDb }, // raw-query
+  } = deps;
+  const {
     createDb: open, // raw-query
   } = client;
+  const { 'create\x44b': openEscaped } = client; // raw-query
   for (const { createDb: make } of [client]) make('postgres://localhost/x'); // raw-query
   return [
     (deps.db as Db).select(), // raw-query
@@ -108,7 +134,11 @@ export function wrappedReceivers(deps: { db: Db }, method: 'execute' | 'select')
     escapedComputed,
     escapedQuoted,
     anyMethod,
+    viaEscapedDb,
+    viaComputedEscapedDb,
+    deps.db['sel\x65ct'](), // raw-query
     open,
+    openEscaped,
   ];
 }
 
@@ -118,6 +148,7 @@ export function notTheDatabase(deps: {
   db: Db;
   ledger: { db: { withdraw(): number } };
   config: { db: { url: string } };
+  history: { db: string[] };
   vault: { db: { ledger: { select(): number } } };
   tools: { open(): void };
 }) {
@@ -125,6 +156,9 @@ export function notTheDatabase(deps: {
   const { url } = deps.config.db;
   // biome-ignore lint/complexity/useLiteralKeys: the fixture exercises a computed key
   const { ['url']: computedUrl } = deps.config.db;
+  const { [-1]: last } = deps.history.db;
+  // Escaped keys are flagged on any object, since an escape could spell a query method.
+  const { 'u\x72l': escapedUrl } = deps.config.db; // raw-query
   const {
     db: { url: again },
   } = deps.config;
@@ -134,12 +168,25 @@ export function notTheDatabase(deps: {
     },
   } = deps.vault;
   const { open: createDb } = deps.tools;
+  const { db: handle = ({ select: unused }: Db) => unused } = deps;
   const cache = { db: new Map<string, number>() };
   // Documented limit, asserted neither way: any object stored under `db` is treated as the handle
   // when a query method is called on it or a rest element destructures it.
   cache.db.delete('key'); // known-false-positive
   const { ...settings } = deps.config.db; // known-false-positive
-  return [deps.ledger.db.withdraw(), db, url, computedUrl, again, select, settings, createDb];
+  return [
+    deps.ledger.db.withdraw(),
+    db,
+    url,
+    computedUrl,
+    last,
+    escapedUrl,
+    again,
+    select,
+    settings,
+    createDb,
+    handle,
+  ];
 }
 
 export function takesAFactory({ createDb }: { createDb: () => void }) {

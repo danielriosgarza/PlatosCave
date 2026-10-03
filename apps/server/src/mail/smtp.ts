@@ -10,8 +10,11 @@ export class SmtpMailer implements Mailer {
   ) {
     this.transport = nodemailer.createTransport({
       url,
-      // Bounded well under the 10 s stop grace (main.ts), so a hung relay cannot outlive a
-      // shutdown's wait for in-flight deliveries (nodemailer defaults: 2 min connect, 10 min socket).
+      // Per phase, not per send: the socket timeout is an inactivity timeout that restarts on
+      // every byte, so a relay answering slowly through EHLO, STARTTLS, AUTH, MAIL, RCPT and DATA
+      // can take several times these. They only stop a dead connection early (nodemailer defaults:
+      // 2 min connect, 10 min socket); the bound on a whole delivery is DELIVERY_TIMEOUT_MS in
+      // auth/email-provider.ts.
       connectionTimeout: 4_000,
       greetingTimeout: 4_000,
       socketTimeout: 8_000,

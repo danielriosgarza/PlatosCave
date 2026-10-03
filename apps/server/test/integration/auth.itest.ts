@@ -230,15 +230,19 @@ describe('POST /api/auth/link', () => {
     );
     apps.push(slow);
     const email = 'slow@example.test';
-    const res = await slow.inject({ method: 'POST', url: '/api/auth/link', payload: { email } });
-    expect(res.statusCode).toBe(202);
-    expect(sent).toEqual([]);
-    const [stored] = await testDb.db
-      .select()
-      .from(signinTokens)
-      .where(eq(signinTokens.email, email));
-    expect(stored).toBeDefined();
-    release();
+    try {
+      const res = await slow.inject({ method: 'POST', url: '/api/auth/link', payload: { email } });
+      expect(res.statusCode).toBe(202);
+      expect(sent).toEqual([]);
+      const [stored] = await testDb.db
+        .select()
+        .from(signinTokens)
+        .where(eq(signinTokens.email, email));
+      expect(stored).toBeDefined();
+    } finally {
+      // A failed assertion must not leave the task pending: every later settled() would time out.
+      release();
+    }
     await background.settled();
     expect(sent).toEqual([email]);
   });
@@ -312,6 +316,33 @@ describe('POST /api/auth/link', () => {
     failing = false;
     expect((await requestLink({ email }, flaky)).statusCode).toBe(202);
     expect(sent).toEqual([email]);
+  });
+
+  test('a send that outlives the delivery deadline is abandoned and its row removed', async () => {
+    const email = 'stalled@example.test';
+    const logged: unknown[] = [];
+    let release: () => void = () => {};
+    const provider = new EmailLinkProvider({
+      db: testDb.db,
+      now: () => clock,
+      background,
+      appOrigin: APP_ORIGIN,
+      deliveryTimeoutMs: 50,
+      log: { info() {}, error: (...args: unknown[]) => void logged.push(args) } as never,
+      // A relay that stays within every per-phase SMTP timeout yet never finishes.
+      mailer: { send: () => new Promise<void>((resolve) => (release = resolve)) },
+    });
+    try {
+      await provider.begin({ email, destination: '/courses' });
+      // Settles on the deadline, not when the relay answers.
+      await expect(background.settled(2_000)).resolves.toBe(0);
+    } finally {
+      release();
+    }
+    const rows = await testDb.db.select().from(signinTokens).where(eq(signinTokens.email, email));
+    expect(rows).toEqual([]);
+    expect(JSON.stringify(logged)).toContain('ETIMEDOUT');
+    expect(JSON.stringify(logged)).not.toContain('stalled');
   });
 
   test('concurrent requests for one address still send at most five links', async () => {

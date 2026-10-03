@@ -54,9 +54,18 @@ export const forClass = (scope: ClassContext, table: { classId: PgColumn }): SQL
 
 /**
  * `WHERE course_id = …` for a course-scoped table; takes only a resolved course or class-manager
- * scope, or a draft preview reading the draft it previews.
+ * scope.
  */
-export const forCourse = (
-  scope: CourseContext | DraftPreviewScope,
-  table: { courseId: PgColumn },
+export const forCourse = (scope: CourseContext, table: { courseId: PgColumn }): SQL =>
+  eq(table.courseId, scope.courseId);
+
+/**
+ * `WHERE course_id = …` for a draft preview reading the draft it previews (ADR-0003). It takes
+ * only the draft syllabus tables, so a class-scoped function narrowed with `isDraftPreview`
+ * cannot reach any other course-scoped table; ADR-0003 grants a preview a read, so use it in
+ * reads only.
+ */
+export const forDraftCourse = (
+  scope: DraftPreviewScope,
+  table: typeof topics | typeof resources,
 ): SQL => eq(table.courseId, scope.courseId);

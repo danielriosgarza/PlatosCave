@@ -21,7 +21,7 @@ import {
   resources,
   topics,
 } from '../schema';
-import { forCourse } from '../scoped';
+import { forCourse, forDraftCourse } from '../scoped';
 
 export type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
 type Issue = z.infer<typeof validationIssue>;
@@ -425,7 +425,7 @@ async function loadSnapshot(db: Db | Tx, scope: DraftPreviewScope) {
       estimatedMinutes: topics.estimatedMinutes,
     })
     .from(topics)
-    .where(and(forCourse(scope, topics), isNull(topics.archivedAt)))
+    .where(and(forDraftCourse(scope, topics), isNull(topics.archivedAt)))
     .orderBy(asc(topics.position), asc(topics.createdAt));
   const rows = await db
     .select({
@@ -458,7 +458,7 @@ async function loadSnapshot(db: Db | Tx, scope: DraftPreviewScope) {
         eq(resourceRevisions.type, resources.type),
       ),
     )
-    .where(and(forCourse(scope, resources), isNull(resources.archivedAt)))
+    .where(and(forDraftCourse(scope, resources), isNull(resources.archivedAt)))
     .orderBy(asc(resources.position), asc(resources.createdAt));
   // Ordered by topic as the snapshot lists them, then by resource position within each topic.
   const order = new Map(topicRows.map((t, i) => [t.id, i]));

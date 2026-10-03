@@ -1,19 +1,23 @@
 import { getObjectUrl } from '@parallax/contracts/routes/media';
 import type { FastifyInstance } from 'fastify';
+import type { RouteDeps } from '../../app';
 import { downloadName, mintContentUrl } from '../../content/media';
 import { findReleasedObject } from '../../db/content/media';
 import { notFound, registerRoute } from '../register';
 
-export default function mediaRoutes(app: FastifyInstance): void {
+export default function mediaRoutes(app: FastifyInstance, { config }: RouteDeps): void {
   registerRoute(app, getObjectUrl, async ({ params, query, scope }) => {
     const { db, now } = app.resolverDeps;
-    const { config } = app.contentDeps;
     const at = now();
     const object = db && (await findReleasedObject(db, scope, params.revisionId, params.key, at));
     // Unreleased, hidden, foreign and missing objects all look the same (§2).
     if (!object) notFound();
     return mintContentUrl(
-      { contentOrigin: config.CONTENT_ORIGIN, secret: config.CONTENT_TOKEN_SECRET, now: at },
+      {
+        contentOrigin: config.CONTENT_ORIGIN,
+        secret: config.CONTENT_TOKEN_SECRET,
+        now: at,
+      },
       scope,
       object,
       {

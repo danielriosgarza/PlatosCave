@@ -35,6 +35,7 @@ let testDb: TestDatabase;
 let app: FastifyInstance;
 let world: World;
 let root: string;
+let storage: FsStorage;
 let clock = now;
 
 function one<T>(rows: T[]): T {
@@ -56,12 +57,15 @@ async function resourceWithObject(
   topicId: string,
   title: string,
   bytes: string,
-  draft: { position?: number; visibility?: 'visible' | 'hidden'; releaseAt?: Date } = {},
+  draft: {
+    position?: number;
+    visibility?: 'visible' | 'hidden';
+    releaseAt?: Date;
+  } = {},
   courseId: string = ids.statistics,
   owner: string = ids.elena,
 ): Promise<Fixture & { resourceId: string }> {
   const { db } = testDb;
-  const storage = app.contentDeps.storage;
   const scope = asCourseScope(courseId, owner);
   const stored = await storeCourseObject(db, storage, scope, Buffer.from(bytes), 'application/pdf');
   const resource = one(
@@ -105,9 +109,10 @@ beforeAll(async () => {
   testDb = await createTestDatabase();
   world = await buildWorld(testDb.db, now);
   root = await mkdtemp(join(tmpdir(), 'parallax-a21-'));
+  storage = new FsStorage(root);
   app = await buildApp(config, {
     db: testDb.db,
-    storage: new FsStorage(root),
+    storage,
     now: () => clock,
   });
   await app.ready();
@@ -116,7 +121,12 @@ beforeAll(async () => {
   const topic = one(
     await db
       .insert(topics)
-      .values({ courseId: ids.statistics, position: 2, title: 'Inference', createdBy: ids.elena })
+      .values({
+        courseId: ids.statistics,
+        position: 2,
+        title: 'Inference',
+        createdBy: ids.elena,
+      })
       .returning(),
   );
   const visible = await resourceWithObject(topic.id, 'Lecture notes', 'visible pdf');
@@ -131,7 +141,12 @@ beforeAll(async () => {
   const foreignTopic = one(
     await db
       .insert(topics)
-      .values({ courseId: ids.linearModels, position: 0, title: 'OLS', createdBy: ids.olivia })
+      .values({
+        courseId: ids.linearModels,
+        position: 0,
+        title: 'OLS',
+        createdBy: ids.olivia,
+      })
       .returning(),
   );
   fx.foreign = await resourceWithObject(
@@ -159,7 +174,7 @@ beforeAll(async () => {
   // A newer draft revision of the visible resource that no release pins.
   const draftObject = await storeCourseObject(
     db,
-    app.contentDeps.storage,
+    storage,
     elenaScope,
     Buffer.from('draft pdf'),
     'application/pdf',
@@ -277,9 +292,13 @@ describe('content origin and signed content tokens', () => {
     expect((await mint(ids.classA, fx.visible)).statusCode).toBe(401);
     const { url } = (await mint(ids.classA, fx.visible, 'sam')).json();
     // A session cookie on the content origin does not replace the token.
-    const bare = await follow('http://localhost:3100/content/', { cookie: world.cookie.sam });
+    const bare = await follow('http://localhost:3100/content/', {
+      cookie: world.cookie.sam,
+    });
     expect(bare.statusCode).toBe(404);
-    const api = await follow('http://localhost:3100/api/me', { cookie: world.cookie.sam });
+    const api = await follow('http://localhost:3100/api/me', {
+      cookie: world.cookie.sam,
+    });
     expect(api.statusCode).toBe(404);
     clock = new Date(now.getTime() + 5 * 60_000);
     try {
