@@ -156,9 +156,13 @@ export function validate(drafts: Drafts): ValidationReport {
           ...at,
         });
       }
-      if (revision.type === 'reading_native' || revision.type === 'reading_pdf') {
-        // A reading nobody can open is worse than none: block while its job is unfinished or
-        // failed. A revision with no job on record (older data) is left alone.
+      if (
+        revision.type === 'reading_native' ||
+        revision.type === 'reading_pdf' ||
+        revision.type === 'notebook'
+      ) {
+        // A reading or notebook nobody can open is worse than none: block while its job is
+        // unfinished or failed. A revision with no job on record (older data) is left alone.
         const state = status?.state;
         if (state !== undefined && state !== 'ready') {
           errors.push({

@@ -30,8 +30,11 @@ export interface ThreadOptions {
   transferList?: ArrayBuffer[];
 }
 
-/** A thread script answers once with `{ ok: true, value }`, or `{ ok: false }` for bad input. */
-export type ThreadReply<T> = { ok: true; value: T } | { ok: false };
+/**
+ * A thread script answers once with `{ ok: true, value }`, or `{ ok: false }` for bad input,
+ * optionally with the reason to show instead of `messages.failed`.
+ */
+export type ThreadReply<T> = { ok: true; value: T } | { ok: false; error?: string };
 
 /**
  * Runs one script in its own thread on `input`, bounded in time and memory, so untrusted input
@@ -74,7 +77,7 @@ export function runInThread<T>(
     signal?.addEventListener('abort', onAbort);
     thread.once('message', (reply: ThreadReply<T>) => {
       if (reply.ok) finish(null, reply.value);
-      else finish(new ThreadInputError(messages.failed));
+      else finish(new ThreadInputError(reply.error ?? messages.failed));
     });
     thread.once('error', (err: Error & { code?: string }) => {
       if (err.code === 'ERR_WORKER_OUT_OF_MEMORY')

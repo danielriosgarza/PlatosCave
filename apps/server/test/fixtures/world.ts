@@ -21,6 +21,7 @@ import { setManageMembers, setPublisher } from '../../src/db/members';
 import { classes, resourceRevisions, resources, topics, users } from '../../src/db/schema';
 import { storeCourseObject } from '../../src/storage/objects';
 import type { Storage } from '../../src/storage/storage';
+import { labNotebookDerived, labNotebookFile } from './notebook';
 import { makePdf } from './pdf';
 
 /** Deterministic fixture ids: `…-4000-8000-0000000000NN`. */
@@ -65,9 +66,11 @@ export const readingLab = {
   native: id(411), // a long native reading
   pdf: id(412), // a four-page PDF reading
   deck: id(413), // a six-slide 16:9 PDF deck
+  notebook: id(414), // a rendered notebook with stored outputs (A09)
   nativeRevision: id(511),
   pdfRevision: id(512),
   deckRevision: id(513),
+  notebookRevision: id(514),
   release: id(611),
   authorEmail: 'lab-author@example.test',
   readerEmail: 'lab-reader@example.test',
@@ -232,7 +235,8 @@ export async function ensureWorld(db: Db, now: Date, storage?: Storage): Promise
 
 /**
  * Adds the reading lab: course *Reading lab* with one topic holding a long native reading, a
- * four-page PDF reading and a six-slide deck, all with their derived outputs written as the ingestion job would,
+ * four-page PDF reading, a six-slide deck and a notebook, all with their derived outputs written
+ * as the ingestion job would,
  * published and adopted by one class with one student. The last data step is adopting the release.
  */
 export async function seedReadingLab(db: Db, storage: Storage, now: Date): Promise<void> {
@@ -292,6 +296,13 @@ export async function seedReadingLab(db: Db, storage: Storage, now: Date): Promi
     Buffer.from(deckBytes),
     'application/pdf',
   );
+  const notebookFile = await storeCourseObject(
+    db,
+    storage,
+    owner,
+    Buffer.from(labNotebookFile),
+    'application/x-ipynb+json',
+  );
   const ready = {
     state: 'ready' as const,
     job: 'reading.ingest',
@@ -328,6 +339,16 @@ export async function seedReadingLab(db: Db, storage: Storage, now: Date): Promi
       content: { title: 'Sampling lecture', objectKey: deck.key },
       objectKeys: [deck.key],
       derived: { ...(await extractPdfText(deckBytes)), rasterOnly: false },
+    },
+    {
+      id: lab.notebook,
+      revisionId: lab.notebookRevision,
+      type: 'notebook' as const,
+      title: 'Repeated samples',
+      position: 3,
+      content: { sourceKey: notebookFile.key },
+      objectKeys: [notebookFile.key],
+      derived: await labNotebookDerived(db, storage, owner),
     },
   ];
   for (const { revisionId, content, objectKeys, derived, ...resource } of readings) {

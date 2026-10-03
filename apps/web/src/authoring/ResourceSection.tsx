@@ -11,6 +11,7 @@ import { useCallback, useState } from 'react';
 import type { z } from 'zod';
 import { call } from '../api/client';
 import styles from '../components/Page.module.css';
+import { AddNotebook } from './AddNotebook';
 import { AddReading } from './AddReading';
 import local from './Authoring.module.css';
 import { useAutosave } from './autosave';
@@ -50,11 +51,15 @@ interface Props {
   resources: ResourceSummary[];
 }
 
-/** The topic's resources grouped by destination tab, with Add reading on the Reading tab (§12). */
+/**
+ * The topic's resources grouped by destination tab, with Add reading on the Reading tab and Add
+ * notebook on the Notebooks tab (§12).
+ */
 export function ResourceSection({ courseId, topicId, resources }: Props) {
   const queryClient = useQueryClient();
   const processing = useQuery(processingQuery(courseId));
   const [adding, setAdding] = useState(false);
+  const [addingNotebook, setAddingNotebook] = useState(false);
   const refresh = useCallback(
     () => queryClient.invalidateQueries({ queryKey: authoringKey(courseId) }),
     [queryClient, courseId],
@@ -106,6 +111,29 @@ export function ResourceSection({ courseId, topicId, resources }: Props) {
                 </div>
               )
             ) : null}
+            {tab.name === 'Notebooks' ? (
+              addingNotebook ? (
+                <AddNotebook
+                  courseId={courseId}
+                  topicId={topicId}
+                  onCancel={() => setAddingNotebook(false)}
+                  onAdded={() => {
+                    setAddingNotebook(false);
+                    void refresh();
+                  }}
+                />
+              ) : (
+                <div style={{ marginTop: 12 }}>
+                  <button
+                    type="button"
+                    className={styles.outline}
+                    onClick={() => setAddingNotebook(true)}
+                  >
+                    Add notebook
+                  </button>
+                </div>
+              )
+            ) : null}
             {tab.name === 'Exercises' ? (
               <AddExercise courseId={courseId} topicId={topicId} onAdded={() => void refresh()} />
             ) : null}
@@ -137,7 +165,9 @@ function StatusLine({
     mutationFn: () => call(retryProcessing, { params: { courseId, resourceId: resource.id } }),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: authoringKey(courseId) }),
   });
-  if (!(isReading(resource.type) || resource.type === 'slides_pdf') || resource.archived) {
+  const processed =
+    isReading(resource.type) || resource.type === 'slides_pdf' || resource.type === 'notebook';
+  if (!processed || resource.archived) {
     return null;
   }
   if (lookup.kind !== 'known') {

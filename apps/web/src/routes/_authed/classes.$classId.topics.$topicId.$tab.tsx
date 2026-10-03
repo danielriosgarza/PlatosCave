@@ -8,6 +8,7 @@ import { RetryNotice } from '../../components/RetryNotice';
 import { type TabDef, TabRow } from '../../components/TabRow';
 import { Unavailable } from '../../components/Unavailable';
 import { ExercisesPanel } from '../../exercises/ExercisesPanel';
+import { NotebooksTab } from '../../notebooks/NotebooksTab';
 import readingStyles from '../../reading/Reading.module.css';
 import { ReadingTab } from '../../reading/ReadingTab';
 import { useClassContext } from '../../session/classContext';
@@ -222,6 +223,22 @@ function OpenTopic({
             />
           ) : tab === 'exercises' ? (
             <ExercisesPanel classId={classId} topicId={topicId} role={role} />
+          ) : tab === 'notebooks' ? (
+            <NotebooksTab
+              classId={classId}
+              courseId={courseId}
+              topicId={topicId}
+              instructor={role === 'instructor'}
+              resource={search.resource}
+              onResource={(resource, how) =>
+                navigate({
+                  params: { classId, topicId, tab },
+                  search: { resource },
+                  replace: how === 'replace',
+                  resetScroll: how !== 'replace',
+                })
+              }
+            />
           ) : (
             <p className={styles.intro}>Nothing is available under {label} for this topic yet.</p>
           )}
