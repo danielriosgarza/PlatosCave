@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import styles from './Reading.module.css';
 import { HOLD_MS, READER_INPUT } from './readerInput';
 import type { ReadingPosition } from './readings';
@@ -10,6 +10,8 @@ interface Props {
   html: string;
   initial: ReadingPosition | null;
   onPosition: (position: ReadingPosition) => void;
+  /** Hands the reading's root element to the margin, which selects and marks passages in it. */
+  onRoot?: (root: HTMLDivElement | null) => void;
 }
 
 type BlockPlace = { blockId: string; offset: number };
@@ -60,8 +62,15 @@ function scrollToBlock(root: HTMLElement, position: BlockPlace) {
  * the page, and none may overwrite the place with where they left it. The HTML is sanitised once
  * more here before it is inserted (ADR-0002 §Readings on the app origin).
  */
-export function NativeReading({ html, initial, onPosition }: Props) {
-  const ref = useRef<HTMLDivElement>(null);
+export function NativeReading({ html, initial, onPosition, onRoot }: Props) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const attach = useCallback(
+    (element: HTMLDivElement | null) => {
+      ref.current = element;
+      onRoot?.(element);
+    },
+    [onRoot],
+  );
   const moved = useRef(false);
   const openedAt = useRef(performance.now());
   const start = useRef(initial && 'blockId' in initial ? initial : null);
@@ -131,7 +140,7 @@ export function NativeReading({ html, initial, onPosition }: Props) {
 
   return (
     <div
-      ref={ref}
+      ref={attach}
       className={styles.native}
       // biome-ignore lint/security/noDangerouslySetInnerHtml: sanitised twice with the reading allow-list: at ingestion and by sanitizeReading
       dangerouslySetInnerHTML={{ __html: shown }}
