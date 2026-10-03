@@ -6,6 +6,7 @@ import { RetryNotice } from '../components/RetryNotice';
 import { SourceDownload } from '../reading/SourceDownload';
 import { useSession } from '../session/useSession';
 import { ResourceTools } from '../workspace/ResourceTools';
+import { ColabSubmission } from './ColabSubmission';
 import styles from './Notebook.module.css';
 import { NotebookView } from './NotebookView';
 import { type NotebookSummary, useNotebookContent, useNotebooks } from './notebooks';
@@ -100,6 +101,7 @@ export function NotebooksTab({
     <NotebookPanel
       key={chosen.revisionId}
       classId={classId}
+      instructor={instructor}
       notebook={chosen}
       picker={picker}
       add={add}
@@ -109,11 +111,13 @@ export function NotebooksTab({
 
 function NotebookPanel({
   classId,
+  instructor,
   notebook,
   picker,
   add,
 }: {
   classId: string;
+  instructor: boolean;
   notebook: NotebookSummary;
   picker: ReactNode;
   add: ReactNode;
@@ -210,6 +214,11 @@ function NotebookPanel({
           showCode={showCode}
           showOutputs={showOutputs}
           outlineOpen={outlineOpen}
+        />
+        <ColabSubmission
+          classId={classId}
+          resourceId={notebook.resourceId}
+          instructor={instructor}
         />
       </div>
     );

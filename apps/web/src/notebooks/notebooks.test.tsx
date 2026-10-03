@@ -97,9 +97,24 @@ const notebook: Notebook = {
   ],
 };
 
-function api(me = makeMe({ classes: [studentIn(CLASS_A, 'Class A')] }), list = [REV]) {
-  return stubApi((url) => {
+type Reply = { status: number; body?: unknown };
+
+function api(
+  me = makeMe({ classes: [studentIn(CLASS_A, 'Class A')] }),
+  list = [REV],
+  /** Answers the submission routes; they answer "none yet" unless this says otherwise. */
+  submissions?: (url: string, init?: RequestInit) => Reply | undefined,
+) {
+  return stubApi((url, init) => {
     if (url === '/api/me') return { status: 200, body: me };
+    if (url.includes('/notebook-submissions') || url.endsWith('/colab-launch')) {
+      return (
+        submissions?.(url, init) ?? {
+          status: 200,
+          body: url.endsWith('/colab-launch') ? { launchedAt: null } : { submissions: [] },
+        }
+      );
+    }
     if (url === `/api/classes/${CLASS_A}/topics`) return { status: 200, body: makeTopics() };
     if (url === `/api/classes/${CLASS_A}/topics/${T_SAMPLING}/notebooks`) {
       return {
@@ -256,6 +271,159 @@ describe('Notebooks tab', () => {
     expect(await screen.findByText('No notebook has been added')).toBeInTheDocument();
     await waitFor(() =>
       expect(screen.getByRole('link', { name: 'Add notebook' })).toBeInTheDocument(),
+    );
+  });
+});
+
+const RESOURCE_URL = `/api/classes/${CLASS_A}/resources/${RES}`;
+const receipt = {
+  id: '00000000-0000-4000-8000-0000000000e1',
+  resourceId: RES,
+  resourceRevisionId: REV,
+  version: 1,
+  filename: 'Repeated samples.ipynb',
+  size: 4096,
+  sha256: 'ab'.repeat(32),
+  environment: { runtime: 'colab', kernel: 'Python 3', language: 'python', nbformat: '4.5' },
+  receivedAt: '2026-10-01T09:00:00.000Z',
+};
+const ipynb = () =>
+  new File(['{"nbformat":4}'], 'Repeated samples.ipynb', { type: 'application/octet-stream' });
+
+describe('Colab route and submissions', () => {
+  it('A10 Open in Colab is an external link that records a launch and promises no grade or sync', async () => {
+    const user = userEvent.setup();
+    const fetchMock = api();
+    renderApp(NOTEBOOKS);
+    const panel = await content();
+    const link = await within(panel).findByRole('link', { name: 'Open in Colab' });
+    expect(link).toHaveAttribute('href', 'https://colab.research.google.com/');
+    expect(link).toHaveAttribute('target', '_blank');
+    expect(link).toHaveAttribute('rel', expect.stringContaining('noopener'));
+    expect(
+      within(panel).getByText(/nothing is graded until you submit a notebook file here/),
+    ).toBeInTheDocument();
+    expect(within(panel).getByText(/Save a copy in Drive/)).toBeInTheDocument();
+    // Opening the link submits nothing.
+    link.addEventListener('click', (e) => e.preventDefault());
+    await user.click(link);
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        `${RESOURCE_URL}/colab-launch`,
+        expect.objectContaining({ method: 'POST' }),
+      ),
+    );
+    expect(
+      fetchMock.mock.calls.some(([url]) => String(url).includes('/notebook-submissions?')),
+    ).toBe(false);
+    expect(within(panel).queryByText(/Received/)).toBeNull();
+  });
+
+  it('A10 uploading a notebook shows Received only with the receipt the server returned', async () => {
+    const user = userEvent.setup();
+    let answer: Reply = { status: 200, body: receipt };
+    const fetchMock = api(undefined, undefined, (url, init) =>
+      init?.method === 'POST' && url.includes('/notebook-submissions?') ? answer : undefined,
+    );
+    renderApp(NOTEBOOKS);
+    const panel = await content();
+    const submit = await within(panel).findByRole('button', { name: 'Submit notebook' });
+    expect(submit).toBeDisabled();
+    await user.upload(within(panel).getByLabelText('Notebook file (.ipynb)'), ipynb());
+    // Chosen is not received.
+    expect(within(panel).queryByText(/Received/)).toBeNull();
+    answer = { status: 400, body: { error: 'The file is not text' } };
+    await user.click(submit);
+    expect(await within(panel).findByRole('alert')).toHaveTextContent('The file is not text');
+    expect(within(panel).queryByText(/Received/)).toBeNull();
+
+    answer = { status: 200, body: receipt };
+    await user.click(within(panel).getByRole('button', { name: 'Submit notebook' }));
+    expect(await within(panel).findByRole('status')).toHaveTextContent(
+      /Received .* · version 1 · Repeated samples\.ipynb · 4 KB · checksum abababababab/,
+    );
+    // The retry after the refusal reused one key, so the server can tell it is the same request.
+    const keys = fetchMock.mock.calls
+      .map(([url]) => String(url))
+      .filter((url) => url.includes('/notebook-submissions?'))
+      .map((url) => new URL(url, 'http://localhost').searchParams.get('submissionKey'));
+    expect(keys).toHaveLength(2);
+    expect(keys[0]).toBe(keys[1]);
+    const [, init] = fetchMock.mock.calls.find(([url]) =>
+      String(url).includes('/notebook-submissions?'),
+    ) ?? [undefined, undefined];
+    expect(init?.body).toBeInstanceOf(FormData);
+  });
+
+  it('A10 a file that is not a notebook is refused in the browser and nothing is sent', async () => {
+    const user = userEvent.setup({ applyAccept: false });
+    const fetchMock = api();
+    renderApp(NOTEBOOKS);
+    const panel = await content();
+    await user.upload(
+      await within(panel).findByLabelText('Notebook file (.ipynb)'),
+      new File(['answers'], 'answers.txt'),
+    );
+    expect(within(panel).getByRole('alert')).toHaveTextContent(
+      'Upload a Jupyter notebook (.ipynb) file',
+    );
+    expect(within(panel).getByRole('button', { name: 'Submit notebook' })).toBeDisabled();
+    expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'POST')).toBe(false);
+  });
+
+  it('A10 a student sees their own versions; an instructor sees every student’s with a download', async () => {
+    const user = userEvent.setup();
+    const mine = [{ ...receipt, version: 2, id: '00000000-0000-4000-8000-0000000000e2' }, receipt];
+    api(undefined, undefined, (url) =>
+      url.endsWith('/notebook-submissions/mine')
+        ? { status: 200, body: { submissions: mine } }
+        : undefined,
+    );
+    renderApp(NOTEBOOKS);
+    let panel = await content();
+    const heading = await within(panel).findByRole('heading', { name: 'Your submissions' });
+    const own = within(heading.parentElement as HTMLElement).getByRole('table');
+    expect(within(own).getAllByRole('row').slice(1)).toHaveLength(2);
+    expect(
+      within(own).getAllByText(/Colab · Python 3 · python \(as declared by the file\)/),
+    ).toHaveLength(2);
+    expect(within(panel).queryByText('Student submissions')).toBeNull();
+    cleanup();
+    vi.unstubAllGlobals();
+
+    const assign = vi.fn();
+    vi.stubGlobal('location', { ...window.location, assign });
+    const student = { id: '00000000-0000-4000-8000-0000000000f1', name: 'Sam Okafor' };
+    const fetchMock = api(
+      makeMe({ classes: [instructorIn(CLASS_A, 'Class A')] }),
+      undefined,
+      (url) => {
+        if (url.endsWith('/notebook-submissions')) {
+          return { status: 200, body: { submissions: [{ ...receipt, student }] } };
+        }
+        if (url.endsWith('/download')) {
+          return {
+            status: 200,
+            body: {
+              url: 'http://localhost:3100/content/snap',
+              expiresAt: '2026-10-01T09:05:00.000Z',
+            },
+          };
+        }
+        return undefined;
+      },
+    );
+    renderApp(NOTEBOOKS);
+    panel = await content();
+    expect(await within(panel).findByText('Student submissions')).toBeInTheDocument();
+    expect(within(panel).getByText('Sam Okafor')).toBeInTheDocument();
+    await user.click(
+      within(panel).getByRole('button', { name: 'Download version 1 of Sam Okafor' }),
+    );
+    await waitFor(() => expect(assign).toHaveBeenCalledWith('http://localhost:3100/content/snap'));
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/classes/${CLASS_A}/notebook-submissions/${receipt.id}/download`,
+      expect.anything(),
     );
   });
 });
