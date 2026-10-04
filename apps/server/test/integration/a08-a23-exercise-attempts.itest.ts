@@ -410,6 +410,64 @@ describe('exercise attempts', () => {
     }
   });
 
+  test('an archived class lets a member with no attempt read the exercise and inserts nothing', async () => {
+    await testDb.db.update(classes).set({ archivedAt: now }).where(eq(classes.id, ids.classA));
+    try {
+      const readUrl = (classId: string) =>
+        `/api/classes/${classId}/resources/${exerciseId}/exercise`;
+      const attemptRows = () =>
+        testDb.db.select().from(exerciseAttempts).where(eq(exerciseAttempts.classId, ids.classA));
+      const priyaRows = async () => (await attemptRows()).filter((row) => row.userId === ids.priya);
+      expect(await priyaRows()).toHaveLength(0);
+      const before = (await attemptRows()).length;
+
+      const read = await call('priya', 'GET', readUrl(ids.classA));
+      expect(read.status).toBe(200);
+      expect(read.body).toMatchObject({ resourceId: exerciseId, credit: null });
+      expect(read.body.steps.map((s: { id: string }) => s.id)).toEqual([
+        'predict',
+        'inspect',
+        'explain',
+      ]);
+      const [predict] = read.body.steps;
+      expect(predict).toMatchObject({
+        kind: 'single_choice',
+        prompt: sampleSize.steps[0]?.prompt,
+        hintCount: 2,
+        hasSolution: true,
+      });
+      expect(predict.options.map((o: { id: string }) => o.id).sort()).toEqual([
+        'narrower',
+        'same',
+        'wider',
+      ]);
+      // Hints, solutions, answers and feedback stay on the server, as for a fresh attempt.
+      const text = JSON.stringify(read.body);
+      for (const hidden of [
+        'Think about what averaging does to noise.',
+        'quadrupling n halves',
+        'Averages of more values vary less.',
+        '"correct"',
+        'feedback',
+      ]) {
+        expect([hidden, text.includes(hidden)]).toEqual([hidden, false]);
+      }
+      expect(await attemptRows()).toHaveLength(before);
+      expect(await priyaRows()).toHaveLength(0);
+
+      // A non-member, and a resource that is not an exercise, get 404.
+      expect((await call('bea', 'GET', readUrl(ids.classA))).status).toBe(404);
+      const reading = await call(
+        'sam',
+        'GET',
+        `/api/classes/${ids.classA}/resources/${ids.samplingReading}/exercise`,
+      );
+      expect(reading.status).toBe(404);
+    } finally {
+      await testDb.db.update(classes).set({ archivedAt: null }).where(eq(classes.id, ids.classA));
+    }
+  });
+
   test('A23 a removed student’s attempts stay reviewable, marked removed; the student and other classes get nothing', async () => {
     const attempt = await open('sam', ids.classA);
     const [membership] = await testDb.db

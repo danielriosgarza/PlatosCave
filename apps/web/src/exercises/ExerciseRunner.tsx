@@ -2,7 +2,14 @@ import { useState } from 'react';
 import { ApiError } from '../api/client';
 import buttons from '../components/Buttons.module.css';
 import { Loading } from '../components/Loading';
-import { type Attempt, type AttemptStep, useAttempt, useAttemptActions } from './attempt';
+import {
+  type Attempt,
+  type AttemptStep,
+  type ExerciseStepView,
+  useAttempt,
+  useAttemptActions,
+  useExerciseView,
+} from './attempt';
 import { creditSummary } from './credit';
 import styles from './Exercise.module.css';
 import { type Draft, initialDraft, StepForm, toResponse } from './StepForm';
@@ -29,6 +36,9 @@ export function ExerciseRunner({
   // Kept here: a stale tab moves to an attempt with another id, which remounts the keyed view.
   const [notice, setNotice] = useState<string | null>(null);
   if (query.isError) {
+    if (isArchived(query.error)) {
+      return <ExerciseReading classId={classId} resourceId={resourceId} title={title} />;
+    }
     return <OpenFailure error={query.error} retry={() => void query.refetch()} />;
   }
   if (!query.data) return <Loading label="Opening exercise" />;
@@ -45,6 +55,12 @@ export function ExerciseRunner({
   );
 }
 
+/** The class is archived and the caller has no attempt to resume: the server starts none. */
+const isArchived = (error: unknown) =>
+  error instanceof ApiError &&
+  error.status === 409 &&
+  (error.body as { error?: unknown } | null)?.error === 'class_archived';
+
 /** Why the exercise did not open: the server's reason, a retry for a lost connection, else it is closed. */
 function OpenFailure({ error, retry }: { error: unknown; retry: () => void }) {
   const body = error instanceof ApiError ? (error.body as { message?: unknown } | null) : null;
@@ -52,17 +68,6 @@ function OpenFailure({ error, retry }: { error: unknown; retry: () => void }) {
     return (
       <p className={styles.inlineError} role="alert">
         {body.message}
-      </p>
-    );
-  }
-  const archived =
-    error instanceof ApiError &&
-    error.status === 409 &&
-    (error.body as { error?: unknown } | null)?.error === 'class_archived';
-  if (archived) {
-    return (
-      <p className={styles.inlineError} role="alert">
-        This class is archived, so practice is read-only. You did not start this exercise.
       </p>
     );
   }
@@ -81,6 +86,101 @@ function OpenFailure({ error, retry }: { error: unknown; retry: () => void }) {
       </button>
     </div>
   );
+}
+
+/**
+ * An exercise never started in an archived class: its steps to read, with nothing to answer,
+ * check, reveal or restart. Hints and solutions are not sent (§4, §9).
+ */
+function ExerciseReading({
+  classId,
+  resourceId,
+  title,
+}: {
+  classId: string;
+  resourceId: string;
+  title: string;
+}) {
+  const query = useExerciseView(classId, resourceId);
+  if (query.isError) {
+    return <OpenFailure error={query.error} retry={() => void query.refetch()} />;
+  }
+  if (!query.data) return <Loading label="Opening exercise" />;
+  const steps = query.data.steps;
+  return (
+    <section className={styles.stage} aria-label={`Exercise ${title}`}>
+      <div className={styles.exercise}>
+        <p className={styles.notice} role="status">
+          This class is archived, so practice is read-only. You did not start this exercise; its
+          steps are shown for reading and nothing is recorded.
+        </p>
+        <ol className={styles.readSteps} aria-label={`Steps of ${title}`}>
+          {steps.map((step, i) => (
+            <li key={step.id}>
+              <div className={styles.head}>
+                <div className={styles.stepLabel}>{`${i + 1} · ${step.title}`}</div>
+                <p className={styles.prompt}>{step.prompt}</p>
+              </div>
+              <StepContent step={step} />
+            </li>
+          ))}
+        </ol>
+      </div>
+    </section>
+  );
+}
+
+/** What a step asks for, as text: its options, items, pairs, control or starter code. */
+function StepContent({ step }: { step: ExerciseStepView }) {
+  const list = (label: string, items: { id: string; label: string }[] | undefined) => (
+    <ul className={styles.readItems} aria-label={label}>
+      {(items ?? []).map((item) => (
+        <li key={item.id}>{item.label}</li>
+      ))}
+    </ul>
+  );
+  switch (step.kind) {
+    case 'numeric':
+      return (
+        <p className={`${styles.small} ${styles.centered}`}>
+          {step.unit ? `A number, in ${step.unit}.` : 'A number.'}
+        </p>
+      );
+    case 'single_choice':
+      return list('Options; one is correct', step.options);
+    case 'multiple_choice':
+      return list('Options; any number may be correct', step.options);
+    case 'ordering':
+      return list('Items to put in order', step.options);
+    case 'matching':
+      return (
+        <>
+          {list('Items to match', step.prompts)}
+          {list('Choices', step.choices)}
+        </>
+      );
+    case 'simulation': {
+      const control = step.control;
+      if (!control) return null;
+      return (
+        <p className={`${styles.small} ${styles.centered}`}>
+          {`${control.label} (${control.name}) from ${control.min} to ${control.max} in steps of ${control.step}`}
+          {step.compare?.length
+            ? `; compare ${control.name} = ${step.compare.join(' and ')}.`
+            : '.'}
+        </p>
+      );
+    }
+    case 'code':
+      return (
+        <div className={`${styles.explain} ${styles.code}`}>
+          <p className={styles.small}>{`Written in ${step.language === 'r' ? 'R' : 'Python'}.`}</p>
+          {step.starter && <pre className={styles.readCode}>{step.starter}</pre>}
+        </div>
+      );
+    case 'text':
+      return <p className={`${styles.small} ${styles.centered}`}>A written explanation.</p>;
+  }
 }
 
 function PracticeAttempt({
