@@ -705,6 +705,25 @@ describe('publication check stays current', () => {
   });
 });
 
+describe('page titles', () => {
+  it('A19 the course draft and topic editor are titled; a lost grant names nothing', async () => {
+    api(grant(), fresh());
+    renderApp(`/courses/${COURSE}/edit`);
+    await screen.findByRole('heading', { name: 'Statistical thinking' });
+    await waitFor(() => expect(document.title).toBe('Statistical thinking · Parallax'));
+    cleanup();
+
+    await open();
+    await waitFor(() => expect(document.title).toBe('Edit Sampling · Parallax'));
+    cleanup();
+
+    api(grant({ editor: false }), fresh());
+    renderApp(`/courses/${COURSE}/edit/${TOPIC}`);
+    await screen.findByRole('heading', { name: 'This page is not available' });
+    await waitFor(() => expect(document.title).toBe('This page is not available · Parallax'));
+  });
+});
+
 describe('course topics', () => {
   it('A26 a failed reorder puts the first topic back instead of leaving two at one position', async () => {
     const user = userEvent.setup();

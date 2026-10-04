@@ -2,9 +2,9 @@ import type { adoptionDiff } from '@parallax/contracts/routes/releases';
 import { and, asc, desc, eq, isNotNull } from 'drizzle-orm';
 import type { z } from 'zod';
 import type { ClassScope, CourseScope } from '../../auth/scope';
+import { audit } from '../audit';
 import type { Db } from '../client';
 import {
-  auditEvents,
   classes,
   classReleaseHistory,
   courseReleases,
@@ -198,7 +198,7 @@ export function adoptRelease(
       actorId: scope.user.id,
       diff,
     });
-    await tx.insert(auditEvents).values({
+    await audit(tx, {
       actorId: scope.user.id,
       action: 'release.adopt',
       scopeKind: 'class',

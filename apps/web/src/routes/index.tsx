@@ -12,7 +12,7 @@ function Home() {
       ? 'API unavailable'
       : 'Checking API…';
   return (
-    <main style={{ padding: 'var(--pc-space-32) var(--pc-space-28)' }}>
+    <main id="main" style={{ padding: 'var(--pc-space-32) var(--pc-space-28)' }}>
       <h1>Parallax</h1>
       <p role="status">{line}</p>
     </main>

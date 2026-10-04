@@ -3,7 +3,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { MAX_SUBMISSION_BYTES } from '@parallax/contracts/routes/notebookSubmissions';
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { buildApp } from '../../src/app';
@@ -181,6 +181,19 @@ describe('Open in Colab', () => {
       scopeId: ids.classA,
       targetId: notebookId,
     });
+  });
+
+  test('repeated Colab launches of one notebook by one student are one audit row', async () => {
+    const again = await call('sam', 'POST', `${base(ids.classA)}/colab-launch`);
+    expect(again.status).toBe(200);
+    expect(again.body.launchedAt).toBe(now.toISOString());
+    const events = await testDb.db
+      .select()
+      .from(auditEvents)
+      .where(
+        and(eq(auditEvents.action, 'notebook.colab_launched'), eq(auditEvents.actorId, ids.sam)),
+      );
+    expect(events).toHaveLength(1);
   });
 
   test('A10 a launch of a resource that is not a notebook of the class is a 404', async () => {

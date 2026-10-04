@@ -6,6 +6,7 @@ import { draftsQuery } from '../../authoring/queries';
 import { ResourceSection } from '../../authoring/ResourceSection';
 import { TopicForm } from '../../authoring/TopicForm';
 import styles from '../../components/Page.module.css';
+import { usePageTitle } from '../../components/pageTitle';
 import { Unavailable } from '../../components/Unavailable';
 import { PreviewButton } from '../../preview/PreviewButton';
 import { useSession } from '../../session/useSession';
@@ -18,14 +19,20 @@ function EditTopic() {
   const { courseId, topicId } = Route.useParams();
   const session = useSession();
   const drafts = useQuery({ ...draftsQuery(courseId), enabled: session.status === 'signed-in' });
-  if (session.status !== 'signed-in') return <main className={styles.index} aria-busy="true" />;
+  const editedTopic = drafts.data?.topics.find((t) => t.id === topicId);
+  const allowed =
+    session.status === 'signed-in' &&
+    session.me.courses.some((c) => c.courseId === courseId && canEdit(c));
+  usePageTitle(allowed && editedTopic ? `Edit ${editedTopic.title}` : undefined);
+  if (session.status !== 'signed-in')
+    return <main id="main" className={styles.index} aria-busy="true" />;
   const grant = session.me.courses.find((c) => c.courseId === courseId);
   if (!grant || !canEdit(grant)) return <Unavailable />;
 
   const topics = drafts.data?.topics ?? [];
   const topic = topics.find((t) => t.id === topicId);
   return (
-    <main className={styles.index}>
+    <main id="main" className={styles.index}>
       <p className={`${styles.small} ${styles.muted}`}>
         <Link to="/courses/$courseId/edit" params={{ courseId }} className={styles.link}>
           {grant.title}
