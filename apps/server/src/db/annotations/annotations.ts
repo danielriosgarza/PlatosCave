@@ -21,12 +21,15 @@ import { excerpt } from '../../annotations/excerpt';
 import { layoutOf, mapAnchor } from '../../annotations/mapping';
 import { type ClassScope, isDraftPreview } from '../../auth/scope';
 import { classArchived, invalid, notFound, type Outcome } from '../../outcome';
+import { audit } from '../audit';
 import type { Db } from '../client';
 import { registerAffectedBy } from '../content/adoption';
 import { studyableDraft, studyableResource, studyableRows } from '../content/releases';
 import {
   annotationPlacements,
   annotations,
+  classes,
+  classMemberships,
   posts,
   releaseResources,
   resourceRevisions,
@@ -71,7 +74,12 @@ const toAnnotation = (row: AnnotationRow, placement: Annotation['placement']): A
   updatedAt: row.updatedAt.toISOString(),
 });
 
-type Placed = { id: string; resourceId: string; resourceRevisionId: string; anchor: Anchor };
+type Placed = {
+  id: string;
+  resourceId: string;
+  resourceRevisionId: string;
+  anchor: Anchor;
+};
 
 /** Resource id → the revision the caller studies it at, or undefined if they cannot. */
 type Pins = Map<string, string | undefined>;
@@ -190,6 +198,25 @@ async function loadThreads(db: Db, scope: ClassScope, where: SQL, now: Date, pin
     now,
     pins,
   );
+  const [policy] = await db
+    .select({
+      edit: classes.studentsEditPosts,
+      delete: classes.studentsDeletePosts,
+    })
+    .from(classes)
+    .where(eq(classes.id, scope.classId));
+  const authorIds = [...new Set(postRows.map((r) => r.post.authorId))];
+  const roleRows = authorIds.length
+    ? await db
+        .select({
+          userId: classMemberships.userId,
+          role: classMemberships.role,
+        })
+        .from(classMemberships)
+        .where(and(forClass(scope, classMemberships), inArray(classMemberships.userId, authorIds)))
+    : [];
+  const roleOf = new Map(roleRows.map((r) => [r.userId, r.role]));
+  const instructor = scope.role === 'instructor';
   return rows.map(
     ({ thread, authorName }): Thread => ({
       id: thread.id,
@@ -201,16 +228,32 @@ async function loadThreads(db: Db, scope: ClassScope, where: SQL, now: Date, pin
       author: { id: thread.authorId, name: authorName },
       placement: placements.get(thread.id) ?? null,
       createdAt: thread.createdAt.toISOString(),
+      can: {
+        reply: !scope.archived,
+        resolve: !scope.archived && instructor && thread.status === 'open',
+        reopen:
+          !scope.archived &&
+          thread.status === 'resolved' &&
+          (instructor || thread.authorId === scope.user.id),
+      },
       posts: (postsOf.get(thread.id) ?? []).map(({ post, authorName: name }) => {
         const hidden = post.deletedAt !== null || post.moderatedAt !== null;
+        const own = post.authorId === scope.user.id;
+        const live = !scope.archived && !hidden;
         return {
           id: post.id,
           parentId: post.parentId,
           author: { id: post.authorId, name },
+          authorRole: roleOf.get(post.authorId) ?? 'student',
           body: hidden ? null : post.body,
           edited: post.editedAt !== null,
           deleted: post.deletedAt !== null,
           moderated: post.moderatedAt !== null,
+          can: {
+            edit: live && own && (instructor || (policy?.edit ?? true)),
+            delete: live && own && (instructor || (policy?.delete ?? true)),
+            moderate: live && instructor && !own,
+          },
           createdAt: post.createdAt.toISOString(),
         };
       }),
@@ -243,7 +286,10 @@ export async function listForResource(db: Db, scope: ClassScope, resourceId: str
         pins,
       )
     : [];
-  return { annotations: await annotationViews(db, scope, own, now, pins), threads: discussion };
+  return {
+    annotations: await annotationViews(db, scope, own, now, pins),
+    threads: discussion,
+  };
 }
 
 export async function createAnnotation(
@@ -312,7 +358,11 @@ export async function saveAnnotation(
   }
   const [row] = await db
     .update(annotations)
-    .set({ ...changes, revision: sql`${annotations.revision} + 1`, updatedAt: now })
+    .set({
+      ...changes,
+      revision: sql`${annotations.revision} + 1`,
+      updatedAt: now,
+    })
     .where(
       and(
         eq(annotations.id, annotationId),
@@ -325,7 +375,11 @@ export async function saveAnnotation(
   if (row) return { ok: true, value: await annotationView(db, scope, row, now) };
   const latest = await ownAnnotation(db, scope, annotationId);
   return latest
-    ? { ok: false, reason: 'conflict', current: await annotationView(db, scope, latest, now) }
+    ? {
+        ok: false,
+        reason: 'conflict',
+        current: await annotationView(db, scope, latest, now),
+      }
     : notFound;
 }
 
@@ -363,7 +417,12 @@ async function insertThread(
 ): Promise<Thread> {
   const { body, ...thread } = values;
   const isPreview = scope.membership.isPreview;
-  const author = { classId: scope.classId, authorId: scope.user.id, isPreview, createdAt: now };
+  const author = {
+    classId: scope.classId,
+    authorId: scope.user.id,
+    isPreview,
+    createdAt: now,
+  };
   const id = await db.transaction(async (tx) => {
     const [row] = await tx
       .insert(threads)
@@ -425,6 +484,248 @@ export async function shareAnnotation(
     now,
   );
   return { ok: true, value };
+}
+
+/** A thread the caller may read, as a row; the audience rule applies. */
+async function readableThread(db: Db, scope: ClassScope, threadId: string) {
+  const [row] = await db
+    .select()
+    .from(threads)
+    .where(and(eq(threads.id, threadId), visibleTo(scope, threads)));
+  return row;
+}
+
+/** The thread's current view for the caller, or "not found" if it vanished meanwhile. */
+async function threadOutcome(
+  db: Db,
+  scope: ClassScope,
+  threadId: string,
+  now: Date,
+): Promise<Outcome<Thread>> {
+  const [view] = await loadThreads(db, scope, eq(threads.id, threadId), now);
+  return view ? { ok: true, value: view } : notFound;
+}
+
+export async function replyToThread(
+  db: Db,
+  scope: ClassScope,
+  threadId: string,
+  input: Body<typeof contracts.replyToThread>,
+  now: Date,
+): Promise<Outcome<Thread>> {
+  if (scope.archived) return classArchived;
+  const thread = await readableThread(db, scope, threadId);
+  if (!thread || !(await studyableResource(db, scope, thread.resourceId, now))) return notFound;
+  const author = {
+    classId: scope.classId,
+    authorId: scope.user.id,
+    isPreview: scope.membership.isPreview,
+  };
+  const result = await db.transaction(async (tx) => {
+    // The question opened the thread; a reply without a named parent answers it.
+    const parents = await tx
+      .select({ id: posts.id, deletedAt: posts.deletedAt })
+      .from(posts)
+      .where(and(eq(posts.threadId, threadId), visiblePost(scope, posts)))
+      .orderBy(asc(posts.createdAt), asc(posts.id));
+    const parent = input.parentId ? parents.find((p) => p.id === input.parentId) : parents[0];
+    if (input.parentId && !parent) return invalid('The post you are replying to is not here');
+    if (parent) {
+      // Hold the parent against a concurrent hard delete until this reply is committed.
+      const [held] = await tx
+        .select({ id: posts.id })
+        .from(posts)
+        .where(eq(posts.id, parent.id))
+        .for('key share');
+      if (!held) return invalid('The post you are replying to is not here');
+    }
+    await tx.insert(posts).values({
+      ...author,
+      threadId,
+      parentId: parent?.id ?? null,
+      body: input.body,
+      createdAt: now,
+    });
+    await tx.update(threads).set({ updatedAt: now }).where(eq(threads.id, threadId));
+    return undefined;
+  });
+  if (result) return result;
+  return threadOutcome(db, scope, threadId, now);
+}
+
+/**
+ * One post the caller may read in a thread they may read, on a resource they may still study:
+ * once the margin listing answers 404 for a resource, so does every route reaching its posts.
+ */
+async function readablePost(db: Db, scope: ClassScope, postId: string, now: Date) {
+  const [row] = await db
+    .select({ post: posts, thread: threads })
+    .from(posts)
+    .innerJoin(threads, and(eq(threads.id, posts.threadId), eq(threads.classId, posts.classId)))
+    .where(and(eq(posts.id, postId), visibleTo(scope, threads), visiblePost(scope, posts)));
+  if (!row || !(await studyableResource(db, scope, row.thread.resourceId, now))) return undefined;
+  return row;
+}
+
+async function postPolicy(db: Db, scope: ClassScope) {
+  const [row] = await db
+    .select({
+      edit: classes.studentsEditPosts,
+      delete: classes.studentsDeletePosts,
+    })
+    .from(classes)
+    .where(eq(classes.id, scope.classId));
+  return row ?? { edit: true, delete: true };
+}
+
+export async function editPost(
+  db: Db,
+  scope: ClassScope,
+  postId: string,
+  input: Body<typeof contracts.editPost>,
+  now: Date,
+): Promise<Outcome<Thread>> {
+  if (scope.archived) return classArchived;
+  const found = await readablePost(db, scope, postId, now);
+  if (!found || found.post.authorId !== scope.user.id) return notFound;
+  const { post } = found;
+  if (post.deletedAt || post.moderatedAt) return invalid('This post was removed and cannot change');
+  if (scope.role === 'student' && !(await postPolicy(db, scope)).edit) {
+    return invalid('This class does not let students edit their posts');
+  }
+  if (input.body !== post.body) {
+    await db
+      .update(posts)
+      .set({
+        body: input.body,
+        revision: sql`${posts.revision} + 1`,
+        editedAt: now,
+      })
+      .where(eq(posts.id, post.id));
+  }
+  return threadOutcome(db, scope, post.threadId, now);
+}
+
+export async function deletePost(
+  db: Db,
+  scope: ClassScope,
+  postId: string,
+  now: Date,
+): Promise<Outcome<Thread>> {
+  if (scope.archived) return classArchived;
+  const found = await readablePost(db, scope, postId, now);
+  if (!found || found.post.authorId !== scope.user.id) return notFound;
+  const { post } = found;
+  if (post.deletedAt) return threadOutcome(db, scope, post.threadId, now);
+  if (post.moderatedAt) return invalid('This post was removed and cannot change');
+  if (scope.role === 'student' && !(await postPolicy(db, scope)).delete) {
+    return invalid('This class does not let students delete their posts');
+  }
+  await db.transaction(async (tx) => {
+    // A reply inserted meanwhile takes a key-share lock on its parent; locking the post first
+    // makes the dependents check below final, so the delete never trips `posts_parent_fk`.
+    await tx.select({ id: posts.id }).from(posts).where(eq(posts.id, post.id)).for('update');
+    const [first] = await tx
+      .select({ id: posts.id })
+      .from(posts)
+      .where(eq(posts.threadId, post.threadId))
+      .orderBy(asc(posts.createdAt), asc(posts.id))
+      .limit(1);
+    const [dependent] = await tx
+      .select({ id: posts.id })
+      .from(posts)
+      .where(eq(posts.parentId, post.id))
+      .limit(1);
+    if (first?.id === post.id || dependent) {
+      await tx
+        .update(posts)
+        .set({ body: null, deletedAt: now, deletedBy: scope.user.id })
+        .where(eq(posts.id, post.id));
+    } else {
+      await tx.delete(posts).where(eq(posts.id, post.id));
+    }
+  });
+  return threadOutcome(db, scope, post.threadId, now);
+}
+
+export async function setThreadStatus(
+  db: Db,
+  scope: ClassScope,
+  threadId: string,
+  status: 'open' | 'resolved',
+  now: Date,
+): Promise<Outcome<Thread>> {
+  if (scope.archived) return classArchived;
+  const thread = await readableThread(db, scope, threadId);
+  if (!thread || !(await studyableResource(db, scope, thread.resourceId, now))) return notFound;
+  const instructor = scope.role === 'instructor';
+  if (status === 'resolved' && !instructor) {
+    return invalid('Only an instructor can mark a discussion resolved');
+  }
+  if (status === 'open' && !instructor && thread.authorId !== scope.user.id) {
+    return invalid('Only an instructor or the person who asked can reopen a discussion');
+  }
+  if (thread.status !== status) {
+    await db
+      .update(threads)
+      .set(
+        status === 'resolved'
+          ? {
+              status,
+              resolvedAt: now,
+              resolvedBy: scope.user.id,
+              updatedAt: now,
+            }
+          : { status, resolvedAt: null, resolvedBy: null, updatedAt: now },
+      )
+      .where(eq(threads.id, threadId));
+  }
+  return threadOutcome(db, scope, threadId, now);
+}
+
+/** Instructor moderation (§8): the post is hidden from everyone, and the change is audited. */
+export async function moderatePost(
+  db: Db,
+  scope: ClassScope,
+  postId: string,
+  input: Body<typeof contracts.moderatePost>,
+  now: Date,
+): Promise<Outcome<Thread>> {
+  if (scope.archived) return classArchived;
+  if (scope.role !== 'instructor') return notFound;
+  const found = await readablePost(db, scope, postId, now);
+  if (!found) return notFound;
+  const { post } = found;
+  if (post.authorId === scope.user.id) {
+    return invalid('Delete your own posts instead of moderating them');
+  }
+  if (!post.deletedAt && !post.moderatedAt) {
+    await db.transaction(async (tx) => {
+      await tx
+        .update(posts)
+        .set({
+          moderatedAt: now,
+          moderatedBy: scope.user.id,
+          moderationReason: input.reason,
+        })
+        .where(eq(posts.id, post.id));
+      await audit(tx, {
+        actorId: scope.user.id,
+        action: 'post.moderate',
+        scopeKind: 'class',
+        scopeId: scope.classId,
+        targetType: 'post',
+        targetId: post.id,
+        before: {
+          threadId: post.threadId,
+          authorId: post.authorId,
+          body: post.body,
+        },
+        after: { moderated: true, reason: input.reason },
+      });
+    });
+  }
+  return threadOutcome(db, scope, post.threadId, now);
 }
 
 /**
@@ -503,7 +804,12 @@ export async function listNotifications(
 
 type Placement = z.input<typeof placementContracts.placeMark.response>;
 type PlacementRow = typeof annotationPlacements.$inferSelect;
-type Mark = { id: string; resourceId: string; resourceRevisionId: string; anchor: Anchor };
+type Mark = {
+  id: string;
+  resourceId: string;
+  resourceRevisionId: string;
+  anchor: Anchor;
+};
 export type Target = { annotationId: string } | { threadId: string };
 
 /** Every resource of the class's release with its pinned revision and derived outputs. */
@@ -547,7 +853,12 @@ export function placementView(
     };
   }
   if (!row)
-    return { resourceRevisionId: revisionId, status: 'pending', anchor: null, confidence: null };
+    return {
+      resourceRevisionId: revisionId,
+      status: 'pending',
+      anchor: null,
+      confidence: null,
+    };
   return {
     resourceRevisionId: revisionId,
     status: row.status,
@@ -617,7 +928,10 @@ export async function mapClass(db: Db, scope: ClassScope): Promise<MapResult> {
   const asked = moved(await db.select(fields(threads)).from(threads).where(where(threads)));
   if (notes.length + asked.length === 0) return result;
 
-  const marks = { annotationIds: notes.map((m) => m.id), threadIds: asked.map((m) => m.id) };
+  const marks = {
+    annotationIds: notes.map((m) => m.id),
+    threadIds: asked.map((m) => m.id),
+  };
   const pinned = [...pins.values()].map((p) => p.revisionId);
   const placed = await loadPlacements(db, scope, marks, pinned);
   // Anchored placement on the newest revision per mark: the best starting point after a
@@ -800,7 +1114,13 @@ export async function listMapping(db: Db, scope: ClassScope): Promise<MappingLis
     { threadIds: asked.map((a) => a.thread.id) },
     pinned,
   );
-  const order = { needs_reattachment: 0, pending: 1, manual: 2, mapped: 3, original: 4 };
+  const order = {
+    needs_reattachment: 0,
+    pending: 1,
+    manual: 2,
+    mapped: 3,
+    original: 4,
+  };
   const items = asked.flatMap(({ thread, authorName }) => {
     const pin = pins.get(thread.resourceId);
     const placement = placementView(
@@ -850,7 +1170,10 @@ registerAffectedBy('annotations', async (ex, scope, revisionIds) => {
     // Marks made on an older revision and placed on one the class now leaves.
     tally(
       await ex
-        .select({ revisionId: annotationPlacements.resourceRevisionId, n: sql<number>`count(*)` })
+        .select({
+          revisionId: annotationPlacements.resourceRevisionId,
+          n: sql<number>`count(*)`,
+        })
         .from(annotationPlacements)
         .innerJoin(t, eq(t.id, markColumn))
         .where(

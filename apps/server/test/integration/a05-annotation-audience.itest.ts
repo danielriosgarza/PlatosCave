@@ -37,6 +37,18 @@ afterAll(async () => {
   await testDb?.drop();
 });
 
+/** What the caller may do differs per viewer and with archiving; the rest of a view must not. */
+const withoutCan = (value: unknown): unknown =>
+  Array.isArray(value)
+    ? value.map(withoutCan)
+    : value && typeof value === 'object'
+      ? Object.fromEntries(
+          Object.entries(value)
+            .filter(([key]) => key !== 'can')
+            .map(([key, v]) => [key, withoutCan(v)]),
+        )
+      : value;
+
 const draftId = '00000000-0000-4000-8000-000000000999';
 const drawing = [
   {
@@ -125,7 +137,7 @@ describe('A05 private annotations and an instructor question', () => {
 
     const teacher = await list('marcus', ids.classB);
     expect(teacher.annotations).toEqual([]);
-    expect(teacher.threads).toContainEqual(question);
+    expect(withoutCan(teacher.threads)).toContainEqual(withoutCan(question));
 
     // Priya studies in class B: a classmate sees neither the note nor the instructor question.
     const classmate = await list('priya', ids.classB);
