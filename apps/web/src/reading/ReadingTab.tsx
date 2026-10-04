@@ -2,6 +2,7 @@ import { type QueryClient, useQueryClient } from '@tanstack/react-query';
 import { Link, useRouter } from '@tanstack/react-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiError } from '../api/client';
+import { Loading } from '../components/Loading';
 import { OfflineBanner } from '../components/OfflineBanner';
 import page from '../components/Page.module.css';
 import { RetryNotice } from '../components/RetryNotice';
@@ -74,9 +75,7 @@ export function ReadingTab({ classId, courseId, topicId, instructor, search, onS
             onRetry={() => void list.refetch()}
           />
         ) : (
-          <p className={styles.loading} role="status">
-            Loading reading
-          </p>
+          <Loading label="Loading reading" className={styles.loading} />
         )}
       </div>
     );
@@ -353,27 +352,18 @@ function ReadingView({
         onRetry={() => void content.refetch()}
       />
     ) : (
-      <p className={styles.loading} role="status">
-        Loading reading
-      </p>
+      <Loading label="Loading reading" className={styles.loading} />
     );
   }
   if (data.status === 'pending') {
-    return (
-      <p className={styles.loading} role="status">
-        {data.title} is being prepared
-      </p>
-    );
+    return <Loading label={`${data.title} is being prepared`} className={styles.loading} />;
   }
   if (data.status === 'failed') {
     return (
-      <div className={page.feedback} role="alert">
-        <p>
-          {data.title} could not be processed{data.error ? `: ${data.error}` : ''}
-        </p>
-        <button type="button" className={page.outline} onClick={() => void content.refetch()}>
-          Try again
-        </button>
+      <RetryNotice
+        message={`${data.title} could not be processed${data.error ? `: ${data.error}` : ''}`}
+        onRetry={() => void content.refetch()}
+      >
         {data.sourceKey && (
           <SourceDownload
             classId={classId}
@@ -382,7 +372,7 @@ function ReadingView({
             className={page.outline}
           />
         )}
-      </div>
+      </RetryNotice>
     );
   }
   const offline = (

@@ -1,6 +1,7 @@
 import { Link } from '@tanstack/react-router';
 import { type ReactNode, useEffect, useState } from 'react';
 import { ApiError } from '../api/client';
+import { Loading } from '../components/Loading';
 import page from '../components/Page.module.css';
 import { RetryNotice } from '../components/RetryNotice';
 import { SourceDownload } from '../reading/SourceDownload';
@@ -61,7 +62,7 @@ export function NotebooksTab({
             onRetry={() => void list.refetch()}
           />
         ) : (
-          <p role="status">Loading notebooks</p>
+          <Loading label="Loading notebooks" />
         )}
       </div>
     );
@@ -147,9 +148,7 @@ function ShinyPanel({
         <RetryNotice message="This app could not be loaded." onRetry={() => void shiny.refetch()} />
       </div>
     ) : (
-      <p className={styles.status} role="status">
-        Loading app
-      </p>
+      <Loading label="Loading app" className={styles.status} />
     );
   } else {
     body = <ShinyEmbed title={shiny.data.title} url={shiny.data.url} origin={shiny.data.origin} />;
@@ -244,16 +243,10 @@ function NotebookPanel({
         />
       </div>
     ) : (
-      <p className={styles.status} role="status">
-        Loading notebook
-      </p>
+      <Loading label="Loading notebook" className={styles.status} />
     );
   } else if (data.status === 'pending') {
-    body = (
-      <p className={styles.status} role="status">
-        {data.title} is being prepared
-      </p>
-    );
+    body = <Loading label={`${data.title} is being prepared`} className={styles.status} />;
   } else if (!ready) {
     body = (
       <div className={`${page.feedback} ${styles.status}`} role="alert">

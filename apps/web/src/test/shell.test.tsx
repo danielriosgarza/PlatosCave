@@ -52,8 +52,9 @@ describe('courses contexts', () => {
   it('A01 explains to a student on the instructor view that there is no instructor access', async () => {
     stubApi(signedIn(makeMe({ classes: [studentIn(CLASS_A, 'Class A')] })));
     renderApp('/courses?view=instructor');
-    expect(await screen.findByRole('heading', { name: 'Courses you teach' })).toBeInTheDocument();
-    expect(screen.getByText('This account has no instructor access')).toBeInTheDocument();
+    // The loading state already carries the heading, so wait for the cards' own text.
+    expect(await screen.findByText('This account has no instructor access')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Courses you teach' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Class A/ })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Class review' })).toBeNull();
     expect(screen.queryByRole('link', { name: 'Instructor view' })).toBeNull();
@@ -70,8 +71,9 @@ describe('courses contexts', () => {
       ),
     );
     renderApp('/courses');
-    expect(await screen.findByRole('heading', { name: 'Your courses' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /Class B/ })).toBeInTheDocument();
+    // The loading state carries the same heading, so wait for the cards themselves.
+    expect(await screen.findByRole('link', { name: /Class B/ })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Your courses' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /Class A/ })).toBeNull();
     expect(screen.queryByRole('link', { name: 'Class review' })).toBeNull();
 
