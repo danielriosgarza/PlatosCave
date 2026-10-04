@@ -118,7 +118,7 @@ afterAll(async () => {
 const base = (classId: string, resourceId = notebookId) =>
   `/api/classes/${classId}/resources/${resourceId}`;
 
-async function call(who: PersonName, method: 'GET' | 'POST', url: string) {
+async function call(who: PersonName, method: 'GET' | 'POST' | 'DELETE', url: string) {
   const res = await app.inject({
     method,
     url,
@@ -411,10 +411,12 @@ describe('who sees what', () => {
 
   test('A10 a removed student’s submissions stay listable and downloadable for the instructor, marked removed', async () => {
     const [membership] = await testDb.db
-      .delete(classMemberships)
-      .where(and(eq(classMemberships.classId, ids.classA), eq(classMemberships.userId, ids.sam)))
-      .returning();
+      .select()
+      .from(classMemberships)
+      .where(and(eq(classMemberships.classId, ids.classA), eq(classMemberships.userId, ids.sam)));
     if (!membership) throw new Error('sam has no membership in class A');
+    const removal = await call('elena', 'DELETE', `/api/classes/${ids.classA}/members/${ids.sam}`);
+    expect(removal.status).toBe(200);
     try {
       const listing = await call('priya', 'GET', `${base(ids.classA)}/notebook-submissions`);
       expect(listing.status).toBe(200);
@@ -439,5 +441,22 @@ describe('who sees what', () => {
     }
     const back = await call('priya', 'GET', `${base(ids.classA)}/notebook-submissions`);
     expect(back.body.submissions.every((s: { removed: boolean }) => !s.removed)).toBe(true);
+  });
+
+  test('A10 a removed instructor’s own non-preview submission does not appear in review', async () => {
+    const sent = await submit(
+      'noor',
+      { name: 'noor.ipynb', bytes: colabNotebook('n') },
+      'noor-key-0001',
+    );
+    expect(sent.status).toBe(200);
+    const listedIds = async () =>
+      (await call('priya', 'GET', `${base(ids.classA)}/notebook-submissions`)).body.submissions.map(
+        (s: { id: string }) => s.id,
+      );
+    expect(await listedIds()).not.toContain(sent.body.id);
+    const removal = await call('elena', 'DELETE', `/api/classes/${ids.classA}/members/${ids.noor}`);
+    expect(removal.status).toBe(200);
+    expect(await listedIds()).not.toContain(sent.body.id);
   });
 });

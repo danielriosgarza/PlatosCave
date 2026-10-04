@@ -1,5 +1,5 @@
 import type * as contracts from '@parallax/contracts/routes/notebookSubmissions';
-import { and, asc, desc, eq, gt, isNull, max, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, max, sql } from 'drizzle-orm';
 import type { z } from 'zod';
 import type { ClassScope } from '../auth/scope';
 import { classArchived, invalid, notFound, type Outcome } from '../outcome';
@@ -8,6 +8,7 @@ import { audit } from './audit';
 import type { Db } from './client';
 import { studyableResource } from './content/releases';
 import { excludePreview } from './preview';
+import { studentOrRemovedStudent } from './removedStudents';
 import { auditEvents, classMemberships, notebookSubmissions, users } from './schema';
 import { forClass } from './scoped';
 
@@ -216,8 +217,7 @@ export async function reviewSubmissions(
         forClass(scope, notebookSubmissions),
         eq(notebookSubmissions.resourceId, resourceId),
         excludePreview(notebookSubmissions),
-        // Removal deletes the membership; that work stays reviewable, marked as removed.
-        or(isNull(classMemberships.role), eq(classMemberships.role, 'student')),
+        studentOrRemovedStudent(notebookSubmissions),
       ),
     )
     .orderBy(asc(users.name), asc(notebookSubmissions.userId), desc(notebookSubmissions.version));

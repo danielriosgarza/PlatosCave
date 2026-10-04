@@ -1,7 +1,7 @@
 import { randomInt } from 'node:crypto';
 import { type ExerciseStep, type ExerciseV1, exerciseV1 } from '@parallax/contracts';
 import type * as contracts from '@parallax/contracts/routes/exercises';
-import { and, asc, desc, eq, inArray, isNull, or } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull } from 'drizzle-orm';
 import type { z } from 'zod';
 import type { ClassScope } from '../auth/scope';
 import {
@@ -15,6 +15,7 @@ import { classArchived, invalid, notFound, type Outcome } from '../outcome';
 import type { Db } from './client';
 import { studyableResource, type Tx } from './content/releases';
 import { excludePreview } from './preview';
+import { studentOrRemovedStudent } from './removedStudents';
 import {
   classMemberships,
   exerciseAttempts,
@@ -435,12 +436,6 @@ export async function restartExercise(db: Db, scope: ClassScope, attemptId: stri
 }
 
 /**
- * A submitter who is a student of the class, or no longer a member of it: removal deletes the
- * membership but the work stays reviewable, marked as from a removed student (§3).
- */
-const studentOrRemoved = or(isNull(classMemberships.role), eq(classMemberships.role, 'student'));
-
-/**
  * Instructor review: students' attempts, including those of removed students (preview principals excluded) with every check,
  * hint count, solution reveal and completion level, newest attempt first per student.
  */
@@ -465,7 +460,7 @@ export async function reviewAttempts(
         forClass(scope, exerciseAttempts),
         eq(exerciseAttempts.resourceId, resourceId),
         excludePreview(exerciseAttempts),
-        studentOrRemoved,
+        studentOrRemovedStudent(exerciseAttempts),
       ),
     )
     .orderBy(asc(users.name), asc(exerciseAttempts.userId), desc(exerciseAttempts.number));

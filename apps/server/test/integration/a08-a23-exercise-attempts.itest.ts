@@ -413,10 +413,12 @@ describe('exercise attempts', () => {
   test('A23 a removed student’s attempts stay reviewable, marked removed; the student and other classes get nothing', async () => {
     const attempt = await open('sam', ids.classA);
     const [membership] = await testDb.db
-      .delete(classMemberships)
-      .where(and(eq(classMemberships.classId, ids.classA), eq(classMemberships.userId, ids.sam)))
-      .returning();
+      .select()
+      .from(classMemberships)
+      .where(and(eq(classMemberships.classId, ids.classA), eq(classMemberships.userId, ids.sam)));
     if (!membership) throw new Error('sam has no membership in class A');
+    const removal = await call('elena', 'DELETE', `/api/classes/${ids.classA}/members/${ids.sam}`);
+    expect(removal.status).toBe(200);
     try {
       const reviewed = await review('priya', ids.classA);
       const mine = reviewed.filter((a: { student: { id: string } }) => a.student.id === ids.sam);
@@ -433,6 +435,18 @@ describe('exercise attempts', () => {
     const restored = await review('priya', ids.classA);
     expect(restored.filter((a: { student: { id: string } }) => a.student.id === ids.sam)).toSatisfy(
       (rows: { removed: boolean }[]) => rows.every((a) => !a.removed),
+    );
+  });
+
+  test('A23 a removed instructor’s own non-preview attempt does not appear in review', async () => {
+    const attempt = await open('noor', ids.classA);
+    expect((await review('priya', ids.classA)).map((a: { id: string }) => a.id)).not.toContain(
+      attempt.id,
+    );
+    const removal = await call('elena', 'DELETE', `/api/classes/${ids.classA}/members/${ids.noor}`);
+    expect(removal.status).toBe(200);
+    expect((await review('priya', ids.classA)).map((a: { id: string }) => a.id)).not.toContain(
+      attempt.id,
     );
   });
 });
