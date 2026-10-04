@@ -1,4 +1,4 @@
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { buildApp } from '../../src/app';
@@ -6,7 +6,7 @@ import { loadConfig } from '../../src/config';
 import { adoptRelease } from '../../src/db/content/adoption';
 import { createResource } from '../../src/db/content/drafts';
 import { publishRelease } from '../../src/db/content/releases';
-import { classes, exerciseAttempts } from '../../src/db/schema';
+import { classes, classMemberships, exerciseAttempts } from '../../src/db/schema';
 import {
   asClassScope,
   asCourseScope,
@@ -408,5 +408,45 @@ describe('exercise attempts', () => {
     } finally {
       await testDb.db.update(classes).set({ archivedAt: null }).where(eq(classes.id, ids.classA));
     }
+  });
+
+  test('A23 a removed student’s attempts stay reviewable, marked removed; the student and other classes get nothing', async () => {
+    const attempt = await open('sam', ids.classA);
+    const [membership] = await testDb.db
+      .select()
+      .from(classMemberships)
+      .where(and(eq(classMemberships.classId, ids.classA), eq(classMemberships.userId, ids.sam)));
+    if (!membership) throw new Error('sam has no membership in class A');
+    const removal = await call('elena', 'DELETE', `/api/classes/${ids.classA}/members/${ids.sam}`);
+    expect(removal.status).toBe(200);
+    try {
+      const reviewed = await review('priya', ids.classA);
+      const mine = reviewed.filter((a: { student: { id: string } }) => a.student.id === ids.sam);
+      expect(mine.length).toBeGreaterThan(0);
+      expect(mine.every((a: { removed: boolean }) => a.removed)).toBe(true);
+      expect(mine.map((a: { id: string }) => a.id)).toContain(attempt.id);
+      const url = `/api/classes/${ids.classA}/resources/${exerciseId}/exercise-attempts`;
+      expect((await call('sam', 'GET', url)).status).toBe(404);
+      expect((await call('sam', 'POST', url.replace('attempts', 'attempt'))).status).toBe(404);
+      expect((await call('marcus', 'GET', url)).status).toBe(404);
+    } finally {
+      await testDb.db.insert(classMemberships).values(membership);
+    }
+    const restored = await review('priya', ids.classA);
+    expect(restored.filter((a: { student: { id: string } }) => a.student.id === ids.sam)).toSatisfy(
+      (rows: { removed: boolean }[]) => rows.every((a) => !a.removed),
+    );
+  });
+
+  test('A23 a removed instructor’s own non-preview attempt does not appear in review', async () => {
+    const attempt = await open('noor', ids.classA);
+    expect((await review('priya', ids.classA)).map((a: { id: string }) => a.id)).not.toContain(
+      attempt.id,
+    );
+    const removal = await call('elena', 'DELETE', `/api/classes/${ids.classA}/members/${ids.noor}`);
+    expect(removal.status).toBe(200);
+    expect((await review('priya', ids.classA)).map((a: { id: string }) => a.id)).not.toContain(
+      attempt.id,
+    );
   });
 });

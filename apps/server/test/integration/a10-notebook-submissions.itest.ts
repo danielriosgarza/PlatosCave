@@ -11,7 +11,7 @@ import { loadConfig } from '../../src/config';
 import { adoptRelease } from '../../src/db/content/adoption';
 import { createResource } from '../../src/db/content/drafts';
 import { publishRelease } from '../../src/db/content/releases';
-import { auditEvents, classes, notebookSubmissions } from '../../src/db/schema';
+import { auditEvents, classes, classMemberships, notebookSubmissions } from '../../src/db/schema';
 import { FsStorage } from '../../src/storage/fs';
 import {
   asClassScope,
@@ -118,7 +118,7 @@ afterAll(async () => {
 const base = (classId: string, resourceId = notebookId) =>
   `/api/classes/${classId}/resources/${resourceId}`;
 
-async function call(who: PersonName, method: 'GET' | 'POST', url: string) {
+async function call(who: PersonName, method: 'GET' | 'POST' | 'DELETE', url: string) {
   const res = await app.inject({
     method,
     url,
@@ -407,5 +407,56 @@ describe('who sees what', () => {
     } finally {
       await testDb.db.update(classes).set({ archivedAt: null }).where(eq(classes.id, ids.classA));
     }
+  });
+
+  test('A10 a removed student’s submissions stay listable and downloadable for the instructor, marked removed', async () => {
+    const [membership] = await testDb.db
+      .select()
+      .from(classMemberships)
+      .where(and(eq(classMemberships.classId, ids.classA), eq(classMemberships.userId, ids.sam)));
+    if (!membership) throw new Error('sam has no membership in class A');
+    const removal = await call('elena', 'DELETE', `/api/classes/${ids.classA}/members/${ids.sam}`);
+    expect(removal.status).toBe(200);
+    try {
+      const listing = await call('priya', 'GET', `${base(ids.classA)}/notebook-submissions`);
+      expect(listing.status).toBe(200);
+      expect(listing.body.submissions).toHaveLength(2);
+      expect(listing.body.submissions.every((s: { removed: boolean }) => s.removed)).toBe(true);
+      const id = listing.body.submissions[0].id;
+      const download = `/api/classes/${ids.classA}/notebook-submissions/${id}/download`;
+      const link = await call('priya', 'GET', download);
+      expect(link.status).toBe(200);
+      expect((await fetchContent(link.body.url)).statusCode).toBe(200);
+      // The removed student, and an instructor of another class, get nothing.
+      expect((await call('sam', 'GET', download)).status).toBe(404);
+      expect((await call('sam', 'GET', `${base(ids.classA)}/notebook-submissions`)).status).toBe(
+        404,
+      );
+      expect((await call('marcus', 'GET', download)).status).toBe(404);
+      expect((await call('marcus', 'GET', `${base(ids.classA)}/notebook-submissions`)).status).toBe(
+        404,
+      );
+    } finally {
+      await testDb.db.insert(classMemberships).values(membership);
+    }
+    const back = await call('priya', 'GET', `${base(ids.classA)}/notebook-submissions`);
+    expect(back.body.submissions.every((s: { removed: boolean }) => !s.removed)).toBe(true);
+  });
+
+  test('A10 a removed instructor’s own non-preview submission does not appear in review', async () => {
+    const sent = await submit(
+      'noor',
+      { name: 'noor.ipynb', bytes: colabNotebook('n') },
+      'noor-key-0001',
+    );
+    expect(sent.status).toBe(200);
+    const listedIds = async () =>
+      (await call('priya', 'GET', `${base(ids.classA)}/notebook-submissions`)).body.submissions.map(
+        (s: { id: string }) => s.id,
+      );
+    expect(await listedIds()).not.toContain(sent.body.id);
+    const removal = await call('elena', 'DELETE', `/api/classes/${ids.classA}/members/${ids.noor}`);
+    expect(removal.status).toBe(200);
+    expect(await listedIds()).not.toContain(sent.body.id);
   });
 });

@@ -167,6 +167,8 @@ export const reviewStep = z.object({
 export const reviewAttempt = z.object({
   id: z.uuid(),
   student: z.object({ id: z.uuid(), name: z.string() }),
+  /** The student has since been removed from the class; the work stays reviewable. */
+  removed: z.boolean(),
   number: z.int(),
   resourceRevisionId: z.uuid(),
   seed: z.int(),
