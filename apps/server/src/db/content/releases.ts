@@ -32,8 +32,8 @@ type Tab = (typeof releaseResources.$inferInsert)['tab'];
  * The credit an exercise revision declares (§9), read from its content without loading the
  * rest of it; null for ungraded practice, other resource types and unreadable values.
  */
-const creditColumn = sql<unknown>`case when ${resourceRevisions.type} = 'exercise' then ${resourceRevisions.content} -> 'credit' end`;
-const creditOf = (raw: unknown) => {
+export const creditColumn = sql<unknown>`case when ${resourceRevisions.type} = 'exercise' then ${resourceRevisions.content} -> 'credit' end`;
+export const creditOf = (raw: unknown) => {
   const parsed = exerciseCredit.safeParse(raw);
   return parsed.success ? parsed.data : null;
 };

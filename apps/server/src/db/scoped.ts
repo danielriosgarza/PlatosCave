@@ -19,6 +19,7 @@ import {
   storageObjects,
   studyPositions,
   threads,
+  topicReviews,
   topics,
 } from './schema';
 
@@ -39,6 +40,7 @@ export const classScopedTables: PgTable[] = [
   exerciseAttempts,
   exerciseEvents,
   notebookSubmissions,
+  topicReviews,
 ];
 export const courseScopedTables: PgTable[] = [
   classes,
