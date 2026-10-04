@@ -121,6 +121,22 @@ const Env = z
           }),
         ),
       ),
+    /**
+     * Who may create a course without already teaching (owner decision on #242), as a
+     * comma-separated list of email addresses, compared trimmed and case-insensitively with the
+     * signed-in account's address (every account's address was proven by a sign-in link). Read
+     * at start-up; empty keeps the rule that only people who already teach create courses.
+     */
+    INSTRUCTOR_EMAILS: z
+      .string()
+      .default('')
+      .transform((v) =>
+        v
+          .split(',')
+          .map((e) => e.trim().toLowerCase())
+          .filter(Boolean),
+      )
+      .pipe(z.array(z.email())),
     /** HMAC key for content tokens. Required in production and off loopback. */
     CONTENT_TOKEN_SECRET: z.string().min(32).optional(),
     STORAGE_DRIVER: z.enum(['fs', 's3']).default('fs'),

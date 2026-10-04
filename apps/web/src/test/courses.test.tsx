@@ -60,6 +60,7 @@ describe('course cards', () => {
         }),
       ],
       courses: [],
+      canCreateCourse: false,
     });
     renderApp('/courses');
     const item = (await screen.findByRole('heading', { name: 'Statistical thinking' })).closest(
@@ -81,7 +82,11 @@ describe('course cards', () => {
 
   it('A02 an instructor card shows class context without a link to the unfinished Class review, and the page offers Create course', async () => {
     const me = makeMe({ classes: [instructorIn(CLASS_A, 'Autumn 2026 A')] });
-    serve(me, { classes: [card({ role: 'instructor', studentCount: 3 })], courses: [] });
+    serve(me, {
+      classes: [card({ role: 'instructor', studentCount: 3 })],
+      courses: [],
+      canCreateCourse: true,
+    });
     renderApp('/courses');
     expect(await screen.findByRole('heading', { name: 'Courses you teach' })).toBeInTheDocument();
     expect(screen.getByText('3 students')).toBeInTheDocument();
@@ -111,6 +116,7 @@ describe('course cards', () => {
         course(3, { publisher: true }),
         course(4, { editor: true }),
       ],
+      canCreateCourse: true,
     } as Cards);
     renderApp('/courses?view=instructor');
     const list = await screen.findByRole('list', { name: 'Courses you hold' });
@@ -158,6 +164,7 @@ describe('course cards', () => {
         }),
       ],
       courses: [],
+      canCreateCourse: false,
     });
     renderApp('/courses');
     expect(await screen.findByRole('heading', { name: 'Lab methods' })).toBeInTheDocument();
@@ -185,6 +192,7 @@ describe('course cards', () => {
         card({ classId: CLASS_B, className: 'Autumn 2026 B', reviewed: { count: 0, total: 5 } }),
       ],
       courses: [],
+      canCreateCourse: false,
     });
     renderApp('/courses');
     await screen.findByRole('heading', { name: 'Statistical thinking' });
@@ -225,7 +233,7 @@ describe('course cards', () => {
 
 describe('join a class', () => {
   it('A02 an empty account shows the invitation code field and no cards', async () => {
-    serve(makeMe(), { classes: [], courses: [] });
+    serve(makeMe(), { classes: [], courses: [], canCreateCourse: false });
     renderApp('/courses');
     expect(await screen.findByRole('heading', { name: 'Join a class' })).toBeInTheDocument();
     expect(screen.getByLabelText('Invitation code')).toBeInTheDocument();
@@ -242,7 +250,7 @@ describe('join a class', () => {
     ['invite_not_found', 404, 'This code is not valid. Check it and try again.'],
   ])('A02 a %s code states its cause', async (error, status, text) => {
     const user = userEvent.setup();
-    serve(makeMe(), { classes: [], courses: [] }, refusal(error, status));
+    serve(makeMe(), { classes: [], courses: [], canCreateCourse: false }, refusal(error, status));
     renderApp('/courses');
     await user.type(await screen.findByLabelText('Invitation code'), 'ABCDE-FGHJK');
     await user.click(screen.getByRole('button', { name: 'Join class' }));
@@ -273,7 +281,9 @@ describe('join a class', () => {
       if (url === '/api/courses')
         return {
           status: 200,
-          body: joined ? { classes: [card()], courses: [] } : { classes: [], courses: [] },
+          body: joined
+            ? { classes: [card()], courses: [], canCreateCourse: false }
+            : { classes: [], courses: [], canCreateCourse: false },
         };
       return { status: 404, body: {} };
     });
@@ -331,5 +341,34 @@ describe('create course', () => {
     expect(screen.queryByRole('dialog')).toBeNull();
     const post = fetchMock.mock.calls.find(([, init]) => init?.method === 'POST');
     expect(JSON.parse(String(post?.[1]?.body))).toEqual({ title: 'Bayesian methods' });
+  });
+});
+
+describe('who is offered Create course', () => {
+  it('A02 an allow-listed account that teaches nothing opens Courses you teach with Create course', async () => {
+    serve(makeMe(), { classes: [], courses: [], canCreateCourse: true });
+    renderApp('/courses');
+    expect(await screen.findByRole('button', { name: 'Create course' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Courses you teach' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'No courses yet' })).toBeInTheDocument();
+    expect(screen.queryByText('This account has no instructor access')).toBeNull();
+  });
+
+  it('A02 an allow-listed student can switch to the instructor view, which offers Create course', async () => {
+    const user = userEvent.setup();
+    const me = makeMe({ classes: [studentIn(CLASS_A, 'Autumn 2026 A')] });
+    serve(me, { classes: [card()], courses: [], canCreateCourse: true });
+    renderApp('/courses');
+    await screen.findByRole('heading', { name: 'Statistical thinking' });
+    expect(screen.queryByRole('button', { name: 'Create course' })).toBeNull();
+    await user.click(screen.getByRole('link', { name: 'Instructor view' }));
+    expect(await screen.findByRole('button', { name: 'Create course' })).toBeInTheDocument();
+  });
+
+  it('A02 an account the server would refuse is not offered Create course, even on the instructor view', async () => {
+    serve(makeMe(), { classes: [], courses: [], canCreateCourse: false });
+    renderApp('/courses?view=instructor');
+    expect(await screen.findByText('This account has no instructor access')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Create course' })).toBeNull();
   });
 });

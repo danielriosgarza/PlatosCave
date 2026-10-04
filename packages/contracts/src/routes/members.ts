@@ -47,7 +47,8 @@ const issuedInvite = z.object({
 /**
  * The code is returned once and only its hash is stored. An enrolment code can only ever
  * create student memberships; an instructor invitation is addressed to one email and
- * single-use (§3). 409 `class_archived`; 400 `expiry_in_past`. Needs a recent sign-in.
+ * single-use (§3). 409 `class_archived`; 400 `expiry_in_past`, or `expiry_too_far` for an instructor
+ * invitation expiring more than 30 days after it is issued. Needs a recent sign-in.
  */
 export const createInvite = defineRoute({
   method: 'POST',
@@ -64,12 +65,15 @@ export const createInvite = defineRoute({
     z.object({
       kind: z.literal('instructor'),
       email: z.email(),
-      /** Defaults to seven days; an instructor invitation always expires. */
+      /** Defaults to seven days, at most 30 days from now; an instructor invitation always expires. */
       expiresAt: datetime.optional(),
     }),
   ]),
   response: issuedInvite.extend({ code: z.string() }),
-  errors: { 400: z.object({ error: z.literal('expiry_in_past') }), 409: classArchived },
+  errors: {
+    400: z.object({ error: z.enum(['expiry_in_past', 'expiry_too_far']) }),
+    409: classArchived,
+  },
   examples: { params: { classId: zero }, body: { kind: 'enrolment', maxUses: 30 } },
 });
 
