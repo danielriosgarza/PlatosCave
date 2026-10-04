@@ -12,6 +12,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import type { z } from 'zod';
 import { ApiError, call, useApi } from '../api/client';
+import { refreshProgress } from '../topics/progress';
 
 export type Attempt = z.output<typeof openExercise.response>;
 export type AttemptStep = Attempt['steps'][number];
@@ -77,7 +78,11 @@ export function useAttemptActions(
   const queryClient = useQueryClient();
   const [error, setError] = useState<string | null>(null);
   const params = { classId, attemptId: attempt.id };
-  const store = (next: Attempt) => queryClient.setQueryData(attemptKey(classId, resourceId), next);
+  const store = (next: Attempt) => {
+    queryClient.setQueryData(attemptKey(classId, resourceId), next);
+    // A finished attempt may complete a topic whose exercise is assigned for credit (§4).
+    if (next.completedAt) refreshProgress(queryClient);
+  };
 
   const guard = async <T>(run: () => Promise<T>): Promise<T | undefined> => {
     setError(null);

@@ -13,6 +13,7 @@ import {
   studyPositions,
   topics,
 } from './schema';
+import { completedInClass } from './topicReviews';
 
 /**
  * The course cards of one person (§4): every class they belong to and every course they hold a
@@ -111,6 +112,18 @@ export async function listCourseCards(db: Db, scope: UserScope, now: Date) {
     }
   }
 
+  // Topics reviewed per studied class, by the course's own completion rule (§4); never a grade.
+  const reviewedByClass = new Map<string, number>();
+  for (const c of classRows) {
+    if (c.role !== 'student' || !c.releaseId) continue;
+    const done = await completedInClass(
+      db,
+      { classId: c.classId, userId, releaseId: c.releaseId, courseId: c.courseId },
+      now,
+    );
+    reviewedByClass.set(c.classId, done.size);
+  }
+
   const courseRows = await db
     .select({
       courseId: courses.id,
@@ -155,7 +168,7 @@ export async function listCourseCards(db: Db, scope: UserScope, now: Date) {
         role: c.role,
         archived: c.archivedAt !== null,
         topicCount: total,
-        reviewed: { count: 0, total },
+        reviewed: { count: reviewedByClass.get(c.classId) ?? 0, total },
         resume: student ? (resumeByClass.get(c.classId) ?? null) : null,
         studentCount: student ? null : (studentCounts.get(c.classId) ?? 0),
       };
