@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { defineRoute } from '../define';
+import { classArchived, defineRoute, errorBody, invalidBody } from '../define';
 
 /**
  * The Colab route and notebook submissions (§10.1, §10.5, §10.7). Opening Colab is an explicit
@@ -56,6 +56,7 @@ export const launchColab = defineRoute({
   params: resourceParams,
   /** Null when nothing was recorded (a preview records nothing). */
   response: z.object({ launchedAt: timestamp.nullable() }),
+  errors: { 409: classArchived },
   examples: { params: { classId: exampleClass, resourceId: exampleResource } },
 });
 
@@ -80,6 +81,7 @@ export const submitNotebook = defineRoute({
   params: resourceParams,
   query: z.object({ submissionKey }),
   response: submissionReceipt,
+  errors: { 400: invalidBody, 409: classArchived, 413: errorBody },
   examples: {
     params: { classId: exampleClass, resourceId: exampleResource },
     query: { submissionKey: 'example-key-0001' },

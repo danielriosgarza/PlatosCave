@@ -70,7 +70,7 @@ export function GlobalBar() {
         </Link>
         <span aria-hidden="true" className={styles.divider} />
         {me ? (
-          <nav className={styles.primary} aria-label="Primary">
+          <nav className={styles.primaryNav} aria-label="Primary">
             <Link to="/courses">Courses</Link>
             {classId ? (
               <Link to="/classes/$classId/topics" params={{ classId }}>
@@ -79,7 +79,7 @@ export function GlobalBar() {
             ) : null}
           </nav>
         ) : session.status === 'signed-out' ? (
-          <nav className={styles.primary} aria-label="Primary">
+          <nav className={styles.primaryNav} aria-label="Primary">
             <Link to="/signin">Sign in</Link>
           </nav>
         ) : null}

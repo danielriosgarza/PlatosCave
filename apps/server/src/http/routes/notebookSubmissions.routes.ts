@@ -22,7 +22,7 @@ import {
 import * as submissions from '../../db/notebookSubmissions';
 import type { Outcome } from '../../outcome';
 import { classSubmissionPrefix } from '../../storage/storage';
-import { notFound, refuse, registerRoute, settle } from '../register';
+import { notFound, registerRoute, settle } from '../register';
 
 const NOTEBOOK_TYPE = 'application/x-ipynb+json';
 
@@ -50,18 +50,20 @@ export default function notebookSubmissionRoutes(app: FastifyInstance, deps: Rou
     settle(await submissions.recordColabLaunch(db(), scope, params.resourceId, now())),
   );
 
-  registerRoute(app, submitNotebook, async ({ scope, params, query, req }) => {
+  registerRoute(app, submitNotebook, async ({ scope, params, query, req, fail }) => {
+    const invalid: (message: string) => never = (message) =>
+      fail(400, { error: 'invalid', message });
     // Before anything is stored: a notebook the caller may not submit to, or an archived class,
     // refuses without keeping the bytes.
     const found = await submissions.submittableNotebook(db(), scope, params.resourceId, now());
     settle(found);
-    if (!req.isMultipart()) refuse(400, 'send the file as multipart/form-data');
+    if (!req.isMultipart()) invalid('send the file as multipart/form-data');
     const part = await req.file();
-    if (part?.fieldname !== 'file') refuse(400, 'the request has no file part');
+    if (part?.fieldname !== 'file') invalid('the request has no file part');
     const filename = submissionFilename(part.filename ?? '');
     if (!filename.toLowerCase().endsWith('.ipynb')) {
       await drain(part.file);
-      refuse(400, 'Upload a Jupyter notebook (.ipynb) file');
+      invalid('Upload a Jupyter notebook (.ipynb) file');
     }
     let environment: Record<string, string | number> = {};
     let outcome: Outcome<z.input<typeof submitNotebook.response>>;
@@ -82,7 +84,7 @@ export default function notebookSubmissionRoutes(app: FastifyInstance, deps: Rou
     } catch (err) {
       // Read the rest of a refused file before answering: unread, it holds the connection open.
       await drain(part.file);
-      if (err instanceof SubmissionRejected) refuse(400, err.message);
+      if (err instanceof SubmissionRejected) invalid(err.message);
       if (err instanceof SubmissionTooLarge) {
         throw app.httpErrors.payloadTooLarge(
           `The file is larger than ${MAX_SUBMISSION_BYTES / (1024 * 1024)} MB`,

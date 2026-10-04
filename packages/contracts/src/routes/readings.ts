@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { defineRoute } from '../define';
+import { classArchived, defineRoute, invalidBody } from '../define';
 import { topicTab } from './topics';
 
 /**
@@ -98,6 +98,7 @@ export const putPosition = defineRoute({
     position: readingPosition,
   }),
   response: z.object({ updatedAt: timestamp }),
+  errors: { 400: invalidBody, 409: classArchived },
   examples: {
     params: { classId: exampleClass },
     body: { revisionId: exampleRevision, tab: 'reading', position: { blockId: 'b1', offset: 0 } },

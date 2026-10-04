@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
+import buttons from '../components/Buttons.module.css';
 import readingStyles from '../reading/Reading.module.css';
 import { sanitizeReading } from '../reading/sanitize';
 import styles from './Notebook.module.css';
@@ -47,7 +48,7 @@ export function NotebookView({ notebook, showCode, showOutputs, outlineOpen }: P
   return (
     <article ref={root} className={styles.notebook}>
       {outlineOpen && notebook.outline.length > 0 ? (
-        <nav className={styles.outline} aria-label="Notebook outline">
+        <nav className={styles.toc} aria-label="Notebook outline">
           <div className={styles.label}>Outline</div>
           <ol>
             {notebook.outline.map((h, i) => (
@@ -132,7 +133,7 @@ function Cell({
           <div>
             <button
               type="button"
-              className={styles.textButton}
+              className={buttons.textButton}
               aria-label={`Show code of cell ${count(cell.executionCount)}`}
               onClick={() => onReveal('code')}
             >
@@ -159,7 +160,7 @@ function Cell({
             <div>
               <button
                 type="button"
-                className={styles.textButton}
+                className={buttons.textButton}
                 aria-label={`Show output of cell ${count(cell.executionCount)}`}
                 onClick={() => onReveal('output')}
               >

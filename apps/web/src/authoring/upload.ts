@@ -57,11 +57,8 @@ export function failureMessage(err: unknown): string {
   if (err instanceof ApiError) {
     const body = err.body as { error?: string; message?: string } | null;
     if (err.status === 413) return body?.message ?? 'The file is too large';
-    // Upload refusals put the reason in `error`; request validation puts it in `message`.
-    if (err.status === 400)
-      return body?.error && body.error !== 'Bad Request'
-        ? body.error
-        : (body?.message ?? 'The server rejected the request');
+    // Every 400 carries the sentence to show in `message` (ADR-0002 §Error replies).
+    if (err.status === 400) return body?.message ?? 'The server rejected the request';
     if (err.status === 404) return 'This course is no longer available to you';
   }
   return 'The request failed. Try again.';

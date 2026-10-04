@@ -14,7 +14,7 @@ function Review() {
   return (
     <main id="main" className={styles.index}>
       <h1>Class review</h1>
-      <p className={`${styles.small} ${styles.muted}`} style={{ marginTop: 12 }}>
+      <p className={`${styles.small} ${styles.muted} ${styles.mt12}`}>
         {context.courseTitle} · {context.className}
       </p>
       <p className={styles.intro}>Class review is not available yet.</p>

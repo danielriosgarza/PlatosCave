@@ -26,13 +26,23 @@ export type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
 type Part = z.ZodType | undefined;
 type InputOf<T extends Part> = T extends z.ZodType ? z.input<T> : never;
 
+/**
+ * Error statuses a handler may answer with itself, declared per route in `errors` (ADR-0002
+ * §Error replies): 400 input the route cannot apply, 403 a refusal the scope does not decide,
+ * 404 a named missing thing, 409 a state conflict, 410 something used up, 413 a file over the
+ * limit, 422 a domain validation report, 429 a rate limit.
+ */
+export type ErrorStatus = 400 | 403 | 404 | 409 | 410 | 413 | 422 | 429;
+/** Declared error bodies by status; every body is `{ error, … }`. */
+export type Errors = { [S in ErrorStatus]?: z.ZodType };
+
 export interface RouteContract<
   P extends Part = Part,
   Q extends Part = Part,
   B extends Part = Part,
   R extends z.ZodType = z.ZodType,
   S extends Scope = Scope,
-  X extends Part = Part,
+  E extends Errors | undefined = Errors | undefined,
 > {
   method: Method;
   path: `/api/${string}`;
@@ -44,8 +54,12 @@ export interface RouteContract<
   query?: Q;
   body?: B;
   response: R;
-  /** Declared error bodies beyond the shared `{ error }` shape; today only 409 conflicts. */
-  errors?: { 409: X };
+  /**
+   * Every error status the handler can answer, with its body. Statuses the contract's scope and
+   * parts already imply (see `errorResponses`) need not be repeated; declaring one narrows the
+   * documented body and keeps the implied one valid.
+   */
+  errors?: E;
   /**
    * Valid example inputs; the isolation matrix (ADR-0002) replays every contract with them,
    * substituting the fixture world's ids for `classId` and `courseId`.
@@ -60,16 +74,65 @@ export function defineRoute<
   P extends Part = undefined,
   Q extends Part = undefined,
   B extends Part = undefined,
-  X extends Part = undefined,
->(c: RouteContract<P, Q, B, R, S, X>): RouteContract<P, Q, B, R, S, X> {
+  E extends Errors | undefined = undefined,
+>(c: RouteContract<P, Q, B, R, S, E>): RouteContract<P, Q, B, R, S, E> {
   return c;
 }
 
 export type ResponseOf<C> =
   C extends RouteContract<Part, Part, Part, infer R> ? z.output<R> : never;
 
-/** Body of every refused request (401, 403, 404, 503): a short, non-identifying reason. */
-export const errorBody = z.object({ error: z.string() });
+/**
+ * The one error body: `error` is a short, non-identifying code. Refusals raised by Fastify or a
+ * plugin (schema validation, a stale sign-in, an unavailable database, a rate limit) also carry
+ * Fastify's `message`, `code` and `statusCode`; a route's own refusal adds only what its
+ * contract declares.
+ */
+export const errorBody = z.object({
+  error: z.string(),
+  message: z.string().optional(),
+  code: z.string().optional(),
+  statusCode: z.number().int().optional(),
+});
+
+/** 409 for a write to an archived class: it keeps read access and refuses writes (§4). */
+export const classArchived = z.object({ error: z.literal('class_archived') });
+
+/** 400 for a request the service refused as written, with the sentence to show (`Outcome`). */
+export const invalidBody = z.object({ error: z.literal('invalid'), message: z.string() });
+
+/**
+ * Every error status a route can answer, with its body: those its scope and parts imply, and
+ * those it declares in `errors`. registerRoute documents exactly these in OpenAPI and answers
+ * 500 instead of any other 4xx.
+ *
+ * - 400 when the route takes params, a query or a body (schema validation);
+ * - 401 for every non-public scope (no session, or a sign-in too old for the change);
+ * - 403 when the scope names a class role, a grant or a course grant (ADR-0002);
+ * - 404 for every route (unknown, foreign or missing; one body);
+ * - 503 for every route (the database or another dependency is not configured).
+ */
+export function errorResponses(contract: RouteContract): Partial<Record<number, z.ZodType>> {
+  const { scope } = contract;
+  const forbids =
+    (scope.kind === 'class' && (scope.role !== 'any' || scope.grant !== undefined)) ||
+    scope.kind === 'course';
+  const implied: Partial<Record<number, z.ZodType>> = {
+    ...((contract.params || contract.query || contract.body) && { 400: errorBody }),
+    ...(scope.kind !== 'public' && { 401: errorBody }),
+    ...(forbids && { 403: errorBody }),
+    404: errorBody,
+    503: errorBody,
+  };
+  const out = { ...implied };
+  for (const [key, body] of Object.entries(contract.errors ?? {})) {
+    if (!body) continue;
+    const status = Number(key);
+    const shared = implied[status];
+    out[status] = shared ? z.union([body, shared]) : body;
+  }
+  return out;
+}
 
 /**
  * 409 body of an optimistic revision check (ADR-0003, §12 "never overwrite silently"): the
@@ -78,9 +141,14 @@ export const errorBody = z.object({ error: z.string() });
 export const conflictBody = <T extends z.ZodType>(current: T) =>
   z.object({ error: z.literal('revision_conflict'), current });
 
-export type ConflictOf<C> =
-  C extends RouteContract<Part, Part, Part, z.ZodType, Scope, infer X>
-    ? X extends z.ZodType
-      ? z.output<X>
+/** The body of a status the contract declares in `errors`. */
+export type ErrorOf<C, S extends ErrorStatus> =
+  C extends RouteContract<Part, Part, Part, z.ZodType, Scope, infer E>
+    ? E extends Errors
+      ? E[S] extends z.ZodType
+        ? z.output<E[S]>
+        : never
       : never
     : never;
+
+export type ConflictOf<C> = ErrorOf<C, 409>;

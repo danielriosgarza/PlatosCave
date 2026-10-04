@@ -190,7 +190,7 @@ export function TopicForm({ courseId, topic, others, requirable }: Props) {
           Only the requirements I choose
         </label>
         {values.completion === 'custom' ? (
-          <div style={{ paddingLeft: 24, display: 'grid', gap: 8 }}>
+          <div className={styles.indentGrid}>
             <label className={local.choice}>
               <input
                 type="checkbox"
@@ -214,7 +214,7 @@ export function TopicForm({ courseId, topic, others, requirable }: Props) {
           </div>
         ) : null}
       </fieldset>
-      <p className={`${styles.small} ${styles.muted}`} style={{ marginTop: 24 }}>
+      <p className={`${styles.small} ${styles.muted} ${styles.mt24}`}>
         Edits change the course draft only. Classes keep the release they use.
       </p>
     </div>

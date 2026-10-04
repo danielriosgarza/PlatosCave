@@ -333,7 +333,7 @@ describe('Colab route and submissions', () => {
     await user.upload(within(panel).getByLabelText('Notebook file (.ipynb)'), ipynb());
     // Chosen is not received.
     expect(within(panel).queryByText(/Received/)).toBeNull();
-    answer = { status: 400, body: { error: 'The file is not text' } };
+    answer = { status: 400, body: { error: 'invalid', message: 'The file is not text' } };
     await user.click(submit);
     expect(await within(panel).findByRole('alert')).toHaveTextContent('The file is not text');
     expect(within(panel).queryByText(/Received/)).toBeNull();

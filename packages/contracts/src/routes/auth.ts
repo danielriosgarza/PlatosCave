@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { defineRoute } from '../define';
+import { defineRoute, errorBody } from '../define';
 
 /** §3: one identity service behind both entrances; the entrance only picks the default page. */
 export const requestSignInLink = defineRoute({
@@ -15,6 +15,7 @@ export const requestSignInLink = defineRoute({
     entrance: z.enum(['student', 'instructor']).optional(),
   }),
   response: z.object({ accepted: z.literal(true) }),
+  errors: { 429: errorBody },
   examples: { body: { email: 'sam@example.test', next: '/courses', entrance: 'student' } },
 });
 
@@ -29,6 +30,7 @@ export const verifySignInLink = defineRoute({
   // page, never a JSON validation error, so anything but one string counts as no token.
   query: z.object({ token: z.string().optional().catch(undefined) }),
   response: z.null(),
+  errors: { 429: errorBody },
   examples: { query: { token: 'example-token' } },
 });
 

@@ -14,7 +14,7 @@ import { findPrincipal, revokeSession } from '../../db/auth/sessions';
 import { loadClassTopics } from '../../db/classTopics';
 import type { Db } from '../../db/client';
 import { PREVIEW_SESSION_TTL_MS, recordPreviewExit, startPreview as start } from '../../db/preview';
-import { notFound, refuse, registerRoute } from '../register';
+import { notFound, registerRoute } from '../register';
 
 /**
  * Where a preview opens (§4), read as the preview student through its own class scope: the
@@ -85,12 +85,13 @@ export default function previewRoutes(app: FastifyInstance, deps: RouteDeps): vo
    * instructor session, once the preview session is gone) is handed back; everything else the
    * browser holds is revoked.
    */
-  registerRoute(app, exitPreview, async ({ req, reply }) => {
+  registerRoute(app, exitPreview, async ({ req, reply, fail }) => {
     const now = deps.now();
     const token = readSessionToken(req);
     const current = token ? await findPrincipal(db(), token, now) : null;
     const kept = readPreviewReturn(req);
-    if (current?.kind === 'user' || (!current && !kept)) return refuse(409, 'not_previewing');
+    if (current?.kind === 'user' || (!current && !kept))
+      return fail(409, { error: 'not_previewing' });
     const owner = kept ? await findPrincipal(db(), kept.token, now) : null;
     const restored =
       owner?.kind === 'user' && (!current || current.ownerUserId === owner.id) && kept;

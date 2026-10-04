@@ -66,11 +66,7 @@ export function submissionFailure(err: unknown): string {
   if (err instanceof ApiError) {
     const body = err.body as { error?: string; message?: string } | null;
     if (err.status === 413) return body?.message ?? 'The file is too large';
-    if (err.status === 400) {
-      return body?.error && body.error !== 'Bad Request'
-        ? body.error
-        : (body?.message ?? 'The server rejected the file');
-    }
+    if (err.status === 400) return body?.message ?? 'The server rejected the file';
     if (err.status === 409 && body?.error === 'class_archived') {
       return 'This class is archived and no longer accepts submissions';
     }

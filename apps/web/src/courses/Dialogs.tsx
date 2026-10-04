@@ -5,6 +5,7 @@ import { type FormEvent, type ReactNode, useEffect, useId, useRef, useState } fr
 import { createPortal } from 'react-dom';
 import type { z } from 'zod';
 import { ApiError, call } from '../api/client';
+import buttons from '../components/Buttons.module.css';
 import page from '../components/Page.module.css';
 import styles from './Courses.module.css';
 import { refreshContexts } from './queries';
@@ -71,11 +72,11 @@ export function JoinForm({
         </p>
       ) : null}
       <div className={styles.actions}>
-        <button type="submit" className={page.primary} disabled={!code.trim() || join.isPending}>
+        <button type="submit" className={buttons.primary} disabled={!code.trim() || join.isPending}>
           Join class
         </button>
         {join.isError && onDone ? (
-          <button type="button" className={page.outline} onClick={onDone}>
+          <button type="button" className={buttons.outline} onClick={onDone}>
             Back to your courses
           </button>
         ) : null}
@@ -128,10 +129,14 @@ export function CreateCourseForm({
         </p>
       ) : null}
       <div className={styles.actions}>
-        <button type="submit" className={page.primary} disabled={!title.trim() || create.isPending}>
+        <button
+          type="submit"
+          className={buttons.primary}
+          disabled={!title.trim() || create.isPending}
+        >
           Create course
         </button>
-        <button type="button" className={page.outline} onClick={onDone}>
+        <button type="button" className={buttons.outline} onClick={onDone}>
           Cancel
         </button>
       </div>

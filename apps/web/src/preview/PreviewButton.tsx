@@ -1,6 +1,7 @@
 import { startPreview } from '@parallax/contracts/routes/preview';
 import { useState } from 'react';
 import { call } from '../api/client';
+import buttons from '../components/Buttons.module.css';
 import page from '../components/Page.module.css';
 import { announceSessionChange } from '../session/broadcast';
 import { teachingContexts, useSession } from '../session/useSession';
@@ -55,7 +56,7 @@ export function PreviewButton({ courseId, topicId }: { courseId: string; topicId
           </select>
         </label>
       ) : null}
-      <button type="button" className={page.outline} disabled={starting} onClick={start}>
+      <button type="button" className={buttons.outline} disabled={starting} onClick={start}>
         Preview student view
       </button>
       {classes.length === 1 ? (

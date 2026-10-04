@@ -1,4 +1,4 @@
-import { conflictBody, defineRoute } from '@parallax/contracts';
+import { conflictBody, defineRoute, errorBody } from '@parallax/contracts';
 import { describe, expect, expectTypeOf, it } from 'vitest';
 import { z } from 'zod';
 import { buildApp } from '../app';
@@ -179,6 +179,7 @@ describe('registerRoute rate limits', () => {
       scope: { kind } as { kind: 'public' } | { kind: 'user' },
       summary: 'limited',
       response: z.object({}),
+      errors: { 429: errorBody },
       examples: {},
     });
 

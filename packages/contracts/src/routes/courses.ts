@@ -63,5 +63,6 @@ export const createCourse = defineRoute({
   summary: 'Create a course owned by the signed-in instructor',
   body: z.object({ title: z.string().trim().min(1).max(160) }),
   response: z.object({ id: z.uuid(), title: z.string() }),
+  errors: { 403: z.object({ error: z.literal('not_instructor') }) },
   examples: { body: { title: 'Introduction to statistics' } },
 });

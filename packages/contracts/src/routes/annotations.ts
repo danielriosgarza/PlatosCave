@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { anchor, hexColor } from '../anchors';
-import { conflictBody, defineRoute } from '../define';
+import { classArchived, conflictBody, defineRoute, invalidBody } from '../define';
 
 /**
  * Private annotations and class discussions (§8, §13). Every route is class-scoped; reads
@@ -20,8 +20,7 @@ const text = z.string().max(20_000);
 const person = z.object({ id: z.uuid(), name: z.string() });
 const sharedAudience = z.enum(['instructor', 'class']);
 
-/** 409 body of every write to an archived class. */
-export const classArchived = z.object({ error: z.literal('class_archived') });
+export { classArchived };
 
 const classParams = z.object({ classId: z.uuid() });
 const resourceParams = classParams.extend({ resourceId: z.uuid() });
@@ -114,7 +113,7 @@ export const createAnnotation = defineRoute({
       path: ['anchor'],
     }),
   response: annotationView,
-  errors: { 409: classArchived },
+  errors: { 400: invalidBody, 409: classArchived },
   examples: {
     params: { classId: exampleClass, resourceId: exampleResource },
     body: { kind: 'note', anchor: { kind: 'none' }, body: 'Ask about the bootstrap.' },
@@ -139,7 +138,7 @@ export const saveAnnotation = defineRoute({
     anchor: anchor.optional(),
   }),
   response: annotationView,
-  errors: { 409: z.union([conflictBody(annotationView), classArchived]) },
+  errors: { 400: invalidBody, 409: z.union([conflictBody(annotationView), classArchived]) },
   examples: {
     params: { classId: exampleClass, annotationId: exampleAnnotation },
     body: { expectedRevision: 1, body: 'Ask about the bootstrap interval.' },
@@ -181,7 +180,7 @@ export const createThread = defineRoute({
   params: resourceParams,
   body: z.object({ audience: sharedAudience, anchor, body: text.trim().min(1) }),
   response: threadView,
-  errors: { 409: classArchived },
+  errors: { 400: invalidBody, 409: classArchived },
   examples: {
     params: { classId: exampleClass, resourceId: exampleResource },
     body: { audience: 'instructor', anchor: { kind: 'none' }, body: 'Why n − 1?' },
@@ -200,7 +199,7 @@ export const shareAnnotation = defineRoute({
   params: annotationParams,
   body: z.object({ audience: sharedAudience, body: text.trim().min(1).optional() }),
   response: threadView,
-  errors: { 409: classArchived },
+  errors: { 400: invalidBody, 409: classArchived },
   examples: {
     params: { classId: exampleClass, annotationId: exampleAnnotation },
     body: { audience: 'instructor' },

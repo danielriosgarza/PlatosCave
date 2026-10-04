@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import buttons from '../components/Buttons.module.css';
 import { openPdf, type PdfDocument, type RenderHandle } from './pdfjs';
 import styles from './Reading.module.css';
 import { HOLD_MS, READER_INPUT } from './readerInput';
@@ -190,7 +191,7 @@ export function PdfReading({ url, pageCount, renew, initial, source, onPosition 
     return (
       <div className={styles.notice} role="alert">
         <p>This PDF could not be loaded.</p>
-        <button type="button" className={styles.button} onClick={() => setAttempt((n) => n + 1)}>
+        <button type="button" className={buttons.tool} onClick={() => setAttempt((n) => n + 1)}>
           Try again
         </button>
         {source.key && (
@@ -209,7 +210,7 @@ export function PdfReading({ url, pageCount, renew, initial, source, onPosition 
       <nav className={styles.pageControls} aria-label="PDF pages">
         <button
           type="button"
-          className={styles.button}
+          className={buttons.tool}
           disabled={page <= 1}
           onClick={() => go(page - 1)}
         >
@@ -220,7 +221,7 @@ export function PdfReading({ url, pageCount, renew, initial, source, onPosition 
         </span>
         <button
           type="button"
-          className={styles.button}
+          className={buttons.tool}
           disabled={page >= pageCount}
           onClick={() => go(page + 1)}
         >

@@ -17,7 +17,7 @@ import { courseOverview } from '../../db/courseOverview';
 import { listResourceJobStatus, type ResourceJobStatus } from '../../db/jobs/derived';
 import { enqueueReadingIngest, isProcessed } from '../../jobs/reading-ingest.job';
 import { storeCourseObject } from '../../storage/objects';
-import { notFound, refuse, registerRoute } from '../register';
+import { notFound, registerRoute } from '../register';
 
 const contentTypes: Record<UploadFormat, string> = {
   markdown: 'text/markdown',
@@ -121,11 +121,13 @@ export default function authoringRoutes(app: FastifyInstance, deps: RouteDeps): 
     return (await courseOverview(db(), scope)) ?? notFound();
   });
 
-  registerRoute(app, uploadCourseFile, async ({ scope, req }) => {
-    if (!req.isMultipart()) refuse(400, 'send the file as multipart/form-data');
+  registerRoute(app, uploadCourseFile, async ({ scope, req, fail }) => {
+    const invalid: (message: string) => never = (message) =>
+      fail(400, { error: 'invalid', message });
+    if (!req.isMultipart()) invalid('send the file as multipart/form-data');
     const part = await req.file();
-    if (part?.fieldname !== 'file') refuse(400, 'the request has no file part');
-    if (!part.filename) refuse(400, 'the file part has no file name');
+    if (part?.fieldname !== 'file') invalid('the request has no file part');
+    if (!part.filename) invalid('the file part has no file name');
     const filename = displayName(part.filename);
     const dot = filename.lastIndexOf('.');
     const extension = dot >= 0 ? filename.slice(dot + 1).toLowerCase() : undefined;
@@ -135,7 +137,7 @@ export default function authoringRoutes(app: FastifyInstance, deps: RouteDeps): 
         ? uploadFormats[extension as keyof typeof uploadFormats]
         : undefined;
     if (!format)
-      refuse(400, 'Upload a Markdown (.md), HTML (.html), PDF (.pdf) or notebook (.ipynb) file');
+      invalid('Upload a Markdown (.md), HTML (.html), PDF (.pdf) or notebook (.ipynb) file');
     try {
       const stored = await storeCourseObject(
         db(),
@@ -155,7 +157,7 @@ export default function authoringRoutes(app: FastifyInstance, deps: RouteDeps): 
       // Read the rest of a refused file and discard it before answering: unread, it stops the
       // request body and holds the connection until the client gives up.
       await drain(part.file);
-      if (err instanceof UploadRejected) refuse(400, err.message);
+      if (err instanceof UploadRejected) invalid(err.message);
       if (err instanceof UploadTooLarge) {
         throw app.httpErrors.payloadTooLarge(
           `The file is larger than ${MAX_UPLOAD_BYTES / (1024 * 1024)} MB`,
@@ -169,20 +171,21 @@ export default function authoringRoutes(app: FastifyInstance, deps: RouteDeps): 
     resources: (await listResourceJobStatus(db(), scope)).map(entry),
   }));
 
-  registerRoute(app, retryProcessing, async ({ scope, params }) => {
+  registerRoute(app, retryProcessing, async ({ scope, params, fail }) => {
+    const busy: () => never = () => fail(409, { error: 'not_retryable', message: BUSY });
     const [found] = await listResourceJobStatus(db(), scope, params.resourceId);
     if (!found?.revisionId || !isProcessed(found.type)) {
       notFound();
     }
     // Only a failed (including stopped) or never-queued resource is queued again: a live job
     // would race the new one.
-    if (found.status && found.status.state !== 'failed') refuse(409, BUSY);
+    if (found.status && found.status.state !== 'failed') busy();
     if (!deps.boss) throw app.httpErrors.serviceUnavailable();
     // Queued only if the status is still the one read here: of two retries, one queues.
     const queued = await enqueueReadingIngest(deps.boss, db(), scope, found.revisionId, {
       tag: found.statusTag,
     });
-    if (!queued) refuse(409, BUSY);
+    if (!queued) busy();
     const [now] = await listResourceJobStatus(db(), scope, params.resourceId);
     return entry(now ?? found);
   });

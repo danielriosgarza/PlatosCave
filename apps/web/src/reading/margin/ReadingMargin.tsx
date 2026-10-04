@@ -10,6 +10,7 @@ import {
   useSyncExternalStore,
 } from 'react';
 import { createPortal } from 'react-dom';
+import buttons from '../../components/Buttons.module.css';
 import { useSession } from '../../session/useSession';
 import {
   activateMarks,
@@ -846,10 +847,10 @@ export function ConflictView({
       <div className={styles.small}>Saved version</div>
       <pre>{saved}</pre>
       <div className={styles.row}>
-        <button type="button" className={styles.outline} onClick={() => controller?.keepMine()}>
+        <button type="button" className={buttons.outline} onClick={() => controller?.keepMine()}>
           Keep my text
         </button>
-        <button type="button" className={styles.outline} onClick={() => controller?.takeSaved()}>
+        <button type="button" className={buttons.outline} onClick={() => controller?.takeSaved()}>
           Use the saved version
         </button>
       </div>
@@ -944,7 +945,7 @@ function Discussion({
         </div>
         <button
           type="button"
-          className={styles.outline}
+          className={buttons.outline}
           disabled={ask.body.trim() === '' || ask.posting}
           onClick={onPost}
         >

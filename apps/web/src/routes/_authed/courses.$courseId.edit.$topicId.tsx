@@ -47,7 +47,7 @@ function EditTopic() {
       </p>
       {drafts.isError ? (
         <>
-          <h1 style={{ marginTop: 8 }}>Edit topic</h1>
+          <h1 className={styles.mt8}>Edit topic</h1>
           <RetryNotice
             message="The topic could not be loaded."
             retryLabel="Retry"
@@ -58,17 +58,17 @@ function EditTopic() {
         <Loading label="Loading the topic…" />
       ) : !topic ? (
         <>
-          <h1 style={{ marginTop: 8 }}>Edit topic</h1>
+          <h1 className={styles.mt8}>Edit topic</h1>
           <p className={styles.intro}>This topic is not in the course draft.</p>
         </>
       ) : (
         <>
-          <h1 style={{ marginTop: 8 }}>Edit topic</h1>
-          <p className={`${styles.small} ${styles.muted}`} style={{ marginTop: 8 }}>
+          <h1 className={styles.mt8}>Edit topic</h1>
+          <p className={`${styles.small} ${styles.muted} ${styles.mt8}`}>
             Topic {topics.filter((t) => !t.archived).findIndex((t) => t.id === topic.id) + 1 || '–'}{' '}
             of the course draft · your permission: {grantLabel(grant)}
           </p>
-          <div style={{ marginTop: 16 }}>
+          <div className={styles.mt16}>
             <PreviewButton courseId={courseId} topicId={topic.id} />
           </div>
           <div className={styles.editGrid}>

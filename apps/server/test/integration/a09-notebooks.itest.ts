@@ -170,10 +170,10 @@ describe('notebook import', () => {
     const before = await testDb.db.select().from(storageObjects);
     const notJson = await upload('broken.ipynb', '{"cells": [');
     expect(notJson.statusCode).toBe(400);
-    expect(notJson.json().error).toMatch(/not valid JSON/);
+    expect(notJson.json().message).toMatch(/not valid JSON/);
     const v3 = await upload('old.ipynb', JSON.stringify({ nbformat: 3, worksheets: [] }));
     expect(v3.statusCode).toBe(400);
-    expect(v3.json().error).toMatch(/Only nbformat 4/);
+    expect(v3.json().message).toMatch(/Only nbformat 4/);
     const noOutputs = await upload(
       'bad.ipynb',
       JSON.stringify({
@@ -184,7 +184,7 @@ describe('notebook import', () => {
       }),
     );
     expect(noOutputs.statusCode).toBe(400);
-    expect(noOutputs.json().error).toMatch(/cells\.0\.outputs/);
+    expect(noOutputs.json().message).toMatch(/cells\.0\.outputs/);
     expect(await testDb.db.select().from(storageObjects)).toHaveLength(before.length);
   });
 

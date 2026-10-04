@@ -1,4 +1,5 @@
 import { type ReactNode, useId } from 'react';
+import buttons from '../components/Buttons.module.css';
 import type { AttemptStep } from './attempt';
 import styles from './Exercise.module.css';
 
@@ -197,7 +198,7 @@ export function StepForm({ step, draft, disabled, onChange }: FormProps) {
                 <span className={styles.nudge}>
                   <button
                     type="button"
-                    className={styles.outline}
+                    className={buttons.outline}
                     disabled={disabled || i === 0}
                     aria-label={`Move ${labels.get(id) ?? id} up`}
                     onClick={() => move(i, -1)}
@@ -206,7 +207,7 @@ export function StepForm({ step, draft, disabled, onChange }: FormProps) {
                   </button>
                   <button
                     type="button"
-                    className={styles.outline}
+                    className={buttons.outline}
                     disabled={disabled || i === draft.order.length - 1}
                     aria-label={`Move ${labels.get(id) ?? id} down`}
                     onClick={() => move(i, 1)}
@@ -334,7 +335,7 @@ function SimulationControl({
         <div className={styles.nudge}>
           <button
             type="button"
-            className={styles.outline}
+            className={buttons.outline}
             disabled={disabled || value <= control.min}
             onClick={() => set(value - control.step)}
           >
@@ -342,7 +343,7 @@ function SimulationControl({
           </button>
           <button
             type="button"
-            className={styles.outline}
+            className={buttons.outline}
             disabled={disabled || value >= last}
             onClick={() => set(value + control.step)}
           >
