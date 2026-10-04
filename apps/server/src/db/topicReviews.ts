@@ -5,7 +5,7 @@ import { type ClassScope, isDraftPreview } from '../auth/scope';
 import { computeAvailability, openToStudent, type Tab, topicOpens } from '../content/availability';
 import { classArchived, invalid, notFound, type Outcome } from '../outcome';
 import type { Db } from './client';
-import { creditColumn, creditOf, draftSnapshot } from './content/releases';
+import { creditColumn, creditOf, type DraftSnapshot, draftSnapshot } from './content/releases';
 import {
   courseReleases,
   exerciseAttempts,
@@ -226,11 +226,13 @@ export async function completedTopics(
   db: Db,
   scope: ClassScope,
   now: Date,
+  draftRead?: DraftSnapshot,
 ): Promise<ReadonlySet<string>> {
   if (scope.role !== 'student') return new Set();
   const evidence = await evidenceOf(db, scope.classId, scope.user.id);
   if (isDraftPreview(scope)) {
-    const draft = await draftSnapshot(db, scope);
+    // A request that already read the draft judges completion on that same snapshot.
+    const draft = draftRead ?? (await draftSnapshot(db, scope));
     return completedFrom(draft.topics, draft.resources, evidence, now);
   }
   if (!scope.releaseId) return new Set();

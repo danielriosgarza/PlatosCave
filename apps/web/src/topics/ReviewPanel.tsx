@@ -1,9 +1,8 @@
 import { getTopicReviews, putReviewed } from '@parallax/contracts/routes/topicReviews';
-import { getClassTopics } from '@parallax/contracts/routes/topics';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { ApiError, call } from '../api/client';
-import { coursesQuery } from '../courses/queries';
+import { refreshProgress, reviewSheetKey } from './progress';
 import styles from './ReviewPanel.module.css';
 
 const TAB_NAMES = {
@@ -27,7 +26,7 @@ const submission = (item: Item) =>
  */
 export function ReviewPanel({ classId, topicId }: { classId: string; topicId: string }) {
   const queryClient = useQueryClient();
-  const key = ['review-sheet', classId, topicId] as const;
+  const key = reviewSheetKey(classId, topicId);
   const sheet = useQuery({
     queryKey: key,
     queryFn: () => call(getTopicReviews, { params: { classId, topicId } }),
@@ -43,8 +42,7 @@ export function ReviewPanel({ classId, topicId }: { classId: string; topicId: st
     onSuccess: (next) => {
       queryClient.setQueryData(key, next);
       // The syllabus state, the footer count and the course cards all follow the marks.
-      void queryClient.invalidateQueries({ queryKey: ['GET', getClassTopics.path] });
-      void queryClient.invalidateQueries({ queryKey: coursesQuery.queryKey });
+      refreshProgress(queryClient);
     },
     onError: (err) =>
       setProblem(

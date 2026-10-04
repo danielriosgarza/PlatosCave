@@ -12,6 +12,7 @@ import {
   studentIn,
   T_SAMPLING,
 } from '../test/render';
+import { refreshProgress } from './progress';
 
 afterEach(() => {
   cleanup();
@@ -49,14 +50,18 @@ const sheet = (reviewed: boolean) => ({
 
 function stubReviews(options: { putStatus?: number } = {}) {
   const puts: unknown[] = [];
+  // The server's state: a mark it acknowledged is what every later read returns.
+  let acknowledged = false;
   const base = signedInWithTopics(makeMe({ classes: [studentIn(CLASS_A, 'Autumn 2026 A')] }));
   const fetchMock = stubApi((url, init) => {
-    if (url === sheetUrl) return { status: 200, body: sheet(false) };
+    if (url === sheetUrl) return { status: 200, body: sheet(acknowledged) };
     if (url === `${sheetUrl}/${READING}` && init?.method === 'PUT') {
       puts.push(JSON.parse(String(init.body)));
-      return options.putStatus && options.putStatus !== 200
-        ? { status: options.putStatus, body: { error: 'class_archived' } }
-        : { status: 200, body: sheet(true) };
+      if (options.putStatus && options.putStatus !== 200) {
+        return { status: options.putStatus, body: { error: 'class_archived' } };
+      }
+      acknowledged = true;
+      return { status: 200, body: sheet(true) };
     }
     return base(url, init);
   });
@@ -64,6 +69,42 @@ function stubReviews(options: { putStatus?: number } = {}) {
 }
 
 describe('reviewed marks', () => {
+  it('the panel and the syllabus re-read after a notebook is submitted', async () => {
+    const NB = '00000000-0000-4000-8000-000000000403';
+    let submitted = false;
+    const base = signedInWithTopics(makeMe({ classes: [studentIn(CLASS_A, 'Autumn 2026 A')] }));
+    const item = () => ({
+      resourceId: NB,
+      title: 'Bootstrap notebook',
+      tab: 'notebooks',
+      graded: false,
+      reviewed: true,
+      submitted,
+      required: 'submission',
+    });
+    const fetchMock = stubApi((url, init) =>
+      url === sheetUrl
+        ? {
+            status: 200,
+            body: { topicId: T_SAMPLING, complete: submitted, items: [item()] },
+          }
+        : base(url, init),
+    );
+    const { queryClient } = renderApp(`/classes/${CLASS_A}/topics/${T_SAMPLING}/reading`);
+    expect(await screen.findByText(/Not submitted, required for completion/)).toBeVisible();
+    expect(screen.getByText('This topic is not complete yet.')).toBeVisible();
+
+    // A submission lands elsewhere in the workspace: it asks the cache to re-read progress.
+    submitted = true;
+    const topicsReads = () =>
+      fetchMock.mock.calls.filter(([u]) => String(u) === `/api/classes/${CLASS_A}/topics`).length;
+    const before = topicsReads();
+    refreshProgress(queryClient);
+    expect(await screen.findByText(/Submitted, required for completion/)).toBeVisible();
+    expect(screen.getByText('This topic is complete.')).toBeVisible();
+    await waitFor(() => expect(topicsReads()).toBeGreaterThan(before));
+  });
+
   it('an ungraded resource required by submission appears once, with its submission status', async () => {
     const NB = '00000000-0000-4000-8000-000000000403';
     const base = signedInWithTopics(makeMe({ classes: [studentIn(CLASS_A, 'Autumn 2026 A')] }));

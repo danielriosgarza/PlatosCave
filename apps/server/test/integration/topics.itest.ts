@@ -531,5 +531,7 @@ describe('reviewed marks and completion', () => {
     expect(refused.body).toEqual({ error: 'class_archived' });
     const sheet = await api('bea', 'GET', sheetUrl(ids.classB, ids.sampling));
     expect(sheet.body.items[0]?.reviewed).toBe(true);
+    // The refused change left the count as it was: Sampling still waits on its quiz.
+    expect(await cardCount('bea', ids.classB)).toBe(0);
   });
 });

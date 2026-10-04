@@ -161,6 +161,7 @@ async function availabilityOf(
   resourceRows: ResourceRow[],
   now: Date,
   withCompletion = true,
+  draftRead?: DraftSnapshot,
 ) {
   const inputs: AvailabilityTopic[] = topicRows.map((t) => ({
     topicId: t.topicId,
@@ -168,7 +169,9 @@ async function availabilityOf(
     prerequisites: t.prerequisites,
     resources: resourceRows.filter((r) => r.releaseTopicId === t.id),
   }));
-  const completed = withCompletion ? await completedTopics(db, scope, now) : new Set<string>();
+  const completed = withCompletion
+    ? await completedTopics(db, scope, now, draftRead)
+    : new Set<string>();
   return computeAvailability(inputs, { role: scope.role, now, completed });
 }
 
@@ -192,8 +195,10 @@ export async function findReleaseTopic(
   let topic: TopicRow | undefined;
   let resources: ResourceRow[];
   let prerequisites: TopicRow[];
+  let draftUsed: DraftSnapshot | undefined;
   if (isDraftPreview(scope)) {
     const draft = draftRead ?? (await draftSnapshot(db, scope));
+    draftUsed = draft;
     topic = draft.topics.find(matches);
     if (!topic) return null;
     const id = topic.id;
@@ -268,6 +273,7 @@ export async function findReleaseTopic(
     now,
     // Only a prerequisite's completion can change whether the topic opens.
     topic.prerequisites.length > 0,
+    draftUsed,
   );
   const state = availability.get(topic.topicId);
   return {

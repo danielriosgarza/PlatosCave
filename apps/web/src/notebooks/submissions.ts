@@ -10,6 +10,7 @@ import {
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import type { z } from 'zod';
 import { ApiError, call, useApi } from '../api/client';
+import { refreshProgress } from '../topics/progress';
 
 export { COLAB_URL };
 export type Receipt = z.output<typeof submissionReceipt>;
@@ -80,8 +81,11 @@ export const downloadSubmission = (classId: string, submissionId: string) =>
 
 export const useRefreshSubmissions = () => {
   const queryClient = useQueryClient();
-  return () =>
-    queryClient.invalidateQueries({
+  return () => {
+    // A submission may complete the topic that asks for it (§4).
+    refreshProgress(queryClient);
+    return queryClient.invalidateQueries({
       predicate: (q) => String(q.queryKey[1]).includes('/notebook-submissions'),
     });
+  };
 };
