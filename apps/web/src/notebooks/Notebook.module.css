@@ -33,61 +33,33 @@
   min-height: 32px;
   max-width: 240px;
 }
-.button {
-  font: inherit;
-  font-size: 12px;
-  min-height: 32px;
-  cursor: pointer;
-  border: 1px solid var(--pc-muted);
-  padding: 4px 12px;
-  background: var(--pc-sheet);
-  color: var(--pc-ink);
-  border-radius: var(--pc-radius-control);
-}
-.button[aria-pressed="true"],
-.button[aria-expanded="true"] {
-  background: var(--pc-soft);
-  font-weight: 600;
-}
-.textButton {
-  font: var(--pc-text-label);
-  color: var(--pc-muted);
-  background: none;
-  border: 0;
-  padding: 4px 0;
-  cursor: pointer;
-  text-decoration: underline;
-}
-.textButton:hover {
-  color: var(--pc-ink);
-}
 
 .notebook {
   max-width: 1160px;
   margin: 0 auto;
 }
-.outline {
+.toc {
   max-width: var(--pc-reading-width);
   padding: 0 0 24px 44px;
 }
-.outline ol {
+.toc ol {
   list-style: none;
   margin: 8px 0 0;
   padding: 0;
 }
-.outline li {
+.toc li {
   margin: 4px 0;
 }
-.outline li[data-level="2"] {
+.toc li[data-level="2"] {
   padding-left: 16px;
 }
-.outline li[data-level="3"],
-.outline li[data-level="4"],
-.outline li[data-level="5"],
-.outline li[data-level="6"] {
+.toc li[data-level="3"],
+.toc li[data-level="4"],
+.toc li[data-level="5"],
+.toc li[data-level="6"] {
   padding-left: 32px;
 }
-.outline button {
+.toc button {
   font: var(--pc-text-ui);
   background: none;
   border: 0;
@@ -96,7 +68,7 @@
   color: var(--pc-ink);
   text-align: left;
 }
-.outline button:hover {
+.toc button:hover {
   text-decoration: underline;
 }
 .prose {

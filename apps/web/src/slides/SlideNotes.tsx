@@ -1,5 +1,6 @@
 import type { Anchor } from '@parallax/contracts';
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import buttons from '../components/Buttons.module.css';
 import {
   type Annotation,
   type Thread,
@@ -396,7 +397,7 @@ export function SlideNotes({ classId, resourceId, page }: Props) {
             </div>
             <button
               type="button"
-              className={margin.outline}
+              className={buttons.outline}
               disabled={ask.body.trim() === '' || ask.posting}
               onClick={() => void post()}
             >

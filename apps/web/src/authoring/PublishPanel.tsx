@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import type { z } from 'zod';
 import { ApiError, call } from '../api/client';
+import buttons from '../components/Buttons.module.css';
 import { Loading } from '../components/Loading';
 import styles from '../components/Page.module.css';
 import { sessionQuery } from '../session/useSession';
@@ -69,14 +70,14 @@ export function PublishPanel({ courseId, grant }: Props) {
 
   return (
     <aside className={styles.side} aria-label="Publication">
-      <h2 style={{ fontSize: 18, margin: '16px 0' }}>Publication</h2>
+      <h2 className={`${styles.subheading} ${styles.sectionHeading}`}>Publication</h2>
       {overview.isError ? (
         <p role="alert">The classes of this course could not be loaded.</p>
       ) : overview.data ? (
         overview.data.classes.length === 0 ? (
           <p className={styles.muted}>This course has no class yet.</p>
         ) : (
-          <ul style={{ listStyle: 'none', padding: 0, margin: 0 }}>
+          <ul className={styles.bareList}>
             {overview.data.classes.map((c) => (
               <li key={c.id} className={styles.muted}>
                 {c.name}
@@ -89,7 +90,7 @@ export function PublishPanel({ courseId, grant }: Props) {
       ) : (
         <Loading label="Loading classes…" />
       )}
-      <p style={{ margin: '18px 0' }}>
+      <p className={styles.sectionHeading}>
         {latest
           ? `Latest release: ${latest.version}. Publishing creates release ${next}; classes stay on their release until an instructor adopts it.`
           : 'Nothing is published yet. Publishing creates release 1.'}
@@ -115,10 +116,10 @@ export function PublishPanel({ courseId, grant }: Props) {
       )}
       {errors.length > 0 ? <IssueList heading="Blocks publication" issues={errors} /> : null}
       {warnings.length > 0 ? <IssueList heading="To review" issues={warnings} /> : null}
-      <div style={{ marginTop: 24 }}>
+      <div className={styles.mt24}>
         <button
           type="button"
-          className={styles.primary}
+          className={buttons.primary}
           disabled={!mayPublish || publish.isPending}
           onClick={() => publish.mutate()}
         >
@@ -126,17 +127,17 @@ export function PublishPanel({ courseId, grant }: Props) {
         </button>
       </div>
       {!mayPublish ? (
-        <p className={`${styles.small} ${styles.muted}`} style={{ marginTop: 12 }}>
+        <p className={`${styles.small} ${styles.muted} ${styles.mt12}`}>
           Publishing needs the publisher permission on this course.
         </p>
       ) : null}
       {notice ? (
-        <p className={`${styles.small} ${local.success}`} role="status" style={{ marginTop: 12 }}>
+        <p className={`${styles.small} ${local.success} ${styles.mt12}`} role="status">
           {notice}
         </p>
       ) : null}
       {publish.isError ? (
-        <p className={styles.small} role="alert" style={{ marginTop: 12 }}>
+        <p className={`${styles.small} ${styles.mt12}`} role="alert">
           {refusal(publish.error)}
         </p>
       ) : null}

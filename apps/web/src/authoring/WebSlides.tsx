@@ -8,6 +8,7 @@ import { useMutation, useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import type { z } from 'zod';
 import { call } from '../api/client';
+import buttons from '../components/Buttons.module.css';
 import styles from '../components/Page.module.css';
 import local from './Authoring.module.css';
 import { useAutosave } from './autosave';
@@ -69,16 +70,16 @@ export function AddWebSlides({ courseId, topicId, onAdded, onCancel }: AddProps)
           {FORMAT_HINT}
         </span>
       </div>
-      <div className={styles.row} style={{ marginTop: 20 }}>
-        <button type="submit" className={styles.primary} disabled={!ready || add.isPending}>
+      <div className={`${styles.row} ${styles.mt20}`}>
+        <button type="submit" className={buttons.primary} disabled={!ready || add.isPending}>
           {add.isPending ? 'Adding…' : 'Add web slides'}
         </button>
-        <button type="button" className={styles.textButton} onClick={onCancel}>
+        <button type="button" className={buttons.textButton} onClick={onCancel}>
           Cancel
         </button>
       </div>
       {add.isError ? (
-        <p className={`${styles.small} ${local.failure}`} role="alert" style={{ marginTop: 12 }}>
+        <p className={`${styles.small} ${local.failure} ${styles.mt12}`} role="alert">
           The slides were not added. {failureMessage(add.error)}
         </p>
       ) : null}
@@ -215,10 +216,10 @@ function WebSlidesFields({
           {FORMAT_HINT}
         </span>
       </div>
-      <div className={styles.row} style={{ marginTop: 16 }}>
+      <div className={`${styles.row} ${styles.mt16}`}>
         <button
           type="button"
-          className={styles.textButton}
+          className={buttons.textButton}
           onClick={() => change({ archived: !values.archived })}
         >
           {values.archived ? 'Restore these slides' : 'Archive these slides'}

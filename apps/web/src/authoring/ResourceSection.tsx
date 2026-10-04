@@ -10,6 +10,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useState } from 'react';
 import type { z } from 'zod';
 import { call } from '../api/client';
+import buttons from '../components/Buttons.module.css';
 import styles from '../components/Page.module.css';
 import { AddNotebook } from './AddNotebook';
 import { AddReading } from './AddReading';
@@ -76,7 +77,7 @@ export function ResourceSection({ courseId, topicId, resources }: Props) {
 
   return (
     <div>
-      <h2 style={{ fontSize: 20, marginTop: 40 }}>Resources</h2>
+      <h2 className={`${styles.subheading} ${styles.mt40}`}>Resources</h2>
       {tabs.map((tab) => {
         const here = resources.filter((r) => (tab.types as readonly Type[]).includes(r.type));
         return (
@@ -107,10 +108,10 @@ export function ResourceSection({ courseId, topicId, resources }: Props) {
                   }}
                 />
               ) : (
-                <div style={{ marginTop: 12 }}>
+                <div className={styles.mt12}>
                   <button
                     type="button"
-                    className={styles.outline}
+                    className={buttons.outline}
                     onClick={() => setAddingSlides(true)}
                   >
                     Add web slides
@@ -130,8 +131,8 @@ export function ResourceSection({ courseId, topicId, resources }: Props) {
                   }}
                 />
               ) : (
-                <div style={{ marginTop: 12 }}>
-                  <button type="button" className={styles.outline} onClick={() => setAdding(true)}>
+                <div className={styles.mt12}>
+                  <button type="button" className={buttons.outline} onClick={() => setAdding(true)}>
                     Add reading
                   </button>
                 </div>
@@ -149,10 +150,10 @@ export function ResourceSection({ courseId, topicId, resources }: Props) {
                   }}
                 />
               ) : (
-                <div style={{ marginTop: 12 }}>
+                <div className={styles.mt12}>
                   <button
                     type="button"
-                    className={styles.outline}
+                    className={buttons.outline}
                     onClick={() => setAddingNotebook(true)}
                   >
                     Add notebook
@@ -207,7 +208,7 @@ function StatusLine({
         ) : (
           <>
             Processing status could not be loaded.{' '}
-            <button type="button" className={styles.textButton} onClick={lookup.reload}>
+            <button type="button" className={buttons.textButton} onClick={lookup.reload}>
               Reload status
             </button>
           </>
@@ -235,7 +236,7 @@ function StatusLine({
           {' '}
           <button
             type="button"
-            className={styles.textButton}
+            className={buttons.textButton}
             onClick={() => retry.mutate()}
             disabled={retry.isPending}
           >
@@ -277,7 +278,7 @@ function ResourceRow({
         {isReading(resource.type) || isWebSlides(resource.type) || isExercise(resource.type) ? (
           <button
             type="button"
-            className={styles.textButton}
+            className={buttons.textButton}
             aria-expanded={open}
             onClick={() => setOpen(!open)}
           >
@@ -324,8 +325,8 @@ function AddExercise({
   });
   if (!adding) {
     return (
-      <div style={{ marginTop: 12 }}>
-        <button type="button" className={styles.outline} onClick={() => setAdding(true)}>
+      <div className={styles.mt12}>
+        <button type="button" className={buttons.outline} onClick={() => setAdding(true)}>
           Add exercise
         </button>
       </div>
@@ -342,15 +343,15 @@ function AddExercise({
         New exercise title
         <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} />
       </label>
-      <div className={styles.row} style={{ marginTop: 12 }}>
+      <div className={`${styles.row} ${styles.mt12}`}>
         <button
           type="submit"
-          className={styles.outline}
+          className={buttons.outline}
           disabled={!title.trim() || create.isPending}
         >
           Create exercise
         </button>
-        <button type="button" className={styles.textButton} onClick={() => setAdding(false)}>
+        <button type="button" className={buttons.textButton} onClick={() => setAdding(false)}>
           Cancel
         </button>
       </div>
@@ -485,10 +486,10 @@ function ReadingFields({
           onChange={(e) => change({ alternative: e.target.value })}
         />
       </div>
-      <div className={styles.row} style={{ marginTop: 16 }}>
+      <div className={`${styles.row} ${styles.mt16}`}>
         <button
           type="button"
-          className={styles.textButton}
+          className={buttons.textButton}
           onClick={() => change({ archived: !values.archived })}
         >
           {values.archived ? 'Restore this reading' : 'Archive this reading'}

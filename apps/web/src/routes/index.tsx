@@ -1,6 +1,7 @@
 import { health } from '@parallax/contracts/routes/health';
 import { createFileRoute } from '@tanstack/react-router';
 import { useApi } from '../api/client';
+import page from '../components/Page.module.css';
 
 export const Route = createFileRoute('/')({ component: Home });
 
@@ -12,7 +13,7 @@ function Home() {
       ? 'API unavailable'
       : 'Checking API…';
   return (
-    <main id="main" style={{ padding: 'var(--pc-space-32) var(--pc-space-28)' }}>
+    <main id="main" className={page.homeMain}>
       <h1>Parallax</h1>
       <p role="status">{line}</p>
     </main>
