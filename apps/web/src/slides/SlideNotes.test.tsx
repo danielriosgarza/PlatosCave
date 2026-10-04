@@ -135,15 +135,18 @@ function api(w: World) {
         author: { id: SAM_ID, name: 'Sam Okafor' },
         placement: placed(anchor),
         createdAt: '2026-10-01T09:00:00Z',
+        can: { reply: true, resolve: false, reopen: false },
         posts: [
           {
             id: uuid(++w.count),
             parentId: null,
             author: { id: SAM_ID, name: 'Sam Okafor' },
+            authorRole: 'student',
             body: String(body?.body),
             edited: false,
             deleted: false,
             moderated: false,
+            can: { edit: false, delete: false, moderate: false },
             createdAt: '2026-10-01T09:00:00Z',
           },
         ],

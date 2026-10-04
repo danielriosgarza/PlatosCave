@@ -2,9 +2,14 @@ import {
   createAnnotation,
   createThread,
   deleteAnnotation,
+  deletePost,
+  editPost,
   listAnnotations,
   listNotifications,
+  moderatePost,
+  replyToThread,
   saveAnnotation,
+  setThreadStatus,
   shareAnnotation,
 } from '@parallax/contracts/routes/annotations';
 import type { FastifyInstance } from 'fastify';
@@ -41,6 +46,26 @@ export default function annotationRoutes(app: FastifyInstance, deps: RouteDeps):
 
   registerRoute(app, shareAnnotation, async ({ scope, params, body }) =>
     settle(await annotations.shareAnnotation(db(), scope, params.annotationId, body, now())),
+  );
+
+  registerRoute(app, replyToThread, async ({ scope, params, body }) =>
+    settle(await annotations.replyToThread(db(), scope, params.threadId, body, now())),
+  );
+
+  registerRoute(app, editPost, async ({ scope, params, body }) =>
+    settle(await annotations.editPost(db(), scope, params.postId, body, now())),
+  );
+
+  registerRoute(app, deletePost, async ({ scope, params }) =>
+    settle(await annotations.deletePost(db(), scope, params.postId, now())),
+  );
+
+  registerRoute(app, setThreadStatus, async ({ scope, params, body }) =>
+    settle(await annotations.setThreadStatus(db(), scope, params.threadId, body.status, now())),
+  );
+
+  registerRoute(app, moderatePost, async ({ scope, params, body }) =>
+    settle(await annotations.moderatePost(db(), scope, params.postId, body, now())),
   );
 
   registerRoute(app, listNotifications, async ({ scope }) => ({

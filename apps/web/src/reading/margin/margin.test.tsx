@@ -46,6 +46,8 @@ interface World {
   /** Annotation saves answer this status instead of working. */
   refuse: number | null;
   count: number;
+  /** Answers discussion actions (reply, edit, delete, status, moderate) a test cares about. */
+  respond: ((call: Call) => { status: number; body: unknown } | undefined) | null;
 }
 
 const world = (annotations: Annotation[] = [], threads: Thread[] = []): World => ({
@@ -56,6 +58,7 @@ const world = (annotations: Annotation[] = [], threads: Thread[] = []): World =>
   hold: null,
   refuse: null,
   count: 0,
+  respond: null,
 });
 
 const placement = (anchor: Annotation['anchor']) => ({
@@ -178,15 +181,18 @@ function api(w: World) {
         author: { id: SAM_ID, name: 'Sam Okafor' },
         placement: placement(body?.anchor as Thread['anchor']),
         createdAt: '2026-10-01T09:00:00Z',
+        can: { reply: true, resolve: false, reopen: false },
         posts: [
           {
             id: uuid(++w.count),
             parentId: null,
             author: { id: SAM_ID, name: 'Sam Okafor' },
+            authorRole: 'student',
             body: body?.body as string,
             edited: false,
             deleted: false,
             moderated: false,
+            can: { edit: false, delete: false, moderate: false },
             createdAt: '2026-10-01T09:00:00Z',
           },
         ],
@@ -194,6 +200,8 @@ function api(w: World) {
       w.threads = [...w.threads, thread];
       return { status: 200, body: thread };
     }
+    const answered = w.respond?.({ method, url, body });
+    if (answered) return answered;
     return { status: 404, body: {} };
   });
   // A dropped connection is a rejected fetch, which no HTTP answer can stand for.
@@ -830,15 +838,18 @@ describe('reading margin: Ask and the audience', () => {
       author: { id: uuid(8), name: 'Ada Lovelace' },
       placement: placement(textAnchor(B3, 0, 5, P3)),
       createdAt: '2026-10-01T09:00:00Z',
+      can: { reply: true, resolve: false, reopen: false },
       posts: [
         {
           id: uuid(9),
           parentId: null,
           author: { id: uuid(8), name: 'Ada Lovelace' },
+          authorRole: 'student',
           body: 'A classmate’s question',
           edited: false,
           deleted: false,
           moderated: false,
+          can: { edit: false, delete: false, moderate: false },
           createdAt: '2026-10-01T09:00:00Z',
         },
       ],
@@ -1121,5 +1132,203 @@ describe('reading margin: follow-ups to the first review', () => {
     await waitFor(() => expect(marks()).toHaveLength(1));
     expect(w.calls.filter((c) => c.method === 'POST')).toHaveLength(1);
     expect(w.annotations).toHaveLength(1);
+  });
+});
+
+describe('discussion threads', () => {
+  const ADA = { id: uuid(8), name: 'Ada Lovelace' };
+  const MARCUS = { id: uuid(20), name: 'Marcus Webb' };
+  const THREAD_ID = uuid(7);
+  const post = (
+    n: number,
+    over: Partial<Thread['posts'][number]> = {},
+  ): Thread['posts'][number] => ({
+    id: uuid(n),
+    parentId: null,
+    author: { id: SAM_ID, name: 'Sam Okafor' },
+    authorRole: 'student',
+    body: `Post ${n}`,
+    edited: false,
+    deleted: false,
+    moderated: false,
+    can: { edit: true, delete: true, moderate: false },
+    createdAt: '2026-10-01T09:00:00Z',
+    ...over,
+  });
+  const threadOf = (
+    posts: Thread['posts'],
+    can: Thread['can'] = { reply: true, resolve: false, reopen: false },
+    status: Thread['status'] = 'open',
+  ): Thread => ({
+    id: THREAD_ID,
+    resourceId: RES,
+    resourceRevisionId: REV,
+    anchor: textAnchor(B3, 0, 5, P3),
+    audience: 'class',
+    status,
+    author: ADA,
+    placement: placement(textAnchor(B3, 0, 5, P3)),
+    createdAt: '2026-10-01T09:00:00Z',
+    can,
+    posts,
+  });
+  const openDiscussion = async (user: ReturnType<typeof userEvent.setup>) => {
+    await open();
+    await user.click(await screen.findByRole('button', { name: /^Discussion/ }));
+  };
+
+  it('A05 an instructor response is labelled, and a reply shows what the server returned', async () => {
+    const question = post(1, {
+      author: ADA,
+      body: 'Why n − 1?',
+      can: { edit: false, delete: false, moderate: false },
+    });
+    const w = world([], [threadOf([question])]);
+    const response = post(2, {
+      parentId: question.id,
+      author: MARCUS,
+      authorRole: 'instructor',
+      body: 'Because the mean is estimated.',
+      can: { edit: false, delete: false, moderate: true },
+    });
+    w.respond = (c) =>
+      c.url.endsWith(`/threads/${THREAD_ID}/posts`) && c.method === 'POST'
+        ? { status: 200, body: threadOf([question, response]) }
+        : undefined;
+    api(w);
+    const user = userEvent.setup();
+    await openDiscussion(user);
+    await user.click(await screen.findByRole('button', { name: 'Reply' }));
+    await user.type(
+      screen.getByRole('textbox', { name: /Reply to Ada Lovelace/ }),
+      'Because the mean is estimated.',
+    );
+    await user.click(screen.getByRole('button', { name: 'Post reply' }));
+    expect(await screen.findByText('Marcus Webb · Instructor')).toBeInTheDocument();
+    expect(w.calls.at(-1)).toMatchObject({
+      method: 'POST',
+      body: { body: 'Because the mean is estimated.', parentId: question.id },
+    });
+  });
+
+  it('A05 edit shows the edited indicator only after the server answers; delete leaves a tombstone', async () => {
+    const mine = post(1);
+    const w = world([], [threadOf([mine])]);
+    w.respond = (c) => {
+      if (c.method === 'PUT' && c.url.endsWith(`/posts/${mine.id}`)) {
+        return {
+          status: 200,
+          body: threadOf([{ ...mine, body: c.body?.body as string, edited: true }]),
+        };
+      }
+      if (c.method === 'DELETE' && c.url.endsWith(`/posts/${mine.id}`)) {
+        return {
+          status: 200,
+          body: threadOf([
+            {
+              ...mine,
+              body: null,
+              deleted: true,
+              can: { edit: false, delete: false, moderate: false },
+            },
+          ]),
+        };
+      }
+      return undefined;
+    };
+    api(w);
+    const user = userEvent.setup();
+    await openDiscussion(user);
+    await user.click(await screen.findByRole('button', { name: 'Edit' }));
+    const box = screen.getByRole('textbox', { name: 'Edit post' });
+    await user.clear(box);
+    await user.type(box, 'Reworded');
+    await user.click(screen.getByRole('button', { name: 'Save edit' }));
+    expect(await screen.findByText('Reworded')).toBeInTheDocument();
+    expect(screen.getByText(/· Edited/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Delete' }));
+    expect(await screen.findByText('The author deleted this post.')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Delete' })).toBeNull();
+  });
+
+  it('A05 offers no edit or delete where the class policy forbids it, and shows a refusal', async () => {
+    const mine = post(1, { can: { edit: false, delete: false, moderate: false } });
+    api(world([], [threadOf([mine])]));
+    const user = userEvent.setup();
+    await openDiscussion(user);
+    await screen.findByText('Post 1');
+    expect(screen.queryByRole('button', { name: 'Edit' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Delete' })).toBeNull();
+  });
+
+  it('A05 the asker reopens a resolved question; an instructor resolves with Mark resolved', async () => {
+    const question = post(1, { author: ADA, can: { edit: false, delete: false, moderate: false } });
+    const w = world(
+      [],
+      [threadOf([question], { reply: true, resolve: false, reopen: true }, 'resolved')],
+    );
+    w.respond = (c) =>
+      c.url.endsWith(`/threads/${THREAD_ID}/status`)
+        ? {
+            status: 200,
+            body: threadOf(
+              [question],
+              { reply: true, resolve: true, reopen: false },
+              c.body?.status as 'open',
+            ),
+          }
+        : undefined;
+    api(w);
+    const user = userEvent.setup();
+    await openDiscussion(user);
+    expect(await screen.findByText('Resolved')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Reopen' }));
+    expect(await screen.findByText('Open')).toBeInTheDocument();
+    expect(w.calls.at(-1)?.body).toEqual({ status: 'open' });
+    expect(screen.getByRole('button', { name: 'Mark resolved' })).toBeInTheDocument();
+  });
+
+  it('A05 moderation asks for a reason and shows the removal the server recorded', async () => {
+    const theirs = post(1, { author: ADA, can: { edit: false, delete: false, moderate: true } });
+    const w = world([], [threadOf([theirs])]);
+    w.respond = (c) =>
+      c.url.endsWith(`/posts/${theirs.id}/moderate`)
+        ? {
+            status: 200,
+            body: threadOf([
+              {
+                ...theirs,
+                body: null,
+                moderated: true,
+                can: { edit: false, delete: false, moderate: false },
+              },
+            ]),
+          }
+        : undefined;
+    api(w);
+    const user = userEvent.setup();
+    await openDiscussion(user);
+    await user.click(await screen.findByRole('button', { name: 'Remove as instructor' }));
+    expect(screen.getByRole('button', { name: 'Remove post' })).toBeDisabled();
+    await user.type(
+      screen.getByRole('textbox', { name: 'Reason for removing this post' }),
+      'Off topic',
+    );
+    await user.click(screen.getByRole('button', { name: 'Remove post' }));
+    expect(await screen.findByText('An instructor removed this post.')).toBeInTheDocument();
+    expect(w.calls.at(-1)?.body).toEqual({ reason: 'Off topic' });
+  });
+
+  it('A05 an archived class refusal is shown and the post is not changed', async () => {
+    const mine = post(1);
+    const w = world([], [threadOf([mine])]);
+    w.respond = (c) =>
+      c.method === 'DELETE' ? { status: 409, body: { error: 'class_archived' } } : undefined;
+    api(w);
+    const user = userEvent.setup();
+    await openDiscussion(user);
+    await user.click(await screen.findByRole('button', { name: 'Delete' }));
+    expect(await screen.findByText(/This class is archived/)).toBeInTheDocument();
+    expect(screen.getByText('Post 1')).toBeInTheDocument();
   });
 });

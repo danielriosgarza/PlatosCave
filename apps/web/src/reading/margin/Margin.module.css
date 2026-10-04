@@ -234,3 +234,18 @@
     border-top: 1px solid var(--pc-rule);
   }
 }
+
+.reply {
+  margin-left: 14px;
+  padding-left: 10px;
+  border-left: 1px solid var(--pc-rule);
+}
+.postActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-top: 6px;
+}
+.thread p.small {
+  margin-top: 2px;
+}

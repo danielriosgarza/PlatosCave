@@ -3,8 +3,13 @@ import {
   createAnnotation,
   createThread,
   deleteAnnotation,
+  deletePost,
+  editPost,
   listAnnotations,
+  moderatePost,
+  replyToThread,
   saveAnnotation,
+  setThreadStatus,
   type threadView,
 } from '@parallax/contracts/routes/annotations';
 import { type QueryClient, useQueryClient } from '@tanstack/react-query';
@@ -71,7 +76,33 @@ function dropAnnotation(client: QueryClient, classId: string, resourceId: string
   );
 }
 
+/** What a thread action answered, in the terms the discussion shows. */
+export type ThreadResult = { ok: true } | { ok: false; message: string };
+
+export type ThreadAction =
+  | { kind: 'reply'; threadId: string; body: string; parentId?: string }
+  | { kind: 'edit'; postId: string; body: string }
+  | { kind: 'delete'; postId: string }
+  | { kind: 'status'; threadId: string; status: 'open' | 'resolved' }
+  | { kind: 'moderate'; postId: string; reason: string };
+
+function refusal(error: unknown): string {
+  if (error instanceof ApiError) {
+    const body = error.body as { error?: string; message?: string } | null;
+    if (error.status === 409 && body?.error === 'class_archived') {
+      return 'This class is archived, so discussions can no longer change.';
+    }
+    if (error.status === 400 && body?.message) return body.message;
+    if (error.status === 404) return 'This discussion is no longer available.';
+  }
+  return offline()
+    ? 'You are offline. Try again when you are back online.'
+    : 'Could not save. Try again.';
+}
+
 export interface MarginActions {
+  /** Runs one discussion action; the cached thread is replaced by what the server answered. */
+  thread(action: ThreadAction): Promise<ThreadResult>;
   createNote(anchor: Anchor, body: string): Promise<SendResult>;
   saveNote(id: string, expectedRevision: number, body: string, final: boolean): Promise<SendResult>;
   highlight(anchor: Anchor): Promise<SendResult>;
@@ -138,6 +169,44 @@ export function useMarginActions(classId: string, resourceId: string): MarginAct
         }
         dropAnnotation(client, classId, resourceId, id);
         return true;
+      },
+      async thread(action) {
+        if (offline()) return { ok: false, message: refusal(null) };
+        try {
+          const classParams = { classId };
+          const updated = await (action.kind === 'reply'
+            ? call(replyToThread, {
+                params: { ...classParams, threadId: action.threadId },
+                body: { body: action.body, parentId: action.parentId },
+              })
+            : action.kind === 'edit'
+              ? call(editPost, {
+                  params: { ...classParams, postId: action.postId },
+                  body: { body: action.body },
+                })
+              : action.kind === 'delete'
+                ? call(deletePost, { params: { ...classParams, postId: action.postId } })
+                : action.kind === 'status'
+                  ? call(setThreadStatus, {
+                      params: { ...classParams, threadId: action.threadId },
+                      body: { status: action.status },
+                    })
+                  : call(moderatePost, {
+                      params: { ...classParams, postId: action.postId },
+                      body: { reason: action.reason },
+                    }));
+          client.setQueryData<MarginList>(
+            listKey(classId, resourceId),
+            (list) =>
+              list && {
+                ...list,
+                threads: list.threads.map((t) => (t.id === updated.id ? updated : t)),
+              },
+          );
+          return { ok: true };
+        } catch (error) {
+          return { ok: false, message: refusal(error) };
+        }
       },
       async ask(audience, anchor, body) {
         if (offline()) return { kind: 'offline' };
