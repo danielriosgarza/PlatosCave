@@ -55,6 +55,8 @@ test('A01 an instructor who signs in from / lands on the instructor view', async
   await expect(page.getByText('Sign-in link requested')).toBeVisible();
   await page.goto(await latestSignInLink(email));
   await expect(page).toHaveURL(/\/courses\?view=instructor$/);
+  await expect(page.getByRole('heading', { name: 'Courses you teach' })).toBeVisible();
+  await expect(page.getByText('This account has no instructor access')).toBeVisible();
 });
 
 test('A02 signed-in / and the brand link land on courses', async ({ page }) => {
