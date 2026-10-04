@@ -86,6 +86,26 @@ describe('permission revoked', () => {
     expect(await screen.findByText('Sampling')).toBeInTheDocument();
   });
 
+  it('A19 titles the revoked-access page without the course or topic name', async () => {
+    const me = makeMe({ classes: [studentIn(CLASS_A, 'Class A')] });
+    let member = true;
+    stubApi((url, init) =>
+      url === '/api/me'
+        ? { status: 200, body: member ? me : { ...me, classes: [] } }
+        : signedInWithTopics(me)(url, init),
+    );
+    const { queryClient } = renderApp(`/classes/${CLASS_A}/topics`);
+    expect(await screen.findByText('Sampling')).toBeInTheDocument();
+    await waitFor(() => expect(document.title).toBe('Statistical thinking · Parallax'));
+
+    member = false;
+    await act(() => queryClient.refetchQueries({ queryKey: ['session'] }));
+    await screen.findByRole('heading', { name: 'Your access to this class has ended' });
+    await waitFor(() =>
+      expect(document.title).toBe('Your access to this class has ended · Parallax'),
+    );
+  });
+
   it('A01 keeps the page when a class request fails but the person is still a member', async () => {
     const me = makeMe({ classes: [studentIn(CLASS_A, 'Class A')] });
     let broken = false;

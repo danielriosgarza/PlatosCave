@@ -9,6 +9,7 @@ import { PublishPanel } from '../../authoring/PublishPanel';
 import { authoringKey, draftsQuery } from '../../authoring/queries';
 import { failureMessage } from '../../authoring/upload';
 import styles from '../../components/Page.module.css';
+import { usePageTitle } from '../../components/pageTitle';
 import { Unavailable } from '../../components/Unavailable';
 import { useSession } from '../../session/useSession';
 
@@ -19,7 +20,8 @@ export const Route = createFileRoute('/_authed/courses/$courseId/edit/')({
 function EditCourse() {
   const { courseId } = Route.useParams();
   const session = useSession();
-  if (session.status !== 'signed-in') return <main className={styles.index} aria-busy="true" />;
+  if (session.status !== 'signed-in')
+    return <main id="main" className={styles.index} aria-busy="true" />;
   const grant = session.me.courses.find((c) => c.courseId === courseId);
   if (!grant || !canEdit(grant)) return <Unavailable />;
   return <CourseDraft courseId={courseId} title={grant.title} grant={grant} />;
@@ -36,6 +38,7 @@ function CourseDraft({
 }) {
   const queryClient = useQueryClient();
   const drafts = useQuery(draftsQuery(courseId));
+  usePageTitle(title);
   const [newTitle, setNewTitle] = useState('');
   const refresh = () => queryClient.invalidateQueries({ queryKey: authoringKey(courseId) });
 
@@ -88,7 +91,7 @@ function CourseDraft({
   const live = topics.filter((t) => !t.archived);
 
   return (
-    <main className={styles.index}>
+    <main id="main" className={styles.index}>
       <p className={`${styles.small} ${styles.muted}`}>
         <Link to="/courses" search={{ view: 'instructor' }} className={styles.link}>
           Courses you teach

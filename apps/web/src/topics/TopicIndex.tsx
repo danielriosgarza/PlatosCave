@@ -2,6 +2,7 @@ import { Link } from '@tanstack/react-router';
 import { ApiError } from '../api/client';
 import { ClassUnavailable } from '../components/AccessLost';
 import page from '../components/Page.module.css';
+import { usePageTitle } from '../components/pageTitle';
 import { Unavailable } from '../components/Unavailable';
 import { useClassContext } from '../session/classContext';
 import type { SessionClass } from '../session/useSession';
@@ -31,10 +32,12 @@ export function TopicIndex({ classId }: { classId: string }) {
 
 function ClassSyllabus({ classId, context }: { classId: string; context: SessionClass }) {
   const query = useClassTopics(classId);
-  if (query.error instanceof ApiError && query.error.status === 404) return <Unavailable />;
+  const notFound = query.error instanceof ApiError && query.error.status === 404;
+  usePageTitle(notFound ? undefined : context.courseTitle);
+  if (notFound) return <Unavailable />;
   const data = query.data;
   return (
-    <main className={page.index}>
+    <main id="main" className={page.index}>
       <h1>{context.courseTitle}</h1>
       {data ? (
         <p className={`${page.small} ${page.muted} ${styles.context}`}>
