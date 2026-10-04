@@ -35,6 +35,7 @@ Available once Phase 0 (P0-01…P0-03) has merged; Phase 0 items keep this list 
 | E2E tests | `pnpm build && pnpm test:e2e` |
 | Everything fast | `pnpm check` (lint, typecheck, unit, scenario records) |
 | Scenario coverage | `pnpm scenarios` |
+| Compose (Docker only) | `pnpm compose …` wraps `docker compose -f infra/compose.yml`; unavailable in cloud sessions |
 | Connector | `cd connector && gofmt -l . && go vet ./... && go test ./...` |
 
 ## Environment facts

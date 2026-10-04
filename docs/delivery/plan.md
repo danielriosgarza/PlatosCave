@@ -239,7 +239,7 @@ P1-06 adds `garage` (`dxflrs/garage:v2.4.1`, profile `s3`); P3-11 adds `sshd-jup
 
 ### 1.9 GitHub Actions `ci.yml`
 
-The repository is private, so Actions minutes are metered per job: keep the job count low and do not duplicate setup. Trigger `pull_request` and `workflow_dispatch` only (no `push` to `main`: `pull_request` runs already test the PR merged with its base, and the orchestrator merges only green PRs); `concurrency: { group: ci-${{ github.ref }}, cancel-in-progress: true }`; every job `runs-on: ubuntu-24.04`, `timeout-minutes: 10` (the `runner` job added by P3-13 builds a Docker image and keeps `timeout-minutes: 15`). Shared setup steps: `actions/checkout@v5`, `pnpm/action-setup@v4` (no `version`; reads `packageManager`), `actions/setup-node@v5` with `node-version-file: .node-version` and `cache: pnpm`, `pnpm install --frozen-lockfile`. (Major tags could not be verified from the sandbox: api.github.com is blocked there. Use major tags; keeping them current by Dependabot for `github-actions` is a repository setting deferred to the owner, §7, and `.github/dependabot.yml` is not part of any item.)
+The repository is private, so Actions minutes are metered per job: keep the job count low and do not duplicate setup. Trigger `pull_request` and `workflow_dispatch` only (no `push` to `main`: `pull_request` runs already test the PR merged with its base, and the orchestrator merges only green PRs); `concurrency: { group: ci-${{ github.ref }}, cancel-in-progress: true }`; every job `runs-on: ubuntu-24.04`, `timeout-minutes: 10` (the `runner` job added by P3-14 builds a Docker image and keeps `timeout-minutes: 15`). Shared setup steps: `actions/checkout@v5`, `pnpm/action-setup@v4` (no `version`; reads `packageManager`), `actions/setup-node@v5` with `node-version-file: .node-version` and `cache: pnpm`, `pnpm install --frozen-lockfile`. (Major tags could not be verified from the sandbox: api.github.com is blocked there. Use major tags; keeping them current by Dependabot for `github-actions` is a repository setting deferred to the owner, §7, and `.github/dependabot.yml` is not part of any item.)
 
 | job | after setup |
 | --- | --- |
@@ -251,7 +251,7 @@ The repository is private, so Actions minutes are metered per job: keep the job 
 
 `ci.yml` never uses `paths`/`paths-ignore`: the merge rule needs at least one check run on every PR head, including documentation-only PRs. Pushes cost minutes: implementers push once per review round, after `pnpm check` and the touched integration/e2e tests pass locally.
 
-The three jobs above are the Phase 0 set. P3-13 adds a fourth, `runner` (`ci.yml`, `timeout-minutes: 15` because it builds a Docker image); the table is not extended for it, and the plan text and `ci.yml` agree on 15 for that job.
+The three jobs above are the Phase 0 set. P3-14 adds a fourth, `runner`, which P3-13 extends (`ci.yml`, `timeout-minutes: 15` because it builds a Docker image); the table is not extended for it, and the plan text and `ci.yml` agree on 15 for that job.
 
 Scheduled workflows added by later items (load test, backup/restore, full connector matrix) run **weekly**, not nightly, to stay within the Actions allowance.
 
