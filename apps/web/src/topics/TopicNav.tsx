@@ -3,16 +3,25 @@ import styles from './TopicNav.module.css';
 import { type ClassTopic, isOpen, lockReason, tabFor, topicNumber, useClassTopics } from './topics';
 
 /**
- * Previous and next topic in the global bar. A neighbour that is not open stays visible and
+ * Previous and next topic in the global bar, as its own landmark. A neighbour that is not open stays visible and
  * says why (release time or unmet prerequisite), never silently disabled (§5).
  */
-export function TopicNav({ classId, topicId }: { classId: string; topicId: string }) {
+export function TopicNav({
+  classId,
+  topicId,
+  className,
+}: {
+  classId: string;
+  topicId: string;
+  className?: string;
+}) {
   const { data } = useClassTopics(classId);
   if (!data) return null;
   const index = data.topics.findIndex((t) => t.topicId === topicId);
   if (index < 0) return null;
   const previous = data.topics[index - 1];
   const next = data.topics[index + 1];
+  if (!previous && !next) return null;
   const item = (topic: ClassTopic | undefined, label: (t: ClassTopic) => string) => {
     if (!topic) return null;
     if (!isOpen(topic)) {
@@ -31,11 +40,12 @@ export function TopicNav({ classId, topicId }: { classId: string; topicId: strin
       </Link>
     );
   };
+  // The landmark exists only while there is a neighbour to name.
   return (
-    <>
+    <nav className={className} aria-label="Neighbouring topics">
       {item(previous, (t) => `‹ ${topicNumber(t)} ${t.title}`)}
       {item(next, (t) => `${topicNumber(t)} ${t.title} ›`)}
-    </>
+    </nav>
   );
 }
 
