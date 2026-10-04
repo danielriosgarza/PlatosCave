@@ -2,7 +2,7 @@
   "v": 1,
   "t": "test_result",
   "requestId": "c0ffee00-1111-4222-8333-444455556666",
-  "outcome": "failed",
+  "outcome": "needs_action",
   "stages": [
     {
       "name": "reachability",
@@ -11,47 +11,56 @@
         "hop": "target",
         "address": "203.0.113.7"
       },
-      "ms": 40
+      "ms": 41
     },
     {
       "name": "host_identity",
-      "status": "ok",
+      "status": "needs_action",
+      "code": "host_key_unknown",
       "data": {
+        "hop": "target",
+        "fingerprint": "SHA256:SGuN8fwGXFkUlKZT8ILLvpynWOsg9Y72LtxX1LmpqEM",
+        "algorithm": "ssh-ed25519",
         "hops": [
           {
-            "hop": "target",
-            "fingerprint": "SHA256:SGuN8fwGXFkUlKZT8ILLvpynWOsg9Y72LtxX1LmpqEM"
+            "hop": "jump",
+            "fingerprint": "SHA256:CNmGQS0lbyFb7+gGOfxSjwhim0p2KZVFysYVlwS7Rws",
+            "address": "203.0.113.9"
           }
         ]
       },
-      "ms": 60
+      "ms": 150
     },
     {
       "name": "ssh_auth",
-      "status": "ok",
-      "ms": 120
+      "status": "skipped",
+      "data": {
+        "reason": "blocked",
+        "blockedBy": "host_identity"
+      }
     },
     {
       "name": "workspace",
-      "status": "ok",
+      "status": "skipped",
       "data": {
-        "resolvedPath": "/home/student/parallax"
-      },
-      "ms": 30
+        "reason": "blocked",
+        "blockedBy": "host_identity"
+      }
     },
     {
       "name": "forwarding",
-      "status": "failed",
-      "code": "forwarding_denied",
-      "detail": "administratively prohibited (open failed)",
-      "ms": 25
+      "status": "skipped",
+      "data": {
+        "reason": "blocked",
+        "blockedBy": "host_identity"
+      }
     },
     {
       "name": "runtime",
       "status": "skipped",
       "data": {
         "reason": "blocked",
-        "blockedBy": "forwarding"
+        "blockedBy": "host_identity"
       }
     },
     {
@@ -59,7 +68,7 @@
       "status": "skipped",
       "data": {
         "reason": "blocked",
-        "blockedBy": "forwarding"
+        "blockedBy": "host_identity"
       }
     },
     {
@@ -67,7 +76,7 @@
       "status": "skipped",
       "data": {
         "reason": "blocked",
-        "blockedBy": "forwarding"
+        "blockedBy": "host_identity"
       }
     }
   ]

@@ -1,5 +1,5 @@
 {
-  "description": "Error and cause catalogue of connector protocol v1 (docs/design/connector.md section 5). The single source of truth for codes: Go emits them, the server and the web app render them, and tests assert every code used or shown is a key here. `stage` is the Test connection stage that reports the code, null for request-level errors; `cause` is the spec section 14 word.",
+  "description": "Error and cause catalogue of connector protocol v1 (docs/design/connector.md section 5). The single source of truth for codes: Go emits them, the server and the web app render them, and tests assert every code used or shown is a key here. `stage` is the Test connection stage that usually reports the code, null for request-level errors; it is not the only one: a stage that reaches its deadline reports the code of design section 5.1 (`connection_timeout` from `host_identity` or `workspace`, `internal` from `kernels`), so the failing stage is the one the stage report names, not this field; `cause` is the spec section 14 word.",
   "v": 1,
   "causes": {
     "reachability": "The connector cannot reach the host.",
