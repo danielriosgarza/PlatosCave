@@ -1,9 +1,9 @@
-import { listCourses } from '@parallax/contracts/routes/courses';
 import { getTopicReviews, putReviewed } from '@parallax/contracts/routes/topicReviews';
 import { getClassTopics } from '@parallax/contracts/routes/topics';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { ApiError, call } from '../api/client';
+import { coursesQuery } from '../courses/queries';
 import styles from './ReviewPanel.module.css';
 
 const TAB_NAMES = {
@@ -13,6 +13,12 @@ const TAB_NAMES = {
   notebooks: 'Notebooks',
   tests: 'Tests',
 } as const;
+
+type Item = { submitted: boolean; required: 'review' | 'submission' | null };
+const submission = (item: Item) =>
+  `${item.submitted ? 'Submitted' : 'Not submitted'}${
+    item.required === 'submission' ? ', required for completion' : ''
+  }`;
 
 /**
  * The student's reviewed marks for one topic (§4). Each ungraded resource carries a checkbox the
@@ -38,7 +44,7 @@ export function ReviewPanel({ classId, topicId }: { classId: string; topicId: st
       queryClient.setQueryData(key, next);
       // The syllabus state, the footer count and the course cards all follow the marks.
       void queryClient.invalidateQueries({ queryKey: ['GET', getClassTopics.path] });
-      void queryClient.invalidateQueries({ queryKey: ['GET', listCourses.path] });
+      void queryClient.invalidateQueries({ queryKey: coursesQuery.queryKey });
     },
     onError: (err) =>
       setProblem(
@@ -60,9 +66,6 @@ export function ReviewPanel({ classId, topicId }: { classId: string; topicId: st
   }
   const data = sheet.data;
   if (!data || data.items.length === 0) return null;
-  const marked = data.items.filter((i) => !i.graded);
-  const graded = data.items.filter((i) => i.graded || i.required === 'submission');
-
   return (
     <section className={styles.panel} aria-labelledby="pc-review-heading">
       <h2 id="pc-review-heading" className={styles.heading}>
@@ -72,36 +75,36 @@ export function ReviewPanel({ classId, topicId }: { classId: string; topicId: st
         {data.complete ? 'This topic is complete.' : 'This topic is not complete yet.'}
       </p>
       <ul className={styles.list}>
-        {marked.map((item) => (
+        {data.items.map((item) => (
           <li key={item.resourceId}>
-            <label className={styles.item}>
-              <input
-                type="checkbox"
-                checked={item.reviewed}
-                disabled={mark.isPending}
-                onChange={(e) =>
-                  mark.mutate({ resourceId: item.resourceId, reviewed: e.target.checked })
-                }
-              />
-              <span>
-                {item.title} <span className={styles.tab}>{TAB_NAMES[item.tab]}</span>
-                {item.required === 'review' ? (
-                  <span className={styles.tab}> · counts toward completion</span>
-                ) : null}
+            {item.graded ? (
+              <span className={styles.item}>
+                <span>
+                  {item.title} <span className={styles.tab}>{TAB_NAMES[item.tab]}</span>
+                  <span className={styles.tab}> · {submission(item)}</span>
+                </span>
               </span>
-            </label>
-          </li>
-        ))}
-        {graded.map((item) => (
-          <li key={item.resourceId} className={styles.item}>
-            <span>
-              {item.title} <span className={styles.tab}>{TAB_NAMES[item.tab]}</span>
-              <span className={styles.tab}>
-                {' · '}
-                {item.submitted ? 'Submitted' : 'Not submitted'}
-                {item.required === 'submission' ? ', required for completion' : ''}
-              </span>
-            </span>
+            ) : (
+              <label className={styles.item}>
+                <input
+                  type="checkbox"
+                  checked={item.reviewed}
+                  disabled={mark.isPending}
+                  onChange={(e) =>
+                    mark.mutate({ resourceId: item.resourceId, reviewed: e.target.checked })
+                  }
+                />
+                <span>
+                  {item.title} <span className={styles.tab}>{TAB_NAMES[item.tab]}</span>
+                  {item.required === 'review' ? (
+                    <span className={styles.tab}> · counts toward completion</span>
+                  ) : null}
+                  {item.required === 'submission' ? (
+                    <span className={styles.tab}> · {submission(item)}</span>
+                  ) : null}
+                </span>
+              </label>
+            )}
           </li>
         ))}
       </ul>

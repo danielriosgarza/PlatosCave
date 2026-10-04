@@ -64,6 +64,38 @@ function stubReviews(options: { putStatus?: number } = {}) {
 }
 
 describe('reviewed marks', () => {
+  it('an ungraded resource required by submission appears once, with its submission status', async () => {
+    const NB = '00000000-0000-4000-8000-000000000403';
+    const base = signedInWithTopics(makeMe({ classes: [studentIn(CLASS_A, 'Autumn 2026 A')] }));
+    stubApi((url, init) =>
+      url === sheetUrl
+        ? {
+            status: 200,
+            body: {
+              topicId: T_SAMPLING,
+              complete: false,
+              items: [
+                {
+                  resourceId: NB,
+                  title: 'Bootstrap notebook',
+                  tab: 'notebooks',
+                  graded: false,
+                  reviewed: false,
+                  submitted: false,
+                  required: 'submission',
+                },
+              ],
+            },
+          }
+        : base(url, init),
+    );
+    renderApp(`/classes/${CLASS_A}/topics/${T_SAMPLING}/reading`);
+    const box = await screen.findByRole('checkbox', { name: /Bootstrap notebook/ });
+    expect(box).toBeVisible();
+    expect(screen.getAllByText(/Bootstrap notebook/)).toHaveLength(1);
+    expect(screen.getByText(/Not submitted, required for completion/)).toBeVisible();
+  });
+
   it('a student marks ungraded material reviewed and sees graded work apart', async () => {
     const { puts } = stubReviews();
     const user = userEvent.setup();

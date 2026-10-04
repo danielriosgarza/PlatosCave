@@ -1,13 +1,14 @@
 import type * as contracts from '@parallax/contracts/routes/topicReviews';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNotNull } from 'drizzle-orm';
 import type { z } from 'zod';
 import { type ClassScope, isDraftPreview } from '../auth/scope';
-import { openToStudent, type Tab } from '../content/availability';
+import { computeAvailability, openToStudent, type Tab, topicOpens } from '../content/availability';
 import { classArchived, invalid, notFound, type Outcome } from '../outcome';
 import type { Db } from './client';
-import { draftSnapshot } from './content/releases';
+import { creditColumn, creditOf, draftSnapshot } from './content/releases';
 import {
   courseReleases,
+  exerciseAttempts,
   notebookSubmissions,
   releaseResources,
   releaseTopics,
@@ -24,14 +25,16 @@ import { forClass } from './scoped';
 
 export type TopicReviews = z.input<typeof contracts.topicReviews>;
 
-/** Resource types whose credit comes from a submission, not from the student's own mark. */
-const GRADED = new Set<string>(['test']);
 /** The requirement that every ungraded resource of the topic is reviewed. */
 export const ALL_REVIEWED = 'reviewed:*';
+/** The requirement that every graded resource of the topic is submitted. */
+export const ALL_SUBMITTED = 'submitted:*';
 
 export interface RuleTopic {
   id: string;
   topicId: string;
+  title: string;
+  prerequisites: string[];
   completionRule: Record<string, unknown> | null;
 }
 export interface RuleResource {
@@ -42,7 +45,16 @@ export interface RuleResource {
   title: string;
   visibility: 'visible' | 'hidden';
   releaseAt: Date | null;
+  /** The declared credit of an exercise; null for practice and for other types. */
+  credit?: unknown;
 }
+
+/**
+ * Graded work counts through a submission, never through the student's own mark (§4): tests, and
+ * exercises assigned for credit (§9).
+ */
+export const isGraded = (r: Pick<RuleResource, 'type' | 'credit'>): boolean =>
+  r.type === 'test' || (r.type === 'exercise' && r.credit != null);
 
 /** What the caller has done: marks they made and resources they submitted. */
 export interface Evidence {
@@ -50,10 +62,13 @@ export interface Evidence {
   submitted: ReadonlySet<string>;
 }
 
-/** The requirements of a topic: its custom list, else every ungraded resource reviewed. */
+/**
+ * The requirements of a topic: its custom list, else every ungraded resource reviewed and every
+ * graded one submitted (plan decision 15).
+ */
 export function requirementsOf(topic: RuleTopic): string[] {
   const requires = topic.completionRule?.requires;
-  if (topic.completionRule === null) return [ALL_REVIEWED];
+  if (topic.completionRule === null) return [ALL_REVIEWED, ALL_SUBMITTED];
   return Array.isArray(requires) ? requires.filter((r): r is string => typeof r === 'string') : [];
 }
 
@@ -71,8 +86,16 @@ export function checksOf(topic: RuleTopic, studyable: RuleResource[], evidence: 
   for (const requirement of requirementsOf(topic)) {
     if (requirement === ALL_REVIEWED) {
       for (const r of studyable) {
-        if (!GRADED.has(r.type)) {
+        if (!isGraded(r)) {
           checks.push({ resourceId: r.resourceId, met: evidence.reviewed.has(r.resourceId) });
+        }
+      }
+      continue;
+    }
+    if (requirement === ALL_SUBMITTED) {
+      for (const r of studyable) {
+        if (isGraded(r)) {
+          checks.push({ resourceId: r.resourceId, met: evidence.submitted.has(r.resourceId) });
         }
       }
       continue;
@@ -88,22 +111,40 @@ export function checksOf(topic: RuleTopic, studyable: RuleResource[], evidence: 
   return checks;
 }
 
-/** Topics of the syllabus the evidence completes: the one evaluation behind every count. */
+/**
+ * Topics of the syllabus the evidence completes: the one evaluation behind every count. A topic
+ * whose prerequisite is incomplete is not complete, whatever was marked in it, so a mark made
+ * before a prerequisite was added cannot open a locked topic.
+ */
 export function completedFrom(
   topics: RuleTopic[],
   resources: RuleResource[],
   evidence: Evidence,
   now: Date,
 ): Set<string> {
-  const done = new Set<string>();
+  const byId = new Map(topics.map((t) => [t.topicId, t]));
+  const met = new Set<string>();
   for (const topic of topics) {
     const studyable = resources.filter(
       (r) => r.releaseTopicId === topic.id && openToStudent(r, now),
     );
     const checks = checksOf(topic, studyable, evidence);
-    if (checks.length > 0 && checks.every((c) => c.met)) done.add(topic.topicId);
+    if (checks.length > 0 && checks.every((c) => c.met)) met.add(topic.topicId);
   }
-  return done;
+  const done = new Map<string, boolean>();
+  const complete = (id: string, path: Set<string>): boolean => {
+    const known = done.get(id);
+    if (known !== undefined) return known;
+    const topic = byId.get(id);
+    if (!topic || !met.has(id) || path.has(id)) return false;
+    path.add(id);
+    // A prerequisite outside the release cannot block (publishing rejects such references).
+    const open = topic.prerequisites.every((p) => !byId.has(p) || complete(p, path));
+    path.delete(id);
+    done.set(id, open);
+    return open;
+  };
+  return new Set(topics.flatMap((t) => (complete(t.topicId, new Set()) ? [t.topicId] : [])));
 }
 
 /** The caller's evidence in one class. */
@@ -116,9 +157,20 @@ async function evidenceOf(db: Db, classId: string, userId: string): Promise<Evid
     .selectDistinct({ resourceId: notebookSubmissions.resourceId })
     .from(notebookSubmissions)
     .where(and(eq(notebookSubmissions.classId, classId), eq(notebookSubmissions.userId, userId)));
+  // An exercise assigned for credit is submitted when its last step was completed.
+  const finished = await db
+    .selectDistinct({ resourceId: exerciseAttempts.resourceId })
+    .from(exerciseAttempts)
+    .where(
+      and(
+        eq(exerciseAttempts.classId, classId),
+        eq(exerciseAttempts.userId, userId),
+        isNotNull(exerciseAttempts.completedAt),
+      ),
+    );
   return {
     reviewed: new Set(marks.map((m) => m.resourceId)),
-    submitted: new Set(submissions.map((s) => s.resourceId)),
+    submitted: new Set([...submissions, ...finished].map((s) => s.resourceId)),
   };
 }
 
@@ -128,6 +180,8 @@ export async function releaseRuleRows(db: Db, releaseId: string, courseId: strin
     .select({
       id: releaseTopics.id,
       topicId: releaseTopics.topicId,
+      title: releaseTopics.title,
+      prerequisites: releaseTopics.prerequisites,
       completionRule: releaseTopics.completionRule,
     })
     .from(releaseTopics)
@@ -142,11 +196,15 @@ export async function releaseRuleRows(db: Db, releaseId: string, courseId: strin
       title: releaseResources.title,
       visibility: releaseResources.visibility,
       releaseAt: releaseResources.releaseAt,
+      credit: creditColumn,
     })
     .from(releaseResources)
     .innerJoin(resourceRevisions, eq(resourceRevisions.id, releaseResources.resourceRevisionId))
     .where(eq(releaseResources.releaseId, releaseId));
-  return { topicRows, resourceRows };
+  return {
+    topicRows,
+    resourceRows: resourceRows.map((r) => ({ ...r, credit: creditOf(r.credit) })),
+  };
 }
 
 /** Completed topic ids of a student in one class of the adopted release (cards and counts). */
@@ -204,6 +262,18 @@ async function sheet(
   const topic = topics.find((t) => t.topicId === topicId);
   if (!topic) return undefined;
   const evidence = await evidenceOf(db, scope.classId, scope.user.id);
+  // A locked or scheduled topic has no sheet: marks there would otherwise complete it (§4).
+  const completed = completedFrom(topics, resources, evidence, now);
+  const state = computeAvailability(
+    topics.map((t) => ({
+      topicId: t.topicId,
+      title: t.title,
+      prerequisites: t.prerequisites,
+      resources: resources.filter((r) => r.releaseTopicId === t.id),
+    })),
+    { role: 'student', now, completed },
+  ).get(topicId);
+  if (!state || !topicOpens(state)) return undefined;
   const studyable = resources.filter((r) => r.releaseTopicId === topic.id && openToStudent(r, now));
   const required = new Set(
     requirementsOf(topic).flatMap((r) => {
@@ -211,9 +281,11 @@ async function sheet(
       return id ? [id] : [];
     }),
   );
-  const allReviewed = requirementsOf(topic).includes(ALL_REVIEWED);
+  const rules = requirementsOf(topic);
+  const allReviewed = rules.includes(ALL_REVIEWED);
+  const allSubmitted = rules.includes(ALL_SUBMITTED);
   const items = studyable.map((r) => {
-    const graded = GRADED.has(r.type);
+    const graded = isGraded(r);
     const submitted = evidence.submitted.has(r.resourceId);
     return {
       resourceId: r.resourceId,
@@ -222,14 +294,15 @@ async function sheet(
       graded,
       reviewed: !graded && evidence.reviewed.has(r.resourceId),
       submitted,
-      required: required.has(r.resourceId)
-        ? ('submission' as const)
-        : allReviewed && !graded
-          ? ('review' as const)
-          : null,
+      required:
+        required.has(r.resourceId) || (graded && allSubmitted)
+          ? ('submission' as const)
+          : allReviewed && !graded
+            ? ('review' as const)
+            : null,
     };
   });
-  const complete = completedFrom([topic], resources, evidence, now).has(topic.topicId);
+  const complete = completed.has(topic.topicId);
   return { reply: { topicId, complete, items }, resources: studyable };
 }
 

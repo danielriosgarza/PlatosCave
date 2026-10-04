@@ -295,6 +295,12 @@ describe('topic locks gate downloads', () => {
       return { revisionId: revision.id, key: stored.key };
     };
 
+    // Class A's release v2 asks only for Sampling's reading; its quiz would need a submission
+    // (the default rule), which no test can make yet. Class B stays on v1 and the default rule.
+    await db
+      .update(topics)
+      .set({ completionRule: { requires: ['reviewed:*'] } })
+      .where(eq(topics.id, ids.sampling));
     const locked = await addTopic(2, 'Inference', [ids.sampling]);
     inference = await addPdf(locked.id, 'Inference notes', 'inference pdf');
     const scheduled = await addTopic(3, 'Bayesian methods', []);
@@ -386,7 +392,7 @@ describe('topic locks gate downloads', () => {
 describe('reviewed marks and completion', () => {
   interface Body {
     complete: boolean;
-    items: { reviewed: boolean }[];
+    items: { reviewed: boolean; graded: boolean; required: string | null; submitted: boolean }[];
     classes: { classId: string; reviewed: { count: number } }[];
   }
   const api = async (
@@ -434,6 +440,24 @@ describe('reviewed marks and completion', () => {
     ]);
   });
 
+  test('a locked topic has no review sheet, takes no mark and stays locked', async () => {
+    const { db } = testDb;
+    const [row] = await db
+      .select({ id: resourceRevisions.resourceId })
+      .from(resourceRevisions)
+      .where(eq(resourceRevisions.id, inference.revisionId));
+    const resourceId = row?.id ?? '';
+    const inferenceTopic = (await get('sam', ids.classA)).body.topics.find(
+      (t) => t.title === 'Inference',
+    )?.topicId;
+    expect(inferenceTopic).toBeDefined();
+    const url = sheetUrl(ids.classA, inferenceTopic ?? '');
+    expect((await api('sam', 'GET', url)).status).toBe(404);
+    expect((await api('sam', 'PUT', `${url}/${resourceId}`, { reviewed: true })).status).toBe(404);
+    expect(await stateOf('sam', ids.classA, 'Inference')).toBe('locked');
+    expect(await mintStatus('sam', ids.classA, inference.key, inference.revisionId)).toBe(404);
+  });
+
   test('a graded resource takes no reviewed mark', async () => {
     const refused = await mark('sam', ids.classA, ids.samplingQuiz, true);
     expect(refused.status).toBe(400);
@@ -459,6 +483,15 @@ describe('reviewed marks and completion', () => {
     expect(body.reviewed.count).toBe(1);
     expect(await cardCount('sam', ids.classA)).toBe(1);
     expect(await mintStatus('sam', ids.classA, inference.key, inference.revisionId)).toBe(200);
+  });
+
+  test('the default rule also asks for graded work to be submitted', async () => {
+    // Class B is on release v1, where Sampling has the default rule and a quiz.
+    expect((await mark('bea', ids.classB, ids.samplingReading, true)).body.complete).toBe(false);
+    expect(await stateOf('bea', ids.classB, 'Sampling')).toBe('available');
+    expect(await stateOf('bea', ids.classB, 'Estimation')).toBe('locked');
+    const { body } = await api('bea', 'GET', sheetUrl(ids.classB, ids.sampling));
+    expect(body.items[1]).toMatchObject({ graded: true, required: 'submission', submitted: false });
   });
 
   test('marking twice changes nothing, and clearing the mark locks the dependants again', async () => {
@@ -498,6 +531,5 @@ describe('reviewed marks and completion', () => {
     expect(refused.body).toEqual({ error: 'class_archived' });
     const sheet = await api('bea', 'GET', sheetUrl(ids.classB, ids.sampling));
     expect(sheet.body.items[0]?.reviewed).toBe(true);
-    expect(await cardCount('bea', ids.classB)).toBe(1);
   });
 });
