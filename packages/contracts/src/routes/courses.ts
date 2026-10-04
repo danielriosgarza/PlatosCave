@@ -14,7 +14,7 @@ const resume = z.object({
 /**
  * The person's class contexts and the courses they hold permissions on, each with only what
  * their own role shows (§3, §4). `reviewed` is the personal count against the topics of the
- * adopted release; it stays 0 until reviewed marks exist, and is never a grade.
+ * adopted release the course's completion rule counts as reviewed; it is never a grade.
  */
 export const listCourses = defineRoute({
   method: 'GET',

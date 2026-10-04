@@ -1,0 +1,41 @@
+.panel {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--pc-rule);
+}
+.heading {
+  font-size: 14px;
+  font-weight: 600;
+}
+.status {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--pc-muted);
+}
+.list {
+  list-style: none;
+  padding: 0;
+  margin: 12px 0 0;
+  display: grid;
+  gap: 8px;
+}
+.item {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 14px;
+}
+.tab {
+  font-size: 12px;
+  color: var(--pc-muted);
+}
+button.retry {
+  font: inherit;
+  color: var(--pc-ink);
+  background: none;
+  border: 0;
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  cursor: pointer;
+}

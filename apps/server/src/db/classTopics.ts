@@ -21,6 +21,7 @@ import {
   users,
 } from './schema';
 import { forClass } from './scoped';
+import { completedTopics } from './topicReviews';
 
 export interface ClassTopic {
   topicId: string;
@@ -43,15 +44,6 @@ export interface ClassTopics {
   topics: ClassTopic[];
   resume: { topicId: string; tab: Tab; saved: boolean } | null;
   reviewedCount: number;
-}
-
-/**
- * Topics the caller has completed in this class. Completion rules and reviewed marks arrive with
- * `topic_reviews` (P2-16), which replaces this body; until then nothing can be complete, so the
- * topics behind a prerequisite stay locked for students.
- */
-async function completedTopics(_db: Db, _scope: ClassScope): Promise<ReadonlySet<string>> {
-  return new Set();
 }
 
 /** Names of the class's instructors, excluding preview principals. */
@@ -168,6 +160,7 @@ async function availabilityOf(
   topicRows: TopicRow[],
   resourceRows: ResourceRow[],
   now: Date,
+  withCompletion = true,
 ) {
   const inputs: AvailabilityTopic[] = topicRows.map((t) => ({
     topicId: t.topicId,
@@ -175,7 +168,7 @@ async function availabilityOf(
     prerequisites: t.prerequisites,
     resources: resourceRows.filter((r) => r.releaseTopicId === t.id),
   }));
-  const completed = await completedTopics(db, scope);
+  const completed = withCompletion ? await completedTopics(db, scope, now) : new Set<string>();
   return computeAvailability(inputs, { role: scope.role, now, completed });
 }
 
@@ -267,7 +260,15 @@ export async function findReleaseTopic(
   }
   // A prerequisite's own prerequisites and resources do not bear on this topic's state.
   const shown = prerequisites.map((p) => ({ ...p, prerequisites: [] }));
-  const availability = await availabilityOf(db, scope, [topic, ...shown], resources, now);
+  const availability = await availabilityOf(
+    db,
+    scope,
+    [topic, ...shown],
+    resources,
+    now,
+    // Only a prerequisite's completion can change whether the topic opens.
+    topic.prerequisites.length > 0,
+  );
   const state = availability.get(topic.topicId);
   return {
     topicId: topic.topicId,

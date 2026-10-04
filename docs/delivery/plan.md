@@ -428,7 +428,7 @@ Tracks: **slides** (P2-01 → P2-02 → P2-03, P2-09), **annotations** (P2-04 �
 - Spec: §10.7. Scenarios: A11. Depends on: P2-13. Model: sonnet. Security: yes. Size: M.
 
 ### P2-16 · Reviewed marks and course progress
-- Scope: table `topic_reviews`, mark ungraded material reviewed, completion rule evaluation (reviewed + graded requirements), reviewed counts on cards and syllabus footer, Resume location from positions.
+- Scope: table `topic_reviews`, mark ungraded material reviewed, completion rule evaluation (reviewed + graded requirements), reviewed counts on cards and syllabus footer, Resume location from positions. As built: `topic_reviews` holds one row per student, class and resource (unmarking deletes it); `GET`/`PUT /api/classes/:classId/topics/:topicId/reviews[/:resourceId]` are student-only. The default rule asks for every ungraded (not `test`) resource the student can open now to be reviewed; a custom rule's `submitted:<resourceId>` is met by a notebook submission, and `test` submissions arrive with P3-15. A topic with nothing to ask, or an unknown requirement, is never complete. Resume from positions was already built in P1-11.
 - Spec: §4. Scenarios: none. Depends on: P1-10, P1-11, P2-14 (migration chain). Model: sonnet. Security: no. Size: S.
 
 ## 4. Phase 3 — connected notebooks; isolated execution and submission
