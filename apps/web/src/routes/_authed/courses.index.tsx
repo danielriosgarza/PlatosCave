@@ -74,13 +74,12 @@ function Courses() {
   }
   if (!cards.data) return <CoursesLoading view={view} />;
   // Without an explicit view, open the context the person actually holds: someone who only
-  // teaches starts on Courses you teach, everyone else on Your courses (§3).
+  // teaches (or may create a course) starts on Courses you teach, everyone else on Your courses (§3).
   const studying = cards.data.classes.some((c) => c.role === 'student');
-  const teaches = teachesAnything(cards.data);
   return (
     <CoursesFor
       cards={cards.data}
-      view={view ?? (teaches && !studying ? 'instructor' : 'student')}
+      view={view ?? (instructs(cards.data) && !studying ? 'instructor' : 'student')}
     />
   );
 }
@@ -88,13 +87,17 @@ function Courses() {
 const teachesAnything = (cards: Cards) =>
   cards.courses.length > 0 || cards.classes.some((c) => c.role === 'instructor');
 
+/** Holds an instructor context: teaches, or the server would let them create a course. */
+const instructs = (cards: Cards) => teachesAnything(cards) || cards.canCreateCourse;
+
 function CoursesFor({ cards, view }: { cards: Cards; view: View }) {
   usePageTitle(view === 'instructor' ? 'Courses you teach' : 'Your courses');
   const studying = cards.classes.filter((c) => c.role === 'student');
   const teaching = cards.classes.filter((c) => c.role === 'instructor');
   const teaches = teachesAnything(cards);
+  const instructor = instructs(cards);
   // A person holding both roles can switch between the two contexts (§3).
-  const canSwitch = teaches && studying.length > 0;
+  const canSwitch = instructor && studying.length > 0;
   const [dialog, setDialog] = useState<'join' | 'create' | null>(null);
   const [filter, setFilter] = useState<Filter>('all');
   const [search, setSearch] = useState('');
@@ -145,7 +148,7 @@ function CoursesFor({ cards, view }: { cards: Cards; view: View }) {
               Join a class
             </button>
           ) : null}
-          {view === 'instructor' && teaches ? (
+          {view === 'instructor' && cards.canCreateCourse ? (
             <button type="button" className={buttons.outline} onClick={() => setDialog('create')}>
               Create course
             </button>
@@ -168,7 +171,7 @@ function CoursesFor({ cards, view }: { cards: Cards; view: View }) {
         </div>
       ) : null}
 
-      {view === 'student' && teaches && !canSwitch ? (
+      {view === 'student' && instructor && !canSwitch ? (
         <p className={page.intro}>
           <Link to="/courses" search={{ view: 'instructor' }} className={page.link}>
             Go to the courses you teach
@@ -176,7 +179,14 @@ function CoursesFor({ cards, view }: { cards: Cards; view: View }) {
         </p>
       ) : null}
 
-      {view === 'instructor' && !teaches ? (
+      {view === 'instructor' && !teaches && cards.canCreateCourse ? (
+        <div className={page.feedback} role="status">
+          <h2>No courses yet</h2>
+          <p>Courses you create appear here.</p>
+        </div>
+      ) : null}
+
+      {view === 'instructor' && !instructor ? (
         <div className={page.feedback} role="status">
           <h2>This account has no instructor access</h2>
           <p>
@@ -210,7 +220,7 @@ function CoursesFor({ cards, view }: { cards: Cards; view: View }) {
         </>
       ) : null}
 
-      {view === 'instructor' && !teaches && studying.length > 0 ? (
+      {view === 'instructor' && !instructor && studying.length > 0 ? (
         <>
           <h2 className={styles.sectionHeading}>Your enrolled classes</h2>
           <div className={page.mt20}>

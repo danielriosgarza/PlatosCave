@@ -181,3 +181,11 @@ test('A11 approved Shiny origins are origins on https or loopback, and never the
   expect(() => loadConfig({ SHINY_ORIGINS: 'http://localhost:3838' })).toThrow(/app or content/);
   expect(() => loadConfig({ SHINY_ORIGINS: 'http://127.0.0.1:3000' })).toThrow(/app or content/);
 });
+
+test('A02 INSTRUCTOR_EMAILS is a trimmed, lower-cased email list, empty by default', () => {
+  expect(loadConfig({}).INSTRUCTOR_EMAILS).toEqual([]);
+  expect(
+    loadConfig({ INSTRUCTOR_EMAILS: ' Ada@Example.TEST , ,ben@example.test,' }).INSTRUCTOR_EMAILS,
+  ).toEqual(['ada@example.test', 'ben@example.test']);
+  expect(() => loadConfig({ INSTRUCTOR_EMAILS: 'ada@example.test, not an email' })).toThrow();
+});

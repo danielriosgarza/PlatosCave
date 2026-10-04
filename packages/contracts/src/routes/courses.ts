@@ -48,13 +48,16 @@ export const listCourses = defineRoute({
         classCount: z.number().int().min(0),
       }),
     ),
+    /** Whether `POST /api/courses` would accept this person, so the page offers Create course. */
+    canCreateCourse: z.boolean(),
   }),
   examples: {},
 });
 
 /**
- * Only an account that already teaches (an instructor class membership or a course grant) may
- * create a course; creating one grants its creator the owner membership. 403 `not_instructor`.
+ * Only an account that already teaches (an instructor class membership or a course grant), or
+ * whose email is on the configured INSTRUCTOR_EMAILS list, may create a course; creating one
+ * grants its creator the owner membership. 403 `not_instructor`.
  */
 export const createCourse = defineRoute({
   method: 'POST',

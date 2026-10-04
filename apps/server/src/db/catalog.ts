@@ -198,12 +198,29 @@ export async function teachesAnything(db: Db, scope: UserScope): Promise<boolean
   return asCourseMember !== undefined;
 }
 
+/**
+ * Whether the person may create a course: an account (never a preview principal) that already
+ * teaches, or whose email is on the instructor allow-list (lower-cased by config; stored emails
+ * are lower-case).
+ */
+export async function mayCreateCourse(
+  db: Db,
+  scope: UserScope,
+  instructorEmails: readonly string[],
+): Promise<boolean> {
+  const { user } = scope;
+  if (user.kind !== 'user') return false;
+  if (user.email !== null && instructorEmails.includes(user.email.toLowerCase())) return true;
+  return teachesAnything(db, scope);
+}
+
 export async function createCourseFor(
   db: Db,
   scope: UserScope,
   title: string,
+  instructorEmails: readonly string[],
 ): Promise<{ id: string; title: string } | 'not_instructor'> {
-  if (scope.user.kind !== 'user' || !(await teachesAnything(db, scope))) return 'not_instructor';
+  if (!(await mayCreateCourse(db, scope, instructorEmails))) return 'not_instructor';
   const id = await createCourse(db, { title, ownerId: scope.user.id });
   return { id, title };
 }
