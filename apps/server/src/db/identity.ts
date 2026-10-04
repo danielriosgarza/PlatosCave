@@ -1,21 +1,9 @@
 import { and, eq } from 'drizzle-orm';
 import type { ClassScope, CourseScope, UserScope } from '../auth/scope';
-import type { Db } from './client';
-import {
-  auditEvents,
-  classes,
-  classMemberships,
-  courseMemberships,
-  courses,
-  users,
-} from './schema';
+import { audit } from './audit';
+import type { Db, Tx } from './client';
+import { classes, classMemberships, courseMemberships, courses, users } from './schema';
 import { forClass } from './scoped';
-
-export type Tx = Parameters<Parameters<Db['transaction']>[0]>[0];
-type Audit = typeof auditEvents.$inferInsert;
-
-/** Appends one audit event (ADR-0002) inside the transaction making the change. */
-export const audit = (tx: Tx, event: Audit) => tx.insert(auditEvents).values(event);
 
 /** Every class and course context of the signed-in person (§3: contexts they can switch between). */
 export async function listContexts(db: Db, scope: UserScope) {

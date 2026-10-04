@@ -4,8 +4,8 @@ import { and, eq, gt, isNull, lt, or, type SQL, sql } from 'drizzle-orm';
 import type { z } from 'zod';
 import type { ClassManagerScope, UserScope } from '../auth/scope';
 import { hashToken, newToken } from '../auth/sessions';
-import type { Db } from './client';
-import { audit, type Tx } from './identity';
+import { audit } from './audit';
+import type { Db, Tx } from './client';
 import { classes, classInvites, classMemberships, courseMemberships, courses } from './schema';
 import { forClass } from './scoped';
 

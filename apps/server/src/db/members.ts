@@ -1,7 +1,7 @@
 import { and, asc, eq, inArray, isNull, type SQL } from 'drizzle-orm';
 import type { ClassManagerScope, CourseContext, CourseScope } from '../auth/scope';
-import type { Db } from './client';
-import { audit, type Tx } from './identity';
+import { audit } from './audit';
+import type { Db, Tx } from './client';
 import { openInvite, type RevokeReason, revokeInvites } from './invites';
 import {
   authSessions,
