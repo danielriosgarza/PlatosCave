@@ -35,11 +35,18 @@ export const Route = createFileRoute('/_authed/courses/')({
   component: Courses,
 });
 
+type CoursesView = 'student' | 'instructor' | undefined;
+
 /** The title is shown only when the address already decides which context opens (§14). */
-function CoursesLoading({ view }: { view: 'student' | 'instructor' | undefined }) {
+function ViewTitle({ view }: { view: CoursesView }) {
+  if (!view) return null;
+  return <h1>{view === 'instructor' ? 'Courses you teach' : 'Your courses'}</h1>;
+}
+
+function CoursesLoading({ view }: { view: CoursesView }) {
   return (
     <main id="main" className={page.index}>
-      {view ? <h1>{view === 'instructor' ? 'Courses you teach' : 'Your courses'}</h1> : null}
+      <ViewTitle view={view} />
       <Loading
         label={view === 'instructor' ? 'Loading courses you teach' : 'Loading your courses'}
       />
@@ -55,7 +62,8 @@ function Courses() {
   if (cards.isError && !cards.data) {
     return (
       <main id="main" className={page.index}>
-        <h1>Your courses</h1>
+        {/* Nothing says which context the person holds, so an unset view keeps the default title. */}
+        <ViewTitle view={view ?? 'student'} />
         <RetryNotice
           message="Your courses could not be loaded."
           onRetry={() => void cards.refetch()}

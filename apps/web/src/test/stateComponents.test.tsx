@@ -61,6 +61,17 @@ describe('loading, failure and unavailable states', () => {
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Courses you teach');
   });
 
+  it('A19 a failed ?view=instructor load keeps the Courses you teach title and offers Retry', async () => {
+    const me = makeMe({ classes: [studentIn(CLASS_A, 'A')] });
+    stubApi((url) =>
+      url === '/api/me' ? { status: 200, body: me } : { status: 500, body: { error: 'boom' } },
+    );
+    renderApp('/courses?view=instructor');
+    expect(await screen.findByRole('alert')).toHaveTextContent('could not be loaded');
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Courses you teach');
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+  });
+
   it('A19 no source file marks a region busy without announcing it', () => {
     const offenders = sources(join(__dirname, '..')).filter((file) =>
       /aria-busy/.test(readFileSync(file, 'utf8')),
