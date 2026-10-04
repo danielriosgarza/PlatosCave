@@ -47,14 +47,25 @@ def safe_repr(value):
 
 
 def read_spec():
-    # One byte at a time: a buffered readline would also pull the check's stdin out of fd 0,
-    # and the student function may read fd 0 directly (open(0), os.read, a subprocess).
+    # Nothing may be consumed from fd 0 past the newline: the student function may read the
+    # check's stdin directly (open(0), os.read, a subprocess). The harness gives the driver a
+    # regular file, so read in chunks and seek back; on a pipe fall back to single bytes.
+    try:
+        start = os.lseek(0, 0, os.SEEK_CUR)
+    except OSError:
+        start = None
     line = bytearray()
     while True:
-        byte = os.read(0, 1)
-        if not byte or byte == b"\n":
+        chunk = os.read(0, 65536 if start is not None else 1)
+        if not chunk:
             break
-        line += byte
+        newline = chunk.find(b"\n")
+        if newline >= 0:
+            line += chunk[:newline]
+            if start is not None:
+                os.lseek(0, start + len(line) + 1, os.SEEK_SET)
+            break
+        line += chunk
     return json.loads(bytes(line).decode("utf-8"))
 
 

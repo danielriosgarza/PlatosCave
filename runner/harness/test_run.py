@@ -720,7 +720,9 @@ class Call(HarnessCase):
             [call(n, n, {"value": "hello\n"}, stdin="hello\n") for n in names],
         )
         outcome = self.go(job)
-        self.assertEqual([c["status"] for c in outcome.result["checks"]], ["passed"] * len(names))
+        self.assertEqual(
+            [c["status"] for c in outcome.result["checks"]], ["passed"] * len(names), outcome.result["checks"]
+        )
 
     def test_printing_inside_a_call_is_captured_not_framed(self):
         outcome = self.outcome_for(call("A", "noisy", {"value": 1}))
