@@ -133,3 +133,55 @@ test('A05 a student highlights text, writes a private note and posts an instruct
   // The question does not carry the note's text, and the note stays out of the thread.
   expect(JSON.stringify(stored.threads)).not.toContain('Private thought');
 });
+
+test('A05 the instructor sees only the shared question, answers it and resolves it; the student reopens it', async ({
+  page,
+}) => {
+  const question = `Why does n − 1 appear? ${Date.now()}`;
+  const privateNote = `Private ${Date.now()}`;
+  const resourceId = await resourceOf(page);
+  await page.goto(reading);
+  await expect(page.getByText('Paragraph 1.', { exact: false }).first()).toBeVisible();
+
+  await selectWords(page, 3, 11);
+  await tools(page).getByRole('button', { name: 'Note' }).click();
+  await page.getByRole('textbox', { name: 'Your note' }).fill(privateNote);
+  await expect(page.getByRole('status').filter({ hasText: 'Saved' })).toBeVisible({
+    timeout: 10_000,
+  });
+  await selectWords(page, 3, 11);
+  await tools(page).getByRole('button', { name: 'Ask' }).click();
+  await page.getByRole('textbox', { name: 'Comment or question' }).fill(question);
+  await page.getByRole('button', { name: 'Post' }).click();
+  await expect(page.getByText('You → Instructor')).toBeVisible();
+
+  // The instructor reads the question; the student's private note is nowhere in what they get.
+  const signedIn = await page.request.post('/api/test/signin-as', {
+    data: { email: 'lab-instructor@example.test' },
+  });
+  expect(signedIn.ok()).toBe(true);
+  const seen = await held(page, resourceId);
+  expect(seen.annotations).toEqual([]);
+  expect(JSON.stringify(seen)).not.toContain(privateNote);
+  await page.goto(reading);
+  await page.getByRole('button', { name: /^Discussion/ }).click();
+  const entry = page.locator('[data-active], [class*="thread"]').filter({ hasText: question });
+  await expect(entry.first()).toBeVisible();
+  await entry.first().getByRole('button', { name: 'Reply' }).click();
+  await page.getByRole('textbox', { name: /^Reply to/ }).fill('Because the mean is estimated.');
+  await page.getByRole('button', { name: 'Post reply' }).click();
+  await expect(page.getByText('Because the mean is estimated.')).toBeVisible();
+  await expect(page.getByText('· Instructor', { exact: false }).first()).toBeVisible();
+  await entry.first().getByRole('button', { name: 'Mark resolved' }).click();
+  await expect(entry.first().getByText('Resolved')).toBeVisible();
+
+  // The student sees the labelled response and may reopen their own question.
+  await page.request.post('/api/test/signin-as', { data: { email: 'lab-reader@example.test' } });
+  await page.goto(reading);
+  await page.getByRole('button', { name: /^Discussion/ }).click();
+  const mine = page.locator('[class*="thread"]').filter({ hasText: question });
+  await expect(mine.first().getByText('Because the mean is estimated.')).toBeVisible();
+  await expect(mine.first().getByText('Resolved')).toBeVisible();
+  await mine.first().getByRole('button', { name: 'Reopen' }).click();
+  await expect(mine.first().getByText('Open', { exact: true })).toBeVisible();
+});

@@ -46,6 +46,8 @@ export const submissionReceipt = z.object({
 
 export const reviewedSubmission = submissionReceipt.extend({
   student: z.object({ id: z.uuid(), name: z.string() }),
+  /** The student has since been removed from the class; the work stays reviewable. */
+  removed: z.boolean(),
 });
 
 /** Records that the caller opened Colab for this notebook; creates nothing else. */
