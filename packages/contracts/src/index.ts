@@ -1,5 +1,6 @@
 export * from './anchors';
 export * from './define';
+export * from './examples';
 export * from './exercise';
 export * from './notebook';
 export * from './readingHtml';

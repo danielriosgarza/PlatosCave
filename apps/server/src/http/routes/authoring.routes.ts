@@ -108,10 +108,7 @@ const displayName = (name: string) =>
     .slice(0, 200);
 
 export default function authoringRoutes(app: FastifyInstance, deps: RouteDeps): void {
-  const db = () => {
-    if (!deps.db) throw app.httpErrors.serviceUnavailable();
-    return deps.db;
-  };
+  const db = deps.requireDb;
   // Scoped to this module: the parser only exists on the routes that take uploads.
   app.register(multipart, {
     limits: { fileSize: MAX_UPLOAD_BYTES, files: 1, fields: 2, parts: 3 },

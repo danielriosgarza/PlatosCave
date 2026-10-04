@@ -1,7 +1,8 @@
 import { z } from 'zod';
 import { defineRoute } from '../define';
+import { exampleIds } from '../examples';
 
-const example = '00000000-0000-4000-8000-000000000000';
+const example = exampleIds.zero;
 
 /**
  * "Preview as student" of the course draft (§3, §12, ADR-0002): the browser's session becomes

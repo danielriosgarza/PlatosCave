@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { defineRoute } from '../define';
+import { exampleIds } from '../examples';
 import { notebookView } from '../notebook';
 
 /**
@@ -8,9 +9,9 @@ import { notebookView } from '../notebook';
  * origin, minted for the caller and short-lived.
  */
 
-const exampleClass = '00000000-0000-4000-8000-000000000000';
-const exampleTopic = '00000000-0000-4000-8000-0000000000aa';
-const exampleRevision = '00000000-0000-4000-8000-0000000000bb';
+const exampleClass = exampleIds.zero;
+const exampleTopic = exampleIds.aa;
+const exampleRevision = exampleIds.bb;
 
 export const notebookSummary = z.object({
   resourceId: z.uuid(),
