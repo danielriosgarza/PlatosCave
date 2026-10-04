@@ -22,7 +22,7 @@ import { users } from './users';
 /**
  * Annotations and discussions (§8, §13). Every row is class-scoped: two cohorts of one course
  * never share a note or a thread (A21). Who may read a row is decided only by
- * `annotations/visibility.ts` and its SQL form in `db/annotations/visibility.ts` (ADR-0002):
+ * `db/annotations/visibility.ts` (ADR-0002):
  * private → author; instructor → author and the class's instructors; class → class members.
  */
 export const audience = pgEnum('audience', ['private', 'instructor', 'class']);
