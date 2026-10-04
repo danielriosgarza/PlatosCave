@@ -135,7 +135,8 @@ describe('reading upload', () => {
     ] as const) {
       const res = await upload('elena', name, bytes);
       expect(res.statusCode, name).toBe(400);
-      expect(res.json().error, name).toMatch(message);
+      expect(res.json().error, name).toBe('invalid');
+      expect(res.json().message, name).toMatch(message);
     }
   });
 
@@ -165,7 +166,7 @@ describe('reading upload', () => {
     const agent = new http.Agent({ keepAlive: true, maxSockets: 1 });
     const boundary = '----parallax-socket-boundary';
     const send = (filename: string, body: Buffer, chunks: number) =>
-      new Promise<{ status: number; error: string; socket: unknown }>((resolve, reject) => {
+      new Promise<{ status: number; message: string; socket: unknown }>((resolve, reject) => {
         const head = Buffer.from(
           `--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${filename}"\r\nContent-Type: application/octet-stream\r\n\r\n`,
         );
@@ -194,7 +195,7 @@ describe('reading upload', () => {
           res.on('end', () =>
             resolve({
               status: res.statusCode ?? 0,
-              error: JSON.parse(data).error,
+              message: JSON.parse(data).message,
               socket: req.socket,
             }),
           );
@@ -214,7 +215,7 @@ describe('reading upload', () => {
     try {
       const refused = await send('fake.pdf', Buffer.alloc(MiB, 0x61), 20);
       expect(refused.status).toBe(400);
-      expect(refused.error).toMatch(/not a PDF/);
+      expect(refused.message).toMatch(/not a PDF/);
       // The same keep-alive socket carries the next upload.
       const next = await send('ok.md', Buffer.from('# Fine\n'), 1);
       expect(next.status).toBe(200);

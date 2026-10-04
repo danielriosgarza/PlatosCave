@@ -293,7 +293,8 @@ describe('notebook upload', () => {
     for (const [name, bytes, reason] of refusals) {
       const res = await submit('sam', { name, bytes }, `bad-${name.replace(/\W/g, '')}`);
       expect(res.status, name).toBe(400);
-      expect(res.body.error, name).toMatch(reason);
+      expect(res.body.error, name).toBe('invalid');
+      expect(res.body.message, name).toMatch(reason);
     }
     expect(await rowCount()).toBe(2);
   });

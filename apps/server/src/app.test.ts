@@ -12,8 +12,11 @@ test('sign-in tokens are redacted from logged URLs', () => {
 test('the OpenAPI document lists the sign-in routes with their success statuses', async () => {
   const app = await buildApp(loadConfig({ NODE_ENV: 'test', LOG_LEVEL: 'silent' }));
   const doc = (await app.inject({ method: 'GET', url: '/api/openapi.json' })).json();
-  expect(Object.keys(doc.paths['/api/auth/link'].post.responses)).toEqual(['202']);
-  expect(Object.keys(doc.paths['/api/auth/verify'].get.responses)).toEqual(['302']);
-  expect(Object.keys(doc.paths['/api/auth/signout'].post.responses)).toEqual(['200']);
+  // Error statuses are listed too (errorResponses); the success status is the only one below 400.
+  const success = (op: { responses: object }) =>
+    Object.keys(op.responses).filter((status) => Number(status) < 400);
+  expect(success(doc.paths['/api/auth/link'].post)).toEqual(['202']);
+  expect(success(doc.paths['/api/auth/verify'].get)).toEqual(['302']);
+  expect(success(doc.paths['/api/auth/signout'].post)).toEqual(['200']);
   await app.close();
 });
