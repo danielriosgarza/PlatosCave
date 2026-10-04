@@ -1,9 +1,10 @@
 import type * as contracts from '@parallax/contracts/routes/notebookSubmissions';
-import { and, asc, desc, eq, max, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, max, sql } from 'drizzle-orm';
 import type { z } from 'zod';
 import type { ClassScope } from '../auth/scope';
 import { classArchived, invalid, notFound, type Outcome } from '../outcome';
 import type { StoredObject } from '../storage/storage';
+import { audit } from './audit';
 import type { Db } from './client';
 import { studyableResource } from './content/releases';
 import { excludePreview } from './preview';
@@ -49,7 +50,14 @@ export async function submittableNotebook(
   return { ok: true, value: { revisionId: resource.revisionId } };
 }
 
-/** Records that the caller opened Colab for a notebook. A preview records nothing. */
+/** Launches by one person of one notebook inside this window are one audit row. */
+const COLAB_LAUNCH_WINDOW_MS = 10 * 60 * 1000;
+
+/**
+ * Records that the caller opened Colab for a notebook. A preview records nothing. A launch within
+ * `COLAB_LAUNCH_WINDOW_MS` of the caller's last one for the notebook adds no row and answers that
+ * launch's time, so repeated clicks do not grow the audit trail.
+ */
 export async function recordColabLaunch(
   db: Db,
   scope: ClassScope,
@@ -59,16 +67,37 @@ export async function recordColabLaunch(
   const found = await submittableNotebook(db, scope, resourceId, now);
   if (!found.ok) return found;
   if (scope.membership.isPreview) return { ok: true, value: { launchedAt: null } };
-  await db.insert(auditEvents).values({
-    actorId: scope.user.id,
-    action: 'notebook.colab_launched',
-    scopeKind: 'class',
-    scopeId: scope.classId,
-    targetType: 'resource',
-    targetId: resourceId,
-    createdAt: now,
+  return db.transaction(async (tx) => {
+    // Serialises one person's launches of one notebook, so two clicks never both add a row.
+    await tx.execute(
+      sql`select pg_advisory_xact_lock(hashtext(${`colab:${scope.user.id}:${resourceId}`}))`,
+    );
+    const [last] = await tx
+      .select({ createdAt: auditEvents.createdAt })
+      .from(auditEvents)
+      .where(
+        and(
+          eq(auditEvents.action, 'notebook.colab_launched'),
+          eq(auditEvents.actorId, scope.user.id),
+          eq(auditEvents.scopeId, scope.classId),
+          eq(auditEvents.targetId, resourceId),
+          gt(auditEvents.createdAt, new Date(now.getTime() - COLAB_LAUNCH_WINDOW_MS)),
+        ),
+      )
+      .orderBy(desc(auditEvents.createdAt))
+      .limit(1);
+    if (last) return { ok: true as const, value: { launchedAt: last.createdAt.toISOString() } };
+    await audit(tx, {
+      actorId: scope.user.id,
+      action: 'notebook.colab_launched',
+      scopeKind: 'class',
+      scopeId: scope.classId,
+      targetType: 'resource',
+      targetId: resourceId,
+      createdAt: now,
+    });
+    return { ok: true as const, value: { launchedAt: now.toISOString() } };
   });
-  return { ok: true, value: { launchedAt: now.toISOString() } };
 }
 
 export interface NewSubmission {
@@ -136,7 +165,7 @@ export async function recordSubmission(
       .returning();
     if (!row) throw new Error('notebook submission insert returned no row');
     if (!scope.membership.isPreview) {
-      await tx.insert(auditEvents).values({
+      await audit(tx, {
         actorId: scope.user.id,
         action: 'notebook.submitted',
         scopeKind: 'class',

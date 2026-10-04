@@ -141,6 +141,36 @@ describe('registerRoute and the scope guard', () => {
   });
 });
 
+describe('openapi.json outside production only', () => {
+  const production = loadConfig({
+    NODE_ENV: 'production',
+    LOG_LEVEL: 'silent',
+    SESSION_SECRET: 's'.repeat(32),
+    APP_ORIGIN: 'https://parallax.example.org',
+    CONTENT_ORIGIN: 'https://content.example.org',
+    CONTENT_HOST: 'content.example.org',
+    CONTENT_TOKEN_SECRET: 'c'.repeat(32),
+    TRUST_PROXY: 'false',
+  });
+
+  it('AUD21 answers 404 with the normal not-found body in production', async () => {
+    const app = await buildApp(production);
+    const res = await app.inject({ method: 'GET', url: '/api/openapi.json' });
+    const unknown = await app.inject({ method: 'GET', url: '/api/no-such-route' });
+    expect(res.statusCode).toBe(404);
+    expect(res.json()).toEqual(unknown.json());
+    await app.close();
+  });
+
+  it.each(['development', 'test'] as const)('AUD21 serves the spec in %s', async (env) => {
+    const app = await buildApp(loadConfig({ NODE_ENV: env, LOG_LEVEL: 'silent' }));
+    const res = await app.inject({ method: 'GET', url: '/api/openapi.json' });
+    expect(res.statusCode).toBe(200);
+    expect(Object.keys(res.json().paths)).toContain('/api/openapi.json');
+    await app.close();
+  });
+});
+
 describe('registerRoute rate limits', () => {
   const route = (path: `/api/${string}`, kind: 'public' | 'user') =>
     defineRoute({

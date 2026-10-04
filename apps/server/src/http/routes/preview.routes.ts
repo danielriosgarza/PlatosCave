@@ -13,7 +13,7 @@ import { topicOpens } from '../../content/availability';
 import { findPrincipal, revokeSession } from '../../db/auth/sessions';
 import { loadClassTopics } from '../../db/classTopics';
 import type { Db } from '../../db/client';
-import { PREVIEW_SESSION_TTL_MS, startPreview as start } from '../../db/preview';
+import { PREVIEW_SESSION_TTL_MS, recordPreviewExit, startPreview as start } from '../../db/preview';
 import { notFound, refuse, registerRoute } from '../register';
 
 /**
@@ -94,6 +94,12 @@ export default function previewRoutes(app: FastifyInstance, deps: RouteDeps): vo
     const owner = kept ? await findPrincipal(db(), kept.token, now) : null;
     const restored =
       owner?.kind === 'user' && (!current || current.ownerUserId === owner.id) && kept;
+    if (current?.kind === 'preview' && current.ownerUserId) {
+      await recordPreviewExit(db(), {
+        previewUserId: current.id,
+        instructorId: current.ownerUserId,
+      });
+    }
     if (token) await revokeSession(db(), token, now);
     if (kept && !restored) await revokeSession(db(), kept.token, now);
     if (restored) reply.setCookie(SESSION_COOKIE, restored.token, sessionCookie);

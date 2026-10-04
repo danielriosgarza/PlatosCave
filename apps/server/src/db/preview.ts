@@ -1,6 +1,7 @@
 import { and, eq, isNull, type SQL } from 'drizzle-orm';
 import type { PgColumn } from 'drizzle-orm/pg-core';
 import type { CourseScope } from '../auth/scope';
+import { audit } from './audit';
 import { createSession } from './auth/sessions';
 import type { Db } from './client';
 import { insertPreviewPrincipal } from './identity';
@@ -94,8 +95,46 @@ export async function startPreview(
       authTime: input.authTime,
       ttlMs: PREVIEW_SESSION_TTL_MS,
     });
+    await audit(tx, {
+      actorId: instructorId,
+      action: 'preview.start',
+      scopeKind: 'class',
+      scopeId: input.classId,
+      targetType: 'user',
+      targetId: principal.id,
+      after: input.topicId ? { topicId: input.topicId } : null,
+    });
     return { previewUserId: principal.id, name: principal.name, token };
   });
   if (!started) return { ok: false };
   return { ok: true, classId: input.classId, ...started };
+}
+
+/**
+ * Audits the end of a preview session by its owner (ADR-0002). Nothing is written when the
+ * preview principal has no preview membership, so a replayed exit appends nothing for a
+ * principal that was never previewing.
+ */
+export async function recordPreviewExit(
+  db: Db,
+  input: { previewUserId: string; instructorId: string },
+): Promise<void> {
+  await db.transaction(async (tx) => {
+    const [membership] = await tx
+      .select({ classId: classMemberships.classId })
+      .from(classMemberships)
+      .where(
+        and(eq(classMemberships.userId, input.previewUserId), eq(classMemberships.isPreview, true)),
+      )
+      .limit(1);
+    if (!membership) return;
+    await audit(tx, {
+      actorId: input.instructorId,
+      action: 'preview.exit',
+      scopeKind: 'class',
+      scopeId: membership.classId,
+      targetType: 'user',
+      targetId: input.previewUserId,
+    });
+  });
 }
