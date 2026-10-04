@@ -239,7 +239,7 @@ P1-06 adds `garage` (`dxflrs/garage:v2.4.1`, profile `s3`); P3-11 adds `sshd-jup
 
 ### 1.9 GitHub Actions `ci.yml`
 
-The repository is private, so Actions minutes are metered per job: keep the job count low and do not duplicate setup. Trigger `pull_request` and `workflow_dispatch` only (no `push` to `main`: `pull_request` runs already test the PR merged with its base, and the orchestrator merges only green PRs); `concurrency: { group: ci-${{ github.ref }}, cancel-in-progress: true }`; every job `runs-on: ubuntu-24.04`, `timeout-minutes: 10`. Shared setup steps: `actions/checkout@v5`, `pnpm/action-setup@v4` (no `version`; reads `packageManager`), `actions/setup-node@v5` with `node-version-file: .node-version` and `cache: pnpm`, `pnpm install --frozen-lockfile`. (Major tags could not be verified from the sandbox: api.github.com is blocked there. Use major tags and let Dependabot for `github-actions` keep them current.)
+The repository is private, so Actions minutes are metered per job: keep the job count low and do not duplicate setup. Trigger `pull_request` and `workflow_dispatch` only (no `push` to `main`: `pull_request` runs already test the PR merged with its base, and the orchestrator merges only green PRs); `concurrency: { group: ci-${{ github.ref }}, cancel-in-progress: true }`; every job `runs-on: ubuntu-24.04`, `timeout-minutes: 10` (the `runner` job added by P3-13 builds a Docker image and keeps `timeout-minutes: 15`). Shared setup steps: `actions/checkout@v5`, `pnpm/action-setup@v4` (no `version`; reads `packageManager`), `actions/setup-node@v5` with `node-version-file: .node-version` and `cache: pnpm`, `pnpm install --frozen-lockfile`. (Major tags could not be verified from the sandbox: api.github.com is blocked there. Use major tags; keeping them current by Dependabot for `github-actions` is a repository setting deferred to the owner, §7, and `.github/dependabot.yml` is not part of any item.)
 
 | job | after setup |
 | --- | --- |
@@ -250,6 +250,8 @@ The repository is private, so Actions minutes are metered per job: keep the job 
 `.github/workflows/image.yml` (separate workflow so it runs only when needed): triggers `pull_request` and `workflow_dispatch` with `paths: [infra/docker/**, .dockerignore, package.json, pnpm-lock.yaml, pnpm-workspace.yaml, apps/*/package.json, packages/*/package.json]`; one job `image`: `docker/setup-buildx-action@v3`, `docker/build-push-action@v6` with `push: false`, `file: infra/docker/server.Dockerfile`, `cache-from/to: type=gha`.
 
 `ci.yml` never uses `paths`/`paths-ignore`: the merge rule needs at least one check run on every PR head, including documentation-only PRs. Pushes cost minutes: implementers push once per review round, after `pnpm check` and the touched integration/e2e tests pass locally.
+
+The three jobs above are the Phase 0 set. P3-13 adds a fourth, `runner` (`ci.yml`, `timeout-minutes: 15` because it builds a Docker image); the table is not extended for it, and the plan text and `ci.yml` agree on 15 for that job.
 
 Scheduled workflows added by later items (load test, backup/restore, full connector matrix) run **weekly**, not nightly, to stay within the Actions allowance.
 
@@ -289,7 +291,7 @@ Parallel tracks once P1-01 merges: **auth** (P1-02 → P1-03), **content** (P1-0
 ### P1-04a · Draft editing API with revision conflicts
 - Scope: draft CRUD contracts and routes for topics and resources (course `editor` scope): list drafts, create/update topic, create/get/update resource; every mutation sends `expectedRevision` and a mismatch returns 409 with the server copy (contracts declare the 409 body); a content change inserts a `resource_revisions` row and moves `head_revision_id`, unchanged content (same `content_hash`) keeps the head; archive/restore instead of delete. No migration.
 - Spec: §12, §13. ADR-0003. Scenarios: A26 (class members without a course grant get 404 on draft routes; editing drafts through the API never changes the adopted release). Depends on: P1-04. Model: opus. Security: no. Size: M.
-- Touches: `content/drafts.ts`, `contracts/routes/drafts.ts`, `http/routes/drafts.routes.ts`, `packages/contracts/src/define.ts` (error bodies), `http/register.ts`.
+- Touches: `db/content/drafts.ts`, `contracts/routes/drafts.ts`, `http/routes/drafts.routes.ts`, `packages/contracts/src/define.ts` (error bodies), `http/register.ts`.
 
 ### P1-05 · Publish release and class adoption
 - Scope: validation report, `POST /api/courses/:courseId/releases` (publisher), snapshot copy, `GET /api/classes/:classId/release` (class any; the only content read path for students), adoption `POST /api/classes/:classId/adopt` (instructor) with diff (added/removed/changed, counts of affected annotations and assignments, computed even before those tables exist through a pluggable `affectedBy` registry), history, audit. Fixture world publishes v1 and adopts it in classes A and B.
@@ -301,7 +303,7 @@ Parallel tracks once P1-01 merges: **auth** (P1-02 → P1-03), **content** (P1-0
 - Touches: `http/content.ts`, `storage/s3.ts`, `infra/compose.yml`, `ci.yml` (integration job), `e2e/playwright.config.ts`.
 
 ### P1-07 · Jobs: pg-boss, scoped jobs, worker mode
-- Scope: `jobs/boss.ts` (pg-boss on the app pool), `runScopedJob` wrapper (payload `{ actorId, scope }`, re-resolution, refusal without scope), `main.ts worker` mode, job status table view for resources (`derived.status`), integration test with a no-op scoped job, compose/CI unchanged (pg-boss lives in Postgres). Foundation for the anchor-mapping and execution jobs.
+- Scope: `db/jobs/boss.ts` (pg-boss on the app pool), `runScopedJob` wrapper (payload `{ actorId, scope }`, re-resolution, refusal without scope), `main.ts worker` mode, job status table view for resources (`derived.status`), integration test with a no-op scoped job, compose/CI unchanged (pg-boss lives in Postgres). Foundation for the anchor-mapping and execution jobs.
 - Spec: §13. ADR-0002. Scenarios: none. Depends on: P1-04. Model: opus. Security: yes. Size: S.
 
 ### P1-08 · Reading ingestion pipeline
@@ -340,6 +342,27 @@ Parallel tracks once P1-01 merges: **auth** (P1-02 → P1-03), **content** (P1-0
 - Scope: stable title/controls with in-stage loading indicator, locked assignment/topic reasons with time zone, unpublished/foreign link page that discloses nothing, permission-revoked handling (stop reads/writes, explain, purge cached classmate data from Query cache), offline banner for loaded readings, save-failure retry pattern component.
 - Spec: §2, §14. Scenarios: A01 (link to unpublished material, e2e). Depends on: P1-12. Model: sonnet. Security: no. Size: S.
 
+### Follow-up items of Phase 1 (suffixed IDs)
+
+Work found while delivering Phase 1 was filed as suffixed items. They have no scope entries here: each issue's body is the scope, and the PR that closed it is the record. Issue numbers are `danielriosgarza/PlatosCave` issues.
+
+| Item | Issues |
+| --- | --- |
+| P1-01a…e (raw-access lint, `db/` moves, data-access follow-ups) | #76, #99, #100, #116, #135, #164, #174, #179 |
+| P1-02a…c (sign-in token purge, sign-in hardening, jobs logger) | #81, #87, #118, #165 |
+| P1-03a…c (invitation, membership audit and draft-preview scope hardening) | #96, #122, #170 |
+| P1-04a (draft editing API; has its own entry above) | #78 |
+| P1-06b…e (content origin follow-ups) | #94, #101, #117, #166 |
+| P1-07a, b (scoped jobs hardening) | #88, #106 |
+| P1-08a, b (ingestion findings, derived-status resolver) | #114, #152 |
+| P1-09b (web shell follow-ups, client test collection) | #98, #157 |
+| P1-12a…cc (Reading tab e2e, failure states, origin decision, flushed places) | #131, #132, #139, #171, #176, #207 |
+| P1-14a…d (course editor, reading processing) | #126, #134, #136, #137 |
+| P1-15a (draft preview findings) | #151 |
+| P1-16b, c (revocation and cached-session robustness) | #168, #200 |
+
+Audit fix-ups are `P1-AUDn` issues and need no entry.
+
 ## 3. Phase 2 — slides, annotations, exercises, static notebooks
 
 Tracks: **slides** (P2-01 → P2-02 → P2-03, P2-09), **annotations** (P2-04 → P2-05, P2-06 → P2-07, P2-08), **exercises** (P2-10 → P2-11, P2-12), **notebooks** (P2-13 → P2-14, P2-15), plus P2-16.
@@ -357,7 +380,7 @@ Tracks: **slides** (P2-01 → P2-02 → P2-03, P2-09), **annotations** (P2-04 �
 - Spec: §7. Scenarios: none. Depends on: P2-02. Model: sonnet. Security: yes. Size: S.
 
 ### P2-04 · Annotation and discussion schema, API, visibility
-- Scope: tables `annotations` (kind highlight|note|sketch, audience private, body/strokes, anchor, resource revision, class), `threads`/`posts` (audience instructor|class, status open|resolved, edited, tombstones, moderation audit), `annotation_placements`; `annotations/visibility.ts` used by every read; contracts for create/update/delete/list by resource, autosave `PUT` with revision, share-as-thread explicit action; notifications list stub. Placements also hold thread anchors (exactly one of annotation/thread), and `classes` gains the student edit/delete post policy, so P2-05 and P2-07 need no migration. Anchor zod schemas live in `packages/contracts/src/anchors.ts`; drawings are stored in `figure` anchors and, for page sketches, in `pdf` anchors (`strokes`), as P2-08 expects.
+- Scope: tables `annotations` (kind highlight|note|sketch, audience private, body/strokes, anchor, resource revision, class), `threads`/`posts` (audience instructor|class, status open|resolved, edited, tombstones, moderation audit), `annotation_placements`; `db/annotations/visibility.ts` used by every read; contracts for create/update/delete/list by resource, autosave `PUT` with revision, share-as-thread explicit action; notifications list stub. Placements also hold thread anchors (exactly one of annotation/thread), and `classes` gains the student edit/delete post policy, so P2-05 and P2-07 need no migration. Anchor zod schemas live in `packages/contracts/src/anchors.ts`; drawings are stored in `figure` anchors and, for page sketches, in `pdf` anchors (`strokes`), as P2-08 expects.
 - Spec: §8, §13. ADR-0002/0003. Scenarios: A05 (API), A21 (discussions per class). Depends on: P1-05 (migration chain after P1-04). Model: opus. Security: yes. Size: M.
 
 ### P2-05 · Anchor mapping across revisions
@@ -674,7 +697,7 @@ None of these blocks Phases 1–4, which run entirely locally and in GitHub Acti
 | 19 | Go 1.24.7 in sessions vs current `x/crypto` needing 1.26 | `go 1.24` with `x/crypto v0.48.0`; P3-01 decided: stay on `go 1.24` with `x/crypto v0.48.0` until the session image ships Go ≥ 1.26 (`docs/design/connector.md` §13) |
 | 20 | Playwright version | 1.56.1 to match `/opt/pw-browsers` Chromium 1194; CI installs the same version |
 | 21 | Docker daemon absent in cloud sessions | Docker suites skip locally (`describe.skipIf`), mandatory in CI; `scripts/pg-local.sh` provides Postgres without Docker (validated as root via `runuser -u postgres`) |
-| 22 | GitHub Actions versions | Major tags (`checkout@v5`, `setup-node@v5`, `setup-go@v6`, `pnpm/action-setup@v4`, `cache@v4`, `upload-artifact@v4`, `setup-buildx-action@v3`, `build-push-action@v6`); api.github.com was blocked from the sandbox, Dependabot keeps them current |
+| 22 | GitHub Actions versions | Major tags (`checkout@v5`, `setup-node@v5`, `setup-go@v6`, `pnpm/action-setup@v4`, `cache@v4`, `upload-artifact@v4`, `setup-buildx-action@v3`, `build-push-action@v6`); api.github.com was blocked from the sandbox; Dependabot for `github-actions` is deferred to the owner (§7) |
 | 23 | Data deletion semantics (§13 "authorised deletion while retaining records") | Anonymise identity and delete private annotations/drafts; retain grades, submissions and audit rows under a pseudonym until a retention policy says otherwise (P4-09) |
 | 24 | Per-student concurrent run cap when a class of 200 starts together | Cap 2 per student on sample runs only; grading runs are system work at lower priority; queue position shown; runner slots configurable (`docs/design/runner.md` §5; P3-16, P4-10) |
 | 25 | Wireframe padding at ≤ 800 px (24 px) vs spec "16 px at phone widths" | 24 px at 541–800 px, 16 px at ≤ 540 px, as DESIGN.md states; spec §5's "phone" is the ≤ 540 px band |

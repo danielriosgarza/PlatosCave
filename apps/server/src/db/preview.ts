@@ -16,7 +16,7 @@ export const PREVIEW_SESSION_TTL_MS = 8 * 60 * 60_000;
  * a preview principal's. Every instructor review, count and export of student work filters its
  * rows through it, so preview attempts never reach a real class's records. The one source of
  * truth is the `is_preview` flag every writer stamps from the caller's membership (attempts,
- * annotations, threads, posts, memberships), the same flag `annotations/visibility.ts` reads.
+ * annotations, threads, posts, memberships), the same flag `db/annotations/visibility.ts` reads.
  */
 export const excludePreview = (table: { isPreview: PgColumn }): SQL => eq(table.isPreview, false);
 

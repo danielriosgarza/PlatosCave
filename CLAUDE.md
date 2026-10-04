@@ -28,8 +28,10 @@ Available once Phase 0 (P0-01…P0-03) has merged; Phase 0 items keep this list 
 | Typecheck | `pnpm typecheck` |
 | Unit + component tests | `pnpm test` |
 | Local Postgres without Docker | `pnpm db:local start` (prints `DATABASE_URL`) |
+| Reset local database | `pnpm db:reset` (dev and e2e only: recreates schema `public` in `DATABASE_URL` and migrates) |
 | Migrations | `pnpm db:migrate`, `pnpm db:generate` (chain items only) |
 | Integration tests | `pnpm test:integration` (needs `DATABASE_URL`) |
+| Runner tests | `pnpm test:runner` (Docker-only parts skip locally and run in CI) |
 | E2E tests | `pnpm build && pnpm test:e2e` |
 | Everything fast | `pnpm check` (lint, typecheck, unit, scenario records) |
 | Scenario coverage | `pnpm scenarios` |
