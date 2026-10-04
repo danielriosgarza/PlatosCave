@@ -34,6 +34,7 @@ import { forClass } from './scoped';
 
 type Help = z.output<typeof contracts.exerciseHelp>;
 type AttemptView = z.input<typeof contracts.attemptView>;
+type ExerciseView = z.input<typeof contracts.exerciseView>;
 type ReviewAttempt = z.input<typeof contracts.reviewAttempt>;
 type AttemptRow = typeof exerciseAttempts.$inferSelect;
 type EventRow = typeof exerciseEvents.$inferSelect;
@@ -217,6 +218,34 @@ export async function openExercise(
   const row = current ?? (await startAttempt(db, scope, resourceId, resource.revisionId, 1, now));
   if (!row) throw new Error('exercise attempt insert returned no row');
   return { ok: true, value: await viewOf(db, scope, row) };
+}
+
+/** Seeds the option order of a view that belongs to no attempt. */
+const READ_SEED = 0;
+
+/**
+ * An exercise of the class's release as a fresh attempt would show it, without starting one:
+ * an archived class starts no attempts but keeps read access (§4). Inserts nothing.
+ */
+export async function readExercise(
+  db: Db,
+  scope: ClassScope,
+  resourceId: string,
+  now: Date,
+): Promise<Outcome<ExerciseView>> {
+  const resource = await studyableResource(db, scope, resourceId, now);
+  if (resource?.type !== 'exercise') return notFound;
+  const definition = await definitionOf(db, resource.revisionId);
+  if (!definition) return invalid('This exercise cannot be opened: its definition is not valid');
+  return {
+    ok: true,
+    value: {
+      resourceId,
+      resourceRevisionId: resource.revisionId,
+      credit: definition.credit ?? null,
+      steps: definition.steps.map((step) => viewStep(step, READ_SEED)),
+    },
+  };
 }
 
 interface Context {

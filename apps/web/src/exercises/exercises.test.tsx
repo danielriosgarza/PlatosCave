@@ -209,6 +209,16 @@ function exerciseApi(
       if (options.openFails) return options.openFails;
       return { status: 200, body: attempt };
     }
+    if (url.endsWith('/exercise')) {
+      // What a fresh attempt shows, with no attempt fields: nothing is recorded.
+      const steps = begin(1).steps.map(
+        ({ status, help, checks, hints, solution, response, feedback, compared, ...view }) => view,
+      );
+      return {
+        status: 200,
+        body: { resourceId: RESOURCE, resourceRevisionId: uuid(800), credit: null, steps },
+      };
+    }
     if (url.endsWith('/check') && options.staleChecks) {
       return {
         status: 409,
@@ -555,11 +565,35 @@ describe('exercise UI follow-ups', () => {
     expect(await screen.findByText(/Hidden from students/)).toBeVisible();
   });
 
-  it('an exercise never opened in an archived class says so, with no Try again', async () => {
-    exerciseApi({ openFails: { status: 409, body: { error: 'class_archived' } } });
+  it('an exercise never opened in an archived class shows its steps read-only, with no actions', async () => {
+    const { calls } = exerciseApi({
+      openFails: { status: 409, body: { error: 'class_archived' } },
+    });
     open();
-    expect(await screen.findByRole('alert')).toHaveTextContent('This class is archived');
-    expect(screen.queryByRole('button', { name: 'Try again' })).toBeNull();
+    const steps = await screen.findByRole('list', { name: 'Steps of Sample size and spread' });
+    expect(screen.getByRole('status')).toHaveTextContent(
+      'This class is archived, so practice is read-only. You did not start this exercise',
+    );
+    expect(within(steps).getByText('1 · Predict')).toBeVisible();
+    expect(within(steps).getByText(/What happens to the spread of sample means/)).toBeVisible();
+    const options = within(steps).getByRole('list', { name: 'Options; one is correct' });
+    expect(
+      within(options)
+        .getAllByRole('listitem')
+        .map((li) => li.textContent),
+    ).toEqual(['Wider', 'About the same', 'Narrower']);
+    expect(within(steps).getByText('2 · Inspect')).toBeVisible();
+    expect(within(steps).getByText(/compare n = 25 and 100/)).toBeVisible();
+    expect(within(steps).getByText('3 · Explain')).toBeVisible();
+    // Nothing to answer, check, reveal, complete or restart.
+    const exercise = screen.getByRole('region', { name: 'Exercise Sample size and spread' });
+    expect(within(exercise).queryAllByRole('button')).toHaveLength(0);
+    expect(within(exercise).queryAllByRole('radio')).toHaveLength(0);
+    expect(within(exercise).queryAllByRole('textbox')).toHaveLength(0);
+    expect(within(exercise).queryAllByRole('slider')).toHaveLength(0);
+    expect(screen.queryByRole('alert')).toBeNull();
+    // Only the refused open and the read reached the server.
+    expect(calls.map((c) => c.url.split('/').at(-1))).toEqual(['exercise-attempt', 'exercise']);
   });
 
   it('A08 an exercise that fails to open shows the server message, or offers Try again', async () => {
