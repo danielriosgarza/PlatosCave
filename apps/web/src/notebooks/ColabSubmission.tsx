@@ -190,7 +190,12 @@ function Submissions({
         <tbody>
           {rows.map((row) => (
             <tr key={row.id}>
-              {withStudent ? <td>{'student' in row ? row.student.name : null}</td> : null}
+              {withStudent ? (
+                <td>
+                  {'student' in row ? row.student.name : null}
+                  {'removed' in row && row.removed ? ' · Removed from class' : null}
+                </td>
+              ) : null}
               <td>{row.version}</td>
               <td>
                 {row.filename} · {kilobytes(row.size)}

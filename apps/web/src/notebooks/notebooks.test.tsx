@@ -400,7 +400,7 @@ describe('Colab route and submissions', () => {
       undefined,
       (url) => {
         if (url.endsWith('/notebook-submissions')) {
-          return { status: 200, body: { submissions: [{ ...receipt, student }] } };
+          return { status: 200, body: { submissions: [{ ...receipt, student, removed: false }] } };
         }
         if (url.endsWith('/download')) {
           return {
@@ -426,5 +426,27 @@ describe('Colab route and submissions', () => {
       `/api/classes/${CLASS_A}/notebook-submissions/${receipt.id}/download`,
       expect.anything(),
     );
+  });
+
+  it('A10 an instructor sees a removed student’s submission labelled "Removed from class"', async () => {
+    cleanup();
+    vi.unstubAllGlobals();
+    const student = { id: '00000000-0000-4000-8000-0000000000f1', name: 'Sam Okafor' };
+    api(makeMe({ classes: [instructorIn(CLASS_A, 'Class A')] }), undefined, (url) =>
+      url.endsWith('/notebook-submissions')
+        ? {
+            status: 200,
+            body: {
+              submissions: [
+                { ...receipt, student, removed: true },
+                { ...receipt, id: '00000000-0000-4000-8000-0000000000f9', student, removed: false },
+              ],
+            },
+          }
+        : undefined,
+    );
+    renderApp(NOTEBOOKS);
+    const panel = await content();
+    expect(await within(panel).findAllByText(/Removed from class/)).toHaveLength(1);
   });
 });

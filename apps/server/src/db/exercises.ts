@@ -15,6 +15,7 @@ import { classArchived, invalid, notFound, type Outcome } from '../outcome';
 import type { Db } from './client';
 import { studyableResource, type Tx } from './content/releases';
 import { excludePreview } from './preview';
+import { studentOrRemovedStudent } from './removedStudents';
 import {
   classMemberships,
   exerciseAttempts,
@@ -435,7 +436,7 @@ export async function restartExercise(db: Db, scope: ClassScope, attemptId: stri
 }
 
 /**
- * Instructor review: students' attempts (preview principals excluded) with every check,
+ * Instructor review: students' attempts, including those of removed students (preview principals excluded) with every check,
  * hint count, solution reveal and completion level, newest attempt first per student.
  */
 export async function reviewAttempts(
@@ -444,10 +445,10 @@ export async function reviewAttempts(
   resourceId: string,
 ): Promise<ReviewAttempt[]> {
   const rows = await db
-    .select({ attempt: exerciseAttempts, name: users.name })
+    .select({ attempt: exerciseAttempts, name: users.name, role: classMemberships.role })
     .from(exerciseAttempts)
     .innerJoin(users, eq(users.id, exerciseAttempts.userId))
-    .innerJoin(
+    .leftJoin(
       classMemberships,
       and(
         eq(classMemberships.classId, exerciseAttempts.classId),
@@ -459,7 +460,7 @@ export async function reviewAttempts(
         forClass(scope, exerciseAttempts),
         eq(exerciseAttempts.resourceId, resourceId),
         excludePreview(exerciseAttempts),
-        eq(classMemberships.role, 'student'),
+        studentOrRemovedStudent(exerciseAttempts),
       ),
     )
     .orderBy(asc(users.name), asc(exerciseAttempts.userId), desc(exerciseAttempts.number));
@@ -471,7 +472,7 @@ export async function reviewAttempts(
   );
   const definitions = new Map<string, ExerciseV1 | undefined>();
   const review: ReviewAttempt[] = [];
-  for (const { attempt, name } of rows) {
+  for (const { attempt, name, role } of rows) {
     if (!definitions.has(attempt.resourceRevisionId)) {
       definitions.set(
         attempt.resourceRevisionId,
@@ -487,6 +488,7 @@ export async function reviewAttempts(
     review.push({
       id: attempt.id,
       student: { id: attempt.userId, name },
+      removed: role === null,
       number: attempt.number,
       resourceRevisionId: attempt.resourceRevisionId,
       seed: attempt.seed,
