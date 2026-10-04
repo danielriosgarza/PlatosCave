@@ -47,8 +47,15 @@ def safe_repr(value):
 
 
 def read_spec():
-    raw = sys.stdin.buffer.readline()
-    return json.loads(raw.decode("utf-8"))
+    # One byte at a time: a buffered readline would also pull the check's stdin out of fd 0,
+    # and the student function may read fd 0 directly (open(0), os.read, a subprocess).
+    line = bytearray()
+    while True:
+        byte = os.read(0, 1)
+        if not byte or byte == b"\n":
+            break
+        line += byte
+    return json.loads(bytes(line).decode("utf-8"))
 
 
 def load_module(file):

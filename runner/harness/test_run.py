@@ -705,6 +705,23 @@ class Call(HarnessCase):
         entry = self.outcome_for(call("A", "echo", {"value": "hello\nworld"}, stdin="hello\nworld")).check()
         self.assertEqual(entry["status"], "passed", entry)
 
+    def test_stdin_is_readable_below_the_python_buffer(self):
+        source = (
+            "def via_open():\n    return open(0).read()\n"
+            "def via_os_read():\n    import os\n    return os.read(0, 100).decode()\n"
+            "def via_sys():\n    import sys\n    return sys.stdin.read()\n"
+            "def via_raw():\n    import sys\n    return sys.stdin.buffer.raw.read(100).decode()\n"
+            "def via_cat():\n    import subprocess\n"
+            "    return subprocess.run(['cat'], capture_output=True, text=True).stdout\n"
+        )
+        names = ["via_open", "via_os_read", "via_sys", "via_raw", "via_cat"]
+        job = make_job(
+            {"solution.py": source},
+            [call(n, n, {"value": "hello\n"}, stdin="hello\n") for n in names],
+        )
+        outcome = self.go(job)
+        self.assertEqual([c["status"] for c in outcome.result["checks"]], ["passed"] * len(names))
+
     def test_printing_inside_a_call_is_captured_not_framed(self):
         outcome = self.outcome_for(call("A", "noisy", {"value": 1}))
         self.assertEqual(outcome.check()["stdout"], "to stdout\n")
@@ -740,7 +757,7 @@ class Call(HarnessCase):
         self.assertEqual(outcome.check(1)["status"], "passed")
 
     def test_a_huge_integer_in_a_numeric_comparison_is_a_verdict_not_a_crash(self):
-        source = "def big():\n    return 10 ** 400\ndef bigs():\n    return [10 ** 400]\n"
+        source = "def bigp():\n    return 10 ** 400 + 1\ndef big():\n    return 10 ** 400\ndef bigs():\n    return [10 ** 400]\n"
         job = make_job(
             {"solution.py": source},
             [
@@ -748,11 +765,12 @@ class Call(HarnessCase):
                 call("Huge in list", "bigs", {"value": [1.5]}, "numeric"),
                 call("Float vs huge expected", "big", {"value": 10 ** 400}, "numeric"),
                 call("Huge equals itself", "big", {"value": 10 ** 400}, "exact"),
+                call("Huge within relTol", "bigp", {"value": 10 ** 400}, "numeric"),
             ],
         )
         outcome = self.go(job)
         self.assertEqual(
-            [c["status"] for c in outcome.result["checks"]], ["failed", "failed", "passed", "passed"]
+            [c["status"] for c in outcome.result["checks"]], ["failed", "failed", "passed", "passed", "passed"]
         )
 
     def test_a_job_holding_a_lone_surrogate_exits_64(self):
