@@ -138,7 +138,23 @@ export function CreateCourseForm({
   );
 }
 
-/** A modal sheet: focus moves in, Escape closes, and focus returns to the opener. */
+const FOCUSABLE =
+  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])';
+
+/** Where focus goes when the opener has unmounted: the page heading, else the main region. */
+function focusPageAnchor() {
+  const anchor =
+    document.querySelector<HTMLElement>('main h1, h1') ?? document.querySelector('main');
+  if (!anchor) return;
+  if (!anchor.hasAttribute('tabindex')) anchor.setAttribute('tabindex', '-1');
+  anchor.focus();
+}
+
+/**
+ * A modal sheet: focus moves in and stays inside (Tab and Shift+Tab wrap), Escape closes from
+ * wherever focus is, and on close focus returns to the opener, or to the page heading when the
+ * opener is gone.
+ */
 export function Dialog({
   title,
   onClose,
@@ -150,23 +166,59 @@ export function Dialog({
 }) {
   const headingId = useId();
   const ref = useRef<HTMLDivElement>(null);
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
   useEffect(() => {
+    const dialog = ref.current;
     const opener = document.activeElement as HTMLElement | null;
-    ref.current?.querySelector<HTMLElement>('input, button, a')?.focus();
-    return () => opener?.focus();
+    const inside = () => Array.from(dialog?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? []);
+    inside()[0]?.focus();
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        closeRef.current();
+        return;
+      }
+      if (e.key !== 'Tab' || !dialog) return;
+      const items = inside();
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (!first || !last) {
+        e.preventDefault();
+        return;
+      }
+      const active = document.activeElement;
+      if (!dialog.contains(active)) {
+        e.preventDefault();
+        (e.shiftKey ? last : first).focus();
+      } else if (e.shiftKey && active === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && active === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    };
+    const onFocusIn = (e: FocusEvent) => {
+      if (dialog && e.target instanceof Node && !dialog.contains(e.target)) inside()[0]?.focus();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    document.addEventListener('focusin', onFocusIn);
+    return () => {
+      document.removeEventListener('keydown', onKeyDown);
+      document.removeEventListener('focusin', onFocusIn);
+      if (opener?.isConnected && opener !== document.body) opener.focus();
+      else focusPageAnchor();
+    };
   }, []);
   return (
     <div className={styles.backdrop}>
-      {/* biome-ignore lint/a11y/noStaticElementInteractions: Escape handling for the modal sheet */}
       <div
         ref={ref}
         role="dialog"
         aria-modal="true"
         aria-labelledby={headingId}
         className={styles.dialog}
-        onKeyDown={(e) => {
-          if (e.key === 'Escape') onClose();
-        }}
       >
         <h2 id={headingId}>{title}</h2>
         {children}
