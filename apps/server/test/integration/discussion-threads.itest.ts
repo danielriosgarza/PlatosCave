@@ -277,4 +277,43 @@ describe('discussion threads and moderation', () => {
       await setPolicy({ archivedAt: null });
     }
   });
+
+  test('A05 once the class no longer studies a reading, post routes answer 404 for it like the margin does', async () => {
+    const thread = await ask('bea', 'class', 'Before it is hidden');
+    const mine = thread.posts[0] as Post;
+    // The class studies nothing once it has no adopted release; Bea's thread is still hers.
+    const adopt = (releaseId: string | null) =>
+      testDb.db.update(classes).set({ releaseId }).where(eq(classes.id, ids.classB));
+    await adopt(null);
+    try {
+      const listing = `${base(ids.classB)}/resources/${ids.samplingReading}/annotations`;
+      // Bea has no marks of her own here, so the listing is closed to her.
+      expect((await call('bea', 'GET', listing)).status).toBe(404);
+      const url = `${base(ids.classB)}/posts/${mine.id}`;
+      expect((await call('bea', 'PUT', url, { body: 'late' })).status).toBe(404);
+      expect((await call('bea', 'DELETE', url)).status).toBe(404);
+      // The instructor cannot reach it either: with no release there is nothing to study.
+      expect((await call('marcus', 'POST', `${url}/moderate`, { reason: 'x' })).status).toBe(404);
+    } finally {
+      await adopt(ids.releaseV1);
+    }
+  });
+
+  test('deleting a post a reply depends on leaves a tombstone even when the reply is concurrent', async () => {
+    const thread = await ask('bea', 'class', 'Race question');
+    const first = thread.posts[0] as Post;
+    const answer = (await reply('priya', thread.id, 'Leaf', first.id)).body as Thread;
+    const leaf = answer.posts[1] as Post;
+    const [deleted, replied] = await Promise.all([
+      call('priya', 'DELETE', `${base(ids.classB)}/posts/${leaf.id}`),
+      reply('bea', thread.id, 'Reply to the leaf', leaf.id),
+    ]);
+    expect(deleted.status).toBe(200);
+    expect([200, 400]).toContain(replied.status);
+    const rows = await testDb.db.select().from(posts).where(eq(posts.threadId, thread.id));
+    const row = rows.find((p) => p.id === leaf.id);
+    // Either the reply landed first (tombstone) or the delete did (the reply is refused as orphaned).
+    if (replied.status === 200) expect(row?.deletedAt).not.toBeNull();
+    else expect(row).toBeUndefined();
+  });
 });

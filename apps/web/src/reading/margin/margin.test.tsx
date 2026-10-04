@@ -1331,4 +1331,32 @@ describe('discussion threads', () => {
     expect(await screen.findByText(/This class is archived/)).toBeInTheDocument();
     expect(screen.getByText('Post 1')).toBeInTheDocument();
   });
+
+  it('A05 a thread whose posts are all removed still offers a reply to the discussion', async () => {
+    const gone = post(1, {
+      author: ADA,
+      body: null,
+      deleted: true,
+      can: { edit: false, delete: false, moderate: false },
+    });
+    const w = world([], [threadOf([gone])]);
+    w.respond = (c) =>
+      c.url.endsWith(`/threads/${THREAD_ID}/posts`)
+        ? {
+            status: 200,
+            body: threadOf([gone, post(2, { parentId: gone.id, body: 'Still here' })]),
+          }
+        : undefined;
+    api(w);
+    const user = userEvent.setup();
+    await openDiscussion(user);
+    await user.click(await screen.findByRole('button', { name: 'Reply to this discussion' }));
+    await user.type(
+      screen.getByRole('textbox', { name: 'Reply to this discussion' }),
+      'Still here',
+    );
+    await user.click(screen.getByRole('button', { name: 'Post reply' }));
+    expect(await screen.findByText('Still here')).toBeInTheDocument();
+    expect(w.calls.at(-1)?.body).toEqual({ body: 'Still here', parentId: undefined });
+  });
 });

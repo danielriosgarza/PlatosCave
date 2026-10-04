@@ -530,6 +530,15 @@ export async function replyToThread(
       .orderBy(asc(posts.createdAt), asc(posts.id));
     const parent = input.parentId ? parents.find((p) => p.id === input.parentId) : parents[0];
     if (input.parentId && !parent) return invalid('The post you are replying to is not here');
+    if (parent) {
+      // Hold the parent against a concurrent hard delete until this reply is committed.
+      const [held] = await tx
+        .select({ id: posts.id })
+        .from(posts)
+        .where(eq(posts.id, parent.id))
+        .for('key share');
+      if (!held) return invalid('The post you are replying to is not here');
+    }
     await tx.insert(posts).values({
       ...author,
       threadId,
@@ -544,13 +553,17 @@ export async function replyToThread(
   return threadOutcome(db, scope, threadId, now);
 }
 
-/** One post the caller may read in a thread they may read. */
-async function readablePost(db: Db, scope: ClassScope, postId: string) {
+/**
+ * One post the caller may read in a thread they may read, on a resource they may still study:
+ * once the margin listing answers 404 for a resource, so does every route reaching its posts.
+ */
+async function readablePost(db: Db, scope: ClassScope, postId: string, now: Date) {
   const [row] = await db
     .select({ post: posts, thread: threads })
     .from(posts)
     .innerJoin(threads, and(eq(threads.id, posts.threadId), eq(threads.classId, posts.classId)))
     .where(and(eq(posts.id, postId), visibleTo(scope, threads), visiblePost(scope, posts)));
+  if (!row || !(await studyableResource(db, scope, row.thread.resourceId, now))) return undefined;
   return row;
 }
 
@@ -573,7 +586,7 @@ export async function editPost(
   now: Date,
 ): Promise<Outcome<Thread>> {
   if (scope.archived) return classArchived;
-  const found = await readablePost(db, scope, postId);
+  const found = await readablePost(db, scope, postId, now);
   if (!found || found.post.authorId !== scope.user.id) return notFound;
   const { post } = found;
   if (post.deletedAt || post.moderatedAt) return invalid('This post was removed and cannot change');
@@ -600,7 +613,7 @@ export async function deletePost(
   now: Date,
 ): Promise<Outcome<Thread>> {
   if (scope.archived) return classArchived;
-  const found = await readablePost(db, scope, postId);
+  const found = await readablePost(db, scope, postId, now);
   if (!found || found.post.authorId !== scope.user.id) return notFound;
   const { post } = found;
   if (post.deletedAt) return threadOutcome(db, scope, post.threadId, now);
@@ -609,6 +622,9 @@ export async function deletePost(
     return invalid('This class does not let students delete their posts');
   }
   await db.transaction(async (tx) => {
+    // A reply inserted meanwhile takes a key-share lock on its parent; locking the post first
+    // makes the dependents check below final, so the delete never trips `posts_parent_fk`.
+    await tx.select({ id: posts.id }).from(posts).where(eq(posts.id, post.id)).for('update');
     const [first] = await tx
       .select({ id: posts.id })
       .from(posts)
@@ -677,7 +693,7 @@ export async function moderatePost(
 ): Promise<Outcome<Thread>> {
   if (scope.archived) return classArchived;
   if (scope.role !== 'instructor') return notFound;
-  const found = await readablePost(db, scope, postId);
+  const found = await readablePost(db, scope, postId, now);
   if (!found) return notFound;
   const { post } = found;
   if (post.authorId === scope.user.id) {

@@ -6,7 +6,7 @@ import styles from './Margin.module.css';
 type Post = Thread['posts'][number];
 
 /** One open form under a post: editing it, or replying to it. Only one at a time per thread. */
-type Form = { kind: 'edit' | 'moderate'; postId: string } | { kind: 'reply'; parentId: string };
+type Form = { kind: 'edit' | 'moderate'; postId: string } | { kind: 'reply'; parentId?: string };
 
 const removedText = (p: Post) =>
   p.moderated ? 'An instructor removed this post.' : 'The author deleted this post.';
@@ -142,6 +142,25 @@ export function ThreadPosts({
           </div>
         );
       })}
+      {thread.can.reply && thread.posts.every((p) => p.body === null) ? (
+        // Every post is removed, so there is nothing to answer: reply to the thread itself.
+        <div className={styles.postActions}>
+          <button type="button" className={styles.link} onClick={() => open({ kind: 'reply' })}>
+            Reply to this discussion
+          </button>
+        </div>
+      ) : null}
+      {form?.kind === 'reply' && form.parentId === undefined ? (
+        <Form
+          label="Reply to this discussion"
+          action="Post reply"
+          text={text}
+          busy={busy}
+          onText={setText}
+          onSubmit={submit}
+          onCancel={close}
+        />
+      ) : null}
       <div className={styles.postActions}>
         {thread.can.resolve ? (
           <button
