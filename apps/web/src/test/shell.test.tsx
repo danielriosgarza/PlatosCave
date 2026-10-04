@@ -30,6 +30,20 @@ describe('session redirect', () => {
     expect(router.state.location.search).toEqual({ next: `/classes/${CLASS_A}/topics?x=1` });
   });
 
+  it('A01 sends a signed-out visitor at / to /signin', async () => {
+    stubApi(signedOut);
+    const { router } = renderApp('/');
+    expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeInTheDocument();
+    expect(router.state.location.pathname).toBe('/signin');
+  });
+
+  it('A02 sends a signed-in person at / to their courses', async () => {
+    stubApi(signedIn(makeMe({ classes: [studentIn(CLASS_A, 'Class A')], courses: [] })));
+    const { router } = renderApp('/');
+    expect(await screen.findByRole('heading', { name: 'Your courses' })).toBeInTheDocument();
+    expect(router.state.location.pathname).toBe('/courses');
+  });
+
   it('A01 shows a class address to a non-member as the neutral unavailable page', async () => {
     stubApi(signedIn(makeMe({ classes: [studentIn(CLASS_B, 'Class B')] })));
     renderApp(`/classes/${CLASS_A}/topics`);
@@ -78,7 +92,7 @@ describe('courses contexts', () => {
     await user.click(screen.getByRole('link', { name: 'Instructor view' }));
     expect(await screen.findByRole('heading', { name: 'Courses you teach' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Class A/ })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Class review' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Class review' })).toBeNull();
     expect(screen.queryByRole('link', { name: /Class B/ })).toBeNull();
     expect(screen.getByRole('link', { name: 'Instructor view' })).toHaveAttribute(
       'aria-current',
@@ -93,7 +107,7 @@ describe('courses default view', () => {
     renderApp('/courses');
     expect(await screen.findByRole('heading', { name: 'Courses you teach' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Class A/ })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Class review' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Class review' })).toBeNull();
   });
 });
 

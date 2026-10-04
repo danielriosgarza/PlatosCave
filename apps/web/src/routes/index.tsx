@@ -1,20 +1,11 @@
-import { health } from '@parallax/contracts/routes/health';
-import { createFileRoute } from '@tanstack/react-router';
-import { useApi } from '../api/client';
+import { createFileRoute, redirect } from '@tanstack/react-router';
 
-export const Route = createFileRoute('/')({ component: Home });
-
-function Home() {
-  const { data, isError } = useApi(health, {});
-  const line = data
-    ? `API ${data.status} · database ${data.db}`
-    : isError
-      ? 'API unavailable'
-      : 'Checking API…';
-  return (
-    <main id="main" style={{ padding: 'var(--pc-space-32) var(--pc-space-28)' }}>
-      <h1>Parallax</h1>
-      <p role="status">{line}</p>
-    </main>
-  );
-}
+/**
+ * `/` has no page of its own: everyone goes to their courses, and the `/_authed` guard sends a
+ * signed-out visitor on to /signin with the courses address kept in `next` (§3).
+ */
+export const Route = createFileRoute('/')({
+  beforeLoad: () => {
+    throw redirect({ to: '/courses', replace: true });
+  },
+});

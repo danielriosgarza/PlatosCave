@@ -40,6 +40,24 @@ test('A01 an address opened while signed out is kept through sign-in', async ({ 
   await expect(page.getByRole('heading', { name: 'Your courses' })).toBeVisible();
 });
 
+test('A01 signed-out / lands on sign-in', async ({ page }) => {
+  await page.goto('/');
+  await expect(page).toHaveURL(/\/signin(\?|$)/);
+  await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible();
+});
+
+test('A02 signed-in / and the brand link land on courses', async ({ page }) => {
+  const email = `a02-home-${Date.now()}@example.test`;
+  await signIn(page, email, 'Student');
+  await page.goto('/');
+  await expect(page).toHaveURL(/\/courses/);
+  await expect(page.getByRole('heading', { name: 'Your courses' })).toBeVisible();
+  await page.goto('/courses?view=student#top');
+  await page.getByRole('link', { name: 'Parallax' }).click();
+  await expect(page).toHaveURL(/\/courses/);
+  await expect(page.getByRole('heading', { name: 'Your courses' })).toBeVisible();
+});
+
 test('A01 a used sign-in link lands on the expired-link state', async ({ page }) => {
   const email = `a01-expired-${Date.now()}@example.test`;
   await signIn(page, email, 'Student');
