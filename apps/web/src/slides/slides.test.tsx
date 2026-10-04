@@ -47,6 +47,8 @@ interface World {
   decks: DeckList;
   puts: { revisionId: string; tab: string; position: { page: number; offset: number } }[];
   contentCalls: number;
+  /** Answer every position save with 409 `class_archived`. */
+  archived?: boolean;
 }
 
 function api(world: World, me = makeMe({ classes: [studentIn(CLASS_A, 'Class A')] })) {
@@ -59,6 +61,7 @@ function api(world: World, me = makeMe({ classes: [studentIn(CLASS_A, 'Class A')
     if (url === `/api/classes/${CLASS_A}/positions` && init?.method === 'PUT') {
       const body = JSON.parse(String(init.body)) as World['puts'][number];
       world.puts.push(body);
+      if (world.archived) return { status: 409, body: { error: 'class_archived' } };
       return { status: 200, body: { updatedAt: '2026-10-01T09:00:00Z' } };
     }
     if (url === `/api/classes/${CLASS_A}/resources/${REV_WEB}/slides`) {
@@ -290,6 +293,26 @@ describe('slide viewer', () => {
       tab: 'slides',
       position: { page: 9, offset: 0 },
     });
+  });
+
+  it('sends no more slide saves once the class is archived, and still opens at the saved slide', async () => {
+    const user = userEvent.setup();
+    openPdf.mockResolvedValue(pdfDocument());
+    const world = makeWorld([deck(REV_A, 'Sampling lecture', 7)], REV_A);
+    world.archived = true;
+    api(world);
+    renderApp(SLIDES);
+    const stage = await viewer();
+    expect(position()).toHaveTextContent('7 / 12');
+    stage.focus();
+    await user.keyboard('{ArrowRight}');
+    await waitFor(() => expect(world.puts).toHaveLength(1));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await user.keyboard('{ArrowRight}{ArrowRight}');
+    // Longer than the pause after which a place is sent.
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    expect(position()).toHaveTextContent('10 / 12');
+    expect(world.puts).toHaveLength(1);
   });
 
   it('jumps from the index, which opens on demand, and keeps the viewer focused', async () => {

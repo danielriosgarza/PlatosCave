@@ -35,6 +35,11 @@ describe('AUD15 error replies', () => {
     );
     expect(Object.keys(op('post', '/api/preview/exit'))).toContain('409');
     expect(Object.keys(op('post', '/api/courses'))).toContain('403');
+    // An archived class refuses a position save and a Colab launch with 409 `class_archived`.
+    expect(Object.keys(op('put', '/api/classes/{classId}/positions'))).toContain('409');
+    expect(
+      Object.keys(op('post', '/api/classes/{classId}/resources/{resourceId}/colab-launch')),
+    ).toContain('409');
     await app.close();
   });
 

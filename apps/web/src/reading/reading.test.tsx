@@ -48,6 +48,8 @@ interface World {
   pdfAnswers: number[];
   contentCalls: number;
   failPut: boolean;
+  /** Answer every position save with 409 `class_archived`. */
+  archived?: boolean;
   /** The native reading's HTML as the server sends it now. */
   html: string;
 }
@@ -70,6 +72,7 @@ function api(world: World, me = makeMe({ classes: [studentIn(CLASS_A, 'Class A')
     }
     if (url === `/api/classes/${CLASS_A}/positions` && init?.method === 'PUT') {
       if (world.failPut) return { status: 503, body: { error: 'down' } };
+      if (world.archived) return { status: 409, body: { error: 'class_archived' } };
       const body = JSON.parse(String(init.body)) as { revisionId: string; position: never };
       world.positions.push(body);
       // The server answers with what it now holds: the reading's list reflects it on reload.
@@ -506,6 +509,23 @@ describe('native reading', () => {
     expect(putsOf(fetchMock)).toHaveLength(2);
     expect(world.positions).toHaveLength(1);
     expect(world.positions[0]).toMatchObject({ position: { blockId: 'b-code' } });
+  });
+
+  it('sends no more position saves once the class is archived, not on a move and not when back online', async () => {
+    const world = makeWorld(two());
+    world.archived = true;
+    const fetchMock = api(world);
+    renderApp(READING);
+    await screen.findByText('Every sample tells a slightly different story.');
+    scrollThrough({ 'b-title': -120, 'b-one': -60, 'b-two': 40, 'b-code': 140 });
+    await waitFor(() => expect(putsOf(fetchMock)).toHaveLength(1));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    scrollThrough({ 'b-title': -300, 'b-one': -240, 'b-two': -140, 'b-code': -40 });
+    window.dispatchEvent(new Event('online'));
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+    document.dispatchEvent(new Event('visibilitychange'));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(putsOf(fetchMock)).toHaveLength(1);
   });
 
   it('A01 a place still waiting when access ends is not sent', async () => {
