@@ -670,13 +670,15 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
                   actions={actions}
                 />
               ))}
-              {sketchEntries.map(({ annotation, surface }) => (
+              {sketchEntries.map(({ annotation, surface, editable }) => (
                 <SketchEntry
                   key={annotation.id}
                   annotation={annotation}
                   label={surfaceLabel(surface ?? surfaceOf(annotation.anchor))}
                   needsReattachment={surface === null}
                   editing={sketches.open?.annotationId === annotation.id}
+                  blocked={sketches.open !== null}
+                  editable={editable}
                   onEdit={() => openSketch(annotation, surface)}
                   onExport={() => exportSketch(annotation, surface ?? surfaceOf(annotation.anchor))}
                   onDelete={() => actions.remove(annotation.id)}

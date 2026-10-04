@@ -356,7 +356,9 @@ describe('sketch on a figure', () => {
     const user = userEvent.setup();
     await openNative();
     // Reach Describe in text for Figure 2 by Tab, press it with Enter, type, and save with the keyboard.
-    screen.getByRole('button', { name: 'Describe Figure 2 in text' }).focus();
+    const describe = screen.getByRole('button', { name: 'Describe Figure 2 in text' });
+    for (let i = 0; i < 40 && document.activeElement !== describe; i++) await user.tab();
+    expect(describe).toHaveFocus();
     await user.keyboard('{Enter}');
     const panel = await screen.findByRole('region', { name: 'Sketch on Figure 2' });
     const field = within(panel).getByLabelText('Text description (required)');
@@ -522,6 +524,72 @@ describe('sketch on a figure', () => {
     expect(svg).toContain('<svg');
     expect(svg).toContain('<desc>A diagonal.</desc>');
     expect(svg).toContain('points="0,0 900,450"');
+  });
+});
+
+describe('sketches already saved', () => {
+  const line = [
+    {
+      tool: 'pen' as const,
+      color: '#202124',
+      width: 4,
+      points: [
+        [0.1, 0.1],
+        [0.9, 0.9],
+      ] as [number, number][],
+    },
+  ];
+
+  it('A07 Open sketch does not replace a sketch that is open with unsaved work', async () => {
+    api(
+      world('native', [
+        stored(uuid(2), 'sketch', { kind: 'figure', figureId: FIG2, strokes: line }, 'Second.'),
+      ]),
+    );
+    const user = userEvent.setup();
+    await openNative();
+    const open = await screen.findByRole('button', { name: 'Open sketch' });
+    await user.click(screen.getByRole('button', { name: 'Sketch on Figure 1' }));
+    await stroke(user, [10, 10], [300, 150]);
+    await user.type(screen.getByLabelText('Text description (required)'), 'Unsaved.');
+    expect(open).toBeDisabled();
+    await user.click(open);
+    expect(screen.getByRole('region', { name: 'Sketch on Figure 1' })).toBeVisible();
+    expect(screen.getByLabelText('Text description (required)')).toHaveValue('Unsaved.');
+    expect(screen.getByText('1 stroke')).toBeVisible();
+  });
+
+  it('A07 a sketch mapped to a newer revision cannot be edited in place, but can be exported, deleted and replaced by a new sketch', async () => {
+    const mapped = stored(
+      uuid(3),
+      'sketch',
+      { kind: 'figure', figureId: 'oldfigure0001', strokes: line },
+      'Old.',
+    );
+    mapped.placement = {
+      resourceRevisionId: REV,
+      status: 'mapped',
+      anchor: { kind: 'figure', figureId: FIG1, strokes: line },
+      confidence: 0.95,
+    };
+    const w = world('native', [mapped]);
+    api(w);
+    const user = userEvent.setup();
+    await openNative();
+    expect(await screen.findByRole('button', { name: 'Open sketch' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Download SVG' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Delete sketch' })).toBeEnabled();
+    // Sketch starts a new drawing on the current revision rather than rewriting the old anchor.
+    expect(screen.getByRole('button', { name: 'Sketch on Figure 1' })).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Sketch on Figure 1' }));
+    await stroke(user, [10, 10], [300, 150]);
+    await user.type(screen.getByLabelText('Text description (required)'), 'New.');
+    await user.click(screen.getByRole('button', { name: 'Done' }));
+    await waitFor(() => expect(w.calls).toHaveLength(1));
+    expect(w.calls[0]?.method).toBe('POST');
+    expect(w.annotations.find((a) => a.id === mapped.id)?.anchor).toMatchObject({
+      figureId: 'oldfigure0001',
+    });
   });
 });
 

@@ -9,6 +9,10 @@ interface Props {
   needsReattachment: boolean;
   /** This sketch is open in the editor. */
   editing: boolean;
+  /** Another sketch is open: opening this one would replace its unsaved work. */
+  blocked: boolean;
+  /** Placed as made; a sketch mapped to a newer revision keeps Download and Delete only. */
+  editable: boolean;
   onEdit: () => void;
   onExport: () => void;
   onDelete: () => Promise<boolean>;
@@ -20,6 +24,8 @@ export function SketchEntry({
   label,
   needsReattachment,
   editing,
+  blocked,
+  editable,
   onEdit,
   onExport,
   onDelete,
@@ -36,7 +42,7 @@ export function SketchEntry({
         <button
           type="button"
           className={styles.link}
-          disabled={editing || needsReattachment}
+          disabled={editing || blocked || !editable || needsReattachment}
           onClick={onEdit}
         >
           Open sketch

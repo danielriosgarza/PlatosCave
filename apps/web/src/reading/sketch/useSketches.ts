@@ -89,7 +89,7 @@ const fromSaved = (a: Annotation, surface: Surface): Session => ({
 export interface Sketches {
   open: Session | null;
   /** Saved sketches (not descriptions) and where they sit today. */
-  saved: { annotation: Annotation; surface: Surface | null }[];
+  saved: { annotation: Annotation; surface: Surface | null; editable: boolean }[];
   savedOn(surface: Surface): Annotation | undefined;
   /** The height-over-width of each surface as last drawn, for the SVG export. */
   aspects: React.MutableRefObject<Map<string, number>>;
@@ -118,12 +118,18 @@ export function useSketches(actions: MarginActions, annotations: Annotation[]): 
     () =>
       annotations
         .filter((a) => a.kind === 'sketch')
-        .map((annotation) => ({ annotation, surface: surfaceOf(shownAnchor(annotation)) })),
+        .map((annotation) => ({
+          annotation,
+          surface: surfaceOf(shownAnchor(annotation)),
+          // A save writes the sketch's own anchor, which belongs to the revision it was made on:
+          // only a sketch still placed as made (or never mapped) can be edited in place.
+          editable: !annotation.placement || annotation.placement.status === 'original',
+        })),
     [annotations],
   );
   const savedOn = useCallback(
     (surface: Surface) =>
-      saved.find((s) => s.surface && sameSurface(s.surface, surface))?.annotation,
+      saved.find((s) => s.editable && s.surface && sameSurface(s.surface, surface))?.annotation,
     [saved],
   );
 
@@ -143,7 +149,10 @@ export function useSketches(actions: MarginActions, annotations: Annotation[]): 
       setOpen(existing ? fromSaved(existing, surface) : fresh(surface, mode));
     },
     edit: (annotation) => {
-      const surface = surfaceOf(shownAnchor(annotation) ?? annotation.anchor);
+      // Never replaces a sketch the reader has open, and only edits one placed as made.
+      if (latest.current) return;
+      if (annotation.placement && annotation.placement.status !== 'original') return;
+      const surface = surfaceOf(annotation.anchor);
       if (surface) setOpen(fromSaved(annotation, surface));
     },
     draw: (stroke) =>
