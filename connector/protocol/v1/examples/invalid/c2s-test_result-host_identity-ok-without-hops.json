@@ -17,12 +17,8 @@
       "name": "host_identity",
       "status": "ok",
       "data": {
-        "hops": [
-          {
-            "hop": "target",
-            "fingerprint": "SHA256:SGuN8fwGXFkUlKZT8ILLvpynWOsg9Y72LtxX1LmpqEM"
-          }
-        ]
+        "hop": "target",
+        "fingerprint": "SHA256:SGuN8fwGXFkUlKZT8ILLvpynWOsg9Y72LtxX1LmpqEM"
       },
       "ms": 60
     },
@@ -43,7 +39,7 @@
       "name": "forwarding",
       "status": "failed",
       "code": "forwarding_denied",
-      "detail": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+      "detail": "administratively prohibited (open failed)",
       "ms": 25
     },
     {

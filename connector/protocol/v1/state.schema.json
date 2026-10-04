@@ -46,8 +46,8 @@
     },
     "user": {
       "type": "string",
-      "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.@\\\\-]{0,63}$",
-      "description": "Account name; never starts with a dash."
+      "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.@-]{0,63}$",
+      "description": "Account name; never starts with a dash. No backslash: `DOMAIN\\user` names belong to Windows OpenSSH targets, which v1 does not support (docs/design/connector.md section 17)."
     },
     "semver": {
       "type": "string",

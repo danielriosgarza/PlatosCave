@@ -28,30 +28,34 @@
     },
     {
       "name": "ssh_auth",
-      "status": "ok",
-      "ms": 120
+      "status": "running",
+      "data": {
+        "hop": "target",
+        "terminalPrompt": true
+      }
     },
     {
       "name": "workspace",
-      "status": "ok",
+      "status": "skipped",
       "data": {
-        "resolvedPath": "/home/student/parallax"
-      },
-      "ms": 30
+        "reason": "blocked",
+        "blockedBy": "ssh_auth"
+      }
     },
     {
       "name": "forwarding",
-      "status": "failed",
-      "code": "forwarding_denied",
-      "detail": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-      "ms": 25
+      "status": "skipped",
+      "data": {
+        "reason": "blocked",
+        "blockedBy": "ssh_auth"
+      }
     },
     {
       "name": "runtime",
       "status": "skipped",
       "data": {
         "reason": "blocked",
-        "blockedBy": "forwarding"
+        "blockedBy": "ssh_auth"
       }
     },
     {
@@ -59,7 +63,7 @@
       "status": "skipped",
       "data": {
         "reason": "blocked",
-        "blockedBy": "forwarding"
+        "blockedBy": "ssh_auth"
       }
     },
     {
@@ -67,7 +71,7 @@
       "status": "skipped",
       "data": {
         "reason": "blocked",
-        "blockedBy": "forwarding"
+        "blockedBy": "ssh_auth"
       }
     }
   ]

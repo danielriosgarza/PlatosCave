@@ -1,0 +1,13 @@
+{
+  "v": 1,
+  "t": "test_progress",
+  "requestId": "c0ffee00-1111-4222-8333-444455556666",
+  "stage": {
+    "name": "ssh_auth",
+    "status": "running",
+    "data": {
+      "hop": "target",
+      "terminalPrompt": true
+    }
+  }
+}

@@ -77,8 +77,8 @@
     },
     "user": {
       "type": "string",
-      "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.@\\\\-]{0,63}$",
-      "description": "Account name; never starts with a dash."
+      "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.@-]{0,63}$",
+      "description": "Account name; never starts with a dash. No backslash: `DOMAIN\\user` names belong to Windows OpenSSH targets, which v1 does not support (docs/design/connector.md section 17)."
     },
     "path": {
       "type": "string",
@@ -435,10 +435,32 @@
               }
             }
           },
-          "description": "host_identity only: the key of every hop that passed, jump host first. The server persists each of these (design section 5.2)."
+          "description": "host_identity only: one entry for every hop whose key passed (rows 1, 2, 4, 6 and 8 of docs/design/connector.md section 5.2), jump host first. Present whenever a hop passed: on an `ok` stage (also for a single hop) and on a `needs_action` or `failed` stage whose jump host passed before the target stopped. The server persists these (section 5.2).",
+          "minItems": 1,
+          "if": {
+            "minItems": 2
+          },
+          "then": {
+            "prefixItems": [
+              {
+                "properties": {
+                  "hop": {
+                    "const": "jump"
+                  }
+                }
+              },
+              {
+                "properties": {
+                  "hop": {
+                    "const": "target"
+                  }
+                }
+              }
+            ]
+          }
         }
       },
-      "description": "A closed set of non-secret facts a stage may report. `terminalPrompt` says the connector is waiting for the person in its own terminal (a key passphrase or a second factor)."
+      "description": "A closed set of non-secret facts a stage may report. In `host_identity`, `hops` lists the hops that passed, and the singular `hop`, `fingerprint`, `expected`, `presented` and `algorithm` describe only the hop that stopped the stage. `terminalPrompt` says the connector is waiting for the person in its own terminal (a key passphrase or a second factor); it is reported on a `running` ssh_auth stage in `test_progress`."
     },
     "stage": {
       "type": "object",
@@ -449,7 +471,7 @@
           "$ref": "#/$defs/stageName"
         },
         "status": {
-          "enum": ["ok", "failed", "skipped", "needs_action"]
+          "enum": ["ok", "failed", "skipped", "needs_action", "running"]
         },
         "code": {
           "$ref": "#/$defs/code"
@@ -465,7 +487,154 @@
           "minimum": 0,
           "maximum": 3600000
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "running"
+              }
+            }
+          },
+          "then": {
+            "required": ["data"],
+            "not": {
+              "required": ["code"]
+            },
+            "properties": {
+              "name": {
+                "const": "ssh_auth"
+              },
+              "data": {
+                "required": ["terminalPrompt"],
+                "properties": {
+                  "terminalPrompt": {
+                    "const": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "name": {
+                "not": {
+                  "const": "host_identity"
+                }
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "data": {
+                "not": {
+                  "anyOf": [
+                    {
+                      "required": ["hops"]
+                    },
+                    {
+                      "required": ["fingerprint"]
+                    },
+                    {
+                      "required": ["expected"]
+                    },
+                    {
+                      "required": ["presented"]
+                    },
+                    {
+                      "required": ["algorithm"]
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "name": {
+                "const": "host_identity"
+              },
+              "status": {
+                "const": "ok"
+              }
+            }
+          },
+          "then": {
+            "required": ["data"],
+            "properties": {
+              "data": {
+                "required": ["hops"],
+                "not": {
+                  "anyOf": [
+                    {
+                      "required": ["hop"]
+                    },
+                    {
+                      "required": ["fingerprint"]
+                    },
+                    {
+                      "required": ["expected"]
+                    },
+                    {
+                      "required": ["presented"]
+                    },
+                    {
+                      "required": ["algorithm"]
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "name": {
+                "const": "host_identity"
+              },
+              "status": {
+                "const": "needs_action"
+              }
+            }
+          },
+          "then": {
+            "required": ["data"],
+            "properties": {
+              "data": {
+                "required": ["hop", "fingerprint"]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "required": ["code"],
+            "properties": {
+              "name": {
+                "const": "host_identity"
+              },
+              "code": {
+                "const": "host_key_changed"
+              }
+            }
+          },
+          "then": {
+            "required": ["data"],
+            "properties": {
+              "data": {
+                "required": ["hop", "expected", "presented"]
+              }
+            }
+          }
+        }
+      ],
+      "description": "One stage report. `running` exists only in `test_progress`, for an ssh_auth stage that is waiting on the connector's terminal (docs/design/connector.md section 5.1). The host_identity rules make one shape for host-key reports (section 5.2): an `ok` stage lists its hops in `data.hops` and nothing else; a stopped stage names the hop that stopped and keeps the hops that passed in `data.hops`."
     },
     "kernelspec": {
       "type": "object",
@@ -838,7 +1007,8 @@
         "stage": {
           "$ref": "#/$defs/stage"
         }
-      }
+      },
+      "description": "Connector to server: one stage, as soon as it finishes, or a `running` ssh_auth stage when the connector starts waiting on its own terminal (design section 5.1)."
     },
     "msg_test_result": {
       "type": "object",
@@ -862,7 +1032,14 @@
           "minItems": 1,
           "maxItems": 8,
           "items": {
-            "$ref": "#/$defs/stage"
+            "$ref": "#/$defs/stage",
+            "properties": {
+              "status": {
+                "not": {
+                  "const": "running"
+                }
+              }
+            }
           }
         },
         "kernelspecs": {
