@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { createFileRoute, Link, redirect } from '@tanstack/react-router';
 import { useState } from 'react';
 import { canEdit, grantLabel } from '../../authoring/grants';
+import buttons from '../../components/Buttons.module.css';
 import { Loading } from '../../components/Loading';
 import page from '../../components/Page.module.css';
 import { usePageTitle } from '../../components/pageTitle';
@@ -140,12 +141,12 @@ function CoursesFor({ cards, view }: { cards: Cards; view: View }) {
             </fieldset>
           ) : null}
           {view === 'student' && !emptyStudent ? (
-            <button type="button" className={page.outline} onClick={() => setDialog('join')}>
+            <button type="button" className={buttons.outline} onClick={() => setDialog('join')}>
               Join a class
             </button>
           ) : null}
           {view === 'instructor' && teaches ? (
-            <button type="button" className={page.outline} onClick={() => setDialog('create')}>
+            <button type="button" className={buttons.outline} onClick={() => setDialog('create')}>
               Create course
             </button>
           ) : null}
@@ -212,7 +213,7 @@ function CoursesFor({ cards, view }: { cards: Cards; view: View }) {
       {view === 'instructor' && !teaches && studying.length > 0 ? (
         <>
           <h2 className={styles.sectionHeading}>Your enrolled classes</h2>
-          <div style={{ marginTop: 20 }}>
+          <div className={page.mt20}>
             <StudentCards classes={studying} filter="all" search="" />
           </div>
         </>
@@ -298,9 +299,7 @@ function Empty() {
   return (
     <li className={styles.empty}>
       <h2>No matching courses</h2>
-      <p className={page.muted} style={{ marginTop: 12 }}>
-        Try a different title or choose All.
-      </p>
+      <p className={`${page.muted} ${page.mt12}`}>Try a different title or choose All.</p>
     </li>
   );
 }
@@ -477,7 +476,7 @@ function InstructorCards({
       {visibleCourses.length > 0 ? (
         <>
           <h2 className={styles.sectionHeading}>Courses</h2>
-          <ul className={styles.grid} style={{ marginTop: 20 }} aria-label="Courses you hold">
+          <ul className={`${styles.grid} ${styles.gridSpaced}`} aria-label="Courses you hold">
             {visibleCourses.map((c) => {
               const body = (
                 <>

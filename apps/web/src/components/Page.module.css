@@ -6,7 +6,8 @@
   min-height: 720px;
 }
 .index h1 {
-  font-size: 28px;
+  font: var(--pc-text-title);
+  letter-spacing: var(--pc-tracking-title);
 }
 .intro {
   font-size: 15px;
@@ -36,57 +37,6 @@
 .small {
   font-size: 12px;
   line-height: 1.5;
-}
-.primary,
-.outline,
-.textButton {
-  font: inherit;
-  cursor: pointer;
-  min-height: 36px;
-  text-align: left;
-}
-/* The 36 px above would otherwise beat the global coarse-pointer minimum. */
-@media (pointer: coarse) {
-  .primary,
-  .outline,
-  .textButton {
-    min-height: 44px;
-  }
-}
-.primary {
-  color: var(--pc-accent-ink);
-  background: var(--pc-accent);
-  border: 0;
-  padding: 9px 22px;
-  font-weight: 600;
-  border-radius: var(--pc-radius-primary);
-}
-.primary:hover {
-  filter: brightness(0.9);
-}
-.outline {
-  border: 1px solid var(--pc-muted);
-  padding: 8px 14px;
-  background: var(--pc-sheet);
-  border-radius: var(--pc-radius-control);
-}
-.outline[aria-pressed="true"] {
-  background: var(--pc-accent);
-  color: var(--pc-accent-ink);
-  border-color: var(--pc-accent);
-  font-weight: 600;
-}
-.textButton {
-  border: 0;
-  background: none;
-  padding: 2px 0;
-  color: var(--pc-ink);
-  text-decoration: underline;
-  text-underline-offset: 4px;
-}
-.primary:disabled {
-  opacity: 0.55;
-  cursor: default;
 }
 .link {
   color: var(--pc-ink);
@@ -157,7 +107,8 @@
   padding: 22px 40px 14px;
 }
 .heading h1 {
-  font-size: 28px;
+  font: var(--pc-text-title);
+  letter-spacing: var(--pc-tracking-title);
 }
 .panel {
   padding: 32px 40px 64px;
@@ -207,4 +158,48 @@
 }
 .offline p {
   margin: 0;
+}
+.mt8 {
+  margin-top: var(--pc-space-8);
+}
+.mt12 {
+  margin-top: var(--pc-space-12);
+}
+.mt16 {
+  margin-top: var(--pc-space-16);
+}
+.mt20 {
+  margin-top: var(--pc-space-20);
+}
+.mt24 {
+  margin-top: var(--pc-space-24);
+}
+.mt40 {
+  margin-top: var(--pc-space-40);
+}
+.sectionTitle {
+  font: var(--pc-text-subsection);
+  letter-spacing: var(--pc-tracking-subsection);
+}
+.sectionHeading {
+  margin-top: var(--pc-space-16);
+  margin-bottom: var(--pc-space-16);
+}
+.bareList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.bareListSpaced {
+  list-style: none;
+  padding: 0;
+  margin: var(--pc-space-16) 0 0;
+}
+.indentGrid {
+  padding-left: var(--pc-space-24);
+  display: grid;
+  gap: var(--pc-space-8);
+}
+.contents {
+  display: contents;
 }

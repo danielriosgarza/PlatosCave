@@ -15,11 +15,6 @@
   align-items: center;
   gap: 16px;
 }
-.button[aria-pressed="true"] {
-  background: var(--pc-accent);
-  color: var(--pc-accent-ink);
-  border-color: var(--pc-accent);
-}
 .panel {
   padding: 0 0 32px;
 }
@@ -57,19 +52,6 @@
 .notice {
   max-width: 700px;
   margin: 0 auto;
-}
-.button {
-  font: inherit;
-  cursor: pointer;
-  min-height: 32px;
-  padding: 4px 12px;
-  border: 1px solid var(--pc-muted);
-  background: var(--pc-sheet);
-  border-radius: var(--pc-radius-control);
-}
-.button:disabled {
-  opacity: 0.55;
-  cursor: default;
 }
 
 /* Native reading: the measure is 720 px; prose uses the reading size. */

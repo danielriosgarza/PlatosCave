@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import { type ReactNode, useId, useState } from 'react';
 import type { z } from 'zod';
 import { call } from '../api/client';
+import buttons from '../components/Buttons.module.css';
 import styles from '../components/Page.module.css';
 import local from './Authoring.module.css';
 import { useAutosave } from './autosave';
@@ -234,7 +235,7 @@ function ExerciseFields({
         />
       ))}
 
-      <div className={styles.row} style={{ marginTop: 20 }}>
+      <div className={`${styles.row} ${styles.mt20}`}>
         <label>
           Step type{' '}
           <select value={addKind} onChange={(e) => setAddKind(e.target.value as StepKind)}>
@@ -247,7 +248,7 @@ function ExerciseFields({
         </label>
         <button
           type="button"
-          className={styles.outline}
+          className={buttons.outline}
           disabled={exercise.steps.length >= 20}
           onClick={() =>
             setExercise({
@@ -264,10 +265,10 @@ function ExerciseFields({
           Add step
         </button>
       </div>
-      <div className={styles.row} style={{ marginTop: 16 }}>
+      <div className={`${styles.row} ${styles.mt16}`}>
         <button
           type="button"
-          className={styles.textButton}
+          className={buttons.textButton}
           onClick={() => change({ archived: !values.archived })}
         >
           {values.archived ? 'Restore this exercise' : 'Archive this exercise'}
@@ -364,7 +365,7 @@ function StepEditor({
       <div className={styles.row}>
         <button
           type="button"
-          className={styles.textButton}
+          className={buttons.textButton}
           disabled={index === 0}
           onClick={() => onMove(-1)}
         >
@@ -372,7 +373,7 @@ function StepEditor({
         </button>
         <button
           type="button"
-          className={styles.textButton}
+          className={buttons.textButton}
           disabled={index === count - 1}
           onClick={() => onMove(1)}
         >
@@ -380,7 +381,7 @@ function StepEditor({
         </button>
         <button
           type="button"
-          className={styles.textButton}
+          className={buttons.textButton}
           disabled={count === 1}
           onClick={onRemove}
         >
@@ -422,7 +423,7 @@ function Hints({
           />
           <button
             type="button"
-            className={styles.textButton}
+            className={buttons.textButton}
             onClick={() => onChange(hints.filter((_, j) => j !== i))}
           >
             Remove hint {i + 1} of step {n}
@@ -431,7 +432,7 @@ function Hints({
       ))}
       <button
         type="button"
-        className={styles.textButton}
+        className={buttons.textButton}
         disabled={hints.length >= 10}
         onClick={() => onChange([...hints, ''])}
       >
@@ -499,7 +500,7 @@ function RowList({
           ) : null}
           <button
             type="button"
-            className={styles.textButton}
+            className={buttons.textButton}
             disabled={rows.length <= minRows}
             onClick={() => onChange(rows.filter((_, j) => j !== i))}
           >
@@ -509,7 +510,7 @@ function RowList({
       ))}
       <button
         type="button"
-        className={styles.textButton}
+        className={buttons.textButton}
         disabled={rows.length >= maxRows}
         onClick={() =>
           onChange([

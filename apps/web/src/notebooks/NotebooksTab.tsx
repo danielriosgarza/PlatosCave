@@ -1,6 +1,7 @@
 import { Link } from '@tanstack/react-router';
 import { type ReactNode, useEffect, useState } from 'react';
 import { ApiError } from '../api/client';
+import buttons from '../components/Buttons.module.css';
 import { Loading } from '../components/Loading';
 import page from '../components/Page.module.css';
 import { RetryNotice } from '../components/RetryNotice';
@@ -196,19 +197,19 @@ function NotebookPanel({
           {ready.outline.length > 0 ? (
             <button
               type="button"
-              className={styles.button}
+              className={buttons.tool}
               aria-expanded={outlineOpen}
               onClick={() => setOutlineOpen(!outlineOpen)}
             >
               Outline
             </button>
           ) : null}
-          <button type="button" className={styles.button} onClick={() => setShowCode(!showCode)}>
+          <button type="button" className={buttons.tool} onClick={() => setShowCode(!showCode)}>
             {showCode ? 'Hide code' : 'Show code'}
           </button>
           <button
             type="button"
-            className={styles.button}
+            className={buttons.tool}
             onClick={() => setShowOutputs(!showOutputs)}
           >
             {showOutputs ? 'Hide outputs' : 'Show outputs'}
@@ -220,7 +221,7 @@ function NotebookPanel({
           classId={classId}
           revisionId={revisionId}
           sourceKey={data.sourceKey}
-          className={styles.button}
+          className={buttons.tool}
         />
       ) : null}
       {add}

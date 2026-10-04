@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { ApiError } from '../api/client';
+import buttons from '../components/Buttons.module.css';
 import { Loading } from '../components/Loading';
 import { type Attempt, type AttemptStep, useAttempt, useAttemptActions } from './attempt';
 import { creditSummary } from './credit';
@@ -75,7 +76,7 @@ function OpenFailure({ error, retry }: { error: unknown; retry: () => void }) {
   return (
     <div className={styles.inlineError} role="alert">
       <p>This exercise could not be opened. Check your connection and try again.</p>
-      <button type="button" className={styles.outline} onClick={retry}>
+      <button type="button" className={buttons.outline} onClick={retry}>
         Try again
       </button>
     </div>
@@ -218,14 +219,14 @@ function StepPanel({
       <StepForm step={step} draft={draft} disabled={completed || actions.busy} onChange={change} />
       <div className={styles.actions}>
         {completed ? (
-          <button type="button" className={styles.primary} onClick={onContinue}>
+          <button type="button" className={buttons.primary} onClick={onContinue}>
             {isLast ? 'See summary' : 'Continue'}
           </button>
         ) : (
           <>
             <button
               type="button"
-              className={styles.primary}
+              className={buttons.primary}
               disabled={actions.busy}
               onClick={() => void submit()}
             >
@@ -234,7 +235,7 @@ function StepPanel({
             {step.hints.length > 0 && (
               <button
                 type="button"
-                className={styles.textButton}
+                className={buttons.textButton}
                 aria-expanded={hintsOpen}
                 onClick={() => setHintsOpen(!hintsOpen)}
               >
@@ -244,7 +245,7 @@ function StepPanel({
             {moreHints && (
               <button
                 type="button"
-                className={styles.textButton}
+                className={buttons.textButton}
                 disabled={actions.busy}
                 onClick={async () => {
                   const next = await actions.hint({ stepId: step.id });
@@ -257,7 +258,7 @@ function StepPanel({
             {showSolution && (
               <button
                 type="button"
-                className={styles.textButton}
+                className={buttons.textButton}
                 disabled={actions.busy}
                 onClick={() => void actions.solution({ stepId: step.id })}
               >
@@ -361,7 +362,7 @@ function Summary({
         ))}
       </ul>
       <div className={styles.actions}>
-        <button type="button" className={styles.textButton} disabled={busy} onClick={onRestart}>
+        <button type="button" className={buttons.textButton} disabled={busy} onClick={onRestart}>
           Start again
         </button>
       </div>

@@ -3,6 +3,7 @@ import { useMutation } from '@tanstack/react-query';
 import { createFileRoute } from '@tanstack/react-router';
 import { type FormEvent, useState } from 'react';
 import { call } from '../api/client';
+import buttons from '../components/Buttons.module.css';
 import styles from '../components/Page.module.css';
 import { usePageTitle } from '../components/pageTitle';
 
@@ -60,7 +61,7 @@ function SignIn() {
               <button
                 key={value}
                 type="button"
-                className={styles.outline}
+                className={buttons.outline}
                 aria-pressed={entrance === value}
                 onClick={() => setEntrance(value)}
               >
@@ -76,7 +77,11 @@ function SignIn() {
                 15 minutes.
               </p>
               <p>
-                <button type="button" className={styles.textButton} onClick={() => request.reset()}>
+                <button
+                  type="button"
+                  className={buttons.textButton}
+                  onClick={() => request.reset()}
+                >
                   Use a different address
                 </button>
               </p>
@@ -95,13 +100,13 @@ function SignIn() {
                   onChange={(e) => setEmail(e.target.value)}
                 />
               </label>
-              <div style={{ marginTop: 20 }}>
-                <button type="submit" className={styles.primary} disabled={request.isPending}>
+              <div className={styles.mt20}>
+                <button type="submit" className={buttons.primary} disabled={request.isPending}>
                   {request.isPending ? 'Sending…' : 'Send sign-in link'}
                 </button>
               </div>
               {request.isError ? (
-                <p role="alert" style={{ marginTop: 16 }}>
+                <p role="alert" className={styles.mt16}>
                   The sign-in link could not be requested. Check the address and try again.
                 </p>
               ) : null}

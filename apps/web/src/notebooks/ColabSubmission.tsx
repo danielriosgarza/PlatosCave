@@ -1,4 +1,5 @@
 import { type ChangeEvent, useRef, useState } from 'react';
+import buttons from '../components/Buttons.module.css';
 import styles from './Notebook.module.css';
 import {
   COLAB_URL,
@@ -111,7 +112,7 @@ export function ColabSubmission({ classId, resourceId, instructor }: Props) {
         />
         <button
           type="button"
-          className={styles.button}
+          className={buttons.tool}
           disabled={!file || busy}
           onClick={() => void submit()}
         >
@@ -199,7 +200,7 @@ function Submissions({
               <td>
                 <button
                   type="button"
-                  className={styles.textButton}
+                  className={buttons.textButton}
                   onClick={() => void download(row.id)}
                   aria-label={`Download version ${row.version}${'student' in row ? ` of ${row.student.name}` : ''}`}
                 >

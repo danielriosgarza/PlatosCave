@@ -2,6 +2,7 @@ import { type QueryClient, useQueryClient } from '@tanstack/react-query';
 import { Link, useRouter } from '@tanstack/react-router';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiError } from '../api/client';
+import buttons from '../components/Buttons.module.css';
 import { Loading } from '../components/Loading';
 import { OfflineBanner } from '../components/OfflineBanner';
 import page from '../components/Page.module.css';
@@ -132,7 +133,7 @@ export function ReadingTab({ classId, courseId, topicId, instructor, search, onS
         <span className={styles.toolbarActions}>
           <button
             type="button"
-            className={styles.button}
+            className={buttons.tool}
             aria-pressed={marginOpen}
             onClick={() => setMarginOpen((open) => !open)}
           >
@@ -369,7 +370,7 @@ function ReadingView({
             classId={classId}
             revisionId={revisionId}
             sourceKey={data.sourceKey}
-            className={page.outline}
+            className={buttons.outline}
           />
         )}
       </RetryNotice>

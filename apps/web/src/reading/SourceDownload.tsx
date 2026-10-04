@@ -1,6 +1,7 @@
 import { getObjectUrl } from '@parallax/contracts/routes/media';
 import { useState } from 'react';
 import { call } from '../api/client';
+import buttons from '../components/Buttons.module.css';
 import styles from './Reading.module.css';
 
 interface Props {
@@ -36,7 +37,7 @@ export function SourceDownload({ classId, revisionId, sourceKey, className }: Pr
     <>
       <button
         type="button"
-        className={className ?? styles.button}
+        className={className ?? buttons.tool}
         disabled={busy}
         onClick={() => void download()}
       >

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import buttons from '../components/Buttons.module.css';
 import styles from './Shiny.module.css';
 import { readShinyMessage } from './shinyMessages';
 
@@ -87,7 +88,7 @@ export function ShinyEmbed({ title, url, origin, blockedAfterMs = BLOCKED_AFTER_
         </span>
         <button
           type="button"
-          className={styles.button}
+          className={buttons.tool}
           onClick={() => {
             setHeight(null);
             setRun((n) => n + 1);
@@ -95,7 +96,7 @@ export function ShinyEmbed({ title, url, origin, blockedAfterMs = BLOCKED_AFTER_
         >
           Restart
         </button>
-        <a className={styles.button} href={url} target="_blank" rel="noopener noreferrer">
+        <a className={buttons.tool} href={url} target="_blank" rel="noopener noreferrer">
           Open externally
         </a>
       </header>
