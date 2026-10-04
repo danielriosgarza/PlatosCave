@@ -38,6 +38,15 @@ describe('session redirect', () => {
     expect(router.state.location.search).toEqual({});
   });
 
+  it('A01 offers Retry at / when the session cannot be checked', async () => {
+    stubApi(() => ({ status: 500, body: { error: 'unavailable' } }));
+    renderApp('/');
+    expect(
+      await screen.findByText('Your session could not be checked, so this page is not shown.'),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+  });
+
   it('A02 sends a signed-in person at / to their courses', async () => {
     stubApi(signedIn(makeMe({ classes: [studentIn(CLASS_A, 'Class A')], courses: [] })));
     const { router } = renderApp('/');

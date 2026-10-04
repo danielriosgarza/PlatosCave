@@ -1,4 +1,5 @@
 import { createFileRoute, redirect } from '@tanstack/react-router';
+import { RouteFailed } from '../components/RouteFailed';
 import { loadSessionOrCached } from '../session/useSession';
 
 /**
@@ -10,4 +11,5 @@ export const Route = createFileRoute('/')({
     const me = await loadSessionOrCached(context.queryClient);
     throw redirect({ to: me ? '/courses' : '/signin', replace: true });
   },
+  errorComponent: RouteFailed,
 });
