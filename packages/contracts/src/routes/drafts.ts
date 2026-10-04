@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { conflictBody, defineRoute } from '../define';
+import { conflictBody, defineRoute, invalidBody } from '../define';
 import { resourceTypes } from '../resources';
 
 /** Draft editing for a course (§12, ADR-0003). Class routes never read these rows (A26). */
@@ -146,6 +146,7 @@ export const createResource = defineRoute({
     ...revisionFields,
   }),
   response: draftResource,
+  errors: { 400: invalidBody },
   examples: {
     params: { courseId: exampleCourseId, topicId: exampleTopicId },
     body: { type: 'reading_native', title: 'Why samples vary', content: { markdown: '# Why' } },
@@ -180,7 +181,7 @@ export const updateResource = defineRoute({
     ...revisionFields,
   }),
   response: draftResource,
-  errors: { 409: conflictBody(draftResource) },
+  errors: { 400: invalidBody, 409: conflictBody(draftResource) },
   examples: {
     params: { courseId: exampleCourseId, resourceId: exampleResourceId },
     body: { expectedRevision: 1, content: { markdown: '# Why samples vary' } },

@@ -16,7 +16,7 @@ import { hashToken } from '../../auth/tokens';
 import * as identity from '../../db/identity';
 import * as invites from '../../db/invites';
 import * as members from '../../db/members';
-import { notFound, refuse, registerRoute } from '../register';
+import { notFound, registerRoute } from '../register';
 
 /** HTTP status for each reason an invitation cannot be used (§4: the cause is shown). */
 const inviteStatus: Record<invites.InviteFailure, 403 | 404 | 409 | 410> = {
@@ -48,10 +48,14 @@ export default function memberRoutes(app: FastifyInstance, deps: Deps): void {
     return { ...created, courseId: scope.courseId };
   });
 
-  registerRoute(app, createInvite, async ({ scope, body }) => {
+  registerRoute(app, createInvite, async ({ scope, body, fail }) => {
     scope.requireRecentAuth();
     const result = await invites.issueInvite(db(), scope, body, now());
-    if (!result.ok) return refuse(result.reason === 'class_archived' ? 409 : 400, result.reason);
+    if (!result.ok) {
+      return result.reason === 'class_archived'
+        ? fail(409, { error: result.reason })
+        : fail(400, { error: result.reason });
+    }
     return inviteView(result.invite);
   });
 
@@ -67,10 +71,12 @@ export default function memberRoutes(app: FastifyInstance, deps: Deps): void {
     return { members: list.members, invites: list.invites.map(inviteView) };
   });
 
-  registerRoute(app, setManageMembers, async ({ scope, params, body }) => {
+  registerRoute(app, setManageMembers, async ({ scope, params, body, fail }) => {
     scope.requireRecentAuth();
     const result = await members.setManageMembers(db(), scope, params.userId, body.granted, now());
-    if (!result.ok) return result.reason === 'not_found' ? notFound() : refuse(409, result.reason);
+    if (!result.ok) {
+      return result.reason === 'not_found' ? notFound() : fail(409, { error: result.reason });
+    }
     return { userId: params.userId, manageMembers: body.granted };
   });
 
@@ -81,10 +87,11 @@ export default function memberRoutes(app: FastifyInstance, deps: Deps): void {
     return { removed: true as const };
   });
 
-  registerRoute(app, setPublisher, async ({ scope, params, body }) => {
+  registerRoute(app, setPublisher, async ({ scope, params, body, fail }) => {
     scope.requireRecentAuth();
     const result = await members.setPublisher(db(), scope, params.userId, body.granted);
-    if (!result.ok) return result.reason === 'not_found' ? notFound() : refuse(409, 'owner');
+    if (!result.ok)
+      return result.reason === 'not_found' ? notFound() : fail(409, { error: 'owner' });
     return { userId: params.userId, publisher: body.granted };
   });
 
@@ -106,10 +113,13 @@ export default function memberRoutes(app: FastifyInstance, deps: Deps): void {
   registerRoute(
     app,
     joinClass,
-    async ({ scope, body }) => {
+    async ({ scope, body, fail }) => {
       const result = await invites.joinWithCode(db(), scope, body.code, now());
-      if (!result.ok) return refuse(inviteStatus[result.reason], result.reason);
-      return { ...result.joined, role: result.role };
+      if (result.ok) return { ...result.joined, role: result.role };
+      const status = inviteStatus[result.reason];
+      // An enrolment code names no account, so it is never another account's.
+      if (status === 403) throw new Error('an enrolment code refused as another account’s');
+      return fail(status, { error: result.reason });
     },
     joinLimit,
   );
@@ -117,9 +127,9 @@ export default function memberRoutes(app: FastifyInstance, deps: Deps): void {
   registerRoute(
     app,
     acceptInvitation,
-    async ({ scope, body }) => {
+    async ({ scope, body, fail }) => {
       const result = await invites.acceptInstructorInvite(db(), scope, body.token, now());
-      if (!result.ok) return refuse(inviteStatus[result.reason], result.reason);
+      if (!result.ok) return fail(inviteStatus[result.reason], { error: result.reason });
       return { ...result.joined, role: result.role };
     },
     joinLimit,

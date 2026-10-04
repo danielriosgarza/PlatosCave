@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { defineRoute } from '../define';
+import { defineRoute, errorBody, invalidBody } from '../define';
 
 /** Authoring support around drafts: uploads, processing status and the course overview (§12). */
 
@@ -44,6 +44,7 @@ export const uploadCourseFile = defineRoute({
   summary: 'Store a reading or notebook file in the course’s content-addressed storage',
   params: courseParams,
   response: uploadedFile,
+  errors: { 400: invalidBody, 413: errorBody },
   examples: { params: { courseId: exampleCourseId } },
 });
 
@@ -82,6 +83,7 @@ export const retryProcessing = defineRoute({
   summary: 'Queue processing of a reading’s or PDF deck’s head revision again',
   params: courseParams.extend({ resourceId: z.uuid() }),
   response: processingEntry,
+  errors: { 409: z.object({ error: z.literal('not_retryable'), message: z.string() }) },
   examples: { params: { courseId: exampleCourseId, resourceId: exampleResourceId } },
 });
 

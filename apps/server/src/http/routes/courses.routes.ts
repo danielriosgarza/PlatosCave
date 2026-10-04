@@ -2,7 +2,7 @@ import { createCourse, listCourses } from '@parallax/contracts/routes/courses';
 import type { FastifyInstance } from 'fastify';
 import type { Deps } from '../../app';
 import { createCourseFor, listCourseCards } from '../../db/catalog';
-import { refuse, registerRoute } from '../register';
+import { registerRoute } from '../register';
 
 export default function courseRoutes(app: FastifyInstance, deps: Deps): void {
   const db = () => {
@@ -14,9 +14,9 @@ export default function courseRoutes(app: FastifyInstance, deps: Deps): void {
     listCourseCards(db(), scope, app.resolverDeps.now()),
   );
 
-  registerRoute(app, createCourse, async ({ scope, body }) => {
+  registerRoute(app, createCourse, async ({ scope, body, fail }) => {
     const created = await createCourseFor(db(), scope, body.title);
-    if (created === 'not_instructor') return refuse(403, 'not_instructor');
+    if (created === 'not_instructor') return fail(403, { error: 'not_instructor' });
     return created;
   });
 }
