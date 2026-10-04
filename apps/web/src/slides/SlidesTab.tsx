@@ -1,3 +1,4 @@
+import { useQueryClient } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
 import { useCallback, useEffect, useRef } from 'react';
 import { ApiError } from '../api/client';
@@ -5,6 +6,11 @@ import buttons from '../components/Buttons.module.css';
 import { Loading } from '../components/Loading';
 import page from '../components/Page.module.css';
 import { RetryNotice } from '../components/RetryNotice';
+import {
+  isArchivedRefusal,
+  markPositionsRefused,
+  positionsRefused,
+} from '../reading/positionRefusal';
 import { SourceDownload } from '../reading/SourceDownload';
 import { useReporter } from '../reading/useReporter';
 import { useSession } from '../session/useSession';
@@ -130,15 +136,26 @@ function DeckView({ classId, topicId, deck }: ViewProps) {
   const { revisionId } = deck;
   const content = useDeckContent(classId, revisionId);
   const save = useSaveSlide(classId, topicId);
+  const queryClient = useQueryClient();
   const lastSaved = useRef(deck.position && 'page' in deck.position ? deck.position.page : 0);
   const saving = useRef(false);
   const next = useRef<number | null>(null);
 
   const send = useCallback(
     function send(slide: number) {
+      // An archived class refused a save and takes no more for the life of the page.
+      if (positionsRefused(queryClient, classId)) {
+        next.current = null;
+        return;
+      }
       saving.current = true;
       save(revisionId, slide)
-        .catch(() => {
+        .catch((error: unknown) => {
+          if (isArchivedRefusal(error)) {
+            markPositionsRefused(queryClient, classId);
+            next.current = null;
+            return;
+          }
           // Retried by the next move unless a newer slide is already waiting; nothing here
           // claims it was kept.
           if (next.current === null) lastSaved.current = 0;
@@ -150,7 +167,7 @@ function DeckView({ classId, topicId, deck }: ViewProps) {
           if (waiting !== null) send(waiting);
         });
     },
-    [save, revisionId],
+    [save, revisionId, queryClient, classId],
   );
 
   /** One save at a time, so an older PUT cannot land after a newer one. */

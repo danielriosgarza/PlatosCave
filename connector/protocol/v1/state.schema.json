@@ -387,7 +387,8 @@
         "pid": {
           "type": "integer",
           "minimum": 1,
-          "maximum": 4194304
+          "maximum": 4294967295,
+          "description": "The process id of `run`. Windows process ids are 32-bit values, so the bound is wider than a Linux pid."
         },
         "startedAt": {
           "$ref": "#/$defs/timestamp"

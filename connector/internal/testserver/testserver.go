@@ -1,6 +1,7 @@
 // Package testserver is an httptest server implementing the three pairing endpoints of
-// docs/design/connector.md §3 with the real signature checks, for the connector's tests and
-// those of later items. It holds its state in memory; nothing about it is used by the binary.
+// docs/design/connector.md §3 and the server side of the link handshake of §4.2 (link.go) with
+// the real signature checks, for the connector's tests and those of later items. It holds its
+// state in memory; nothing about it is used by the binary.
 package testserver
 
 import (
@@ -55,6 +56,7 @@ type Connector struct {
 // Server is the fake. Set its exported fields before the first request.
 type Server struct {
 	*httptest.Server
+	linkState
 
 	// Origin is the normalised origin that signatures must name.
 	Origin string
@@ -173,6 +175,7 @@ func (s *Server) handler() http.Handler {
 	mux.HandleFunc("POST "+pairing.PairPath, s.pair)
 	mux.HandleFunc("POST "+pairing.PollPath, s.poll)
 	mux.HandleFunc("POST "+pairing.UnpairPath, s.unpair)
+	mux.HandleFunc("GET "+LinkPath, s.link)
 	mux.HandleFunc("GET /api/health", func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 	})
@@ -189,6 +192,9 @@ type statusRecorder struct {
 	http.ResponseWriter
 	status int
 }
+
+// Unwrap lets the WebSocket upgrade reach the connection underneath.
+func (r *statusRecorder) Unwrap() http.ResponseWriter { return r.ResponseWriter }
 
 func (r *statusRecorder) WriteHeader(code int) {
 	r.status = code

@@ -1,0 +1,129 @@
+name: connector-release
+
+# Builds the parallax-connector binaries (docs/design/connector.md §13). A tag connector-v<version>
+# publishes them, unsigned, with a SHA256SUMS file as a GitHub release. A pull request that changes
+# this file, and workflow_dispatch with dry_run (the default), build and check everything but
+# publish nothing.
+
+on:
+  push:
+    tags:
+      - connector-v*
+  pull_request:
+    paths:
+      - .github/workflows/connector-release.yml
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Build and checksum only; publish nothing
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: connector-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      publish: ${{ steps.version.outputs.publish }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: connector/go.mod
+          cache-dependency-path: connector/go.sum
+      - name: Version
+        id: version
+        env:
+          DRY_RUN: ${{ github.event_name != 'workflow_dispatch' || inputs.dry_run }}
+        run: |
+          if [ "$GITHUB_REF_TYPE" = tag ]; then
+            version="${GITHUB_REF_NAME#connector-v}"
+            publish=true
+            if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ] && [ "$DRY_RUN" = true ]; then publish=false; fi
+          else
+            version="0.0.0-dryrun.${GITHUB_SHA:0:12}"
+            publish=false
+          fi
+          # hello.version in link.schema.json: semver, at most 32 characters.
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || [ "${#version}" -gt 32 ]; then
+            echo "::error::version '$version' is not a semantic version of at most 32 characters"
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "publish=$publish" >> "$GITHUB_OUTPUT"
+      - name: Test
+        working-directory: connector
+        run: |
+          test -z "$(gofmt -l .)"
+          go vet ./...
+          go test ./...
+      - name: Build
+        working-directory: connector
+        env:
+          CGO_ENABLED: '0'
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          mkdir -p dist
+          ldflags="-s -w -X parallax/connector/internal/version.Version=$VERSION -X parallax/connector/internal/version.Commit=$GITHUB_SHA"
+          for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do
+            os="${target%/*}" arch="${target#*/}" ext=""
+            if [ "$os" = windows ]; then ext=".exe"; fi
+            GOOS="$os" GOARCH="$arch" go build -trimpath -ldflags "$ldflags" \
+              -o "dist/parallax-connector_${VERSION}_${os}_${arch}${ext}" ./cmd/parallax-connector
+          done
+      - name: Check the stamped version
+        working-directory: connector/dist
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          got="$(./parallax-connector_${VERSION}_linux_amd64 version)"
+          want="parallax-connector $VERSION (commit $GITHUB_SHA, linux/amd64)"
+          if [ "$got" != "$want" ]; then
+            echo "::error::version prints '$got', want '$want'"
+            exit 1
+          fi
+      - name: Checksums
+        working-directory: connector/dist
+        run: |
+          sha256sum parallax-connector_* > SHA256SUMS
+          sha256sum --check --strict SHA256SUMS
+          test "$(wc -l < SHA256SUMS)" -eq 5
+          cat SHA256SUMS
+      - uses: actions/upload-artifact@v4
+        with:
+          name: parallax-connector-${{ steps.version.outputs.version }}
+          path: connector/dist/*
+          if-no-files-found: error
+          retention-days: ${{ steps.version.outputs.publish == 'true' && 30 || 3 }}
+
+  publish:
+    needs: build
+    if: needs.build.outputs.publish == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: parallax-connector-${{ needs.build.outputs.version }}
+          path: dist
+      - name: Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.build.outputs.version }}
+        run: |
+          cd dist
+          sha256sum --check --strict SHA256SUMS
+          gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --verify-tag \
+            --title "parallax-connector $VERSION" \
+            --notes "Unsigned binaries of parallax-connector $VERSION (commit $GITHUB_SHA). Check them against SHA256SUMS. On macOS, a binary downloaded by a browser needs: xattr -d com.apple.quarantine <file>." \
+            parallax-connector_* SHA256SUMS

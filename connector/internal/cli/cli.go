@@ -1,5 +1,5 @@
-// Package cli is the parallax-connector command line: pair, status, unpair, doctor and version
-// (docs/design/connector.md §3, §13). `run` arrives with the link (P3-03a).
+// Package cli is the parallax-connector command line: pair, run, status, unpair, doctor and
+// version (docs/design/connector.md §3, §4, §13).
 package cli
 
 import (
@@ -48,6 +48,10 @@ type Env struct {
 	Sleep      pairing.Sleeper
 	// Doctor builds the doctor's environment for a state directory.
 	Doctor func(store *state.Store, storeErr error) doctor.Env
+	// Getenv, ReadFile and Stat let `run` describe this computer in hello; nil means unknown.
+	Getenv   func(string) string
+	ReadFile func(string) ([]byte, error)
+	Stat     func(string) (fs.FileInfo, error)
 }
 
 // DefaultEnv is the real process.
@@ -69,6 +73,9 @@ func DefaultEnv() Env {
 			env.Store, env.StoreErr = store, storeErr
 			return env
 		},
+		Getenv:   os.Getenv,
+		ReadFile: os.ReadFile,
+		Stat:     os.Stat,
 	}
 }
 
@@ -77,6 +84,8 @@ const usage = `Usage: parallax-connector <command> [flags]
 Commands:
   pair --server URL --code XXXX-XXXX [--name NAME] [--force]
                     pair this computer with your Parallax account
+  run [--allow-net CIDR]... [--state-dir DIR]
+                    connect this computer to Parallax and keep it connected
   status [--json]   show whether this computer is paired, and with which server
   unpair [--yes]    revoke this computer in Parallax and delete its identity
   doctor [--json]   check what the connector needs on this computer
@@ -99,6 +108,8 @@ func Main(ctx context.Context, args []string, env Env) int {
 	switch args[0] {
 	case "pair":
 		err = pair(ctx, args[1:], env)
+	case "run":
+		err = run(ctx, args[1:], env)
 	case "status":
 		err = status(args[1:], env)
 	case "unpair":
@@ -155,12 +166,22 @@ func openStore(env Env) (*state.Store, error) {
 	return state.Open(dir), nil
 }
 
+// lockStore takes run.lock for a command that changes the state directory. runtime.json is
+// written by `run` only while it holds the lock, so one found by a new holder is stale and goes;
+// `status` therefore reads a held lock with runtime.json as a running connector.
 func lockStore(s *state.Store) (*state.Lock, error) {
 	lock, err := s.Lock()
 	if errors.Is(err, state.ErrLocked) {
 		return nil, fmt.Errorf("another parallax-connector process (perhaps `run`) is using %s; stop it first", s.Dir)
 	}
-	return lock, err
+	if err != nil {
+		return nil, err
+	}
+	if err := s.Remove(state.RuntimeFile); err != nil {
+		lock.Release()
+		return nil, err
+	}
+	return lock, nil
 }
 
 func pair(ctx context.Context, args []string, env Env) error {
@@ -298,6 +319,7 @@ type statusReport struct {
 	Mode        string `json:"mode,omitempty"`
 	Fingerprint string `json:"fingerprint,omitempty"`
 	Running     bool   `json:"running"`
+	Busy        bool   `json:"busy,omitempty"`
 	Link        string `json:"link,omitempty"`
 	LinkSince   string `json:"linkSince,omitempty"`
 	LastError   string `json:"lastError,omitempty"`
@@ -332,16 +354,20 @@ func status(args []string, env Env) error {
 		}
 		rep.Fingerprint = id.Fingerprint()
 	}
-	// `run` holds run.lock while alive, so a lock we can take means runtime.json is stale. Only
-	// an existing run.lock is tried, so status never creates anything.
+	// `run` holds run.lock while alive and keeps runtime.json only then; `pair` and `unpair` take
+	// the lock too but remove runtime.json. So a held lock with runtime.json is a running
+	// connector, a held lock without it is another command, and a lock we can take means any
+	// runtime.json is stale. Only an existing run.lock is tried, so status never creates anything.
 	if ok, _ := store.Exists(state.LockFile); ok {
 		lock, err := store.Lock()
 		switch {
 		case errors.Is(err, state.ErrLocked):
-			rep.Running = true
 			if rt, err := store.ReadRuntime(); err == nil {
 				n := rt.Sessions
+				rep.Running = true
 				rep.Link, rep.LinkSince, rep.LastError, rep.Sessions = rt.Link, rt.Since, rt.LastError, &n
+			} else {
+				rep.Busy = true
 			}
 		case err == nil:
 			lock.Release()
@@ -365,10 +391,10 @@ func status(args []string, env Env) error {
 	fmt.Fprintf(out, "Paired at:    %s\n", rep.PairedAt)
 	fmt.Fprintf(out, "State:        %s\n", rep.StateDir)
 	switch {
+	case rep.Busy:
+		fmt.Fprintln(out, "Not running; another parallax-connector command (pair or unpair) is using the state directory.")
 	case !rep.Running:
 		fmt.Fprintln(out, "Not running. Start it with: parallax-connector run")
-	case rep.Link == "":
-		fmt.Fprintln(out, "Running; link state not reported yet.")
 	default:
 		fmt.Fprintf(out, "Running. Link %s since %s; %d session(s).\n", rep.Link, rep.LinkSince, *rep.Sessions)
 		if rep.LastError != "" {
@@ -458,11 +484,10 @@ func unpair(ctx context.Context, args []string, env Env) error {
 		fmt.Fprintf(out, "The server could not be told because config.json is unusable. %s\n", revokeHint)
 	}
 
+	// run.lock stays: deleting it would let a process that opened the old file lock an unlinked
+	// copy while another creates a new one, and two holders could then use the directory.
 	removeErr := store.Remove(state.IdentityFile, state.ConfigFile, state.SessionsFile, state.RuntimeFile, state.KnownHostsFile)
 	lockErr := lock.Release()
-	if removeErr == nil {
-		removeErr = store.Remove(state.LockFile)
-	}
 	if err := errors.Join(removeErr, lockErr); err != nil {
 		return fmt.Errorf("could not delete the local state in %s: %w", store.Dir, err)
 	}

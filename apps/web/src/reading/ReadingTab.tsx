@@ -13,6 +13,7 @@ import { ReadingMargin } from './margin/ReadingMargin';
 import { NativeReading } from './NativeReading';
 import { PdfReading } from './PdfReading';
 import { positionFromSearch, type ReadingSearch, searchFor } from './place';
+import { isArchivedRefusal, markPositionsRefused, positionsRefused } from './positionRefusal';
 import styles from './Reading.module.css';
 import {
   type ReadingPosition,
@@ -235,7 +236,8 @@ function ReadingView({
   const send = useCallback(
     function send(place: ReadingPosition) {
       // Once access ended nothing more is written for the class (§14), whatever was pending.
-      if (isRevoked(queryClient, classId)) {
+      // An archived class refused a save and takes no more for the life of the page.
+      if (isRevoked(queryClient, classId) || positionsRefused(queryClient, classId)) {
         next.current = null;
         unsaved.current = null;
         return;
@@ -244,7 +246,13 @@ function ReadingView({
       unsaved.current = null;
       const sequence = ++sends.current;
       save(revisionId, place)
-        .catch(() => {
+        .catch((error: unknown) => {
+          if (isArchivedRefusal(error)) {
+            markPositionsRefused(queryClient, classId);
+            next.current = null;
+            unsaved.current = null;
+            return;
+          }
           // Retried by the next move or when the connection returns, unless a newer place is
           // already waiting or was sent meanwhile (it would be overwritten by this older one).
           if (!next.current && sequence === sends.current) {

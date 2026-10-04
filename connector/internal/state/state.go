@@ -298,7 +298,7 @@ func (r Runtime) Validate() error {
 	switch {
 	case r.V != 1:
 		return fmt.Errorf("runtime.json: v must be 1, got %d", r.V)
-	case r.PID < 1 || r.PID > 4194304:
+	case r.PID < 1 || int64(r.PID) > 4294967295: // Windows process ids are 32-bit
 		return fmt.Errorf("runtime.json: pid %d out of range", r.PID)
 	case !timestampPattern.MatchString(r.StartedAt) || !timestampPattern.MatchString(r.Since):
 		return errors.New("runtime.json: startedAt and since must be RFC 3339 UTC times")
