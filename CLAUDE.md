@@ -42,7 +42,7 @@ Available once Phase 0 (P0-01…P0-03) has merged; Phase 0 items keep this list 
 
 - Cloud sessions have **no Docker daemon**. Use `pnpm db:local` for Postgres. Docker-only suites skip locally and run in CI.
 - Playwright is pinned to 1.56.1 to match the pre-installed Chromium (`PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers`). Never run `playwright install` in a session.
-- The repository is private and GitHub Actions minutes are metered: run checks locally before pushing, and don't add CI jobs without need.
+- The repository is public, so anything committed (code, issues, PRs, commit metadata) is visible to everyone. Never commit secrets, real credentials or personal data. Still run checks locally before pushing.
 
 ## Rules that are easy to break
 
