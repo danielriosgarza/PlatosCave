@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { defineRoute } from '../define';
+import { exampleIds } from '../examples';
 
 /** A content-addressed storage key, `courses/{courseId}/objects/{sha256}` (ADR-0003). */
 const ObjectKey = z.string().regex(/^courses\/[0-9a-f-]{36}\/objects\/[0-9a-f]{64}$/);
@@ -15,9 +16,9 @@ export const getObjectUrl = defineRoute({
   response: z.object({ url: z.url(), expiresAt: z.iso.datetime() }),
   examples: {
     params: {
-      classId: '00000000-0000-4000-8000-000000000000',
-      revisionId: '00000000-0000-4000-8000-000000000000',
-      key: `courses/00000000-0000-4000-8000-000000000000/objects/${'0'.repeat(64)}`,
+      classId: exampleIds.zero,
+      revisionId: exampleIds.zero,
+      key: `courses/${exampleIds.zero}/objects/${'0'.repeat(64)}`,
     },
     query: {},
   },

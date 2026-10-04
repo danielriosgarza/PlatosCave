@@ -1,13 +1,12 @@
 import { getClassTopics } from '@parallax/contracts/routes/topics';
 import type { FastifyInstance } from 'fastify';
+import type { RouteDeps } from '../../app';
 import { loadClassTopics } from '../../db/classTopics';
 import { registerRoute } from '../register';
 
-export default function topicRoutes(app: FastifyInstance): void {
+export default function topicRoutes(app: FastifyInstance, deps: RouteDeps): void {
   registerRoute(app, getClassTopics, async ({ scope }) => {
-    const { db, now } = app.resolverDeps;
-    if (!db) throw app.httpErrors.serviceUnavailable();
-    const view = await loadClassTopics(db, scope, now());
+    const view = await loadClassTopics(deps.requireDb(), scope, deps.now());
     return {
       release: view.release,
       course: { id: scope.courseId, title: scope.courseTitle },

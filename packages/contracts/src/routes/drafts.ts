@@ -1,12 +1,13 @@
 import { z } from 'zod';
 import { conflictBody, defineRoute, invalidBody } from '../define';
+import { exampleIds } from '../examples';
 import { resourceTypes } from '../resources';
 
 /** Draft editing for a course (§12, ADR-0003). Class routes never read these rows (A26). */
 
-const exampleCourseId = '00000000-0000-4000-8000-000000000000';
-const exampleTopicId = '00000000-0000-4000-8000-0000000000aa';
-const exampleResourceId = '00000000-0000-4000-8000-0000000000bb';
+const exampleCourseId = exampleIds.zero;
+const exampleTopicId = exampleIds.aa;
+const exampleResourceId = exampleIds.bb;
 
 export { resourceTypes };
 

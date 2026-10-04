@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { classArchived, defineRoute, errorBody, invalidBody } from '../define';
+import { exampleIds } from '../examples';
 
 /**
  * The Colab route and notebook submissions (§10.1, §10.5, §10.7). Opening Colab is an explicit
@@ -14,9 +15,9 @@ export const COLAB_URL = 'https://colab.research.google.com/';
 /** Largest notebook a submission accepts, with its saved outputs. */
 export const MAX_SUBMISSION_BYTES = 25 * 1024 * 1024;
 
-const exampleClass = '00000000-0000-4000-8000-000000000000';
-const exampleResource = '00000000-0000-4000-8000-0000000000bb';
-const exampleSubmission = '00000000-0000-4000-8000-0000000000ee';
+const exampleClass = exampleIds.zero;
+const exampleResource = exampleIds.bb;
+const exampleSubmission = exampleIds.ee;
 
 const timestamp = z.iso.datetime({ offset: true });
 const resourceParams = z.object({ classId: z.uuid(), resourceId: z.uuid() });

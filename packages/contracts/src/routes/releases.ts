@@ -1,12 +1,13 @@
 import { z } from 'zod';
 import { classArchived, defineRoute } from '../define';
+import { exampleIds } from '../examples';
 import { exerciseCredit } from '../exercise';
 
 const courseParams = z.object({ courseId: z.uuid() });
 const classParams = z.object({ classId: z.uuid() });
-const exampleCourse = { courseId: '00000000-0000-4000-8000-000000000000' };
-const exampleClass = { classId: '00000000-0000-4000-8000-000000000000' };
-const exampleRelease = '00000000-0000-4000-8000-000000000000';
+const exampleCourse = { courseId: exampleIds.zero };
+const exampleClass = { classId: exampleIds.zero };
+const exampleRelease = exampleIds.zero;
 
 const tab = z.enum(['slides', 'reading', 'exercises', 'notebooks', 'tests']);
 const resourceType = z.enum([

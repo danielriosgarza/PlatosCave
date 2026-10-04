@@ -4,7 +4,11 @@ export type Scope =
   | { kind: 'public' }
   | { kind: 'user' }
   | { kind: 'system' }
-  | { kind: 'class'; role: 'student' | 'instructor' | 'any'; grant?: 'manage_members' }
+  | {
+      kind: 'class';
+      role: 'student' | 'instructor' | 'any';
+      grant?: 'manage_members';
+    }
   | { kind: 'course'; role: 'editor' | 'publisher' | 'owner' };
 
 /** The runtime check of a declared scope, for declarations loaded from modules (jobs). */
@@ -17,7 +21,10 @@ export const Scope: z.ZodType<Scope> = z.discriminatedUnion('kind', [
     role: z.enum(['student', 'instructor', 'any']),
     grant: z.literal('manage_members').optional(),
   }),
-  z.strictObject({ kind: z.literal('course'), role: z.enum(['editor', 'publisher', 'owner']) }),
+  z.strictObject({
+    kind: z.literal('course'),
+    role: z.enum(['editor', 'publisher', 'owner']),
+  }),
 ]);
 
 export type Method = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
@@ -79,9 +86,6 @@ export function defineRoute<
   return c;
 }
 
-export type ResponseOf<C> =
-  C extends RouteContract<Part, Part, Part, infer R> ? z.output<R> : never;
-
 /**
  * The one error body: `error` is a short, non-identifying code. Refusals raised by Fastify or a
  * plugin (schema validation, a stale sign-in, an unavailable database, a rate limit) also carry
@@ -99,7 +103,10 @@ export const errorBody = z.object({
 export const classArchived = z.object({ error: z.literal('class_archived') });
 
 /** 400 for a request the service refused as written, with the sentence to show (`Outcome`). */
-export const invalidBody = z.object({ error: z.literal('invalid'), message: z.string() });
+export const invalidBody = z.object({
+  error: z.literal('invalid'),
+  message: z.string(),
+});
 
 /**
  * Every error status a route can answer, with its body: those its scope and parts imply, and
@@ -118,7 +125,9 @@ export function errorResponses(contract: RouteContract): Partial<Record<number, 
     (scope.kind === 'class' && (scope.role !== 'any' || scope.grant !== undefined)) ||
     scope.kind === 'course';
   const implied: Partial<Record<number, z.ZodType>> = {
-    ...((contract.params || contract.query || contract.body) && { 400: errorBody }),
+    ...((contract.params || contract.query || contract.body) && {
+      400: errorBody,
+    }),
     ...(scope.kind !== 'public' && { 401: errorBody }),
     ...(forbids && { 403: errorBody }),
     404: errorBody,
@@ -140,15 +149,3 @@ export function errorResponses(contract: RouteContract): Partial<Record<number, 
  */
 export const conflictBody = <T extends z.ZodType>(current: T) =>
   z.object({ error: z.literal('revision_conflict'), current });
-
-/** The body of a status the contract declares in `errors`. */
-export type ErrorOf<C, S extends ErrorStatus> =
-  C extends RouteContract<Part, Part, Part, z.ZodType, Scope, infer E>
-    ? E extends Errors
-      ? E[S] extends z.ZodType
-        ? z.output<E[S]>
-        : never
-      : never
-    : never;
-
-export type ConflictOf<C> = ErrorOf<C, 409>;

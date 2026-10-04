@@ -454,6 +454,47 @@ describe('study positions', () => {
     expect((await bad({ blockId: nativeBlock, offset: 0 }, rev.native, 'slides')).status).toBe(400);
   });
 
+  test('A03 a stored position outside the contract bounds is not served, as the contract refuses it', async () => {
+    const stored = (position: Record<string, unknown>) =>
+      testDb.db
+        .insert(studyPositions)
+        .values({
+          userId: ids.sam,
+          classId: ids.classA,
+          resourceRevisionId: rev.native,
+          tab: 'reading',
+          position,
+          updatedAt: now,
+        })
+        .onConflictDoUpdate({
+          target: [
+            studyPositions.userId,
+            studyPositions.classId,
+            studyPositions.resourceRevisionId,
+          ],
+          set: { position },
+        });
+    try {
+      for (const position of [
+        { blockId: nativeBlock, offset: 1.5 },
+        { blockId: nativeBlock, offset: -1 },
+        { blockId: nativeBlock, offset: 1_000_001 },
+      ]) {
+        await stored(position);
+        const { body } = await list('sam', ids.classA, ids.sampling);
+        expect(body.readings[0]?.position).toBeNull();
+        expect(
+          (await save('sam', ids.classA, { revisionId: rev.native, tab: 'reading', position }))
+            .status,
+        ).toBe(400);
+      }
+    } finally {
+      await testDb.db
+        .delete(studyPositions)
+        .where(and(eq(studyPositions.userId, ids.sam), eq(studyPositions.classId, ids.classA)));
+    }
+  });
+
   test('A01 a position cannot be saved for a hidden, foreign or unknown resource', async () => {
     const at = (revisionId: string, who: PersonName = 'sam', classId: string = ids.classA) =>
       save(who, classId, {

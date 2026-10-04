@@ -1,7 +1,8 @@
 import { z } from 'zod';
 import { classArchived, defineRoute, errorBody } from '../define';
+import { exampleIds } from '../examples';
 
-const zero = '00000000-0000-4000-8000-000000000000';
+const zero = exampleIds.zero;
 const classParams = z.object({ classId: z.uuid() });
 const memberParams = z.object({ classId: z.uuid(), userId: z.uuid() });
 const datetime = z.iso.datetime({ offset: true });

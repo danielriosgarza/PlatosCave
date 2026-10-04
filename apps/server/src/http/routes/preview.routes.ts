@@ -47,10 +47,7 @@ export default function previewRoutes(app: FastifyInstance, deps: RouteDeps): vo
   const { config } = deps;
   const origin = config.APP_ORIGIN;
   const sessionCookie = sessionCookieOptions(origin);
-  const db = () => {
-    if (!deps.db) throw app.httpErrors.serviceUnavailable();
-    return deps.db;
-  };
+  const db = deps.requireDb;
 
   registerRoute(app, startPreview, async ({ scope, body, req, reply }) => {
     const own = readSessionToken(req);

@@ -7,7 +7,7 @@ import {
   validateDrafts,
 } from '@parallax/contracts/routes/releases';
 import type { FastifyInstance } from 'fastify';
-import type { Deps } from '../../app';
+import type { RouteDeps } from '../../app';
 import * as adoption from '../../db/content/adoption';
 import * as releases from '../../db/content/releases';
 import { enqueueAnnotationsMap } from '../../jobs/annotations-map.job';
@@ -15,11 +15,8 @@ import { notFound, registerRoute } from '../register';
 
 const iso = (d: Date) => d.toISOString();
 
-export default function releaseRoutes(app: FastifyInstance, deps: Deps): void {
-  const db = () => {
-    if (!deps.db) throw app.httpErrors.serviceUnavailable();
-    return deps.db;
-  };
+export default function releaseRoutes(app: FastifyInstance, deps: RouteDeps): void {
+  const db = deps.requireDb;
 
   registerRoute(app, validateDrafts, ({ scope }) => releases.validateDrafts(db(), scope));
 

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { conflictBody, defineRoute, invalidBody } from '../define';
+import { exampleIds } from '../examples';
 import { exerciseCredit, exerciseStepView } from '../exercise';
 import { classArchived } from './annotations';
 
@@ -10,9 +11,9 @@ import { classArchived } from './annotations';
  * restarts) are append-only: hiding a hint or starting again never erases them (A23).
  */
 
-const exampleClass = '00000000-0000-4000-8000-000000000000';
-const exampleResource = '00000000-0000-4000-8000-0000000000bb';
-const exampleAttempt = '00000000-0000-4000-8000-0000000000dd';
+const exampleClass = exampleIds.zero;
+const exampleResource = exampleIds.bb;
+const exampleAttempt = exampleIds.dd;
 
 const timestamp = z.iso.datetime({ offset: true });
 /** How a step or an exercise was completed; never collapsed into a percentage (§9). */

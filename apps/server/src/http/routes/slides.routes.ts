@@ -6,11 +6,7 @@ import { listTopicDecks, loadDeck } from '../../db/slides';
 import { notFound, registerRoute } from '../register';
 
 export default function slideRoutes(app: FastifyInstance, routeDeps: RouteDeps): void {
-  const deps = () => {
-    const { db, now } = app.resolverDeps;
-    if (!db) throw app.httpErrors.serviceUnavailable();
-    return { db, at: now() };
-  };
+  const deps = () => ({ db: routeDeps.requireDb(), at: routeDeps.now() });
 
   registerRoute(app, listSlides, async ({ params, scope }) => {
     const { db, at } = deps();

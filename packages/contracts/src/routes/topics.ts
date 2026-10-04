@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { defineRoute } from '../define';
+import { exampleIds } from '../examples';
 
 export const topicTab = z.enum(['slides', 'reading', 'exercises', 'notebooks', 'tests']);
 
@@ -58,5 +59,5 @@ export const getClassTopics = defineRoute({
     /** Topics the caller has completed, of all topics; never a grade (§4). */
     reviewed: z.object({ count: z.number().int(), total: z.number().int() }),
   }),
-  examples: { params: { classId: '00000000-0000-4000-8000-000000000000' } },
+  examples: { params: { classId: exampleIds.zero } },
 });

@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { defineRoute } from '../define';
+import { exampleIds } from '../examples';
 
 export const getClass = defineRoute({
   method: 'GET',
@@ -17,5 +18,5 @@ export const getClass = defineRoute({
     role: z.enum(['student', 'instructor']),
     grants: z.object({ manageMembers: z.boolean() }),
   }),
-  examples: { params: { classId: '00000000-0000-4000-8000-000000000000' } },
+  examples: { params: { classId: exampleIds.zero } },
 });
