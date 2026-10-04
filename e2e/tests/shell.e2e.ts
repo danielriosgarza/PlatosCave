@@ -63,9 +63,11 @@ test('A02 signed-in / and the brand link land on courses', async ({ page }) => {
   await page.goto('/');
   await expect(page).toHaveURL(/\/courses/);
   await expect(page.getByRole('heading', { name: 'Your courses' })).toBeVisible();
-  await page.goto('/courses?view=student#top');
+  // The brand link must move the page: start on another path.
+  await page.goto('/signin');
+  await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible();
   await page.getByRole('link', { name: 'Parallax' }).click();
-  await expect(page).toHaveURL(/\/courses/);
+  await expect(page).toHaveURL(/\/courses$/);
   await expect(page.getByRole('heading', { name: 'Your courses' })).toBeVisible();
 });
 
