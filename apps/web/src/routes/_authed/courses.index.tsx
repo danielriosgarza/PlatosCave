@@ -467,9 +467,7 @@ function InstructorCards({
                   {c.archived ? 'Archived · ' : ''}
                   {c.studentCount ?? 0} {c.studentCount === 1 ? 'student' : 'students'}
                 </span>
-                <Link to="/classes/$classId/review" params={{ classId: c.classId }}>
-                  Class review
-                </Link>
+                {/* No Class review link until the review table exists (P4-02). */}
               </div>
             </li>
           ))}
@@ -478,7 +476,7 @@ function InstructorCards({
       {visibleCourses.length > 0 ? (
         <>
           <h2 className={styles.sectionHeading}>Courses</h2>
-          <ul className={`${styles.grid} ${page.mt20}`} aria-label="Courses you hold">
+          <ul className={`${styles.grid} ${styles.gridSpaced}`} aria-label="Courses you hold">
             {visibleCourses.map((c) => {
               const body = (
                 <>

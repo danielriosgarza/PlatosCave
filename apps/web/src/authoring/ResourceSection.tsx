@@ -77,7 +77,7 @@ export function ResourceSection({ courseId, topicId, resources }: Props) {
 
   return (
     <div>
-      <h2 className={`${styles.subheading} ${styles.mt40}`}>Resources</h2>
+      <h2 className={`${styles.sectionTitle} ${styles.mt40}`}>Resources</h2>
       {tabs.map((tab) => {
         const here = resources.filter((r) => (tab.types as readonly Type[]).includes(r.type));
         return (

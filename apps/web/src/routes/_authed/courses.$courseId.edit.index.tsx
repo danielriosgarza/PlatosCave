@@ -111,7 +111,7 @@ function CourseDraft({
       </p>
       <div className={styles.editGrid}>
         <div>
-          <h2 className={styles.subheading}>Topics</h2>
+          <h2 className={styles.sectionTitle}>Topics</h2>
           {drafts.isError ? (
             <RetryNotice
               message="The topics could not be loaded."

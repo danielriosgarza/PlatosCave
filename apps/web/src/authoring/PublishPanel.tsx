@@ -70,7 +70,7 @@ export function PublishPanel({ courseId, grant }: Props) {
 
   return (
     <aside className={styles.side} aria-label="Publication">
-      <h2 className={`${styles.subheading} ${styles.sectionHeading}`}>Publication</h2>
+      <h2 className={`${styles.sectionTitle} ${styles.sectionHeading}`}>Publication</h2>
       {overview.isError ? (
         <p role="alert">The classes of this course could not be loaded.</p>
       ) : overview.data ? (

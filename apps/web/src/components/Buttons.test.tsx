@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 afterEach(cleanup);
 
 const css = readFileSync(join(__dirname, 'Buttons.module.css'), 'utf8');
-const BUTTON_CLASS = /^\.(primary|outline|textButton|button|tool)\b/;
+const BUTTON_CLASS = /^\s*\.(primary|outline|textButton|button|tool)\b/;
 
 function sourceFiles(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {
