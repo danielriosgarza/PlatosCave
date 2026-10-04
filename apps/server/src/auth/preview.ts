@@ -1,9 +1,9 @@
 import type { CookieSerializeOptions } from '@fastify/cookie';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { revokeSession } from '../db/auth/sessions';
+import { revokeSession, SESSION_TTL_MS } from '../db/auth/sessions';
 import type { Executor } from '../db/client';
-import { SESSION_TTL_MS, TOKEN_SHAPE } from './sessions';
+import { TOKEN_SHAPE } from './tokens';
 
 /**
  * While a draft preview runs, the browser's session cookie holds the preview principal's
@@ -76,19 +76,4 @@ export function clearPreviewReturn(req: FastifyRequest, reply: FastifyReply, app
   if (req.cookies?.[PREVIEW_RETURN_COOKIE]) {
     reply.clearCookie(PREVIEW_RETURN_COOKIE, returnCookieOptions(appOrigin));
   }
-}
-
-/**
- * Sign-out and sign-in end the kept instructor session too: a browser that signs out during a
- * preview must not keep a live session in a cookie it cannot see.
- */
-export async function endPreviewReturn(
-  db: Executor | undefined,
-  req: FastifyRequest,
-  reply: FastifyReply,
-  appOrigin: string,
-  now: Date,
-): Promise<void> {
-  await revokePreviewReturn(db, req, now);
-  clearPreviewReturn(req, reply, appOrigin);
 }

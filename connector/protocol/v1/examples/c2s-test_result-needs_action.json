@@ -1,0 +1,76 @@
+{
+  "v": 1,
+  "t": "test_result",
+  "requestId": "c0ffee00-1111-4222-8333-444455556666",
+  "outcome": "needs_action",
+  "stages": [
+    {
+      "name": "reachability",
+      "status": "ok",
+      "data": {
+        "hop": "target",
+        "address": "203.0.113.7"
+      },
+      "ms": 41
+    },
+    {
+      "name": "host_identity",
+      "status": "needs_action",
+      "code": "host_key_unknown",
+      "data": {
+        "hop": "target",
+        "fingerprint": "SHA256:SGuN8fwGXFkUlKZT8ILLvpynWOsg9Y72LtxX1LmpqEM",
+        "algorithm": "ssh-ed25519"
+      },
+      "ms": 95
+    },
+    {
+      "name": "ssh_auth",
+      "status": "skipped",
+      "data": {
+        "reason": "blocked",
+        "blockedBy": "host_identity"
+      }
+    },
+    {
+      "name": "workspace",
+      "status": "skipped",
+      "data": {
+        "reason": "blocked",
+        "blockedBy": "host_identity"
+      }
+    },
+    {
+      "name": "forwarding",
+      "status": "skipped",
+      "data": {
+        "reason": "blocked",
+        "blockedBy": "host_identity"
+      }
+    },
+    {
+      "name": "runtime",
+      "status": "skipped",
+      "data": {
+        "reason": "blocked",
+        "blockedBy": "host_identity"
+      }
+    },
+    {
+      "name": "notebook_auth",
+      "status": "skipped",
+      "data": {
+        "reason": "blocked",
+        "blockedBy": "host_identity"
+      }
+    },
+    {
+      "name": "kernels",
+      "status": "skipped",
+      "data": {
+        "reason": "blocked",
+        "blockedBy": "host_identity"
+      }
+    }
+  ]
+}

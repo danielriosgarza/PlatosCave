@@ -4,7 +4,7 @@ import styles from './Reading.module.css';
 import { HOLD_MS, READER_INPUT } from './readerInput';
 import type { ReadingPosition } from './readings';
 import { SourceDownload } from './SourceDownload';
-import { inFullScreen, onScrollerScroll, scrollerOf } from './scroller';
+import { scrollerOf, useReaderScroll } from './scroller';
 
 interface Props {
   url: string;
@@ -34,7 +34,8 @@ type Load = { state: 'loading' } | { state: 'failed' } | { state: 'ready'; doc: 
 
 /**
  * A PDF reading drawn by pdf.js, one page at a time, fitted to the stage width with a text
- * layer. The place is the page and the share of its height above the window top, in thousandths.
+ * layer. The place is the page and the share of its height above the window top, in thousandths;
+ * none is recorded while the window top is above the page.
  */
 export function PdfReading({ url, pageCount, renew, initial, source, onPosition }: Props) {
   const [load, setLoad] = useState<Load>({ state: 'loading' });
@@ -140,6 +141,9 @@ export function PdfReading({ url, pageCount, renew, initial, source, onPosition 
     if (!el) return;
     const rect = el.getBoundingClientRect();
     const above = scrollerOf(el).origin - rect.top;
+    // The window top is above the page (the tab row or the page controls): not a place, so the
+    // last one stands.
+    if (above < -1) return;
     const through = rect.height > 0 ? Math.min(1, Math.max(0, above / rect.height)) : 0;
     share.current = Math.round(through * 1000);
     onPosition({ page, offset: share.current });
@@ -151,34 +155,27 @@ export function PdfReading({ url, pageCount, renew, initial, source, onPosition 
     const input = () => {
       moved.current = true;
     };
-    let full = inFullScreen(sheet.current);
-    const onScroll = () => {
-      // Entering or leaving full screen scrolls the old container first; that is not the reader.
-      if (inFullScreen(sheet.current) !== full) return;
+    for (const type of READER_INPUT) window.addEventListener(type, input, { passive: true });
+    return () => {
+      for (const type of READER_INPUT) window.removeEventListener(type, input);
+    };
+  }, []);
+  useReaderScroll(
+    () => sheet.current,
+    () => {
       const at = settledAt.current;
       // Not before the page is drawn and its place restored, and not in the moment after it.
       if (at === null) return;
       if (moved.current || performance.now() - at > HOLD_MS) place();
-    };
-    const onFullScreen = () => {
-      // Another element entering or leaving full screen does not move this reader.
-      if (inFullScreen(sheet.current) === full) return;
-      full = inFullScreen(sheet.current);
+    },
+    () => {
       if (settledAt.current === null) return;
       scrollToShare(share.current);
       // The stage width may change with full screen, so the page may be drawn again at a new
       // height; that draw applies the share the reader is at by then.
       reapply.current = true;
-    };
-    for (const type of READER_INPUT) window.addEventListener(type, input, { passive: true });
-    const stopScroll = onScrollerScroll(() => sheet.current, onScroll);
-    document.addEventListener('fullscreenchange', onFullScreen);
-    return () => {
-      for (const type of READER_INPUT) window.removeEventListener(type, input);
-      stopScroll();
-      document.removeEventListener('fullscreenchange', onFullScreen);
-    };
-  }, [place, scrollToShare]);
+    },
+  );
 
   const go = (next: number) => {
     const target = Math.min(Math.max(next, 1), pageCount);

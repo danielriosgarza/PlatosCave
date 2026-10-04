@@ -1,6 +1,7 @@
 import { basename } from 'node:path';
 import { finished, type Readable } from 'node:stream';
 import multipart from '@fastify/multipart';
+import { parseNotebook } from '@parallax/contracts';
 import {
   getCourseOverview,
   getProcessing,
@@ -11,10 +12,9 @@ import {
   uploadFormats,
 } from '@parallax/contracts/routes/authoring';
 import type { FastifyInstance } from 'fastify';
-import type { Deps } from '../../app';
+import type { RouteDeps } from '../../app';
 import { courseOverview } from '../../db/courseOverview';
-import { listResourceJobStatus } from '../../db/jobs/derived';
-import type { ResourceJobStatus } from '../../jobs/derived';
+import { listResourceJobStatus, type ResourceJobStatus } from '../../db/jobs/derived';
 import { enqueueReadingIngest, isProcessed } from '../../jobs/reading-ingest.job';
 import { storeCourseObject } from '../../storage/objects';
 import { notFound, refuse, registerRoute } from '../register';
@@ -23,6 +23,7 @@ const contentTypes: Record<UploadFormat, string> = {
   markdown: 'text/markdown',
   html: 'text/html',
   pdf: 'application/pdf',
+  notebook: 'application/x-ipynb+json',
 };
 
 /** A problem with the uploaded file itself, reported to the editor as a 400. */
@@ -53,6 +54,8 @@ async function* checked(stream: Readable & { truncated?: boolean }, format: Uplo
   const decoder = format === 'pdf' ? undefined : new TextDecoder('utf-8', { fatal: true });
   let empty = true;
   let header = Buffer.alloc(0);
+  // A notebook is checked whole against the import contract before it is kept (§10.7).
+  const notebook: string[] | undefined = format === 'notebook' ? [] : undefined;
   try {
     for await (const chunk of stream.iterator({
       destroyOnReturn: false,
@@ -65,7 +68,8 @@ async function* checked(stream: Readable & { truncated?: boolean }, format: Uplo
         }
       }
       if (decoder && chunk.includes(0)) throw new UploadRejected('The file is not text');
-      decoder?.decode(chunk, { stream: true });
+      const decoded = decoder?.decode(chunk, { stream: true });
+      if (decoded !== undefined) notebook?.push(decoded);
       empty = false;
       yield chunk;
     }
@@ -74,12 +78,17 @@ async function* checked(stream: Readable & { truncated?: boolean }, format: Uplo
     if (format === 'pdf' && !empty && header.toString('latin1') !== PDF_MAGIC) {
       throw new UploadRejected('The file is not a PDF');
     }
-    decoder?.decode();
+    const rest = decoder?.decode();
+    if (rest !== undefined) notebook?.push(rest);
   } catch (err) {
     if (err instanceof TypeError) throw new UploadRejected('The text is not valid UTF-8');
     throw err;
   }
   if (empty) throw new UploadRejected('The file is empty');
+  if (notebook) {
+    const parsed = parseNotebook(notebook.join(''));
+    if (!parsed.ok) throw new UploadRejected(parsed.error);
+  }
 }
 
 /** Reads a stream to its end, discarding the bytes; stops quietly if it fails or is destroyed. */
@@ -98,7 +107,7 @@ const displayName = (name: string) =>
     .join('')
     .slice(0, 200);
 
-export default function authoringRoutes(app: FastifyInstance, deps: Deps): void {
+export default function authoringRoutes(app: FastifyInstance, deps: RouteDeps): void {
   const db = () => {
     if (!deps.db) throw app.httpErrors.serviceUnavailable();
     return deps.db;
@@ -125,16 +134,23 @@ export default function authoringRoutes(app: FastifyInstance, deps: Deps): void 
       extension && Object.hasOwn(uploadFormats, extension)
         ? uploadFormats[extension as keyof typeof uploadFormats]
         : undefined;
-    if (!format) refuse(400, 'Upload a Markdown (.md), HTML (.html) or PDF (.pdf) file');
+    if (!format)
+      refuse(400, 'Upload a Markdown (.md), HTML (.html), PDF (.pdf) or notebook (.ipynb) file');
     try {
       const stored = await storeCourseObject(
         db(),
-        app.contentDeps.storage,
+        deps.storage,
         scope,
         checked(part.file, format),
         contentTypes[format],
       );
-      return { key: stored.key, sha256: stored.sha256, size: stored.size, format, filename };
+      return {
+        key: stored.key,
+        sha256: stored.sha256,
+        size: stored.size,
+        format,
+        filename,
+      };
     } catch (err) {
       // Read the rest of a refused file and discard it before answering: unread, it stops the
       // request body and holds the connection until the client gives up.

@@ -4,12 +4,8 @@ import type { RouteDeps } from '../../app';
 import { defaultDestination, safeDestination } from '../../auth/destination';
 import { EmailLinkProvider } from '../../auth/email-provider';
 import { clearPreviewReturn, PREVIEW_RETURN_COOKIE, revokePreviewReturn } from '../../auth/preview';
-import {
-  readSessionToken,
-  SESSION_COOKIE,
-  sessionCookieOptions,
-  TOKEN_SHAPE,
-} from '../../auth/sessions';
+import { readSessionToken, SESSION_COOKIE, sessionCookieOptions } from '../../auth/sessions';
+import { TOKEN_SHAPE } from '../../auth/tokens';
 import { revokeSession, signInWithProof } from '../../db/auth/sessions';
 import { registerRoute } from '../register';
 

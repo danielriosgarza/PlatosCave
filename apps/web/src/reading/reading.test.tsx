@@ -1,5 +1,6 @@
-import { cleanup, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   CLASS_A,
@@ -62,6 +63,10 @@ function api(world: World, me = makeMe({ classes: [studentIn(CLASS_A, 'Class A')
     if (url === `/api/classes/${CLASS_A}/topics`) return { status: 200, body: makeTopics() };
     if (url === `/api/classes/${CLASS_A}/topics/${T_SAMPLING}/readings`) {
       return { status: 200, body: world.readings };
+    }
+    if (url === `/api/classes/${CLASS_A}/resources/${RES}/annotations`) {
+      // The margin of the reading: nothing noted yet (its own behaviour is tested in margin/).
+      return { status: 200, body: { annotations: [], threads: [] } };
     }
     if (url === `/api/classes/${CLASS_A}/positions` && init?.method === 'PUT') {
       if (world.failPut) return { status: 503, body: { error: 'down' } };
@@ -387,6 +392,25 @@ describe('native reading', () => {
     expect(scrollTo).toHaveBeenCalledWith({ top: 260 + (saved.position.offset / 8) * 100 });
   });
 
+  it('A03 reaching the tab row above the reading records no place and the last place is kept', async () => {
+    const user = userEvent.setup();
+    const world = makeWorld(two());
+    const fetchMock = api(world);
+    const { router } = renderApp(READING);
+    await screen.findByText('Every sample tells a slightly different story.');
+    scrollThrough({ 'b-title': -300, 'b-one': -240, 'b-two': -140, 'b-code': -40 });
+    await waitFor(() => expect(world.positions).toHaveLength(1));
+    // The reader scrolls up to the tab row: the reading starts below the window top.
+    scrollThrough({ 'b-title': 400, 'b-one': 460, 'b-two': 560, 'b-code': 660 });
+    await user.click(screen.getByRole('tab', { name: 'Slides' }));
+    await waitFor(() => expect(router.state.location.pathname).toMatch(/\/slides$/));
+    await new Promise((resolve) => setTimeout(resolve, 450));
+    expect(putsOf(fetchMock)).toHaveLength(1);
+    expect((world.positions[0] as { position: { blockId: string } }).position.blockId).toBe(
+      'b-code',
+    );
+  });
+
   it('A03 Back returns to the reading and place the earlier entry showed', async () => {
     const user = userEvent.setup();
     api(makeWorld(two({ blockId: 'b-one', offset: 0 })));
@@ -433,6 +457,72 @@ describe('native reading', () => {
     scrollThrough({ 'b-title': -50, 'b-one': 10, 'b-two': 110, 'b-code': 210 });
     await waitFor(() => expect(world.positions).toHaveLength(1));
     expect(screen.queryByText(/saved/i)).toBeNull();
+  });
+
+  it('a place whose save failed offline is sent again when the connection returns', async () => {
+    const world = makeWorld(two());
+    world.failPut = true;
+    const fetchMock = api(world);
+    renderApp(READING);
+    await screen.findByText('Every sample tells a slightly different story.');
+    scrollThrough({ 'b-title': -50, 'b-one': 10, 'b-two': 110, 'b-code': 210 });
+    await waitFor(() => expect(putsOf(fetchMock)).toHaveLength(1));
+    world.failPut = false;
+    window.dispatchEvent(new Event('online'));
+    await waitFor(() => expect(world.positions).toHaveLength(1));
+    expect(world.positions[0]).toMatchObject({ revisionId: REV_NATIVE });
+  });
+
+  it('an older save that fails after a newer one was sent is not resent over it', async () => {
+    const world = makeWorld(two());
+    const fetchMock = api(world);
+    const base = fetchMock.getMockImplementation();
+    if (!base) throw new Error('no fetch stub');
+    let failA: (() => void) | undefined;
+    fetchMock.mockImplementation(async (input, init) => {
+      if (init?.method !== 'PUT') return base(input, init);
+      // Save A waits to fail; save B (sent when the page is hidden) goes through.
+      if (!failA) {
+        return new Promise<Response>((_resolve, reject) => {
+          failA = () => reject(new TypeError('offline'));
+        });
+      }
+      return base(input, init);
+    });
+    renderApp(READING);
+    await screen.findByText('Every sample tells a slightly different story.');
+    scrollThrough({ 'b-title': -120, 'b-one': -60, 'b-two': 40, 'b-code': 140 });
+    await waitFor(() => expect(putsOf(fetchMock)).toHaveLength(1));
+    // A newer place, sent at once because the page is hidden while A is still in flight.
+    scrollThrough({ 'b-title': -300, 'b-one': -240, 'b-two': -140, 'b-code': -40 });
+    vi.spyOn(document, 'visibilityState', 'get').mockReturnValue('hidden');
+    document.dispatchEvent(new Event('visibilitychange'));
+    await waitFor(() => expect(world.positions).toHaveLength(1));
+    // A fails after B has gone through; the connection then returns.
+    failA?.();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    window.dispatchEvent(new Event('online'));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(putsOf(fetchMock)).toHaveLength(2);
+    expect(world.positions).toHaveLength(1);
+    expect(world.positions[0]).toMatchObject({ position: { blockId: 'b-code' } });
+  });
+
+  it('A01 a place still waiting when access ends is not sent', async () => {
+    const world = makeWorld(two());
+    const me = makeMe({ classes: [studentIn(CLASS_A, 'Class A')] });
+    const fetchMock = api(world, me);
+    const { queryClient } = renderApp(READING);
+    await screen.findByText('Every sample tells a slightly different story.');
+    // A place is reported, and the session loses the class before the pause has passed.
+    scrollThrough({ 'b-title': -50, 'b-one': 10, 'b-two': 110, 'b-code': 210 });
+    me.classes = [];
+    await act(() => queryClient.refetchQueries({ queryKey: ['session'] }));
+    expect(
+      await screen.findByRole('heading', { name: 'Your access to this class has ended' }),
+    ).toBeVisible();
+    await act(() => new Promise((r) => setTimeout(r, 500)));
+    expect(putsOf(fetchMock)).toHaveLength(0);
   });
 
   it('A03 says a reading is still being prepared instead of showing it empty', async () => {
@@ -506,6 +596,29 @@ describe('PDF reading', () => {
     );
     await user.click(screen.getByRole('button', { name: 'Next page' }));
     expect(screen.getByRole('button', { name: 'Next page' })).toBeDisabled();
+  });
+
+  it('A03 a scroll that leaves the window top above the page records no place', async () => {
+    const doc = pdfDocument();
+    openPdf.mockResolvedValue(doc);
+    const world = makeWorld(pdfList({ page: 2, offset: 500 }));
+    const fetchMock = api(world);
+    renderApp(READING);
+    await waitFor(() => expect(scrollTo).toHaveBeenCalledWith({ top: 50 }));
+    await new Promise((resolve) => setTimeout(resolve, 450));
+    // Scrolled up to the tab row: the page starts 300 px below the window top.
+    window.dispatchEvent(new Event('wheel'));
+    layout.tops = { sheet: 300 };
+    window.dispatchEvent(new Event('scroll'));
+    await new Promise((resolve) => setTimeout(resolve, 450));
+    expect(putsOf(fetchMock)).toHaveLength(0);
+    // Back inside the page, the place follows the reader again.
+    window.dispatchEvent(new Event('wheel'));
+    layout.tops = { sheet: -50 };
+    window.dispatchEvent(new Event('scroll'));
+    await waitFor(() =>
+      expect(world.positions.at(-1)).toMatchObject({ position: { page: 2, offset: 500 } }),
+    );
   });
 
   it('A03 fetches the file once more with a renewed link when the first one fails', async () => {
@@ -644,7 +757,13 @@ describe('reading hardening', () => {
     layout.tops = { 'b-title': 0, 'b-one': 60, 'b-two': 160, 'b-code': 260 };
     router.history.back();
     await screen.findByText('Every sample tells a slightly different story.');
-    expect(router.state.location.search).toMatchObject({ block: 'b:b-one' });
+    // The address holds what the reader sees: the place flushed on leaving.
+    await waitFor(() =>
+      expect(router.state.location.search).toMatchObject({
+        block: 'b:b-code',
+        offset: Math.round(length['b-code'] * 0.4),
+      }),
+    );
     expect(scrollTo).toHaveBeenCalledWith({ top: 260 + (3 / length['b-code']) * 100 });
   });
 
@@ -894,7 +1013,13 @@ describe('reading hardening', () => {
     scrollTo.mockClear();
     router.history.back();
     await screen.findByText('Every sample tells a slightly different story.');
-    expect(router.state.location.search).toMatchObject({ block: 'b:b-one' });
+    // The address holds what the reader sees: the place flushed on leaving.
+    await waitFor(() =>
+      expect(router.state.location.search).toMatchObject({
+        block: 'b:b-code',
+        offset: Math.round(length['b-code'] * 0.4),
+      }),
+    );
     expect(scrollTo).toHaveBeenCalledWith({ top: 260 + (3 / length['b-code']) * 100 });
   });
 
@@ -1009,5 +1134,107 @@ describe('reading hardening', () => {
     const [, init] = putsOf(fetchMock)[1] ?? [];
     expect(init?.keepalive).toBe(true);
     expect(JSON.parse(String(init?.body))).toMatchObject({ position: { blockId: 'b-two' } });
+  });
+
+  it('A03 a pause after a hide flush waits for every save still in flight', async () => {
+    const world = makeWorld(two());
+    const fetchMock = api(world);
+    const base = fetchMock.getMockImplementation();
+    if (!base) throw new Error('no fetch stub');
+    // Each PUT waits for its own release.
+    const releases: Array<() => void> = [];
+    fetchMock.mockImplementation(async (input, init) => {
+      if (init?.method === 'PUT') {
+        await new Promise<void>((resolve) => releases.push(resolve));
+      }
+      return base(input, init);
+    });
+    renderApp(READING);
+    await screen.findByText('Every sample tells a slightly different story.');
+    scrollThrough({ 'b-title': -120, 'b-one': -60, 'b-two': 40, 'b-code': 140 });
+    await waitFor(() => expect(putsOf(fetchMock)).toHaveLength(1));
+    // A place waits behind the first save; hiding the tab sends it at once as a second save.
+    scrollThrough({ 'b-title': -220, 'b-one': -160, 'b-two': -60, 'b-code': 40 });
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    Object.defineProperty(document, 'visibilityState', { configurable: true, value: 'hidden' });
+    try {
+      document.dispatchEvent(new Event('visibilitychange'));
+    } finally {
+      Reflect.deleteProperty(document, 'visibilityState');
+    }
+    expect(putsOf(fetchMock)).toHaveLength(2);
+    // The first save settles; the tab is back and the reader pauses at a third place.
+    releases[0]?.();
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    scrollThrough({ 'b-title': -300, 'b-one': -240, 'b-two': -140, 'b-code': -40 });
+    await new Promise((resolve) => setTimeout(resolve, 350));
+    expect(putsOf(fetchMock)).toHaveLength(2);
+    // Only once the second has settled does the third go.
+    releases[1]?.();
+    await waitFor(() => expect(putsOf(fetchMock)).toHaveLength(3));
+    expect(JSON.parse(String(putsOf(fetchMock)[2]?.[1]?.body))).toMatchObject({
+      position: { blockId: 'b-code' },
+    });
+  });
+
+  it('A03 a later entry that pauses at the same address place does not inherit a flushed place', async () => {
+    const world = makeWorld(two());
+    api(world);
+    const { router } = renderApp(READING);
+    await screen.findByText('Every sample tells a slightly different story.');
+    // Entry 1: a pause at b-one, then on to the code and Slides within the pause.
+    scrollThrough({ 'b-title': -120, 'b-one': -60, 'b-two': 40, 'b-code': 140 });
+    await waitFor(() => expect(router.state.location.search).toMatchObject({ block: 'b:b-one' }));
+    scrollThrough({ 'b-title': -300, 'b-one': -240, 'b-two': -140, 'b-code': -40 });
+    fireEvent.click(screen.getByRole('tab', { name: 'Slides' }));
+    await waitFor(() => expect(world.positions).toHaveLength(2));
+    // A later entry pauses at the same place b-one, and leaves with nothing pending.
+    fireEvent.click(screen.getByRole('tab', { name: 'Reading' }));
+    await screen.findByText('Every sample tells a slightly different story.');
+    scrollThrough({ 'b-title': -120, 'b-one': -60, 'b-two': 40, 'b-code': 140 });
+    await waitFor(() => expect(router.state.location.search).toMatchObject({ block: 'b:b-one' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Slides' }));
+    await waitFor(() => expect(router.state.location.pathname).toMatch(/\/slides$/));
+
+    layout.tops = { 'b-title': 0, 'b-one': 60, 'b-two': 160, 'b-code': 260 };
+    scrollTo.mockClear();
+    router.history.back();
+    await screen.findByText('Every sample tells a slightly different story.');
+    // Back shows b-one, where that entry paused, not the code.
+    expect(router.state.location.search).toMatchObject({ block: 'b:b-one' });
+    expect(scrollTo).toHaveBeenCalled();
+    for (const [options] of scrollTo.mock.calls) expect(options.top).toBeLessThan(260);
+  });
+
+  it("A03 a later entry that pauses at an earlier entry's address place leaves that entry's flushed place", async () => {
+    const world = makeWorld(two());
+    api(world);
+    const { router } = renderApp(READING);
+    await screen.findByText('Every sample tells a slightly different story.');
+    // Entry 1: a pause at b-one, then on to the code and Slides within the pause.
+    scrollThrough({ 'b-title': -120, 'b-one': -60, 'b-two': 40, 'b-code': 140 });
+    await waitFor(() => expect(router.state.location.search).toMatchObject({ block: 'b:b-one' }));
+    scrollThrough({ 'b-title': -300, 'b-one': -240, 'b-two': -140, 'b-code': -40 });
+    fireEvent.click(screen.getByRole('tab', { name: 'Slides' }));
+    await waitFor(() => expect(world.positions).toHaveLength(2));
+    // A later entry pauses at the same place b-one, and leaves with nothing pending.
+    fireEvent.click(screen.getByRole('tab', { name: 'Reading' }));
+    await screen.findByText('Every sample tells a slightly different story.');
+    scrollThrough({ 'b-title': -120, 'b-one': -60, 'b-two': 40, 'b-code': 140 });
+    await waitFor(() => expect(router.state.location.search).toMatchObject({ block: 'b:b-one' }));
+    fireEvent.click(screen.getByRole('tab', { name: 'Slides' }));
+    await waitFor(() => expect(router.state.location.pathname).toMatch(/\/slides$/));
+
+    layout.tops = { 'b-title': 0, 'b-one': 60, 'b-two': 160, 'b-code': 260 };
+    router.history.back();
+    await screen.findByText('Every sample tells a slightly different story.');
+    // The later entry shows its own pause, b-one.
+    expect(router.state.location.search).toMatchObject({ block: 'b:b-one' });
+    router.history.back();
+    await waitFor(() => expect(router.state.location.pathname).toMatch(/\/slides$/));
+    router.history.back();
+    await screen.findByText('Every sample tells a slightly different story.');
+    // The first entry shows the place flushed as it was left, the code, not b-one.
+    await waitFor(() => expect(router.state.location.search).toMatchObject({ block: 'b:b-code' }));
   });
 });

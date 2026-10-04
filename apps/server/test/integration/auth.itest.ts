@@ -6,7 +6,7 @@ import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
 import { buildApp } from '../../src/app';
 import { EmailLinkProvider } from '../../src/auth/email-provider';
-import { hashToken } from '../../src/auth/sessions';
+import { hashToken } from '../../src/auth/tokens';
 import { BackgroundTasks } from '../../src/background';
 import { loadConfig } from '../../src/config';
 import { createSession } from '../../src/db/auth/sessions';
@@ -230,15 +230,19 @@ describe('POST /api/auth/link', () => {
     );
     apps.push(slow);
     const email = 'slow@example.test';
-    const res = await slow.inject({ method: 'POST', url: '/api/auth/link', payload: { email } });
-    expect(res.statusCode).toBe(202);
-    expect(sent).toEqual([]);
-    const [stored] = await testDb.db
-      .select()
-      .from(signinTokens)
-      .where(eq(signinTokens.email, email));
-    expect(stored).toBeDefined();
-    release();
+    try {
+      const res = await slow.inject({ method: 'POST', url: '/api/auth/link', payload: { email } });
+      expect(res.statusCode).toBe(202);
+      expect(sent).toEqual([]);
+      const [stored] = await testDb.db
+        .select()
+        .from(signinTokens)
+        .where(eq(signinTokens.email, email));
+      expect(stored).toBeDefined();
+    } finally {
+      // A failed assertion must not leave the task pending: every later settled() would time out.
+      release();
+    }
     await background.settled();
     expect(sent).toEqual([email]);
   });
@@ -314,6 +318,33 @@ describe('POST /api/auth/link', () => {
     expect(sent).toEqual([email]);
   });
 
+  test('a send that outlives the delivery deadline is abandoned and its row removed', async () => {
+    const email = 'stalled@example.test';
+    const logged: unknown[] = [];
+    let release: () => void = () => {};
+    const provider = new EmailLinkProvider({
+      db: testDb.db,
+      now: () => clock,
+      background,
+      appOrigin: APP_ORIGIN,
+      deliveryTimeoutMs: 50,
+      log: { info() {}, error: (...args: unknown[]) => void logged.push(args) } as never,
+      // A relay that stays within every per-phase SMTP timeout yet never finishes.
+      mailer: { send: () => new Promise<void>((resolve) => (release = resolve)) },
+    });
+    try {
+      await provider.begin({ email, destination: '/courses' });
+      // Settles on the deadline, not when the relay answers.
+      await expect(background.settled(2_000)).resolves.toBe(0);
+    } finally {
+      release();
+    }
+    const rows = await testDb.db.select().from(signinTokens).where(eq(signinTokens.email, email));
+    expect(rows).toEqual([]);
+    expect(JSON.stringify(logged)).toContain('ETIMEDOUT');
+    expect(JSON.stringify(logged)).not.toContain('stalled');
+  });
+
   test('concurrent requests for one address still send at most five links', async () => {
     const email = 'burst@example.test';
     const results = await Promise.all(Array.from({ length: 20 }, () => requestLink({ email })));
@@ -321,11 +352,66 @@ describe('POST /api/auth/link', () => {
     expect(await mailsTo(email)).toHaveLength(5);
   });
 
-  test('sends at most five links per address per 15 minutes, still answering 202', async () => {
+  test('sends at most five unused links per address at once, still answering 202', async () => {
     const email = 'flood@example.test';
     for (let i = 0; i < 7; i++) expect((await requestLink({ email })).statusCode).toBe(202);
     expect(await mailsTo(email)).toHaveLength(5);
+    clock = new Date(t0.getTime() + 59_000);
+    await requestLink({ email });
+    expect(await mailsTo(email)).toHaveLength(5);
     clock = new Date(t0.getTime() + 15 * 60_000 + 1);
+    await requestLink({ email });
+    expect(await mailsTo(email)).toHaveLength(6);
+  });
+});
+
+describe('A01 a stranger cannot lock an address out of sign-in', () => {
+  test('A01 after strangers fill the cap with unused links, the owner’s request a minute later still sends a working link', async () => {
+    const email = 'ines@example.test';
+    // A stranger asks for links to the owner's address until the cap holds.
+    for (let i = 0; i < 8; i++) expect((await requestLink({ email })).statusCode).toBe(202);
+    expect(await mailsTo(email)).toHaveLength(5);
+
+    clock = new Date(t0.getTime() + 60_000);
+    const path = await linkFor(email);
+    expect(await mailsTo(email)).toHaveLength(6);
+    const res = await verify(path);
+    expect(res.statusCode).toBe(302);
+    expect((await me(sessionCookieFrom(res))).statusCode).toBe(200);
+  });
+
+  test('A01 past the cap one link a minute goes out, and every answer is the same 202 for known and unknown addresses', async () => {
+    const known = 'olivia@example.test';
+    const unknown = 'no-account-yet@example.test';
+    const bodies = new Set<string>();
+    const ask = async (email: string) => {
+      const res = await requestLink({ email });
+      expect(res.statusCode).toBe(202);
+      bodies.add(res.body);
+    };
+    for (const email of [known, unknown]) for (let i = 0; i < 6; i++) await ask(email);
+    expect(await mailsTo(known)).toHaveLength(5);
+    expect(await mailsTo(unknown)).toHaveLength(5);
+
+    for (let minute = 1; minute <= 3; minute++) {
+      clock = new Date(t0.getTime() + minute * 60_000);
+      // Two requests inside the same minute: the first sends, the second is held.
+      for (const email of [known, unknown]) {
+        await ask(email);
+        await ask(email);
+      }
+      expect(await mailsTo(known)).toHaveLength(5 + minute);
+      expect(await mailsTo(unknown)).toHaveLength(5 + minute);
+    }
+    expect([...bodies]).toEqual([JSON.stringify({ accepted: true })]);
+  });
+
+  test('A01 used links do not count toward the cap', async () => {
+    const email = 'marcus@example.test';
+    for (let i = 0; i < 5; i++) {
+      expect((await verify(await linkFor(email))).statusCode).toBe(302);
+    }
+    // Five sign-ins in a row used every link; a sixth request at once still sends.
     await requestLink({ email });
     expect(await mailsTo(email)).toHaveLength(6);
   });

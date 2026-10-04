@@ -1,0 +1,22 @@
+{
+  "description": "Signing vectors for docs/design/connector.md section 4.2. Ed25519 is deterministic, so every implementation must produce exactly these signatures from this seed.",
+  "seed": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+  "publicKey": "A6EHv_POEL4dcN0Y50vAmWfk1jCbpQ1fHdyGZBJVMbg",
+  "fingerprint": "SHA256:Vkdap1RjR0wChd9dvyvKtz2mUTWIOem3dIGy6rEHcIw",
+  "origin": "https://parallax.example.org",
+  "connectorId": "3f2a6c1e-8b7d-4e5f-9a10-2c4d6e8f0a1b",
+  "ts": 1790000000,
+  "nonce": "__79_Pv6-fj39vX08_Lx8O_u7ezr6uno5-bl5OPi4eA",
+  "link": {
+    "message": "706172616c6c61782d636f6e6e6563746f722d6c696e6b2d763100fffefdfcfbfaf9f8f7f6f5f4f3f2f1f0efeeedecebeae9e8e7e6e5e4e3e2e1e03f2a6c1e8b7d4e5f9a102c4d6e8f0a1b000000006ab13b80001c68747470733a2f2f706172616c6c61782e6578616d706c652e6f7267",
+    "sig": "SMbs4EJ5wo-3SbvtlCBqMZi4FyY2EfucrySMMbp7-2gyk91Jhg1jt0MvfnjLExCQBDeinkLPSzS1Xx-iFP7fDw"
+  },
+  "poll": {
+    "message": "706172616c6c61782d636f6e6e6563746f722d706f6c6c2d7631003f2a6c1e8b7d4e5f9a102c4d6e8f0a1b000000006ab13b80001c68747470733a2f2f706172616c6c61782e6578616d706c652e6f7267",
+    "sig": "RL0wYB2Vz64Lwz9WoKZ1jum3fPqHzJmvAsNsrQjVzS2FSdVbq8FIBMXRvdAJLgwB90Zh8rFEVjIBb5lJB6DHBg"
+  },
+  "unpair": {
+    "message": "706172616c6c61782d636f6e6e6563746f722d756e706169722d7631003f2a6c1e8b7d4e5f9a102c4d6e8f0a1b000000006ab13b80001c68747470733a2f2f706172616c6c61782e6578616d706c652e6f7267",
+    "sig": "A-1M1HB3vaDg4y0Jrw1gyfpwTQgMYI7QOKUEajDq8UoYoNQWslMfa7cqPJvUd4n_V4UriuyqchKfpy4QBGNvBA"
+  }
+}

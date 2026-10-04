@@ -4,7 +4,7 @@ import type { ClassManagerScope, ClassScope, CourseScope, UserScope } from '../.
 import { sessionCookieHeader } from '../../src/auth/sessions';
 import { DEV_SESSION_SECRET } from '../../src/config';
 import { extractPdfText } from '../../src/content/pdf-text';
-import { renderReading } from '../../src/content/reading';
+import { renderReading, renderSlides } from '../../src/content/reading';
 import { createSession } from '../../src/db/auth/sessions';
 import type { Db } from '../../src/db/client';
 import { adoptRelease } from '../../src/db/content/adoption';
@@ -21,6 +21,7 @@ import { setManageMembers, setPublisher } from '../../src/db/members';
 import { classes, resourceRevisions, resources, topics, users } from '../../src/db/schema';
 import { storeCourseObject } from '../../src/storage/objects';
 import type { Storage } from '../../src/storage/storage';
+import { labNotebookDerived, labNotebookFile } from './notebook';
 import { makePdf } from './pdf';
 
 /** Deterministic fixture ids: `…-4000-8000-0000000000NN`. */
@@ -65,9 +66,13 @@ export const readingLab = {
   native: id(411), // a long native reading
   pdf: id(412), // a four-page PDF reading
   deck: id(413), // a six-slide 16:9 PDF deck
+  notebook: id(414), // a rendered notebook with stored outputs (A09)
+  webDeck: id(415), // a three-slide Markdown deck
   nativeRevision: id(511),
   pdfRevision: id(512),
   deckRevision: id(513),
+  notebookRevision: id(514),
+  webDeckRevision: id(515),
   release: id(611),
   authorEmail: 'lab-author@example.test',
   readerEmail: 'lab-reader@example.test',
@@ -232,7 +237,8 @@ export async function ensureWorld(db: Db, now: Date, storage?: Storage): Promise
 
 /**
  * Adds the reading lab: course *Reading lab* with one topic holding a long native reading, a
- * four-page PDF reading and a six-slide deck, all with their derived outputs written as the ingestion job would,
+ * four-page PDF reading, a six-slide deck and a notebook, all with their derived outputs written
+ * as the ingestion job would,
  * published and adopted by one class with one student. The last data step is adopting the release.
  */
 export async function seedReadingLab(db: Db, storage: Storage, now: Date): Promise<void> {
@@ -292,6 +298,24 @@ export async function seedReadingLab(db: Db, storage: Storage, now: Date): Promi
     Buffer.from(deckBytes),
     'application/pdf',
   );
+  const notebookFile = await storeCourseObject(
+    db,
+    storage,
+    owner,
+    Buffer.from(labNotebookFile),
+    'application/x-ipynb+json',
+  );
+  const webDeckMarkdown = [
+    '# Sampling in slides',
+    'Why estimates differ from sample to sample',
+    '---',
+    '## Two ideas',
+    '- the sample mean moves around the true mean\n- the spread of those means shrinks with the sample size',
+    '---',
+    '## The last slide',
+    'Every sample tells a slightly different story, and the sampling distribution describes it.',
+  ].join('\n\n');
+  const webDeck = renderSlides(webDeckMarkdown);
   const ready = {
     state: 'ready' as const,
     job: 'reading.ingest',
@@ -329,6 +353,26 @@ export async function seedReadingLab(db: Db, storage: Storage, now: Date): Promi
       objectKeys: [deck.key],
       derived: { ...(await extractPdfText(deckBytes)), rasterOnly: false },
     },
+    {
+      id: lab.webDeck,
+      revisionId: lab.webDeckRevision,
+      type: 'slides_web' as const,
+      title: 'Sampling in slides',
+      position: 4,
+      content: { markdown: webDeckMarkdown },
+      objectKeys: [] as string[],
+      derived: { ...webDeck, pageCount: webDeck.slides.length },
+    },
+    {
+      id: lab.notebook,
+      revisionId: lab.notebookRevision,
+      type: 'notebook' as const,
+      title: 'Repeated samples',
+      position: 3,
+      content: { sourceKey: notebookFile.key },
+      objectKeys: [notebookFile.key],
+      derived: await labNotebookDerived(db, storage, owner),
+    },
   ];
   for (const { revisionId, content, objectKeys, derived, ...resource } of readings) {
     await db
@@ -340,9 +384,10 @@ export async function seedReadingLab(db: Db, storage: Storage, now: Date): Promi
       courseId: lab.course,
       type: resource.type,
       content,
-      ...(resource.type !== 'reading_native' && {
-        accessibleAlternative: { text: resource.title },
-      }),
+      ...(resource.type !== 'reading_native' &&
+        resource.type !== 'slides_web' && {
+          accessibleAlternative: { text: resource.title },
+        }),
       objectKeys,
       contentHash: sha256(content),
       createdBy: lab.author,
@@ -361,6 +406,28 @@ export async function seedReadingLab(db: Db, storage: Storage, now: Date): Promi
     expectedReleaseId: null,
   });
   if (!adopted.ok) throw new Error(`lab adoption: ${adopted.reason}`);
+}
+
+/**
+ * A live enrolment code and a live instructor invitation for class A, issued by its course owner
+ * (Elena). For tests that present them as a principal who must be refused.
+ */
+export async function issueLiveInvites(
+  db: Db,
+  now: Date,
+  instructorEmail = 'invitee@example.test',
+): Promise<{ enrolmentCode: string; instructorToken: string }> {
+  const manager = asManagerScope(ids.classA, ids.statistics, ids.elena);
+  const code = await issueInvite(db, manager, { kind: 'enrolment' }, now);
+  if (!code.ok) throw new Error(`live code: ${code.reason}`);
+  const invitation = await issueInvite(
+    db,
+    manager,
+    { kind: 'instructor', email: instructorEmail },
+    now,
+  );
+  if (!invitation.ok) throw new Error(`live invitation: ${invitation.reason}`);
+  return { enrolmentCode: code.invite.code, instructorToken: invitation.invite.code };
 }
 
 /**

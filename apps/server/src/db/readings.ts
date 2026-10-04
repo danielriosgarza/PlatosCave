@@ -3,7 +3,7 @@ import { and, asc, desc, eq, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import type { ClassScope } from '../auth/scope';
 import { openToStudent } from '../content/availability';
-import { invalid, notFound, type Outcome } from '../outcome';
+import { classArchived, invalid, notFound, type Outcome } from '../outcome';
 import { findReleaseTopic } from './classTopics';
 import type { Db } from './client';
 import { resolveDerivedStatuses } from './jobs/derived';
@@ -18,8 +18,8 @@ import { forClass } from './scoped';
  */
 
 const READING_TYPES = ['reading_native', 'reading_pdf'] as const;
-/** Decks share the readings' positions: a PDF is placed by page. */
-const PLACED_TYPES = [...READING_TYPES, 'slides_pdf'] as const;
+/** Decks share the readings' positions: a deck is placed by slide (a PDF's page). */
+const PLACED_TYPES = [...READING_TYPES, 'slides_pdf', 'slides_web'] as const;
 type ReadingType = (typeof READING_TYPES)[number];
 const isReading = (type: string): type is ReadingType =>
   (READING_TYPES as readonly string[]).includes(type);
@@ -172,7 +172,10 @@ export interface ReadingContent {
   html: string | null;
   /** Storage key and page count of a ready PDF reading. */
   pdf: { key: string; pageCount: number } | null;
-  /** Storage key of the uploaded source file (a PDF, or a native reading's Markdown/HTML), if any. */
+  /**
+   * Storage key of the uploaded source file the caller may download: a PDF reading's file, or a
+   * native reading's Markdown/HTML only while its conversion has failed (`nativeSourceWithheld`).
+   */
   sourceKey: string | null;
   /** Content type of each object the revision owns: the only ones an image may resolve to. */
   objects: Record<string, string>;
@@ -208,7 +211,10 @@ export async function loadReading(
     kind: kindOf(row.type),
     error:
       status?.state === 'failed' ? (status.error ?? 'The reading could not be processed') : null,
-    sourceKey: sourceKeyOf(row.type, row.content, row.objectKeys),
+    sourceKey:
+      row.type === 'reading_native' && status?.state !== 'failed'
+        ? null
+        : sourceKeyOf(row.type, row.content, row.objectKeys),
     objects: Object.fromEntries(stored.map((o) => [o.key, o.contentType])),
     html: null,
     pdf: null,
@@ -239,6 +245,24 @@ function sourceKeyOf(
   return key && objectKeys.includes(key) ? key : null;
 }
 
+/**
+ * Whether `key` is a native reading's uploaded source that may not be downloaded now: only the
+ * ingested HTML is served, and the source only as the permitted download of a failed conversion
+ * (§14, ADR-0002 "Readings on the app origin"). The state is resolved as the reading shows it, so
+ * the route and the reading's `sourceKey` agree. Other objects and resource types are unaffected.
+ */
+export async function nativeSourceWithheld(
+  db: Db,
+  revision: Pick<ReleasedReading, 'type' | 'content' | 'derived' | 'createdAt'>,
+  key: string,
+): Promise<boolean> {
+  if (revision.type !== 'reading_native' || revision.content.sourceKey !== key) return false;
+  const [status] = await resolveDerivedStatuses(db, [
+    { raw: revision.derived.status, createdAt: revision.createdAt },
+  ]);
+  return status?.state !== 'failed';
+}
+
 /** The PDF file of a `reading_pdf` revision: `content.objectKey`, else its only object. */
 export function pdfKey(content: Record<string, unknown>, objectKeys: string[]): string | null {
   const named = typeof content.objectKey === 'string' ? content.objectKey : undefined;
@@ -259,6 +283,7 @@ export async function savePosition(
 ): Promise<Outcome<{ updatedAt: string }>> {
   const row = await releasedRevision(db, scope, input.revisionId, now);
   if (!row) return notFound;
+  if (scope.archived) return classArchived;
   if (row.tab !== input.tab) return invalid('The resource is not on that tab');
   if (!(PLACED_TYPES as readonly string[]).includes(row.type)) {
     return invalid('Positions are only saved for readings and slide decks here');

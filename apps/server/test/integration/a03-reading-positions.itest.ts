@@ -11,7 +11,7 @@ import { adoptRelease } from '../../src/db/content/adoption';
 import { publishRelease } from '../../src/db/content/releases';
 import { createBoss } from '../../src/db/jobs/boss';
 import { setDerivedStatus, writeDerivedOutputs } from '../../src/db/jobs/derived';
-import { resourceRevisions, resources, studyPositions } from '../../src/db/schema';
+import { classes, resourceRevisions, resources, studyPositions } from '../../src/db/schema';
 import { FsStorage } from '../../src/storage/fs';
 import { storeCourseObject } from '../../src/storage/objects';
 import {
@@ -235,20 +235,22 @@ beforeAll(async () => {
     expectedReleaseId: ids.releaseV1,
   });
   if (!adopted.ok) throw new Error(adopted.reason);
-  // This conversion fails after release, as a re-run of the job can.
-  await writeDerivedOutputs(
-    db,
-    elena,
-    rev.failed,
-    {},
-    {
-      state: 'failed',
-      job: 'reading.ingest',
-      jobId: null,
-      updatedAt: now.toISOString(),
-      error: 'The file could not be read',
-    },
-  );
+  // These conversions fail after release, as a re-run of the job can.
+  for (const failed of [rev.failed, rev.hidden]) {
+    await writeDerivedOutputs(
+      db,
+      elena,
+      failed,
+      {},
+      {
+        state: 'failed',
+        job: 'reading.ingest',
+        jobId: null,
+        updatedAt: now.toISOString(),
+        error: 'The file could not be read',
+      },
+    );
+  }
 });
 
 afterAll(async () => {
@@ -355,9 +357,11 @@ describe('reading source download', () => {
       `/api/classes/${classId}/resources/${revisionId}/objects/${encodeURIComponent(key)}?disposition=attachment`,
     );
 
-  test('P1-12b a reading names its uploaded source file, ready or failed, and inline text has none', async () => {
+  test('P1-12b a reading names its uploaded source file when it may be downloaded: a PDF always, a native upload only once its conversion failed', async () => {
     expect((await read('sam', ids.classA, rev.pdf)).body.sourceKey).toBe(keys.pdf);
-    expect((await read('sam', ids.classA, rev.upload)).body.sourceKey).toBe(keys.source);
+    // Only the ingested HTML of a converted native reading is served (ADR-0002).
+    expect((await read('sam', ids.classA, rev.upload)).body.sourceKey).toBeNull();
+    expect((await object('sam', ids.classA, rev.upload, keys.source)).status).toBe(404);
     const failed = (await read('sam', ids.classA, rev.failed)).body;
     expect(failed).toMatchObject({ status: 'failed', sourceKey: keys.source });
     expect((await read('sam', ids.classA, rev.native)).body.sourceKey).toBeNull();
@@ -370,7 +374,8 @@ describe('reading source download', () => {
     // A non-member, another class's release and a hidden resource all look the same.
     expect((await object('bea', ids.classA, rev.failed, keys.source)).status).toBe(404);
     expect((await object('bea', ids.classB, rev.failed, keys.source)).status).toBe(404);
-    // A hidden resource that owns the very key: only its hiding makes it a 404 for a student.
+    // A hidden resource that owns the very key and also failed: only its hiding makes it a 404
+    // for a student.
     expect((await object('sam', ids.classA, rev.hidden, keys.source)).status).toBe(404);
     expect((await read('sam', ids.classA, rev.hidden)).status).toBe(404);
     expect((await object('priya', ids.classA, rev.hidden, keys.source)).status).toBe(200);
@@ -460,5 +465,29 @@ describe('study positions', () => {
     expect((await at(rev.pdf, 'bea', ids.classB)).status).toBe(404);
     expect((await at(rev.native, 'bea', ids.classA)).status).toBe(404);
     expect((await at('00000000-0000-4000-8000-0000000000ff')).status).toBe(404);
+  });
+
+  test('an archived class keeps its positions readable and refuses saving one', async () => {
+    const place = {
+      revisionId: rev.native,
+      tab: 'reading',
+      position: { blockId: nativeBlock, offset: 1 },
+    };
+    expect((await save('sam', ids.classA, place)).status).toBe(200);
+    await testDb.db.update(classes).set({ archivedAt: now }).where(eq(classes.id, ids.classA));
+    try {
+      const refused = await save('sam', ids.classA, {
+        ...place,
+        position: { blockId: nativeBlock, offset: 2 },
+      });
+      expect(refused.status).toBe(409);
+      expect(refused.body).toEqual({ error: 'class_archived' });
+      const topic = await list('sam', ids.classA, ids.sampling);
+      expect(topic.status).toBe(200);
+      expect(topic.body.readings.find((r) => r.position)?.position).toEqual(place.position);
+      expect((await read('sam', ids.classA, rev.native)).status).toBe(200);
+    } finally {
+      await testDb.db.update(classes).set({ archivedAt: null }).where(eq(classes.id, ids.classA));
+    }
   });
 });

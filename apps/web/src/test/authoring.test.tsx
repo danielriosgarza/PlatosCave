@@ -13,6 +13,7 @@ const OTHER = '00000000-0000-4000-8000-0000000000a2';
 const RESOURCE = '00000000-0000-4000-8000-0000000000b1';
 const NEW_RESOURCE = '00000000-0000-4000-8000-0000000000b2';
 const REVISION = '00000000-0000-4000-8000-0000000000c1';
+const SAM = '00000000-0000-4000-8000-000000000004';
 const stamp = '2026-10-01T09:00:00.000Z';
 
 const grant = (over: Partial<{ owner: boolean; editor: boolean; publisher: boolean }> = {}) =>
@@ -78,6 +79,10 @@ interface Server {
   uploads: number;
   /** PATCH of this topic id answers with this status (reorder tests). */
   otherStatus?: number;
+  /** The Markdown a web deck's head revision holds. */
+  deckMarkdown?: string;
+  /** The next PATCH of the deck answers 409 with a copy holding this Markdown. */
+  deckConflict?: string;
 }
 
 function fresh(over: Partial<Server> = {}): Server {
@@ -185,9 +190,42 @@ function api(me: ReturnType<typeof makeMe>, s: Server) {
       s.processing = { state: 'queued' };
       return json({ ...created, head: null });
     }
+    if (path === `${base}/resources/${RESOURCE}`) {
+      const found = s.resources.find((r) => r.id === RESOURCE) ?? resource();
+      if (method === 'PATCH') {
+        const body = JSON.parse(String(init?.body));
+        s.patched.push({ url: path, body });
+        if (s.deckConflict !== undefined) {
+          const theirs = s.deckConflict;
+          s.deckConflict = undefined;
+          s.deckMarkdown = theirs;
+          return json(
+            {
+              error: 'revision_conflict',
+              current: { ...found, revision: found.revision + 1, head: head(s) },
+            },
+            409,
+          );
+        }
+        if ('content' in body) s.deckMarkdown = (body.content as { markdown: string }).markdown;
+        return json({ ...found, ...body, revision: found.revision + 1, head: head(s) });
+      }
+      return json({ ...found, head: head(s) });
+    }
     return json({ error: 'not found' }, 404);
   });
 }
+
+const head = (s: Server) => ({
+  id: REVISION,
+  content: { markdown: s.deckMarkdown ?? '# Old' },
+  objectKeys: [],
+  accessibleAlternative: null,
+  provenance: null,
+  contentHash: 'h',
+  createdBy: SAM,
+  createdAt: stamp,
+});
 
 /** Holds matching requests until released, so a test can act while one is in flight. */
 function hold(
@@ -396,6 +434,122 @@ describe('reading upload', () => {
       await screen.findByText(/Processing failed: The file is larger than 50 MB/),
     ).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Retry processing' })).toBeInTheDocument();
+  });
+});
+
+describe('notebook upload', () => {
+  it('A09 adds a notebook from an .ipynb file on the Notebooks tab', async () => {
+    const user = userEvent.setup();
+    const { s } = await open();
+    const notebooks = await screen.findByRole('region', { name: 'Notebooks resources' });
+    await user.click(within(notebooks).getByRole('button', { name: 'Add notebook' }));
+    const form = screen.getByRole('form', { name: 'Add notebook' });
+    await user.upload(
+      within(form).getByLabelText(/File/),
+      new File(['{"nbformat": 4}'], 'Repeated samples.ipynb', { type: 'application/json' }),
+    );
+    expect(within(form).getByLabelText('Title')).toHaveValue('Repeated samples');
+    await user.click(within(form).getByRole('button', { name: 'Add notebook' }));
+    await waitFor(() => expect(s.uploads).toBe(1));
+    const created = s.patched.find((p) => p.url.endsWith('/resources'))?.body;
+    expect(created).toEqual({
+      type: 'notebook',
+      title: 'Repeated samples',
+      content: { sourceKey: `courses/${COURSE}/objects/${'a'.repeat(64)}` },
+      objectKeys: [`courses/${COURSE}/objects/${'a'.repeat(64)}`],
+    });
+  });
+
+  it('A09 refuses a file that is not a notebook before sending it, and a reading refuses .ipynb', async () => {
+    const user = userEvent.setup({ applyAccept: false });
+    const { s } = await open();
+    const notebooks = await screen.findByRole('region', { name: 'Notebooks resources' });
+    await user.click(within(notebooks).getByRole('button', { name: 'Add notebook' }));
+    const form = screen.getByRole('form', { name: 'Add notebook' });
+    await user.upload(within(form).getByLabelText(/File/), new File(['# x'], 'notes.md'));
+    expect(await within(form).findByRole('alert')).toHaveTextContent(
+      'Upload a Jupyter notebook (.ipynb) file',
+    );
+    expect(within(form).getByRole('button', { name: 'Add notebook' })).toBeDisabled();
+
+    await user.click(screen.getByRole('button', { name: 'Add reading' }));
+    const reading = screen.getByRole('form', { name: 'Add reading' });
+    await user.upload(within(reading).getByLabelText(/File/), new File(['{}'], 'lab.ipynb'));
+    expect(await within(reading).findByRole('alert')).toHaveTextContent('Upload a Markdown');
+    expect(s.uploads).toBe(0);
+  });
+});
+
+describe('web slides', () => {
+  const deck = () =>
+    fresh({
+      resources: [resource({ type: 'slides_web', title: 'Sampling in slides' })],
+      deckMarkdown: '# Sampling\n\n---\n\nSlide two',
+    });
+
+  it('adds a deck from Markdown typed into a textarea and shows its processing state', async () => {
+    const user = userEvent.setup();
+    const { s } = await open();
+    const slides = await screen.findByRole('region', { name: 'Slides resources' });
+    await user.click(within(slides).getByRole('button', { name: 'Add web slides' }));
+    const form = screen.getByRole('form', { name: 'Add web slides' });
+    expect(within(form).getByRole('button', { name: 'Add web slides' })).toBeDisabled();
+    await user.type(within(form).getByLabelText('Title'), 'Week 3 slides');
+    await user.type(within(form).getByLabelText(/Slides \(Markdown\)/), 'One{enter}---{enter}Two');
+    await user.click(within(form).getByRole('button', { name: 'Add web slides' }));
+    await waitFor(() => expect(s.patched.some((p) => p.url.endsWith('/resources'))).toBe(true));
+    expect(s.patched.find((p) => p.url.endsWith('/resources'))?.body).toEqual({
+      type: 'slides_web',
+      title: 'Week 3 slides',
+      content: { markdown: 'One\n---\nTwo' },
+    });
+    expect(await screen.findByText('Week 3 slides')).toBeInTheDocument();
+    expect(await screen.findAllByText('Waiting to be processed')).toHaveLength(2);
+  });
+
+  it('edits the Markdown of a deck and shows Saved only after the server acknowledged it', async () => {
+    const user = userEvent.setup();
+    const { s } = await open(grant(), deck());
+    await user.click(await screen.findByRole('button', { name: 'Edit Sampling in slides' }));
+    const markdown = await screen.findByLabelText('Slides (Markdown)');
+    expect(markdown).toHaveValue('# Sampling\n\n---\n\nSlide two');
+    await user.type(screen.getByLabelText('Slides title'), '!');
+    await waitFor(() => expect(s.patched).toHaveLength(1), { timeout: 4000 });
+    expect(s.patched[0]?.body).toMatchObject({ title: 'Sampling in slides!' });
+    expect(await screen.findByText(/Draft saved at/)).toBeInTheDocument();
+
+    await user.type(markdown, '{enter}---{enter}Slide three');
+    expect(await screen.findByText('Unsaved changes')).toBeInTheDocument();
+    await waitFor(() => expect(s.patched).toHaveLength(2), { timeout: 4000 });
+    expect(s.patched[1]?.body).toMatchObject({
+      expectedRevision: 2,
+      content: { markdown: '# Sampling\n\n---\n\nSlide two\n---\nSlide three' },
+    });
+  });
+
+  it('Keep mine after a conflict sends the Markdown on screen, not the copy the form started from', async () => {
+    const user = userEvent.setup();
+    const s = deck();
+    s.deckConflict = '# Theirs';
+    await open(grant(), s);
+    await user.click(await screen.findByRole('button', { name: 'Edit Sampling in slides' }));
+    await screen.findByLabelText('Slides (Markdown)');
+    // Only the title is edited; the Markdown on screen is the one the form started with.
+    await user.type(screen.getByLabelText('Slides title'), '!');
+    const conflict = await screen.findByRole('alert', {}, { timeout: 4000 });
+    expect(conflict).toHaveTextContent('Someone else changed this deck');
+    await user.click(within(conflict).getByRole('button', { name: 'Keep my version' }));
+    await waitFor(() => expect(s.patched).toHaveLength(2), { timeout: 4000 });
+    expect(s.patched[1]?.body).toMatchObject({
+      expectedRevision: 2,
+      content: { markdown: '# Sampling\n\n---\n\nSlide two' },
+    });
+    expect(s.deckMarkdown).toBe('# Sampling\n\n---\n\nSlide two');
+  });
+
+  it('a finished web deck reads Ready to publish', async () => {
+    await open(grant(), deck());
+    expect(await screen.findByText('Ready to publish')).toBeInTheDocument();
   });
 });
 

@@ -3,10 +3,8 @@ import { buildApp } from './app';
 import { loadConfig } from './config';
 import { createDb } from './db/client';
 import { createBoss } from './db/jobs/boss';
-import annotationsMap from './jobs/annotations-map.job';
 import type { JobLogger } from './jobs/logger';
 import { workMaintenance } from './jobs/maintenance';
-import readingIngest from './jobs/reading-ingest.job';
 import { loadJobs } from './jobs/registry';
 import { ensureQueues, workScopedJob } from './jobs/scoped';
 import { createStorage } from './storage/create';
@@ -83,11 +81,12 @@ if (mode === 'api') {
       onWarning: (warning) => logBossWarning(warning),
     });
   // Without a queue the API still serves; adoptions then queue no mapping (logged at error).
-  // pg-boss refuses sends to a missing queue, so the queues exist before the first adoption or
-  // reading upload, created once here rather than on every send.
+  // pg-boss refuses sends to a missing queue, so every discovered job's queue exists before a
+  // route sends one (an adoption, a reading upload), created once here rather than on every
+  // send. The worker discovers the same files.
   const started = await boss
     ?.start()
-    .then(() => ensureQueues(boss, [annotationsMap, readingIngest]))
+    .then(async () => ensureQueues(boss, await loadJobs()))
     .then(
       () => true,
       (err) => {
@@ -123,7 +122,10 @@ if (mode === 'api') {
     storage = createStorage(config);
     await boss.start();
     const jobs = await loadJobs();
-    for (const job of jobs) await workScopedJob(boss, database.db, job, log, {}, { storage });
+    // Jobs get the queue too, so one may queue follow-ups (ingestion re-queues mapping).
+    for (const job of jobs) {
+      await workScopedJob(boss, database.db, job, log, {}, { storage, boss });
+    }
     const maintenance = await workMaintenance(boss, database.db, log);
     log.info({ jobs: [...jobs.map((j) => j.name), ...maintenance] }, 'worker started');
   })();

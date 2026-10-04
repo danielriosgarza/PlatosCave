@@ -1,24 +1,32 @@
-import { useEffect, useLayoutEffect, useMemo, useRef } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react';
 import styles from './Reading.module.css';
 import { HOLD_MS, READER_INPUT } from './readerInput';
 import type { ReadingPosition } from './readings';
 import { sanitizeReading } from './sanitize';
-import { inFullScreen, onScrollerScroll, scrollerOf } from './scroller';
+import { scrollerOf, useReaderScroll } from './scroller';
 
 interface Props {
   /** Sanitised at ingestion (P1-08) and image links resolved by the server at read time. */
   html: string;
   initial: ReadingPosition | null;
   onPosition: (position: ReadingPosition) => void;
+  /** Hands the reading's root element to the margin, which selects and marks passages in it. */
+  onRoot?: (root: HTMLDivElement | null) => void;
 }
 
 type BlockPlace = { blockId: string; offset: number };
 
 const blocks = (root: HTMLElement) => root.querySelectorAll<HTMLElement>('[data-block-id]');
 
-/** The block at the top of the reading window and how far into its text that top reaches. */
+/**
+ * The block at the top of the reading window and how far into its text that top reaches. Null
+ * while the window top is above the reading's content (the first block starts below it): that is
+ * the reader at the tab row or the heading, not a place in the reading, so the last place stands.
+ */
 export function currentBlock(root: HTMLElement): ReadingPosition | null {
   const origin = scrollerOf(root).origin;
+  const first = blocks(root)[0];
+  if (first && first.getBoundingClientRect().top - origin > 1) return null;
   for (const block of blocks(root)) {
     const rect = block.getBoundingClientRect();
     if (rect.bottom - origin <= 1) continue;
@@ -54,8 +62,15 @@ function scrollToBlock(root: HTMLElement, position: BlockPlace) {
  * the page, and none may overwrite the place with where they left it. The HTML is sanitised once
  * more here before it is inserted (ADR-0002 §Readings on the app origin).
  */
-export function NativeReading({ html, initial, onPosition }: Props) {
-  const ref = useRef<HTMLDivElement>(null);
+export function NativeReading({ html, initial, onPosition, onRoot }: Props) {
+  const ref = useRef<HTMLDivElement | null>(null);
+  const attach = useCallback(
+    (element: HTMLDivElement | null) => {
+      ref.current = element;
+      onRoot?.(element);
+    },
+    [onRoot],
+  );
   const moved = useRef(false);
   const openedAt = useRef(performance.now());
   const start = useRef(initial && 'blockId' in initial ? initial : null);
@@ -82,50 +97,49 @@ export function NativeReading({ html, initial, onPosition }: Props) {
     if (target.current) scrollToBlock(root, target.current);
   }, [shown]);
 
-  useEffect(() => {
+  const settling = () => !moved.current && performance.now() - openedAt.current < HOLD_MS;
+  const hold = () => {
     const root = ref.current;
-    if (!root) return;
-    let full = inFullScreen(root);
-    const settling = () => !moved.current && performance.now() - openedAt.current < HOLD_MS;
-    const hold = () => {
-      if (settling() && target.current) scrollToBlock(root, target.current);
-    };
-    const input = () => {
-      moved.current = true;
-    };
-    const onScroll = () => {
-      // Entering or leaving full screen scrolls the old container first; that is not the reader.
-      if (inFullScreen(root) !== full) return;
+    if (root && settling() && target.current) scrollToBlock(root, target.current);
+  };
+  useReaderScroll(
+    () => ref.current,
+    () => {
+      const root = ref.current;
+      if (!root) return;
       if (settling()) return hold();
       const place = currentBlock(root);
       if (!place || !('blockId' in place)) return;
       here.current = place;
       onPosition(place);
-    };
-    const onFullScreen = () => {
-      // Another element entering or leaving full screen does not move this reader.
-      if (inFullScreen(root) === full) return;
-      full = inFullScreen(root);
-      if (here.current) scrollToBlock(root, here.current);
+    },
+    () => {
+      const root = ref.current;
+      if (root && here.current) scrollToBlock(root, here.current);
+    },
+  );
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `hold` reads refs only
+  useEffect(() => {
+    const root = ref.current;
+    if (!root) return;
+    const input = () => {
+      moved.current = true;
     };
     for (const type of READER_INPUT) window.addEventListener(type, input, { passive: true });
-    const stopScroll = onScrollerScroll(() => root, onScroll);
-    document.addEventListener('fullscreenchange', onFullScreen);
     root.addEventListener('load', hold, true);
     // The router scrolls to the top once the page has rendered; hold the place after that too.
     const frame = requestAnimationFrame(() => requestAnimationFrame(hold));
     return () => {
       cancelAnimationFrame(frame);
       for (const type of READER_INPUT) window.removeEventListener(type, input);
-      stopScroll();
-      document.removeEventListener('fullscreenchange', onFullScreen);
       root.removeEventListener('load', hold, true);
     };
-  }, [onPosition]);
+  }, []);
 
   return (
     <div
-      ref={ref}
+      ref={attach}
       className={styles.native}
       // biome-ignore lint/security/noDangerouslySetInnerHtml: sanitised twice with the reading allow-list: at ingestion and by sanitizeReading
       dangerouslySetInnerHTML={{ __html: shown }}

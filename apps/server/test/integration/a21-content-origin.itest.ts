@@ -5,9 +5,13 @@ import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { buildApp } from '../../src/app';
+import { PREVIEW_RETURN_COOKIE } from '../../src/auth/preview';
+import { SESSION_COOKIE } from '../../src/auth/sessions';
 import { loadConfig } from '../../src/config';
+import { renderReading } from '../../src/content/reading';
 import { adoptRelease } from '../../src/db/content/adoption';
 import { publishRelease } from '../../src/db/content/releases';
+import { type DerivedStatus, writeDerivedOutputs } from '../../src/db/jobs/derived';
 import { resourceRevisions, resources, topics } from '../../src/db/schema';
 import { FsStorage } from '../../src/storage/fs';
 import { storeCourseObject } from '../../src/storage/objects';
@@ -35,6 +39,7 @@ let testDb: TestDatabase;
 let app: FastifyInstance;
 let world: World;
 let root: string;
+let storage: FsStorage;
 let clock = now;
 
 function one<T>(rows: T[]): T {
@@ -51,17 +56,114 @@ interface Fixture {
 }
 const fx = {} as Record<'visible' | 'hidden' | 'scheduled' | 'draft' | 'foreign', Fixture>;
 
+/** A native reading uploaded as Markdown with one figure, and the keys of both files. */
+interface NativeFixture {
+  revisionId: string;
+  source: Fixture;
+  figure: Fixture;
+}
+const native = {} as Record<'ready' | 'failed' | 'pending', NativeFixture>;
+const status = (state: DerivedStatus['state'], error?: string): DerivedStatus => ({
+  state,
+  job: 'reading.ingest',
+  // A pending status names a job, so it stays pending rather than reading as never sent.
+  jobId: state === 'queued' ? '00000000-0000-4000-8000-0000000000aa' : null,
+  updatedAt: now.toISOString(),
+  ...(error && { error }),
+});
+
+/** Status writes that follow the release (a conversion re-run that fails or is in progress). */
+const later: (() => Promise<void>)[] = [];
+
+async function nativeReading(
+  topicId: string,
+  title: string,
+  position: number,
+  state: 'ready' | 'failed' | 'queued',
+): Promise<NativeFixture> {
+  const { db } = testDb;
+  const markdown = `# ${title}\n\n![A histogram](fig.png)\n`;
+  const source = await storeCourseObject(
+    db,
+    storage,
+    elenaScope,
+    Buffer.from(markdown),
+    'text/markdown',
+  );
+  const figure = await storeCourseObject(
+    db,
+    storage,
+    elenaScope,
+    Buffer.from(`${title} figure`),
+    'image/png',
+  );
+  const resource = one(
+    await db
+      .insert(resources)
+      .values({
+        courseId: ids.statistics,
+        topicId,
+        type: 'reading_native',
+        title,
+        position,
+        createdBy: ids.elena,
+      })
+      .returning(),
+  );
+  const revision = one(
+    await db
+      .insert(resourceRevisions)
+      .values({
+        resourceId: resource.id,
+        courseId: ids.statistics,
+        type: 'reading_native',
+        content: { sourceKey: source.key, format: 'markdown', assets: { 'fig.png': figure.key } },
+        accessibleAlternative: { text: title },
+        objectKeys: [source.key, figure.key],
+        contentHash: source.sha256,
+        createdBy: ids.elena,
+      })
+      .returning(),
+  );
+  await db
+    .update(resources)
+    .set({ headRevisionId: revision.id })
+    .where(eq(resources.id, resource.id));
+  // Converted for release; `state` is applied after release, as a re-run of the job can.
+  const written = await writeDerivedOutputs(
+    db,
+    elenaScope,
+    revision.id,
+    { ...renderReading(markdown, 'markdown', { 'fig.png': figure.key }) },
+    status('ready'),
+  );
+  if (!written) throw new Error('derived outputs not written');
+  later.push(async () => {
+    if (state === 'ready') return;
+    const error = state === 'failed' ? 'The file could not be read' : undefined;
+    await writeDerivedOutputs(db, elenaScope, revision.id, { html: null }, status(state, error));
+  });
+  return {
+    revisionId: revision.id,
+    source: { revisionId: revision.id, key: source.key },
+    figure: { revisionId: revision.id, key: figure.key },
+  };
+}
+
 /** A draft PDF reading whose revision holds one stored object. */
 async function resourceWithObject(
   topicId: string,
   title: string,
   bytes: string,
-  draft: { position?: number; visibility?: 'visible' | 'hidden'; releaseAt?: Date } = {},
+  draft: {
+    position?: number;
+    visibility?: 'visible' | 'hidden';
+    releaseAt?: Date;
+  } = {},
   courseId: string = ids.statistics,
   owner: string = ids.elena,
 ): Promise<Fixture & { resourceId: string }> {
   const { db } = testDb;
-  const storage = app.contentDeps.storage;
   const scope = asCourseScope(courseId, owner);
   const stored = await storeCourseObject(db, storage, scope, Buffer.from(bytes), 'application/pdf');
   const resource = one(
@@ -105,9 +207,10 @@ beforeAll(async () => {
   testDb = await createTestDatabase();
   world = await buildWorld(testDb.db, now);
   root = await mkdtemp(join(tmpdir(), 'parallax-a21-'));
+  storage = new FsStorage(root);
   app = await buildApp(config, {
     db: testDb.db,
-    storage: new FsStorage(root),
+    storage,
     now: () => clock,
   });
   await app.ready();
@@ -116,7 +219,12 @@ beforeAll(async () => {
   const topic = one(
     await db
       .insert(topics)
-      .values({ courseId: ids.statistics, position: 2, title: 'Inference', createdBy: ids.elena })
+      .values({
+        courseId: ids.statistics,
+        position: 2,
+        title: 'Inference',
+        createdBy: ids.elena,
+      })
       .returning(),
   );
   const visible = await resourceWithObject(topic.id, 'Lecture notes', 'visible pdf');
@@ -128,10 +236,18 @@ beforeAll(async () => {
     position: 2,
     releaseAt: tomorrow,
   });
+  native.ready = await nativeReading(topic.id, 'Converted notes', 3, 'ready');
+  native.failed = await nativeReading(topic.id, 'Broken notes', 4, 'failed');
+  native.pending = await nativeReading(topic.id, 'Converting notes', 5, 'queued');
   const foreignTopic = one(
     await db
       .insert(topics)
-      .values({ courseId: ids.linearModels, position: 0, title: 'OLS', createdBy: ids.olivia })
+      .values({
+        courseId: ids.linearModels,
+        position: 0,
+        title: 'OLS',
+        createdBy: ids.olivia,
+      })
       .returning(),
   );
   fx.foreign = await resourceWithObject(
@@ -152,6 +268,7 @@ beforeAll(async () => {
     expectedReleaseId: ids.releaseV1,
   });
   if (!adopted.ok) throw new Error(adopted.reason);
+  for (const write of later) await write();
   fx.visible = visible;
   fx.hidden = hidden;
   fx.scheduled = scheduled;
@@ -159,7 +276,7 @@ beforeAll(async () => {
   // A newer draft revision of the visible resource that no release pins.
   const draftObject = await storeCourseObject(
     db,
-    app.contentDeps.storage,
+    storage,
     elenaScope,
     Buffer.from('draft pdf'),
     'application/pdf',
@@ -277,9 +394,13 @@ describe('content origin and signed content tokens', () => {
     expect((await mint(ids.classA, fx.visible)).statusCode).toBe(401);
     const { url } = (await mint(ids.classA, fx.visible, 'sam')).json();
     // A session cookie on the content origin does not replace the token.
-    const bare = await follow('http://localhost:3100/content/', { cookie: world.cookie.sam });
+    const bare = await follow('http://localhost:3100/content/', {
+      cookie: world.cookie.sam,
+    });
     expect(bare.statusCode).toBe(404);
-    const api = await follow('http://localhost:3100/api/me', { cookie: world.cookie.sam });
+    const api = await follow('http://localhost:3100/api/me', {
+      cookie: world.cookie.sam,
+    });
     expect(api.statusCode).toBe(404);
     clock = new Date(now.getTime() + 5 * 60_000);
     try {
@@ -297,5 +418,90 @@ describe('content origin and signed content tokens', () => {
     expect(file.headers['content-disposition']).toBe(
       `attachment; filename="Lecture notes.pdf"; filename*=UTF-8''Lecture%20notes.pdf`,
     );
+  });
+
+  test('A21 a native reading serves its figures but not its uploaded source once converted', async () => {
+    const source = await mint(ids.classA, native.ready.source, 'sam');
+    expect(source.statusCode).toBe(404);
+    // The same body as any key the revision does not own.
+    const unknown = await mint(
+      ids.classA,
+      {
+        revisionId: native.ready.revisionId,
+        key: `courses/${ids.statistics}/objects/${'0'.repeat(64)}`,
+      },
+      'sam',
+    );
+    expect(unknown.statusCode).toBe(404);
+    expect(source.json()).toEqual(unknown.json());
+    expect(source.json()).toEqual({ error: 'not found' });
+    // Nor while it is still converting, as an attachment, or for the class instructor.
+    expect((await mint(ids.classA, native.pending.source, 'sam')).statusCode).toBe(404);
+    expect(
+      (await mint(ids.classA, native.ready.source, 'sam', '?disposition=attachment')).statusCode,
+    ).toBe(404);
+    expect((await mint(ids.classA, native.ready.source, 'priya')).statusCode).toBe(404);
+
+    // Its figures and PDF readings are still served.
+    const figure = await mint(ids.classA, native.ready.figure, 'sam');
+    expect(figure.statusCode).toBe(200);
+    expect((await follow(figure.json().url)).body).toBe('Converted notes figure');
+    const pdf = await mint(ids.classA, fx.visible, 'sam');
+    expect((await follow(pdf.json().url)).body).toBe('visible pdf');
+  });
+
+  test('A21 a failed conversion offers its uploaded source as the permitted download', async () => {
+    const res = await mint(ids.classA, native.failed.source, 'sam', '?disposition=attachment');
+    expect(res.statusCode).toBe(200);
+    const file = await follow(res.json().url);
+    expect(file.statusCode).toBe(200);
+    expect(file.body).toContain('# Broken notes');
+    expect(file.headers['content-disposition']).toMatch(/^attachment; /);
+    expect(file.headers['content-security-policy']).toMatch(/^sandbox; /);
+    // The other cohort still cannot reach it.
+    expect((await mint(ids.classA, native.failed.source, 'bea')).statusCode).toBe(404);
+  });
+
+  test('A01 the reading names its source only when the student may download it', async () => {
+    const read = async (revisionId: string) =>
+      (
+        await app.inject({
+          method: 'GET',
+          url: `/api/classes/${ids.classA}/resources/${revisionId}/reading`,
+          headers: { ...appHost, cookie: world.cookie.sam },
+        })
+      ).json();
+    expect(await read(native.ready.revisionId)).toMatchObject({
+      status: 'ready',
+      sourceKey: null,
+    });
+    expect(await read(native.pending.revisionId)).toMatchObject({
+      status: 'pending',
+      sourceKey: null,
+    });
+    expect(await read(native.failed.revisionId)).toMatchObject({
+      status: 'failed',
+      sourceKey: native.failed.source.key,
+    });
+    expect(await read(fx.visible.revisionId)).toMatchObject({ sourceKey: fx.visible.key });
+  });
+
+  test('A01 a draft preview follows the same rule for a native reading source', async () => {
+    const started = await app.inject({
+      method: 'POST',
+      url: `/api/courses/${ids.statistics}/preview`,
+      headers: { ...appHost, cookie: world.cookie.marcus },
+      payload: { classId: ids.classB, topicId: ids.sampling },
+    });
+    expect(started.statusCode).toBe(200);
+    const cookie = started.cookies
+      .filter((c) => c.name === SESSION_COOKIE || c.name === PREVIEW_RETURN_COOKIE)
+      .map((c) => `${c.name}=${encodeURIComponent(c.value)}`)
+      .join('; ');
+    const preview = (f: Fixture) =>
+      app.inject({ method: 'GET', url: mintUrl(ids.classB, f), headers: { ...appHost, cookie } });
+    expect((await preview(native.ready.figure)).statusCode).toBe(200);
+    expect((await preview(native.ready.source)).statusCode).toBe(404);
+    expect((await preview(native.failed.source)).statusCode).toBe(200);
   });
 });

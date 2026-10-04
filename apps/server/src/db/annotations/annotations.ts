@@ -665,23 +665,29 @@ export async function mapClass(db: Db, scope: ClassScope): Promise<MapResult> {
       ),
     );
   const layouts = new Map(revisionRows.map((r) => [r.id, layoutOf(r.type, r.derived)]));
+  // Each pinned revision's layout once, not once per mark.
+  const targets = new Map(
+    [...pins.values()].map((p) => [p.revisionId, layoutOf(p.type, p.derived)]),
+  );
 
   const place = async (mark: Mark, target: 'annotationId' | 'threadId') => {
     const pin = pins.get(mark.resourceId);
     if (!pin || placed.has(`${mark.id}:${pin.revisionId}`)) return;
-    const to = layoutOf(pin.type, pin.derived);
-    if (!to) {
-      result.pending += 1;
-      return;
-    }
+    // Never the pinned revision: marks made on it are not `moved`, and placements on it are
+    // in `placed`, skipped above.
     const from = latest.get(mark.id);
     const source = from?.anchor
       ? { revisionId: from.resourceRevisionId, anchor: from.anchor }
       : { revisionId: mark.resourceRevisionId, anchor: mark.anchor };
-    const mapping =
-      source.revisionId === pin.revisionId
-        ? ({ status: 'mapped', anchor: source.anchor, confidence: 1 } as const)
-        : mapAnchor(source.anchor, layouts.get(source.revisionId), to);
+    const to = targets.get(pin.revisionId);
+    const before = layouts.get(source.revisionId);
+    // Page anchors compare page hashes on both sides, so they also wait for the source's.
+    const pageAnchor = source.anchor.kind === 'pdf' || source.anchor.kind === 'slide';
+    if (!to || to === 'pending' || (pageAnchor && before === 'pending')) {
+      result.pending += 1;
+      return;
+    }
+    const mapping = mapAnchor(source.anchor, before === 'pending' ? undefined : before, to);
     await db
       .insert(annotationPlacements)
       .values({
@@ -821,8 +827,10 @@ export async function listMapping(db: Db, scope: ClassScope): Promise<MappingLis
 }
 
 /**
- * Adoption diff (ADR-0003): how many of the class's annotations and threads sit on each
- * revision the class stops using, by their original revision or a placement on it.
+ * Adoption diff (ADR-0003): how many of the class's annotations and threads the adopting
+ * instructor may see sit on each revision the class stops using, by their original revision or
+ * a placement on it. Counts go through `visibleTo` like every other read (ADR-0002): students'
+ * private notes and preview principals' marks are never counted (§8, §17, A05).
  */
 registerAffectedBy('annotations', async (ex, scope, revisionIds) => {
   const counts = new Map<string, number>();
@@ -836,7 +844,7 @@ registerAffectedBy('annotations', async (ex, scope, revisionIds) => {
       await ex
         .select({ revisionId: t.resourceRevisionId, n: sql<number>`count(*)` })
         .from(t)
-        .where(and(forClass(scope, t), inArray(t.resourceRevisionId, revisionIds)))
+        .where(and(visibleTo(scope, t), inArray(t.resourceRevisionId, revisionIds)))
         .groupBy(t.resourceRevisionId),
     );
     // Marks made on an older revision and placed on one the class now leaves.
@@ -848,6 +856,7 @@ registerAffectedBy('annotations', async (ex, scope, revisionIds) => {
         .where(
           and(
             forClass(scope, annotationPlacements),
+            visibleTo(scope, t),
             inArray(annotationPlacements.resourceRevisionId, revisionIds),
             sql`${t.resourceRevisionId} <> ${annotationPlacements.resourceRevisionId}`,
           ),

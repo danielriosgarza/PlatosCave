@@ -1,9 +1,11 @@
 import { and, eq, gt, isNull } from 'drizzle-orm';
 import type { SignInResult } from '../../auth/identity-provider';
-import { hashToken, newToken, type Principal, SESSION_TTL_MS } from '../../auth/sessions';
+import { hashToken, newToken } from '../../auth/tokens';
 import type { Db, Executor } from '../client';
 import { authSessions, users } from '../schema';
 import { userForVerifiedEmail } from './accounts';
+
+export const SESSION_TTL_MS = 14 * 24 * 60 * 60_000;
 
 export async function createSession(
   db: Executor,
@@ -68,6 +70,20 @@ export async function revokeSession(db: Executor, token: string, now: Date): Pro
     .update(authSessions)
     .set({ revokedAt: now })
     .where(and(eq(authSessions.tokenHash, hashToken(token)), isNull(authSessions.revokedAt)));
+}
+
+/** A person who can act: a signed-in session's user, or the actor of a background job. */
+export interface Actor {
+  id: string;
+  kind: 'user' | 'preview';
+  name: string;
+  email: string | null;
+  ownerUserId: string | null;
+}
+
+export interface Principal extends Actor {
+  sessionId: string;
+  authTime: Date;
 }
 
 /** The columns that make an `Actor`, for every query that loads one (sessions and jobs). */

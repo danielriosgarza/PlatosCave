@@ -72,4 +72,7 @@ export function assertSafeKey(key: string): void {
 
 export const courseObjectPrefix = (courseId: string): string => `courses/${courseId}`;
 
+/** Where a class's submitted snapshots live: inside the class's own area (ADR-0002). */
+export const classSubmissionPrefix = (classId: string): string => `classes/${classId}/submissions`;
+
 export const objectKey = (prefix: string, sha256: string): string => `${prefix}/objects/${sha256}`;

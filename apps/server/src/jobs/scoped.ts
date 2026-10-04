@@ -30,11 +30,14 @@ export interface ScopedJobArgs<R extends JobRule, I extends z.ZodType> {
   job: Job<unknown>;
   /** Object store, for jobs that read uploads; absent where the caller has none. */
   storage?: Storage;
+  /** The queue, for jobs that queue follow-up jobs; absent where the caller has none. */
+  boss?: PgBoss;
 }
 
 /** Services a worker hands every job besides the database. */
 export interface JobServices {
   storage?: Storage;
+  boss?: PgBoss;
 }
 
 export interface ScopedJob<R extends JobRule = JobRule, I extends z.ZodType = z.ZodType> {

@@ -10,6 +10,16 @@
   flex-wrap: wrap;
   background: var(--pc-sheet);
 }
+.toolbarActions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.button[aria-pressed="true"] {
+  background: var(--pc-accent);
+  color: var(--pc-accent-ink);
+  border-color: var(--pc-accent);
+}
 .panel {
   padding: 0 0 32px;
 }
@@ -185,6 +195,28 @@
 .native :global(.hljs-literal) {
   text-decoration: underline dotted;
   text-underline-offset: 3px;
+}
+
+/*
+ * Marks on annotated passages (§8): pale yellow, an underline so they do not rely on colour, and a
+ * count where several passages overlap. The count is drawn here, not in the text, so block offsets
+ * stay what the anchors recorded.
+ */
+.native :global(mark[data-marks]) {
+  color: inherit;
+  background: var(--pc-highlight);
+  border-bottom: 1px solid var(--pc-muted);
+  cursor: pointer;
+}
+.native :global(mark[data-marks][data-active="true"]) {
+  outline: 2px solid var(--pc-ink);
+  outline-offset: 1px;
+}
+.native :global(mark[data-count])::after {
+  content: attr(data-count);
+  font: 600 12px var(--pc-font-sans);
+  vertical-align: super;
+  margin-left: 4px;
 }
 
 /* PDF reading: one page at a time, fitted to the stage. */

@@ -35,6 +35,8 @@ export interface Row {
   correct: boolean;
   /** Matching: id of the choice this prompt is paired with, kept so saves do not renumber it. */
   choiceId?: string;
+  /** Matching: that choice's stored label, so an edited label can adopt a same-named extra choice. */
+  choiceLabel?: string;
 }
 
 export interface DraftStep {
@@ -234,6 +236,7 @@ export function toDraft(content: unknown): DraftExercise {
               extra: choices.get(step.pairs[p.id] ?? '') ?? '',
               correct: false,
               choiceId: step.pairs[p.id] ?? '',
+              choiceLabel: choices.get(step.pairs[p.id] ?? '') ?? '',
             })),
             distractors: rowsOf(
               step.choices.filter((c) => !Object.values(step.pairs).includes(c.id)),
@@ -335,6 +338,8 @@ function stepContent(s: DraftStep): unknown {
         ...s.distractors.map((d) => d.id),
       ]);
       const choices: { id: string; label: string }[] = [];
+      // Distractors a prompt has since adopted move into the paired set.
+      const unused = [...s.distractors];
       const pairs: Record<string, string> = {};
       for (const r of s.rows) {
         const label = text(r.extra);
@@ -342,6 +347,14 @@ function stepContent(s: DraftStep): unknown {
         let choice = choices.find((c) =>
           r.choiceId ? c.id === r.choiceId && c.label === label : c.label === label,
         );
+        const unchanged = r.choiceId && r.choiceLabel === label;
+        const adopted =
+          choice || !label || unchanged ? -1 : unused.findIndex((d) => text(d.label) === label);
+        if (!choice && adopted !== -1) {
+          const [d] = unused.splice(adopted, 1);
+          choice = { id: d?.id ?? '', label };
+          choices.push(choice);
+        }
         if (!choice) {
           let id = r.choiceId ?? '';
           if (!id || choices.some((c) => c.id === id)) {
@@ -353,7 +366,7 @@ function stepContent(s: DraftStep): unknown {
         }
         pairs[r.id] = choice.id;
       }
-      choices.push(...labelled(s.distractors));
+      choices.push(...labelled(unused));
       return {
         ...common,
         prompts: labelled(s.rows),
@@ -411,6 +424,10 @@ export function toContent(draft: DraftExercise): unknown {
     }),
   };
 }
+
+/** Ordering: whether students would see the items already in the answer order if not shuffled. */
+export const presentedAsAnswer = (s: DraftStep): boolean =>
+  presentedItems(s).every((item, i) => item.id === s.rows[i]?.id);
 
 /** What still stops the form from being a valid exercise; empty when it can be saved. */
 export const problemsOf = (draft: DraftExercise): string[] => exerciseProblems(toContent(draft));

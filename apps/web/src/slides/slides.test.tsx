@@ -21,12 +21,20 @@ vi.mock('../reading/pdfjs', () => ({ openPdf }));
 const REV_A = '00000000-0000-4000-8000-000000000601';
 const REV_B = '00000000-0000-4000-8000-000000000602';
 const REV_PENDING = '00000000-0000-4000-8000-000000000603';
+const REV_WEB = '00000000-0000-4000-8000-000000000604';
 const RES = '00000000-0000-4000-8000-000000000401';
 const SOURCE_KEY = `courses/${COURSE}/objects/${'a'.repeat(64)}`;
 const DECK_URL = 'http://localhost:3100/content/deck-1';
 const SLIDES = `/classes/${CLASS_A}/topics/${T_SAMPLING}/slides`;
 const PAGES = 12;
 const MAT = { width: 978, height: 550 };
+// What ingestion stores for a web deck; the hostile bits are what a second sanitiser must catch.
+const WEB_SLIDES = [
+  '<h1 data-block-id="a1">Sampling</h1>\n<p data-block-id="a2">Why samples vary</p>',
+  '<h2 data-block-id="b1">Two ideas</h2>\n<ul><li data-block-id="b2">the mean moves</li></ul>' +
+    '<img alt="x" src="data:image/svg+xml,<svg onload=alert(1)>" onerror="alert(1)"><script>alert(1)</script>',
+  '<p data-block-id="c1">Last slide</p>',
+];
 
 const deck = (revisionId: string, title: string, page?: number) => ({
   resourceId: RES,
@@ -53,6 +61,20 @@ function api(world: World, me = makeMe({ classes: [studentIn(CLASS_A, 'Class A')
       world.puts.push(body);
       return { status: 200, body: { updatedAt: '2026-10-01T09:00:00Z' } };
     }
+    if (url === `/api/classes/${CLASS_A}/resources/${REV_WEB}/slides`) {
+      return {
+        status: 200,
+        body: {
+          revisionId: REV_WEB,
+          title: 'Sampling slides',
+          status: 'ready',
+          error: null,
+          sourceKey: null,
+          pdf: null,
+          web: { slides: WEB_SLIDES },
+        },
+      };
+    }
     for (const [revisionId, title, state] of [
       [REV_A, 'Sampling lecture', 'ready'],
       [REV_B, 'Sampling recap', 'ready'],
@@ -68,6 +90,7 @@ function api(world: World, me = makeMe({ classes: [studentIn(CLASS_A, 'Class A')
             status: state,
             error: null,
             sourceKey: SOURCE_KEY,
+            web: null,
             pdf:
               state === 'ready'
                 ? {
@@ -172,17 +195,34 @@ describe('slide viewer', () => {
     expect(position()).toHaveTextContent('4 / 12');
   });
 
-  it('A24 arrows change nothing while the viewer does not hold focus; without a notes slot there is no Notes control', async () => {
+  it('A24 arrows change nothing while the viewer does not hold focus', async () => {
     const user = userEvent.setup();
     openPdf.mockResolvedValue(pdfDocument());
     api(makeWorld([deck(REV_A, 'Sampling lecture', 5)]));
     renderApp(SLIDES);
     await viewer();
-    expect(screen.queryByRole('button', { name: 'Notes' })).toBeNull();
     expect(position()).toHaveTextContent('5 / 12');
     await user.click(document.body);
     await user.keyboard('{ArrowRight}{ArrowLeft}{ArrowLeft}');
     expect(position()).toHaveTextContent('5 / 12');
+  });
+
+  it('A24 a viewer given no notes slot has no Notes control', async () => {
+    openPdf.mockResolvedValue(pdfDocument());
+    api(makeWorld([deck(REV_A, 'Sampling lecture')]));
+    const { SlideViewer } = await import('./SlideViewer');
+    const { render } = await import('@testing-library/react');
+    render(
+      <SlideViewer
+        url={DECK_URL}
+        pageCount={PAGES}
+        initialPage={1}
+        source={{ classId: CLASS_A, revisionId: REV_A, key: null }}
+        onPage={vi.fn()}
+      />,
+    );
+    await viewer();
+    expect(screen.queryByRole('button', { name: 'Notes' })).toBeNull();
   });
 
   it('A24 the notes slot follows the slide shown and is not reached by arrow keys typed in it', async () => {
@@ -423,5 +463,69 @@ describe('several decks and states', () => {
     await waitFor(() => expect(second.rendered.at(-1)?.n).toBe(2));
     expect(openPdf).toHaveBeenCalledTimes(2);
     expect(position()).toHaveTextContent('2 / 12');
+  });
+});
+
+describe('web slides', () => {
+  const count = () => screen.getByText(/^\d+ \/ 3$/);
+  const open = async () => {
+    const world = makeWorld([deck(REV_WEB, 'Sampling slides', 2)], REV_WEB);
+    api(world);
+    renderApp(SLIDES);
+    const stage = await viewer();
+    return { world, stage };
+  };
+  const box = (n: number) =>
+    screen.getByRole('article', { name: `Slide ${n} of 3` }).parentElement as HTMLElement;
+  const FIT = Math.floor(550 * (16 / 9));
+
+  it('shows the slide of a web deck in a 16:9 box fitted to the stage, opened at the last slide studied', async () => {
+    await open();
+    expect(openPdf).not.toHaveBeenCalled();
+    expect(count()).toHaveTextContent('2 / 3');
+    expect(await screen.findByRole('heading', { name: 'Two ideas' })).toBeVisible();
+    // 16:9 inside 978 x 550 fits by height: never distorted.
+    expect(box(2).style.width).toBe(`${FIT}px`);
+    expect(box(2).style.height).toBe(`${Math.round(FIT / (16 / 9))}px`);
+    expect(screen.queryByText('Why samples vary')).toBeNull();
+  });
+
+  it('the viewer controls work on a web deck: arrows, index, zoom and fit, and the place is saved', async () => {
+    const user = userEvent.setup();
+    const { world, stage } = await open();
+    stage.focus();
+    await user.keyboard('{ArrowRight}');
+    expect(count()).toHaveTextContent('3 / 3');
+    expect(screen.getByText('Last slide')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled();
+    await user.keyboard('{ArrowLeft}{ArrowLeft}');
+    expect(
+      within(screen.getByRole('article', { name: 'Slide 1 of 3' })).getByRole('heading', {
+        name: 'Sampling',
+      }),
+    ).toBeVisible();
+    expect(stage).toHaveFocus();
+
+    await user.click(screen.getByRole('button', { name: 'Slide index' }));
+    const index = screen.getByRole('list', { name: 'Slides' });
+    expect(within(index).getAllByRole('button')).toHaveLength(3);
+    await user.click(within(index).getByRole('button', { name: 'Slide 3' }));
+    expect(screen.getByText('Last slide')).toBeVisible();
+
+    await user.click(screen.getByRole('button', { name: 'Zoom in' }));
+    expect(box(3).style.width).toBe(`${Math.floor(550 * (16 / 9) * 1.5)}px`);
+    await user.click(screen.getByRole('button', { name: 'Fit' }));
+    expect(box(3).style.width).toBe(`${FIT}px`);
+
+    await waitFor(() => expect(world.puts.at(-1)?.position).toEqual({ page: 3, offset: 0 }));
+    expect(world.puts.at(-1)).toMatchObject({ revisionId: REV_WEB, tab: 'slides' });
+  });
+
+  it('inserts no script, handler or data image from a slide', async () => {
+    await open();
+    const slide = screen.getByRole('article', { name: 'Slide 2 of 3' });
+    expect(slide.querySelector('script')).toBeNull();
+    expect(slide.innerHTML).not.toMatch(/onerror|onload|alert\(1\)|data:image/i);
+    expect(within(slide).getByText('the mean moves')).toBeVisible();
   });
 });

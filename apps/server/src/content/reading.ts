@@ -28,6 +28,8 @@ export interface BlockEntry {
   tag: string;
   /** The block's text content, as a browser's `textContent` reports it (anchor offsets). */
   text: string;
+  /** The 1-based slide the block is on; only blocks of a slide deck have one. */
+  slide?: number;
 }
 
 export interface FigureEntry {
@@ -326,16 +328,12 @@ function dropEmptyClasses(tree: Root): void {
   });
 }
 
-/**
- * Renders one native reading. `assets` maps image names used in the source to storage keys of
- * the revision's own objects. Raw HTML inside Markdown is dropped; HTML uploads are sanitised.
- * Runs on the calling thread; the ingestion job calls it through `renderReadingInThread`.
- */
-export function renderReading(
+/** Everything `renderReading` and `renderSlides` share: parse, sanitise, and normalise the tree. */
+function renderTree(
   source: string,
   format: ReadingFormat,
-  assets: Record<string, string> = {},
-): RenderedReading {
+  assets: Record<string, string>,
+): { tree: Root; warnings: string[] } {
   const tree: Root =
     format === 'markdown'
       ? markdownProcessor.runSync(markdownProcessor.parse(source))
@@ -361,9 +359,96 @@ export function renderReading(
   paragraphImagesToFigures(clean);
   fixLinks(clean);
   rewriteImages(clean, assets, warnings);
-  const { blockMap, figures } = assignIds(clean);
-  const html = stringify(clean);
+  return { tree: clean, warnings };
+}
+
+/**
+ * Renders one native reading. `assets` maps image names used in the source to storage keys of
+ * the revision's own objects. Raw HTML inside Markdown is dropped; HTML uploads are sanitised.
+ * Runs on the calling thread; the ingestion job calls it through `renderReadingInThread`.
+ */
+export function renderReading(
+  source: string,
+  format: ReadingFormat,
+  assets: Record<string, string> = {},
+): RenderedReading {
+  const { tree, warnings } = renderTree(source, format, assets);
+  const { blockMap, figures } = assignIds(tree);
+  const html = stringify(tree);
   return { html, blockMap, figures, warnings };
+}
+
+export interface RenderedSlides {
+  /** The sanitised HTML of each slide, in order. */
+  slides: string[];
+  /** Blocks of the whole deck; ids are unique across slides, each entry names its slide. */
+  blockMap: BlockEntry[];
+  figures: FigureEntry[];
+  warnings: string[];
+}
+
+const FENCE_OPEN = /^ {0,3}(`{3,}|~{3,})/;
+const FENCE_CLOSE = /^ {0,3}(`{3,}|~{3,})\s*$/;
+const SEPARATOR = /^ {0,3}---\s*$/;
+const MATH_FENCE = /^ {0,3}\$\$\s*$/;
+
+/**
+ * A line holding only `---` separates slides. Markdown reads the same line under a paragraph
+ * as a heading underline, so a blank line goes before every separator outside code fences
+ * and `$$` math blocks.
+ */
+function isolateSeparators(source: string): string {
+  const out: string[] = [];
+  let fence: string | null = null;
+  let math = false;
+  for (const line of source.split(/\r\n|\r|\n/)) {
+    if (fence === null && MATH_FENCE.test(line)) math = !math;
+    else if (math) {
+      // Inside display math a --- is TeX, not a separator.
+    } else if (fence === null) {
+      const open = FENCE_OPEN.exec(line);
+      if (open?.[1]) fence = open[1];
+      else if (SEPARATOR.test(line) && (out.at(-1) ?? '').trim() !== '') out.push('');
+    } else {
+      const close = FENCE_CLOSE.exec(line)?.[1];
+      if (close && close[0] === fence[0] && close.length >= fence.length) fence = null;
+    }
+    out.push(line);
+  }
+  return out.join('\n');
+}
+
+/**
+ * Renders a Markdown slide deck through the reading pipeline: one pass over the whole deck, so
+ * block ids are unique across slides, then the result is cut at the top-level thematic breaks
+ * (`---`, which Markdown also spells `***` and `___`). Empty slides are dropped. Images are not uploaded files of a deck, so none shows.
+ */
+export function renderSlides(source: string): RenderedSlides {
+  const { tree, warnings } = renderTree(isolateSeparators(source), 'markdown', {});
+  const { blockMap, figures } = assignIds(tree);
+  const groups: ElementContent[][] = [[]];
+  for (const node of tree.children) {
+    if (node.type === 'element' && node.tagName === 'hr') groups.push([]);
+    else groups.at(-1)?.push(node as ElementContent);
+  }
+  const slides: string[] = [];
+  const slideOf = new Map<string, number>();
+  for (const group of groups) {
+    if (group.every(isBlank)) continue;
+    const slide: Root = { type: 'root', children: group };
+    const number = slides.length + 1;
+    visit(slide, 'element', (el) => {
+      const id = el.properties.dataBlockId;
+      if (typeof id === 'string') slideOf.set(id, number);
+    });
+    slides.push(stringify(slide));
+  }
+  return {
+    slides,
+    blockMap: blockMap.map((b) => ({ ...b, slide: slideOf.get(b.id) ?? 1 })),
+    figures,
+    warnings,
+  };
 }
 
 /**

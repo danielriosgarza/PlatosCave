@@ -3,18 +3,20 @@ import { and, asc, desc, eq } from 'drizzle-orm';
 import { z } from 'zod';
 import type { ClassScope } from '../auth/scope';
 import { openToStudent } from '../content/availability';
-import { readDerivedStatus } from '../jobs/derived';
 import { findReleaseTopic } from './classTopics';
 import type { Db } from './client';
+import { readDerivedStatus } from './jobs/derived';
 import { pdfKey, releasedRevision } from './readings';
 import { releaseResources, resourceRevisions, studyPositions } from './schema';
 import { forClass } from './scoped';
 
 /**
- * PDF decks of the class's adopted release as the caller may study them (§5, §7), and the slide
+ * Decks (PDF and Markdown) of the class's adopted release as the caller may study them (§5, §7), and the slide
  * the caller was at. As for readings, every function takes the resolved `ClassScope`, and a
  * student reaches only visible, released decks of an open topic.
  */
+
+const isDeck = (type: string) => type === 'slides_pdf' || type === 'slides_web';
 
 const Place = z.object({ page: z.number(), offset: z.number() });
 
@@ -62,7 +64,7 @@ export async function listTopicDecks(
     )
     .orderBy(asc(releaseResources.position));
   const shown = rows.filter(
-    (r) => r.type === 'slides_pdf' && (scope.role !== 'student' || openToStudent(r, now)),
+    (r) => isDeck(r.type) && (scope.role !== 'student' || openToStudent(r, now)),
   );
   const saved = await db
     .select({ revisionId: studyPositions.resourceRevisionId, position: studyPositions.position })
@@ -91,8 +93,10 @@ export interface DeckContent {
   status: 'ready' | 'pending' | 'failed';
   error: string | null;
   sourceKey: string | null;
-  /** Storage key and page count of a ready deck. */
+  /** Storage key and page count of a ready PDF deck. */
   pdf: { key: string; pageCount: number } | null;
+  /** The sanitised HTML of each slide of a ready web deck. */
+  web: { slides: string[] } | null;
 }
 
 /** One deck the caller may open now, with its ingestion state; null when not found (404). */
@@ -103,18 +107,26 @@ export async function loadDeck(
   now: Date,
 ): Promise<DeckContent | null> {
   const row = await releasedRevision(db, scope, revisionId, now);
-  if (!row || row.type !== 'slides_pdf' || row.tab !== 'slides') return null;
+  if (!row || !isDeck(row.type) || row.tab !== 'slides') return null;
   const status = readDerivedStatus(row.derived.status, row.createdAt);
-  const key = pdfKey(row.content, row.objectKeys);
+  const web = row.type === 'slides_web';
+  const key = web ? null : pdfKey(row.content, row.objectKeys);
   const base = {
     revisionId: row.revisionId,
     title: row.title,
     error: status?.state === 'failed' ? (status.error ?? 'The deck could not be processed') : null,
     sourceKey: key,
     pdf: null,
+    web: null,
   };
   if (status?.state !== 'ready') {
     return { ...base, status: status?.state === 'failed' ? 'failed' : 'pending' };
+  }
+  if (web) {
+    const { slides } = row.derived;
+    return Array.isArray(slides) && slides.length > 0 && slides.every((s) => typeof s === 'string')
+      ? { ...base, status: 'ready', web: { slides: slides as string[] } }
+      : { ...base, status: 'failed', error: 'The deck has no rendered slides' };
   }
   const pageCount = row.derived.pageCount;
   if (!key || typeof pageCount !== 'number' || pageCount < 1) {

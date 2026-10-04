@@ -17,6 +17,7 @@ import type { Config } from './config';
 import { MAX_TOKEN_LENGTH } from './content/tokens';
 import type { Db } from './db/client';
 import { CONTENT_ROUTE, isContentHost, registerContentOrigin } from './http/content';
+import { handleError } from './http/errors';
 import { redactUrl } from './http/redact';
 import { NOT_FOUND } from './http/register';
 import { isApiPath, registerStatic } from './http/static';
@@ -24,13 +25,6 @@ import { createMailer, type Mailer } from './mail/mailer';
 import { loadModules } from './modules';
 import { createStorage } from './storage/create';
 import type { Storage } from './storage/storage';
-
-declare module 'fastify' {
-  interface FastifyInstance {
-    /** Configuration and object store for content tokens and the content origin (P1-06). */
-    contentDeps: { config: Config; storage: Storage };
-  }
-}
 
 export interface Deps {
   db?: Db;
@@ -55,6 +49,8 @@ export interface RouteDeps extends Deps {
   now: () => Date;
   mailer: Mailer;
   background: BackgroundTasks;
+  /** The injected object store, or the one STORAGE_DRIVER selects. */
+  storage: Storage;
 }
 
 /** How long close waits for background work, inside the 10 s stop grace main.ts documents. */
@@ -102,6 +98,8 @@ export async function buildApp(config: Config, deps: Deps = {}): Promise<Fastify
   });
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
+  // No 5xx body carries an error's text (hosts, buckets, SQL); 4xx keep Fastify's default.
+  app.setErrorHandler(handleError);
 
   const now = deps.now ?? (() => new Date());
   const storage = deps.storage ?? createStorage(config);
@@ -118,11 +116,11 @@ export async function buildApp(config: Config, deps: Deps = {}): Promise<Fastify
     now,
     mailer: deps.mailer ?? createMailer(config, now),
     background,
+    storage,
   };
   // Only the store built here is ours to release; an injected one belongs to the caller.
   if (!deps.storage) app.addHook('onClose', async () => storage.destroy?.());
   app.decorate('resolverDeps', { db: deps.db, now });
-  app.decorate('contentDeps', { config, storage });
   app.decorate('contracts', [] as RouteContract[]);
   app.decorateRequest('parallaxScope', undefined);
 
@@ -154,7 +152,7 @@ export async function buildApp(config: Config, deps: Deps = {}): Promise<Fastify
         fontSrc: ["'self'", 'data:', content],
         formAction: ["'self'"],
         frameAncestors: ["'none'"],
-        frameSrc: [content],
+        frameSrc: [content, ...config.SHINY_ORIGINS],
         imgSrc: ["'self'", 'data:', 'blob:', content],
         mediaSrc: ["'self'", 'blob:', content],
         objectSrc: ["'none'"],

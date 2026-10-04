@@ -12,7 +12,7 @@ import {
   renderApp,
   stubApi,
   studentIn,
-} from '../test/render';
+} from './render';
 
 afterEach(() => {
   cleanup();

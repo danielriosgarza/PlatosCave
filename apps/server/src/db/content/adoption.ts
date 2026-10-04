@@ -1,7 +1,7 @@
 import type { adoptionDiff } from '@parallax/contracts/routes/releases';
-import { and, asc, desc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq, isNotNull } from 'drizzle-orm';
 import type { z } from 'zod';
-import type { ClassScope } from '../../auth/scope';
+import type { ClassScope, CourseScope } from '../../auth/scope';
 import { audit } from '../audit';
 import type { Db } from '../client';
 import {
@@ -10,9 +10,10 @@ import {
   courseReleases,
   releaseResources,
   releaseTopics,
+  resourceRevisions,
   users,
 } from '../schema';
-import { forClass } from '../scoped';
+import { forClass, forCourse } from '../scoped';
 import type { Tx } from './releases';
 
 export type AdoptionDiff = z.infer<typeof adoptionDiff>;
@@ -249,4 +250,54 @@ export async function listClassReleases(db: Db, scope: ClassScope) {
       };
     }),
   };
+}
+
+/**
+ * When `revisionId` is pinned by some release of the scope's course, the classes whose adopted
+ * release pins a revision of the same resource (marks there map from or onto it), each with
+ * the person who adopted that release; none for a revision no release pins (a draft). Used to
+ * queue annotation mapping again once that revision's derived outputs are written (ADR-0003):
+ * the mapping runs as the adopting instructor, whose membership the caller re-resolves before
+ * sending anything. Only ids leave this function.
+ */
+export async function adoptersPinningResourceOf(
+  db: Db,
+  scope: CourseScope,
+  revisionId: string,
+): Promise<{ classId: string; releaseId: string; actorId: string }[]> {
+  const [released] = await db
+    .select({ id: releaseResources.id })
+    .from(releaseResources)
+    .innerJoin(resourceRevisions, eq(resourceRevisions.id, releaseResources.resourceRevisionId))
+    .where(
+      and(eq(releaseResources.resourceRevisionId, revisionId), forCourse(scope, resourceRevisions)),
+    )
+    .limit(1);
+  if (!released) return [];
+  const rows = await db
+    .selectDistinctOn([classes.id], {
+      classId: classes.id,
+      releaseId: classReleaseHistory.toReleaseId,
+      actorId: classReleaseHistory.actorId,
+    })
+    .from(classes)
+    .innerJoin(releaseResources, eq(releaseResources.releaseId, classes.releaseId))
+    .innerJoin(
+      resourceRevisions,
+      and(
+        eq(resourceRevisions.id, revisionId),
+        eq(resourceRevisions.resourceId, releaseResources.resourceId),
+        eq(resourceRevisions.courseId, classes.courseId),
+      ),
+    )
+    .innerJoin(
+      classReleaseHistory,
+      and(
+        eq(classReleaseHistory.classId, classes.id),
+        eq(classReleaseHistory.toReleaseId, classes.releaseId),
+      ),
+    )
+    .where(and(forCourse(scope, classes), isNotNull(classReleaseHistory.actorId)))
+    .orderBy(classes.id, desc(classReleaseHistory.createdAt), desc(classReleaseHistory.id));
+  return rows.flatMap((r) => (r.actorId ? [{ ...r, actorId: r.actorId }] : []));
 }

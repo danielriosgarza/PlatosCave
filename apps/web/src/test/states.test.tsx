@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { OfflineBanner } from '../components/OfflineBanner';
 import { RetryNotice } from '../components/RetryNotice';
 import { TabRow } from '../components/TabRow';
+import { createQueryClient, revokeClass } from '../session/revocation';
 import {
   CLASS_A,
   makeMe,
@@ -118,6 +119,39 @@ describe('session check failure', () => {
     down = false;
     await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
     await waitFor(() => expect(screen.queryByText(/could not be checked/)).toBeNull());
+  });
+});
+
+describe('session check on navigation', () => {
+  it('keeps the page when a stale session cannot be re-checked once and one is cached', async () => {
+    const me = makeMe({ classes: [studentIn(CLASS_A, 'Class A')] });
+    let down = false;
+    stubApi((url, init) =>
+      url === '/api/me' && down
+        ? { status: 500, body: { error: 'boom' } }
+        : signedInWithTopics(me)(url, init),
+    );
+    const { queryClient, router } = renderApp(`/classes/${CLASS_A}/topics`);
+    expect(await screen.findByText('Sampling')).toBeInTheDocument();
+    // The cached session goes stale; the next navigation's re-check fails once.
+    queryClient.invalidateQueries({ queryKey: ['session'], refetchType: 'none' });
+    down = true;
+    await act(() => router.navigate({ to: '/courses' }));
+    await act(() => new Promise((r) => setTimeout(r, 50)));
+    expect(await screen.findByRole('heading', { name: 'Your courses' })).toBeInTheDocument();
+    expect(screen.queryByText(/could not be checked/)).toBeNull();
+    expect(screen.queryByText(/could not be shown/)).toBeNull();
+    expect(router.state.location.pathname).toBe('/courses');
+  });
+});
+
+describe('revoked flag', () => {
+  it('A01 outlives garbage collection of its cache entry', async () => {
+    const client = createQueryClient();
+    revokeClass(client, CLASS_A);
+    const entry = client.getQueryCache().find({ queryKey: ['access-revoked', CLASS_A] });
+    expect(entry?.gcTime).toBe(Number.POSITIVE_INFINITY);
+    client.clear();
   });
 });
 

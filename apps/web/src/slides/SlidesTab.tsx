@@ -1,5 +1,4 @@
 import { Link } from '@tanstack/react-router';
-import type { ReactNode } from 'react';
 import { useCallback, useEffect, useRef } from 'react';
 import { ApiError } from '../api/client';
 import page from '../components/Page.module.css';
@@ -8,6 +7,7 @@ import { SourceDownload } from '../reading/SourceDownload';
 import { useReporter } from '../reading/useReporter';
 import { useSession } from '../session/useSession';
 import { ResourceTools } from '../workspace/ResourceTools';
+import { SlideNotes } from './SlideNotes';
 import styles from './Slides.module.css';
 import { type NotesContext, SlideViewer } from './SlideViewer';
 import {
@@ -28,20 +28,10 @@ interface Props {
   resource: string | undefined;
   /** Moves the address to another deck: a new history entry. */
   onResource: (revisionId: string, mode: 'push' | 'replace') => void;
-  /** Fills the notes margin for the slide shown; P2-09 provides it. */
-  notes?: (context: NotesContext) => ReactNode;
 }
 
 /** The Slides tab (§5, §7): the picked deck in its viewer, opened at the slide studied last. */
-export function SlidesTab({
-  classId,
-  courseId,
-  topicId,
-  instructor,
-  resource,
-  onResource,
-  notes,
-}: Props) {
+export function SlidesTab({ classId, courseId, topicId, instructor, resource, onResource }: Props) {
   const list = useDecks(classId, topicId);
   const session = useSession();
   const canAdd =
@@ -123,13 +113,7 @@ export function SlidesTab({
           </Link>
         )}
       </ResourceTools>
-      <DeckView
-        key={chosen.revisionId}
-        classId={classId}
-        topicId={topicId}
-        deck={chosen}
-        notes={notes}
-      />
+      <DeckView key={chosen.revisionId} classId={classId} topicId={topicId} deck={chosen} />
     </>
   );
 }
@@ -138,10 +122,9 @@ interface ViewProps {
   classId: string;
   topicId: string;
   deck: DeckSummary;
-  notes: Props['notes'];
 }
 
-function DeckView({ classId, topicId, deck, notes }: ViewProps) {
+function DeckView({ classId, topicId, deck }: ViewProps) {
   const { revisionId } = deck;
   const content = useDeckContent(classId, revisionId);
   const save = useSaveSlide(classId, topicId);
@@ -197,6 +180,13 @@ function DeckView({ classId, topicId, deck, notes }: ViewProps) {
   );
   const onPage = useCallback((n: number) => report(slidePosition(n)), [report]);
   const renew = useCallback(() => renewDeckUrl(classId, revisionId), [classId, revisionId]);
+  // Notes and questions belong to the deck's resource, so they outlive a replaced revision (§7).
+  const notes = useCallback(
+    ({ page: slide }: NotesContext) => (
+      <SlideNotes classId={classId} resourceId={deck.resourceId} page={slide} />
+    ),
+    [classId, deck.resourceId],
+  );
 
   if (content.error instanceof ApiError && content.error.status === 404) {
     return (
@@ -227,7 +217,7 @@ function DeckView({ classId, topicId, deck, notes }: ViewProps) {
       </p>
     );
   }
-  if (data.status === 'failed' || !data.pdf) {
+  if (data.status === 'failed' || (!data.pdf && !data.web)) {
     return (
       <div className={`${page.feedback} ${styles.status}`} role="alert">
         <p>
@@ -247,12 +237,26 @@ function DeckView({ classId, topicId, deck, notes }: ViewProps) {
       </div>
     );
   }
+  const initialPage = deck.position && 'page' in deck.position ? deck.position.page : 1;
+  if (data.web) {
+    return (
+      <SlideViewer
+        slides={data.web.slides}
+        pageCount={data.web.slides.length}
+        initialPage={initialPage}
+        source={{ classId, revisionId, key: null }}
+        onPage={onPage}
+        notes={notes}
+      />
+    );
+  }
+  if (!data.pdf) return null;
   return (
     <SlideViewer
       url={data.pdf.url}
       pageCount={data.pdf.pageCount}
       renew={renew}
-      initialPage={deck.position && 'page' in deck.position ? deck.position.page : 1}
+      initialPage={initialPage}
       source={{ classId, revisionId, key: data.sourceKey }}
       onPage={onPage}
       notes={notes}

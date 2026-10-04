@@ -1,0 +1,50 @@
+/* The frame fills the stage: Shiny receives the remaining viewport height (§5). */
+.shiny {
+  border: 1px solid var(--pc-rule);
+  background: var(--pc-sheet);
+  margin: 24px 40px 48px;
+}
+.head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--pc-rule);
+}
+.head h2 {
+  font: var(--pc-text-subsection);
+  margin: 0;
+  margin-right: auto;
+}
+.state {
+  font: var(--pc-text-label);
+  color: var(--pc-muted);
+}
+.button {
+  font: inherit;
+  font-size: 12px;
+  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+  border: 1px solid var(--pc-muted);
+  padding: 4px 12px;
+  background: var(--pc-sheet);
+  color: var(--pc-ink);
+  border-radius: var(--pc-radius-control);
+  text-decoration: none;
+}
+.notice {
+  margin: 0;
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--pc-rule);
+}
+.frame {
+  display: block;
+  width: 100%;
+  min-height: 460px;
+  height: calc(100vh - 220px);
+  border: 0;
+  background: var(--pc-sheet);
+}

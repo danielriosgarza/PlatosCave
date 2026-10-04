@@ -11,29 +11,17 @@ import { useEffect } from 'react';
 import page from '../components/Page.module.css';
 import { RetryNotice } from '../components/RetryNotice';
 import { PreviewBanner } from '../preview/PreviewBanner';
-import { loadSession, useSession } from '../session/useSession';
+import { loadSessionOrCached, SessionCheckError, useSession } from '../session/useSession';
 
 /** Everything below needs a session; the intended address travels in `next` (§3). */
 export const Route = createFileRoute('/_authed')({
   beforeLoad: async ({ context, location }) => {
-    let me: Awaited<ReturnType<typeof loadSession>>;
-    try {
-      me = await loadSession(context.queryClient);
-    } catch (error) {
-      throw new SessionCheckError(error);
-    }
+    const me = await loadSessionOrCached(context.queryClient);
     if (!me) throw redirect({ to: '/signin', search: { next: location.href } });
   },
   component: Authed,
   errorComponent: RouteFailed,
 });
-
-/** Marks a failed session check, so its copy is shown for that and nothing else. */
-class SessionCheckError extends Error {
-  constructor(readonly reason: unknown) {
-    super('session check failed');
-  }
-}
 
 /**
  * The global bar stays (it belongs to the root); the page says what failed and offers Retry (§14).

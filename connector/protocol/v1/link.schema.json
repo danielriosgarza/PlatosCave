@@ -1,0 +1,1416 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://parallax.invalid/connector/v1/link.schema.json",
+  "title": "Parallax connector link, control messages (protocol v1)",
+  "description": "The JSON text frames of the connector link (docs/design/connector.md section 4). Validate a server message against #/$defs/ServerMessage and a connector message against #/$defs/ConnectorMessage; the root accepts either. Binary frames carry stream data and are described by vectors/frames.json.",
+  "anyOf": [
+    {
+      "$ref": "#/$defs/ServerMessage"
+    },
+    {
+      "$ref": "#/$defs/ConnectorMessage"
+    }
+  ],
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "description": "Lower-case UUID."
+    },
+    "b64url32": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{43}$",
+      "description": "32 bytes, base64url without padding."
+    },
+    "b64url64": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{86}$",
+      "description": "64 bytes, base64url without padding."
+    },
+    "fingerprint": {
+      "type": "string",
+      "pattern": "^SHA256:[A-Za-z0-9+/]{43}$",
+      "description": "OpenSSH style: SHA256: and the unpadded base64 of a SHA-256 digest."
+    },
+    "semver": {
+      "type": "string",
+      "maxLength": 32,
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]+)?$"
+    },
+    "unixSeconds": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4102444800
+    },
+    "timestamp": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?Z$",
+      "description": "RFC 3339, UTC, with the Z suffix."
+    },
+    "streamId": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 4294967295
+    },
+    "port": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 65535
+    },
+    "code": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{2,47}$",
+      "description": "A key of errors.json. The schema checks the shape; the catalogue test checks membership."
+    },
+    "detail": {
+      "type": "string",
+      "maxLength": 512,
+      "pattern": "^[^\\x00-\\x08\\x0b-\\x1f\\x7f]*$",
+      "description": "Human-readable, never secret: no keys, tokens, passphrases or command output beyond 512 characters."
+    },
+    "host": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 253,
+      "pattern": "^[A-Za-z0-9.:-]+$",
+      "description": "Host name or IP literal. Syntax and range rules beyond this pattern are the semantic rules of docs/design/connector.md section 4.4."
+    },
+    "user": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_][A-Za-z0-9_.@\\\\-]{0,63}$",
+      "description": "Account name; never starts with a dash."
+    },
+    "path": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024,
+      "pattern": "^[^\\x00-\\x1f\\x7f]+$",
+      "description": "A path on the machine the message names. Absolute, free of dot-dot segments and POSIX or drive-rooted: semantic rules."
+    },
+    "cidr": {
+      "type": "string",
+      "maxLength": 49,
+      "pattern": "^[0-9A-Fa-f:.]+/[0-9]{1,3}$"
+    },
+    "hostPattern": {
+      "type": "string",
+      "maxLength": 253,
+      "pattern": "^(\\*\\.)?[A-Za-z0-9.-]+$"
+    },
+    "os": {
+      "enum": ["linux", "darwin", "windows"]
+    },
+    "arch": {
+      "enum": ["amd64", "arm64"]
+    },
+    "kernelName": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._][A-Za-z0-9._-]{0,63}$",
+      "description": "The kernelspec the person chose; the kernels stage checks it exists (kernelspec_not_found)."
+    },
+    "hop": {
+      "type": "object",
+      "required": ["host", "port", "user"],
+      "additionalProperties": false,
+      "properties": {
+        "host": {
+          "$ref": "#/$defs/host"
+        },
+        "port": {
+          "$ref": "#/$defs/port"
+        },
+        "user": {
+          "$ref": "#/$defs/user"
+        },
+        "auth": {
+          "$ref": "#/$defs/auth"
+        }
+      },
+      "description": "A jump host. Its auth defaults to the target's."
+    },
+    "auth": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["method", "keyPath"],
+          "additionalProperties": false,
+          "properties": {
+            "method": {
+              "const": "key"
+            },
+            "keyPath": {
+              "$ref": "#/$defs/path"
+            }
+          },
+          "description": "A private key file on the connector's machine. A passphrase is asked for in the connector, never sent."
+        },
+        {
+          "type": "object",
+          "required": ["method"],
+          "additionalProperties": false,
+          "properties": {
+            "method": {
+              "const": "agent"
+            },
+            "hint": {
+              "type": "string",
+              "maxLength": 128
+            }
+          },
+          "description": "An identity held by the connector machine's SSH agent; `hint` selects by comment or fingerprint."
+        },
+        {
+          "type": "object",
+          "required": ["method", "keyId"],
+          "additionalProperties": false,
+          "properties": {
+            "method": {
+              "const": "managed_key"
+            },
+            "keyId": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9-]{0,62}$"
+            }
+          },
+          "description": "A key in the managed connector's own secret store (managed mode only)."
+        }
+      ]
+    },
+    "hostKey": {
+      "type": "object",
+      "required": ["host", "port", "sha256"],
+      "additionalProperties": false,
+      "properties": {
+        "host": {
+          "$ref": "#/$defs/host"
+        },
+        "port": {
+          "$ref": "#/$defs/port"
+        },
+        "sha256": {
+          "$ref": "#/$defs/fingerprint"
+        }
+      },
+      "description": "A host key the server remembers as trusted for this connection."
+    },
+    "confirmation": {
+      "type": "object",
+      "required": ["host", "port", "sha256"],
+      "additionalProperties": false,
+      "properties": {
+        "host": {
+          "$ref": "#/$defs/host"
+        },
+        "port": {
+          "$ref": "#/$defs/port"
+        },
+        "sha256": {
+          "$ref": "#/$defs/fingerprint"
+        },
+        "replacing": {
+          "$ref": "#/$defs/fingerprint"
+        }
+      },
+      "description": "The person confirmed this presented key. `replacing` names the trusted key being replaced and is required to replace one."
+    },
+    "target": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["kind", "workspace"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "local"
+            },
+            "workspace": {
+              "$ref": "#/$defs/path"
+            }
+          },
+          "description": "The machine the connector runs on."
+        },
+        {
+          "type": "object",
+          "required": ["kind", "host", "port", "user", "auth", "workspace"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "ssh"
+            },
+            "host": {
+              "$ref": "#/$defs/host"
+            },
+            "port": {
+              "$ref": "#/$defs/port"
+            },
+            "user": {
+              "$ref": "#/$defs/user"
+            },
+            "jump": {
+              "$ref": "#/$defs/hop"
+            },
+            "auth": {
+              "$ref": "#/$defs/auth"
+            },
+            "workspace": {
+              "$ref": "#/$defs/path"
+            },
+            "hostKeys": {
+              "type": "array",
+              "maxItems": 2,
+              "items": {
+                "$ref": "#/$defs/hostKey"
+              }
+            },
+            "expectedEnd": {
+              "$ref": "#/$defs/timestamp"
+            }
+          },
+          "description": "An SSH account, optionally through one jump host. `expectedEnd` is when a time-limited allocation is declared to end; it only sharpens the cause shown after a loss."
+        },
+        {
+          "type": "object",
+          "required": ["kind", "targetId", "subject"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "managed"
+            },
+            "targetId": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9-]{0,62}$"
+            },
+            "subject": {
+              "$ref": "#/$defs/uuid"
+            }
+          },
+          "description": "A target defined in a managed connector's own configuration. Personal connectors answer unsupported_target."
+        }
+      ]
+    },
+    "runtime": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": ["mode"],
+          "additionalProperties": false,
+          "properties": {
+            "mode": {
+              "const": "start"
+            },
+            "python": {
+              "$ref": "#/$defs/path"
+            },
+            "login": {
+              "type": "boolean"
+            },
+            "kernelName": {
+              "$ref": "#/$defs/kernelName"
+            }
+          },
+          "description": "Start a Jupyter server owned by this session. `python` selects the interpreter that has Jupyter; `login` runs the remote command in a login shell for its PATH."
+        },
+        {
+          "type": "object",
+          "required": ["mode", "port"],
+          "additionalProperties": false,
+          "properties": {
+            "mode": {
+              "const": "attach"
+            },
+            "port": {
+              "type": "integer",
+              "minimum": 1024,
+              "maximum": 65535
+            },
+            "pid": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 4194304
+            },
+            "kernelName": {
+              "$ref": "#/$defs/kernelName"
+            }
+          },
+          "description": "Attach to a Jupyter server somebody else started. Never stopped by Parallax."
+        }
+      ]
+    },
+    "lease": {
+      "type": "object",
+      "required": ["idleTimeoutMin", "gracePeriodMin"],
+      "additionalProperties": false,
+      "properties": {
+        "idleTimeoutMin": {
+          "type": "integer",
+          "minimum": 5,
+          "maximum": 240
+        },
+        "gracePeriodMin": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 60
+        }
+      },
+      "description": "Shown before Connect and enforced by the connector (design section 9)."
+    },
+    "stageName": {
+      "enum": [
+        "reachability",
+        "host_identity",
+        "ssh_auth",
+        "workspace",
+        "forwarding",
+        "runtime",
+        "notebook_auth",
+        "kernels"
+      ]
+    },
+    "stageData": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "hop": {
+          "enum": ["jump", "target"]
+        },
+        "address": {
+          "type": "string",
+          "maxLength": 45
+        },
+        "fingerprint": {
+          "$ref": "#/$defs/fingerprint"
+        },
+        "expected": {
+          "$ref": "#/$defs/fingerprint"
+        },
+        "presented": {
+          "$ref": "#/$defs/fingerprint"
+        },
+        "algorithm": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "resolvedPath": {
+          "$ref": "#/$defs/path"
+        },
+        "rootDir": {
+          "$ref": "#/$defs/path"
+        },
+        "version": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "reason": {
+          "enum": ["blocked", "not_started", "not_applicable"]
+        },
+        "blockedBy": {
+          "$ref": "#/$defs/stageName"
+        },
+        "state": {
+          "enum": ["startable", "running"]
+        },
+        "source": {
+          "enum": ["cli", "service"]
+        },
+        "terminalPrompt": {
+          "type": "boolean"
+        },
+        "hops": {
+          "type": "array",
+          "maxItems": 2,
+          "items": {
+            "type": "object",
+            "required": ["hop", "fingerprint"],
+            "additionalProperties": false,
+            "properties": {
+              "hop": {
+                "enum": ["jump", "target"]
+              },
+              "fingerprint": {
+                "$ref": "#/$defs/fingerprint"
+              },
+              "address": {
+                "type": "string",
+                "maxLength": 45
+              }
+            }
+          },
+          "description": "host_identity only: the key of every hop that passed, jump host first. The server persists each of these (design section 5.2)."
+        }
+      },
+      "description": "A closed set of non-secret facts a stage may report. `terminalPrompt` says the connector is waiting for the person in its own terminal (a key passphrase or a second factor)."
+    },
+    "stage": {
+      "type": "object",
+      "required": ["name", "status"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/stageName"
+        },
+        "status": {
+          "enum": ["ok", "failed", "skipped", "needs_action"]
+        },
+        "code": {
+          "$ref": "#/$defs/code"
+        },
+        "detail": {
+          "$ref": "#/$defs/detail"
+        },
+        "data": {
+          "$ref": "#/$defs/stageData"
+        },
+        "ms": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3600000
+        }
+      }
+    },
+    "kernelspec": {
+      "type": "object",
+      "required": ["name", "displayName", "language"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9._-]{1,64}$"
+        },
+        "displayName": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "language": {
+          "type": "string",
+          "maxLength": 32
+        }
+      }
+    },
+    "attachable": {
+      "type": "object",
+      "required": ["port", "rootDir"],
+      "additionalProperties": false,
+      "properties": {
+        "port": {
+          "type": "integer",
+          "minimum": 1024,
+          "maximum": 65535
+        },
+        "pid": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4194304
+        },
+        "rootDir": {
+          "$ref": "#/$defs/path"
+        }
+      },
+      "description": "A running Jupyter server the connector found. Its token stays in the connector."
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "os": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "arch": {
+          "type": "string",
+          "maxLength": 16
+        },
+        "runtime": {
+          "type": "string",
+          "maxLength": 64
+        }
+      },
+      "description": "Environment metadata recorded with a submission (spec 10.5). Versions only; never package lists, paths or host names."
+    },
+    "cause": {
+      "enum": [
+        "sleep",
+        "vpn",
+        "network_change",
+        "ssh_timeout",
+        "service_stopped",
+        "allocation_expired",
+        "host_unreachable",
+        "process_exited",
+        "lease_idle",
+        "lease_grace",
+        "user_stop",
+        "connector_exit",
+        "connector_restarted",
+        "max_lifetime"
+      ]
+    },
+    "sessionState": {
+      "enum": ["starting", "ready", "disconnected", "stopping", "stopped", "failed"]
+    },
+    "headers": {
+      "type": "object",
+      "maxProperties": 16,
+      "propertyNames": {
+        "pattern": "^[a-z][a-z0-9-]{0,63}$"
+      },
+      "additionalProperties": {
+        "type": "string",
+        "maxLength": 1024,
+        "pattern": "^[^\\x00-\\x1f\\x7f]*$"
+      }
+    },
+    "apiPath": {
+      "type": "string",
+      "maxLength": 2048,
+      "pattern": "^/api/[A-Za-z0-9._~%/:@!$&'()*+,;=?-]*$",
+      "description": "A Jupyter Server path and query. The allowlist of design section 7 decides which are served."
+    },
+    "heartbeatSession": {
+      "type": "object",
+      "required": ["sessionId", "state"],
+      "additionalProperties": false,
+      "properties": {
+        "sessionId": {
+          "$ref": "#/$defs/uuid"
+        },
+        "state": {
+          "$ref": "#/$defs/sessionState"
+        },
+        "phase": {
+          "enum": ["attached", "detached"]
+        },
+        "cause": {
+          "$ref": "#/$defs/cause"
+        },
+        "leaseExpiresAt": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "kernels": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "object",
+            "required": ["id", "executionState"],
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9-]{1,64}$"
+              },
+              "executionState": {
+                "enum": ["starting", "idle", "busy", "unknown"]
+              },
+              "lastActivity": {
+                "$ref": "#/$defs/timestamp"
+              }
+            }
+          }
+        }
+      }
+    },
+    "msg_challenge": {
+      "type": "object",
+      "required": ["v", "t", "nonce", "origin", "ts"],
+      "additionalProperties": false,
+      "properties": {
+        "v": {
+          "const": 1
+        },
+        "t": {
+          "const": "challenge"
+        },
+        "nonce": {
+          "$ref": "#/$defs/b64url32"
+        },
+        "origin": {
+          "type": "string",
+          "maxLength": 255,
+          "pattern": "^https?://[a-z0-9.:\\[\\]-]+$"
+        },
+        "ts": {
+          "$ref": "#/$defs/unixSeconds"
+        }
+      },
+      "description": "Server to connector, first message. `origin` is lower case, no trailing slash, default port omitted. The nonce is single use and expires after 30 seconds."
+    },
+    "msg_auth": {
+      "type": "object",
+      "required": ["v", "t", "connectorId", "ts", "sig"],
+      "additionalProperties": false,
+      "properties": {
+        "v": {
+          "const": 1
+        },
+        "t": {
+          "const": "auth"
+        },
+        "connectorId": {
+          "$ref": "#/$defs/uuid"
+        },
+        "ts": {
+          "$ref": "#/$defs/unixSeconds"
+        },
+        "sig": {
+          "$ref": "#/$defs/b64url64"
+        }
+      },
+      "description": "Connector to server. sig = Ed25519 over the bytes of design section 4.2."
+    },
+    "msg_auth_ok": {
+      "type": "object",
+      "required": ["v", "t", "heartbeatSeconds", "limits"],
+      "additionalProperties": false,
+      "properties": {
+        "v": {
+          "const": 1
+        },
+        "t": {
+          "const": "auth_ok"
+        },
+        "heartbeatSeconds": {
+          "type": "integer",
+          "minimum": 5,
+          "maximum": 60
+        },
+        "limits": {
+          "type": "object",
+          "required": ["maxStreams", "maxPayload", "initialWindow", "maxControl", "maxSessions"],
+          "additionalProperties": false,
+          "properties": {
+            "maxStreams": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 256
+            },
+            "maxPayload": {
+              "type": "integer",
+              "minimum": 1024,
+              "maximum": 1048576
+            },
+            "initialWindow": {
+              "type": "integer",
+              "minimum": 4096,
+              "maximum": 16777216
+            },
+            "maxControl": {
+              "type": "integer",
+              "minimum": 4096,
+              "maximum": 1048576
+            },
+            "maxSessions": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 64
+            }
+          }
+        },
+        "minVersion": {
+          "$ref": "#/$defs/semver"
+        }
+      }
+    },
+    "msg_hello": {
+      "type": "object",
+      "required": [
+        "v",
+        "t",
+        "version",
+        "os",
+        "arch",
+        "mode",
+        "targets",
+        "features",
+        "networkScope"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "v": {
+          "const": 1
+        },
+        "t": {
+          "const": "hello"
+        },
+        "version": {
+          "$ref": "#/$defs/semver"
+        },
+        "os": {
+          "$ref": "#/$defs/os"
+        },
+        "arch": {
+          "$ref": "#/$defs/arch"
+        },
+        "mode": {
+          "enum": ["personal", "managed"]
+        },
+        "targets": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": {
+            "enum": ["local", "ssh", "managed"]
+          }
+        },
+        "features": {
+          "type": "object",
+          "required": ["tty", "agent", "wsl"],
+          "additionalProperties": false,
+          "properties": {
+            "tty": {
+              "type": "boolean"
+            },
+            "agent": {
+              "type": "boolean"
+            },
+            "wsl": {
+              "type": "boolean"
+            }
+          }
+        },
+        "networkScope": {
+          "type": "object",
+          "required": ["cidrs", "hosts"],
+          "additionalProperties": false,
+          "properties": {
+            "cidrs": {
+              "type": "array",
+              "maxItems": 64,
+              "items": {
+                "$ref": "#/$defs/cidr"
+              }
+            },
+            "hosts": {
+              "type": "array",
+              "maxItems": 64,
+              "items": {
+                "$ref": "#/$defs/hostPattern"
+              }
+            }
+          }
+        }
+      },
+      "description": "Connector to server, after auth_ok. It is followed at once by heartbeat seq 0, which lists every held session; the server reconciles from that list."
+    },
+    "msg_test_connection": {
+      "type": "object",
+      "required": ["v", "t", "requestId", "target", "runtime"],
+      "additionalProperties": false,
+      "properties": {
+        "v": {
+          "const": 1
+        },
+        "t": {
+          "const": "test_connection"
+        },
+        "requestId": {
+          "$ref": "#/$defs/uuid"
+        },
+        "target": {
+          "$ref": "#/$defs/target"
+        },
+        "runtime": {
+          "$ref": "#/$defs/runtime"
+        },
+        "confirmations": {
+          "type": "array",
+          "maxItems": 2,
+          "items": {
+            "$ref": "#/$defs/confirmation"
+          }
+        }
+      },
+      "description": "Server to connector. Probes only: no package install, no cell execution, no file written."
+    },
+    "msg_test_progress": {
+      "type": "object",
+      "required": ["v", "t", "requestId", "stage"],
+      "additionalProperties": false,
+      "properties": {
+        "v": {
+          "const": 1
+        },
+        "t": {
+          "const": "test_progress"
+        },
+        "requestId": {
+          "$ref": "#/$defs/uuid"
+        },
+        "stage": {
+          "$ref": "#/$defs/stage"
+        }
+      }
+    },
+    "msg_test_result": {
+      "type": "object",
+      "required": ["v", "t", "requestId", "outcome", "stages"],
+      "additionalProperties": false,
+      "properties": {
+        "v": {
+          "const": 1
+        },
+        "t": {
+          "const": "test_result"
+        },
+        "requestId": {
+          "$ref": "#/$defs/uuid"
+        },
+        "outcome": {
+          "enum": ["ready", "ready_to_start", "needs_action", "failed"]
+        },
+        "stages": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 8,
+          "items": {
+            "$ref": "#/$defs/stage"
+          }
+        },
+        "kernelspecs": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/kernelspec"
+          }
+        },
+        "attachable": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/attachable"
+          }
+        },
+        "jupyterVersion": {
+          "type": "string",
+          "maxLength": 32,
+          "pattern": "^[0-9]+\\.[0-9]+(\\.[0-9]+)?[A-Za-z0-9.+-]*$"
+        },
+        "environment": {
+          "$ref": "#/$defs/environment"
+        }
+      }
+    },
+    "msg_open_session": {
+      "type": "object",
+      "required": ["v", "t", "requestId", "sessionId", "target", "runtime", "lease"],
+      "additionalProperties": false,
+      "properties": {
+        "v": {
+          "const": 1
+        },
+        "t": {
+          "const": "open_session"
+        },
+        "requestId": {
+          "$ref": "#/$defs/uuid"
+        },
+        "sessionId": {
+          "$ref": "#/$defs/uuid"
+        },
+        "target": {
+          "$ref": "#/$defs/target"
+        },
+        "runtime": {
+          "$ref": "#/$defs/runtime"
+        },
+        "lease": {
+          "$ref": "#/$defs/lease"
+        }
+      },
+      "description": "Server to connector. Answered by session_state messages carrying the requestId until the session is ready or failed."
+    },
+    "msg_session_state": {
+      "type": "object",
+      "required": ["v", "t", "sessionId", "state", "owned", "ts"],
+      "additionalProperties": false,
+      "properties": {
+        "v": {
+          "const": 1
+        },
+        "t": {
+          "const": "session_state"
+        },
+        "sessionId": {
+          "$ref": "#/$defs/uuid"
+        },
+        "requestId": {
+          "$ref": "#/$defs/uuid"
+        },
+        "state": {
+          "$ref": "#/$defs/sessionState"
+        },
+        "owned": {
+          "type": "boolean"
+        },
+        "phase": {
+          "enum": ["attached", "detached"]
+        },
+        "cause": {
+          "$ref": "#/$defs/cause"
+        },
+        "code": {
+          "$ref": "#/$defs/code"
+        },
+        "detail": {
+          "$ref": "#/$defs/detail"
+        },
+        "jupyterVersion": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "kernelspecs": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/kernelspec"
+          }
+        },
+        "environment": {
+          "$ref": "#/$defs/environment"
+        },
+        "leaseExpiresAt": {
+          "$ref": "#/$defs/timestamp"
+        },
+        "ts": {
+          "$ref": "#/$defs/unixSeconds"
+        }
+      }
+    },
+    "msg_close_session": {
+      "type": "object",
+      "required": ["v", "t", "requestId", "sessionId", "stop"],
+      "additionalProperties": false,
+      "properties": {
+        "v": {
+          "const": 1
+        },
+        "t": {
+          "const": "close_session"
+        },
+        "requestId": {
+          "$ref": "#/$defs/uuid"
+        },
+        "sessionId": {
+          "$ref": "#/$defs/uuid"
+        },
+        "stop": {
+          "type": "boolean"
+        }
+      },
+      "description": "Server to connector. stop=false detaches; stop=true stops a session the connector owns and is refused for one it only attached to."
+    },
+    "msg_presence": {
+      "type": "object",
+      "required": ["v", "t", "sessionId", "attached"],
+      "additionalProperties": false,
+      "properties": {
+        "v": {
+          "const": 1
+        },
+        "t": {
+          "const": "presence"
+        },
+        "sessionId": {
+          "$ref": "#/$defs/uuid"
+        },
+        "attached": {
+          "type": "boolean"
+        }
+      },
+      "description": "Server to connector: whether any browser is attached to the session. Drives the lease phase."
+    },
+    "msg_activity": {
+      "type": "object",
+      "required": ["v", "t", "sessionId"],
+      "additionalProperties": false,
+      "properties": {
+        "v": {
+          "const": 1
+        },
+        "t": {
+          "const": "activity"
+        },
+        "sessionId": {
+          "$ref": "#/$defs/uuid"
+        }
+      },
+      "description": "Server to connector: a person did something in the session (run, interrupt, restart). Sent at most every 10 seconds. Resets the idle clock."
+    },
+    "msg_http": {
+      "type": "object",
+      "required": [
+        "v",
+        "t",
+        "streamId",
+        "sessionId",
+        "purpose",
+        "method",
+        "path",
+        "headers",
+        "body"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "v": {
+          "const": 1
+        },
+        "t": {
+          "const": "http"
+        },
+        "streamId": {
+          "$ref": "#/$defs/streamId"
+        },
+        "sessionId": {
+          "$ref": "#/$defs/uuid"
+        },
+        "purpose": {
+          "enum": ["session", "contents"]
+        },
+        "method": {
+          "enum": ["GET", "POST", "PUT", "PATCH", "DELETE"]
+        },
+        "path": {
+          "$ref": "#/$defs/apiPath"
+        },
+        "headers": {
+          "$ref": "#/$defs/headers"
+        },
+        "body": {
+          "enum": ["none", "stream"]
+        },
+        "contentLength": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 67108864
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "body": {
+                "const": "stream"
+              }
+            },
+            "required": ["body"]
+          },
+          "then": {
+            "required": ["contentLength"],
+            "properties": {
+              "contentLength": {}
+            }
+          }
+        }
+      ]
+    },
+    "msg_http_head": {
+      "type": "object",
+      "required": ["v", "t", "streamId", "status", "headers", "body"],
+      "additionalProperties": false,
+      "properties": {
+        "v": {
+          "const": 1
+        },
+        "t": {
+          "const": "http_head"
+        },
+        "streamId": {
+          "$ref": "#/$defs/streamId"
+        },
+        "status": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 599
+        },
+        "headers": {
+          "$ref": "#/$defs/headers"
+        },
+        "body": {
+          "enum": ["none", "stream"]
+        }
+      }
+    },
+    "msg_ws_open": {
+      "type": "object",
+      "required": ["v", "t", "streamId", "sessionId", "path"],
+      "additionalProperties": false,
+      "properties": {
+        "v": {
+          "const": 1
+        },
+        "t": {
+          "const": "ws_open"
+        },
+        "streamId": {
+          "$ref": "#/$defs/streamId"
+        },
+        "sessionId": {
+          "$ref": "#/$defs/uuid"
+        },
+        "path": {
+          "$ref": "#/$defs/apiPath"
+        },
+        "protocols": {
+          "type": "array",
+          "maxItems": 4,
+          "items": {
+            "type": "string",
+            "maxLength": 64,
+            "pattern": "^[A-Za-z0-9._-]+$"
+          }
+        }
+      }
+    },
+    "msg_ws_opened": {
+      "type": "object",
+      "required": ["v", "t", "streamId"],
+      "additionalProperties": false,
+      "properties": {
+        "v": {
+          "const": 1
+        },
+        "t": {
+          "const": "ws_opened"
+        },
+        "streamId": {
+          "$ref": "#/$defs/streamId"
+        },
+        "protocol": {
+          "type": "string",
+          "maxLength": 64
+        }
+      }
+    },
+    "msg_ws_close": {
+      "type": "object",
+      "required": ["v", "t", "streamId", "code"],
+      "additionalProperties": false,
+      "properties": {
+        "v": {
+          "const": 1
+        },
+        "t": {
+          "const": "ws_close"
+        },
+        "streamId": {
+          "$ref": "#/$defs/streamId"
+        },
+        "code": {
+          "type": "integer",
+          "minimum": 1000,
+          "maximum": 4999
+        },
+        "reason": {
+          "type": "string",
+          "maxLength": 123
+        }
+      }
+    },
+    "msg_window": {
+      "type": "object",
+      "required": ["v", "t", "streamId", "credit"],
+      "additionalProperties": false,
+      "properties": {
+        "v": {
+          "const": 1
+        },
+        "t": {
+          "const": "window"
+        },
+        "streamId": {
+          "$ref": "#/$defs/streamId"
+        },
+        "credit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 16777216
+        }
+      },
+      "description": "Grants the sender of data frames more bytes. Both directions."
+    },
+    "msg_stream_reset": {
+      "type": "object",
+      "required": ["v", "t", "streamId", "code"],
+      "additionalProperties": false,
+      "properties": {
+        "v": {
+          "const": 1
+        },
+        "t": {
+          "const": "stream_reset"
+        },
+        "streamId": {
+          "$ref": "#/$defs/streamId"
+        },
+        "code": {
+          "$ref": "#/$defs/code"
+        },
+        "detail": {
+          "$ref": "#/$defs/detail"
+        }
+      }
+    },
+    "msg_heartbeat": {
+      "type": "object",
+      "required": ["v", "t", "seq", "ts", "sessions"],
+      "additionalProperties": false,
+      "properties": {
+        "v": {
+          "const": 1
+        },
+        "t": {
+          "const": "heartbeat"
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "ts": {
+          "$ref": "#/$defs/unixSeconds"
+        },
+        "sessions": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/heartbeatSession"
+          }
+        }
+      },
+      "description": "Sent every heartbeatSeconds; seq restarts at 0 on every link. The first one (seq 0) follows hello at once and lists every session the connector holds, terminal ones included: the server reconciles from it, never from session_state messages."
+    },
+    "msg_heartbeat_ack": {
+      "type": "object",
+      "required": ["v", "t", "seq"],
+      "additionalProperties": false,
+      "properties": {
+        "v": {
+          "const": 1
+        },
+        "t": {
+          "const": "heartbeat_ack"
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        }
+      }
+    },
+    "msg_error": {
+      "type": "object",
+      "required": ["v", "t", "code"],
+      "additionalProperties": false,
+      "properties": {
+        "v": {
+          "const": 1
+        },
+        "t": {
+          "const": "error"
+        },
+        "requestId": {
+          "$ref": "#/$defs/uuid"
+        },
+        "sessionId": {
+          "$ref": "#/$defs/uuid"
+        },
+        "streamId": {
+          "$ref": "#/$defs/streamId"
+        },
+        "code": {
+          "$ref": "#/$defs/code"
+        },
+        "detail": {
+          "$ref": "#/$defs/detail"
+        }
+      }
+    },
+    "ServerMessage": {
+      "description": "Every control message the server may send.",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/msg_challenge"
+        },
+        {
+          "$ref": "#/$defs/msg_auth_ok"
+        },
+        {
+          "$ref": "#/$defs/msg_test_connection"
+        },
+        {
+          "$ref": "#/$defs/msg_open_session"
+        },
+        {
+          "$ref": "#/$defs/msg_close_session"
+        },
+        {
+          "$ref": "#/$defs/msg_presence"
+        },
+        {
+          "$ref": "#/$defs/msg_activity"
+        },
+        {
+          "$ref": "#/$defs/msg_http"
+        },
+        {
+          "$ref": "#/$defs/msg_ws_open"
+        },
+        {
+          "$ref": "#/$defs/msg_ws_close"
+        },
+        {
+          "$ref": "#/$defs/msg_window"
+        },
+        {
+          "$ref": "#/$defs/msg_stream_reset"
+        },
+        {
+          "$ref": "#/$defs/msg_heartbeat_ack"
+        },
+        {
+          "$ref": "#/$defs/msg_error"
+        }
+      ]
+    },
+    "ConnectorMessage": {
+      "description": "Every control message the connector may send.",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/msg_auth"
+        },
+        {
+          "$ref": "#/$defs/msg_hello"
+        },
+        {
+          "$ref": "#/$defs/msg_test_progress"
+        },
+        {
+          "$ref": "#/$defs/msg_test_result"
+        },
+        {
+          "$ref": "#/$defs/msg_session_state"
+        },
+        {
+          "$ref": "#/$defs/msg_http_head"
+        },
+        {
+          "$ref": "#/$defs/msg_ws_opened"
+        },
+        {
+          "$ref": "#/$defs/msg_ws_close"
+        },
+        {
+          "$ref": "#/$defs/msg_window"
+        },
+        {
+          "$ref": "#/$defs/msg_stream_reset"
+        },
+        {
+          "$ref": "#/$defs/msg_heartbeat"
+        },
+        {
+          "$ref": "#/$defs/msg_error"
+        }
+      ]
+    }
+  }
+}

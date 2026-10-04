@@ -11,7 +11,8 @@ import {
 } from '@parallax/contracts/routes/members';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { Deps } from '../../app';
-import { hashToken, readSessionToken } from '../../auth/sessions';
+import { readSessionToken } from '../../auth/sessions';
+import { hashToken } from '../../auth/tokens';
 import * as identity from '../../db/identity';
 import * as invites from '../../db/invites';
 import * as members from '../../db/members';

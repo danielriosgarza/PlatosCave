@@ -2,7 +2,8 @@ import { useState } from 'react';
 import { ApiError } from '../api/client';
 import pageStyles from '../components/Page.module.css';
 import { formatOpens } from '../topics/topics';
-import { type ReleasedResource, useClassRelease } from './attempt';
+import { type ReleasedResource, useAttempt, useClassRelease } from './attempt';
+import { creditText } from './credit';
 import styles from './Exercise.module.css';
 import { ExerciseRunner } from './ExerciseRunner';
 
@@ -13,10 +14,10 @@ const lockedUntil = (resource: ReleasedResource, role: 'student' | 'instructor',
     : null;
 
 /** What an exercise card says about its audience and state. */
-const practiceLabel = (resource: ReleasedResource) =>
+const practiceLabel = (resource: ReleasedResource, credit = resource.credit) =>
   resource.visibility === 'hidden'
-    ? 'Hidden from students · Practice · ungraded'
-    : 'Practice · ungraded';
+    ? `Hidden from students · ${creditText(credit)}`
+    : creditText(credit);
 
 /** The Exercises tab of a topic: its released exercises, scheduled ones locked with their date. */
 export function ExercisesPanel(props: {
@@ -68,20 +69,11 @@ function TopicExercises({
   const selected = exercises.find((r) => r.resourceId === (chosen ?? only?.resourceId));
   if (selected && !lockedUntil(selected, role, now)) {
     return (
-      <div>
-        <header className={styles.toolbar}>
-          <h2>{selected.title}</h2>
-          <span className={`${styles.small} ${styles.muted}`}>{practiceLabel(selected)}</span>
-        </header>
-        {exercises.length > 1 && (
-          <p className={styles.allExercises}>
-            <button type="button" className={styles.textButton} onClick={() => setChosen(null)}>
-              All exercises
-            </button>
-          </p>
-        )}
-        <ExerciseRunner classId={classId} resourceId={selected.resourceId} title={selected.title} />
-      </div>
+      <OpenExercise
+        classId={classId}
+        selected={selected}
+        onAll={exercises.length > 1 ? () => setChosen(null) : undefined}
+      />
     );
   }
   return (
@@ -112,5 +104,40 @@ function TopicExercises({
         );
       })}
     </ul>
+  );
+}
+
+/**
+ * The open exercise. The attempt is pinned to the revision it started on, so once it has
+ * loaded its credit states the terms the student is working under; the release listing's
+ * credit (the class's current revision) is shown only until then.
+ */
+function OpenExercise({
+  classId,
+  selected,
+  onAll,
+}: {
+  classId: string;
+  selected: ReleasedResource;
+  onAll?: () => void;
+}) {
+  const attempt = useAttempt(classId, selected.resourceId);
+  return (
+    <div>
+      <header className={styles.toolbar}>
+        <h2>{selected.title}</h2>
+        <span className={`${styles.small} ${styles.muted}`}>
+          {practiceLabel(selected, attempt.data ? attempt.data.credit : selected.credit)}
+        </span>
+      </header>
+      {onAll && (
+        <p className={styles.allExercises}>
+          <button type="button" className={styles.textButton} onClick={onAll}>
+            All exercises
+          </button>
+        </p>
+      )}
+      <ExerciseRunner classId={classId} resourceId={selected.resourceId} title={selected.title} />
+    </div>
   );
 }

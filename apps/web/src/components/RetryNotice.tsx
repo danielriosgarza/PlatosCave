@@ -19,15 +19,17 @@ export function RetryNotice({
 }: RetryNoticeProps) {
   // Created and revoked inside the effect so StrictMode's second run gets a live URL.
   const [href, setHref] = useState<string | null>(null);
+  // Keyed on the content, not the object: a parent that rebuilds it each render keeps one URL.
+  const text = recovery?.text;
   useEffect(() => {
-    if (!recovery) {
+    if (text === undefined) {
       setHref(null);
       return;
     }
-    const url = URL.createObjectURL(new Blob([recovery.text], { type: 'text/plain' }));
+    const url = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
     setHref(url);
     return () => URL.revokeObjectURL(url);
-  }, [recovery]);
+  }, [text]);
   return (
     <div className={styles.feedback} role="alert">
       <p>{message}</p>

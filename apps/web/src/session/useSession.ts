@@ -3,6 +3,7 @@ import { exitPreview } from '@parallax/contracts/routes/preview';
 import { type QueryClient, queryOptions, useQuery } from '@tanstack/react-query';
 import type { z } from 'zod';
 import { ApiError, call } from '../api/client';
+import { allowDrafts } from '../reading/margin/drafts';
 
 export type Me = z.output<typeof me.response>;
 export type SessionClass = Me['classes'][number];
@@ -31,13 +32,40 @@ async function readMe(leaveEndedPreview = true): Promise<Me | null> {
 /** `null` means nobody is signed in (the API answered 401); any other failure is an error. */
 export const sessionQuery = queryOptions({
   queryKey: ['session'],
-  queryFn: () => readMe(),
+  queryFn: async () => {
+    const current = await readMe();
+    // The server confirmed this session: only now may the device keep this person's drafts again.
+    // A tab that merely still shows a signed-out session never gets here.
+    if (current) void allowDrafts(current.user.id);
+    return current;
+  },
   staleTime: 30_000,
   retry: false,
 });
 
 /** Serves a fresh cached session and waits for a refetch when it is stale, so guards re-check it. */
 export const loadSession = (queryClient: QueryClient) => queryClient.fetchQuery(sessionQuery);
+
+/** Marks a failed session check, so its copy is shown for that and nothing else. */
+export class SessionCheckError extends Error {
+  constructor(readonly reason: unknown) {
+    super('session check failed');
+  }
+}
+
+/**
+ * For route guards: re-checks a stale session, and when that fails keeps the last good answer
+ * (a cached `null` still means signed out). With nothing cached the page cannot be shown.
+ */
+export async function loadSessionOrCached(queryClient: QueryClient): Promise<Me | null> {
+  try {
+    return await loadSession(queryClient);
+  } catch (error) {
+    const cached = queryClient.getQueryData<Me | null>(sessionQuery.queryKey);
+    if (cached === undefined) throw new SessionCheckError(error);
+    return cached;
+  }
+}
 
 /** Records the signed-out state where observers can see it, then drops other cached data. */
 export function endSession(queryClient: QueryClient) {
