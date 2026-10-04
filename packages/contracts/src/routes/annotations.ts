@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { anchor, hexColor } from '../anchors';
 import { classArchived, conflictBody, defineRoute, invalidBody } from '../define';
+import { exampleIds } from '../examples';
 
 /**
  * Private annotations and class discussions (§8, §13). Every route is class-scoped; reads
@@ -10,9 +11,9 @@ import { classArchived, conflictBody, defineRoute, invalidBody } from '../define
  * to an archived class answer 409 `{ error: 'class_archived' }`; reads keep working (§4).
  */
 
-const exampleClass = '00000000-0000-4000-8000-000000000000';
-const exampleResource = '00000000-0000-4000-8000-0000000000bb';
-const exampleAnnotation = '00000000-0000-4000-8000-0000000000cc';
+const exampleClass = exampleIds.zero;
+const exampleResource = exampleIds.bb;
+const exampleAnnotation = exampleIds.cc;
 
 const timestamp = z.iso.datetime({ offset: true });
 const color = hexColor;

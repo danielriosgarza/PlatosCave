@@ -47,6 +47,8 @@ export interface RouteDeps extends Deps {
   config: Config;
   /** The injected clock, or the system one. */
   now: () => Date;
+  /** The database, or a 503 when none is configured. */
+  requireDb: () => Db;
   mailer: Mailer;
   background: BackgroundTasks;
   /** The injected object store, or the one STORAGE_DRIVER selects. */
@@ -114,6 +116,10 @@ export async function buildApp(config: Config, deps: Deps = {}): Promise<Fastify
     ...deps,
     config,
     now,
+    requireDb: () => {
+      if (!deps.db) throw app.httpErrors.serviceUnavailable();
+      return deps.db;
+    },
     mailer: deps.mailer ?? createMailer(config, now),
     background,
     storage,

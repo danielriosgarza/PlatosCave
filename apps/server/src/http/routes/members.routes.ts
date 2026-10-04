@@ -10,7 +10,7 @@ import {
   setPublisher,
 } from '@parallax/contracts/routes/members';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import type { Deps } from '../../app';
+import type { RouteDeps } from '../../app';
 import { readSessionToken } from '../../auth/sessions';
 import { hashToken } from '../../auth/tokens';
 import * as identity from '../../db/identity';
@@ -36,12 +36,9 @@ const inviteView = <T extends { expiresAt: Date | null; createdAt: Date }>(i: T)
   createdAt: i.createdAt.toISOString(),
 });
 
-export default function memberRoutes(app: FastifyInstance, deps: Deps): void {
-  const db = () => {
-    if (!deps.db) throw app.httpErrors.serviceUnavailable();
-    return deps.db;
-  };
-  const now = () => app.resolverDeps.now();
+export default function memberRoutes(app: FastifyInstance, deps: RouteDeps): void {
+  const db = deps.requireDb;
+  const now = deps.now;
 
   registerRoute(app, createClass, async ({ scope, body }) => {
     const created = await identity.createClass(db(), scope, { name: body.name });

@@ -31,7 +31,6 @@ export const strokes = z
     }),
   )
   .max(500);
-export type Strokes = z.infer<typeof strokes>;
 
 export const textAnchor = z
   .object({
@@ -44,7 +43,10 @@ export const textAnchor = z
     prefix: context,
     suffix: context,
   })
-  .refine((a) => a.end > a.start, { message: 'end must be after start', path: ['end'] });
+  .refine((a) => a.end > a.start, {
+    message: 'end must be after start',
+    path: ['end'],
+  });
 
 export const pdfAnchor = z.object({
   kind: z.literal('pdf'),
@@ -55,7 +57,10 @@ export const pdfAnchor = z.object({
   strokes: strokes.optional(),
 });
 
-export const slideAnchor = z.object({ kind: z.literal('slide'), page: z.int().min(0) });
+export const slideAnchor = z.object({
+  kind: z.literal('slide'),
+  page: z.int().min(0),
+});
 
 /** A native figure or bounded sketch area, with the drawing made on it. */
 export const figureAnchor = z.object({

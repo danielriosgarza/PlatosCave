@@ -10,10 +10,7 @@ import { registerRoute } from '../register';
 export default function testRoutes(app: FastifyInstance, deps: RouteDeps): void {
   const { config } = deps;
   if (!config.TEST_ROUTES || config.NODE_ENV === 'production') return;
-  const db = () => {
-    if (!deps.db) throw app.httpErrors.serviceUnavailable();
-    return deps.db;
-  };
+  const db = deps.requireDb;
   const now = deps.now;
   // One server process serves every Playwright worker: build the world at most once.
   let building: Promise<boolean> | undefined;

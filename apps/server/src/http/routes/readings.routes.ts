@@ -7,11 +7,7 @@ import { listTopicReadings, loadReading, savePosition } from '../../db/readings'
 import { notFound, registerRoute, settle } from '../register';
 
 export default function readingRoutes(app: FastifyInstance, routeDeps: RouteDeps): void {
-  const deps = () => {
-    const { db, now } = app.resolverDeps;
-    if (!db) throw app.httpErrors.serviceUnavailable();
-    return { db, at: now() };
-  };
+  const deps = () => ({ db: routeDeps.requireDb(), at: routeDeps.now() });
 
   registerRoute(app, listReadings, async ({ params, scope }) => {
     const { db, at } = deps();

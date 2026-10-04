@@ -1,6 +1,5 @@
-import type { ReadingPosition } from '@parallax/contracts/routes/readings';
+import { type ReadingPosition, readingPosition } from '@parallax/contracts/routes/readings';
 import { and, asc, desc, eq, inArray } from 'drizzle-orm';
-import { z } from 'zod';
 import type { ClassScope } from '../auth/scope';
 import { openToStudent } from '../content/availability';
 import { classArchived, invalid, notFound, type Outcome } from '../outcome';
@@ -27,15 +26,10 @@ const isReading = (type: string): type is ReadingType =>
 const kindOf = (type: ReadingType): 'native' | 'pdf' =>
   type === 'reading_native' ? 'native' : 'pdf';
 
-const Position = z.union([
-  z.object({ blockId: z.string(), offset: z.number() }),
-  z.object({ page: z.number(), offset: z.number() }),
-]);
-
 /** A saved position as stored, or null when the stored JSON is not a reading position. */
 const readPosition = (raw: unknown): ReadingPosition | null => {
-  const parsed = Position.safeParse(raw);
-  return parsed.success ? (parsed.data as ReadingPosition) : null;
+  const parsed = readingPosition.safeParse(raw);
+  return parsed.success ? parsed.data : null;
 };
 
 interface ReleasedReading {
@@ -108,7 +102,10 @@ export async function listTopicReadings(
   scope: ClassScope,
   topicId: string,
   now: Date,
-): Promise<{ readings: ReadingSummary[]; lastRevisionId: string | null } | null> {
+): Promise<{
+  readings: ReadingSummary[];
+  lastRevisionId: string | null;
+} | null> {
   if (!scope.releaseId) return null;
   const topic = await findReleaseTopic(db, scope, { topicId }, now);
   if (!topic?.open) return null;
@@ -196,7 +193,10 @@ export async function loadReading(
   const state = status?.state === 'ready' ? 'ready' : status?.state === 'failed' ? 'failed' : null;
   const stored = row.objectKeys.length
     ? await db
-        .select({ key: storageObjects.key, contentType: storageObjects.contentType })
+        .select({
+          key: storageObjects.key,
+          contentType: storageObjects.contentType,
+        })
         .from(storageObjects)
         .where(
           and(
@@ -223,7 +223,11 @@ export async function loadReading(
   if (row.type === 'reading_native') {
     const html = typeof row.derived.html === 'string' ? row.derived.html : null;
     return html === null
-      ? { ...base, status: 'failed', error: 'The reading has no rendered content' }
+      ? {
+          ...base,
+          status: 'failed',
+          error: 'The reading has no rendered content',
+        }
       : { ...base, status: 'ready', html };
   }
   const key = pdfKey(row.content, row.objectKeys);

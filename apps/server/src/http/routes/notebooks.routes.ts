@@ -41,11 +41,7 @@ export function notebookView(
 }
 
 export default function notebookRoutes(app: FastifyInstance, routeDeps: RouteDeps): void {
-  const deps = () => {
-    const { db, now } = app.resolverDeps;
-    if (!db) throw app.httpErrors.serviceUnavailable();
-    return { db, at: now() };
-  };
+  const deps = () => ({ db: routeDeps.requireDb(), at: routeDeps.now() });
 
   registerRoute(app, listNotebooks, async ({ params, scope }) => {
     const { db, at } = deps();

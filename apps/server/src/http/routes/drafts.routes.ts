@@ -7,17 +7,14 @@ import {
   updateTopic,
 } from '@parallax/contracts/routes/drafts';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
-import type { Deps } from '../../app';
+import type { RouteDeps } from '../../app';
 import * as drafts from '../../db/content/drafts';
 import { enqueueIfUnprocessed, isProcessed } from '../../jobs/reading-ingest.job';
 import { notFound, registerRoute, settle } from '../register';
 
-export default function draftRoutes(app: FastifyInstance, deps: Deps): void {
-  const db = () => {
-    if (!deps.db) throw app.httpErrors.serviceUnavailable();
-    return deps.db;
-  };
-  const now = () => (deps.now ?? (() => new Date()))();
+export default function draftRoutes(app: FastifyInstance, deps: RouteDeps): void {
+  const db = deps.requireDb;
+  const now = deps.now;
 
   registerRoute(app, listDrafts, ({ scope }) => drafts.listDrafts(db(), scope));
 

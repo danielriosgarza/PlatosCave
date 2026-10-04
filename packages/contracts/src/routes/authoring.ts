@@ -1,10 +1,11 @@
 import { z } from 'zod';
 import { defineRoute, errorBody, invalidBody } from '../define';
+import { exampleIds } from '../examples';
 
 /** Authoring support around drafts: uploads, processing status and the course overview (§12). */
 
-const exampleCourseId = '00000000-0000-4000-8000-000000000000';
-const exampleResourceId = '00000000-0000-4000-8000-0000000000bb';
+const exampleCourseId = exampleIds.zero;
+const exampleResourceId = exampleIds.bb;
 const courseParams = z.object({ courseId: z.uuid() });
 const timestamp = z.iso.datetime({ offset: true });
 

@@ -36,11 +36,8 @@ async function drain(stream: Readable): Promise<void> {
 }
 
 export default function notebookSubmissionRoutes(app: FastifyInstance, deps: RouteDeps): void {
-  const db = () => {
-    if (!deps.db) throw app.httpErrors.serviceUnavailable();
-    return deps.db;
-  };
-  const now = () => app.resolverDeps.now();
+  const db = deps.requireDb;
+  const now = deps.now;
   // Scoped to this module: the parser only exists on the route that takes the upload.
   app.register(multipart, {
     limits: { fileSize: MAX_SUBMISSION_BYTES, files: 1, fields: 1, parts: 2 },

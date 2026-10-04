@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { defineRoute } from '../define';
+import { exampleIds } from '../examples';
 import { readingPosition } from './readings';
 
 /**
@@ -8,9 +9,9 @@ import { readingPosition } from './readings';
  * to the deck revision, so a replaced deck starts again at its first slide.
  */
 
-const exampleClass = '00000000-0000-4000-8000-000000000000';
-const exampleTopic = '00000000-0000-4000-8000-0000000000aa';
-const exampleRevision = '00000000-0000-4000-8000-0000000000bb';
+const exampleClass = exampleIds.zero;
+const exampleTopic = exampleIds.aa;
+const exampleRevision = exampleIds.bb;
 
 const timestamp = z.iso.datetime({ offset: true });
 

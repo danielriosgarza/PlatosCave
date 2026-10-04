@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { anchor } from '../anchors';
 import { defineRoute, invalidBody } from '../define';
+import { exampleIds } from '../examples';
 import { classArchived, placementView } from './annotations';
 
 /**
@@ -9,8 +10,8 @@ import { classArchived, placementView } from './annotations';
  * reattachment with its original quote and context.
  */
 
-const exampleClass = '00000000-0000-4000-8000-000000000000';
-const exampleThread = '00000000-0000-4000-8000-0000000000dd';
+const exampleClass = exampleIds.zero;
+const exampleThread = exampleIds.dd;
 
 const classParams = z.object({ classId: z.uuid() });
 

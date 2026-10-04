@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { classArchived, defineRoute, invalidBody } from '../define';
+import { exampleIds } from '../examples';
 import { topicTab } from './topics';
 
 /**
@@ -7,9 +8,9 @@ import { topicTab } from './topics';
  * person last studied it. Every route is class-scoped and reads only the class's adopted release.
  */
 
-const exampleClass = '00000000-0000-4000-8000-000000000000';
-const exampleTopic = '00000000-0000-4000-8000-0000000000aa';
-const exampleRevision = '00000000-0000-4000-8000-0000000000bb';
+const exampleClass = exampleIds.zero;
+const exampleTopic = exampleIds.aa;
+const exampleRevision = exampleIds.bb;
 
 const timestamp = z.iso.datetime({ offset: true });
 

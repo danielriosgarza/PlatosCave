@@ -1,6 +1,5 @@
-import type { ReadingPosition } from '@parallax/contracts/routes/readings';
+import { type ReadingPosition, readingPosition } from '@parallax/contracts/routes/readings';
 import { and, asc, desc, eq } from 'drizzle-orm';
-import { z } from 'zod';
 import type { ClassScope } from '../auth/scope';
 import { openToStudent } from '../content/availability';
 import { findReleaseTopic } from './classTopics';
@@ -18,12 +17,10 @@ import { forClass } from './scoped';
 
 const isDeck = (type: string) => type === 'slides_pdf' || type === 'slides_web';
 
-const Place = z.object({ page: z.number(), offset: z.number() });
-
 /** A saved place as stored, or null when the stored JSON is not a page. */
 const readPlace = (raw: unknown): ReadingPosition | null => {
-  const parsed = Place.safeParse(raw);
-  return parsed.success ? parsed.data : null;
+  const parsed = readingPosition.safeParse(raw);
+  return parsed.success && 'page' in parsed.data ? parsed.data : null;
 };
 
 export interface DeckSummary {
@@ -67,7 +64,10 @@ export async function listTopicDecks(
     (r) => isDeck(r.type) && (scope.role !== 'student' || openToStudent(r, now)),
   );
   const saved = await db
-    .select({ revisionId: studyPositions.resourceRevisionId, position: studyPositions.position })
+    .select({
+      revisionId: studyPositions.resourceRevisionId,
+      position: studyPositions.position,
+    })
     .from(studyPositions)
     .where(
       and(
@@ -120,7 +120,10 @@ export async function loadDeck(
     web: null,
   };
   if (status?.state !== 'ready') {
-    return { ...base, status: status?.state === 'failed' ? 'failed' : 'pending' };
+    return {
+      ...base,
+      status: status?.state === 'failed' ? 'failed' : 'pending',
+    };
   }
   if (web) {
     const { slides } = row.derived;
