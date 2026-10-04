@@ -103,6 +103,20 @@
 .feedback p {
   margin: 12px 0 0;
 }
+.loading {
+  margin-top: 16px;
+  color: var(--pc-muted);
+}
+.stateAction {
+  margin-top: 20px;
+}
+.subheading {
+  font-size: 16px;
+}
+.subheadingSmall {
+  font-size: 13px;
+  margin-top: 16px;
+}
 .editGrid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 280px;

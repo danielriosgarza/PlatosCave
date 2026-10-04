@@ -328,7 +328,7 @@ export function SlideNotes({ classId, resourceId, page }: Props) {
           })}
           {earlier.length > 0 ? (
             <section aria-label="Notes on an earlier version of this deck">
-              <h4 className={margin.small}>Earlier version of this deck</h4>
+              <h3 className={margin.small}>Earlier version of this deck</h3>
               {earlier.map((a) => (
                 <div key={a.id} className={margin.entry}>
                   <div className={margin.entryHead}>
@@ -355,7 +355,7 @@ export function SlideNotes({ classId, resourceId, page }: Props) {
           ))}
           {earlierThreads.length > 0 ? (
             <section aria-label="Discussion on an earlier version of this deck">
-              <h4 className={margin.small}>Earlier version of this deck</h4>
+              <h3 className={margin.small}>Earlier version of this deck</h3>
               {earlierThreads.map((t) => (
                 <ThreadEntry
                   key={t.id}

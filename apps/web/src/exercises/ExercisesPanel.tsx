@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { ApiError } from '../api/client';
+import { Loading } from '../components/Loading';
 import pageStyles from '../components/Page.module.css';
+import { RetryNotice } from '../components/RetryNotice';
 import { formatOpens } from '../topics/topics';
 import { type ReleasedResource, useAttempt, useClassRelease } from './attempt';
 import { creditText } from './credit';
@@ -45,16 +47,9 @@ function TopicExercises({
   }
   if (!query.data) {
     return query.isError ? (
-      <div className={pageStyles.feedback} role="alert">
-        <p>Exercises could not be loaded.</p>
-        <button type="button" className={pageStyles.outline} onClick={() => void query.refetch()}>
-          Try again
-        </button>
-      </div>
+      <RetryNotice message="Exercises could not be loaded." onRetry={() => void query.refetch()} />
     ) : (
-      <p className={pageStyles.intro} role="status">
-        Loading exercises
-      </p>
+      <Loading label="Loading exercises" className={pageStyles.intro} />
     );
   }
   const topic = query.data.topics.find((t) => t.topicId === topicId);

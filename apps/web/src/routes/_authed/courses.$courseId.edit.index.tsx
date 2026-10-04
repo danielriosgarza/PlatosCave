@@ -8,8 +8,10 @@ import { canEdit, grantLabel } from '../../authoring/grants';
 import { PublishPanel } from '../../authoring/PublishPanel';
 import { authoringKey, draftsQuery } from '../../authoring/queries';
 import { failureMessage } from '../../authoring/upload';
+import { Loading } from '../../components/Loading';
 import styles from '../../components/Page.module.css';
 import { usePageTitle } from '../../components/pageTitle';
+import { RetryNotice } from '../../components/RetryNotice';
 import { Unavailable } from '../../components/Unavailable';
 import { useSession } from '../../session/useSession';
 
@@ -20,8 +22,13 @@ export const Route = createFileRoute('/_authed/courses/$courseId/edit/')({
 function EditCourse() {
   const { courseId } = Route.useParams();
   const session = useSession();
-  if (session.status !== 'signed-in')
-    return <main id="main" className={styles.index} aria-busy="true" />;
+  if (session.status !== 'signed-in') {
+    return (
+      <main id="main" className={styles.index}>
+        <Loading label="Loading the course" />
+      </main>
+    );
+  }
   const grant = session.me.courses.find((c) => c.courseId === courseId);
   if (!grant || !canEdit(grant)) return <Unavailable />;
   return <CourseDraft courseId={courseId} title={grant.title} grant={grant} />;
@@ -105,20 +112,13 @@ function CourseDraft({
         <div>
           <h2 style={{ fontSize: 20 }}>Topics</h2>
           {drafts.isError ? (
-            <p role="alert" style={{ marginTop: 16 }}>
-              The topics could not be loaded.{' '}
-              <button
-                type="button"
-                className={styles.textButton}
-                onClick={() => void drafts.refetch()}
-              >
-                Retry
-              </button>
-            </p>
+            <RetryNotice
+              message="The topics could not be loaded."
+              retryLabel="Retry"
+              onRetry={() => void drafts.refetch()}
+            />
           ) : !drafts.data ? (
-            <p className={styles.muted} aria-busy="true" style={{ marginTop: 16 }}>
-              Loading topics…
-            </p>
+            <Loading label="Loading topics…" />
           ) : topics.length === 0 ? (
             <p className={styles.muted} style={{ marginTop: 16 }}>
               This course has no topics yet.
