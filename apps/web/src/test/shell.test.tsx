@@ -35,6 +35,7 @@ describe('session redirect', () => {
     const { router } = renderApp('/');
     expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeInTheDocument();
     expect(router.state.location.pathname).toBe('/signin');
+    expect(router.state.location.search).toEqual({});
   });
 
   it('A02 sends a signed-in person at / to their courses', async () => {

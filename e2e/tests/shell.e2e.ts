@@ -42,8 +42,19 @@ test('A01 an address opened while signed out is kept through sign-in', async ({ 
 
 test('A01 signed-out / lands on sign-in', async ({ page }) => {
   await page.goto('/');
-  await expect(page).toHaveURL(/\/signin(\?|$)/);
+  await expect(page).toHaveURL(/\/signin$/);
   await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible();
+});
+
+test('A01 an instructor who signs in from / lands on the instructor view', async ({ page }) => {
+  const email = `a01-root-${Date.now()}@example.test`;
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Instructor sign in' }).click();
+  await page.getByLabel('Email address').fill(email);
+  await page.getByRole('button', { name: 'Send sign-in link' }).click();
+  await expect(page.getByText('Sign-in link requested')).toBeVisible();
+  await page.goto(await latestSignInLink(email));
+  await expect(page).toHaveURL(/\/courses\?view=instructor$/);
 });
 
 test('A02 signed-in / and the brand link land on courses', async ({ page }) => {
