@@ -46,6 +46,8 @@ interface World {
   /** Saves fail like a dropped connection. */
   drop: boolean;
   count: number;
+  /** The reading's HTML when a test needs other than the default. */
+  html?: string;
 }
 const world = (kind: World['kind'] = 'native', annotations: Annotation[] = []): World => ({
   kind,
@@ -111,7 +113,7 @@ function api(w: World) {
           status: 'ready',
           error: null,
           sourceKey: null,
-          html: w.kind === 'native' ? HTML : null,
+          html: w.kind === 'native' ? (w.html ?? HTML) : null,
           pdf:
             w.kind === 'pdf'
               ? {
@@ -590,6 +592,405 @@ describe('sketches already saved', () => {
     expect(w.annotations.find((a) => a.id === mapped.id)?.anchor).toMatchObject({
       figureId: 'oldfigure0001',
     });
+  });
+});
+
+describe('sketch editor reachability', () => {
+  it('A07 on a figure without a picture the tools and panel stay above the ink layer', async () => {
+    const w = world();
+    // A figure known by its text alone: no picture for the layer to follow.
+    w.html = `<p data-block-id="aaaaaaaaaaa2">Text.</p><figure data-figure-id="${FIG1}"><table><tr><td>n</td></tr></table><figcaption>Figure 1. A table.</figcaption></figure>`;
+    api(w);
+    const user = userEvent.setup();
+    await openNative();
+    await user.click(screen.getByRole('button', { name: 'Sketch on Figure 1' }));
+    const panel = await screen.findByRole('region', { name: 'Sketch on Figure 1' });
+
+    // touch-action: none only while drawing.
+    const canvas = await screen.findByRole('img', { name: /^Freehand sketch on Figure 1/ });
+    expect(canvas).toHaveStyle({ touchAction: 'none' });
+
+    await stroke(user, [100, 50], [200, 100]);
+    await stroke(user, [0, 0], [400, 200]);
+    await strokeCount(2);
+    await user.click(within(panel).getByRole('button', { name: 'Undo' }));
+    await strokeCount(1);
+    await user.click(within(panel).getByRole('button', { name: 'Redo' }));
+    await strokeCount(2);
+    await user.click(within(panel).getByRole('button', { name: 'Undo' }));
+
+    await user.type(
+      within(panel).getByLabelText('Text description (required)'),
+      'A line rising to the right.',
+    );
+    await user.click(within(panel).getByRole('button', { name: 'Done' }));
+
+    await waitFor(() => expect(w.calls).toHaveLength(1));
+    const posted = w.calls[0];
+    expect(posted?.method).toBe('POST');
+    expect(posted?.body).toEqual({
+      kind: 'sketch',
+      body: 'A line rising to the right.',
+      anchor: {
+        kind: 'figure',
+        figureId: FIG1,
+        strokes: [
+          {
+            tool: 'pen',
+            color: '#202124',
+            width: 4,
+            points: [
+              [0.25, 0.25],
+              [0.5, 0.5],
+            ],
+          },
+        ],
+      },
+    });
+    // The editor closes only once the server acknowledged, and the sketch is listed with its text.
+    await waitFor(() =>
+      expect(screen.queryByRole('region', { name: 'Sketch on Figure 1' })).toBeNull(),
+    );
+    expect(await screen.findByText('Sketch · Figure 1')).toBeVisible();
+    expect(screen.getByText('A line rising to the right.')).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Edit sketch on Figure 1' })).toBeVisible();
+    expect(document.querySelector('canvas[style*="touch-action"]')).toBeNull();
+  });
+
+  it('A07 a saved drawing reopens with its strokes and description, and saves changes against its revision', async () => {
+    const strokes = [
+      {
+        tool: 'pen' as const,
+        color: '#315747',
+        width: 8,
+        points: [
+          [0.1, 0.1],
+          [0.9, 0.9],
+        ] as [number, number][],
+      },
+    ];
+    const w = world('native', [
+      stored(uuid(1), 'sketch', { kind: 'figure', figureId: FIG1, strokes }, 'A diagonal.', 3),
+    ]);
+    api(w);
+    const user = userEvent.setup();
+    await openNative();
+    await user.click(await screen.findByRole('button', { name: 'Open sketch' }));
+    const panel = await screen.findByRole('region', { name: 'Sketch on Figure 1' });
+    expect(within(panel).getByLabelText('Text description (required)')).toHaveValue('A diagonal.');
+    await screen.findByText('1 stroke');
+
+    await stroke(user, [0, 100], [400, 100]);
+    await screen.findByText('2 strokes');
+    await user.click(within(panel).getByRole('button', { name: 'Done' }));
+    await waitFor(() => expect(w.calls).toHaveLength(1));
+    expect(w.calls[0]?.method).toBe('PUT');
+    expect(w.calls[0]?.body).toMatchObject({ expectedRevision: 3, body: 'A diagonal.' });
+    const sent = w.calls[0]?.body?.anchor as { strokes: unknown[] };
+    expect(sent.strokes).toHaveLength(2);
+    expect(sent.strokes[0]).toEqual(strokes[0]);
+  });
+
+  it('A07 a drawing without its text description is refused with the reason, and nothing is sent', async () => {
+    const w = world();
+    api(w);
+    const user = userEvent.setup();
+    await openNative();
+    await user.click(screen.getByRole('button', { name: 'Sketch on Figure 1' }));
+    await stroke(user, [10, 10], [300, 150]);
+    await user.click(await screen.findByRole('button', { name: 'Done' }));
+    expect(await screen.findByText('Describe the sketch in words before finishing.')).toBeVisible();
+    expect(w.calls).toHaveLength(0);
+    expect(screen.getByLabelText('Text description (required)')).toHaveFocus();
+  });
+
+  it('A07 a keyboard-only student supplies the same explanation without drawing', async () => {
+    const w = world();
+    api(w);
+    const user = userEvent.setup();
+    await openNative();
+    // Reach Describe in text for Figure 2 by Tab, press it with Enter, type, and save with the keyboard.
+    const describe = screen.getByRole('button', { name: 'Describe Figure 2 in text' });
+    for (let i = 0; i < 40 && document.activeElement !== describe; i++) await user.tab();
+    expect(describe).toHaveFocus();
+    await user.keyboard('{Enter}');
+    const panel = await screen.findByRole('region', { name: 'Sketch on Figure 2' });
+    const field = within(panel).getByLabelText('Text description (required)');
+    expect(field).toHaveFocus();
+    // No canvas and no drawing tools: there is nothing to draw.
+    expect(screen.queryByRole('img', { name: /^Freehand sketch/ })).toBeNull();
+    expect(within(panel).queryByRole('button', { name: 'Pen' })).toBeNull();
+    await user.keyboard('The wider samples cluster tightly around 10.');
+    await user.tab();
+    expect(within(panel).getByRole('button', { name: 'Save description' })).toHaveFocus();
+    await user.keyboard('{Enter}');
+    await waitFor(() => expect(w.calls).toHaveLength(1));
+    expect(w.calls[0]?.body).toEqual({
+      kind: 'note',
+      body: 'The wider samples cluster tightly around 10.',
+      anchor: { kind: 'figure', figureId: FIG2, strokes: [] },
+    });
+    expect(await screen.findByText('Description · Figure 2')).toBeVisible();
+  });
+
+  it('A07 a save that fails keeps the drawing and the text, and Done tries again', async () => {
+    const w = world();
+    w.refuse = 503;
+    api(w);
+    const user = userEvent.setup();
+    await openNative();
+    await user.click(screen.getByRole('button', { name: 'Sketch on Figure 1' }));
+    await stroke(user, [10, 10], [300, 150]);
+    await user.type(screen.getByLabelText('Text description (required)'), 'Kept.');
+    await user.click(screen.getByRole('button', { name: 'Done' }));
+    expect(await screen.findByText(/Could not save/)).toBeVisible();
+    expect(screen.getByLabelText('Text description (required)')).toHaveValue('Kept.');
+    w.refuse = null;
+    await user.click(screen.getByRole('button', { name: 'Done' }));
+    await waitFor(() => expect(w.annotations).toHaveLength(1));
+    await waitFor(() =>
+      expect(screen.queryByRole('region', { name: 'Sketch on Figure 1' })).toBeNull(),
+    );
+  });
+
+  it('A07 offline says nothing is saved yet instead of claiming a save', async () => {
+    const w = world();
+    api(w);
+    const user = userEvent.setup();
+    await openNative();
+    await user.click(screen.getByRole('button', { name: 'Sketch on Figure 1' }));
+    await stroke(user, [10, 10], [300, 150]);
+    await user.type(screen.getByLabelText('Text description (required)'), 'Offline.');
+    vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    await user.click(screen.getByRole('button', { name: 'Done' }));
+    expect(await screen.findByText(/Offline · not saved/)).toBeVisible();
+    expect(screen.queryByText('Saved')).toBeNull();
+    expect(w.calls).toHaveLength(0);
+  });
+
+  it('A07 the eraser is a stroke of its own and undo takes it back', async () => {
+    api(world());
+    const user = userEvent.setup();
+    await openNative();
+    await user.click(screen.getByRole('button', { name: 'Sketch on Figure 1' }));
+    await stroke(user, [0, 100], [400, 100]);
+    await user.click(screen.getByRole('button', { name: 'Eraser' }));
+    expect(screen.getByRole('button', { name: 'Eraser' })).toHaveAttribute('aria-pressed', 'true');
+    await stroke(user, [200, 0], [200, 200]);
+    await screen.findByText('2 strokes');
+    await user.click(screen.getByRole('button', { name: 'Undo' }));
+    await screen.findByText('1 stroke');
+    await user.click(screen.getByRole('button', { name: 'Colour Green' }));
+    expect(screen.getByRole('button', { name: 'Colour Green' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    );
+    expect(screen.getByRole('button', { name: 'Pen' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('A07 Discard drops an unsaved drawing; Delete sketch removes a saved one', async () => {
+    const strokes = [
+      {
+        tool: 'pen' as const,
+        color: '#202124',
+        width: 4,
+        points: [
+          [0.1, 0.1],
+          [0.9, 0.9],
+        ] as [number, number][],
+      },
+    ];
+    const w = world('native', [
+      stored(uuid(1), 'sketch', { kind: 'figure', figureId: FIG1, strokes }, 'A diagonal.'),
+    ]);
+    api(w);
+    const user = userEvent.setup();
+    await openNative();
+    await user.click(await screen.findByRole('button', { name: 'Open sketch' }));
+    await stroke(user, [0, 0], [10, 10]);
+    await user.click(screen.getByRole('button', { name: 'Discard' }));
+    expect(screen.queryByRole('region', { name: 'Sketch on Figure 1' })).toBeNull();
+    expect(w.calls).toHaveLength(0);
+    await user.click(screen.getByRole('button', { name: 'Delete sketch' }));
+    await waitFor(() => expect(w.annotations).toHaveLength(0));
+    await waitFor(() => expect(screen.queryByText('Sketch · Figure 1')).toBeNull());
+  });
+
+  it('A07 a sketch edited elsewhere offers the saved copy or the drawing on this device', async () => {
+    const strokes = [
+      {
+        tool: 'pen' as const,
+        color: '#202124',
+        width: 4,
+        points: [
+          [0.1, 0.1],
+          [0.9, 0.9],
+        ] as [number, number][],
+      },
+    ];
+    const w = world('native', [
+      stored(uuid(1), 'sketch', { kind: 'figure', figureId: FIG1, strokes }, 'Mine.', 1),
+    ]);
+    api(w);
+    const user = userEvent.setup();
+    await openNative();
+    await user.click(await screen.findByRole('button', { name: 'Open sketch' }));
+    // Another device saves first.
+    w.annotations = w.annotations.map((a) => ({ ...a, body: 'Theirs.', revision: 2 }));
+    await stroke(user, [0, 0], [50, 50]);
+    await user.click(screen.getByRole('button', { name: 'Done' }));
+    expect(await screen.findByText('This sketch changed somewhere else')).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Keep my drawing' }));
+    await user.click(screen.getByRole('button', { name: 'Done' }));
+    await waitFor(() => expect(w.annotations[0]?.revision).toBe(3));
+    expect(w.annotations[0]?.body).toBe('Mine.');
+  });
+
+  it('A07 Download SVG hands over the drawing as SVG with its description', async () => {
+    const strokes = [
+      {
+        tool: 'pen' as const,
+        color: '#202124',
+        width: 4,
+        points: [
+          [0, 0],
+          [1, 1],
+        ] as [number, number][],
+      },
+    ];
+    api(
+      world('native', [
+        stored(uuid(1), 'sketch', { kind: 'figure', figureId: FIG1, strokes }, 'A diagonal.'),
+      ]),
+    );
+    const blobs: Blob[] = [];
+    URL.createObjectURL = vi.fn((b: Blob | MediaSource) => {
+      blobs.push(b as Blob);
+      return 'blob:sketch';
+    });
+    URL.revokeObjectURL = vi.fn();
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    const user = userEvent.setup();
+    await openNative();
+    await user.click(await screen.findByRole('button', { name: 'Download SVG' }));
+    expect(click).toHaveBeenCalled();
+    const svg = await blobs[0]?.text();
+    expect(svg).toContain('<svg');
+    expect(svg).toContain('<desc>A diagonal.</desc>');
+    expect(svg).toContain('points="0,0 900,450"');
+  });
+});
+
+describe('sketches already saved', () => {
+  const line = [
+    {
+      tool: 'pen' as const,
+      color: '#202124',
+      width: 4,
+      points: [
+        [0.1, 0.1],
+        [0.9, 0.9],
+      ] as [number, number][],
+    },
+  ];
+
+  it('A07 Open sketch does not replace a sketch that is open with unsaved work', async () => {
+    api(
+      world('native', [
+        stored(uuid(2), 'sketch', { kind: 'figure', figureId: FIG2, strokes: line }, 'Second.'),
+      ]),
+    );
+    const user = userEvent.setup();
+    await openNative();
+    const open = await screen.findByRole('button', { name: 'Open sketch' });
+    await user.click(screen.getByRole('button', { name: 'Sketch on Figure 1' }));
+    await stroke(user, [10, 10], [300, 150]);
+    await user.type(screen.getByLabelText('Text description (required)'), 'Unsaved.');
+    expect(open).toBeDisabled();
+    await user.click(open);
+    expect(screen.getByRole('region', { name: 'Sketch on Figure 1' })).toBeVisible();
+    expect(screen.getByLabelText('Text description (required)')).toHaveValue('Unsaved.');
+    expect(screen.getByText('1 stroke')).toBeVisible();
+  });
+
+  it('A07 a sketch mapped to a newer revision cannot be edited in place, but can be exported, deleted and replaced by a new sketch', async () => {
+    const mapped = stored(
+      uuid(3),
+      'sketch',
+      { kind: 'figure', figureId: 'oldfigure0001', strokes: line },
+      'Old.',
+    );
+    mapped.placement = {
+      resourceRevisionId: REV,
+      status: 'mapped',
+      anchor: { kind: 'figure', figureId: FIG1, strokes: line },
+      confidence: 0.95,
+    };
+    const w = world('native', [mapped]);
+    api(w);
+    const user = userEvent.setup();
+    await openNative();
+    expect(await screen.findByRole('button', { name: 'Open sketch' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Download SVG' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Delete sketch' })).toBeEnabled();
+    // Sketch starts a new drawing on the current revision rather than rewriting the old anchor.
+    expect(screen.getByRole('button', { name: 'Sketch on Figure 1' })).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Sketch on Figure 1' }));
+    await stroke(user, [10, 10], [300, 150]);
+    await user.type(screen.getByLabelText('Text description (required)'), 'New.');
+    await user.click(screen.getByRole('button', { name: 'Done' }));
+    await waitFor(() => expect(w.calls).toHaveLength(1));
+    expect(w.calls[0]?.method).toBe('POST');
+    expect(w.annotations.find((a) => a.id === mapped.id)?.anchor).toMatchObject({
+      figureId: 'oldfigure0001',
+    });
+  });
+});
+
+describe('sketch editor reachability', () => {
+  it('A07 on a figure without a picture the tools and panel stay above the ink layer', async () => {
+    const w = world();
+    api(w);
+    const user = userEvent.setup();
+    await openNative();
+    const figure = document.querySelector(`figure[data-figure-id="${FIG1}"]`) as HTMLElement;
+    for (const img of figure.querySelectorAll('img')) img.remove();
+    cleanup();
+    expect(figure).toBeDefined();
+    renderApp(READING);
+    await screen.findByRole('button', { name: 'Sketch on Figure 1' });
+    await user.click(screen.getByRole('button', { name: 'Sketch on Figure 1' }));
+    const panel = (await screen.findByRole('region', { name: 'Sketch on Figure 1' })).parentElement;
+    const layer = (
+      await screen.findByRole('img', { name: /^Freehand sketch on Figure 1/ })
+    ).closest('div[style*="position: absolute"]') as HTMLElement;
+    // Both lie in the same figure; the host of the panel is positioned with a higher stacking order.
+    expect(panel?.style.position).toBe('relative');
+    expect(Number(panel?.style.zIndex)).toBeGreaterThan(Number(layer.style.zIndex || 0));
+  });
+
+  it('A07 Delete sketch is unavailable while that sketch is open, so it cannot be recreated by Done', async () => {
+    const line = [
+      {
+        tool: 'pen' as const,
+        color: '#202124',
+        width: 4,
+        points: [
+          [0.1, 0.1],
+          [0.9, 0.9],
+        ] as [number, number][],
+      },
+    ];
+    const w = world('native', [
+      stored(uuid(1), 'sketch', { kind: 'figure', figureId: FIG1, strokes: line }, 'A diagonal.'),
+    ]);
+    api(w);
+    const user = userEvent.setup();
+    await openNative();
+    await user.click(await screen.findByRole('button', { name: 'Open sketch' }));
+    expect(screen.getByRole('button', { name: 'Delete sketch' })).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: 'Discard' }));
+    expect(screen.getByRole('button', { name: 'Delete sketch' })).toBeEnabled();
   });
 });
 

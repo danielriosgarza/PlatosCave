@@ -60,6 +60,12 @@ export function FigureSketches({
       const panel = document.createElement('div');
       layer.style.position = 'absolute';
       layer.style.pointerEvents = 'none';
+      // The tools row and the panel lie above the ink layer, which on a figure without a picture
+      // covers the whole figure: their buttons must stay reachable while a sketch is drawn.
+      for (const host of [head, panel]) {
+        host.style.position = 'relative';
+        host.style.zIndex = '1';
+      }
       figure.prepend(head);
       figure.append(layer, panel);
       const move = () => place(figure, layer);

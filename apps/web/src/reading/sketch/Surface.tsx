@@ -29,17 +29,24 @@ export function SketchLayer({
     [api.aspects, key],
   );
   const editing = api.open && sameSurface(api.open.surface, surface) ? api.open : null;
-  // A sketch being edited is drawn from the editor's copy; the rest stay as they are saved.
-  const others = api.saved
-    .filter(
-      (s) =>
-        s.surface && sameSurface(s.surface, surface) && s.annotation.id !== editing?.annotationId,
-    )
-    .flatMap((s) => strokesOfSaved(s.annotation));
+  // A sketch being edited is drawn from the editor's copy; the rest stay as they are saved, each
+  // on its own canvas so one sketch's eraser never cuts another's ink.
+  const others = api.saved.filter(
+    (s) =>
+      s.surface && sameSurface(s.surface, surface) && s.annotation.id !== editing?.annotationId,
+  );
   const drawing = editing && editing.mode === 'draw' ? editing : null;
   return (
     <div className={styles.layer}>
-      <SketchCanvas strokes={others} label={label} onSize={onSize} />
+      {others.length === 0 ? <SketchCanvas strokes={[]} label={label} onSize={onSize} /> : null}
+      {others.map((s) => (
+        <SketchCanvas
+          key={s.annotation.id}
+          strokes={strokesOfSaved(s.annotation)}
+          label={label}
+          onSize={onSize}
+        />
+      ))}
       {drawing ? (
         <SketchCanvas
           strokes={drawing.history.strokes}

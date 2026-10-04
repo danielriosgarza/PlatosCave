@@ -53,6 +53,7 @@ export function SketchEntry({
         <button
           type="button"
           className={styles.link}
+          disabled={editing}
           onClick={async () => setProblem(!(await onDelete()))}
         >
           Delete sketch

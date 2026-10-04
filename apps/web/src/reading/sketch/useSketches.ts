@@ -202,6 +202,7 @@ export function useSketches(actions: MarginActions, annotations: Annotation[]): 
         return patch({ status: 'conflict', current: result.current, message: null });
       }
       if (result.kind === 'gone') {
+        if (s.annotationId) actions.forget(s.annotationId);
         return patch({
           status: 'failed',
           annotationId: null,
