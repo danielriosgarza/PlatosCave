@@ -2,6 +2,7 @@ import {
   checkStep,
   completeStep,
   openExercise,
+  readExercise,
   restartExercise,
   reviewExercise,
   showHint,
@@ -18,6 +19,10 @@ export default function exerciseRoutes(app: FastifyInstance, deps: RouteDeps): v
 
   registerRoute(app, openExercise, async ({ scope, params }) =>
     settle(await attempts.openExercise(db(), scope, params.resourceId, now())),
+  );
+
+  registerRoute(app, readExercise, async ({ scope, params }) =>
+    settle(await attempts.readExercise(db(), scope, params.resourceId, now())),
   );
 
   registerRoute(app, checkStep, async ({ scope, params, body, conflict }) => {

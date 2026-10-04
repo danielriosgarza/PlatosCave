@@ -70,6 +70,30 @@ export const openExercise = defineRoute({
   examples: { params: { classId: exampleClass, resourceId: exampleResource } },
 });
 
+/** An exercise's steps without an attempt: what a fresh attempt shows, recording nothing. */
+export const exerciseView = z.object({
+  resourceId: z.uuid(),
+  resourceRevisionId: z.uuid(),
+  credit: exerciseCredit.nullable(),
+  /** Hints and solutions stay hidden; options are in their default seeded order. */
+  steps: z.array(exerciseStepView),
+});
+
+/**
+ * Read an exercise of the class's release without starting an attempt. An archived class
+ * starts no attempts (§4), so this is how its members read an exercise they never opened.
+ */
+export const readExercise = defineRoute({
+  method: 'GET',
+  path: '/api/classes/:classId/resources/:resourceId/exercise',
+  scope: { kind: 'class', role: 'any' },
+  summary: 'Read an exercise’s steps without starting a practice attempt',
+  params: resourceParams,
+  response: exerciseView,
+  errors: { 400: invalidBody },
+  examples: { params: { classId: exampleClass, resourceId: exampleResource } },
+});
+
 /**
  * Check answer: records the response and returns targeted feedback. A malformed response is
  * refused (400) and not recorded; a wrong one is recorded and may be retried.

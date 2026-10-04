@@ -2,6 +2,7 @@ import {
   checkStep,
   completeStep,
   openExercise,
+  readExercise,
   restartExercise,
   showHint,
   showSolution,
@@ -14,12 +15,19 @@ import { ApiError, call, useApi } from '../api/client';
 
 export type Attempt = z.output<typeof openExercise.response>;
 export type AttemptStep = Attempt['steps'][number];
+/** An exercise's steps without an attempt; nothing in it is recorded. */
+export type ExerciseView = z.output<typeof readExercise.response>;
+export type ExerciseStepView = ExerciseView['steps'][number];
 export type ClassRelease = z.output<typeof getClassRelease.response>;
 export type ReleasedResource = ClassRelease['topics'][number]['resources'][number];
 
 /** The released exercises of a topic, with their release times (§4, §9). */
 export const useClassRelease = (classId: string) =>
   useApi(getClassRelease, { params: { classId } });
+
+/** Reads an exercise without starting an attempt: an archived class starts none (§4). */
+export const useExerciseView = (classId: string, resourceId: string) =>
+  useApi(readExercise, { params: { classId, resourceId } });
 
 const attemptKey = (classId: string, resourceId: string) => [
   'exercise-attempt',

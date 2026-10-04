@@ -301,3 +301,30 @@
 .centered {
   text-align: center;
 }
+
+.readSteps {
+  list-style: none;
+  padding: 0;
+  margin: 24px 0 0;
+}
+.readSteps > li {
+  padding: 24px 0;
+  border-top: 1px solid var(--pc-rule);
+}
+.readItems {
+  margin: 0 auto;
+  max-width: 480px;
+  padding-left: 20px;
+}
+.readItems li {
+  padding: 4px 0;
+}
+.readCode {
+  margin: 8px 0 0;
+  padding: 12px;
+  border: 1px solid var(--pc-rule);
+  border-radius: var(--pc-radius-control);
+  font: var(--pc-text-code);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
