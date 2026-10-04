@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import type { z } from 'zod';
 import { ApiError, call } from '../api/client';
+import { Loading } from '../components/Loading';
 import styles from '../components/Page.module.css';
 import { sessionQuery } from '../session/useSession';
 import local from './Authoring.module.css';
@@ -86,9 +87,7 @@ export function PublishPanel({ courseId, grant }: Props) {
           </ul>
         )
       ) : (
-        <p className={styles.muted} aria-busy="true">
-          Loading classes…
-        </p>
+        <Loading label="Loading classes…" />
       )}
       <p style={{ margin: '18px 0' }}>
         {latest
@@ -159,7 +158,7 @@ function refusal(err: unknown): string {
 function IssueList({ heading, issues }: { heading: string; issues: Issue[] }) {
   return (
     <>
-      <h3 style={{ fontSize: 13, marginTop: 16 }}>{heading}</h3>
+      <h3 className={styles.subheadingSmall}>{heading}</h3>
       <ul className={local.issues}>
         {issues.map((i, n) => (
           // biome-ignore lint/suspicious/noArrayIndexKey: two issues can share code and resource

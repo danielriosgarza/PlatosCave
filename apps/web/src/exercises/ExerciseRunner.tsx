@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { ApiError } from '../api/client';
+import { Loading } from '../components/Loading';
 import { type Attempt, type AttemptStep, useAttempt, useAttemptActions } from './attempt';
 import { creditSummary } from './credit';
 import styles from './Exercise.module.css';
@@ -29,7 +30,7 @@ export function ExerciseRunner({
   if (query.isError) {
     return <OpenFailure error={query.error} retry={() => void query.refetch()} />;
   }
-  if (!query.data) return <p role="status">Opening exercise</p>;
+  if (!query.data) return <Loading label="Opening exercise" />;
   return (
     <PracticeAttempt
       key={query.data.id}

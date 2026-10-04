@@ -30,6 +30,30 @@ describe('session redirect', () => {
     expect(router.state.location.search).toEqual({ next: `/classes/${CLASS_A}/topics?x=1` });
   });
 
+  it('A01 sends a signed-out visitor at / to /signin', async () => {
+    stubApi(signedOut);
+    const { router } = renderApp('/');
+    expect(await screen.findByRole('heading', { name: 'Sign in' })).toBeInTheDocument();
+    expect(router.state.location.pathname).toBe('/signin');
+    expect(router.state.location.search).toEqual({});
+  });
+
+  it('A01 offers Retry at / when the session cannot be checked', async () => {
+    stubApi(() => ({ status: 500, body: { error: 'unavailable' } }));
+    renderApp('/');
+    expect(
+      await screen.findByText('Your session could not be checked, so this page is not shown.'),
+    ).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+  });
+
+  it('A02 sends a signed-in person at / to their courses', async () => {
+    stubApi(signedIn(makeMe({ classes: [studentIn(CLASS_A, 'Class A')], courses: [] })));
+    const { router } = renderApp('/');
+    expect(await screen.findByRole('heading', { name: 'Your courses' })).toBeInTheDocument();
+    expect(router.state.location.pathname).toBe('/courses');
+  });
+
   it('A01 shows a class address to a non-member as the neutral unavailable page', async () => {
     stubApi(signedIn(makeMe({ classes: [studentIn(CLASS_B, 'Class B')] })));
     renderApp(`/classes/${CLASS_A}/topics`);
@@ -52,8 +76,9 @@ describe('courses contexts', () => {
   it('A01 explains to a student on the instructor view that there is no instructor access', async () => {
     stubApi(signedIn(makeMe({ classes: [studentIn(CLASS_A, 'Class A')] })));
     renderApp('/courses?view=instructor');
-    expect(await screen.findByRole('heading', { name: 'Courses you teach' })).toBeInTheDocument();
-    expect(screen.getByText('This account has no instructor access')).toBeInTheDocument();
+    // The loading state already carries the heading, so wait for the cards' own text.
+    expect(await screen.findByText('This account has no instructor access')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Courses you teach' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Class A/ })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: 'Class review' })).toBeNull();
     expect(screen.queryByRole('link', { name: 'Instructor view' })).toBeNull();
@@ -70,15 +95,16 @@ describe('courses contexts', () => {
       ),
     );
     renderApp('/courses');
-    expect(await screen.findByRole('heading', { name: 'Your courses' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /Class B/ })).toBeInTheDocument();
+    // The loading state carries the same heading, so wait for the cards themselves.
+    expect(await screen.findByRole('link', { name: /Class B/ })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Your courses' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /Class A/ })).toBeNull();
     expect(screen.queryByRole('link', { name: 'Class review' })).toBeNull();
 
     await user.click(screen.getByRole('link', { name: 'Instructor view' }));
     expect(await screen.findByRole('heading', { name: 'Courses you teach' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Class A/ })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Class review' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Class review' })).toBeNull();
     expect(screen.queryByRole('link', { name: /Class B/ })).toBeNull();
     expect(screen.getByRole('link', { name: 'Instructor view' })).toHaveAttribute(
       'aria-current',
@@ -93,7 +119,7 @@ describe('courses default view', () => {
     renderApp('/courses');
     expect(await screen.findByRole('heading', { name: 'Courses you teach' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Class A/ })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'Class review' })).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Class review' })).toBeNull();
   });
 });
 

@@ -1,8 +1,10 @@
 import { Link } from '@tanstack/react-router';
 import { ApiError } from '../api/client';
 import { ClassUnavailable } from '../components/AccessLost';
+import { Loading } from '../components/Loading';
 import page from '../components/Page.module.css';
 import { usePageTitle } from '../components/pageTitle';
+import { RetryNotice } from '../components/RetryNotice';
 import { Unavailable } from '../components/Unavailable';
 import { useClassContext } from '../session/classContext';
 import type { SessionClass } from '../session/useSession';
@@ -45,16 +47,12 @@ function ClassSyllabus({ classId, context }: { classId: string; context: Session
         </p>
       ) : null}
       {query.isPending ? (
-        <p className={page.intro} role="status">
-          Loading topics
-        </p>
+        <Loading label="Loading topics" className={page.intro} />
       ) : !data ? (
-        <div className={page.feedback} role="alert">
-          <p>The topic list could not be loaded.</p>
-          <button type="button" className={page.outline} onClick={() => void query.refetch()}>
-            Try again
-          </button>
-        </div>
+        <RetryNotice
+          message="The topic list could not be loaded."
+          onRetry={() => void query.refetch()}
+        />
       ) : data.topics.length === 0 ? (
         <p className={page.intro}>No topics have been published for this class yet.</p>
       ) : (

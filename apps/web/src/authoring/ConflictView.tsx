@@ -21,7 +21,7 @@ interface Props {
 export function ConflictView({ what, rows, onKeepMine, onUseTheirs }: Props) {
   return (
     <section className={local.conflict} role="alert" aria-label="Editing conflict">
-      <h3 style={{ fontSize: 16 }}>Someone else changed this {what}</h3>
+      <h3 className={styles.subheading}>Someone else changed this {what}</h3>
       <p className={styles.small} style={{ marginTop: 8 }}>
         Your changes are not saved. Choose which version to keep.
       </p>

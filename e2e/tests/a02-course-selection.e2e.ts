@@ -18,7 +18,7 @@ test.beforeAll(async ({ playwright, baseURL }) => {
   expect((await setup.post('/api/test/world')).ok()).toBe(true);
 });
 
-test('A02 each context lists only its permissions: a student sees progress and Join, an instructor Class review and Create course', async ({
+test('A02 each context lists only its permissions: a student sees progress and Join, an instructor class context and Create course', async ({
   page,
 }) => {
   await signIn(page, 'sam@example.test', 'Student');
@@ -42,7 +42,7 @@ test('A02 a person teaching class A and studying in class B switches between two
   const taught = page.getByRole('list', { name: 'Classes you teach' });
   await expect(taught.getByText('2 topics · Autumn 2026 A')).toBeVisible();
   await expect(taught.getByText('Autumn 2026 B')).toHaveCount(0);
-  await expect(taught.getByRole('link', { name: 'Class review' })).toBeVisible();
+  await expect(taught.getByRole('link', { name: 'Class review' })).toHaveCount(0);
   await expect(page.getByRole('button', { name: 'Create course' })).toBeVisible();
 
   await page.getByRole('link', { name: 'Student view' }).click();

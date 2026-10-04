@@ -1,6 +1,7 @@
 import { Link } from '@tanstack/react-router';
 import { useCallback, useEffect, useRef } from 'react';
 import { ApiError } from '../api/client';
+import { Loading } from '../components/Loading';
 import page from '../components/Page.module.css';
 import { RetryNotice } from '../components/RetryNotice';
 import { SourceDownload } from '../reading/SourceDownload';
@@ -60,7 +61,7 @@ export function SlidesTab({ classId, courseId, topicId, instructor, resource, on
             onRetry={() => void list.refetch()}
           />
         ) : (
-          <p role="status">Loading slides</p>
+          <Loading label="Loading slides" />
         )}
       </div>
     );
@@ -205,35 +206,28 @@ function DeckView({ classId, topicId, deck }: ViewProps) {
         />
       </div>
     ) : (
-      <p className={styles.status} role="status">
-        Loading slides
-      </p>
+      <Loading label="Loading slides" className={styles.status} />
     );
   }
   if (data.status === 'pending') {
-    return (
-      <p className={styles.status} role="status">
-        {data.title} is being prepared
-      </p>
-    );
+    return <Loading label={`${data.title} is being prepared`} className={styles.status} />;
   }
   if (data.status === 'failed' || (!data.pdf && !data.web)) {
     return (
-      <div className={`${page.feedback} ${styles.status}`} role="alert">
-        <p>
-          {data.title} could not be processed{data.error ? `: ${data.error}` : ''}
-        </p>
-        <button type="button" className={page.outline} onClick={() => void content.refetch()}>
-          Try again
-        </button>
-        {data.sourceKey && (
-          <SourceDownload
-            classId={classId}
-            revisionId={revisionId}
-            sourceKey={data.sourceKey}
-            className={page.outline}
-          />
-        )}
+      <div className={styles.status}>
+        <RetryNotice
+          message={`${data.title} could not be processed${data.error ? `: ${data.error}` : ''}`}
+          onRetry={() => void content.refetch()}
+        >
+          {data.sourceKey && (
+            <SourceDownload
+              classId={classId}
+              revisionId={revisionId}
+              sourceKey={data.sourceKey}
+              className={page.outline}
+            />
+          )}
+        </RetryNotice>
       </div>
     );
   }

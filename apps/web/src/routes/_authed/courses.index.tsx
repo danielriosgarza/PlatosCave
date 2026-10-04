@@ -2,8 +2,10 @@ import { useQuery } from '@tanstack/react-query';
 import { createFileRoute, Link, redirect } from '@tanstack/react-router';
 import { useState } from 'react';
 import { canEdit, grantLabel } from '../../authoring/grants';
+import { Loading } from '../../components/Loading';
 import page from '../../components/Page.module.css';
 import { usePageTitle } from '../../components/pageTitle';
+import { RetryNotice } from '../../components/RetryNotice';
 import { CourseMark } from '../../courses/CourseMark';
 import styles from '../../courses/Courses.module.css';
 import { CreateCourseForm, Dialog, type Joined, JoinForm } from '../../courses/Dialogs';
@@ -33,28 +35,43 @@ export const Route = createFileRoute('/_authed/courses/')({
   component: Courses,
 });
 
+type CoursesView = 'student' | 'instructor' | undefined;
+
+/** The title is shown only when the address already decides which context opens (§14). */
+function ViewTitle({ view }: { view: CoursesView }) {
+  if (!view) return null;
+  return <h1>{view === 'instructor' ? 'Courses you teach' : 'Your courses'}</h1>;
+}
+
+function CoursesLoading({ view }: { view: CoursesView }) {
+  return (
+    <main id="main" className={page.index}>
+      <ViewTitle view={view} />
+      <Loading
+        label={view === 'instructor' ? 'Loading courses you teach' : 'Loading your courses'}
+      />
+    </main>
+  );
+}
+
 function Courses() {
   const session = useSession();
   const { view } = Route.useSearch();
   const cards = useQuery(coursesQuery);
-  if (session.status !== 'signed-in')
-    return <main id="main" className={page.index} aria-busy="true" />;
+  if (session.status !== 'signed-in') return <CoursesLoading view={view} />;
   if (cards.isError && !cards.data) {
     return (
       <main id="main" className={page.index}>
-        <h1>Your courses</h1>
-        <div className={page.feedback} role="alert">
-          <p>Your courses could not be loaded.</p>
-          <p>
-            <button type="button" className={page.textButton} onClick={() => void cards.refetch()}>
-              Try again
-            </button>
-          </p>
-        </div>
+        {/* Nothing says which context the person holds, so an unset view keeps the default title. */}
+        <ViewTitle view={view ?? 'student'} />
+        <RetryNotice
+          message="Your courses could not be loaded."
+          onRetry={() => void cards.refetch()}
+        />
       </main>
     );
   }
-  if (!cards.data) return <main id="main" className={page.index} aria-busy="true" />;
+  if (!cards.data) return <CoursesLoading view={view} />;
   // Without an explicit view, open the context the person actually holds: someone who only
   // teaches starts on Courses you teach, everyone else on Your courses (§3).
   const studying = cards.data.classes.some((c) => c.role === 'student');
@@ -451,9 +468,7 @@ function InstructorCards({
                   {c.archived ? 'Archived · ' : ''}
                   {c.studentCount ?? 0} {c.studentCount === 1 ? 'student' : 'students'}
                 </span>
-                <Link to="/classes/$classId/review" params={{ classId: c.classId }}>
-                  Class review
-                </Link>
+                {/* No Class review link until the review table exists (P4-02). */}
               </div>
             </li>
           ))}
