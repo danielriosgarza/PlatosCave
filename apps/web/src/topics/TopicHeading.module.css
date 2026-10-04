@@ -16,7 +16,13 @@
   color: var(--pc-muted);
   margin-top: 5px;
 }
-@media (max-width: 900px) {
+@media (max-width: 1199px) {
+  .heading {
+    padding-left: 32px;
+    padding-right: 32px;
+  }
+}
+@media (max-width: 800px) {
   .heading {
     padding: 16px 24px;
   }
