@@ -70,6 +70,10 @@ export function cardsFor(me: Me) {
         studentCount: c.role === 'instructor' ? 0 : null,
       })),
     courses: me.courses.map((c) => ({ ...c, topicCount: 0, classCount: 0 })),
+    // The server's rule with an empty INSTRUCTOR_EMAILS: only people who already teach.
+    canCreateCourse:
+      me.user.kind === 'user' &&
+      (me.courses.length > 0 || me.classes.some((c) => c.role === 'instructor' && !c.isPreview)),
   };
 }
 
