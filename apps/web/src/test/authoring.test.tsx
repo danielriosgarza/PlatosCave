@@ -255,6 +255,40 @@ const open = async (me = grant(), s = fresh()) => {
   return { s, fetchMock, ...view };
 };
 
+/** Keeps one request unanswered so the page stays in its loading state. */
+function holdRequest(suffix: string) {
+  const fetchMock = api(grant(), fresh());
+  const original = fetchMock.getMockImplementation();
+  vi.stubGlobal('fetch', (url: RequestInfo | URL, init?: RequestInit) =>
+    (String(url).split('?')[0] ?? '').endsWith(suffix)
+      ? new Promise<Response>(() => {})
+      : original?.(url, init),
+  );
+}
+
+describe('loading states', () => {
+  it('A19 the course draft announces Loading topics… while its topics are pending', async () => {
+    holdRequest('/drafts');
+    renderApp(`/courses/${COURSE}/edit`);
+    const loading = await screen.findByText('Loading topics…');
+    expect(loading.closest('[role="status"]')).not.toBeNull();
+  });
+
+  it('A19 the topic editor announces Loading the topic… while its drafts are pending', async () => {
+    holdRequest('/drafts');
+    renderApp(`/courses/${COURSE}/edit/${TOPIC}`);
+    const loading = await screen.findByText('Loading the topic…');
+    expect(loading.closest('[role="status"]')).not.toBeNull();
+  });
+
+  it('A19 the publication panel announces Loading classes… while the overview is pending', async () => {
+    holdRequest('/overview');
+    renderApp(`/courses/${COURSE}/edit/${TOPIC}`);
+    const loading = await screen.findByText('Loading classes…');
+    expect(loading.closest('[role="status"]')).not.toBeNull();
+  });
+});
+
 describe('topic editor', () => {
   it('A26 shows which release the class uses and says edits touch the draft only', async () => {
     await open();

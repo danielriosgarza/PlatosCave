@@ -29,7 +29,7 @@ function EditTopic() {
   if (session.status !== 'signed-in') {
     return (
       <main id="main" className={styles.index}>
-        <Loading label="Loading" />
+        <Loading label="Loading the topic" />
       </main>
     );
   }

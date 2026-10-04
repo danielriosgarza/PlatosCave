@@ -50,7 +50,7 @@ export function AddWebSlides({ courseId, topicId, onAdded, onCancel }: AddProps)
         if (ready) add.mutate();
       }}
     >
-      <h3 className={styles.subheading}>Add web slides</h3>
+      <h4 className={styles.subheading}>Add web slides</h4>
       <label className={local.field}>
         Title
         <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} />

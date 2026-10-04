@@ -35,11 +35,14 @@ export const Route = createFileRoute('/_authed/courses/')({
   component: Courses,
 });
 
-function CoursesLoading() {
+/** The title is shown only when the address already decides which context opens (§14). */
+function CoursesLoading({ view }: { view: 'student' | 'instructor' | undefined }) {
   return (
     <main id="main" className={page.index}>
-      <h1>Your courses</h1>
-      <Loading label="Loading your courses" />
+      {view ? <h1>{view === 'instructor' ? 'Courses you teach' : 'Your courses'}</h1> : null}
+      <Loading
+        label={view === 'instructor' ? 'Loading courses you teach' : 'Loading your courses'}
+      />
     </main>
   );
 }
@@ -48,7 +51,7 @@ function Courses() {
   const session = useSession();
   const { view } = Route.useSearch();
   const cards = useQuery(coursesQuery);
-  if (session.status !== 'signed-in') return <CoursesLoading />;
+  if (session.status !== 'signed-in') return <CoursesLoading view={view} />;
   if (cards.isError && !cards.data) {
     return (
       <main id="main" className={page.index}>
@@ -60,7 +63,7 @@ function Courses() {
       </main>
     );
   }
-  if (!cards.data) return <CoursesLoading />;
+  if (!cards.data) return <CoursesLoading view={view} />;
   // Without an explicit view, open the context the person actually holds: someone who only
   // teaches starts on Courses you teach, everyone else on Your courses (§3).
   const studying = cards.data.classes.some((c) => c.role === 'student');

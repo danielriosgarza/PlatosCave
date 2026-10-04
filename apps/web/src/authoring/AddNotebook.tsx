@@ -54,7 +54,7 @@ export function AddNotebook({ courseId, topicId, onAdded, onCancel }: Props) {
         if (file && !problem) add.mutate();
       }}
     >
-      <h3 className={styles.subheading}>Add notebook</h3>
+      <h4 className={styles.subheading}>Add notebook</h4>
       <label className={local.field}>
         File (Jupyter notebook)
         <input
