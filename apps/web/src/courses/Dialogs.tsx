@@ -2,6 +2,7 @@ import { createCourse } from '@parallax/contracts/routes/courses';
 import { joinClass } from '@parallax/contracts/routes/members';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { type FormEvent, type ReactNode, useEffect, useId, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { z } from 'zod';
 import { ApiError, call } from '../api/client';
 import page from '../components/Page.module.css';
@@ -144,7 +145,9 @@ const FOCUSABLE =
 /** Where focus goes when the opener has unmounted: the page heading, else the main region. */
 function focusPageAnchor() {
   const anchor =
-    document.querySelector<HTMLElement>('main h1, h1') ?? document.querySelector('main');
+    document.querySelector<HTMLElement>('main h1') ??
+    document.querySelector<HTMLElement>('h1') ??
+    document.querySelector('main');
   if (!anchor) return;
   if (!anchor.hasAttribute('tabindex')) anchor.setAttribute('tabindex', '-1');
   anchor.focus();
@@ -202,16 +205,24 @@ export function Dialog({
     const onFocusIn = (e: FocusEvent) => {
       if (dialog && e.target instanceof Node && !dialog.contains(e.target)) inside()[0]?.focus();
     };
+    // The sheet is portalled to <body>, so every other child of <body> is the page behind it.
+    const backdrop = dialog?.parentElement;
+    const background = Array.from(document.body.children).filter(
+      (el): el is HTMLElement =>
+        el !== backdrop && el instanceof HTMLElement && !el.hasAttribute('inert'),
+    );
+    for (const el of background) el.setAttribute('inert', '');
     document.addEventListener('keydown', onKeyDown);
     document.addEventListener('focusin', onFocusIn);
     return () => {
       document.removeEventListener('keydown', onKeyDown);
       document.removeEventListener('focusin', onFocusIn);
+      for (const el of background) el.removeAttribute('inert');
       if (opener?.isConnected && opener !== document.body) opener.focus();
       else focusPageAnchor();
     };
   }, []);
-  return (
+  return createPortal(
     <div className={styles.backdrop}>
       <div
         ref={ref}
@@ -223,6 +234,7 @@ export function Dialog({
         <h2 id={headingId}>{title}</h2>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

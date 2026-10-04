@@ -28,6 +28,17 @@ function Page({ openerGoneOnOpen = false }: { openerGoneOnOpen?: boolean }) {
 }
 
 describe('Dialog', () => {
+  it('A02 the page behind the dialog is inert while it is open and not after it closes', async () => {
+    const user = userEvent.setup();
+    const { container } = render(<Page />);
+    expect(container.hasAttribute('inert')).toBe(false);
+    await user.click(screen.getByRole('button', { name: 'Open' }));
+    expect(container.hasAttribute('inert')).toBe(true);
+    expect(screen.getByRole('dialog').closest('[inert]')).toBeNull();
+    await user.keyboard('{Escape}');
+    expect(container.hasAttribute('inert')).toBe(false);
+  });
+
   it('A02 Tab and Shift+Tab stay inside the dialog', async () => {
     const user = userEvent.setup();
     render(<Page />);
