@@ -1,4 +1,5 @@
 import { type ReactNode, useEffect, useState } from 'react';
+import buttons from './Buttons.module.css';
 import styles from './Page.module.css';
 
 interface RetryNoticeProps {
@@ -37,7 +38,7 @@ export function RetryNotice({
     <div className={styles.feedback} role="alert">
       <p>{message}</p>
       <p className={styles.row}>
-        <button type="button" className={styles.outline} onClick={onRetry}>
+        <button type="button" className={buttons.outline} onClick={onRetry}>
           {retryLabel}
         </button>
         {href && recovery ? (

@@ -2,6 +2,7 @@ import { createResource } from '@parallax/contracts/routes/drafts';
 import { useMutation } from '@tanstack/react-query';
 import { useState } from 'react';
 import { call } from '../api/client';
+import buttons from '../components/Buttons.module.css';
 import styles from '../components/Page.module.css';
 import local from './Authoring.module.css';
 import { failureMessage, fileProblem, NOTEBOOK_ACCEPT, uploadFile } from './upload';
@@ -64,7 +65,7 @@ export function AddNotebook({ courseId, topicId, onAdded, onCancel }: Props) {
         />
       </label>
       {problem ? (
-        <p className={`${styles.small} ${local.failure}`} role="alert" style={{ marginTop: 8 }}>
+        <p className={`${styles.small} ${local.failure} ${styles.mt8}`} role="alert">
           {problem}
         </p>
       ) : null}
@@ -72,20 +73,20 @@ export function AddNotebook({ courseId, topicId, onAdded, onCancel }: Props) {
         Title
         <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} />
       </label>
-      <div className={styles.row} style={{ marginTop: 20 }}>
+      <div className={`${styles.row} ${styles.mt20}`}>
         <button
           type="submit"
-          className={styles.primary}
+          className={buttons.primary}
           disabled={!file || problem !== null || add.isPending}
         >
           {add.isPending ? 'Uploading…' : 'Add notebook'}
         </button>
-        <button type="button" className={styles.textButton} onClick={onCancel}>
+        <button type="button" className={buttons.textButton} onClick={onCancel}>
           Cancel
         </button>
       </div>
       {add.isError ? (
-        <p className={`${styles.small} ${local.failure}`} role="alert" style={{ marginTop: 12 }}>
+        <p className={`${styles.small} ${local.failure} ${styles.mt12}`} role="alert">
           The notebook was not added. {failureMessage(add.error)}
         </p>
       ) : null}

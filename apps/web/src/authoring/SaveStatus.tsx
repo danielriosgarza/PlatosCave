@@ -1,3 +1,4 @@
+import buttons from '../components/Buttons.module.css';
 import styles from '../components/Page.module.css';
 import local from './Authoring.module.css';
 import type { SaveState } from './autosave';
@@ -30,7 +31,7 @@ export function SaveStatus({ state, onRetry }: { state: SaveState<unknown>; onRe
     return (
       <div className={`${local.status} ${local.failure}`} role="alert">
         {state.message}{' '}
-        <button type="button" className={styles.textButton} onClick={onRetry}>
+        <button type="button" className={buttons.textButton} onClick={onRetry}>
           Retry
         </button>
       </div>

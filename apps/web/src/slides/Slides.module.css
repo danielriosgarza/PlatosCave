@@ -3,26 +3,6 @@
 .label {
   font: var(--pc-text-label);
 }
-.button {
-  font: inherit;
-  font-size: 12px;
-  min-height: 32px;
-  cursor: pointer;
-  border: 1px solid var(--pc-muted);
-  padding: 4px 12px;
-  background: var(--pc-sheet);
-  color: var(--pc-ink);
-  border-radius: var(--pc-radius-control);
-}
-.button:disabled {
-  opacity: 0.55;
-  cursor: default;
-}
-.button[aria-pressed="true"],
-.button[aria-expanded="true"] {
-  background: var(--pc-soft);
-  font-weight: 600;
-}
 .picker {
   display: flex;
   align-items: center;

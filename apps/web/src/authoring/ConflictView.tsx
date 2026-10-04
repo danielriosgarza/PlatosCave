@@ -1,3 +1,4 @@
+import buttons from '../components/Buttons.module.css';
 import styles from '../components/Page.module.css';
 import local from './Authoring.module.css';
 
@@ -22,7 +23,7 @@ export function ConflictView({ what, rows, onKeepMine, onUseTheirs }: Props) {
   return (
     <section className={local.conflict} role="alert" aria-label="Editing conflict">
       <h3 className={styles.subheading}>Someone else changed this {what}</h3>
-      <p className={styles.small} style={{ marginTop: 8 }}>
+      <p className={`${styles.small} ${styles.mt8}`}>
         Your changes are not saved. Choose which version to keep.
       </p>
       {rows.length > 0 ? (
@@ -31,7 +32,7 @@ export function ConflictView({ what, rows, onKeepMine, onUseTheirs }: Props) {
           <dd className={styles.muted}>Yours</dd>
           <dd className={styles.muted}>Theirs</dd>
           {rows.map((r) => (
-            <div key={r.label} style={{ display: 'contents' }}>
+            <div key={r.label} className={styles.contents}>
               <dt>{r.label}</dt>
               <dd>{r.mine || '—'}</dd>
               <dd>{r.theirs || '—'}</dd>
@@ -40,10 +41,10 @@ export function ConflictView({ what, rows, onKeepMine, onUseTheirs }: Props) {
         </dl>
       ) : null}
       <div className={styles.row}>
-        <button type="button" className={styles.primary} onClick={onKeepMine}>
+        <button type="button" className={buttons.primary} onClick={onKeepMine}>
           Keep my version
         </button>
-        <button type="button" className={styles.outline} onClick={onUseTheirs}>
+        <button type="button" className={buttons.outline} onClick={onUseTheirs}>
           Use their version
         </button>
       </div>

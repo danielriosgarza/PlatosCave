@@ -8,6 +8,7 @@ import {
   useRef,
   useState,
 } from 'react';
+import buttons from '../components/Buttons.module.css';
 import { openPdf, type PdfDocument, type RenderHandle } from '../reading/pdfjs';
 import readingStyles from '../reading/Reading.module.css';
 import { SourceDownload } from '../reading/SourceDownload';
@@ -207,7 +208,7 @@ export function SlideViewer({
     <ResourceTools>
       <button
         type="button"
-        className={styles.button}
+        className={buttons.tool}
         aria-expanded={indexOpen}
         aria-controls="pc-slide-index"
         onClick={() => setIndexOpen((open) => !open)}
@@ -216,7 +217,7 @@ export function SlideViewer({
       </button>
       <button
         type="button"
-        className={styles.button}
+        className={buttons.tool}
         disabled={zoom <= 0}
         onClick={() => setZoom((z) => Math.max(0, z - 1))}
       >
@@ -224,7 +225,7 @@ export function SlideViewer({
       </button>
       <button
         type="button"
-        className={styles.button}
+        className={buttons.tool}
         disabled={zoom >= ZOOMS.length - 1}
         onClick={() => setZoom((z) => Math.min(ZOOMS.length - 1, z + 1))}
       >
@@ -232,7 +233,7 @@ export function SlideViewer({
       </button>
       <button
         type="button"
-        className={styles.button}
+        className={buttons.tool}
         disabled={zoom === 0}
         onClick={() => setZoom(0)}
       >
@@ -246,7 +247,7 @@ export function SlideViewer({
       {notes && (
         <button
           type="button"
-          className={styles.button}
+          className={buttons.tool}
           aria-pressed={notesOpen}
           onClick={() => setNotesOpen((open) => !open)}
         >
@@ -261,7 +262,7 @@ export function SlideViewer({
       <div className={styles.stage}>
         <div className={styles.notice} role="alert">
           <p>These slides could not be loaded.</p>
-          <button type="button" className={styles.button} onClick={() => setAttempt((n) => n + 1)}>
+          <button type="button" className={buttons.tool} onClick={() => setAttempt((n) => n + 1)}>
             Try again
           </button>
           {source.key && (
@@ -343,7 +344,7 @@ export function SlideViewer({
             <div className={styles.controls}>
               <button
                 type="button"
-                className={`${styles.button} ${styles.first}`}
+                className={`${buttons.tool} ${styles.first}`}
                 disabled={page <= 1}
                 onClick={() => go(page - 1)}
               >
@@ -354,7 +355,7 @@ export function SlideViewer({
               </span>
               <button
                 type="button"
-                className={styles.button}
+                className={buttons.tool}
                 disabled={page >= pageCount}
                 onClick={() => go(page + 1)}
               >
@@ -365,7 +366,7 @@ export function SlideViewer({
                   classId={source.classId}
                   revisionId={source.revisionId}
                   sourceKey={source.key}
-                  className={styles.button}
+                  className={buttons.tool}
                 />
               )}
             </div>

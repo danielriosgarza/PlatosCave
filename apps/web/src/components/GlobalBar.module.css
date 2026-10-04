@@ -27,7 +27,7 @@
 .skip:focus {
   top: 8px;
 }
-.primary {
+.primaryNav {
   display: flex;
   align-items: center;
   gap: 20px;
@@ -102,7 +102,7 @@
 }
 @media (pointer: coarse) {
   .topicNav a,
-  .primary a,
+  .primaryNav a,
   .brand,
   .signOut,
   .skip {

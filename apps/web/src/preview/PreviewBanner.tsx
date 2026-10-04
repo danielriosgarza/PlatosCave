@@ -1,6 +1,7 @@
 import { exitPreview } from '@parallax/contracts/routes/preview';
 import { useState } from 'react';
 import { call } from '../api/client';
+import buttons from '../components/Buttons.module.css';
 import page from '../components/Page.module.css';
 import { announceSessionChange } from '../session/broadcast';
 import { usableClasses, useSession } from '../session/useSession';
@@ -45,7 +46,7 @@ export function PreviewBanner() {
           Could not leave the preview. Try again.
         </p>
       ) : null}
-      <button type="button" className={page.outline} disabled={leaving} onClick={exit}>
+      <button type="button" className={buttons.outline} disabled={leaving} onClick={exit}>
         Exit draft preview
       </button>
     </section>

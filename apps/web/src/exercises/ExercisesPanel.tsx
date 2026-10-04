@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { ApiError } from '../api/client';
+import buttons from '../components/Buttons.module.css';
 import { Loading } from '../components/Loading';
 import pageStyles from '../components/Page.module.css';
 import { RetryNotice } from '../components/RetryNotice';
@@ -89,7 +90,7 @@ function TopicExercises({
             ) : (
               <button
                 type="button"
-                className={styles.outline}
+                className={buttons.outline}
                 onClick={() => setChosen(r.resourceId)}
               >
                 Start
@@ -127,7 +128,7 @@ function OpenExercise({
       </header>
       {onAll && (
         <p className={styles.allExercises}>
-          <button type="button" className={styles.textButton} onClick={onAll}>
+          <button type="button" className={buttons.textButton} onClick={onAll}>
             All exercises
           </button>
         </p>

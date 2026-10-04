@@ -1,6 +1,7 @@
 import { Link } from '@tanstack/react-router';
 import { useCallback, useEffect, useRef } from 'react';
 import { ApiError } from '../api/client';
+import buttons from '../components/Buttons.module.css';
 import { Loading } from '../components/Loading';
 import page from '../components/Page.module.css';
 import { RetryNotice } from '../components/RetryNotice';
@@ -224,7 +225,7 @@ function DeckView({ classId, topicId, deck }: ViewProps) {
               classId={classId}
               revisionId={revisionId}
               sourceKey={data.sourceKey}
-              className={page.outline}
+              className={buttons.outline}
             />
           )}
         </RetryNotice>

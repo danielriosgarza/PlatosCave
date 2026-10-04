@@ -180,20 +180,6 @@
   text-underline-offset: 4px;
   cursor: pointer;
 }
-.outline {
-  font: var(--pc-text-ui);
-  min-height: 32px;
-  padding: 4px 12px;
-  border: 1px solid var(--pc-muted);
-  background: var(--pc-sheet);
-  color: var(--pc-ink);
-  border-radius: var(--pc-radius-control);
-  cursor: pointer;
-}
-.outline:disabled {
-  opacity: 0.55;
-  cursor: default;
-}
 .conflict {
   border: 1px solid var(--pc-ink);
   border-radius: var(--pc-radius-note);

@@ -8,6 +8,7 @@ import { canEdit, grantLabel } from '../../authoring/grants';
 import { PublishPanel } from '../../authoring/PublishPanel';
 import { authoringKey, draftsQuery } from '../../authoring/queries';
 import { failureMessage } from '../../authoring/upload';
+import buttons from '../../components/Buttons.module.css';
 import { Loading } from '../../components/Loading';
 import styles from '../../components/Page.module.css';
 import { usePageTitle } from '../../components/pageTitle';
@@ -104,13 +105,13 @@ function CourseDraft({
           Courses you teach
         </Link>
       </p>
-      <h1 style={{ marginTop: 8 }}>{title}</h1>
-      <p className={`${styles.small} ${styles.muted}`} style={{ marginTop: 8 }}>
+      <h1 className={styles.mt8}>{title}</h1>
+      <p className={`${styles.small} ${styles.muted} ${styles.mt8}`}>
         Course draft · your permission: {grantLabel(grant)}
       </p>
       <div className={styles.editGrid}>
         <div>
-          <h2 style={{ fontSize: 20 }}>Topics</h2>
+          <h2 className={styles.sectionTitle}>Topics</h2>
           {drafts.isError ? (
             <RetryNotice
               message="The topics could not be loaded."
@@ -120,11 +121,9 @@ function CourseDraft({
           ) : !drafts.data ? (
             <Loading label="Loading topics…" />
           ) : topics.length === 0 ? (
-            <p className={styles.muted} style={{ marginTop: 16 }}>
-              This course has no topics yet.
-            </p>
+            <p className={`${styles.muted} ${styles.mt16}`}>This course has no topics yet.</p>
           ) : (
-            <ol style={{ listStyle: 'none', padding: 0, margin: '16px 0 0' }}>
+            <ol className={styles.bareListSpaced}>
               {topics.map((t) => {
                 const at = live.findIndex((x) => x.id === t.id);
                 const before = at > 0 ? live[at - 1] : undefined;
@@ -148,7 +147,7 @@ function CourseDraft({
                       {before ? (
                         <button
                           type="button"
-                          className={styles.textButton}
+                          className={buttons.textButton}
                           disabled={move.isPending}
                           aria-label={`Move ${t.title} earlier`}
                           onClick={() => move.mutate({ a: t, b: before })}
@@ -159,7 +158,7 @@ function CourseDraft({
                       {after ? (
                         <button
                           type="button"
-                          className={styles.textButton}
+                          className={buttons.textButton}
                           disabled={move.isPending}
                           aria-label={`Move ${t.title} later`}
                           onClick={() => move.mutate({ a: t, b: after })}
@@ -169,7 +168,7 @@ function CourseDraft({
                       ) : null}
                       <button
                         type="button"
-                        className={styles.textButton}
+                        className={buttons.textButton}
                         disabled={archive.isPending}
                         onClick={() => archive.mutate(t)}
                       >
@@ -182,7 +181,7 @@ function CourseDraft({
             </ol>
           )}
           {move.isError || archive.isError ? (
-            <p role="alert" className={styles.small} style={{ marginTop: 12 }}>
+            <p role="alert" className={`${styles.small} ${styles.mt12}`}>
               {(move.error ?? archive.error) instanceof ApiError &&
               ((move.error ?? archive.error) as ApiError).status === 409
                 ? 'Another editor changed the topics meanwhile. The list is reloaded; try again.'
@@ -190,7 +189,7 @@ function CourseDraft({
             </p>
           ) : null}
           <form
-            style={{ marginTop: 24 }}
+            className={styles.mt24}
             onSubmit={(e) => {
               e.preventDefault();
               if (newTitle.trim()) add.mutate();
@@ -200,17 +199,17 @@ function CourseDraft({
               New topic title
               <input type="text" value={newTitle} onChange={(e) => setNewTitle(e.target.value)} />
             </label>
-            <div className={styles.row} style={{ marginTop: 12 }}>
+            <div className={`${styles.row} ${styles.mt12}`}>
               <button
                 type="submit"
-                className={styles.outline}
+                className={buttons.outline}
                 disabled={!newTitle.trim() || add.isPending}
               >
                 {add.isPending ? 'Adding…' : 'Add topic'}
               </button>
             </div>
             {add.isError ? (
-              <p role="alert" className={styles.small} style={{ marginTop: 8 }}>
+              <p role="alert" className={`${styles.small} ${styles.mt8}`}>
                 The topic was not added. {failureMessage(add.error)}
               </p>
             ) : null}
