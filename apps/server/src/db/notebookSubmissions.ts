@@ -1,5 +1,5 @@
 import type * as contracts from '@parallax/contracts/routes/notebookSubmissions';
-import { and, asc, desc, eq, gt, max, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, isNull, max, or, sql } from 'drizzle-orm';
 import type { z } from 'zod';
 import type { ClassScope } from '../auth/scope';
 import { classArchived, invalid, notFound, type Outcome } from '../outcome';
@@ -201,10 +201,10 @@ export async function reviewSubmissions(
   resourceId: string,
 ): Promise<Reviewed[]> {
   const rows = await db
-    .select({ submission: notebookSubmissions, name: users.name })
+    .select({ submission: notebookSubmissions, name: users.name, role: classMemberships.role })
     .from(notebookSubmissions)
     .innerJoin(users, eq(users.id, notebookSubmissions.userId))
-    .innerJoin(
+    .leftJoin(
       classMemberships,
       and(
         eq(classMemberships.classId, notebookSubmissions.classId),
@@ -216,13 +216,15 @@ export async function reviewSubmissions(
         forClass(scope, notebookSubmissions),
         eq(notebookSubmissions.resourceId, resourceId),
         excludePreview(notebookSubmissions),
-        eq(classMemberships.role, 'student'),
+        // Removal deletes the membership; that work stays reviewable, marked as removed.
+        or(isNull(classMemberships.role), eq(classMemberships.role, 'student')),
       ),
     )
     .orderBy(asc(users.name), asc(notebookSubmissions.userId), desc(notebookSubmissions.version));
-  return rows.map(({ submission, name }) => ({
+  return rows.map(({ submission, name, role }) => ({
     ...receipt(submission),
     student: { id: submission.userId, name },
+    removed: role === null,
   }));
 }
 

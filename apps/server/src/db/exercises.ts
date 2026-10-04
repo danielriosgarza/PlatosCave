@@ -1,7 +1,7 @@
 import { randomInt } from 'node:crypto';
 import { type ExerciseStep, type ExerciseV1, exerciseV1 } from '@parallax/contracts';
 import type * as contracts from '@parallax/contracts/routes/exercises';
-import { and, asc, desc, eq, inArray, isNull } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNull, or } from 'drizzle-orm';
 import type { z } from 'zod';
 import type { ClassScope } from '../auth/scope';
 import {
@@ -435,7 +435,13 @@ export async function restartExercise(db: Db, scope: ClassScope, attemptId: stri
 }
 
 /**
- * Instructor review: students' attempts (preview principals excluded) with every check,
+ * A submitter who is a student of the class, or no longer a member of it: removal deletes the
+ * membership but the work stays reviewable, marked as from a removed student (§3).
+ */
+const studentOrRemoved = or(isNull(classMemberships.role), eq(classMemberships.role, 'student'));
+
+/**
+ * Instructor review: students' attempts, including those of removed students (preview principals excluded) with every check,
  * hint count, solution reveal and completion level, newest attempt first per student.
  */
 export async function reviewAttempts(
@@ -444,10 +450,10 @@ export async function reviewAttempts(
   resourceId: string,
 ): Promise<ReviewAttempt[]> {
   const rows = await db
-    .select({ attempt: exerciseAttempts, name: users.name })
+    .select({ attempt: exerciseAttempts, name: users.name, role: classMemberships.role })
     .from(exerciseAttempts)
     .innerJoin(users, eq(users.id, exerciseAttempts.userId))
-    .innerJoin(
+    .leftJoin(
       classMemberships,
       and(
         eq(classMemberships.classId, exerciseAttempts.classId),
@@ -459,7 +465,7 @@ export async function reviewAttempts(
         forClass(scope, exerciseAttempts),
         eq(exerciseAttempts.resourceId, resourceId),
         excludePreview(exerciseAttempts),
-        eq(classMemberships.role, 'student'),
+        studentOrRemoved,
       ),
     )
     .orderBy(asc(users.name), asc(exerciseAttempts.userId), desc(exerciseAttempts.number));
@@ -471,7 +477,7 @@ export async function reviewAttempts(
   );
   const definitions = new Map<string, ExerciseV1 | undefined>();
   const review: ReviewAttempt[] = [];
-  for (const { attempt, name } of rows) {
+  for (const { attempt, name, role } of rows) {
     if (!definitions.has(attempt.resourceRevisionId)) {
       definitions.set(
         attempt.resourceRevisionId,
@@ -487,6 +493,7 @@ export async function reviewAttempts(
     review.push({
       id: attempt.id,
       student: { id: attempt.userId, name },
+      removed: role === null,
       number: attempt.number,
       resourceRevisionId: attempt.resourceRevisionId,
       seed: attempt.seed,
