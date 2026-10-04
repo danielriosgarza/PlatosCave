@@ -40,6 +40,39 @@ test('A01 an address opened while signed out is kept through sign-in', async ({ 
   await expect(page.getByRole('heading', { name: 'Your courses' })).toBeVisible();
 });
 
+test('A01 signed-out / lands on sign-in', async ({ page }) => {
+  await page.goto('/');
+  await expect(page).toHaveURL(/\/signin$/);
+  await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible();
+});
+
+test('A01 an instructor who signs in from / lands on the instructor view', async ({ page }) => {
+  const email = `a01-root-${Date.now()}@example.test`;
+  await page.goto('/');
+  await page.getByRole('button', { name: 'Instructor sign in' }).click();
+  await page.getByLabel('Email address').fill(email);
+  await page.getByRole('button', { name: 'Send sign-in link' }).click();
+  await expect(page.getByText('Sign-in link requested')).toBeVisible();
+  await page.goto(await latestSignInLink(email));
+  await expect(page).toHaveURL(/\/courses\?view=instructor$/);
+  await expect(page.getByRole('heading', { name: 'Courses you teach' })).toBeVisible();
+  await expect(page.getByText('This account has no instructor access')).toBeVisible();
+});
+
+test('A02 signed-in / and the brand link land on courses', async ({ page }) => {
+  const email = `a02-home-${Date.now()}@example.test`;
+  await signIn(page, email, 'Student');
+  await page.goto('/');
+  await expect(page).toHaveURL(/\/courses/);
+  await expect(page.getByRole('heading', { name: 'Your courses' })).toBeVisible();
+  // The brand link must move the page: start on another path.
+  await page.goto('/signin');
+  await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible();
+  await page.getByRole('link', { name: 'Parallax' }).click();
+  await expect(page).toHaveURL(/\/courses$/);
+  await expect(page.getByRole('heading', { name: 'Your courses' })).toBeVisible();
+});
+
 test('A01 a used sign-in link lands on the expired-link state', async ({ page }) => {
   const email = `a01-expired-${Date.now()}@example.test`;
   await signIn(page, email, 'Student');
