@@ -3,7 +3,7 @@ import { connect } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
-import { defineRoute } from '@parallax/contracts';
+import { defineRoute, errorBody } from '@parallax/contracts';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { z } from 'zod';
@@ -332,6 +332,7 @@ describe('content origin', () => {
           scope: { kind: 'public' },
           summary: path,
           response: z.object({}),
+          errors: { 409: errorBody },
           examples: {},
         }),
         fail,

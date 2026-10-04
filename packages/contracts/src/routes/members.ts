@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { defineRoute } from '../define';
+import { classArchived, defineRoute, errorBody } from '../define';
 
 const zero = '00000000-0000-4000-8000-000000000000';
 const classParams = z.object({ classId: z.uuid() });
@@ -18,6 +18,9 @@ export const inviteFailure = z.enum([
   'class_archived',
   'already_member',
 ]);
+const inviteRefusal = z.object({ error: inviteFailure });
+/** Joining is limited per session (members.routes.ts). */
+const limited = { 429: errorBody };
 
 export const createClass = defineRoute({
   method: 'POST',
@@ -65,6 +68,7 @@ export const createInvite = defineRoute({
     }),
   ]),
   response: issuedInvite.extend({ code: z.string() }),
+  errors: { 400: z.object({ error: z.literal('expiry_in_past') }), 409: classArchived },
   examples: { params: { classId: zero }, body: { kind: 'enrolment', maxUses: 30 } },
 });
 
@@ -117,6 +121,7 @@ export const setManageMembers = defineRoute({
   params: memberParams,
   body: z.object({ granted: z.boolean() }),
   response: z.object({ userId: z.uuid(), manageMembers: z.boolean() }),
+  errors: { 409: z.object({ error: z.literal('not_instructor') }) },
   examples: { params: { classId: zero, userId: zero }, body: { granted: true } },
 });
 
@@ -145,6 +150,7 @@ export const setPublisher = defineRoute({
   params: z.object({ courseId: z.uuid(), userId: z.uuid() }),
   body: z.object({ granted: z.boolean() }),
   response: z.object({ userId: z.uuid(), publisher: z.boolean() }),
+  errors: { 409: z.object({ error: z.literal('owner') }) },
   examples: { params: { courseId: zero, userId: zero }, body: { granted: true } },
 });
 
@@ -169,6 +175,7 @@ export const joinClass = defineRoute({
   summary: 'Join a class as a student with an enrolment code',
   body: z.object({ code: z.string().trim().min(1).max(64) }),
   response: joined,
+  errors: { 404: inviteRefusal, 409: inviteRefusal, 410: inviteRefusal, ...limited },
   examples: { body: { code: 'ABCDE-FGHJK' } },
 });
 
@@ -184,5 +191,12 @@ export const acceptInvitation = defineRoute({
   summary: 'Accept an instructor invitation addressed to the signed-in account',
   body: z.object({ token: z.string().trim().min(1).max(64) }),
   response: joined.extend({ role: z.literal('instructor') }),
+  errors: {
+    403: inviteRefusal,
+    404: inviteRefusal,
+    409: inviteRefusal,
+    410: inviteRefusal,
+    ...limited,
+  },
   examples: { body: { token: 'x'.repeat(43) } },
 });

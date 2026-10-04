@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { defineRoute } from '../define';
+import { classArchived, defineRoute } from '../define';
 import { exerciseCredit } from '../exercise';
 
 const courseParams = z.object({ courseId: z.uuid() });
@@ -56,6 +56,9 @@ export const publishRelease = defineRoute({
     release: releaseRef.extend({ createdAt: z.iso.datetime({ offset: true }) }),
     report: validationReport,
   }),
+  errors: {
+    422: z.object({ error: z.literal('validation_failed'), report: validationReport }),
+  },
   examples: { params: exampleCourse },
 });
 
@@ -178,6 +181,12 @@ export const adoptRelease = defineRoute({
   params: classParams,
   body: z.object({ releaseId: z.uuid(), expectedReleaseId: z.uuid().nullable() }),
   response: z.object({ releaseId: z.uuid(), diff: adoptionDiff }),
+  errors: {
+    409: z.union([
+      classArchived,
+      z.object({ error: z.literal('release_conflict'), currentReleaseId: z.uuid().nullable() }),
+    ]),
+  },
   examples: {
     params: exampleClass,
     body: { releaseId: exampleRelease, expectedReleaseId: null },

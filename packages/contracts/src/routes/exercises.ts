@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { conflictBody, defineRoute } from '../define';
+import { conflictBody, defineRoute, invalidBody } from '../define';
 import { exerciseCredit, exerciseStepView } from '../exercise';
 import { classArchived } from './annotations';
 
@@ -55,7 +55,7 @@ export const attemptView = z.object({
 });
 
 /** 409: another tab superseded the attempt (the server's copy), or the class is archived (§4). */
-const stale = { 409: z.union([conflictBody(attemptView), classArchived]) };
+const stale = { 400: invalidBody, 409: z.union([conflictBody(attemptView), classArchived]) };
 
 /** Resume the current attempt, or start the first one on the class's revision. */
 export const openExercise = defineRoute({
@@ -65,7 +65,7 @@ export const openExercise = defineRoute({
   summary: 'Resume your current practice attempt on an exercise, or start one',
   params: resourceParams,
   response: attemptView,
-  errors: { 409: classArchived },
+  errors: { 400: invalidBody, 409: classArchived },
   examples: { params: { classId: exampleClass, resourceId: exampleResource } },
 });
 

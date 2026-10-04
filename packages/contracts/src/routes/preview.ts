@@ -47,5 +47,6 @@ export const exitPreview = defineRoute({
   scope: { kind: 'public' },
   summary: 'Leave the draft preview and return to the instructor session and editor',
   response: z.object({ restored: z.boolean(), returnTo: z.string() }),
+  errors: { 409: z.object({ error: z.literal('not_previewing') }) },
   examples: {},
 });

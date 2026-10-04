@@ -1,6 +1,6 @@
 import { z } from 'zod';
 import { anchor } from '../anchors';
-import { defineRoute } from '../define';
+import { defineRoute, invalidBody } from '../define';
 import { classArchived, placementView } from './annotations';
 
 /**
@@ -60,7 +60,7 @@ export const placeMark = defineRoute({
     z.object({ threadId: z.uuid(), anchor }).strict(),
   ]),
   response: placementView,
-  errors: { 409: classArchived },
+  errors: { 400: invalidBody, 409: classArchived },
   examples: {
     params: { classId: exampleClass },
     body: { threadId: exampleThread, anchor: { kind: 'none' } },
