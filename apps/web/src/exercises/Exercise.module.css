@@ -309,7 +309,7 @@
   padding: 14px 0;
   border-top: 1px solid var(--pc-rule);
 }
-@media (max-width: 900px) {
+@media (max-width: 800px) {
   .lab {
     grid-template-columns: minmax(0, 1fr);
     gap: 24px;

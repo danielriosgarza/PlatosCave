@@ -17,7 +17,7 @@
   margin: 0;
   color: var(--pc-ink);
 }
-@media (max-width: 600px) {
+@media (max-width: 540px) {
   .banner {
     padding: 10px 16px;
   }
