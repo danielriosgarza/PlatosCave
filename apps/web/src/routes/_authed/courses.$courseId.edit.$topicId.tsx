@@ -20,7 +20,10 @@ function EditTopic() {
   const session = useSession();
   const drafts = useQuery({ ...draftsQuery(courseId), enabled: session.status === 'signed-in' });
   const editedTopic = drafts.data?.topics.find((t) => t.id === topicId);
-  usePageTitle(editedTopic ? `Edit ${editedTopic.title}` : undefined);
+  const allowed =
+    session.status === 'signed-in' &&
+    session.me.courses.some((c) => c.courseId === courseId && canEdit(c));
+  usePageTitle(allowed && editedTopic ? `Edit ${editedTopic.title}` : undefined);
   if (session.status !== 'signed-in')
     return <main id="main" className={styles.index} aria-busy="true" />;
   const grant = session.me.courses.find((c) => c.courseId === courseId);

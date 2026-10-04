@@ -86,8 +86,9 @@ function LoadedWorkspace({
 }) {
   const query = useClassTopics(classId);
   const data = query.data;
-  usePageTitle(data?.topics.find((t) => t.topicId === topicId)?.title);
-  if (query.error instanceof ApiError && query.error.status === 404) return <Unavailable />;
+  const notFound = query.error instanceof ApiError && query.error.status === 404;
+  usePageTitle(notFound ? undefined : data?.topics.find((t) => t.topicId === topicId)?.title);
+  if (notFound) return <Unavailable />;
   if (!data) {
     return (
       <main id="main" className={styles.index}>

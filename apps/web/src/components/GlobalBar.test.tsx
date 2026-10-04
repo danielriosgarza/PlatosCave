@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   CLASS_A,
+  CLASS_B,
   cardsFor,
   instructorIn,
   makeMe,
@@ -137,5 +138,43 @@ describe('GlobalBar', () => {
     expect(
       await screen.findByRole('navigation', { name: 'Neighbouring topics' }),
     ).toBeInTheDocument();
+  });
+
+  it('A19 titles the courses page by the view it actually shows, with or without ?view', async () => {
+    stubApi(signedIn(makeMe({ classes: [instructorIn(CLASS_A, 'Class A')] })));
+    renderApp('/courses');
+    await screen.findByRole('heading', { name: 'Courses you teach' });
+    await waitFor(() => expect(document.title).toBe('Courses you teach · Parallax'));
+    cleanup();
+
+    stubApi(signedIn(makeMe({ classes: [instructorIn(CLASS_A, 'Class A')] })));
+    renderApp('/courses?view=instructor');
+    await screen.findByRole('heading', { name: 'Courses you teach' });
+    await waitFor(() => expect(document.title).toBe('Courses you teach · Parallax'));
+  });
+
+  it('A19 titles the class review page', async () => {
+    stubApi(signedIn(makeMe({ classes: [instructorIn(CLASS_A, 'Class A')] })));
+    renderApp(`/classes/${CLASS_A}/review`);
+    await screen.findByRole('heading', { name: 'Class review' });
+    await waitFor(() => expect(document.title).toBe('Class review · Parallax'));
+  });
+
+  it('A19 titles the neutral page without naming anything, even over a cached topic list', async () => {
+    stubApi(signedIn(makeMe({ classes: [studentIn(CLASS_A, 'Class A')] })));
+    renderApp(`/classes/${CLASS_B}/topics`);
+    await screen.findByRole('heading', { name: 'This page is not available' });
+    await waitFor(() => expect(document.title).toBe('This page is not available · Parallax'));
+    cleanup();
+
+    const me = makeMe({ classes: [studentIn(CLASS_A, 'Class A')] });
+    stubApi((url) =>
+      /^\/api\/classes\/[^/]+\/topics$/.test(url)
+        ? { status: 404, body: { error: 'not found' } }
+        : signedIn(me)(url),
+    );
+    renderApp(`/classes/${CLASS_A}/topics/${T_SAMPLING}/reading`);
+    await screen.findByRole('heading', { name: 'This page is not available' });
+    await waitFor(() => expect(document.title).toBe('This page is not available · Parallax'));
   });
 });

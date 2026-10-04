@@ -37,7 +37,6 @@ function Courses() {
   const session = useSession();
   const { view } = Route.useSearch();
   const cards = useQuery(coursesQuery);
-  usePageTitle(view === 'instructor' ? 'Courses you teach' : 'Your courses');
   if (session.status !== 'signed-in')
     return <main id="main" className={page.index} aria-busy="true" />;
   if (cards.isError && !cards.data) {
@@ -72,6 +71,7 @@ const teachesAnything = (cards: Cards) =>
   cards.courses.length > 0 || cards.classes.some((c) => c.role === 'instructor');
 
 function CoursesFor({ cards, view }: { cards: Cards; view: View }) {
+  usePageTitle(view === 'instructor' ? 'Courses you teach' : 'Your courses');
   const studying = cards.classes.filter((c) => c.role === 'student');
   const teaching = cards.classes.filter((c) => c.role === 'instructor');
   const teaches = teachesAnything(cards);
