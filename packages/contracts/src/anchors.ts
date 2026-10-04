@@ -31,6 +31,7 @@ export const strokes = z
     }),
   )
   .max(500);
+export type Strokes = z.infer<typeof strokes>;
 
 export const textAnchor = z
   .object({

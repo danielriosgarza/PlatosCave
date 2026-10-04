@@ -1,0 +1,126 @@
+/* Ported from the wireframe: .pc-figure-head, .pc-drawing; controls use the shared button classes. */
+.tools {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.tools button {
+  font-size: 12px;
+  min-height: 30px;
+  padding: 4px 8px;
+}
+.layer {
+  position: absolute;
+  inset: 0;
+  /* Ink takes the pointer only while a sketch is open (the drawing canvas below). */
+  pointer-events: none;
+}
+.canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+.drawing {
+  cursor: crosshair;
+  pointer-events: auto;
+  touch-action: none;
+}
+.panel {
+  margin-top: 12px;
+  border-top: 1px solid var(--pc-rule);
+  padding-top: 12px;
+  font: var(--pc-text-ui);
+}
+.head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.small {
+  font: var(--pc-text-label);
+  color: var(--pc-muted);
+}
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+.head .row {
+  margin-top: 0;
+}
+.pens {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+}
+.pens button[aria-pressed="true"] {
+  background: var(--pc-accent);
+  color: var(--pc-accent-ink);
+}
+.swatch {
+  width: 28px;
+  height: 28px;
+  min-height: 28px;
+  padding: 0;
+  border: 2px solid var(--pc-paper);
+  outline: 1px solid var(--pc-muted);
+  border-radius: 50%;
+  cursor: pointer;
+}
+.swatch[aria-pressed="true"] {
+  outline: 2px solid var(--pc-ink);
+  outline-offset: 1px;
+}
+@media (pointer: coarse) {
+  .swatch {
+    width: 44px;
+    height: 44px;
+    min-height: 44px;
+  }
+}
+.width {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: var(--pc-text-label);
+}
+.field {
+  display: block;
+  margin-top: 12px;
+  font: var(--pc-text-label);
+}
+.field textarea {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+}
+.status {
+  min-height: 1.5em;
+  margin-top: 8px;
+  font: var(--pc-text-label);
+  color: var(--pc-muted);
+}
+.conflict {
+  margin-top: 12px;
+  border: 1px solid var(--pc-rule);
+  border-radius: var(--pc-radius-note);
+  padding: 12px;
+}
+.conflict h3 {
+  font-size: 14px;
+  margin: 0 0 8px;
+}
+.conflict pre {
+  white-space: pre-wrap;
+  margin: 4px 0 8px;
+  font: inherit;
+}

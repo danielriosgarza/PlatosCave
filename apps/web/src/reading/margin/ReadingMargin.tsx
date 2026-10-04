@@ -12,6 +12,11 @@ import {
 import { createPortal } from 'react-dom';
 import buttons from '../../components/Buttons.module.css';
 import { useSession } from '../../session/useSession';
+import { downloadSvg, FIGURE_ASPECT, PAGE_ASPECT, sketchSvg } from '../sketch/exportSvg';
+import { FigureSketches, figureLabel } from '../sketch/FigureSketches';
+import { type PdfSketch, pdfSketch } from '../sketch/pdf';
+import { SketchEntry } from '../sketch/SketchEntry';
+import { type Surface, surfaceKey, surfaceOf, useSketches } from '../sketch/useSketches';
 import {
   activateMarks,
   applyMarks,
@@ -32,6 +37,7 @@ import {
 import { type Draft, draftKey, listDrafts, removeDraft, saveDraft } from './drafts';
 import styles from './Margin.module.css';
 import { NoteController, type NoteState } from './notes';
+import { shownAnchor } from './placement';
 import { ThreadPosts } from './ThreadEntry';
 
 type Tab = 'notes' | 'discussion';
@@ -65,14 +71,6 @@ const WIDE = '(min-width: 1100px)';
 const textAnchorOf = (a: Anchor | null | undefined): TextAnchor | null =>
   a?.kind === 'text' ? a : null;
 
-/** The anchor a mark should sit on today: where the class's revision places it (ADR-0003). */
-function shownAnchor(a: Annotation | Thread): Anchor | null {
-  const placement = a.placement;
-  if (!placement) return a.anchor;
-  if (placement.status === 'needs_reattachment' || placement.status === 'pending') return null;
-  return placement.anchor ?? a.anchor;
-}
-
 const quoteOf = (a: Anchor): string | null =>
   a.kind === 'text' || a.kind === 'pdf' ? (a.quote ?? null) : null;
 
@@ -88,13 +86,14 @@ interface Props {
   open: boolean;
   onOpen: () => void;
   /** Renders the reader and hands back its root element, where passages are selected and marked. */
-  children: (setRoot: (root: HTMLDivElement | null) => void) => ReactNode;
+  children: (setRoot: (root: HTMLDivElement | null) => void, pdf: PdfSketch) => ReactNode;
 }
 
 /**
  * The reading with its margin (§8): the selection toolbar (Highlight, Note, Ask), marks on
  * annotated passages, and the margin's My notes and Discussion lists. Text anchors apply to
- * native readings; a PDF reading takes topic notes and questions without a passage.
+ * native readings; a PDF reading takes topic notes and questions without a passage. Figures and
+ * PDF pages take Sketch (§8), whose saved drawings are listed under My notes.
  */
 export function ReadingMargin({ classId, resourceId, html, open, onOpen, children }: Props) {
   const session = useSession();
@@ -221,6 +220,16 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
       revision: annotation.revision,
     });
 
+  // --- sketches on figures and pages ------------------------------------------------------------
+  const sketches = useSketches(actions, list.data?.annotations ?? []);
+  const [showPage, setShowPage] = useState<{ page: number; seq: number } | null>(null);
+  const surfaceLabel = (surface: Surface | null) =>
+    !surface
+      ? 'Figure'
+      : surface.kind === 'page'
+        ? `Page ${surface.page + 1}`
+        : figureLabel(root, surface.figureId);
+
   // --- what the margin lists ------------------------------------------------------------------
   const annotations = list.data?.annotations ?? [];
   const threads = list.data?.threads ?? [];
@@ -243,6 +252,37 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
   const position = (a: Anchor | null) => {
     const text = textAnchorOf(a);
     return text ? (order.get(text.blockId) ?? 1e6) * 1e4 + text.start : 1e12;
+  };
+
+  // Sketches follow the notes: figures in reading order, then pages.
+  const sketchEntries = [...sketches.saved].sort((a, b) => {
+    const rank = (x: Surface | null) =>
+      !x
+        ? 1e9
+        : x.kind === 'page'
+          ? 1e6 + x.page
+          : root
+            ? [...root.querySelectorAll<HTMLElement>('figure[data-figure-id]')].findIndex(
+                (f) => f.dataset.figureId === x.figureId,
+              )
+            : 0;
+    return rank(a.surface) - rank(b.surface);
+  });
+  const openSketch = (annotation: Annotation, surface: Surface | null) => {
+    if (!surface) return;
+    sketches.edit(annotation);
+    if (surface.kind === 'page') setShowPage({ page: surface.page, seq: Date.now() });
+    else
+      root
+        ?.querySelector<HTMLElement>(`figure[data-figure-id="${surface.figureId}"]`)
+        ?.scrollIntoView?.({ block: 'center' });
+  };
+  const exportSketch = (annotation: Annotation, surface: Surface | null) => {
+    const label = surfaceLabel(surface);
+    const aspect =
+      (surface && sketches.aspects.current.get(surfaceKey(surface))) ||
+      (surface?.kind === 'page' ? PAGE_ASPECT : FIGURE_ASPECT);
+    downloadSvg(sketchSvg(annotation, label, aspect), label);
   };
 
   const notes = [
@@ -559,8 +599,9 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
   return (
     <div className={`${styles.grid} ${open ? '' : styles.noMargin}`}>
       <div>
-        {children(setRoot)}
+        {children(setRoot, pdfSketch(sketches, showPage))}
         {toolbar}
+        <FigureSketches root={root} html={html} api={sketches} />
       </div>
       {open ? (
         <aside className={styles.margin} aria-label="Notes and discussion">
@@ -585,7 +626,7 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
             </p>
           ) : tab === 'notes' ? (
             <div ref={entriesRef} className={styles.entries}>
-              {notes.length === 0 ? (
+              {notes.length === 0 && sketches.saved.length === 0 ? (
                 <p className={styles.empty}>
                   {html === null
                     ? 'No notes on this reading yet.'
@@ -617,6 +658,7 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
                   annotation={n.annotation}
                   controller={n.controller}
                   anchor={n.anchor}
+                  place={surfaceLabel(surfaceOf(n.anchor))}
                   active={isActive(n)}
                   alignTop={isActive(n) ? alignTop : 0}
                   onSelect={() => select(n.id, true)}
@@ -626,6 +668,18 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
                   onBlur={() => n.controller?.blur()}
                   onRemove={() => void removeNote(n.id, n.controller)}
                   actions={actions}
+                />
+              ))}
+              {sketchEntries.map(({ annotation, surface }) => (
+                <SketchEntry
+                  key={annotation.id}
+                  annotation={annotation}
+                  label={surfaceLabel(surface ?? surfaceOf(annotation.anchor))}
+                  needsReattachment={surface === null}
+                  editing={sketches.open?.annotationId === annotation.id}
+                  onEdit={() => openSketch(annotation, surface)}
+                  onExport={() => exportSketch(annotation, surface ?? surfaceOf(annotation.anchor))}
+                  onDelete={() => actions.remove(annotation.id)}
                 />
               ))}
               <p>
@@ -689,6 +743,8 @@ interface EntryProps {
   annotation: Annotation | null;
   controller: NoteController | undefined;
   anchor: Anchor;
+  /** Where a figure or page note sits: `Figure 2`, `Page 4`. */
+  place: string;
   active: boolean;
   alignTop: number;
   onSelect: () => void;
@@ -714,6 +770,7 @@ function NoteEntry({
   annotation,
   controller,
   anchor,
+  place,
   active,
   alignTop,
   onSelect,
@@ -733,7 +790,9 @@ function NoteEntry({
     ? 'Highlight'
     : anchor.kind === 'none'
       ? 'Topic note · no anchor'
-      : `Note ${index + 1}`;
+      : anchor.kind === 'figure' || anchor.kind === 'pdf'
+        ? `Description · ${place}`
+        : `Note ${index + 1}`;
   return (
     <div
       className={styles.entry}

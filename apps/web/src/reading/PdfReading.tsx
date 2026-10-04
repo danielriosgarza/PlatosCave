@@ -6,6 +6,7 @@ import { HOLD_MS, READER_INPUT } from './readerInput';
 import type { ReadingPosition } from './readings';
 import { SourceDownload } from './SourceDownload';
 import { scrollerOf, useReaderScroll } from './scroller';
+import type { PdfSketch } from './sketch/pdf';
 
 interface Props {
   url: string;
@@ -16,6 +17,8 @@ interface Props {
   /** The class and revision the file belongs to, and its storage key, for the Download action. */
   source: { classId: string; revisionId: string; key: string | null };
   onPosition: (position: ReadingPosition) => void;
+  /** Sketching on pages (§8), supplied by the margin. */
+  sketch?: PdfSketch;
 }
 
 const MAX_WIDTH = 960;
@@ -38,7 +41,7 @@ type Load = { state: 'loading' } | { state: 'failed' } | { state: 'ready'; doc: 
  * layer. The place is the page and the share of its height above the window top, in thousandths;
  * none is recorded while the window top is above the page.
  */
-export function PdfReading({ url, pageCount, renew, initial, source, onPosition }: Props) {
+export function PdfReading({ url, pageCount, renew, initial, source, onPosition, sketch }: Props) {
   const [load, setLoad] = useState<Load>({ state: 'loading' });
   const [attempt, setAttempt] = useState(0);
   const start = initial && 'page' in initial ? initial : null;
@@ -187,6 +190,11 @@ export function PdfReading({ url, pageCount, renew, initial, source, onPosition 
     onPosition({ page: target, offset: 0 });
   };
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs for each new ask of the margin
+  useEffect(() => {
+    if (sketch?.show) go(sketch.show.page + 1);
+  }, [sketch?.show?.seq]);
+
   if (load.state === 'failed') {
     return (
       <div className={styles.notice} role="alert">
@@ -211,7 +219,7 @@ export function PdfReading({ url, pageCount, renew, initial, source, onPosition 
         <button
           type="button"
           className={buttons.tool}
-          disabled={page <= 1}
+          disabled={page <= 1 || sketch?.busy}
           onClick={() => go(page - 1)}
         >
           Previous page
@@ -222,7 +230,7 @@ export function PdfReading({ url, pageCount, renew, initial, source, onPosition 
         <button
           type="button"
           className={buttons.tool}
-          disabled={page >= pageCount}
+          disabled={page >= pageCount || sketch?.busy}
           onClick={() => go(page + 1)}
         >
           Next page
@@ -234,6 +242,7 @@ export function PdfReading({ url, pageCount, renew, initial, source, onPosition 
             sourceKey={source.key}
           />
         )}
+        {sketch?.tools(page)}
       </nav>
       {load.state === 'loading' && (
         <p className={styles.loading} role="status">
@@ -250,7 +259,9 @@ export function PdfReading({ url, pageCount, renew, initial, source, onPosition 
         <canvas ref={canvas} aria-label={`Page ${page}`} />
         {/* pdf.js finds its text layer by the plain `textLayer` class while a selection is made. */}
         <div ref={text} className={`${styles.textLayer} textLayer`} />
+        {sketch?.layer(page)}
       </div>
+      {sketch?.panel(page)}
     </div>
   );
 }
