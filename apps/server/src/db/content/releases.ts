@@ -9,10 +9,10 @@ import {
   isDraftPreview,
 } from '../../auth/scope';
 import { openToStudent } from '../../content/availability';
+import { audit } from '../audit';
 import type { Db } from '../client';
 import { derivedReady, resolveDerivedStatuses } from '../jobs/derived';
 import {
-  auditEvents,
   courseReleases,
   courses,
   releaseResources,
@@ -283,7 +283,7 @@ export function publishRelease(
       resourceCount += rows.length;
     }
 
-    await tx.insert(auditEvents).values({
+    await audit(tx, {
       actorId: scope.user.id,
       action: 'release.publish',
       scopeKind: 'course',
