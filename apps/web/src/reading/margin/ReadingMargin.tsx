@@ -840,7 +840,7 @@ export function ConflictView({
 }) {
   return (
     <div className={styles.conflict} role="alert">
-      <h4>This note changed somewhere else</h4>
+      <h3>This note changed somewhere else</h3>
       <div className={styles.small}>Your text on this device</div>
       <pre>{mine}</pre>
       <div className={styles.small}>Saved version</div>

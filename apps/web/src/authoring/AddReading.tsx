@@ -56,7 +56,7 @@ export function AddReading({ courseId, topicId, onAdded, onCancel }: Props) {
         if (file && !problem) add.mutate();
       }}
     >
-      <h4 style={{ fontSize: 16 }}>Add reading</h4>
+      <h3 className={styles.subheading}>Add reading</h3>
       <label className={local.field}>
         File (Markdown, HTML or PDF)
         <input type="file" accept={ACCEPT} onChange={(e) => pick(e.target.files?.[0] ?? null)} />

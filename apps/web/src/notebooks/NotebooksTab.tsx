@@ -1,6 +1,7 @@
 import { Link } from '@tanstack/react-router';
 import { type ReactNode, useEffect, useState } from 'react';
 import { ApiError } from '../api/client';
+import { Loading } from '../components/Loading';
 import page from '../components/Page.module.css';
 import { RetryNotice } from '../components/RetryNotice';
 import { SourceDownload } from '../reading/SourceDownload';
@@ -61,7 +62,7 @@ export function NotebooksTab({
             onRetry={() => void list.refetch()}
           />
         ) : (
-          <p role="status">Loading notebooks</p>
+          <Loading label="Loading notebooks" />
         )}
       </div>
     );

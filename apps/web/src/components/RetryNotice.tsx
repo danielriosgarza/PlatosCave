@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { type ReactNode, useEffect, useState } from 'react';
 import styles from './Page.module.css';
 
 interface RetryNoticeProps {
@@ -8,6 +8,8 @@ interface RetryNoticeProps {
   retryLabel?: string;
   /** A long answer or code that is still only in the browser: offered back as a file (§14). */
   recovery?: { filename: string; text: string };
+  /** Further actions beside Retry, such as a download of the source file. */
+  children?: ReactNode;
 }
 
 /** Failure pattern of §14: say what failed, keep the work, offer Retry (and a download of long drafts). */
@@ -16,6 +18,7 @@ export function RetryNotice({
   onRetry,
   retryLabel = 'Try again',
   recovery,
+  children,
 }: RetryNoticeProps) {
   // Created and revoked inside the effect so StrictMode's second run gets a live URL.
   const [href, setHref] = useState<string | null>(null);
@@ -42,6 +45,7 @@ export function RetryNotice({
             Download what you wrote
           </a>
         ) : null}
+        {children}
       </p>
     </div>
   );

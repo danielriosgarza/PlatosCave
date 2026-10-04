@@ -70,8 +70,9 @@ describe('courses contexts', () => {
       ),
     );
     renderApp('/courses');
-    expect(await screen.findByRole('heading', { name: 'Your courses' })).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /Class B/ })).toBeInTheDocument();
+    // The loading state carries the same heading, so wait for the cards themselves.
+    expect(await screen.findByRole('link', { name: /Class B/ })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Your courses' })).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /Class A/ })).toBeNull();
     expect(screen.queryByRole('link', { name: 'Class review' })).toBeNull();
 

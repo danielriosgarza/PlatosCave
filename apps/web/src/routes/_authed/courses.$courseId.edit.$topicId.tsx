@@ -5,8 +5,10 @@ import { PublishPanel } from '../../authoring/PublishPanel';
 import { draftsQuery } from '../../authoring/queries';
 import { ResourceSection } from '../../authoring/ResourceSection';
 import { TopicForm } from '../../authoring/TopicForm';
+import { Loading } from '../../components/Loading';
 import styles from '../../components/Page.module.css';
 import { usePageTitle } from '../../components/pageTitle';
+import { RetryNotice } from '../../components/RetryNotice';
 import { Unavailable } from '../../components/Unavailable';
 import { PreviewButton } from '../../preview/PreviewButton';
 import { useSession } from '../../session/useSession';
@@ -24,8 +26,13 @@ function EditTopic() {
     session.status === 'signed-in' &&
     session.me.courses.some((c) => c.courseId === courseId && canEdit(c));
   usePageTitle(allowed && editedTopic ? `Edit ${editedTopic.title}` : undefined);
-  if (session.status !== 'signed-in')
-    return <main id="main" className={styles.index} aria-busy="true" />;
+  if (session.status !== 'signed-in') {
+    return (
+      <main id="main" className={styles.index}>
+        <Loading label="Loading" />
+      </main>
+    );
+  }
   const grant = session.me.courses.find((c) => c.courseId === courseId);
   if (!grant || !canEdit(grant)) return <Unavailable />;
 
@@ -41,21 +48,14 @@ function EditTopic() {
       {drafts.isError ? (
         <>
           <h1 style={{ marginTop: 8 }}>Edit topic</h1>
-          <p role="alert" style={{ marginTop: 16 }}>
-            The topic could not be loaded.{' '}
-            <button
-              type="button"
-              className={styles.textButton}
-              onClick={() => void drafts.refetch()}
-            >
-              Retry
-            </button>
-          </p>
+          <RetryNotice
+            message="The topic could not be loaded."
+            retryLabel="Retry"
+            onRetry={() => void drafts.refetch()}
+          />
         </>
       ) : !drafts.data ? (
-        <p className={styles.muted} aria-busy="true" style={{ marginTop: 16 }}>
-          Loading the topic…
-        </p>
+        <Loading label="Loading the topic…" />
       ) : !topic ? (
         <>
           <h1 style={{ marginTop: 8 }}>Edit topic</h1>

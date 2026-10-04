@@ -2,8 +2,10 @@ import { useQuery } from '@tanstack/react-query';
 import { createFileRoute, Link, redirect } from '@tanstack/react-router';
 import { useState } from 'react';
 import { canEdit, grantLabel } from '../../authoring/grants';
+import { Loading } from '../../components/Loading';
 import page from '../../components/Page.module.css';
 import { usePageTitle } from '../../components/pageTitle';
+import { RetryNotice } from '../../components/RetryNotice';
 import { CourseMark } from '../../courses/CourseMark';
 import styles from '../../courses/Courses.module.css';
 import { CreateCourseForm, Dialog, type Joined, JoinForm } from '../../courses/Dialogs';
@@ -33,28 +35,32 @@ export const Route = createFileRoute('/_authed/courses/')({
   component: Courses,
 });
 
+function CoursesLoading() {
+  return (
+    <main id="main" className={page.index}>
+      <h1>Your courses</h1>
+      <Loading label="Loading your courses" />
+    </main>
+  );
+}
+
 function Courses() {
   const session = useSession();
   const { view } = Route.useSearch();
   const cards = useQuery(coursesQuery);
-  if (session.status !== 'signed-in')
-    return <main id="main" className={page.index} aria-busy="true" />;
+  if (session.status !== 'signed-in') return <CoursesLoading />;
   if (cards.isError && !cards.data) {
     return (
       <main id="main" className={page.index}>
         <h1>Your courses</h1>
-        <div className={page.feedback} role="alert">
-          <p>Your courses could not be loaded.</p>
-          <p>
-            <button type="button" className={page.textButton} onClick={() => void cards.refetch()}>
-              Try again
-            </button>
-          </p>
-        </div>
+        <RetryNotice
+          message="Your courses could not be loaded."
+          onRetry={() => void cards.refetch()}
+        />
       </main>
     );
   }
-  if (!cards.data) return <main id="main" className={page.index} aria-busy="true" />;
+  if (!cards.data) return <CoursesLoading />;
   // Without an explicit view, open the context the person actually holds: someone who only
   // teaches starts on Courses you teach, everyone else on Your courses (§3).
   const studying = cards.data.classes.some((c) => c.role === 'student');
