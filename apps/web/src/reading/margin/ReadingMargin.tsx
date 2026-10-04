@@ -32,6 +32,7 @@ import {
 import { type Draft, draftKey, listDrafts, removeDraft, saveDraft } from './drafts';
 import styles from './Margin.module.css';
 import { NoteController, type NoteState } from './notes';
+import { ThreadPosts } from './ThreadEntry';
 
 type Tab = 'notes' | 'discussion';
 type Audience = 'instructor' | 'class';
@@ -637,6 +638,7 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
             <Discussion
               threads={threads}
               userId={userId}
+              actions={actions}
               activeId={activeId}
               onSelect={(id) => select(id, true)}
               ask={ask}
@@ -861,6 +863,7 @@ export function ConflictView({
 function Discussion({
   threads,
   userId,
+  actions,
   activeId,
   onSelect,
   ask,
@@ -869,6 +872,7 @@ function Discussion({
 }: {
   threads: Thread[];
   userId: string | null;
+  actions: MarginActions;
   activeId: string | null;
   onSelect: (id: string) => void;
   ask: Ask;
@@ -895,11 +899,12 @@ function Discussion({
               <span>{t.status === 'open' ? 'Open' : 'Resolved'}</span>
             </button>
             {text ? <blockquote className={styles.quote}>{text}</blockquote> : null}
-            {t.posts.map((p) => (
-              <p key={p.id}>
-                {p.body ?? (p.deleted ? 'This post was deleted.' : 'This post was removed.')}
-              </p>
-            ))}
+            {text ? (
+              <button type="button" className={styles.link} onClick={() => onSelect(t.id)}>
+                Show in reading
+              </button>
+            ) : null}
+            <ThreadPosts thread={t} userId={userId} actions={actions} />
           </div>
         );
       })}

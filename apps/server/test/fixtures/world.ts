@@ -60,6 +60,7 @@ export const ids = {
 export const readingLab = {
   author: id(21), // owns the course and teaches the class
   reader: id(22), // student in the class
+  instructor: id(23), // teaches the class without owning the course
   course: id(111),
   class: id(211),
   topic: id(311),
@@ -76,6 +77,7 @@ export const readingLab = {
   release: id(611),
   authorEmail: 'lab-author@example.test',
   readerEmail: 'lab-reader@example.test',
+  instructorEmail: 'lab-instructor@example.test',
   /** Paragraphs in the long native reading, each long enough to make the page scroll. */
   paragraphs: 40,
   pdfPages: 4,
@@ -258,6 +260,22 @@ export async function seedReadingLab(db: Db, storage: Storage, now: Date): Promi
     now,
   );
   if (!joined.ok) throw new Error(`lab join: ${joined.reason}`);
+
+  await createUser(db, { id: lab.instructor, email: lab.instructorEmail, name: 'Tomas Berg' });
+  const teacherInvite = await issueInvite(
+    db,
+    manager,
+    { kind: 'instructor', email: lab.instructorEmail },
+    now,
+  );
+  if (!teacherInvite.ok) throw new Error(`lab instructor invite: ${teacherInvite.reason}`);
+  const teaching = await acceptInstructorInvite(
+    db,
+    asUserScope(lab.instructor, lab.instructorEmail),
+    teacherInvite.invite.code,
+    now,
+  );
+  if (!teaching.ok) throw new Error(`lab instructor accept: ${teaching.reason}`);
 
   await db.insert(topics).values({
     id: lab.topic,

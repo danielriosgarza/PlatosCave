@@ -107,6 +107,18 @@ describe('notification excerpts of a removed first post', () => {
   });
 });
 
+/** What the caller may do differs per viewer and with archiving; the rest of a view must not. */
+const withoutCan = (value: unknown): unknown =>
+  Array.isArray(value)
+    ? value.map(withoutCan)
+    : value && typeof value === 'object'
+      ? Object.fromEntries(
+          Object.entries(value)
+            .filter(([key]) => key !== 'can')
+            .map(([key, v]) => [key, withoutCan(v)]),
+        )
+      : value;
+
 describe('archived classes', () => {
   // Archives class A.
   test('an archived class refuses every annotation and thread write and keeps reads', async () => {
@@ -135,10 +147,13 @@ describe('archived classes', () => {
       archived,
     );
 
-    expect(await call('sam', 'GET', `${reading}/annotations`)).toEqual({
-      status: 200,
-      body: { annotations: [mine.body], threads: [thread.body] },
-    });
+    const read = await call('sam', 'GET', `${reading}/annotations`);
+    expect(read.status).toBe(200);
+    expect(withoutCan(read.body)).toEqual(
+      withoutCan({ annotations: [mine.body], threads: [thread.body] }),
+    );
+    // Nothing may change in an archived class, and the view says so.
+    expect(read.body.threads[0].can).toEqual({ reply: false, resolve: false, reopen: false });
     expect((await notified('sam', ids.classA)).map((i) => i.threadId)).toContain(thread.body.id);
   });
 });

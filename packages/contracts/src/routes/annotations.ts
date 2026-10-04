@@ -61,11 +61,15 @@ export const postView = z.object({
   id: z.uuid(),
   parentId: z.uuid().nullable(),
   author: person,
+  /** Whether the author teaches the class: instructor responses are labelled as such. */
+  authorRole: z.enum(['student', 'instructor']),
   /** Null for a tombstone (deleted) or a post hidden by moderation. */
   body: z.string().nullable(),
   edited: z.boolean(),
   deleted: z.boolean(),
   moderated: z.boolean(),
+  /** What the caller may do to this post now (class policy, §8); the server enforces it again. */
+  can: z.object({ edit: z.boolean(), delete: z.boolean(), moderate: z.boolean() }),
   createdAt: timestamp,
 });
 
@@ -80,6 +84,8 @@ export const threadView = z.object({
   placement: placementView.nullable(),
   createdAt: timestamp,
   posts: z.array(postView),
+  /** Instructors resolve or reopen any thread; a student only reopens their own question. */
+  can: z.object({ reply: z.boolean(), resolve: z.boolean(), reopen: z.boolean() }),
 });
 
 /** Highlights mark text or PDF regions; sketches sit on a figure or PDF page (§8). */
@@ -226,4 +232,82 @@ export const listNotifications = defineRoute({
   params: classParams,
   response: z.object({ items: z.array(notificationView) }),
   examples: { params: { classId: exampleClass } },
+});
+
+const threadParams = classParams.extend({ threadId: z.uuid() });
+const postParams = classParams.extend({ postId: z.uuid() });
+
+/** Every thread action answers with the whole thread as the caller may now read it. */
+export const replyToThread = defineRoute({
+  method: 'POST',
+  path: '/api/classes/:classId/threads/:threadId/posts',
+  scope: { kind: 'class', role: 'any' },
+  summary: 'Reply in a discussion you may read; instructors’ replies are labelled as responses',
+  params: threadParams,
+  body: z.object({ body: text.trim().min(1), parentId: z.uuid().optional() }),
+  response: threadView,
+  errors: { 400: invalidBody, 409: classArchived },
+  examples: {
+    params: { classId: exampleClass, threadId: exampleIds.dd },
+    body: { body: 'Because the sample mean uses one estimated centre.' },
+  },
+});
+
+/** Sets the edited indicator; a student needs the class policy to allow it (§8). */
+export const editPost = defineRoute({
+  method: 'PUT',
+  path: '/api/classes/:classId/posts/:postId',
+  scope: { kind: 'class', role: 'any' },
+  summary: 'Edit one of your posts, where the class policy allows it',
+  params: postParams,
+  body: z.object({ body: text.trim().min(1) }),
+  response: threadView,
+  errors: { 400: invalidBody, 409: classArchived },
+  examples: {
+    params: { classId: exampleClass, postId: exampleIds.ee },
+    body: { body: 'Why n − 1 rather than n?' },
+  },
+});
+
+/** A post that replies depend on, or that opened the thread, stays as a tombstone (§8). */
+export const deletePost = defineRoute({
+  method: 'DELETE',
+  path: '/api/classes/:classId/posts/:postId',
+  scope: { kind: 'class', role: 'any' },
+  summary: 'Delete one of your posts, where the class policy allows it',
+  params: postParams,
+  response: threadView,
+  errors: { 400: invalidBody, 409: classArchived },
+  examples: { params: { classId: exampleClass, postId: exampleIds.ee } },
+});
+
+export const setThreadStatus = defineRoute({
+  method: 'POST',
+  path: '/api/classes/:classId/threads/:threadId/status',
+  scope: { kind: 'class', role: 'any' },
+  summary: 'Resolve or reopen a discussion; students may only reopen their own question',
+  params: threadParams,
+  body: z.object({ status: z.enum(['open', 'resolved']) }),
+  response: threadView,
+  errors: { 400: invalidBody, 409: classArchived },
+  examples: {
+    params: { classId: exampleClass, threadId: exampleIds.dd },
+    body: { status: 'resolved' },
+  },
+});
+
+/** Hides another member’s post from the class; the reason is kept in the audit record. */
+export const moderatePost = defineRoute({
+  method: 'POST',
+  path: '/api/classes/:classId/posts/:postId/moderate',
+  scope: { kind: 'class', role: 'instructor' },
+  summary: 'Instructor: remove a post from view with a recorded reason',
+  params: postParams,
+  body: z.object({ reason: z.string().trim().min(1).max(500) }),
+  response: threadView,
+  errors: { 400: invalidBody, 409: classArchived },
+  examples: {
+    params: { classId: exampleClass, postId: exampleIds.ee },
+    body: { reason: 'Off topic' },
+  },
 });
