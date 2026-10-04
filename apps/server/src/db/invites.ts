@@ -14,6 +14,9 @@ export type InviteFailure = z.infer<typeof inviteFailure>;
 /** Instructor invitations expire after a week unless the issuer chooses otherwise. */
 export const INSTRUCTOR_INVITE_TTL_MS = 7 * 24 * 60 * 60_000;
 
+/** The longest an instructor invitation may live, counted from its creation. */
+export const INSTRUCTOR_INVITE_MAX_TTL_MS = 30 * 24 * 60 * 60_000;
+
 /** Without the look-alikes 0/O and 1/I/L: 31 symbols, so ten give about 49 bits. */
 const ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 const CODE_LENGTH = 10;
@@ -60,6 +63,8 @@ export async function issueInvite(db: Db, scope: ClassManagerScope, input: Issue
       : null;
   if (expiresAt && expiresAt <= now)
     return { ok: false as const, reason: 'expiry_in_past' as const };
+  if (instructor && expiresAt && expiresAt.getTime() - now.getTime() > INSTRUCTOR_INVITE_MAX_TTL_MS)
+    return { ok: false as const, reason: 'expiry_too_far' as const };
   const code = instructor ? newToken() : newEnrolmentCode();
   return db.transaction(async (tx) => {
     const [row] = await tx

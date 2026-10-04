@@ -277,6 +277,22 @@ describe('instructor invitations', () => {
     expect((await accept(kofi, invite.body.code)).body).toMatchObject({ alreadyMember: true });
   });
 
+  test('A02 an instructor invitation lives at most 30 days', async () => {
+    const day = 24 * 60 * 60_000;
+    const atCap = await issue(as('noor'), ids.classA, {
+      kind: 'instructor',
+      email: 'kofi@example.test',
+      expiresAt: new Date(now.getTime() + 30 * day).toISOString(),
+    });
+    expect(atCap.status).toBe(200);
+    const pastCap = await issue(as('noor'), ids.classA, {
+      kind: 'instructor',
+      email: 'kofi@example.test',
+      expiresAt: new Date(now.getTime() + 30 * day + 60_000).toISOString(),
+    });
+    expect(pastCap).toEqual({ status: 400, body: { error: 'expiry_too_far' } });
+  });
+
   test('A02 a student of the class cannot be upgraded through an invitation', async () => {
     const invite = await issue(as('elena'), ids.classB, {
       kind: 'instructor',
