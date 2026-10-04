@@ -1,15 +1,18 @@
-import { cleanup, screen, waitFor } from '@testing-library/react';
+import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   CLASS_A,
+  CLASS_B,
   cardsFor,
   instructorIn,
   makeMe,
   renderApp,
   signedIn,
+  signedInWithTopics,
   stubApi,
   studentIn,
+  T_SAMPLING,
 } from '../test/render';
 
 afterEach(() => {
@@ -30,7 +33,8 @@ describe('GlobalBar', () => {
       'href',
       `/classes/${CLASS_A}/topics`,
     );
-    expect(screen.getByRole('navigation', { name: 'Neighbouring topics' })).toBeInTheDocument();
+    // Off a topic route there is no neighbour, so no empty landmark is rendered (P1-AUD11).
+    expect(screen.queryByRole('navigation', { name: 'Neighbouring topics' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Sign out' })).toBeInTheDocument();
   });
 
@@ -78,5 +82,99 @@ describe('GlobalBar', () => {
     expect(await screen.findByRole('link', { name: 'Sign in' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Sign out' })).toBeNull();
     expect(screen.queryByText('Sam Okafor')).toBeNull();
+  });
+
+  it('A19 puts the primary links in a labelled Primary landmark, signed in and signed out', async () => {
+    stubApi(signedIn(makeMe({ classes: [studentIn(CLASS_A, 'Class A')] })));
+    renderApp('/courses');
+    const primary = await screen.findByRole('navigation', { name: 'Primary' });
+    expect(within(primary).getByRole('link', { name: 'Courses' })).toBeInTheDocument();
+    expect(within(primary).getByRole('link', { name: 'Topics' })).toBeInTheDocument();
+    cleanup();
+    stubApi(() => ({ status: 401, body: { error: 'unauthenticated' } }));
+    renderApp('/signin');
+    const signedOut = await screen.findByRole('navigation', { name: 'Primary' });
+    expect(within(signedOut).getByRole('link', { name: 'Sign in' })).toBeInTheDocument();
+    expect(screen.queryByRole('navigation', { name: 'Neighbouring topics' })).toBeNull();
+  });
+
+  it('A19 offers a Skip to content link that moves focus to the main region', async () => {
+    const user = userEvent.setup();
+    stubApi(signedIn(makeMe({ classes: [studentIn(CLASS_A, 'Class A')] })));
+    renderApp('/courses');
+    await screen.findByRole('navigation', { name: 'Primary' });
+    await user.tab();
+    const skip = screen.getByRole('link', { name: 'Skip to content' });
+    expect(skip).toHaveFocus();
+    await user.keyboard('{Enter}');
+    expect(screen.getByRole('main')).toHaveFocus();
+  });
+
+  it('A19 sets the document title per route', async () => {
+    stubApi(() => ({ status: 401, body: { error: 'unauthenticated' } }));
+    renderApp('/signin');
+    await screen.findByRole('heading', { name: 'Sign in' });
+    await waitFor(() => expect(document.title).toBe('Sign in · Parallax'));
+    cleanup();
+    expect(document.title).toBe('Parallax');
+
+    const me = makeMe({ classes: [studentIn(CLASS_A, 'Class A')] });
+    stubApi(signedIn(me));
+    renderApp('/courses');
+    await screen.findByRole('heading', { name: 'Your courses' });
+    await waitFor(() => expect(document.title).toBe('Your courses · Parallax'));
+    cleanup();
+
+    stubApi(signedInWithTopics(me));
+    renderApp(`/classes/${CLASS_A}/topics`);
+    await screen.findByRole('heading', { name: 'Statistical thinking' });
+    await waitFor(() => expect(document.title).toBe('Statistical thinking · Parallax'));
+    cleanup();
+
+    stubApi(signedInWithTopics(me));
+    renderApp(`/classes/${CLASS_A}/topics/${T_SAMPLING}/reading`);
+    await screen.findByRole('heading', { name: 'Sampling' });
+    await waitFor(() => expect(document.title).toBe('Sampling · Parallax'));
+    expect(
+      await screen.findByRole('navigation', { name: 'Neighbouring topics' }),
+    ).toBeInTheDocument();
+  });
+
+  it('A19 titles the courses page by the view it actually shows, with or without ?view', async () => {
+    stubApi(signedIn(makeMe({ classes: [instructorIn(CLASS_A, 'Class A')] })));
+    renderApp('/courses');
+    await screen.findByRole('heading', { name: 'Courses you teach' });
+    await waitFor(() => expect(document.title).toBe('Courses you teach · Parallax'));
+    cleanup();
+
+    stubApi(signedIn(makeMe({ classes: [instructorIn(CLASS_A, 'Class A')] })));
+    renderApp('/courses?view=instructor');
+    await screen.findByRole('heading', { name: 'Courses you teach' });
+    await waitFor(() => expect(document.title).toBe('Courses you teach · Parallax'));
+  });
+
+  it('A19 titles the class review page', async () => {
+    stubApi(signedIn(makeMe({ classes: [instructorIn(CLASS_A, 'Class A')] })));
+    renderApp(`/classes/${CLASS_A}/review`);
+    await screen.findByRole('heading', { name: 'Class review' });
+    await waitFor(() => expect(document.title).toBe('Class review · Parallax'));
+  });
+
+  it('A19 titles the neutral page without naming anything, even over a cached topic list', async () => {
+    stubApi(signedIn(makeMe({ classes: [studentIn(CLASS_A, 'Class A')] })));
+    renderApp(`/classes/${CLASS_B}/topics`);
+    await screen.findByRole('heading', { name: 'This page is not available' });
+    await waitFor(() => expect(document.title).toBe('This page is not available · Parallax'));
+    cleanup();
+
+    const me = makeMe({ classes: [studentIn(CLASS_A, 'Class A')] });
+    stubApi((url) =>
+      /^\/api\/classes\/[^/]+\/topics$/.test(url)
+        ? { status: 404, body: { error: 'not found' } }
+        : signedIn(me)(url),
+    );
+    renderApp(`/classes/${CLASS_A}/topics/${T_SAMPLING}/reading`);
+    await screen.findByRole('heading', { name: 'This page is not available' });
+    await waitFor(() => expect(document.title).toBe('This page is not available · Parallax'));
   });
 });
