@@ -20,6 +20,7 @@ import { ConflictView } from './ConflictView';
 import { ExerciseEditor } from './ExerciseEditor';
 import { authoringKey, processingQuery } from './queries';
 import { SaveStatus } from './SaveStatus';
+import { TestEditor } from './TestEditor';
 import { AddWebSlides, WebSlidesEditor } from './WebSlides';
 
 export type ResourceSummary = z.output<typeof draftResourceSummary>;
@@ -47,6 +48,7 @@ const typeNames: Record<Type, string> = {
 const isExercise = (t: Type) => t === 'exercise';
 const isReading = (t: Type) => t === 'reading_native' || t === 'reading_pdf';
 const isWebSlides = (t: Type) => t === 'slides_web';
+const isTest = (t: Type) => t === 'test';
 
 interface Props {
   courseId: string;
@@ -164,6 +166,14 @@ export function ResourceSection({ courseId, topicId, resources }: Props) {
             {tab.name === 'Exercises' ? (
               <AddExercise courseId={courseId} topicId={topicId} onAdded={() => void refresh()} />
             ) : null}
+            {tab.name === 'Tests' ? (
+              <AddExercise
+                courseId={courseId}
+                topicId={topicId}
+                type="test"
+                onAdded={() => void refresh()}
+              />
+            ) : null}
           </section>
         );
       })}
@@ -275,7 +285,10 @@ function ResourceRow({
           </div>
           <StatusLine courseId={courseId} resource={resource} status={status} lookup={lookup} />
         </div>
-        {isReading(resource.type) || isWebSlides(resource.type) || isExercise(resource.type) ? (
+        {isReading(resource.type) ||
+        isWebSlides(resource.type) ||
+        isExercise(resource.type) ||
+        isTest(resource.type) ? (
           <button
             type="button"
             className={buttons.textButton}
@@ -289,6 +302,9 @@ function ResourceRow({
       {open && isExercise(resource.type) ? (
         <ExerciseEditor courseId={courseId} resourceId={resource.id} onSaved={onChanged} />
       ) : null}
+      {open && isTest(resource.type) ? (
+        <TestEditor courseId={courseId} resourceId={resource.id} onSaved={onChanged} />
+      ) : null}
       {open && isWebSlides(resource.type) ? (
         <WebSlidesEditor courseId={courseId} resourceId={resource.id} onSaved={onChanged} />
       ) : null}
@@ -299,23 +315,26 @@ function ResourceRow({
   );
 }
 
-/** Creates an exercise without content; the editor's first valid save makes its first revision. */
+/** Creates an exercise or test without content; the editor's first valid save makes its first revision. */
 function AddExercise({
   courseId,
   topicId,
+  type = 'exercise',
   onAdded,
 }: {
   courseId: string;
   topicId: string;
+  type?: 'exercise' | 'test';
   onAdded: () => void;
 }) {
+  const noun = type === 'test' ? 'test' : 'exercise';
   const [adding, setAdding] = useState(false);
   const [title, setTitle] = useState('');
   const create = useMutation({
     mutationFn: () =>
       call(createResource, {
         params: { courseId, topicId },
-        body: { type: 'exercise', title: title.trim() },
+        body: { type, title: title.trim() },
       }),
     onSuccess: () => {
       setAdding(false);
@@ -327,7 +346,7 @@ function AddExercise({
     return (
       <div className={styles.mt12}>
         <button type="button" className={buttons.outline} onClick={() => setAdding(true)}>
-          Add exercise
+          Add {noun}
         </button>
       </div>
     );
@@ -340,7 +359,7 @@ function AddExercise({
       }}
     >
       <label className={local.field}>
-        New exercise title
+        New {noun} title
         <input type="text" value={title} onChange={(e) => setTitle(e.target.value)} />
       </label>
       <div className={`${styles.row} ${styles.mt12}`}>
@@ -349,7 +368,7 @@ function AddExercise({
           className={buttons.outline}
           disabled={!title.trim() || create.isPending}
         >
-          Create exercise
+          Create {noun}
         </button>
         <button type="button" className={buttons.textButton} onClick={() => setAdding(false)}>
           Cancel
@@ -357,7 +376,7 @@ function AddExercise({
       </div>
       {create.isError ? (
         <p role="alert" className={styles.small}>
-          Could not create the exercise.
+          Could not create the {noun}.
         </p>
       ) : null}
     </form>

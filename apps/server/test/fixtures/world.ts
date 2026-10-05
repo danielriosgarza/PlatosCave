@@ -515,7 +515,11 @@ async function seedDrafts(db: Db): Promise<void> {
       type: 'test' as const,
       title: 'Sampling quiz',
       position: 1,
-      content: { questions: [{ id: 'q1', prompt: 'What is a sampling distribution?' }] },
+      content: {
+        questions: [
+          { id: 'q1', kind: 'explanation', prompt: 'What is a sampling distribution?', points: 1 },
+        ],
+      },
     },
     {
       id: ids.answerKey,

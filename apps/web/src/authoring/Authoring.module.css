@@ -124,3 +124,67 @@
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+/* Test editor: question cards, file and check blocks, preview output. */
+.card {
+  border: 1px solid var(--pc-rule);
+  border-radius: var(--pc-radius-control);
+  padding: 4px 16px 16px;
+  margin-top: 20px;
+  background: var(--pc-sheet);
+}
+.cardHead {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+.block {
+  border-top: 1px solid var(--pc-rule);
+  margin-top: 16px;
+  padding-top: 4px;
+}
+.mono {
+  font-family: var(--pc-mono, ui-monospace, monospace);
+  font-size: 13px;
+  line-height: 1.5;
+  white-space: pre;
+}
+.inlineFields {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  align-items: flex-end;
+}
+.inlineFields .field {
+  margin-top: 12px;
+}
+.inlineFields .field input[type="text"],
+.inlineFields .field input[type="number"],
+.inlineFields .field select {
+  max-width: 240px;
+}
+.badge {
+  font-size: 12px;
+  border: 1px solid var(--pc-muted);
+  border-radius: var(--pc-radius-control);
+  padding: 0 6px;
+  margin-left: 6px;
+}
+.output {
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.output li {
+  border-top: 1px solid var(--pc-rule);
+  padding: 8px 0;
+}
+.output pre {
+  margin: 4px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+}

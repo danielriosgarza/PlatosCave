@@ -8,7 +8,9 @@ import {
   type DraftPreviewScope,
   isDraftPreview,
 } from '../../auth/scope';
+import { DEV_RUNNER_RUNTIMES, type RunnerRuntime } from '../../config';
 import { openToStudent } from '../../content/availability';
+import { testPublicationIssues } from '../../execution/publication';
 import { audit } from '../audit';
 import type { Db } from '../client';
 import { derivedReady, resolveDerivedStatuses } from '../jobs/derived';
@@ -86,10 +88,13 @@ type Drafts = Awaited<ReturnType<typeof loadDrafts>>;
 
 /**
  * Publication checks (§12, ADR-0003): broken references, missing alternatives and unconverted
- * decks. Grading-rule and execution-configuration checks join this function with the items
- * that define those resource contents (P2-10, P3-15).
+ * decks, exercise definitions, and tests (grading rules and execution configuration, P3-18).
+ * `runtimes` are the runtimes a code question may select.
  */
-export function validate(drafts: Drafts): ValidationReport {
+export function validate(
+  drafts: Drafts,
+  runtimes: readonly RunnerRuntime[] = DEV_RUNNER_RUNTIMES,
+): ValidationReport {
   const errors: Issue[] = [];
   const warnings: Issue[] = [];
   if (drafts.length === 0) {
@@ -187,6 +192,15 @@ export function validate(drafts: Drafts): ValidationReport {
           });
         }
       }
+      if (revision.type === 'test') {
+        const found = testPublicationIssues(revision.content, runtimes);
+        for (const { code, message } of found.errors) {
+          errors.push({ code, message: `“${resource.title}”: ${message}`, ...at });
+        }
+        for (const { code, message } of found.warnings) {
+          warnings.push({ code, message: `“${resource.title}”: ${message}`, ...at });
+        }
+      }
       if (needsAlternative.has(revision.type) && !revision.accessibleAlternative) {
         const rasterDeck = revision.type === 'slides_pdf' && revision.derived.rasterOnly === true;
         (rasterDeck ? errors : warnings).push({
@@ -200,8 +214,12 @@ export function validate(drafts: Drafts): ValidationReport {
   return { errors, warnings };
 }
 
-export function validateDrafts(db: Db, scope: CourseScope): Promise<ValidationReport> {
-  return db.transaction(async (tx) => validate(await loadDrafts(tx, scope)));
+export function validateDrafts(
+  db: Db,
+  scope: CourseScope,
+  runtimes?: readonly RunnerRuntime[],
+): Promise<ValidationReport> {
+  return db.transaction(async (tx) => validate(await loadDrafts(tx, scope), runtimes));
 }
 
 export type PublishResult =
@@ -219,7 +237,7 @@ export type PublishResult =
 export function publishRelease(
   db: Db,
   scope: CourseScope,
-  opts: { id?: string } = {},
+  opts: { id?: string; runtimes?: readonly RunnerRuntime[] } = {},
 ): Promise<PublishResult> {
   return db.transaction(async (tx) => {
     await tx
@@ -228,7 +246,7 @@ export function publishRelease(
       .where(eq(courses.id, scope.courseId))
       .for('update');
     const drafts = await loadDrafts(tx, scope);
-    const report = validate(drafts);
+    const report = validate(drafts, opts.runtimes);
     if (report.errors.length > 0) return { ok: false, report };
 
     const [last] = await tx

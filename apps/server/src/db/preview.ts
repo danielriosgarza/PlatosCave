@@ -1,4 +1,4 @@
-import { and, eq, isNull, type SQL } from 'drizzle-orm';
+import { and, asc, eq, isNull, type SQL } from 'drizzle-orm';
 import type { PgColumn } from 'drizzle-orm/pg-core';
 import type { CourseScope } from '../auth/scope';
 import { audit } from './audit';
@@ -136,5 +136,59 @@ export async function recordPreviewExit(
       targetType: 'user',
       targetId: input.previewUserId,
     });
+  });
+}
+
+/**
+ * The class a preview run happens in, and the preview principal that owns the run (design §8.3:
+ * preview runs have `attempt_id NULL` and the preview principal as `user_id`): the oldest live
+ * class of the course the caller teaches. `create` makes the principal on first use; without it
+ * a caller who never previewed finds nothing. Locking the teaching membership serialises two
+ * first uses with each other and with `startPreview`, so a class has one principal.
+ */
+export async function previewRunClass(
+  db: Db,
+  scope: CourseScope,
+  opts: { create: boolean },
+): Promise<{ classId: string; previewUserId: string } | undefined> {
+  if (scope.user.kind !== 'user') return undefined;
+  const instructorId = scope.user.id;
+  return db.transaction(async (tx) => {
+    const [teaching] = await tx
+      .select({ id: classMemberships.id, classId: classMemberships.classId })
+      .from(classMemberships)
+      .innerJoin(classes, eq(classes.id, classMemberships.classId))
+      .where(
+        and(
+          forCourse(scope, classes),
+          isNull(classes.archivedAt),
+          eq(classMemberships.userId, instructorId),
+          eq(classMemberships.role, 'instructor'),
+        ),
+      )
+      .orderBy(asc(classes.createdAt), asc(classes.id))
+      .limit(1)
+      .for('update', { of: classMemberships });
+    if (!teaching) return undefined;
+    const [existing] = await tx
+      .select({ id: users.id })
+      .from(users)
+      .innerJoin(classMemberships, eq(classMemberships.userId, users.id))
+      .where(
+        and(
+          eq(users.kind, 'preview'),
+          eq(users.ownerUserId, instructorId),
+          eq(classMemberships.classId, teaching.classId),
+          eq(classMemberships.isPreview, true),
+        ),
+      )
+      .limit(1);
+    if (existing) return { classId: teaching.classId, previewUserId: existing.id };
+    if (!opts.create) return undefined;
+    const principal = await insertPreviewPrincipal(tx, {
+      classId: teaching.classId,
+      instructorId,
+    });
+    return { classId: teaching.classId, previewUserId: principal.id };
   });
 }

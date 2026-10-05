@@ -112,3 +112,22 @@ export const getCourseOverview = defineRoute({
   }),
   examples: { params: { courseId: exampleCourseId } },
 });
+
+/** The runtimes a code question may select (design §6.3); the test editor's runtime picker. */
+export const getRuntimes = defineRoute({
+  method: 'GET',
+  path: '/api/courses/:courseId/runtimes',
+  scope: { kind: 'course', role: 'editor' },
+  summary: 'Approved runtimes and the packages each one provides',
+  params: courseParams,
+  response: z.object({
+    runtimes: z.array(
+      z.object({
+        id: z.string(),
+        language: z.enum(['python', 'r']),
+        packages: z.array(z.string()),
+      }),
+    ),
+  }),
+  examples: { params: { courseId: exampleCourseId } },
+});

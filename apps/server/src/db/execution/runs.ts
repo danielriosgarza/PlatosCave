@@ -7,6 +7,7 @@ import type { ClassScope } from '../../auth/scope';
 import type { RunnerRuntime } from '../../config';
 import {
   buildRunnerJob,
+  buildRunnerJobDetailed,
   type CheckSet,
   type CodeQuestion,
   codeHash,
@@ -714,4 +715,98 @@ export async function attemptResults(
     runs.push((await viewOf(db, exec, scope, row, now)) as InstructorRun);
   }
   return runs;
+}
+
+/**
+ * An instructor preview run (P3-18; design §8.3): the code question of a draft test revision run
+ * as the class's preview principal, with no attempt. `scope` is that principal's class scope,
+ * `instructorId` the editor who asked. Nothing is reused, superseded or capped (§5): a preview
+ * runs against hidden checks the author is still changing, so every request is a fresh run.
+ * `files` are editable files to run, the starter files when empty.
+ */
+export async function requestPreviewRun(
+  db: Db,
+  deps: () => ExecDeps,
+  scope: ClassScope,
+  input: {
+    revisionId: string;
+    questionId: string;
+    set: CheckSet;
+    files: Snapshot['files'];
+    instructorId: string;
+  },
+  now: Date,
+): Promise<Outcome<InstructorRun>> {
+  if (!scope.membership.isPreview) return notFound;
+  const question = await codeQuestionOf(db, input.revisionId, input.questionId);
+  if (!question) return notFound;
+  if (scope.archived) return classArchived;
+  const exec = deps();
+  const runtime = exec.runtimes.find((r) => r.id === question.runtime);
+  if (!runtime) return invalid('This question’s runtime is not available');
+  const snapshot: Snapshot = {
+    files: input.files.map((f) => ({ path: f.path, content: f.content })),
+  };
+  const id = randomUUID();
+  const built = buildRunnerJobDetailed(question, snapshot, input.set, id, runtime);
+  if (!built.ok) return invalid(built.detail);
+  const [inserted] = await db
+    .insert(executionJobs)
+    .values({
+      id,
+      bossJobId: randomUUID(),
+      classId: scope.classId,
+      userId: scope.user.id,
+      attemptId: null,
+      questionRevisionId: input.revisionId,
+      questionId: question.id,
+      context: 'preview',
+      reason: 'preview',
+      checkSet: input.set,
+      codeHash: codeHash(snapshot),
+      snapshot,
+      runtimeId: runtime.id,
+      imageRef: runtimeImage(runtime),
+      harnessVersion: runtime.harnessVersion,
+      graderVersion: graderVersion(question, runtime),
+      limits: built.job.limits,
+      priority: PRIORITY.preview,
+      requestedBy: input.instructorId,
+      queuedAt: now,
+    })
+    .returning();
+  if (!inserted) throw new Error('preview run insert returned no row');
+  await sendRun(db, exec, inserted, now, built.job);
+  const row = await rowOf(db, scope, id);
+  return { ok: true, value: (await previewView(db, exec, scope, row, now)) as InstructorRun };
+}
+
+/** The instructor view of a preview row, settled first when its job is no longer live. */
+async function previewView(db: Db, deps: ExecDeps, scope: ClassScope, row: RunRow, now: Date) {
+  const read = await readState(db, queuesOf(deps), row, now);
+  const result = read.live ? null : await resultOf(db, scope, row.id);
+  return toInstructorView(read.row, result, read.live);
+}
+
+/** One preview run of this principal; others' runs and attempt runs are not found. */
+export async function readPreviewRun(
+  db: Db,
+  deps: () => ExecDeps,
+  scope: ClassScope,
+  runId: string,
+  now: Date,
+): Promise<InstructorRun | undefined> {
+  if (!scope.membership.isPreview) return undefined;
+  const [row] = await db
+    .select()
+    .from(executionJobs)
+    .where(
+      and(
+        forClass(scope, executionJobs),
+        eq(executionJobs.id, runId),
+        eq(executionJobs.context, 'preview'),
+        eq(executionJobs.userId, scope.user.id),
+      ),
+    );
+  return row && ((await previewView(db, deps(), scope, row, now)) as InstructorRun);
 }
