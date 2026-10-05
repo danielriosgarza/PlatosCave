@@ -14,7 +14,6 @@ import type { RouteDeps } from '../../app';
 import type { UserScope } from '../../auth/scope';
 import { createPairing, normalisePairingCode, pairingKey } from '../../db/connectors/pairing';
 import * as registry from '../../db/connectors/registry';
-import { emptyLinkRegistry } from '../../relay/links';
 import {
   decodeB64url,
   normaliseOrigin,
@@ -34,7 +33,7 @@ const perAddress = (max: number, timeWindow: string) => ({ rateLimit: { max, tim
 export default function connectorRoutes(app: FastifyInstance, deps: RouteDeps): void {
   const { config, now } = deps;
   const db = deps.requireDb;
-  const links = deps.links ?? emptyLinkRegistry;
+  const { links } = deps;
   const key = pairingKey(config.SESSION_SECRET);
   const origin = normaliseOrigin(config.APP_ORIGIN);
   // §3 Controls: a person creates at most 5 codes an hour; an address is blocked for 10 minutes

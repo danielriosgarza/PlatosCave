@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { buildApp } from '../app';
 import type { ClassScope, UserScope } from '../auth/scope';
 import { loadConfig } from '../config';
-import { notFound, type RouteArgs, registerRoute } from './register';
+import { notFound, type RouteArgs, registerRoute, registerWebSocketRoute } from './register';
 
 const config = loadConfig({ NODE_ENV: 'test', LOG_LEVEL: 'silent' });
 
@@ -215,4 +215,95 @@ it('API routes get no implicit HEAD route, so a HEAD never runs a handler', asyn
   expect(calls).toBe(0);
   expect((await app.inject({ method: 'GET', url: '/api/echo/1' })).json()).toEqual({ n: 1 });
   await app.close();
+});
+
+describe('registerWebSocketRoute (relay mode)', () => {
+  const socketRoute = <S extends { kind: 'public' } | { kind: 'user' }>(
+    path: `/api/${string}`,
+    scope: S,
+  ) =>
+    defineRoute({
+      method: 'GET',
+      path,
+      scope,
+      summary: 'socket',
+      websocket: true,
+      response: z.never(),
+      examples: {},
+    });
+
+  it('refuses at boot a WebSocket contract without a scope', async () => {
+    const app = await buildApp(config, { mode: 'relay' });
+    const unscoped = { ...socketRoute('/api/socket', { kind: 'public' }), scope: undefined };
+    expect(() => registerWebSocketRoute(app, unscoped as never, () => {})).toThrow(
+      /declares no scope/,
+    );
+    await app.close();
+  });
+
+  it('keeps WebSocket and HTTP contracts apart, and needs relay mode', async () => {
+    const relay = await buildApp(config, { mode: 'relay' });
+    expect(() =>
+      registerRoute(
+        relay,
+        socketRoute('/api/socket', { kind: 'public' }),
+        () => undefined as never,
+      ),
+    ).toThrow(/registerWebSocketRoute/);
+    expect(() => registerWebSocketRoute(relay, echo as never, () => {})).toThrow(/registerRoute/);
+    await relay.close();
+    const api = await buildApp(config);
+    expect(() =>
+      registerWebSocketRoute(api, socketRoute('/api/socket', { kind: 'public' }), () => {}),
+    ).toThrow(/relay mode/);
+    await api.close();
+  });
+
+  it('resolves the scope before the upgrade: a refusal is HTTP and opens no socket', async () => {
+    const app = await buildApp(config, { mode: 'relay' });
+    let opened = 0;
+    registerWebSocketRoute(app, socketRoute('/api/socket/user', { kind: 'user' }), () => {
+      opened += 1;
+    });
+    await app.ready();
+    await expect(app.injectWS('/api/socket/user')).rejects.toThrow(/401/);
+    expect((await app.inject({ url: '/api/socket/user' })).statusCode).toBe(401);
+    expect(opened).toBe(0);
+    await app.close();
+  });
+
+  it('hands an upgraded socket to the handler; a plain GET is the shared 404', async () => {
+    const app = await buildApp(config, { mode: 'relay' });
+    registerWebSocketRoute(app, socketRoute('/api/socket/echo', { kind: 'public' }), (socket) => {
+      socket.on('message', (data) => socket.send(`echo ${data.toString()}`));
+    });
+    await app.ready();
+    const ws = await app.injectWS('/api/socket/echo');
+    const reply = new Promise<string>((resolve) =>
+      ws.once('message', (d) => resolve(d.toString())),
+    );
+    ws.send('hi');
+    expect(await reply).toBe('echo hi');
+    ws.terminate();
+    const plain = await app.inject({ url: '/api/socket/echo' });
+    expect(plain.statusCode).toBe(404);
+    expect(plain.json()).toEqual({ error: 'not found' });
+    await app.close();
+  });
+
+  it('serves the connector link in relay mode only', async () => {
+    const api = await buildApp(config);
+    expect(api.contracts.map((c) => c.path)).not.toContain('/api/connector/v1/link');
+    await api.close();
+    const relay = await buildApp(config, { mode: 'relay' });
+    await relay.ready();
+    expect(relay.contracts.map((c) => c.path)).toContain('/api/connector/v1/link');
+    // Without a database no connector can authenticate: the socket is closed with 4500.
+    const ws = await relay.injectWS('/api/connector/v1/link', {
+      headers: { 'sec-websocket-protocol': 'parallax.connector.v1' },
+    });
+    const code = await new Promise<number>((resolve) => ws.once('close', (c) => resolve(c)));
+    expect(code).toBe(4500);
+    await relay.close();
+  });
 });
