@@ -1,5 +1,5 @@
 import type * as contracts from '@parallax/contracts/routes/topicReviews';
-import { and, eq, isNotNull } from 'drizzle-orm';
+import { and, asc, eq, isNotNull } from 'drizzle-orm';
 import type { z } from 'zod';
 import { type ClassScope, isDraftPreview } from '../auth/scope';
 import { computeAvailability, openToStudent, type Tab, topicOpens } from '../content/availability';
@@ -189,7 +189,8 @@ export async function releaseRuleRows(db: Db, releaseId: string, courseId: strin
     })
     .from(releaseTopics)
     .innerJoin(courseReleases, eq(courseReleases.id, releaseTopics.releaseId))
-    .where(and(eq(releaseTopics.releaseId, releaseId), eq(courseReleases.courseId, courseId)));
+    .where(and(eq(releaseTopics.releaseId, releaseId), eq(courseReleases.courseId, courseId)))
+    .orderBy(asc(releaseTopics.position));
   const resourceRows = await db
     .select({
       releaseTopicId: releaseResources.releaseTopicId,
@@ -203,7 +204,8 @@ export async function releaseRuleRows(db: Db, releaseId: string, courseId: strin
     })
     .from(releaseResources)
     .innerJoin(resourceRevisions, eq(resourceRevisions.id, releaseResources.resourceRevisionId))
-    .where(eq(releaseResources.releaseId, releaseId));
+    .where(eq(releaseResources.releaseId, releaseId))
+    .orderBy(asc(releaseResources.position));
   return {
     topicRows,
     resourceRows: resourceRows.map((r) => ({ ...r, credit: creditOf(r.credit) })),
