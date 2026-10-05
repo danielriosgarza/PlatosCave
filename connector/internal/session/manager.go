@@ -378,6 +378,11 @@ func (m *Manager) start(t target.Target, s *Session, req *protocol.OpenSession) 
 	if rt.Process != nil {
 		s.process = &ProcessRecord{Where: "local", PID: rt.Process.PID, Port: rt.Process.Port, StartedAt: stamp(m.cfg.Now())}
 	}
+	if rt.Remote != nil {
+		if pid, port := rt.Remote.Process(); pid > 0 {
+			s.process = &ProcessRecord{Where: "remote", PID: pid, Port: port, StartedAt: stamp(m.cfg.Now())}
+		}
+	}
 	pendingStop := s.stopRequested
 	if pendingStop == "" {
 		s.state = StateReady
@@ -396,6 +401,9 @@ func (m *Manager) start(t target.Target, s *Session, req *protocol.OpenSession) 
 	m.send(st)
 	if exited := rt.Exited(); exited != nil {
 		go m.watch(s, exited)
+	}
+	if rt.Remote != nil {
+		go m.watchRemote(s, rt.Remote)
 	}
 }
 
@@ -489,9 +497,14 @@ func (m *Manager) stopWithin(ctx context.Context, s *Session, requestID, why, pr
 	s.mu.Unlock()
 	m.logf("Session %s stopping %s.", s.ID, stopReason[why])
 	m.send(m.stateMsg(s, requestID))
-	if rt != nil && rt.Process != nil {
+	if rt != nil && (rt.Process != nil || rt.Remote != nil) {
 		sctx, cancel := context.WithTimeout(ctx, stopDeadline)
-		err := rt.Process.Stop(sctx, m.cfg.StopTimes)
+		var err error
+		if rt.Remote != nil {
+			err = rt.Remote.Stop(sctx, m.cfg.StopTimes)
+		} else {
+			err = rt.Process.Stop(sctx, m.cfg.StopTimes)
+		}
 		cancel()
 		if err != nil {
 			m.logf("Session %s could not be stopped: %v", s.ID, err)
@@ -527,6 +540,9 @@ func (m *Manager) finish(s *Session, requestID, why string) {
 	s.mu.Unlock()
 	if rt != nil {
 		rt.Client.CloseIdle() // the tunnel of an attached session ends here
+		if rt.Remote != nil {
+			rt.Remote.Close() // and so does the SSH connection; the server is never signalled
+		}
 	}
 	m.mu.Lock()
 	m.stopped[s.ID] = &rec
