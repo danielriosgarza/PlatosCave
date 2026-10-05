@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"parallax/connector/internal/cause"
 	"parallax/connector/internal/jupyter"
 	"parallax/connector/internal/protocol"
 )
@@ -36,8 +37,36 @@ type Runtime struct {
 	JupyterVersion string
 	Kernelspecs    []protocol.Kernelspec
 	Environment    *protocol.Environment
-	// Process is the owned server process, nil when attached.
+	// Process is the owned server process on this computer, nil when attached or remote.
 	Process *jupyter.Process
+	// Remote is the transport of a runtime on another computer (`ssh`); nil for `local`.
+	Remote Remote
+}
+
+// Remote is a runtime reached over a transport that can be lost and re-established (design
+// §5.5, §6): the SSH connection, its keepalive and the tunnel to the session's fixed port.
+type Remote interface {
+	// Process is the owned server's pid and port, for sessions.json; zeros when attached.
+	Process() (pid, port int)
+	// Losses delivers each loss of the transport or the service, until Close.
+	Losses() <-chan Loss
+	// Reconnect re-establishes the transport and checks /api/status with the token; it
+	// implements the session manager's Reconnector.
+	Reconnect(ctx context.Context) error
+	// Stop stops an owned server: POST /api/shutdown, then SIGTERM and SIGKILL to the recorded
+	// pid once its marker proves it is the session's own. It returns nil only once the process
+	// is gone, and then closes the transport.
+	Stop(ctx context.Context, times jupyter.StopTimes) error
+	// Close closes the tunnel and the SSH connection. It never signals the server.
+	Close()
+}
+
+// Loss is one loss of a remote session's transport or service, with the evidence the cause
+// rules of design §5.5 need. Gone is true when the connector confirmed the process ended, so
+// the session is stopped rather than disconnected.
+type Loss struct {
+	Evidence cause.Evidence
+	Gone     bool
 }
 
 // Exited is closed when an owned process ends; nil (never ready) for an attached server.
@@ -80,6 +109,10 @@ func asFailure(err error, fallback protocol.Code) *Failure {
 type skip struct{ reason string }
 
 func (s *skip) Error() string { return "skipped: " + s.reason }
+
+// Skipped is a stage result that is skipped for a reason of its own, such as notebook_auth with
+// reason not_started before a server runs; it blocks nothing.
+func Skipped(reason string) error { return &skip{reason: reason} }
 
 // Stage deadlines of design §5.1, and the code a stage reports when it reaches its deadline.
 // ssh_auth's deadline rises to PromptDeadline once a terminal prompt starts, and its code is then

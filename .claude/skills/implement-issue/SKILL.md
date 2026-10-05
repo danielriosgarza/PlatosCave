@@ -51,6 +51,6 @@ Read, in order:
 - Non-blocking suggestions: apply the ones that are clearly correct in your next push; otherwise reply once and leave them.
 - When the PR is labelled `review:approved` and CI is green, stop. The orchestrator merges it; you never merge, approve, or edit labels other than the ones named above.
 
-## Design items (`model:fable`, deliverable is a document)
+## Design items (`model:fable`, run by Opus 5.5 at maximum effort; deliverable is a document)
 
 The PR adds the design document (under `docs/design/`) and, in the same PR, rewrites the follow-on items in `docs/delivery/plan.md`. When the PR reaches `review:approved`, before stopping, bring the GitHub issues in line with the approved design: edit the existing follow-on issues (those whose `Depends on` names this item), and create any new ones with `status:blocked` and `Depends on: <this item's ID>`. If you are no longer running by then, nothing is lost: follow-on implementers take scope from `docs/delivery/plan.md` on `main`, which wins over issue text.

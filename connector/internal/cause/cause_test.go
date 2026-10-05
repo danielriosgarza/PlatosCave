@@ -74,6 +74,12 @@ func TestA36_CauseClassification(t *testing.T) {
 			e.RouteBefore, e.RouteAfter = "eth0", "wlan0"
 			return e
 		}(), VPN},
+		{"near miss 3: a Wi-Fi drop whose route lookup failed is network_change, not vpn", func() Evidence {
+			e := lower(base)
+			e.Before, e.After = snap(wifi, ethIf), snap(ethIf)
+			e.RouteBefore, e.RouteAfter = "wlan0", ""
+			return e
+		}(), NetworkChange},
 		{"3 vpn: a Windows adapter described as a VPN went away", func() Evidence {
 			e := lower(base)
 			e.OS = "windows"
