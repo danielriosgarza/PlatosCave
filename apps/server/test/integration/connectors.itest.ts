@@ -20,13 +20,14 @@ const config = loadConfig({ NODE_ENV: 'test', LOG_LEVEL: 'silent' });
 const origin = normaliseOrigin(config.APP_ORIGIN);
 const key = pairingKey(config.SESSION_SECRET);
 
-/** Links the routes close; the real registry arrives in P3-02a. */
+/** Links the routes close, recorded; link-auth.itest.ts runs the real registry. */
 const closed: { connectorId: string; code: number; reason: string }[] = [];
 const fakeLinks: LinkRegistry = {
-  get: (connectorId): Link => ({
-    connectorId,
-    close: (code, reason) => void closed.push({ connectorId, code, reason }),
-  }),
+  get: (connectorId) =>
+    ({
+      connectorId,
+      close: (code: number, reason: string) => void closed.push({ connectorId, code, reason }),
+    }) as Partial<Link> as Link,
 };
 
 let testDb: TestDatabase;

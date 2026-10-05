@@ -4,7 +4,8 @@ import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
 import sensible from '@fastify/sensible';
 import swagger from '@fastify/swagger';
-import type { RouteContract } from '@parallax/contracts';
+import websocket from '@fastify/websocket';
+import { LINK_SUBPROTOCOL, type RouteContract } from '@parallax/contracts';
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import {
   jsonSchemaTransform,
@@ -23,7 +24,8 @@ import { NOT_FOUND } from './http/register';
 import { isApiPath, registerStatic } from './http/static';
 import { createMailer, type Mailer } from './mail/mailer';
 import { loadModules } from './modules';
-import type { LinkRegistry } from './relay/links';
+import { emptyLinkRegistry, type LinkRegistry, LiveLinkRegistry } from './relay/links';
+import { normaliseOrigin } from './relay/signing';
 import { createStorage } from './storage/create';
 import type { Storage } from './storage/storage';
 
@@ -41,7 +43,16 @@ export interface Deps {
   boss?: PgBoss;
   /** Work that outlives its request (mail delivery); defaults to one the server drains on close. */
   background?: BackgroundTasks;
-  /** Live connector links; defaults to the empty registry until P3-02a. */
+  /**
+   * `api` serves the HTTP API; `relay` serves everything `api` does plus the routes that need a
+   * live connector link (`http/relay/*.routes.ts`, docs/design/connector.md §10.1). Defaults to
+   * `api`.
+   */
+  mode?: 'api' | 'relay';
+  /**
+   * Live connector links. `relay` mode builds the live registry when none is injected; `api`
+   * mode holds no links, so every connector reads as offline there.
+   */
   links?: LinkRegistry;
 }
 
@@ -56,6 +67,7 @@ export interface RouteDeps extends Deps {
   background: BackgroundTasks;
   /** The injected object store, or the one STORAGE_DRIVER selects. */
   storage: Storage;
+  links: LinkRegistry;
 }
 
 /** How long close waits for background work, inside the 10 s stop grace main.ts documents. */
@@ -115,8 +127,22 @@ export async function buildApp(config: Config, deps: Deps = {}): Promise<Fastify
     const left = await background.settled(BACKGROUND_CLOSE_TIMEOUT_MS);
     if (left > 0) app.log.warn({ left }, 'abandoning background tasks still running at close');
   });
+  const relay = deps.mode === 'relay';
+  const links =
+    deps.links ??
+    (relay && deps.db
+      ? new LiveLinkRegistry({
+          db: deps.db,
+          origin: normaliseOrigin(config.APP_ORIGIN),
+          now,
+          log: app.log.child({ component: 'links' }),
+        })
+      : emptyLinkRegistry);
+  // Links close before the server does: 1001 tells connectors to redial (§4.6).
+  if (links instanceof LiveLinkRegistry) app.addHook('preClose', async () => links.closeAll());
   const routeDeps: RouteDeps = {
     ...deps,
+    links,
     config,
     now,
     requireDb: () => {
@@ -184,7 +210,22 @@ export async function buildApp(config: Config, deps: Deps = {}): Promise<Fastify
     transform: jsonSchemaTransform,
   });
 
+  if (relay) {
+    // Link messages up to max(maxControl, maxPayload + 5) bytes (§4.1); only the link's
+    // subprotocol is agreed, and its route closes a socket that did not offer it.
+    const maxPayload = links instanceof LiveLinkRegistry ? links.maxMessageBytes : 65541;
+    await app.register(websocket, {
+      options: {
+        maxPayload,
+        handleProtocols: (offered) => (offered.has(LINK_SUBPROTOCOL) ? LINK_SUBPROTOCOL : false),
+      },
+    });
+  }
+
   const routes = await loadModules(resolve(import.meta.dirname, 'http/routes'), '.routes.ts');
+  if (relay) {
+    routes.push(...(await loadModules(resolve(import.meta.dirname, 'http/relay'), '.routes.ts')));
+  }
   for (const { file, mod } of routes) {
     if (typeof mod.default !== 'function') {
       throw new Error(`${file} does not default-export a route registrar`);

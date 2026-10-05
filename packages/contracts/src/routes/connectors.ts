@@ -191,3 +191,18 @@ export const unpairConnector = defineRoute({
   errors: { 404: ErrorBody, 429: errorBody },
   examples: { body: signedExample },
 });
+
+/**
+ * The connector's link (docs/design/connector.md §4): a WebSocket with the subprotocol
+ * `parallax.connector.v1`, served in `relay` mode. Public: the challenge and the connector's
+ * Ed25519 signature are the credential (§4.2); refusals after the upgrade are close codes (§4.6).
+ */
+export const connectorLink = defineRoute({
+  method: 'GET',
+  path: '/api/connector/v1/link',
+  scope: { kind: 'public' },
+  summary: 'Connector link (WebSocket, subprotocol parallax.connector.v1)',
+  websocket: true,
+  response: z.never(),
+  examples: {},
+});

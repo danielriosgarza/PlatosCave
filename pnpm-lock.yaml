@@ -87,6 +87,9 @@ importers:
       '@fastify/swagger':
         specifier: 9.9.0
         version: 9.9.0
+      '@fastify/websocket':
+        specifier: 11.3.1
+        version: 11.3.1
       '@parallax/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
@@ -169,6 +172,9 @@ importers:
       '@types/pg':
         specifier: 8.23.1
         version: 8.23.1
+      '@types/ws':
+        specifier: 8.18.2
+        version: 8.18.2
       drizzle-kit:
         specifier: 0.31.11
         version: 0.31.11
@@ -1040,6 +1046,9 @@ packages:
   '@fastify/swagger@9.9.0':
     resolution: {integrity: sha512-d21Im1l3KoF2kmzJHOYL50Erjhj1qUUudQsW9hzwYTE7likjvMx7AQKpClyZbdhrqGXbl+fU4dI2S7BaLpFIvw==}
 
+  '@fastify/websocket@11.3.1':
+    resolution: {integrity: sha512-3117Fteg0MC9zRl0ilNAQelRb+PNDvNuWe0yJ+jnLthaPPZnlml+GraGpesNUEQvLl8+3C+W4aKZz10XmQ10Mg==}
+
   '@grpc/grpc-js@1.14.5':
     resolution: {integrity: sha512-7VZM+SVdEcUUqSQeNI3zM8Qs/BhQKZndPo2h5VkYkAM8Iz0wJIa8mKV5ekQGqG8UUsnkQ0NMxIxwkIHYvj0qOw==}
     engines: {node: '>=12.10.0'}
@@ -1475,6 +1484,9 @@ packages:
   '@types/unist@3.0.3':
     resolution: {integrity: sha512-ko/gIFJRv177XgZsZcBwnqJN5x/Gien8qNOn0D5bQU/zAzVf9Zt3BlcUiLqhV9y4ARk0GbT3tnUiPNgnTXzc/Q==}
 
+  '@types/ws@8.18.2':
+    resolution: {integrity: sha512-67MQl+fpWKVTT1NYdnmo3U4sc/xPo/zQBncVnI74qmQa0z/b+1g6iYqNmGCPbxO+zz2aklb08a0oHfegiVd0/w==}
+
   '@ungap/structured-clone@1.4.0':
     resolution: {integrity: sha512-1mEZtMKPM09vDmQt5y7YvmN2+DFTP7Tg0EWXdic8/C6VRnpb33e4ghisCIE3WZjsE2N8mf+QV1Zqh7ZFYLWInQ==}
 
@@ -1855,6 +1867,9 @@ packages:
         optional: true
       sqlite3:
         optional: true
+
+  duplexify@4.1.3:
+    resolution: {integrity: sha512-M3BmBhwJRZsSx38lZyhE53Csddgzl5R7xGJNk7CVddZD6CcmwMCH8J+7AprIrQKH7TonKxaCjcv27Qmf+sQ+oA==}
 
   electron-to-chromium@1.5.442:
     resolution: {integrity: sha512-najZYZ3+ZpjN1z3VOsrBiv5ej18vQgfV2lvEmxWzfmKrk4bdm3Owseyud4yGU6DfFn9pyunoAHDDyM4KmP78Ew==}
@@ -2779,6 +2794,9 @@ packages:
   stream-browserify@3.0.0:
     resolution: {integrity: sha512-H73RAHsVBapbim0tU2JwwOiXUj+fikfiaoYAKHF3VJfA0pe2BCzkhAHBlLG6REzE+2WNZcxOXjK7lkso+9euLA==}
 
+  stream-shift@1.0.3:
+    resolution: {integrity: sha512-76ORR0DO1o1hlKwTbi/DM3EXWGf3ZJYO8cXX5RJwnul2DEg2oyoZyjLNoQM8WsvZiFKCRfC1O0J7iCvie3RZmQ==}
+
   string-width@4.2.3:
     resolution: {integrity: sha512-wKyQRQpjJ0sIp62ErSZdGsjMJWsap5oRNihHhu6G7JVO/9jIB6UyevL+tXuOqrng8j/cxKTWyWUwvSTriiZz/g==}
     engines: {node: '>=8'}
@@ -3102,6 +3120,18 @@ packages:
 
   wrappy@1.0.2:
     resolution: {integrity: sha512-l4Sp/DRseor9wL6EvV2+TuQn63dMkPjZ/sp9XkghTEbV9KlPS1xUsZ3u7/IQO4wxtcFB4bgpQPRcR3QCvezPcQ==}
+
+  ws@8.22.0:
+    resolution: {integrity: sha512-Ydggc987+RO0AnWtZ/7Wq9FtNvcrL1b/RO0ud9mWjUPgDrsAAwQSF51sm2hm1XofbU/4jkpGEsLFsZZxU+1DOg==}
+    engines: {node: '>=10.0.0'}
+    peerDependencies:
+      bufferutil: ^4.0.1
+      utf-8-validate: '>=5.0.2'
+    peerDependenciesMeta:
+      bufferutil:
+        optional: true
+      utf-8-validate:
+        optional: true
 
   xml-name-validator@5.0.0:
     resolution: {integrity: sha512-EvGK8EJ3DhaHfbRlETOWAS5pO9MZITeauHKJyb8wyajUfQUenkIg2MvLDTZ4T/TgIcm3HU0TFBgWWboAZ30UHg==}
@@ -3834,6 +3864,15 @@ snapshots:
     transitivePeerDependencies:
       - supports-color
 
+  '@fastify/websocket@11.3.1':
+    dependencies:
+      duplexify: 4.1.3
+      fastify-plugin: 6.0.0
+      ws: 8.22.0
+    transitivePeerDependencies:
+      - bufferutil
+      - utf-8-validate
+
   '@grpc/grpc-js@1.14.5':
     dependencies:
       '@grpc/proto-loader': 0.8.1
@@ -4228,6 +4267,10 @@ snapshots:
 
   '@types/unist@3.0.3': {}
 
+  '@types/ws@8.18.2':
+    dependencies:
+      '@types/node': 22.20.4
+
   '@ungap/structured-clone@1.4.0': {}
 
   '@vitejs/plugin-react@6.1.1(vite@8.3.1(@types/node@22.20.4)(esbuild@0.28.2)(jiti@2.7.0)(tsx@4.23.15)(yaml@2.9.1))':
@@ -4482,6 +4525,13 @@ snapshots:
     optionalDependencies:
       '@types/pg': 8.23.1
       pg: 8.23.0
+
+  duplexify@4.1.3:
+    dependencies:
+      end-of-stream: 1.4.5
+      inherits: 2.0.4
+      readable-stream: 3.6.2
+      stream-shift: 1.0.3
 
   electron-to-chromium@1.5.442: {}
 
@@ -5713,6 +5763,8 @@ snapshots:
       inherits: 2.0.4
       readable-stream: 3.6.2
 
+  stream-shift@1.0.3: {}
+
   string-width@4.2.3:
     dependencies:
       emoji-regex: 8.0.0
@@ -5976,6 +6028,8 @@ snapshots:
       strip-ansi: 6.0.1
 
   wrappy@1.0.2: {}
+
+  ws@8.22.0: {}
 
   xml-name-validator@5.0.0: {}
 
