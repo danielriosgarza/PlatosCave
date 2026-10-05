@@ -57,6 +57,13 @@
       "when": 1791157641153,
       "tag": "0007_p3-02_connectors",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1791179287374,
+      "tag": "0008_p3-15_assignments",
+      "breakpoints": true
     }
   ]
 }
