@@ -103,4 +103,10 @@ DO $$ BEGIN
     'ALTER DEFAULT PRIVILEGES FOR ROLE %I IN SCHEMA pgboss_exec GRANT USAGE ON SEQUENCES TO parallax_runner',
     current_user);
 END $$;--> statement-breakpoint
-ALTER ROLE parallax_runner SET statement_timeout = '30s';
+-- Already applied by scripts/runner-role.sql where operators pre-created the role; the
+-- application role may then lack the privilege to alter it.
+DO $$ BEGIN
+  ALTER ROLE parallax_runner SET statement_timeout = '30s';
+EXCEPTION WHEN insufficient_privilege THEN
+  RAISE NOTICE 'parallax_runner statement_timeout left as set by scripts/runner-role.sql';
+END $$;

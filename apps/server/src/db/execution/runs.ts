@@ -142,9 +142,12 @@ async function jobOf(
     row.checkSet,
     row.id,
     runtime,
-    row.reason === 'replay' ? row.imageRef : undefined,
+    row.reason === 'replay' && isPinnable(row.imageRef) ? row.imageRef : undefined,
   );
 }
+
+/** A reference a job may pin (`runtime.image`): a repository digest or a Docker image id. */
+const isPinnable = (ref: string) => /^sha256:[0-9a-f]{64}$|@sha256:[0-9a-f]{64}$/.test(ref);
 
 /**
  * Sends a committed row's job with the id written on the row (§2 step 4), then marks the send
@@ -288,7 +291,16 @@ export async function requestRun(
     // The cap counts the student's own sample runs in every class (forOwnRows, §8.4) and writes
     // nothing to them; their jobs are looked up in one statement.
     const own = await tx
-      .select()
+      .select({
+        id: executionJobs.id,
+        bossJobId: executionJobs.bossJobId,
+        state: executionJobs.state,
+        classId: executionJobs.classId,
+        attemptId: executionJobs.attemptId,
+        questionId: executionJobs.questionId,
+        jobSentAt: executionJobs.jobSentAt,
+        queuedAt: executionJobs.queuedAt,
+      })
       .from(executionJobs)
       .where(
         and(
@@ -578,9 +590,12 @@ export type ReplayRefusal =
 
 /**
  * Instructor replay or regrade of a question's grading (§9). Both run the attempt's pinned
- * revision on the stored snapshot of the latest full run and create new records. A replay pins
- * the image of the latest recorded full result and keeps its grader version; a regrade runs the
- * runtime's current image with a recomputed grader version.
+ * revision on the stored snapshot of the latest full run and create new records. A replay keeps
+ * the original grader version and pins the image of the latest recorded full result; a run that
+ * never produced one (an infrastructure failure, the case NeedsReview asks to replay, §8.7) is
+ * replayed on the image its row was sent with: pinned when that is a digest or image id, else the
+ * runtime's configured reference, as long as it still yields the original grader version. A
+ * regrade runs the runtime's current image with a recomputed grader version.
  */
 export async function requestReplay(
   db: Db,
@@ -622,8 +637,15 @@ export async function requestReplay(
       .where(and(full, forClass(scope, executionResults)))
       .orderBy(desc(executionResults.createdAt))
       .limit(1);
-    if (!recorded) return { ok: false, reason: 'no_result' };
-    image = recorded.imageDigest ?? recorded.imageId;
+    if (recorded) image = recorded.imageDigest ?? recorded.imageId;
+    else if (isPinnable(original.imageRef)) image = original.imageRef;
+    else if (
+      original.imageRef !== runtimeImage(runtime) ||
+      graderVersion(question, runtime) !== original.graderVersion
+    ) {
+      // The image the failed run was sent with is no longer the runtime's: regrade instead.
+      return { ok: false, reason: 'no_result' };
+    }
   }
   const fields = newRow(scope, attempt, question, runtime, original.snapshot, 'full', now);
   const built = buildRunnerJob(question, original.snapshot, 'full', fields.id, runtime, image);
@@ -638,7 +660,10 @@ export async function requestReplay(
         reason: input.reason,
         limits: built.job.limits,
         priority: PRIORITY[input.reason],
-        ...(image !== undefined && { imageRef: image, graderVersion: original.graderVersion }),
+        ...(input.reason === 'replay' && {
+          imageRef: image ?? original.imageRef,
+          graderVersion: original.graderVersion,
+        }),
         requestedBy: scope.user.id,
         note: input.note || null,
       })

@@ -1,10 +1,12 @@
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
+import { requestReplay } from '../../src/db/execution/runs';
 import { auditEvents, testAttempts } from '../../src/db/schema';
-import { ids } from '../fixtures/world';
+import { asClassScope, ids } from '../fixtures/world';
 import {
   attemptUrl,
   call,
+  config,
   DEV_IMAGE_ID,
   drain,
   type ExecWorld,
@@ -164,15 +166,66 @@ describe('A18 run unavailable', () => {
     expect(audited?.action).toBe('execution.replay_requested');
   });
 
-  test('A18 a regrade needs a note and runs the current image; a run without a result cannot be replayed', async () => {
+  test('A18 a grading run that ended without a result is replayed on the image it was sent with', async () => {
+    const base = attemptUrl(ids.classA, attempt);
+    const before = await call(w, 'priya', 'GET', `${base}/results`);
+    const failed = before.body.runs.find(
+      (r: { reason: string; questionId: string }) =>
+        r.reason === 'grading' && r.questionId === 'mean',
+    );
+    expect(failed).toMatchObject({ state: 'infrastructure_error', result: null });
+
+    // Once the runtime's image is no longer the one the failed run was sent with, only a regrade
+    // can run it: a replay would not be the identical grading.
+    const scope = asClassScope(ids.classA, ids.statistics, ids.priya);
+    const moved = config.RUNNER_RUNTIMES.map((r) => ({
+      ...r,
+      image: 'parallax-runner-python:next',
+    }));
+    expect(
+      await requestReplay(
+        w.testDb.db,
+        () => ({ boss: w.boss, runtimes: moved }),
+        scope,
+        attempt,
+        'mean',
+        { reason: 'replay', note: '' },
+        w.clock.now,
+      ),
+    ).toEqual({ ok: false, reason: 'no_result' });
+
+    tick();
+    const replay = await call(w, 'priya', 'POST', `${base}/questions/mean/replays`, {
+      reason: 'replay',
+    });
+    expect(replay.status).toBe(202);
+    const job = await w.runner.take();
+    // The failed run was sent with the configured `:dev` reference, not a digest: unpinned.
+    expect(job.data).toMatchObject({
+      jobId: replay.body.runId,
+      set: 'full',
+      runtime: { id: 'python-3.12', language: 'python' },
+    });
+    expect(job.data.runtime.image).toBeUndefined();
+    expect(await rowOf(w, replay.body.runId)).toMatchObject({
+      reason: 'replay',
+      graderVersion: failed.graderVersion,
+      imageRef: failed.imageRef,
+      codeHash: failed.codeHash,
+    });
+    await w.runner.finish(job);
+    expect((await call(w, 'priya', 'GET', `${base}/runs/${replay.body.runId}`)).body.state).toBe(
+      'passed',
+    );
+    expect((await rowOf(w, failed.runId)).state).toBe('infrastructure_error');
+  });
+
+  test('A18 a regrade needs a note and runs the current image', async () => {
     const base = attemptUrl(ids.classA, attempt);
     expect(
       (await call(w, 'priya', 'POST', `${base}/questions/mean/replays`, { reason: 'regrade' }))
         .status,
     ).toBe(400);
-    expect(
-      (await call(w, 'priya', 'POST', `${base}/questions/mean/replays`, { reason: 'replay' })).body,
-    ).toEqual({ error: 'no_result' });
     tick();
     const regrade = await call(w, 'priya', 'POST', `${base}/questions/mean/replays`, {
       reason: 'regrade',
