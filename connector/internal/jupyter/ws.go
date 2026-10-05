@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"strings"
 	"sync/atomic"
 
 	"github.com/coder/websocket"
@@ -18,11 +17,11 @@ const MaxChannelMessage = 32 << 20
 
 // DialChannel opens a kernel channel WebSocket with the token in the Authorization header and
 // the server's own origin, without a subprotocol (Jupyter's JSON text dialect).
-func (c *Client) DialChannel(ctx context.Context, uri string) (*websocket.Conn, error) {
+func (c *Client) DialChannel(ctx context.Context, path, rawQuery string) (*websocket.Conn, error) {
 	h := http.Header{}
 	h.Set("Authorization", "token "+c.token)
 	h.Set("Origin", c.Origin())
-	u := "ws" + strings.TrimPrefix(c.target(uri), "http")
+	u := c.target("ws", path, rawQuery)
 	conn, resp, err := websocket.Dial(ctx, u, &websocket.DialOptions{HTTPClient: c.hc, HTTPHeader: h})
 	if err != nil {
 		if resp != nil && (resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden) {

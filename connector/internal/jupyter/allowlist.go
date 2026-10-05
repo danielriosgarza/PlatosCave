@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/url"
 	"regexp"
+	"runtime"
 	"strings"
 	"sync"
 
@@ -115,8 +116,10 @@ const (
 // Request is an allowed request: its operation and the exact path and query to send.
 type Request struct {
 	Op Op
-	// URI is the decoded path plus a re-encoded query, to send to Jupyter.
-	URI string
+	// Path is the decoded path and RawQuery the re-encoded query the allowlist approved. They
+	// are kept apart so nothing in the path can become a query when the URL is built.
+	Path     string
+	RawQuery string
 	// KernelID is the kernel the path names, if any.
 	KernelID string
 }
@@ -161,15 +164,15 @@ func checkSession(method, path string, segs []string, s Scope) (Request, error) 
 	// segs[0] is "api".
 	switch {
 	case len(segs) == 2 && segs[1] == "status" && method == "GET":
-		return Request{Op: OpStatus, URI: path}, nil
+		return Request{Op: OpStatus, Path: path}, nil
 	case len(segs) == 2 && segs[1] == "kernelspecs" && method == "GET":
-		return Request{Op: OpKernelspecs, URI: path}, nil
+		return Request{Op: OpKernelspecs, Path: path}, nil
 	case len(segs) == 2 && segs[1] == "kernels":
 		switch method {
 		case "GET":
-			return Request{Op: OpListKernels, URI: path}, nil
+			return Request{Op: OpListKernels, Path: path}, nil
 		case "POST":
-			return Request{Op: OpStartKernel, URI: path}, nil
+			return Request{Op: OpStartKernel, Path: path}, nil
 		}
 	case len(segs) == 3 && segs[1] == "kernels":
 		id, err := ownKernel(segs[2], s)
@@ -178,9 +181,9 @@ func checkSession(method, path string, segs []string, s Scope) (Request, error) 
 		}
 		switch method {
 		case "GET":
-			return Request{Op: OpKernelState, URI: path, KernelID: id}, nil
+			return Request{Op: OpKernelState, Path: path, KernelID: id}, nil
 		case "DELETE":
-			return Request{Op: OpDeleteKernel, URI: path, KernelID: id}, nil
+			return Request{Op: OpDeleteKernel, Path: path, KernelID: id}, nil
 		}
 	case len(segs) == 4 && segs[1] == "kernels" && method == "POST" && (segs[3] == "interrupt" || segs[3] == "restart"):
 		id, err := ownKernel(segs[2], s)
@@ -191,7 +194,7 @@ func checkSession(method, path string, segs []string, s Scope) (Request, error) 
 		if segs[3] == "restart" {
 			op = OpRestartKernel
 		}
-		return Request{Op: op, URI: path, KernelID: id}, nil
+		return Request{Op: op, Path: path, KernelID: id}, nil
 	}
 	return Request{}, notAllowed("%s %s is not served", method, path)
 }
@@ -252,11 +255,7 @@ func checkContents(method, path string, segs []string, query url.Values, s Scope
 	if len(rel) == len(root) && (op == OpContentsPut || op == OpContentsDelete) {
 		return Request{}, notAllowed("%s names the workspace itself", path)
 	}
-	uri := path
-	if len(query) > 0 {
-		uri += "?" + query.Encode()
-	}
-	return Request{Op: op, URI: uri}, nil
+	return Request{Op: op, Path: path, RawQuery: query.Encode()}, nil
 }
 
 // CheckWS applies the table of design §7 to a `ws_open`: only a kernel channel of a kernel the
@@ -280,7 +279,7 @@ func CheckWS(rawPath string, protocols []string, s Scope) (Request, error) {
 	if len(query) != 1 || len(query["session_id"]) != 1 || !reKernelUUID.MatchString(query.Get("session_id")) {
 		return Request{}, notAllowed("a kernel channel takes exactly session_id=<uuid>")
 	}
-	return Request{Op: OpChannels, URI: path + "?" + query.Encode(), KernelID: id}, nil
+	return Request{Op: OpChannels, Path: path, RawQuery: query.Encode(), KernelID: id}, nil
 }
 
 // splitPath applies the path rules of design §7 and returns the decoded path and the query.
@@ -304,6 +303,8 @@ func splitPath(raw string) (string, url.Values, error) {
 		return "", nil, notAllowed("the path is longer than %d bytes", maxPathLen)
 	case strings.ContainsAny(path, "\x00\\"):
 		return "", nil, notAllowed("the path has a NUL or a backslash")
+	case strings.ContainsAny(path, "?#"):
+		return "", nil, notAllowed("the path has an encoded ? or #")
 	case strings.ContainsFunc(path, func(r rune) bool { return r < 0x20 || r == 0x7f }):
 		return "", nil, notAllowed("the path has a control character")
 	case !strings.HasPrefix(path, "/api/"):
@@ -318,6 +319,9 @@ func splitPath(raw string) (string, url.Values, error) {
 		}
 		if strings.HasPrefix(seg, ".") {
 			return "", nil, notAllowed("the path has a . or .. segment, or a hidden one")
+		}
+		if runtime.GOOS == "windows" && strings.Contains(seg, ":") {
+			return "", nil, notAllowed("a path segment with : names a drive or a stream on Windows")
 		}
 	}
 	query, err := parseQuery(rawQuery)

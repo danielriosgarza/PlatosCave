@@ -121,6 +121,22 @@ func TestTestConnectionLocalStages(t *testing.T) {
 			t.Errorf("outcome %s, environment %+v", res.Outcome, res.Environment)
 		}
 	})
+	t.Run("an interpreter under ~/ is found in the home directory", func(t *testing.T) {
+		dir := jupytertest.Install(t, "")
+		home := t.TempDir()
+		t.Setenv("HOME", home)
+		t.Setenv("USERPROFILE", home)
+		venv := filepath.Join(home, "venv", "bin")
+		os.MkdirAll(venv, 0o700)
+		name := filepath.Base(jupytertest.Python(dir))
+		if err := os.Rename(jupytertest.Python(dir), filepath.Join(venv, name)); err != nil {
+			t.Fatal(err)
+		}
+		res := runTest(t, testReq(t.TempDir(), protocol.Runtime{Mode: "start", Python: "~/venv/bin/" + name}))
+		if res.Outcome != "ready_to_start" || res.Environment.Runtime != "Python 3.12.8" {
+			t.Errorf("outcome %s: %+v", res.Outcome, res.Stages)
+		}
+	})
 	t.Run("missing workspace blocks the rest", func(t *testing.T) {
 		jupytertest.Install(t, "")
 		res := runTest(t, testReq(filepath.Join(t.TempDir(), "nope"), protocol.Runtime{Mode: "start"}))
@@ -269,6 +285,30 @@ func attachFixtureToken(t *testing.T, listedToken string) (string, int, *jupyter
 	t.Setenv(jupytertest.EnvList, fmt.Sprintf(`{"hostname": "127.0.0.1", "port": %d, "pid": %d, "root_dir": %q, "token": %q, "url": "http://127.0.0.1:%d/", "version": "2.21.1"}`,
 		port, os.Getpid(), root, listedToken, port))
 	return ws, port, fake
+}
+
+func TestOpenLocalStartWithInterpreterUnderHome(t *testing.T) {
+	dir := jupytertest.Install(t, "")
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("USERPROFILE", home)
+	name := filepath.Base(jupytertest.Python(dir))
+	os.MkdirAll(filepath.Join(home, "env"), 0o700)
+	if err := os.Rename(jupytertest.Python(dir), filepath.Join(home, "env", name)); err != nil {
+		t.Fatal(err)
+	}
+	l := &Local{OS: "linux", Arch: "amd64"}
+	rt, err := l.Open(context.Background(), &protocol.OpenSession{RequestID: requestID, SessionID: requestID,
+		Target: protocol.Target{Kind: "local", Workspace: t.TempDir()}, Runtime: protocol.Runtime{Mode: "start", Python: "~/env/" + name},
+		Lease: protocol.Lease{IdleTimeoutMin: 30, GracePeriodMin: 5}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rt.Process.Stop(context.Background(), jupyter.DefaultStopTimes)
+	recs := jupytertest.Records(t, dir)
+	if len(recs) != 1 || recs[0].Argv[0] != filepath.Join(home, "env", name) {
+		t.Errorf("started %+v", recs)
+	}
 }
 
 func TestOpenLocalAttachIsNotOwned(t *testing.T) {

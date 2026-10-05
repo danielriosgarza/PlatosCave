@@ -72,7 +72,11 @@ func TestAllowlistAcceptsEveryRow(t *testing.T) {
 			t.Errorf("%s %s %s refused: %v", c.purpose, c.method, c.path, err)
 			continue
 		}
-		if r.Op != c.op || r.URI != c.uri {
+		uri := r.Path
+		if r.RawQuery != "" {
+			uri += "?" + r.RawQuery
+		}
+		if r.Op != c.op || uri != c.uri {
 			t.Errorf("%s %s = %+v, want op %d uri %q", c.method, c.path, r, c.op, c.uri)
 		}
 	}
@@ -111,6 +115,12 @@ func TestAllowlistRefusesPathTricks(t *testing.T) {
 		"/api/contents/a.csv#frag",
 		"/api/contents/" + strings.Repeat("a", 1100),
 		"/api/contents/a.csv%",
+		"/api/contents/a%3Ftoken=x",
+		"/api/contents/a%3ftoken=x",
+		"/api/contents/a%3F_xsrf=1",
+		"/api/contents/a%3Fcontent=1",
+		"/api/contents/a%23frag",
+		"/api/contents/dir%3F/b.csv",
 	}
 	for _, p := range paths {
 		for _, m := range []string{"GET", "PUT"} {
@@ -286,9 +296,45 @@ func fakeJupyter(t *testing.T, token string) (*jupytertest.Server, *Client) {
 	return fake, NewClient(n, token, LoopbackDial(n))
 }
 
+// TestURLHasOnlyTheApprovedQuery: what reaches Jupyter is exactly the path and the query the
+// allowlist approved; an encoded ? or # cannot start a query of its own.
+func TestURLHasOnlyTheApprovedQuery(t *testing.T) {
+	fake, c := fakeJupyter(t, "tok-query-0123456789")
+	for _, raw := range []string{"/api/contents/a%3Ftoken=x", "/api/contents/a%23x?content=1"} {
+		if _, err := CheckHTTP("contents", "GET", raw, ownScope("")); err == nil {
+			t.Errorf("%s accepted", raw)
+		}
+	}
+	r, err := CheckHTTP("contents", "GET", "/api/contents/data/My%20File.csv?type=file&content=1", ownScope(""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := c.Do(context.Background(), "GET", r.Path, r.RawQuery, nil, nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	// Even a path holding ? and # (which the allowlist refuses) is escaped, never split.
+	resp, err = c.Do(context.Background(), "GET", "/api/contents/a?token=x#y", "", nil, nil, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	got := fake.Requests()
+	if len(got) != 2 {
+		t.Fatalf("%d requests", len(got))
+	}
+	if got[0].URI != "/api/contents/data/My%20File.csv?content=1&type=file" {
+		t.Errorf("first request %q", got[0].URI)
+	}
+	if got[1].URI != "/api/contents/a%3Ftoken=x%23y" {
+		t.Errorf("second request %q: the path became a query", got[1].URI)
+	}
+}
+
 func TestHeadersFiltered(t *testing.T) {
 	fake, c := fakeJupyter(t, "tok-headers-0123456789")
-	resp, err := c.Do(context.Background(), "GET", "/api/kernelspecs", protocol.Headers{
+	resp, err := c.Do(context.Background(), "GET", "/api/kernelspecs", "", protocol.Headers{
 		"accept":        "application/json",
 		"content-type":  "application/json",
 		"cookie":        "session=stolen",
@@ -331,7 +377,7 @@ func TestHeadersFiltered(t *testing.T) {
 
 func TestNoRedirectsFollowed(t *testing.T) {
 	fake, c := fakeJupyter(t, "tok-redirect-0123456789")
-	resp, err := c.Do(context.Background(), "GET", "/api/redirect", nil, nil, 0)
+	resp, err := c.Do(context.Background(), "GET", "/api/redirect", "", nil, nil, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -486,13 +532,13 @@ func TestTokenNeverInArgvURLOrLog(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
-	resp, err := p.Client.Do(ctx, "GET", "/api/contents/a.csv?content=1", nil, nil, 0)
+	resp, err := p.Client.Do(ctx, "GET", "/api/contents/a.csv", "content=1", nil, nil, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
 	io.Copy(io.Discard, resp.Body)
 	resp.Body.Close()
-	conn, err := p.Client.DialChannel(ctx, "/api/kernels/"+k1+"/channels?session_id="+s1)
+	conn, err := p.Client.DialChannel(ctx, "/api/kernels/"+k1+"/channels", "session_id="+s1)
 	if err == nil {
 		conn.CloseNow()
 	}

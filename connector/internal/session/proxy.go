@@ -168,7 +168,7 @@ func (m *Manager) serveHTTP(s *Session, c *jupyter.Client, msg *protocol.HTTP, r
 		}
 	}
 
-	resp, err := c.Do(ctx, msg.Method, req.URI, msg.Headers, body, length)
+	resp, err := c.Do(ctx, msg.Method, req.Path, req.RawQuery, msg.Headers, body, length)
 	if err != nil {
 		switch {
 		case errors.Is(err, errLength):
@@ -270,7 +270,7 @@ func (m *Manager) respond(ctx context.Context, st *link.Stream, status int, head
 
 func (m *Manager) serveWS(s *Session, c *jupyter.Client, req jupyter.Request, st *link.Stream) {
 	dctx, cancel := context.WithTimeout(s.ctx, sessionDeadline)
-	conn, err := c.DialChannel(dctx, req.URI)
+	conn, err := c.DialChannel(dctx, req.Path, req.RawQuery)
 	cancel()
 	if err != nil {
 		refuseStream(st, err)

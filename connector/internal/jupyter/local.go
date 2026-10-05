@@ -95,9 +95,10 @@ func Start(ctx context.Context, o StartOptions) (*Process, error) {
 	if o.PollInterval <= 0 {
 		o.PollInterval = 250 * time.Millisecond
 	}
-	redact.Register(o.Token)
 	var last error
 	for attempt := 0; attempt < startAttempts; attempt++ {
+		// A failed attempt's cleanup forgets the token, so each attempt registers it again.
+		redact.Register(o.Token)
 		p, err := startOnce(ctx, o)
 		if err == nil {
 			return p, nil

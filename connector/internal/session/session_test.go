@@ -703,3 +703,35 @@ func attachFixture(t *testing.T) (string, int, *jupytertest.Server) {
 		port, os.Getpid(), root, fake.Token, port))
 	return ws, port, fake
 }
+
+func TestDoubleStopStopsOnce(t *testing.T) {
+	jupytertest.Install(t, "")
+	e := newEnv(t, nil, protocol.Limits{})
+	e.openLocal(sessionA, reqA, t.TempDir(), protocol.Runtime{Mode: "start"})
+	e.send(&protocol.CloseSession{RequestID: reqB, SessionID: sessionA, Stop: true})
+	e.send(&protocol.CloseSession{RequestID: reqC, SessionID: sessionA, Stop: true})
+	answered := map[string]bool{}
+	stopped := 0
+	for stopped == 0 || len(answered) < 2 {
+		st := expect[*protocol.SessionState](e)
+		answered[st.RequestID] = true
+		switch st.State {
+		case StateStopped:
+			stopped++
+			if st.RequestID != reqB || st.Cause != "user_stop" {
+				t.Errorf("stopped = %+v", st)
+			}
+		case StateStopping:
+		default:
+			t.Fatalf("state %s during a stop", st.State)
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	if r, err := e.l.Next(ctx); err == nil {
+		t.Errorf("after the stop: %+v", r)
+	}
+	if stopped != 1 || !answered[reqC] {
+		t.Errorf("%d stopped, answers %v", stopped, answered)
+	}
+}

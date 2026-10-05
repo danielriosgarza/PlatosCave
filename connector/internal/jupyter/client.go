@@ -102,17 +102,17 @@ func FilterResponseHeaders(h http.Header) protocol.Headers {
 	return out
 }
 
-// target builds the URL for a checked URI (decoded path, encoded query).
-func (c *Client) target(uri string) string {
-	path, query, _ := strings.Cut(uri, "?")
-	u := url.URL{Scheme: "http", Host: c.host, Path: path, RawQuery: query}
+// target builds the URL from a decoded path and an encoded query, kept apart: a `?` or `#` in
+// the path is escaped by url.URL, never read as the start of a query.
+func (c *Client) target(scheme, path, rawQuery string) string {
+	u := url.URL{Scheme: scheme, Host: c.host, Path: path, RawQuery: rawQuery}
 	return u.String()
 }
 
 // Do sends one request. The relay's headers are filtered first; the token goes only in the
 // Authorization header, never in the URL.
-func (c *Client) Do(ctx context.Context, method, uri string, relayHeaders protocol.Headers, body io.Reader, length int64) (*http.Response, error) {
-	req, err := http.NewRequestWithContext(ctx, method, c.target(uri), body)
+func (c *Client) Do(ctx context.Context, method, path, rawQuery string, relayHeaders protocol.Headers, body io.Reader, length int64) (*http.Response, error) {
+	req, err := http.NewRequestWithContext(ctx, method, c.target("http", path, rawQuery), body)
 	if err != nil {
 		return nil, err
 	}
@@ -135,7 +135,7 @@ func (e *Failure) Error() string { return e.Detail }
 
 // call makes one of the connector's own calls and decodes a JSON answer.
 func (c *Client) call(ctx context.Context, method, path string, out any) error {
-	resp, err := c.Do(ctx, method, path, nil, nil, 0)
+	resp, err := c.Do(ctx, method, path, "", nil, nil, 0)
 	if err != nil {
 		return &Failure{Code: protocol.CodeNotebookServiceUnreachable, Detail: fmt.Sprintf("Jupyter did not answer %s", path)}
 	}

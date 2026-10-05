@@ -269,11 +269,18 @@ func (m *Manager) start(t target.Target, s *Session, req *protocol.OpenSession) 
 		m.logf("Session %s failed: %s %s", s.ID, f.Code, f.Detail)
 		s.mu.Lock()
 		s.state = StateFailed
+		pendingStop := s.stopRequested
 		s.mu.Unlock()
-		st := m.stateMsg(s, req.RequestID)
-		st.Code, st.Detail = f.Code, clip(redact.Redact(f.Detail))
 		m.remove(s)
-		m.send(st)
+		// Both the open request and a stop that arrived while starting get a terminal answer.
+		for _, id := range []string{req.RequestID, pendingStop} {
+			if id == "" {
+				continue
+			}
+			st := m.stateMsg(s, id)
+			st.Code, st.Detail = f.Code, clip(redact.Redact(f.Detail))
+			m.send(st)
+		}
 		return
 	}
 	s.mu.Lock()
@@ -281,10 +288,12 @@ func (m *Manager) start(t target.Target, s *Session, req *protocol.OpenSession) 
 	pendingStop := s.stopRequested
 	if pendingStop == "" {
 		s.state = StateReady
+	} else {
+		s.state = StateStopping
 	}
 	s.mu.Unlock()
 	if pendingStop != "" {
-		m.stop(s, pendingStop)
+		m.stop(s, pendingStop, StateReady)
 		return
 	}
 	m.logf("Session %s ready (%s, Jupyter %s).", s.ID, ownedWord(s.Owned), rt.JupyterVersion)
@@ -347,20 +356,21 @@ func (m *Manager) close(req *protocol.CloseSession) {
 		s.mu.Unlock()
 		m.send(m.stateMsg(s, req.RequestID))
 		return
-	case StateStopping:
+	case StateReady:
+		// Checked and changed under one lock, so two stop requests cannot both start a stop.
+		s.state = StateStopping
 		s.mu.Unlock()
-		m.send(m.stateMsg(s, req.RequestID))
+		go m.stop(s, req.RequestID, StateReady)
 		return
 	}
 	s.mu.Unlock()
-	go m.stop(s, req.RequestID)
+	m.send(m.stateMsg(s, req.RequestID)) // already stopping or ending
 }
 
-// stop stops an owned session's process and reports `stopped` only once it is gone.
-func (m *Manager) stop(s *Session, requestID string) {
+// stop stops an owned session's process, whose state the caller already set to stopping, and
+// reports `stopped` only once it is gone; a failed stop returns the session to prev.
+func (m *Manager) stop(s *Session, requestID, prev string) {
 	s.mu.Lock()
-	prev := s.state
-	s.state = StateStopping
 	rt := s.runtime
 	s.mu.Unlock()
 	m.logf("Session %s stopping at Parallax's request.", s.ID)

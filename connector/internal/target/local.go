@@ -35,6 +35,8 @@ func (l *Local) Test(ctx context.Context, req *protocol.TestConnection, progress
 	s := &stages{progress: progress, limit: l.StageLimit}
 	res := &protocol.TestResult{RequestID: req.RequestID}
 	rt := req.Runtime
+	python, pyErr := expandHome(rt.Python)
+	rt.Python = python
 	var resolved string
 	var info jupyter.RuntimeInfo
 	var server jupyter.Server
@@ -49,6 +51,9 @@ func (l *Local) Test(ctx context.Context, req *protocol.TestConnection, progress
 	})
 	s.run(ctx, "runtime", func(ctx context.Context) (*protocol.StageData, error) {
 		if rt.Mode == protocol.RuntimeStart {
+			if pyErr != nil {
+				return nil, pyErr
+			}
 			i, err := jupyter.ProbeRuntime(ctx, rt.Python)
 			if err != nil {
 				return nil, err
@@ -115,6 +120,9 @@ func (l *Local) Open(ctx context.Context, req *protocol.OpenSession) (*Runtime, 
 	rt := req.Runtime
 	resolved, err := checkWorkspace(req.Target.Workspace)
 	if err != nil {
+		return nil, err
+	}
+	if rt.Python, err = expandHome(rt.Python); err != nil {
 		return nil, err
 	}
 	if rt.Mode == protocol.RuntimeAttach {
@@ -195,6 +203,20 @@ func checkKernel(specs []protocol.Kernelspec, name string) error {
 		return fail(protocol.CodeKernelspecNotFound, "the kernel %s is not installed", name)
 	}
 	return nil
+}
+
+// expandHome turns a leading ~/ of a validated interpreter path (design §4.4 rule 5) into this
+// account's home directory: exec does not expand it, and on this computer there is no shell.
+func expandHome(p string) (string, error) {
+	rest, ok := strings.CutPrefix(p, "~/")
+	if !ok {
+		return p, nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return "", fail(protocol.CodeEnvironmentInvalid, "the home directory for %s is not known", p)
+	}
+	return filepath.Join(home, filepath.FromSlash(rest)), nil
 }
 
 // findAttach finds the server to attach to on port: a loopback listener from `jupyter server
