@@ -204,6 +204,7 @@ func (m *Manager) serveHTTP(s *Session, c *jupyter.Client, msg *protocol.HTTP, r
 				return
 			}
 			s.kernels.Add(id)
+			m.persist()
 			m.logf("Session %s started kernel %s.", s.ID, id)
 		case req.Op == jupyter.OpListKernels && ok:
 			if data, err = jupyter.FilterKernelList(data, &s.kernels); err != nil {
@@ -213,6 +214,7 @@ func (m *Manager) serveHTTP(s *Session, c *jupyter.Client, msg *protocol.HTTP, r
 			headers["content-length"] = strconv.Itoa(len(data))
 		case req.Op == jupyter.OpDeleteKernel && ok:
 			s.kernels.Remove(req.KernelID)
+			m.persist()
 		}
 		m.respond(ctx, st, resp.StatusCode, headers, bytes.NewReader(data), limit)
 	default:

@@ -62,6 +62,7 @@ func (s *syncBuffer) String() string {
 // env runs a manager behind a real link to the test server.
 type env struct {
 	t    *testing.T
+	srv  *testserver.Server
 	l    *testserver.Link
 	mgr  *Manager
 	log  *syncBuffer
@@ -71,11 +72,21 @@ type env struct {
 
 func newEnv(t *testing.T, mutate func(*Config), limits protocol.Limits) *env {
 	t.Helper()
+	return newEnvOn(t, mutate, func(srv *testserver.Server) {
+		if limits != (protocol.Limits{}) {
+			srv.LinkOptions.Limits = limits
+		}
+	})
+}
+
+// newEnvOn is newEnv with the test server's link options set by setup before the first link.
+func newEnvOn(t *testing.T, mutate func(*Config), setup func(*testserver.Server)) *env {
+	t.Helper()
 	srv := testserver.New()
 	t.Cleanup(srv.Close)
 	srv.LinkOptions.HeartbeatSeconds = 30
-	if limits != (protocol.Limits{}) {
-		srv.LinkOptions.Limits = limits
+	if setup != nil {
+		setup(srv)
 	}
 	id, err := identity.Generate()
 	if err != nil {
@@ -114,7 +125,7 @@ func newEnv(t *testing.T, mutate func(*Config), limits protocol.Limits) *env {
 	if err != nil {
 		t.Fatalf("no link: %v", err)
 	}
-	return &env{t: t, l: l, mgr: mgr, log: log, next: 1}
+	return &env{t: t, srv: srv, l: l, mgr: mgr, log: log, next: 1}
 }
 
 func (e *env) send(m protocol.Message) {
