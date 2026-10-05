@@ -450,6 +450,41 @@ describe('files panel', () => {
     expect(screen.getByLabelText('Files copied to Parallax')).toBeInTheDocument();
   });
 
+  it('A34 a folder that cannot be read keeps the panel and offers the way back', async () => {
+    const withDir = {
+      ...listing,
+      declared: [],
+      entries: [
+        ...listing.entries,
+        { path: 'sub', name: 'sub', type: 'directory', size: null, modified: null },
+      ],
+    };
+    stubApi((url) =>
+      url.includes('dir=sub')
+        ? { status: 409, body: { error: 'transfer_failed', code: 'not_found' } }
+        : url.includes('/files')
+          ? { status: 200, body: withDir }
+          : { status: 404 },
+    );
+    render(
+      wrap(
+        <FilesPanel
+          classId={CLASS_A}
+          sessionId={SESSION}
+          workingCopy={copy() as never}
+          onWorkingCopy={vi.fn()}
+        />,
+      ),
+    );
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'sub/' }));
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('The folder sub could not be read');
+    expect(screen.getByRole('checkbox', { name: 'Copy out.csv to Parallax' })).toBeInTheDocument();
+    await user.click(within(alert).getByRole('button', { name: 'Back to the workspace folder' }));
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
+  });
+
   it('A34 Import asks before it creates a new revision', async () => {
     const imported = copy({
       currentRevision: 3,
@@ -582,6 +617,25 @@ describe('submit panel', () => {
     );
   });
 
+  it('A34 a failed list of copied files is not reported as none copied', async () => {
+    stubApi(() => ({ status: 500, body: {} }));
+    render(
+      wrap(
+        <SubmitPanel
+          classId={CLASS_A}
+          sessionId={SESSION}
+          workingCopy={copy() as never}
+          environment={{}}
+        />,
+      ),
+    );
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(/could not be read/i);
+    expect(within(alert).getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+    expect(screen.queryByText(/no files have been copied/i)).toBeNull();
+    expect(screen.getByRole('button', { name: 'Submit notebook' })).toBeDisabled();
+  });
+
   it('A34 the receipt appears only with the server’s answer and a refusal shows none', async () => {
     let answer: { status: number; body: unknown } = {
       status: 400,
@@ -605,7 +659,9 @@ describe('submit panel', () => {
       ),
     );
     const user = userEvent.setup();
-    await user.click(await screen.findByRole('button', { name: 'Submit notebook' }));
+    const submitButton = await screen.findByRole('button', { name: 'Submit notebook' });
+    await waitFor(() => expect(submitButton).toBeEnabled());
+    await user.click(submitButton);
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'Not submitted. Transfer is not finished',
     );

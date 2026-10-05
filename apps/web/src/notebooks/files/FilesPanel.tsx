@@ -5,7 +5,7 @@ import {
 } from '@parallax/contracts/routes/transfers';
 import type { WorkingCopyView } from '@parallax/contracts/routes/workingCopies';
 import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { z } from 'zod';
 import { ApiError, call } from '../../api/client';
 import buttons from '../../components/Buttons.module.css';
@@ -61,11 +61,14 @@ export function FilesPanel({
     // Opening a folder keeps the panel, its selection and its acknowledgements on screen.
     placeholderData: keepPreviousData,
   });
-  const data = listing.data;
+  // The last listing that loaded stays on screen when another folder cannot be read.
+  const last = useRef<Listing | undefined>(undefined);
+  if (listing.data) last.current = listing.data;
+  const data = listing.data ?? last.current;
   const refresh = () => queryClient.invalidateQueries({ queryKey: ['files', classId, sessionId] });
 
-  if (listing.isPending && !listing.data) return <p role="status">Reading the workspace</p>;
   if (!data) {
+    if (listing.isPending) return <p role="status">Reading the workspace</p>;
     return (
       <section className={styles.panel} aria-labelledby="files-heading">
         <h3 id="files-heading">Files</h3>
@@ -87,6 +90,24 @@ export function FilesPanel({
         Workspace: <code>{data.workspace}</code> on {where(data.host)}. Only this folder is listed
         or changed; the rest of the computer is never read.
       </p>
+      {listing.isError ? (
+        <div role="alert">
+          <p>
+            {dir
+              ? `The folder ${dir} could not be read.`
+              : refusalText(listing.error, 'The workspace could not be read.')}{' '}
+            Nothing on the computer was changed.
+          </p>
+          <button type="button" className={buttons.tool} onClick={() => void listing.refetch()}>
+            Try again
+          </button>{' '}
+          {dir ? (
+            <button type="button" className={buttons.tool} onClick={() => setDir('')}>
+              Back to the workspace folder
+            </button>
+          ) : null}
+        </div>
+      ) : null}
       {data.declared.length > 0 ? (
         <CopyIn
           classId={classId}
@@ -197,7 +218,7 @@ function CopyIn({
         </>
       ) : (
         <p role="status">
-          The notebook’s files are in <code>{workspace}</code> on {where(host)}.
+          Copy to <code>{workspace}</code> on {where(host)} finished. See each file below.
         </p>
       )}
       {error ? <p role="alert">{error}</p> : null}
@@ -326,7 +347,7 @@ function Workspace({
 
   return (
     <div className={styles.row}>
-      <h4>In the workspace{dir ? `: ${dir}` : ''}</h4>
+      <h4>In the workspace{listing.dir ? `: ${listing.dir}` : ''}</h4>
       {dir ? (
         <button
           type="button"

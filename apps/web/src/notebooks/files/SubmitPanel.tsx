@@ -100,7 +100,19 @@ export function SubmitPanel({ classId, sessionId, workingCopy, environment }: Pr
         </li>
       </ul>
 
-      {available.length > 0 ? (
+      {transfers.isPending ? (
+        <p role="status">Reading the files copied to Parallax</p>
+      ) : transfers.isError ? (
+        <div role="alert">
+          <p>
+            {refusalText(transfers.error, 'The files copied to Parallax could not be read.')} The
+            list of files you can include is unknown, so submitting is paused.
+          </p>
+          <button type="button" className={buttons.tool} onClick={() => void transfers.refetch()}>
+            Try again
+          </button>
+        </div>
+      ) : available.length > 0 ? (
         <fieldset className={styles.fieldset}>
           <legend>Files copied to Parallax to include</legend>
           {available.map((t) => (
@@ -123,7 +135,7 @@ export function SubmitPanel({ classId, sessionId, workingCopy, environment }: Pr
       <button
         type="button"
         className={buttons.primary}
-        disabled={busy}
+        disabled={busy || !transfers.isSuccess}
         onClick={() => void submit()}
       >
         {busy ? 'Submitting' : 'Submit notebook'}
