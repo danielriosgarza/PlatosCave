@@ -15,7 +15,7 @@ The repository owner authorised this process on 2026-09-30, including fully auto
 - **If the permission system refuses `merge_pull_request`**, do not retry it or work around it with other tools. Label the dashboard issue `needs-human` (once, with an escalate record): "Orchestrator could not merge PR #<n>, which satisfies the merge rule. Merge it manually, or check the permission rule in `.claude/settings.json`." Continue with the other steps.
 - GitHub MCP tools (`mcp__github__*`, load with ToolSearch) for issues, comments, PRs, check runs and merges. Claude Code Remote tools: `create_session`, `get_session`, `list_sessions`, `send_later`, `delete_trigger`, `get_trigger`.
 - **Labels** on issues and PRs are written with `issue_write` `method: update` (`issue_number` = issue or PR number), whose `labels` **replaces the whole set**: read the current labels first, change only the family you are acting on (`status:*`, `review:*`, `needs-human`), and write every other label back unchanged.
-- **Launch parameters** for every session: `source_url: https://github.com/danielriosgarza/PlatosCave`, `permission_mode: auto` (sessions are unattended; if `create_session` rejects `auto`, launch nothing, label the dashboard issue `needs-human` with "Sessions cannot be launched in auto permission mode", and start the final message with `NEEDS HUMAN:`), environment inherited. Model IDs: Sonnet `claude-sonnet-5-5`, Opus `claude-opus-5-5`; no other model is launched. **Maximum effort** (owner decision, replaces Fable): the launch prompt begins with the line `ultrathink`; the launch record's `model=` stays the plain model ID.
+- **Launch parameters** for every session: `source_url: https://github.com/danielriosgarza/PlatosCave`, `permission_mode: auto` (sessions are unattended; if `create_session` rejects `auto`, launch nothing, label the dashboard issue `needs-human` with "Sessions cannot be launched in auto permission mode", and start the final message with `NEEDS HUMAN:`), environment inherited. Model IDs: Sonnet `claude-sonnet-5-5`, Opus `claude-opus-5-5`; no other model is launched. **Maximum effort** (owner decision, replaces Fable): the launch prompt includes the line `ultrathink` right after its slash-command line (the first line must stay `/review-pr …`, `/implement-issue …` or `/phase-audit …`, or the skill is not invoked); it affects only the first turn of the session, as `create_session` has no effort parameter; the launch record's `model=` stays the plain model ID.
 - **Launch record**: after each launch, post on the issue (implementer), the PR (reviewer) or the dashboard issue (auditor) a comment whose first line is
   `<!-- orchestrator launch role=<implementer|reviewer|auditor> item=<ID or phase-N> attempt=<n> model=<model id> session=<session id or pending> head=<sha or -> pr=<n or -> branch=<branch or -> at=<ISO> -->`
   followed by one human-readable line with the session link `https://claude.ai/code/<session id>`.
@@ -27,7 +27,7 @@ The repository owner authorised this process on 2026-09-30, including fully auto
 - **Dependency IDs** are the tokens on an issue's `Depends on:` line matching `P[0-4]-(\d\d|AUD\d+)[a-z]?`; ignore all other text (`none`, `—`, parentheses).
 - **The PR of an issue**: an open PR whose body contains `Closes #<issue>`, else an open PR whose title starts with the issue's `[ID]`.
 - **Verdict**: the latest issue comment on the PR (`pull_request_read` `get_comments`) whose body starts with `Review verdict:`. Ignore pull-request review bodies.
-- **Attempts** of an issue = number of `role=implementer` launch records on the issue newer than its latest escalate record (all, if none). Fresh launches and continuations count alike. Attempts 1–2 use the model from the issue's `model:` label; attempt 3 uses one step up (Sonnet → Opus → Opus at maximum effort; Opus at maximum effort stays as it is). The `model:fable` label (kept so existing issues and tooling still work) means Opus at maximum effort on every attempt (the prompt begins with `ultrathink`); so does attempt 3 of an `opus` item. There is no attempt 4: escalate instead.
+- **Attempts** of an issue = number of `role=implementer` launch records on the issue newer than its latest escalate record (all, if none). Fresh launches and continuations count alike. Attempts 1–2 use the model from the issue's `model:` label; attempt 3 uses one step up (Sonnet → Opus → Opus at maximum effort; Opus at maximum effort stays as it is). The `model:fable` label (kept so existing issues and tooling still work) means Opus at maximum effort on every attempt (the prompt has `ultrathink` on its second line); so does attempt 3 of an `opus` item. An issue-less PR has no implementer record: take the implementer model from the PR body or the session that opened it, and use Opus at maximum effort when it cannot be told. There is no attempt 4: escalate instead.
 - **Implementer model of a PR** = `model=` of the latest `role=implementer` launch record on its issue.
 - A launched session has **ended** if `get_session` shows `status_bucket` `completed`, `failed` or `review_ready`, or `blocked` with no update for 60 minutes. A record with `session=pending` older than 30 minutes is a failed launch.
 - **Live issues** = open `plan` issues labelled `status:in-progress` and not `needs-human`.
@@ -84,12 +84,13 @@ Reviewer model:
 - Linked issue labelled `security`, or the PR changes `.claude/`, `.github/`, `CLAUDE.md`, `docs/adr/`, `docs/delivery/README.md` or `scripts/session-start.sh` → Sonnet at maximum effort.
 - Two or more earlier `CHANGES REQUESTED` verdicts on the PR, or an issue-less PR → Sonnet at maximum effort.
 - Otherwise by the implementer model: Sonnet → Opus, Opus → Sonnet (`model:fable` items are implemented by Opus).
-- If the chosen model equals the implementer model, use Opus at maximum effort (Sonnet at maximum effort if the implementer was Opus). A reviewer is never the implementer's model.
-- Every reviewer chosen by the first two rules runs at maximum effort: its prompt begins with `ultrathink`.
+- If the chosen model equals the implementer model, use Opus at maximum effort. A reviewer is never the implementer's model.
+- Every reviewer chosen by the first two rules runs at maximum effort: its prompt has `ultrathink` on its second line, after the `/review-pr` line.
 
 Set `review:in-progress`, post the launch record (`head=` current SHA), then `create_session` with `title: "[<ID>] review PR #<n>"`, `source_revision: main` (never the PR branch: rules, `CLAUDE.md` and the SessionStart hook must come from `main`), `model`, tags `["parallax","reviewer","<ID>"]` (`<ID>` = `process` for an issue-less PR), and `prompt`:
 
 > /review-pr <PR number>
+> ultrathink  _(only at maximum effort; second line)_
 >
 > Rules come from `main`, where you start. If the skill is not listed, read `.claude/skills/review-pr/SKILL.md` now, before checking out the PR, and follow it for pull request #<PR number> in danielriosgarza/PlatosCave.
 
@@ -105,6 +106,7 @@ Capacity = 3 − (number of live issues). If 5 or more open issues are `needs-hu
 2. `create_session` with `title: "[<ID>] <issue title>"`, `source_revision: main`, `outcome_branch: <branch>`, model per the attempt rule, tags `["parallax","implementer","<ID>"]`, `permission_mode: auto`, and `prompt`:
 
 > /implement-issue <issue number>
+> ultrathink  _(only at maximum effort; second line)_
 >
 > If the skill is not listed, read `.claude/skills/implement-issue/SKILL.md` and follow it for issue #<issue number> in danielriosgarza/PlatosCave.
 
@@ -114,7 +116,7 @@ Capacity = 3 − (number of live issues). If 5 or more open issues are `needs-hu
 
 ## Step 7 — Phase audits
 
-For each phase N from 1 to 4 whose `plan` issues (including audit issues) are all closed, with no issue titled `Phase N summary`, no auditor launch record for phase N younger than 6 hours, and fewer than 2 auditor launch records for phase N: post the launch record on the dashboard issue, then launch a Sonnet session at maximum effort (prompt begins with `ultrathink`) with `title: "Phase N audit"`, `source_revision: main`, tags `["parallax","auditor","phase-N"]`, prompt `/phase-audit N` plus the fallback sentence pointing at `.claude/skills/phase-audit/SKILL.md`. With 2 records and no summary, label the dashboard `needs-human` ("Phase N audit failed twice").
+For each phase N from 1 to 4 whose `plan` issues (including audit issues) are all closed, with no issue titled `Phase N summary`, no auditor launch record for phase N younger than 6 hours, and fewer than 2 auditor launch records for phase N: post the launch record on the dashboard issue, then launch a Sonnet session at maximum effort (prompt has `ultrathink` on its second line) with `title: "Phase N audit"`, `source_revision: main`, tags `["parallax","auditor","phase-N"]`, prompt `/phase-audit N` plus the fallback sentence pointing at `.claude/skills/phase-audit/SKILL.md`. With 2 records and no summary, label the dashboard `needs-human` ("Phase N audit failed twice").
 
 When every phase through 4 is audited and no `plan` issue is open, report "Delivery plan complete" on the dashboard and in the final message.
 
