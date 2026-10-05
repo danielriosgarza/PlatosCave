@@ -26,8 +26,10 @@ const refusal = (error: unknown, fallback: string) => REFUSALS[errorCode(error) 
  * run on the computer to connect, with its code and when the code expires.
  */
 export function DeviceList() {
-  const connectors = useConnectors();
   const actions = useConnectorActions();
+  // While a code is live the computer may register from another machine at any moment.
+  const codeExpiry = actions.pair.data ? new Date(actions.pair.data.expiresAt).getTime() : 0;
+  const connectors = useConnectors(codeExpiry > Date.now());
   const [renaming, setRenaming] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [revoking, setRevoking] = useState<string | null>(null);

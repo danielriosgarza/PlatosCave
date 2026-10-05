@@ -7,6 +7,7 @@ import {
   errorCode,
   isOpenState,
   type NotebookSession,
+  restartKernel,
   startKernel,
   startTest,
   useConnectionActions,
@@ -22,7 +23,7 @@ import styles from './Connect.module.css';
 import { ConnectSummary } from './ConnectSummary';
 import { DeviceList } from './DeviceList';
 import { LossNotice } from './LossNotice';
-import { codeText } from './messages';
+import { causeText, codeText } from './messages';
 import { StageList } from './StageList';
 import { TargetForm, type TargetKind, type TargetValues } from './TargetForm';
 
@@ -83,7 +84,8 @@ export function ConnectPanel({ classId, revisionId, onClose }: Props) {
   const [busy, setBusy] = useState(false);
   // Sessions the person has left: the cached list may still call them open.
   const [left, setLeft] = useState<string[]>([]);
-  const [kernelError, setKernelError] = useState<string | null>(null);
+  // Keyed by session: a refusal for one session says nothing about the next.
+  const [kernelError, setKernelError] = useState<{ id: string; text: string } | null>(null);
   const [kernelTry, setKernelTry] = useState(0);
   const [sessionError, setSessionError] = useState<string | null>(null);
 
@@ -101,30 +103,71 @@ export function ConnectPanel({ classId, revisionId, onClose }: Props) {
   const active = (connectors.data ?? []).filter((c) => c.status === 'active');
   const saved = connections.data ?? [];
 
-  // Ready is a state of the kernel, so the chosen kernel is started once the session is ready.
+  // Ready is a state of the kernel, so the chosen kernel is started once, for a session that has
+  // never had one. A kernel the relay lost is only replaced when the person asks (design §10.6).
   const readySession = session.data?.state === 'ready' ? session.data : undefined;
   const kernelKnown = kernel.data !== undefined;
-  const hasKernel = kernel.data?.kernel != null;
+  const kernelView = kernel.data?.kernel ?? null;
+  const kernelLost = Boolean(
+    readySession && kernelKnown && !kernelView && readySession.cause === 'kernel_lost',
+  );
   const kernelToStart =
     chosenKernel ??
     readySession?.kernelName ??
     readySession?.runtime.kernelName ??
     readySession?.runtime.kernelspecs?.[0]?.name;
+  const startFor = (id: string, name: string) =>
+    startKernel(classId, id, name)
+      .then(() => setKernelError(null))
+      .catch((e) =>
+        setKernelError({ id, text: refusalText(e, 'The kernel could not be started.') }),
+      );
   // biome-ignore lint/correctness/useExhaustiveDependencies: `kernelTry` is the person's request to try again
   useEffect(() => {
-    if (!readySession || !kernelKnown) return;
-    // A kernel that exists settles it; one that is lost later may be started again.
-    if (hasKernel) {
-      startedKernel.current = null;
-      setKernelError(null);
-      return;
-    }
-    if (!kernelToStart || startedKernel.current === readySession.id) return;
+    if (!readySession || !kernelKnown || kernelView || kernelLost || !kernelToStart) return;
+    if (startedKernel.current === readySession.id) return;
     startedKernel.current = readySession.id;
-    startKernel(classId, readySession.id, kernelToStart).catch((e) =>
-      setKernelError(refusalText(e, 'The kernel could not be started.')),
-    );
-  }, [readySession, kernelKnown, hasKernel, kernelToStart, classId, kernelTry]);
+    void startFor(readySession.id, kernelToStart);
+  }, [readySession, kernelKnown, kernelView, kernelLost, kernelToStart, classId, kernelTry]);
+
+  const kernelFailure =
+    kernelError && kernelError.id === readySession?.id ? kernelError.text : null;
+  let kernelNote: KernelNote | null = null;
+  if (readySession && kernelFailure) {
+    kernelNote = {
+      text: kernelFailure,
+      actionLabel: 'Start the kernel again',
+      onAction: () => {
+        startedKernel.current = null;
+        setKernelError(null);
+        setKernelTry((n) => n + 1);
+      },
+    };
+  } else if (readySession && kernelLost) {
+    kernelNote = {
+      text: `${causeText('kernel_lost')} A new kernel starts empty.`,
+      actionLabel: 'Start a new kernel',
+      onAction: () => {
+        if (kernelToStart) void startFor(readySession.id, kernelToStart);
+      },
+    };
+  } else if (readySession && (kernelView?.state === 'dead' || kernelView?.state === 'unknown')) {
+    kernelNote = {
+      text:
+        kernelView.state === 'dead'
+          ? 'The kernel is not running. Its variables are gone.'
+          : 'Parallax cannot tell what state the kernel is in. Restarting it loses its variables.',
+      actionLabel: 'Restart the kernel',
+      onAction: () => {
+        restartKernel(classId, readySession.id).catch((e) =>
+          setKernelError({
+            id: readySession.id,
+            text: refusalText(e, 'The kernel could not be restarted.'),
+          }),
+        );
+      },
+    };
+  }
 
   const runTest = async (conn: Connection, confirmations?: Confirmation[]) => {
     const { testId } = await startTest(conn.id, confirmations);
@@ -188,6 +231,8 @@ export function ConnectPanel({ classId, revisionId, onClose }: Props) {
     setBusy(true);
     setError(null);
     setChosenKernel(choice.kernelName);
+    setKernelError(null);
+    startedKernel.current = null;
     try {
       const runtime = choice.kernelName
         ? { ...connection.runtime, kernelName: choice.kernelName }
@@ -221,6 +266,8 @@ export function ConnectPanel({ classId, revisionId, onClose }: Props) {
     if (activeId) setLeft((ids) => [...ids, activeId]);
     void sessions.refetch();
     setSessionError(null);
+    setKernelError(null);
+    startedKernel.current = null;
     setSessionId(undefined);
     setTestRef(undefined);
   };
@@ -262,19 +309,11 @@ export function ConnectPanel({ classId, revisionId, onClose }: Props) {
         <SessionBlock
           session={session.data}
           connectionName={saved.find((c) => c.id === session.data?.connectionId)?.name}
-          kernelState={kernel.data?.kernel?.state}
+          kernelState={kernelLost ? 'lost' : kernelView?.state}
+          kernelNote={kernelNote}
           busy={sessionActions.close.isPending || sessionActions.forget.isPending}
           onRefresh={() => void session.refetch()}
-          error={sessionError ?? (session.data.state === 'ready' ? kernelError : null)}
-          onRetryKernel={
-            kernelError
-              ? () => {
-                  startedKernel.current = null;
-                  setKernelError(null);
-                  setKernelTry((n) => n + 1);
-                }
-              : undefined
-          }
+          error={sessionError}
           onClose={(stop) => {
             setSessionError(null);
             sessionActions.close.mutate(
@@ -404,6 +443,22 @@ export function ConnectPanel({ classId, revisionId, onClose }: Props) {
   );
 }
 
+interface KernelNote {
+  text: string;
+  actionLabel: string;
+  onAction: () => void;
+}
+
+const KERNEL_LABEL: Record<string, string> = {
+  idle: 'Ready',
+  busy: 'Running',
+  waiting_for_input: 'Waiting for input',
+  restarting: 'Restarting',
+  dead: 'Kernel stopped',
+  unknown: 'Kernel state unknown',
+  lost: 'No kernel',
+};
+
 function runtimeLabel(session: NotebookSession) {
   return session.runtime.mode === 'attach' ? 'Attached' : 'Python';
 }
@@ -415,7 +470,7 @@ function SessionBlock({
   kernelState,
   busy,
   error,
-  onRetryKernel,
+  kernelNote,
   onRefresh,
   onClose,
   onForget,
@@ -426,7 +481,7 @@ function SessionBlock({
   kernelState: string | undefined;
   busy: boolean;
   error: string | null;
-  onRetryKernel: (() => void) | undefined;
+  kernelNote: KernelNote | null;
   onRefresh: () => void;
   onClose: (stop: boolean) => void;
   onForget: () => void;
@@ -437,11 +492,9 @@ function SessionBlock({
   if (session.state === 'starting' || session.state === 'ready') {
     // Ready is the kernel's word, not the session's (§5.6).
     const label =
-      session.state === 'ready' && kernelState === 'idle'
-        ? 'Ready'
-        : session.state === 'ready' && kernelState === 'busy'
-          ? 'Running'
-          : 'Starting';
+      session.state === 'starting' || !kernelState || kernelState === 'starting'
+        ? 'Starting'
+        : (KERNEL_LABEL[kernelState] ?? 'Kernel state unknown');
     return (
       <div className={styles.section}>
         <p role="status">
@@ -450,14 +503,17 @@ function SessionBlock({
         {error ? (
           <div className={styles.alert} role="alert">
             <p>{error}</p>
-            {onRetryKernel ? (
-              <button type="button" className={buttons.outline} onClick={onRetryKernel}>
-                Start the kernel again
-              </button>
-            ) : null}
           </div>
         ) : null}
-        {label === 'Starting' && session.state === 'ready' && !error ? (
+        {kernelNote ? (
+          <div className={styles.alert} role="alert">
+            <p>{kernelNote.text}</p>
+            <button type="button" className={buttons.outline} onClick={kernelNote.onAction}>
+              {kernelNote.actionLabel}
+            </button>
+          </div>
+        ) : null}
+        {label === 'Starting' && session.state === 'ready' && !kernelNote ? (
           <p className={styles.muted}>Jupyter is running. Waiting for the kernel to be idle.</p>
         ) : null}
         <div className={styles.row}>

@@ -48,6 +48,8 @@ interface World {
   refuseTest?: { status: number; error: string };
   /** Answers close, forget and kernel start with this refusal. */
   refuse?: { status: number; error: string };
+  /** A second session, answered under its own id. */
+  other?: { session: unknown; kernel: unknown };
 }
 
 /** An API for the panel with state a test can change between polls. */
@@ -94,6 +96,12 @@ function serve(w: World) {
     if (url === `/api/classes/${CLASS_A}/notebook-sessions/${SESSION}`) {
       return w.session ? { status: 200, body: w.session } : { status: 404, body: {} };
     }
+    if (w.other && url.startsWith(`/api/classes/${CLASS_A}/notebook-sessions/${SESSION_B}`)) {
+      if (url.endsWith('/kernel')) {
+        return { status: method === 'POST' ? 201 : 200, body: { kernel: w.other.kernel } };
+      }
+      return { status: 200, body: w.other.session };
+    }
     if (
       w.refuse &&
       method === 'POST' &&
@@ -118,6 +126,8 @@ function renderPanel(onClose = vi.fn()) {
   );
   return { ...view, onClose };
 }
+
+const SESSION_B = '00000000-0000-4000-8000-0000000d0002';
 
 const kernel = (state: string) => ({
   id: '00000000-0000-4000-8000-0000000e0001',
@@ -409,6 +419,86 @@ describe('ConnectPanel', () => {
       ).toHaveLength(2),
     );
   });
+
+  it('A36 a lost kernel is not replaced silently: the warning shows and a new kernel starts only on request', async () => {
+    const w = world({
+      connections: [sshConnection()],
+      sessions: [session({ cause: 'kernel_lost' })],
+      session: session({ cause: 'kernel_lost' }),
+      kernel: null,
+    });
+    serve(w);
+    renderPanel();
+    expect(
+      await screen.findByText(/The kernel no longer exists\. Its variables are gone\./),
+    ).toBeInTheDocument();
+    expect(screen.getByText('Cluster · Python · No kernel')).toBeInTheDocument();
+    await new Promise((r) => setTimeout(r, 1500));
+    expect(w.posts.filter((p) => p.url.endsWith('/kernel'))).toHaveLength(0);
+    w.kernel = kernel('starting');
+    await userEvent.click(screen.getByRole('button', { name: 'Start a new kernel' }));
+    await waitFor(() => expect(w.posts.filter((p) => p.url.endsWith('/kernel'))).toHaveLength(1));
+  });
+
+  it('a dead kernel is said in words and offers a restart, not Starting', async () => {
+    const w = world({
+      connections: [sshConnection()],
+      sessions: [session()],
+      session: session(),
+      kernel: kernel('dead'),
+    });
+    serve(w);
+    renderPanel();
+    expect(await screen.findByText('Cluster · Python · Kernel stopped')).toBeInTheDocument();
+    expect(
+      screen.getByText('The kernel is not running. Its variables are gone.'),
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Starting|Waiting for the kernel/)).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Restart the kernel' }));
+    await waitFor(() => expect(w.posts.at(-1)?.url).toMatch(/\/kernel\/restart$/));
+  });
+
+  it.each([
+    ['restarting', 'Restarting'],
+    ['waiting_for_input', 'Waiting for input'],
+  ])('a %s kernel is labelled as it is', async (state, label) => {
+    const w = world({
+      connections: [sshConnection()],
+      sessions: [session()],
+      session: session(),
+      kernel: kernel(state),
+    });
+    serve(w);
+    renderPanel();
+    expect(await screen.findByText(`Cluster · Python · ${label}`)).toBeInTheDocument();
+  });
+
+  it('a refused kernel start of one session is not shown for the next', async () => {
+    const w = world({
+      connections: [sshConnection()],
+      sessions: [session()],
+      session: session(),
+      kernel: null,
+      refuse: { status: 409, error: 'not_ready' },
+    });
+    serve(w);
+    renderPanel();
+    expect(await screen.findByText(/The kernel could not be started/)).toBeInTheDocument();
+    // The first session ends; the person leaves it and a second one is open and starting normally.
+    w.refuse = undefined;
+    w.session = session({ state: 'failed', cause: 'jupyter_missing' });
+    w.sessions = [session({ id: SESSION_B })];
+    w.other = { session: session({ id: SESSION_B }), kernel: null };
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Start a new session' }, { timeout: 6000 }),
+    );
+    await waitFor(() => expect(screen.getByText(/Cluster · Python/)).toBeInTheDocument(), {
+      timeout: 6000,
+    });
+    await waitFor(() => expect(w.posts.filter((p) => p.url.includes(SESSION_B))).toHaveLength(1));
+    expect(screen.queryByText(/The kernel could not be started/)).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Start the kernel again' })).toBeNull();
+  }, 20000);
 
   it('a saved connection keeps its computer: it is named and cannot be changed', async () => {
     const w = world({

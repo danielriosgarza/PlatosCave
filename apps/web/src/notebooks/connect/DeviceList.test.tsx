@@ -65,6 +65,29 @@ describe('DeviceList', () => {
     );
   });
 
+  it('a computer that registers while a pairing code is live appears without a refocus', async () => {
+    let registered = false;
+    stubApi((_url, init) =>
+      init?.method === 'POST'
+        ? {
+            status: 201,
+            body: {
+              pairingId: CONNECTOR,
+              code: 'K7M2-Q9XD',
+              expiresAt: new Date(Date.now() + 600_000).toISOString(),
+            },
+          }
+        : { status: 200, body: registered ? [connector({ status: 'pending' })] : [] },
+    );
+    renderList();
+    await userEvent.click(await screen.findByRole('button', { name: 'Pair a computer' }));
+    await screen.findByText(/--code K7M2-Q9XD/);
+    registered = true;
+    expect(
+      await screen.findByText('Waiting for approval', {}, { timeout: 6000 }),
+    ).toBeInTheDocument();
+  }, 15000);
+
   it('a pending computer is approved only after its fingerprint is shown and Approve is pressed', async () => {
     let status = 'pending';
     const fetchMock = stubApi((url) => {

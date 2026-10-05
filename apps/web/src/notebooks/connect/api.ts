@@ -20,6 +20,7 @@ import {
   getSessionKernel,
   listNotebookSessions,
   openNotebookSession,
+  restartSessionKernel,
   startSessionKernel,
 } from '@parallax/contracts/routes/notebookSessions';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -71,12 +72,14 @@ export const errorCode = (error: unknown): string | undefined => {
 const DEVICES_POLL_MS = 3000;
 
 /** This person's connectors; while one is pending the list is read again every few seconds. */
-export const useConnectors = () =>
+export const useConnectors = (pairingLive = false) =>
   useQuery({
     queryKey: [listConnectors.method, listConnectors.path],
     queryFn: () => call(listConnectors),
     refetchInterval: (query) =>
-      query.state.data?.some((c) => c.status === 'pending') ? DEVICES_POLL_MS : false,
+      pairingLive || query.state.data?.some((c) => c.status === 'pending')
+        ? DEVICES_POLL_MS
+        : false,
   });
 
 const refreshConnectors = (client: ReturnType<typeof useQueryClient>) =>
@@ -227,3 +230,7 @@ export const startKernel = async (classId: string, sessionId: string, kernelName
     throw error;
   }
 };
+
+/** Restarts the session's kernel; its variables are lost (design §10.6). */
+export const restartKernel = (classId: string, sessionId: string) =>
+  call(restartSessionKernel, { params: { classId, sessionId } });
