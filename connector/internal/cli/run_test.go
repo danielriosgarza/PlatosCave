@@ -3,12 +3,14 @@ package cli
 import (
 	"bytes"
 	"context"
+	"io"
 	"os"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"parallax/connector/internal/protocol"
 	"parallax/connector/internal/state"
 	"parallax/connector/internal/testserver"
 )
@@ -203,5 +205,71 @@ func TestRuntimePIDAcceptsWindowsRange(t *testing.T) {
 	rt := state.Runtime{V: 1, PID: 4194305 * 4, StartedAt: "2026-10-03T09:30:00Z", Link: "up", Since: "2026-10-03T09:30:00Z"}
 	if err := rt.Validate(); err != nil {
 		t.Fatalf("a Windows process id above the Linux limit: %v", err)
+	}
+}
+
+func TestConfirmSessionsAsksFirst(t *testing.T) {
+	h, srv, _ := pairedHarness(t)
+	if code := h.run("run", "--confirm-sessions"); code != ExitUsage || !strings.Contains(h.stderr.String(), "needs a terminal") {
+		t.Fatalf("--confirm-sessions without a terminal: exit %d: %s", code, h.stderr)
+	}
+
+	h.tty = true
+	pr, pw := io.Pipe()
+	defer pw.Close()
+	h.env.Stdin = pr
+	out := &syncBuffer{}
+	h.env.Stdout = out
+	h.env.Getenv = func(k string) string {
+		if k == "PARALLAX_ALLOW_NET" {
+			return "192.168.10.0/24"
+		}
+		return ""
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan int, 1)
+	go func() { done <- Main(ctx, []string{"run", "--confirm-sessions", "--allow-net", "10.1.0.0/16"}, h.env) }()
+	lctx, lcancel := context.WithTimeout(ctx, 10*time.Second)
+	l, err := srv.NextLink(lctx)
+	lcancel()
+	if err != nil {
+		t.Fatalf("no link: %v (%s)", err, h.stderr)
+	}
+	if got := strings.Join(l.Hello.NetworkScope.CIDRs, " "); got != "10.1.0.0/16 192.168.10.0/24" {
+		t.Errorf("hello.networkScope.cidrs = %q, want the flag and PARALLAX_ALLOW_NET", got)
+	}
+
+	ws := t.TempDir()
+	const sessionID, requestID = "7b1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f", "c0ffee00-1111-4222-8333-444455556666"
+	if err := l.Send(&protocol.OpenSession{RequestID: requestID, SessionID: sessionID,
+		Target:  protocol.Target{Kind: "local", Workspace: ws},
+		Runtime: protocol.Runtime{Mode: "start", KernelName: "python3"},
+		Lease:   protocol.Lease{IdleTimeoutMin: 30, GracePeriodMin: 5}}); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the question", func() bool { return strings.Contains(out.String(), "Allow? [y/N]") })
+	if !strings.Contains(out.String(), "Session "+sessionID+" requested by Parallax on this computer in "+ws+": start Jupyter, kernel python3.") {
+		t.Errorf("no session log line before the question:\n%s", out)
+	}
+	// Nothing was answered yet, so nothing was sent about the session.
+	rctx, rcancel := context.WithTimeout(ctx, 200*time.Millisecond)
+	if r, err := l.Next(rctx); err == nil {
+		t.Errorf("the connector sent %+v before the person answered", r)
+	}
+	rcancel()
+	io.WriteString(pw, "n\n")
+	nctx, ncancel := context.WithTimeout(ctx, 10*time.Second)
+	r, err := l.Next(nctx)
+	ncancel()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e, ok := r.Message.(*protocol.Error); !ok || e.Code != protocol.CodePathNotAllowed || e.SessionID != sessionID {
+		t.Errorf("after declining: %+v", r)
+	}
+	cancel()
+	if code := <-done; code != ExitOK {
+		t.Errorf("run exit %d: %s", code, h.stderr)
 	}
 }

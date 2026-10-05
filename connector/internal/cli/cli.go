@@ -84,7 +84,7 @@ const usage = `Usage: parallax-connector <command> [flags]
 Commands:
   pair --server URL --code XXXX-XXXX [--name NAME] [--force]
                     pair this computer with your Parallax account
-  run [--allow-net CIDR]... [--state-dir DIR]
+  run [--allow-net CIDR]... [--state-dir DIR] [--confirm-sessions]
                     connect this computer to Parallax and keep it connected
   status [--json]   show whether this computer is paired, and with which server
   unpair [--yes]    revoke this computer in Parallax and delete its identity
