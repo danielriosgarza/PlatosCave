@@ -62,9 +62,12 @@ export async function uploadWorkspaceData(
   return uploadedWorkspaceFile.parse(body);
 }
 
+/** The notebook cannot carry a declaration; the message is shown to the editor. */
+export class NotebookDeclarationError extends Error {}
+
 /**
  * The notebook with `metadata.parallax.files` set to the declared files, every other part kept.
- * Throws an Error with the sentence to show when the file is not a JSON object.
+ * Throws a NotebookDeclarationError with the sentence to show when the file is not a JSON object.
  */
 export function declareFiles(
   notebookText: string,
@@ -74,10 +77,10 @@ export function declareFiles(
   try {
     parsed = JSON.parse(notebookText);
   } catch {
-    throw new Error('The notebook is not valid JSON');
+    throw new NotebookDeclarationError('The notebook is not valid JSON');
   }
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-    throw new Error('The notebook is not a Jupyter notebook');
+    throw new NotebookDeclarationError('The notebook is not a Jupyter notebook');
   }
   const notebook = parsed as { metadata?: unknown };
   const metadata =

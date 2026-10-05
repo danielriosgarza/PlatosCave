@@ -1,7 +1,7 @@
 import { createResource } from '@parallax/contracts/routes/drafts';
 import { useMutation } from '@tanstack/react-query';
-import { useId, useState } from 'react';
-import { ApiError, call } from '../api/client';
+import { useRef, useState } from 'react';
+import { call } from '../api/client';
 import buttons from '../components/Buttons.module.css';
 import styles from '../components/Page.module.css';
 import local from './Authoring.module.css';
@@ -9,6 +9,7 @@ import { failureMessage, fileProblem, NOTEBOOK_ACCEPT, uploadFile } from './uplo
 import {
   declareFiles,
   MAX_WORKSPACE_FILES,
+  NotebookDeclarationError,
   pathProblems,
   type UploadedWorkspaceFile,
   uploadWorkspaceData,
@@ -34,7 +35,8 @@ export function AddNotebook({ courseId, topicId, onAdded, onCancel }: Props) {
   const [problem, setProblem] = useState<string | null>(null);
   const [entries, setEntries] = useState<WorkspaceEntry[]>([]);
   const [fileKey, setFileKey] = useState(0);
-  const nextId = useId();
+  // Entry ids come from a counter that never repeats, so a removed entry's id is not reused.
+  const counter = useRef(0);
   const problems = pathProblems(entries);
   const tooMany = entries.length > MAX_WORKSPACE_FILES;
 
@@ -42,6 +44,9 @@ export function AddNotebook({ courseId, topicId, onAdded, onCancel }: Props) {
     mutationFn: async () => {
       if (!file) throw new Error('no file');
       const data: UploadedWorkspaceFile[] = [];
+      // Fails before anything is uploaded when the notebook cannot carry the declaration.
+      const text = entries.length === 0 ? '' : await file.text();
+      if (entries.length > 0) declareFiles(text, []);
       for (const entry of entries) data.push(await uploadWorkspaceData(courseId, entry.file));
       const declared = entries.map((entry, i) => ({
         path: entry.path,
@@ -52,7 +57,7 @@ export function AddNotebook({ courseId, topicId, onAdded, onCancel }: Props) {
       const source =
         entries.length === 0
           ? file
-          : new File([declareFiles(await file.text(), declared)], file.name, {
+          : new File([declareFiles(text, declared)], file.name, {
               type: file.type,
             });
       const stored = await uploadFile(courseId, source);
@@ -89,8 +94,8 @@ export function AddNotebook({ courseId, topicId, onAdded, onCancel }: Props) {
     if (!picked) return;
     setEntries((current) => [
       ...current,
-      ...[...picked].map((f, i) => ({
-        id: `${nextId}-${current.length + i}-${f.name}`,
+      ...[...picked].map((f) => ({
+        id: `workspace-file-${counter.current++}`,
         file: f,
         path: f.name,
       })),
@@ -129,8 +134,8 @@ export function AddNotebook({ courseId, topicId, onAdded, onCancel }: Props) {
       <fieldset className={local.field}>
         <legend>Workspace files</legend>
         <p className={`${styles.small} ${styles.muted}`}>
-          Data files copied into a learner’s workspace on their computer. Each path is relative to
-          the workspace.
+          Data files copied into a learner’s workspace on the machine they connect. Each path is
+          relative to the workspace.
         </p>
         <label className={local.field}>
           Add data files
@@ -201,7 +206,7 @@ export function AddNotebook({ courseId, topicId, onAdded, onCancel }: Props) {
       {add.isError ? (
         <p className={`${styles.small} ${local.failure} ${styles.mt12}`} role="alert">
           The notebook was not added.{' '}
-          {add.error instanceof Error && !(add.error instanceof ApiError)
+          {add.error instanceof NotebookDeclarationError
             ? add.error.message
             : failureMessage(add.error)}
         </p>

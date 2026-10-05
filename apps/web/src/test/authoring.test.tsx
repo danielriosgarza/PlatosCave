@@ -653,6 +653,56 @@ describe('notebook workspace files', () => {
     expect(within(list).getByText('data/sample.csv')).toBeInTheDocument();
   });
 
+  it('A34 removing and re-adding a file keeps entries distinct and flags the duplicate path', async () => {
+    const { user, form } = await openForm();
+    const picker = within(form).getByLabelText('Add data files');
+    await user.upload(picker, [new File(['1'], 'a.csv'), new File(['2'], 'b.csv')]);
+    await user.click(within(form).getByRole('button', { name: 'Remove a.csv' }));
+    await user.upload(within(form).getByLabelText('Add data files'), new File(['3'], 'b.csv'));
+    const paths = within(form).getAllByLabelText('Workspace path of b.csv');
+    expect(paths).toHaveLength(2);
+    expect(
+      within(form)
+        .getAllByRole('alert')
+        .map((a) => a.textContent),
+    ).toEqual(['Another file already has this path', 'Another file already has this path']);
+    expect(within(form).getByRole('button', { name: 'Add notebook' })).toBeDisabled();
+    await user.type(paths[1] as HTMLElement, 'x');
+    expect(within(form).queryAllByRole('alert')).toHaveLength(0);
+    const describedBy = paths.map((p) => p.getAttribute('aria-describedby'));
+    expect(describedBy.every((d) => d === null || !/\s/.test(d))).toBe(true);
+  });
+
+  it('A34 a file name with spaces still points its input at the path error', async () => {
+    const { user, form } = await openForm();
+    await user.upload(
+      within(form).getByLabelText('Add data files'),
+      new File(['1'], 'my data.csv'),
+    );
+    const path = within(form).getByLabelText('Workspace path of my data.csv');
+    await user.clear(path);
+    await user.type(path, '.hidden');
+    const id = path.getAttribute('aria-describedby') ?? '';
+    expect(id).not.toMatch(/\s/);
+    expect(document.getElementById(id)).toHaveTextContent(/relative path/);
+  });
+
+  it('A34 a notebook that is not JSON is refused before any data file is uploaded', async () => {
+    const user = userEvent.setup({ applyAccept: false });
+    const { s } = await open(grant(), fresh());
+    const notebooks = await screen.findByRole('region', { name: 'Notebooks resources' });
+    await user.click(within(notebooks).getByRole('button', { name: 'Add notebook' }));
+    const form = screen.getByRole('form', { name: 'Add notebook' });
+    await user.upload(
+      within(form).getByLabelText(/File \(Jupyter/),
+      new File(['not json'], 'n.ipynb'),
+    );
+    await user.upload(within(form).getByLabelText('Add data files'), new File(['1'], 'one.csv'));
+    await user.click(within(form).getByRole('button', { name: 'Add notebook' }));
+    expect(await within(form).findByText(/The notebook is not valid JSON/)).toBeInTheDocument();
+    expect(s.received).toEqual([]);
+  });
+
   it('A34 the files form is keyboard operable and has no accessibility violations', async () => {
     const { user, form } = await openForm();
     const picker = within(form).getByLabelText('Add data files');

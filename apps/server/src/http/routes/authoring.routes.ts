@@ -188,6 +188,8 @@ export default function authoringRoutes(app: FastifyInstance, deps: RouteDeps): 
     if (!part.filename) invalid('the file part has no file name');
     const filename = displayName(part.filename);
     try {
+      // Objects are shared by hash within a course, so bytes first stored here keep this type
+      // for any later use of the same bytes (the object is recorded once).
       const stored = await storeCourseObject(
         db(),
         deps.storage,

@@ -3,6 +3,7 @@ import type { CourseScope } from '../../auth/scope';
 import type { StoredObject } from '../../storage/storage';
 import type { Db } from '../client';
 import { storageObjects } from '../schema';
+import { forCourse } from '../scoped';
 
 /** Records a stored object of the scope's course once; recording the same key again is a no-op. */
 export async function recordCourseObject(
@@ -26,6 +27,6 @@ export async function courseObjectId(
   const [row] = await db
     .select({ id: storageObjects.id })
     .from(storageObjects)
-    .where(and(eq(storageObjects.courseId, scope.courseId), eq(storageObjects.key, key)));
+    .where(and(forCourse(scope, storageObjects), eq(storageObjects.key, key)));
   return row?.id ?? null;
 }
