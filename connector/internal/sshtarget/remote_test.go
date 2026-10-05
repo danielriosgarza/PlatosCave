@@ -192,6 +192,9 @@ func execsContaining(srv *sshtest.Server, s string) []string {
 	return out
 }
 
+// TestA28_OwnedSessionReady (A28): Test connection on an SSH host reports every stage and
+// ready_to_start without starting anything; Connect starts Jupyter on loopback in the workspace,
+// reached only through the tunnel, a cell runs on the kernel channel, and Stop ends the process.
 func TestA28_OwnedSessionReady(t *testing.T) {
 	h := newRemoteHost(t, "")
 	res, _ := h.test(h.start())
@@ -319,6 +322,8 @@ func freePort(t *testing.T) int {
 	return ln.Addr().(*net.TCPAddr).Port
 }
 
+// TestRemoteTokenOnStdinOnly: the session token reaches the remote server only on standard input,
+// never in a command line, an argument, a URL or the log.
 func TestRemoteTokenOnStdinOnly(t *testing.T) {
 	h := newRemoteHost(t, "")
 	rt, err := h.open(h.start())
@@ -359,6 +364,8 @@ func TestRemoteTokenOnStdinOnly(t *testing.T) {
 	}
 }
 
+// TestA29_JupyterMissing (A29, runtime stage): an environment without jupyter_server fails the
+// runtime stage with jupyter_missing, blocks the later stages and never starts a server.
 func TestA29_JupyterMissing(t *testing.T) {
 	for _, python := range []bool{true, false} {
 		t.Run(fmt.Sprintf("interpreter chosen %v", python), func(t *testing.T) {
@@ -384,6 +391,7 @@ func TestA29_JupyterMissing(t *testing.T) {
 	}
 }
 
+// TestA29_JupyterTooOld (A29, runtime stage): Jupyter Server older than 2.0 is jupyter_incompatible.
 func TestA29_JupyterTooOld(t *testing.T) {
 	h := newRemoteHost(t, "old")
 	res, _ := h.test(h.start())
@@ -416,6 +424,8 @@ func (h *remoteHost) attach(port int) protocol.Runtime {
 	return protocol.Runtime{Mode: protocol.RuntimeAttach, Port: port, KernelName: "python3"}
 }
 
+// TestA29_NotebookAuthRejected (A29, notebook authentication stage): a server that refuses the
+// token it listed fails notebook_auth with token_rejected, and Connect never reaches ready.
 func TestA29_NotebookAuthRejected(t *testing.T) {
 	h := newRemoteHost(t, "")
 	_, port := h.attachTo("the-real-token", "a-stale-token", filepath.Dir(h.ws))
@@ -431,6 +441,8 @@ func TestA29_NotebookAuthRejected(t *testing.T) {
 	wantCode(t, err, protocol.CodeTokenRejected)
 }
 
+// TestA29_RemoteExecDenied (A29): an account that may not run commands fails with
+// remote_exec_denied at its first exec, and the runtime and kernel stages are blocked.
 func TestA29_RemoteExecDenied(t *testing.T) {
 	h := newRemoteHost(t, "", func(o *sshtest.Options) { o.DenyExec = true })
 	res, _ := h.test(h.start())
@@ -442,6 +454,9 @@ func TestA29_RemoteExecDenied(t *testing.T) {
 	wantCode(t, err, protocol.CodeRemoteExecDenied)
 }
 
+// TestA28_AttachNeverStops (A28, attach mode): an attached server is listed by exec, must listen on
+// loopback and contain the workspace, and is never shut down or signalled; closing the session
+// leaves it running.
 func TestA28_AttachNeverStops(t *testing.T) {
 	h := newRemoteHost(t, "")
 	fake, port := h.attachTo("tok-attached", "tok-attached", filepath.Dir(h.ws))
@@ -496,6 +511,8 @@ func TestA28_AttachNeverStops(t *testing.T) {
 	})
 }
 
+// TestTunnelDestinationFixed: every channel the session opens goes to its own 127.0.0.1 port,
+// whatever a request names.
 func TestTunnelDestinationFixed(t *testing.T) {
 	h := newRemoteHost(t, "")
 	rt, err := h.open(h.start())
@@ -523,6 +540,8 @@ func TestTunnelDestinationFixed(t *testing.T) {
 	}
 }
 
+// TestStopShutdownThenKillWithMarker: a server that ignores shutdown and SIGTERM is killed only
+// after ps shows the session's marker, and Stop returns once it is gone.
 func TestStopShutdownThenKillWithMarker(t *testing.T) {
 	h := newRemoteHost(t, "stubborn")
 	rt, err := h.open(h.start())
@@ -579,6 +598,8 @@ func TestStopShutdownThenKillWithMarker(t *testing.T) {
 	})
 }
 
+// TestNonPosixHostUnsupported: a host without a POSIX shell is shell_unsupported in start and
+// attach mode, and nothing else runs there.
 func TestNonPosixHostUnsupported(t *testing.T) {
 	windows := func(o *sshtest.Options) {
 		posix := o.Exec
@@ -621,6 +642,8 @@ func TestNonPosixHostUnsupported(t *testing.T) {
 	})
 }
 
+// TestTestedConnectionReusedForConnect: Connect within 120 s of a passed test reuses its SSH
+// connection, so the second factor is asked once.
 func TestTestedConnectionReusedForConnect(t *testing.T) {
 	mfa := func(o *sshtest.Options) { o.MFA = &sshtest.MFA{Question: "Verification code: ", Answer: "424242"} }
 	h := newRemoteHost(t, "", mfa)
@@ -673,6 +696,8 @@ func TestTestedConnectionReusedForConnect(t *testing.T) {
 	})
 }
 
+// TestOrphanRemoteSweepNonInteractive: a remote server left by a crash is stopped over a
+// connection that asks nothing in a terminal, after its marker is proved.
 func TestOrphanRemoteSweepNonInteractive(t *testing.T) {
 	h := newRemoteHost(t, "stubborn")
 	rt, err := h.open(h.start())

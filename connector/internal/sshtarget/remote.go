@@ -64,6 +64,7 @@ const (
 	defaultKeepalive = 15 * time.Second
 	defaultLoss      = 45 * time.Second
 	defaultReuse     = 120 * time.Second
+	stopBudget       = 30 * time.Second
 	maxAttachable    = 16
 )
 
@@ -291,7 +292,7 @@ func (rr *remoteRuntime) open(ctx context.Context, resolved string) (*target.Run
 	}
 	if err != nil {
 		if rr.owned {
-			rr.Stop(context.WithoutCancel(ctx), jupyter.DefaultStopTimes)
+			rr.stopAfterFailure(ctx)
 		}
 		return nil, asFailure(err, protocol.CodeNotebookServiceUnreachable)
 	}
@@ -801,7 +802,7 @@ func (rr *remoteRuntime) startOnce(ctx context.Context, workspace string, port i
 	defer tick.Stop()
 	giveUp := func(code protocol.Code, detail string) error {
 		rr.setPID(out.pid())
-		rr.Stop(context.WithoutCancel(ctx), jupyter.DefaultStopTimes)
+		rr.stopAfterFailure(ctx)
 		return &target.Failure{Code: code, Detail: detail}
 	}
 	for {
@@ -828,6 +829,16 @@ func (rr *remoteRuntime) startOnce(ctx context.Context, workspace string, port i
 			return giveUp(protocol.CodeJupyterStartTimeout, "Jupyter did not become ready in time")
 		case <-tick.C:
 		}
+	}
+}
+
+// stopAfterFailure stops a server whose start failed, even when the open's context ended, within
+// the stop budget.
+func (rr *remoteRuntime) stopAfterFailure(ctx context.Context) {
+	sctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), stopBudget)
+	defer cancel()
+	if err := rr.Stop(sctx, jupyter.DefaultStopTimes); err != nil {
+		rr.r.logLine(fmt.Sprintf("the Jupyter server of session %s may still be running: %v", rr.sessionID, err))
 	}
 }
 

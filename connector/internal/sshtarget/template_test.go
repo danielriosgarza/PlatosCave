@@ -25,6 +25,7 @@ var goldenCases = []struct {
 	{"jupyter from PATH, a quote in the workspace", "/home/o'brien/notebooks", "", false},
 }
 
+// TestRemoteStartTemplate: the start command of design §6, golden.
 func TestRemoteStartTemplate(t *testing.T) {
 	// The script is design §6's template, character for character.
 	const design = `cd -- "$1" || exit 70; IFS= read -r JUPYTER_TOKEN || exit 71; export JUPYTER_TOKEN; echo "PARALLAX_PID=$$"; shift; exec "$@"`
@@ -117,6 +118,7 @@ func randomArg(r *rand.Rand) string {
 	return string(out)
 }
 
+// TestShellQuoteFuzz: shellQuote gives every string back unchanged to a POSIX shell.
 func TestShellQuoteFuzz(t *testing.T) {
 	r := rand.New(rand.NewPCG(1, 2))
 	for i := 0; i < 20000; i++ {
@@ -151,6 +153,8 @@ func TestShellQuoteFuzz(t *testing.T) {
 	}
 }
 
+// TestCommandTemplates: every remote command is a fixed script whose only variable parts are the
+// quoted, validated workspace, interpreter, port, session id and pid.
 func TestCommandTemplates(t *testing.T) {
 	r := rand.New(rand.NewPCG(3, 4))
 	hostile := []string{`'; rm -rf ~ #`, `$(id)`, "`id`", `a"b`, "x\ny", `\'`, `~/x'y`, "-c", ""}

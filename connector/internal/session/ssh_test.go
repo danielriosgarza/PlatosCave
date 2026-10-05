@@ -119,6 +119,9 @@ func (e *sshEnv) lost(want, why string) {
 	}
 }
 
+// TestA36_SSHLossCausesOverRealTransport (A36, SSH half): a lost SSH session is reported with the
+// cause its evidence shows, over a real transport that sleeps, times out, loses its server, ends
+// its allocation or becomes unreachable.
 func TestA36_SSHLossCausesOverRealTransport(t *testing.T) {
 	t.Run("sleep: the computer slept, then the keepalive went unanswered", func(t *testing.T) {
 		e := newSSHEnv(t)
@@ -161,6 +164,8 @@ func TestA36_SSHLossCausesOverRealTransport(t *testing.T) {
 	})
 }
 
+// TestSSHReconnectKeepsSession (A36): after the transport drops, the connector reconnects on its
+// schedule and the session is ready again with the same server and kernel.
 func TestSSHReconnectKeepsSession(t *testing.T) {
 	e := newSSHEnv(t)
 	pid := e.openSSH(e.target())
