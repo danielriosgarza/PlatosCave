@@ -8,5 +8,6 @@ export * from './notebookChannel';
 export * from './readingHtml';
 export * from './resources';
 export * from './runner';
+export * from './shiny';
 export * from './sketch';
 export * from './test';

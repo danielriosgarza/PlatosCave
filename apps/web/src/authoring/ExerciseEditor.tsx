@@ -110,6 +110,8 @@ function ExerciseFields({
       return saved;
     },
     onSaved,
+    unchanged: (v, last) =>
+      v.title === last.title && v.visibility === last.visibility && v.archived === last.archived,
     partial: (v) =>
       problemsOf(v.exercise).length
         ? 'Title, visibility and archive state saved; step and credit edits are not saved yet'

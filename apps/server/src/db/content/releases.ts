@@ -1,4 +1,9 @@
-import { exerciseCredit, exerciseProblems, type ResourceType } from '@parallax/contracts';
+import {
+  exerciseCredit,
+  exerciseProblems,
+  type ResourceType,
+  shinyContentProblem,
+} from '@parallax/contracts';
 import type { validationIssue, validationReport } from '@parallax/contracts/routes/releases';
 import { and, asc, eq, isNull, lte, max, ne, or, type SQL, sql } from 'drizzle-orm';
 import type { z } from 'zod';
@@ -55,6 +60,13 @@ export const tabOf: Record<ResourceType, Tab> = {
 /** Types whose material is not text, so they need an accessible alternative (§7, §14). */
 const needsAlternative = new Set<ResourceType>(['slides_pdf', 'reading_pdf', 'shiny']);
 
+/** Whether a Shiny revision's address is on the host's approved list, as `loadShiny` decides. */
+function shinyOriginApproved(content: unknown, approved: readonly string[]): boolean {
+  const address = (content as { url?: unknown } | null)?.url;
+  if (typeof address !== 'string' || shinyContentProblem(content)) return false;
+  return approved.includes(new URL(address).origin);
+}
+
 /**
  * The course's live (not archived) draft topics with their resources, head revisions and each
  * head revision's derived status as the processing list shows it (`resolveDerivedStatuses`).
@@ -86,14 +98,20 @@ async function loadDrafts(tx: Tx, scope: CourseScope) {
 }
 type Drafts = Awaited<ReturnType<typeof loadDrafts>>;
 
+export interface ValidateOptions {
+  approvedShinyOrigins?: readonly string[];
+  runtimes?: readonly RunnerRuntime[];
+}
+
 /**
  * Publication checks (§12, ADR-0003): broken references, missing alternatives and unconverted
- * decks, exercise definitions, and tests (grading rules and execution configuration, P3-18).
- * `runtimes` are the runtimes a code question may select.
+ * decks, exercise definitions, tests (grading rules and execution configuration, P3-18), and
+ * Shiny apps whose origin the host has not approved (students would see only the preview label
+ * and the external route, §10.7). `runtimes` are the runtimes a code question may select.
  */
 export function validate(
   drafts: Drafts,
-  runtimes: readonly RunnerRuntime[] = DEV_RUNNER_RUNTIMES,
+  { approvedShinyOrigins = [], runtimes = DEV_RUNNER_RUNTIMES }: ValidateOptions = {},
 ): ValidationReport {
   const errors: Issue[] = [];
   const warnings: Issue[] = [];
@@ -201,6 +219,16 @@ export function validate(
           warnings.push({ code, message: `“${resource.title}”: ${message}`, ...at });
         }
       }
+      if (
+        revision.type === 'shiny' &&
+        !shinyOriginApproved(revision.content, approvedShinyOrigins)
+      ) {
+        warnings.push({
+          code: 'unapproved_shiny_origin',
+          message: `“${resource.title}” is not on an approved Shiny origin; students will see “Preview · no session”`,
+          ...at,
+        });
+      }
       if (needsAlternative.has(revision.type) && !revision.accessibleAlternative) {
         const rasterDeck = revision.type === 'slides_pdf' && revision.derived.rasterOnly === true;
         (rasterDeck ? errors : warnings).push({
@@ -217,9 +245,9 @@ export function validate(
 export function validateDrafts(
   db: Db,
   scope: CourseScope,
-  runtimes?: readonly RunnerRuntime[],
+  opts: ValidateOptions = {},
 ): Promise<ValidationReport> {
-  return db.transaction(async (tx) => validate(await loadDrafts(tx, scope), runtimes));
+  return db.transaction(async (tx) => validate(await loadDrafts(tx, scope), opts));
 }
 
 export type PublishResult =
@@ -237,7 +265,7 @@ export type PublishResult =
 export function publishRelease(
   db: Db,
   scope: CourseScope,
-  opts: { id?: string; runtimes?: readonly RunnerRuntime[] } = {},
+  opts: { id?: string } & ValidateOptions = {},
 ): Promise<PublishResult> {
   return db.transaction(async (tx) => {
     await tx
@@ -246,7 +274,7 @@ export function publishRelease(
       .where(eq(courses.id, scope.courseId))
       .for('update');
     const drafts = await loadDrafts(tx, scope);
-    const report = validate(drafts, opts.runtimes);
+    const report = validate(drafts, opts);
     if (report.errors.length > 0) return { ok: false, report };
 
     const [last] = await tx

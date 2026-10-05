@@ -79,6 +79,8 @@ export function SketchCanvas({ strokes, pen, label, onSize }: Props) {
           if (e.pointerType === 'mouse' && e.button !== 0) return;
           const at = point(e);
           if (!at) return;
+          // A mouse stroke must not start a text selection (and the selection toolbar) mid-drawing.
+          e.preventDefault();
           e.currentTarget.setPointerCapture?.(e.pointerId);
           live.current = {
             id: e.pointerId,

@@ -20,6 +20,7 @@ import { ConflictView } from './ConflictView';
 import { ExerciseEditor } from './ExerciseEditor';
 import { authoringKey, processingQuery } from './queries';
 import { SaveStatus } from './SaveStatus';
+import { AddShiny, ShinyEditor } from './ShinyApp';
 import { TestEditor } from './TestEditor';
 import { AddWebSlides, WebSlidesEditor } from './WebSlides';
 
@@ -49,6 +50,7 @@ const isExercise = (t: Type) => t === 'exercise';
 const isReading = (t: Type) => t === 'reading_native' || t === 'reading_pdf';
 const isWebSlides = (t: Type) => t === 'slides_web';
 const isTest = (t: Type) => t === 'test';
+const isShiny = (t: Type) => t === 'shiny';
 
 interface Props {
   courseId: string;
@@ -66,6 +68,7 @@ export function ResourceSection({ courseId, topicId, resources }: Props) {
   const [adding, setAdding] = useState(false);
   const [addingNotebook, setAddingNotebook] = useState(false);
   const [addingSlides, setAddingSlides] = useState(false);
+  const [addingShiny, setAddingShiny] = useState(false);
   const refresh = useCallback(
     () => queryClient.invalidateQueries({ queryKey: authoringKey(courseId) }),
     [queryClient, courseId],
@@ -159,6 +162,29 @@ export function ResourceSection({ courseId, topicId, resources }: Props) {
                     onClick={() => setAddingNotebook(true)}
                   >
                     Add notebook
+                  </button>
+                </div>
+              )
+            ) : null}
+            {tab.name === 'Notebooks' ? (
+              addingShiny ? (
+                <AddShiny
+                  courseId={courseId}
+                  topicId={topicId}
+                  onCancel={() => setAddingShiny(false)}
+                  onAdded={() => {
+                    setAddingShiny(false);
+                    void refresh();
+                  }}
+                />
+              ) : (
+                <div className={styles.mt12}>
+                  <button
+                    type="button"
+                    className={buttons.outline}
+                    onClick={() => setAddingShiny(true)}
+                  >
+                    Add Shiny app
                   </button>
                 </div>
               )
@@ -287,6 +313,7 @@ function ResourceRow({
         </div>
         {isReading(resource.type) ||
         isWebSlides(resource.type) ||
+        isShiny(resource.type) ||
         isExercise(resource.type) ||
         isTest(resource.type) ? (
           <button
@@ -307,6 +334,9 @@ function ResourceRow({
       ) : null}
       {open && isWebSlides(resource.type) ? (
         <WebSlidesEditor courseId={courseId} resourceId={resource.id} onSaved={onChanged} />
+      ) : null}
+      {open && isShiny(resource.type) ? (
+        <ShinyEditor courseId={courseId} resourceId={resource.id} onSaved={onChanged} />
       ) : null}
       {open && isReading(resource.type) ? (
         <ReadingEditor courseId={courseId} resourceId={resource.id} onSaved={onChanged} />
