@@ -26,6 +26,7 @@ export async function resetDatabase(url: string): Promise<void> {
     await client.query('drop schema if exists drizzle cascade');
     // Queued jobs name rows that no longer exist; pg-boss reinstalls its schema on start.
     await client.query('drop schema if exists pgboss cascade');
+    await client.query('drop schema if exists pgboss_exec cascade');
     await client.query('create schema public');
   } finally {
     await client.end();

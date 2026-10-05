@@ -22,9 +22,11 @@ describe('AUD15 error replies', () => {
       const op = doc.paths[openapiPath(contract.path)]?.[contract.method.toLowerCase()];
       const name = `${contract.method} ${contract.path}`;
       expect(op, name).toBeDefined();
-      const expected = [contract.status ?? 200, ...Object.keys(errorResponses(contract))].map(
-        String,
-      );
+      const expected = [
+        contract.status ?? 200,
+        ...(contract.alternativeStatus ? [contract.alternativeStatus] : []),
+        ...Object.keys(errorResponses(contract)),
+      ].map(String);
       expect(Object.keys(op.responses).sort(), name).toEqual(expected.sort());
     }
     // Spot checks of statuses the handlers raise themselves (they were missing before).

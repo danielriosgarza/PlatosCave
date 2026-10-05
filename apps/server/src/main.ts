@@ -2,7 +2,9 @@ import pino from 'pino';
 import { buildApp } from './app';
 import { loadConfig } from './config';
 import { createDb } from './db/client';
-import { createBoss } from './db/jobs/boss';
+import { createBoss, EXEC_SCHEMA } from './db/jobs/boss';
+import { workExecution } from './execution/handlers';
+import { ensureExecQueues } from './execution/queues';
 import type { JobLogger } from './jobs/logger';
 import { workMaintenance } from './jobs/maintenance';
 import { loadJobs } from './jobs/registry';
@@ -99,9 +101,33 @@ if (mode === 'api' || mode === 'relay') {
         return false;
       },
     );
+  // The runner's channel (docs/design/runner.md §8.4): a second instance on schema pgboss_exec.
+  // Without it the API still serves; code runs answer 503 and submissions queue no grading.
+  const bossExec =
+    database &&
+    createBoss(database.pool, {
+      role: 'api',
+      schema: EXEC_SCHEMA,
+      onError: (err) => logBossError(err),
+      onWarning: (warning) => logBossWarning(warning),
+    });
+  const execStarted = await bossExec
+    ?.start()
+    .then(() => ensureExecQueues(bossExec))
+    .then(
+      () => true,
+      (err) => {
+        logBossError(err);
+        return false;
+      },
+    );
   const app = await buildApp(config, {
     mode,
-    ...(database && { db: database.db, ...(started && { boss }) }),
+    ...(database && {
+      db: database.db,
+      ...(started && { boss }),
+      ...(execStarted && { bossExec }),
+    }),
   });
   logPoolError = (err) => app.log.error({ err }, 'pg pool error');
   logBossError = (err) => app.log.error({ err }, 'pg-boss error');
@@ -110,6 +136,7 @@ if (mode === 'api' || mode === 'relay') {
   onSignals(app.log, async () => {
     await app.close();
     await boss?.stop({ graceful: true });
+    await bossExec?.stop({ graceful: true });
   });
 } else {
   const log = pino({ level: config.LOG_LEVEL, name: 'worker' });
@@ -124,18 +151,33 @@ if (mode === 'api' || mode === 'relay') {
     onError: (err) => log.error({ err }, 'pg-boss error'),
     onWarning: (warning) => log.warn({ warning }, 'pg-boss warning'),
   });
+  // The runner's channel: this worker supervises pgboss_exec, so it expires the `active` job of
+  // a runner that died mid-run (design §7.5), and consumes results and dead letters.
+  const bossExec = createBoss(database.pool, {
+    role: 'worker',
+    schema: EXEC_SCHEMA,
+    onError: (err) => log.error({ err }, 'pg-boss error'),
+    onWarning: (warning) => log.warn({ warning }, 'pg-boss warning'),
+  });
   let storage: Storage | undefined;
   const started = (async () => {
     // Inside startup, so a store that cannot be set up is reported as a failed start.
     storage = createStorage(config);
     await boss.start();
+    await bossExec.start();
+    await ensureExecQueues(bossExec);
+    const exec = { boss: bossExec, runtimes: config.RUNNER_RUNTIMES, log };
     const jobs = await loadJobs();
     // Jobs get the queue too, so one may queue follow-ups (ingestion re-queues mapping).
     for (const job of jobs) {
-      await workScopedJob(boss, database.db, job, log, {}, { storage, boss });
+      await workScopedJob(boss, database.db, job, log, {}, { storage, boss, exec });
     }
     const maintenance = await workMaintenance(boss, database.db, log);
-    log.info({ jobs: [...jobs.map((j) => j.name), ...maintenance] }, 'worker started');
+    const execution = await workExecution(bossExec, database.db, log);
+    log.info(
+      { jobs: [...jobs.map((j) => j.name), ...maintenance, ...execution] },
+      'worker started',
+    );
   })();
   // Installed before startup, so a signal during it still stops pg-boss once startup settles.
   // pg-boss's own stop() waits for start() too, so a startup that hangs (boss.start() waiting on
@@ -145,7 +187,11 @@ if (mode === 'api' || mode === 'relay') {
     if (!(await settlesWithin(started, WORKER_STOP_TIMEOUT_MS))) {
       throw new Error(`worker startup did not settle within ${WORKER_STOP_TIMEOUT_MS} ms`);
     }
-    await boss.stop({ graceful: true, timeout: Math.max(deadline - Date.now(), 1) });
+    await Promise.all(
+      [boss, bossExec].map((b) =>
+        b.stop({ graceful: true, timeout: Math.max(deadline - Date.now(), 1) }),
+      ),
+    );
     storage?.destroy?.();
   });
   try {

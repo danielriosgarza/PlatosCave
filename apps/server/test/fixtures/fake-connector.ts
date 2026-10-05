@@ -111,6 +111,7 @@ export class FakeConnector {
   readonly closed: Promise<{ code: number; reason: string }>;
   private waiters: { match: (m: Received) => boolean; resolve: (m: Received) => void }[] = [];
   private frameWaiters: ((frame: Buffer) => void)[] = [];
+  private readonly frameListeners: ((frame: Buffer) => void)[] = [];
   private readonly answers = new Map<string, (m: Received) => void>();
   private cursor = 0;
   closeEvent: { code: number; reason: string } | undefined;
@@ -130,6 +131,7 @@ export class FakeConnector {
       if (typeof event.data !== 'string') {
         const frame = Buffer.from(event.data as ArrayBuffer);
         this.frames.push(frame);
+        for (const listener of this.frameListeners) listener(frame);
         for (const waiter of this.frameWaiters.splice(0)) waiter(frame);
         return;
       }
@@ -174,6 +176,11 @@ export class FakeConnector {
   /** The next binary frame, including one that already arrived and was not awaited. */
   nextFrame(): Promise<Buffer> {
     return new Promise((resolve) => this.frameWaiters.push(resolve));
+  }
+
+  /** Calls `listener` with every later binary frame. */
+  onFrame(listener: (frame: Buffer) => void): void {
+    this.frameListeners.push(listener);
   }
 
   /** Answers every later message of type `t` with `reply`. */
