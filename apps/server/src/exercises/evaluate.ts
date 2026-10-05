@@ -1,4 +1,9 @@
-import { type ExerciseStep, exerciseResponse, type exerciseStepView } from '@parallax/contracts';
+import {
+  type ExerciseStep,
+  exerciseResponse,
+  type exerciseStepView,
+  onControlGrid,
+} from '@parallax/contracts';
 import type { z } from 'zod';
 
 /**
@@ -118,8 +123,8 @@ export function parseResponse(step: ExerciseStep, raw: unknown): Parsed {
     case 'simulation': {
       const { value: v, observations } = value as { value: number; observations: object };
       const { min, max, step: size } = step.control;
-      const onGrid = Math.abs((v - min) / size - Math.round((v - min) / size)) < 1e-9;
-      if (v < min || v > max || !onGrid) return refuse(`${step.control.label} is out of range`);
+      if (v < min || v > max || !onControlGrid(v, min, size))
+        return refuse(`${step.control.label} is out of range`);
       return known(step.observations, Object.keys(observations))
         ? { ok: true, value }
         : refuse('Only the declared observations are recorded');

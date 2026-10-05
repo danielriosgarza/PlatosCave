@@ -135,6 +135,16 @@ const sameSet = (a: string[], b: string[]) =>
   a.length === b.length && new Set(a).size === a.length && a.every((x) => b.includes(x));
 
 /** Cross-field rules a step's own shape cannot express; the message names what is wrong. */
+/**
+ * Whether `value` is a point the simulation control offers: min + k·step for a whole k. Both
+ * sides are snapped to six decimals, as the control does when it sends a value, so authors
+ * and students agree for large step counts and for values below the rounding.
+ */
+export function onControlGrid(value: number, min: number, step: number): boolean {
+  const k = Math.round((value - min) / step);
+  return Number.isFinite(k) && Number(value.toFixed(6)) === Number((min + k * step).toFixed(6));
+}
+
 function stepProblem(step: ExerciseStep): string | undefined {
   const unique = (list: { id: string }[]) => new Set(ids(list)).size === list.length;
   switch (step.kind) {
@@ -158,8 +168,7 @@ function stepProblem(step: ExerciseStep): string | undefined {
       const { min, max, initial, step: size } = step.control;
       const inRange = (v: number) => v >= min && v <= max;
       // The control only offers min + k·step, so a value off that grid could never be checked.
-      const onGrid = (v: number) =>
-        Math.abs((v - min) / size - Math.round((v - min) / size)) < 1e-9;
+      const onGrid = (v: number) => onControlGrid(v, min, size);
       if (min >= max || !inRange(initial)) return 'control range is invalid';
       if (!onGrid(initial)) return 'initial value must be one the control offers (min + k·step)';
       if (!unique(step.observations)) return 'observation ids must be unique';

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { exerciseProblems, exerciseV1 } from './exercise';
+import { exerciseProblems, exerciseV1, onControlGrid } from './exercise';
 
 const fb = { correct: 'Yes.', incomplete: 'Not yet.' };
 const simulation = (control: object, compare: number[]) => ({
@@ -46,6 +46,16 @@ describe('exercise.v1 authoring rules', () => {
     expect(
       exerciseProblems(simulation({ min: 0, max: 1, step: 0.1, initial: 0.3 }, [0.3, 0.7])),
     ).toEqual([]);
+  });
+
+  test('the grid test is relative to k and snaps to six decimals, so large step counts agree', () => {
+    expect(onControlGrid(0.3, 0, 0.1)).toBe(true);
+    expect(onControlGrid(0.35, 0, 0.1)).toBe(false);
+    // k = 10 million: an absolute 1e-9 on k would refuse this grid point.
+    expect(onControlGrid(1_000_000, 0, 0.1)).toBe(true);
+    expect(onControlGrid(1_000_000.04, 0, 0.1)).toBe(false);
+    // A value below the six-decimal rounding of the control is the grid point the control sends.
+    expect(onControlGrid(0.3 + 1e-8, 0, 0.1)).toBe(true);
   });
 
   test('credit is optional; points must be positive and the hint policy known', () => {
