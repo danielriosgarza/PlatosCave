@@ -86,6 +86,8 @@ export class SessionRelay {
   private readonly chains = new Map<string, Promise<void>>();
   /** Connector messages naming a session that is not on that connector's own list (§10.4). */
   unmatchedMessages = 0;
+  /** Listeners told the id of every session whose state or cause changed (the browser channel). */
+  private readonly changeListeners = new Set<(sessionId: string) => void>();
 
   constructor(
     private readonly options: {
@@ -122,11 +124,28 @@ export class SessionRelay {
       close: (link) => {
         this.awaitingFirstHeartbeat.delete(link);
         this.serial(link.connectorId, async () => {
-          await markLinkLost(this.options.db, link.connectorId, this.options.now());
+          const lost = await markLinkLost(this.options.db, link.connectorId, this.options.now());
+          for (const id of lost) this.changed(id);
         });
       },
       notice: (link, message) => this.serial(link.connectorId, () => this.notice(link, message)),
     });
+  }
+
+  /** Subscribes to session changes; returns the unsubscribe. */
+  onChange(listener: (sessionId: string) => void): () => void {
+    this.changeListeners.add(listener);
+    return () => this.changeListeners.delete(listener);
+  }
+
+  private changed(sessionId: string): void {
+    for (const listener of this.changeListeners) {
+      try {
+        listener(sessionId);
+      } catch (err) {
+        this.options.log.error({ err, sessionId }, 'session change listener failed');
+      }
+    }
   }
 
   /** Waits until everything already received for `connectorId` has been applied (tests). */
@@ -173,6 +192,7 @@ export class SessionRelay {
       return null;
     }
     this.settle(sessionId, applied.session.state);
+    if (applied.changed) this.changed(sessionId);
     return applied;
   }
 
@@ -370,6 +390,7 @@ export class SessionRelay {
       this.now,
     );
     if (applied?.session.state !== 'stopping') return { ok: false, reason: 'not_open' };
+    if (applied.changed) this.changed(session.id);
     const connectorId = session.connectorId;
     const failed: SessionEvent = { t: 'stop_failed', previous };
     this.stops.get(session.id)?.cancel();
@@ -407,6 +428,7 @@ export class SessionRelay {
     );
     if (!applied?.changed) return null;
     this.settle(session.id, applied.session.state);
+    this.changed(session.id);
     return applied.session as OwnedSession;
   }
 

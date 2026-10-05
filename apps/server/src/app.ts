@@ -5,7 +5,7 @@ import rateLimit from '@fastify/rate-limit';
 import sensible from '@fastify/sensible';
 import swagger from '@fastify/swagger';
 import websocket from '@fastify/websocket';
-import { LINK_SUBPROTOCOL, type RouteContract } from '@parallax/contracts';
+import { LINK_SUBPROTOCOL, MAX_CHANNEL_FRAME_BYTES, type RouteContract } from '@parallax/contracts';
 import Fastify, { type FastifyInstance, type FastifyRequest } from 'fastify';
 import {
   jsonSchemaTransform,
@@ -216,9 +216,13 @@ export async function buildApp(config: Config, deps: Deps = {}): Promise<Fastify
   });
 
   if (relay) {
-    // Link messages up to max(maxControl, maxPayload + 5) bytes (§4.1); only the link's
+    // Link messages up to max(maxControl, maxPayload + 5) bytes (§4.1), which the link enforces
+    // itself, and browser-channel frames carrying a cell of up to 1 MiB (§10.5); only the link's
     // subprotocol is agreed, and its route closes a socket that did not offer it.
-    const maxPayload = links instanceof LiveLinkRegistry ? links.maxMessageBytes : 65541;
+    const maxPayload = Math.max(
+      links instanceof LiveLinkRegistry ? links.maxMessageBytes : 65541,
+      MAX_CHANNEL_FRAME_BYTES,
+    );
     await app.register(websocket, {
       options: {
         maxPayload,

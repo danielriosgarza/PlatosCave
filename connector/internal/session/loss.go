@@ -5,9 +5,11 @@ import (
 	"time"
 
 	"parallax/connector/internal/cause"
+	"parallax/connector/internal/target"
 )
 
-// Reconnector re-establishes a lost session's transport; P3-05a's SSH runtime implements it.
+// Reconnector re-establishes a lost session's transport; the SSH runtime (target.Remote)
+// implements it.
 type Reconnector interface {
 	Reconnect(ctx context.Context) error
 }
@@ -105,6 +107,40 @@ func (m *Manager) reconnect(s *Session, r Reconnector) {
 		cancel()
 		if err == nil {
 			m.Recovered(s.ID)
+			return
+		}
+	}
+}
+
+// watchRemote reports the losses of a remote session's transport or service (design §5.5): a
+// loss whose process the runtime proved gone stops the session with its cause; any other makes
+// it disconnected and starts reconnecting.
+func (m *Manager) watchRemote(s *Session, rem target.Remote) {
+	for {
+		select {
+		case <-s.ctx.Done():
+			return
+		case l := <-rem.Losses():
+			if !l.Gone {
+				m.Lost(s.ID, l.Evidence, rem)
+				continue
+			}
+			s.mu.Lock()
+			if s.state != StateReady && s.state != StateDisconnected {
+				s.mu.Unlock()
+				continue
+			}
+			s.state = StateStopped
+			healthy := s.lastHealthy
+			s.mu.Unlock()
+			ev := l.Evidence
+			m.mu.Lock()
+			ev.Slept = ev.Slept || m.sleep.SleptSince(healthy)
+			m.mu.Unlock()
+			ev.OS, ev.Now = m.cfg.OS, m.cfg.Now()
+			why := cause.Classify(ev)
+			m.logf("Session %s: the Jupyter server on %s ended (%s).", s.ID, s.Target.Host, why)
+			m.finish(s, "", why)
 			return
 		}
 	}

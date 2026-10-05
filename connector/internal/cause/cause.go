@@ -181,7 +181,8 @@ func Classify(e Evidence) string {
 	if !e.ExpectedEnd.IsZero() && !e.Now.Before(e.ExpectedEnd.Add(-AllocationMargin)) && e.TransportEnded {
 		return AllocationExpired
 	}
-	if VPNGone(e.OS, e.Before, e.After) || (e.RouteBefore != "" && e.RouteAfter != e.RouteBefore) {
+	// A route that is unknown before or after (the lookup failed) is no evidence of a change.
+	if VPNGone(e.OS, e.Before, e.After) || (e.RouteBefore != "" && e.RouteAfter != "" && e.RouteAfter != e.RouteBefore) {
 		return VPN
 	}
 	if Changed(e.Before, e.After) {

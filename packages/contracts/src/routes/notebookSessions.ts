@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { LinkEnvironment, LinkKernelspec, LinkLease, LinkRuntime } from '../connector';
 import { classArchived, defineRoute, errorBody } from '../define';
 import { exampleIds } from '../examples';
+import { ExecutionState, KernelView } from '../notebookChannel';
 import { targetRefused } from './connections';
 
 /**
@@ -149,5 +150,132 @@ export const forgetNotebookSession = defineRoute({
   params: sessionParams,
   response: SessionView,
   errors: { 409: z.object({ error: z.literal('not_forgettable') }) },
+  examples: { params: exampleSession },
+});
+
+// ── Kernel and executions (P3-06a, §7, §10.6) ──────────────────────────────────────────────
+
+/**
+ * 409 for a kernel operation the session cannot take now: `not_ready` (the session is not
+ * `ready` or its kernel channel is down), `kernel_exists` (start while a kernel runs: restart it
+ * or delete it first), `no_kernel`, `connector_offline`, or `kernel_failed` with the catalogue
+ * code or Jupyter status the connector answered.
+ */
+export const kernelRefused = z.object({
+  error: z.enum(['not_ready', 'kernel_exists', 'no_kernel', 'connector_offline', 'kernel_failed']),
+  code: z.string().optional(),
+});
+
+export const SessionKernel = z.object({ kernel: KernelView.nullable() });
+
+/**
+ * Starts a kernel of the chosen kernelspec in a `ready` session and opens its one kernel channel
+ * (§7). A kernel lost while the connector was away (cause `kernel_lost`) is replaced only this
+ * way: its variables are gone.
+ */
+export const startSessionKernel = defineRoute({
+  method: 'POST',
+  path: '/api/classes/:classId/notebook-sessions/:sessionId/kernel',
+  scope: { kind: 'class', role: 'any' },
+  summary: 'Start the kernel of a notebook session',
+  status: 201,
+  params: sessionParams,
+  body: z.strictObject({ kernelName: z.string().regex(/^[A-Za-z0-9._][A-Za-z0-9._-]{0,63}$/) }),
+  response: SessionKernel,
+  errors: { 409: kernelRefused },
+  examples: { params: exampleSession, body: { kernelName: 'python3' } },
+});
+
+/** The session's kernel as the relay knows it, or null. */
+export const getSessionKernel = defineRoute({
+  method: 'GET',
+  path: '/api/classes/:classId/notebook-sessions/:sessionId/kernel',
+  scope: { kind: 'class', role: 'any' },
+  summary: 'Read the kernel of a notebook session',
+  params: sessionParams,
+  response: SessionKernel,
+  examples: { params: exampleSession },
+});
+
+/** Shuts the kernel down; its unfinished executions become `aborted`. */
+export const deleteSessionKernel = defineRoute({
+  method: 'DELETE',
+  path: '/api/classes/:classId/notebook-sessions/:sessionId/kernel',
+  scope: { kind: 'class', role: 'any' },
+  summary: 'Shut down the kernel of a notebook session',
+  params: sessionParams,
+  response: SessionKernel,
+  errors: { 409: kernelRefused },
+  examples: { params: exampleSession },
+});
+
+/** Asks the kernel to stop its current operation. */
+export const interruptSessionKernel = defineRoute({
+  method: 'POST',
+  path: '/api/classes/:classId/notebook-sessions/:sessionId/kernel/interrupt',
+  scope: { kind: 'class', role: 'any' },
+  summary: 'Interrupt the kernel of a notebook session',
+  params: sessionParams,
+  response: SessionKernel,
+  errors: { 409: kernelRefused },
+  examples: { params: exampleSession },
+});
+
+/**
+ * Restarts the kernel (§10.6): its generation increases, unfinished executions become `aborted`
+ * and nothing is run again; outputs already shown belong to the previous generation.
+ */
+export const restartSessionKernel = defineRoute({
+  method: 'POST',
+  path: '/api/classes/:classId/notebook-sessions/:sessionId/kernel/restart',
+  scope: { kind: 'class', role: 'any' },
+  summary: 'Restart the kernel of a notebook session',
+  params: sessionParams,
+  response: SessionKernel,
+  errors: { 409: kernelRefused },
+  examples: { params: exampleSession },
+});
+
+export const ExecutionView = z.object({
+  id: z.uuid(),
+  ref: z.uuid(),
+  cellId: z.string(),
+  seq: z.number().int().min(1),
+  state: ExecutionState,
+  executionCount: z.number().int().nullable(),
+  outputsIncomplete: z.boolean(),
+  generation: z.number().int().min(0),
+  workingCopyRevision: z.number().int().nullable(),
+  sentAt: datetime.nullable(),
+  finishedAt: datetime.nullable(),
+});
+export type ExecutionView = z.infer<typeof ExecutionView>;
+
+/** The session's executions after `afterSeq`, in order, at most 500: how a reload reconciles. */
+export const listSessionExecutions = defineRoute({
+  method: 'GET',
+  path: '/api/classes/:classId/notebook-sessions/:sessionId/executions',
+  scope: { kind: 'class', role: 'any' },
+  summary: 'List the executions of a notebook session',
+  params: sessionParams,
+  query: z.object({ afterSeq: z.coerce.number().int().min(0).default(0) }),
+  response: z.object({ executions: z.array(ExecutionView) }),
+  examples: { params: exampleSession, query: { afterSeq: 0 } },
+});
+
+/**
+ * The browser channel (§10.5): a WebSocket of `notebookChannel.ts` messages. Before the upgrade
+ * the scope is resolved (a non-member, or anyone but the session's owner, gets the shared 404),
+ * and an `Origin` other than the app's is 403 (cross-site WebSocket hijacking).
+ */
+export const notebookSessionChannel = defineRoute({
+  method: 'GET',
+  path: '/api/classes/:classId/notebook-sessions/:sessionId/channels',
+  scope: { kind: 'class', role: 'any' },
+  summary: 'Notebook session channel (WebSocket)',
+  websocket: true,
+  params: sessionParams,
+  response: z.never(),
+  errors: { 403: errorBody },
   examples: { params: exampleSession },
 });
