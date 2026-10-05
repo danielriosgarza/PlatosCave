@@ -32,7 +32,7 @@ const maxAttachable = 16
 
 // Test runs workspace, runtime, notebook_auth and kernels for this computer.
 func (l *Local) Test(ctx context.Context, req *protocol.TestConnection, progress Progress) *protocol.TestResult {
-	s := &stages{progress: progress, limit: l.StageLimit}
+	s := &Stages{Progress: progress, Limit: l.StageLimit}
 	res := &protocol.TestResult{RequestID: req.RequestID}
 	rt := req.Runtime
 	python, pyErr := expandHome(rt.Python)
@@ -41,7 +41,7 @@ func (l *Local) Test(ctx context.Context, req *protocol.TestConnection, progress
 	var info jupyter.RuntimeInfo
 	var server jupyter.Server
 
-	s.run(ctx, "workspace", func(ctx context.Context) (*protocol.StageData, error) {
+	s.Run(ctx, "workspace", func(ctx context.Context) (*protocol.StageData, error) {
 		p, err := checkWorkspace(req.Target.Workspace)
 		if err != nil {
 			return nil, err
@@ -49,7 +49,7 @@ func (l *Local) Test(ctx context.Context, req *protocol.TestConnection, progress
 		resolved = p
 		return &protocol.StageData{ResolvedPath: p}, nil
 	})
-	s.run(ctx, "runtime", func(ctx context.Context) (*protocol.StageData, error) {
+	s.Run(ctx, "runtime", func(ctx context.Context) (*protocol.StageData, error) {
 		if rt.Mode == protocol.RuntimeStart {
 			if pyErr != nil {
 				return nil, pyErr
@@ -70,7 +70,7 @@ func (l *Local) Test(ctx context.Context, req *protocol.TestConnection, progress
 		return &protocol.StageData{State: "running", Version: srv.Version, RootDir: srv.RootDir}, nil
 	})
 	var client *jupyter.Client
-	s.run(ctx, "notebook_auth", func(ctx context.Context) (*protocol.StageData, error) {
+	s.Run(ctx, "notebook_auth", func(ctx context.Context) (*protocol.StageData, error) {
 		if rt.Mode == protocol.RuntimeStart {
 			return nil, &skip{reason: "not_started"}
 		}
@@ -83,7 +83,7 @@ func (l *Local) Test(ctx context.Context, req *protocol.TestConnection, progress
 	if client != nil {
 		defer client.CloseIdle()
 	}
-	s.run(ctx, "kernels", func(ctx context.Context) (*protocol.StageData, error) {
+	s.Run(ctx, "kernels", func(ctx context.Context) (*protocol.StageData, error) {
 		var specs []protocol.Kernelspec
 		var err error
 		source := "cli"
@@ -100,8 +100,8 @@ func (l *Local) Test(ctx context.Context, req *protocol.TestConnection, progress
 		data := &protocol.StageData{Source: source}
 		return data, checkKernel(specs, rt.KernelName)
 	})
-	res.Stages = s.list
-	res.Outcome = s.outcome()
+	res.Stages = s.List
+	res.Outcome = s.Outcome()
 	res.JupyterVersion = jupyterVersion(info.Version)
 	res.Environment = l.environment(info)
 	if rt.Mode == protocol.RuntimeStart && ctx.Err() == nil {
