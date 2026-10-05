@@ -2,6 +2,7 @@ import { finished, type Readable } from 'node:stream';
 import multipart from '@fastify/multipart';
 import {
   getSubmissionDownload,
+  getSubmissionFileDownload,
   launchColab,
   listOwnSubmissions,
   MAX_SUBMISSION_BYTES,
@@ -112,6 +113,26 @@ export default function notebookSubmissionRoutes(app: FastifyInstance, deps: Rou
       scope,
       { key: object.key, contentType: NOTEBOOK_TYPE },
       { disposition: 'attachment', filename: downloadName(object.filename, NOTEBOOK_TYPE) },
+    );
+  });
+
+  registerRoute(app, getSubmissionFileDownload, async ({ scope, params }) => {
+    const file = await submissions.submissionFileObject(
+      db(),
+      scope,
+      params.submissionId,
+      params.fileId,
+    );
+    if (!file) notFound();
+    return mintContentUrl(
+      {
+        contentOrigin: deps.config.CONTENT_ORIGIN,
+        secret: deps.config.CONTENT_TOKEN_SECRET,
+        now: now(),
+      },
+      scope,
+      { key: file.key, contentType: 'application/octet-stream' },
+      { disposition: 'attachment', filename: submissionFilename(file.path) || 'file' },
     );
   });
 }

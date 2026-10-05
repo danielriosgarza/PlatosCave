@@ -60,6 +60,13 @@ export class FakeJupyter {
   /** Whether received frames are credited back (§4.5). */
   credit = true;
   channel: number | undefined;
+  /** The workspace as Jupyter's contents API sees it: files by decoded path, and directories. */
+  readonly files = new Map<string, Buffer>();
+  readonly dirs = new Set<string>();
+  /** Sizes reported for paths without sending their bytes (`content=0`), for limit tests. */
+  readonly reportedSizes = new Map<string, number>();
+  /** Every complete request body the relay sent on an `http` stream, by stream id. */
+  readonly bodies = new Map<number, Buffer>();
   private partial = new Map<number, Buffer[]>();
   private held: Received[] = [];
 
@@ -90,6 +97,7 @@ export class FakeJupyter {
       const body = Buffer.concat(parts);
       const request = this.http.find((h) => h.streamId === streamId);
       if (request) {
+        this.bodies.set(streamId, body);
         this.respond(request);
         return;
       }
@@ -102,10 +110,113 @@ export class FakeJupyter {
     return this.written.filter((w) => w.message.header?.msg_type === 'execute_request');
   }
 
+  /** The `contents` requests so far, with their decoded path, query and body. */
+  get contentsRequests() {
+    return this.http
+      .filter((h) => h.purpose === 'contents')
+      .map((h) => {
+        const [raw = '', search = ''] = (h.path as string).split('?');
+        const body = this.bodies.get(h.streamId as number);
+        return {
+          method: h.method as string,
+          path: decodeURIComponent(raw.replace(/^\/api\/contents\/?/, '')),
+          query: new URLSearchParams(search),
+          body: body ? (JSON.parse(body.toString('utf8')) as Json) : undefined,
+        };
+      });
+  }
+
+  /** Jupyter's contents API over `files` and `dirs` (§7), as far as transfers use it. */
+  private respondContents(m: Received): void {
+    const streamId = m.streamId as number;
+    const [raw = '', search = ''] = (m.path as string).split('?');
+    const path = decodeURIComponent(raw.replace(/^\/api\/contents\/?/, ''));
+    const query = new URLSearchParams(search);
+    const name = path.split('/').pop() ?? '';
+    const isDir = path === '' || this.dirs.has(path);
+    if (m.method === 'GET') {
+      if (isDir) {
+        if (query.get('type') === 'file') {
+          this.reply(streamId, 400, { message: `${path} is a directory, not a file` });
+          return;
+        }
+        const prefix = path === '' ? '' : `${path}/`;
+        const children = [...this.files.keys(), ...this.dirs]
+          .filter(
+            (p) => p.startsWith(prefix) && p !== path && !p.slice(prefix.length).includes('/'),
+          )
+          .map((p) => ({
+            name: p.slice(prefix.length),
+            path: p,
+            type: this.dirs.has(p) ? 'directory' : 'file',
+            size: this.dirs.has(p) ? null : (this.files.get(p)?.length ?? 0),
+            last_modified: '2026-10-01T09:00:00Z',
+          }));
+        this.reply(streamId, 200, { name, path, type: 'directory', content: children });
+        return;
+      }
+      const reported = this.reportedSizes.get(path);
+      const bytes = this.files.get(path);
+      if (bytes === undefined && reported === undefined) {
+        this.reply(streamId, 404, { message: `No such file or directory: ${path}` });
+        return;
+      }
+      const model = {
+        name,
+        path,
+        type: 'file',
+        size: reported ?? bytes?.length ?? 0,
+        last_modified: '2026-10-01T09:00:00Z',
+      };
+      if (query.get('content') !== '1') {
+        this.reply(streamId, 200, { ...model, content: null, format: null });
+        return;
+      }
+      const format = query.get('format') === 'base64' ? 'base64' : 'text';
+      const data = bytes ?? Buffer.alloc(reported ?? 0);
+      this.reply(streamId, 200, {
+        ...model,
+        format,
+        content: format === 'base64' ? data.toString('base64') : data.toString('utf8'),
+      });
+      return;
+    }
+    if (m.method === 'PUT') {
+      const body = JSON.parse(this.bodies.get(streamId)?.toString('utf8') ?? '{}') as Json;
+      const parent = path.split('/').slice(0, -1).join('/');
+      if (parent !== '' && !this.dirs.has(parent)) {
+        this.reply(streamId, 404, { message: `No such directory: ${parent}` });
+        return;
+      }
+      if (body.type === 'directory') {
+        if (this.files.has(path)) {
+          this.reply(streamId, 400, { message: 'a file is in the way' });
+          return;
+        }
+        const existed = this.dirs.has(path);
+        this.dirs.add(path);
+        this.reply(streamId, existed ? 200 : 201, { name, path, type: 'directory' });
+        return;
+      }
+      const content = String(body.content ?? '');
+      const bytes =
+        body.format === 'base64' ? Buffer.from(content, 'base64') : Buffer.from(content, 'utf8');
+      const existed = this.files.has(path);
+      this.files.set(path, bytes);
+      this.reply(streamId, existed ? 200 : 201, { name, path, type: 'file', size: bytes.length });
+      return;
+    }
+    this.reply(streamId, 405, { message: 'not served' });
+  }
+
   private respond(m: Received): void {
     const path = m.path as string;
     const method = m.method as string;
     const streamId = m.streamId as number;
+    if (m.purpose === 'contents') {
+      this.respondContents(m);
+      return;
+    }
     if (method === 'POST' && path === '/api/kernels') {
       this.reply(streamId, 201, {
         id: this.kernelId,
@@ -168,9 +279,18 @@ export class FakeJupyter {
       headers: { 'content-type': 'application/json' },
       body: 'stream',
     });
-    this.connector.sendRaw(
-      encodeFrame({ streamId, flags: FLAG_END, payload: Buffer.from(JSON.stringify(body)) }, 65536),
-    );
+    // Frames of at most 64 KiB, the last one carrying END (§4.5).
+    const payload = Buffer.from(JSON.stringify(body));
+    for (let at = 0; at < payload.length || at === 0; at += 65536) {
+      const last = at + 65536 >= payload.length;
+      this.connector.sendRaw(
+        encodeFrame(
+          { streamId, flags: last ? FLAG_END : 0, payload: payload.subarray(at, at + 65536) },
+          65536,
+        ),
+      );
+      if (last) break;
+    }
   }
 
   /** Sends one kernel message on the current channel (or on `streamId`). */
@@ -328,7 +448,16 @@ export async function readySession(
   relay: Relay,
   testDb: TestDatabase,
   revisionId: string,
-  options: { owner?: string; cookie?: string; classId?: string; kernel?: boolean } = {},
+  options: {
+    owner?: string;
+    cookie?: string;
+    classId?: string;
+    kernel?: boolean;
+    /** Passed to `saveConnection` (an attach runtime, another target). */
+    connection?: Parameters<typeof saveConnection>[3];
+    /** What the connector reports with `ready`. */
+    report?: Record<string, unknown>;
+  } = {},
 ): Promise<ReadySession> {
   const owner = options.owner ?? ids.sam;
   const cookie = options.cookie ?? relay.world.cookie.sam;
@@ -336,9 +465,12 @@ export async function readySession(
   const live = await liveConnector(relay, owner);
   const jupyter = new FakeJupyter(live.connector);
   live.connector.answer('open_session', (m) =>
-    sessionState(relay, m.sessionId as string, 'ready', { requestId: m.requestId }),
+    sessionState(relay, m.sessionId as string, 'ready', {
+      requestId: m.requestId,
+      ...options.report,
+    }),
   );
-  const connectionId = await saveConnection(relay, cookie, live.id);
+  const connectionId = await saveConnection(relay, cookie, live.id, options.connection);
   const res = await call(relay, cookie, 'POST', base(classId), { connectionId, revisionId });
   expect(res.status, JSON.stringify(res.body)).toBe(202);
   const sessionId = res.body.sessionId as string;

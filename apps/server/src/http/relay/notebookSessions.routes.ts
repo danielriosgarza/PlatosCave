@@ -8,6 +8,7 @@ import {
 } from '@parallax/contracts/routes/notebookSessions';
 import type { FastifyInstance } from 'fastify';
 import type { RouteDeps } from '../../app';
+import { ensureWorkingCopy } from '../../content/workingCopy';
 import { connectionForSession } from '../../db/connectors/connections';
 import { findSession, listSessions, type SessionRow } from '../../db/notebooks/sessions';
 import { notebookRelays } from '../../relay/kernel';
@@ -68,7 +69,24 @@ export default function notebookSessionRoutes(app: FastifyInstance, deps: RouteD
     if (!found) return notFound();
     if (!opened.take(scope.user.id, now())) return fail(429, { error: 'too many requests' });
     const result = await sessions().open(scope, found, body);
-    if (result.ok) return { sessionId: result.sessionId, state: result.state };
+    if (result.ok) {
+      // The first Connect for this notebook revision makes the working copy (design §11). The
+      // session is open either way: a copy that could not be made is logged, and the working
+      // copy route answers 404 until a later Connect makes it.
+      try {
+        await ensureWorkingCopy(
+          db(),
+          deps.storage,
+          scope,
+          { revisionId: body.revisionId, sessionId: result.sessionId },
+          now(),
+          app.log,
+        );
+      } catch (err) {
+        app.log.error({ err, sessionId: result.sessionId }, 'making the working copy failed');
+      }
+      return { sessionId: result.sessionId, state: result.state };
+    }
     switch (result.reason) {
       case 'not_found':
         return notFound();
