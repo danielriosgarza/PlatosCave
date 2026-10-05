@@ -68,6 +68,10 @@ async function selectWords(page: Page, paragraph: number, chars: number) {
   );
 }
 
+/** The discussion entry holding `text`. Threads cannot be deleted, so earlier attempts' stay listed. */
+const threadOf = (page: Page, text: string) =>
+  page.locator('[class*="thread"]').filter({ hasText: text });
+
 const tools = (page: Page) => page.getByRole('toolbar', { name: 'Selected passage' });
 
 test('A03 a note acknowledged by the server is still there, marked, after a reload', async ({
@@ -98,6 +102,7 @@ test('A03 a note acknowledged by the server is still there, marked, after a relo
 test('A05 a student highlights text, writes a private note and posts an instructor question', async ({
   page,
 }) => {
+  const question = `Is n or n − 1 used here? ${Date.now()}`;
   const resourceId = await resourceOf(page);
   await page.goto(reading);
   await expect(page.getByText('Paragraph 1.', { exact: false }).first()).toBeVisible();
@@ -116,16 +121,10 @@ test('A05 a student highlights text, writes a private note and posts an instruct
   await selectWords(page, 3, 11);
   await tools(page).getByRole('button', { name: 'Ask' }).click();
   await expect(page.getByRole('combobox', { name: 'Visible to' })).toHaveValue('instructor');
-  await page.getByRole('textbox', { name: 'Comment or question' }).fill('Is n or n − 1 used here?');
+  await page.getByRole('textbox', { name: 'Comment or question' }).fill(question);
   await page.getByRole('button', { name: 'Post' }).click();
   // Threads cannot be deleted, so an earlier attempt's identical question may be listed too.
-  await expect(
-    page
-      .locator('[class*="thread"]')
-      .filter({ hasText: 'Is n or n − 1 used here?' })
-      .getByText('You → Instructor')
-      .first(),
-  ).toBeVisible();
+  await expect(threadOf(page, question).getByText('You → Instructor')).toBeVisible();
 
   // The server holds the highlight and the note as private, and the question as one thread.
   const stored = await held(page, resourceId);
@@ -133,10 +132,8 @@ test('A05 a student highlights text, writes a private note and posts an instruct
     ['highlight', 'private', null],
     ['note', 'private', 'Private thought'],
   ]);
-  // Threads cannot be deleted, so an earlier attempt's identical question may also be there.
-  const asked = stored.threads.filter((t) => t.posts[0]?.body === 'Is n or n − 1 used here?');
-  expect(asked.length).toBeGreaterThan(0);
-  expect(asked.every((t) => t.audience === 'instructor')).toBe(true);
+  const asked = stored.threads.filter((t) => t.posts[0]?.body === question);
+  expect(asked.map((t) => t.audience)).toEqual(['instructor']);
   // The question does not carry the note's text, and the note stays out of the thread.
   expect(JSON.stringify(stored.threads)).not.toContain('Private thought');
 });
@@ -161,9 +158,7 @@ test('A05 the instructor sees only the shared question, answers it and resolves 
   await page.getByRole('textbox', { name: 'Comment or question' }).fill(question);
   await page.getByRole('button', { name: 'Post' }).click();
   // Threads cannot be deleted, so the previous test's question may be listed too: find this one.
-  await expect(
-    page.locator('[class*="thread"]').filter({ hasText: question }).getByText('You → Instructor'),
-  ).toBeVisible();
+  await expect(threadOf(page, question).getByText('You → Instructor')).toBeVisible();
 
   // The instructor reads the question; the student's private note is nowhere in what they get.
   const signedIn = await page.request.post('/api/test/signin-as', {
@@ -175,13 +170,13 @@ test('A05 the instructor sees only the shared question, answers it and resolves 
   expect(JSON.stringify(seen)).not.toContain(privateNote);
   await page.goto(reading);
   await page.getByRole('button', { name: /^Discussion/ }).click();
-  const entry = page.locator('[data-active], [class*="thread"]').filter({ hasText: question });
+  const entry = threadOf(page, question);
   await expect(entry.first()).toBeVisible();
   await entry.first().getByRole('button', { name: 'Reply' }).click();
   await page.getByRole('textbox', { name: /^Reply to/ }).fill('Because the mean is estimated.');
   await page.getByRole('button', { name: 'Post reply' }).click();
   await expect(entry.first().getByText('Because the mean is estimated.')).toBeVisible();
-  await expect(page.getByText('· Instructor', { exact: false }).first()).toBeVisible();
+  await expect(entry.first().getByText('· Instructor', { exact: false }).first()).toBeVisible();
   await entry.first().getByRole('button', { name: 'Mark resolved' }).click();
   await expect(entry.first().getByText('Resolved')).toBeVisible();
 
@@ -189,7 +184,7 @@ test('A05 the instructor sees only the shared question, answers it and resolves 
   await page.request.post('/api/test/signin-as', { data: { email: 'lab-reader@example.test' } });
   await page.goto(reading);
   await page.getByRole('button', { name: /^Discussion/ }).click();
-  const mine = page.locator('[class*="thread"]').filter({ hasText: question });
+  const mine = threadOf(page, question);
   await expect(mine.first().getByText('Because the mean is estimated.')).toBeVisible();
   await expect(mine.first().getByText('Resolved')).toBeVisible();
   await mine.first().getByRole('button', { name: 'Reopen' }).click();
