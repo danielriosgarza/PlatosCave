@@ -263,14 +263,23 @@ describe('A33 notebook session isolation', () => {
     expect(beaConnections.body.map((c: { id: string }) => c.id)).not.toContain(
       opened.priya?.connectionId,
     );
+    const priyaConnections = await call(relay, cookie('priya'), 'GET', '/api/me/connections');
+    expect(priyaConnections.body.map((c: { id: string }) => c.id)).not.toContain(
+      opened.bea?.connectionId,
+    );
     const priyaSession = `${sessions(ids.classB)}/${opened.priya?.sessionId}`;
     expect(await call(relay, cookie('bea'), 'GET', priyaSession)).toMatchObject({ status: 404 });
+    const beaSession = `${sessions(ids.classB)}/${opened.bea?.sessionId}`;
+    expect(await call(relay, cookie('priya'), 'GET', beaSession)).toMatchObject({ status: 404 });
 
     // Once the instructor archives the template, its connections open no new session.
-    await testDb.db
-      .update(classComputeTemplates)
-      .set({ archivedAt: relay.now() })
-      .where(eq(classComputeTemplates.id, templateId));
+    const archived = await call(
+      relay,
+      cookie('marcus'),
+      'DELETE',
+      `/api/classes/${ids.classB}/compute-templates/${templateId}`,
+    );
+    expect(archived.status, JSON.stringify(archived.body)).toBe(200);
     await testDb.db
       .update(notebookSessions)
       .set({ state: 'stopped', cause: 'abandoned', stoppedAt: relay.now() })

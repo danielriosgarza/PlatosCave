@@ -115,7 +115,7 @@ describe('Class computers for a learner', () => {
     expect(ISOLATION_TEXT.allocation).toMatch(/allocation service/);
   });
 
-  it('is usable from the keyboard alone', async () => {
+  it('the learner form is usable from the keyboard alone', async () => {
     const onSubmit = vi.fn();
     const { container } = wrap(
       <TemplateConnectForm
@@ -245,7 +245,7 @@ describe('Class computers for an instructor', () => {
     expect(state.posts.at(-1)).toMatchObject({ method: 'DELETE' });
   });
 
-  it('is usable from the keyboard alone', async () => {
+  it('the publish form is usable from the keyboard alone', async () => {
     const state = { templates: [], posts: [] as { body: unknown }[] };
     serveTemplates(state as never);
     wrap(<TemplateManager classId={CLASS_A} />);

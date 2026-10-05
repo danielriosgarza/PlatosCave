@@ -58,8 +58,15 @@ export default function computeTemplateRoutes(app: FastifyInstance, deps: RouteD
     scope.requireRecentAuth();
     const result = await templates.updateTemplate(db(), scope, params.templateId, body, now());
     if (result.ok) return templateView(result.template);
+    // A new isolation can make the stored workspace pattern refused (`workspace_needs_user`).
+    if (result.reason === 'target_not_allowed') {
+      return fail(400, {
+        error: 'target_not_allowed',
+        code: result.code,
+        ...(result.rules && { rules: result.rules }),
+      });
+    }
     if (result.reason === 'class_archived') return fail(409, { error: 'class_archived' });
-    // A stored template always passes its own check: only `not_found` remains.
     return notFound();
   });
 

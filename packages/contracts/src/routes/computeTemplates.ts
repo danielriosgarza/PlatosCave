@@ -177,7 +177,8 @@ export const createComputeTemplate = defineRoute({
 /**
  * Changes a template's name, description, isolation or lease, with the host-owner statement
  * again. Its host, jump host, workspace and runtime are fixed: connections made from it hold
- * them, so another host is a new template (archive this one).
+ * them, so another host is a new template (archive this one). 400 `workspace_needs_user` when
+ * the new isolation is `account` and the workspace does not name the learner's account.
  */
 export const updateComputeTemplate = defineRoute({
   method: 'PATCH',
@@ -193,7 +194,7 @@ export const updateComputeTemplate = defineRoute({
     hostOwnerConfirmed: HostOwnerConfirmed,
   }),
   response: ComputeTemplateView,
-  errors: { 409: classArchived },
+  errors: { 400: templateRefused, 409: classArchived },
   examples: {
     params: { classId: exampleIds.zero, templateId: exampleIds.aa },
     body: { name: 'Department cluster (GPU)', hostOwnerConfirmed: true },

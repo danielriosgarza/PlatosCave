@@ -287,6 +287,25 @@ describe('class host templates', () => {
     // A container per learner may share a path.
     const container = await refused({ ...cluster.target, workspace: '/srv/parallax' }, 'container');
     expect(container.status, JSON.stringify(container.body)).toBe(201);
+    // Moving that template to an account per learner would point every learner at one directory.
+    const reisolated = await as(
+      'marcus',
+      'PATCH',
+      `${templates(ids.classB)}/${container.body.id}`,
+      {
+        isolation: 'account',
+        hostOwnerConfirmed: true,
+      },
+    );
+    expect(reisolated).toMatchObject({
+      status: 400,
+      body: { error: 'target_not_allowed', code: 'workspace_needs_user' },
+    });
+    const [kept] = await testDb.db
+      .select()
+      .from(classComputeTemplates)
+      .where(eq(classComputeTemplates.id, container.body.id));
+    expect(kept?.isolation).toBe('container');
     expect(
       (
         await as('marcus', 'POST', templates(ids.classB), {
