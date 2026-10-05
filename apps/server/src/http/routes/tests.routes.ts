@@ -14,6 +14,7 @@ import {
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { RouteDeps } from '../../app';
 import type { ClassScope } from '../../auth/scope';
+import { enqueueGrading } from '../../db/execution/runs';
 import * as tests from '../../db/tests';
 import { enqueueTestsExpire } from '../../jobs/tests-expire.job';
 import { notFound, registerRoute, settle } from '../register';
@@ -35,6 +36,19 @@ export default function testRoutes(app: FastifyInstance, deps: RouteDeps): void 
     if (!deps.boss || !deadlineAt) return;
     await enqueueTestsExpire(deps.boss, scope, attemptId, deadlineAt).catch((err) =>
       req.log.error({ err, attemptId }, 'could not queue the test deadline job'),
+    );
+  };
+
+  /**
+   * The grading hook (docs/design/runner.md §8.7) after the submission is stored. It is
+   * idempotent, so a repeated submit runs it again harmlessly; if it fails, the deadline job and
+   * an instructor's read of the results run it again.
+   */
+  const queueGrading = async (req: FastifyRequest, scope: ClassScope, attemptId: string) => {
+    if (!deps.bossExec) return;
+    const exec = { boss: deps.bossExec, runtimes: deps.config.RUNNER_RUNTIMES, log: req.log };
+    await enqueueGrading(db(), exec, scope, attemptId, now()).catch((err) =>
+      req.log.error({ err, attemptId }, 'could not queue the grading runs'),
     );
   };
 
@@ -73,7 +87,7 @@ export default function testRoutes(app: FastifyInstance, deps: RouteDeps): void 
     return settle(outcome);
   });
 
-  registerRoute(app, submitTestAttempt, async ({ scope, params, body, fail }) => {
+  registerRoute(app, submitTestAttempt, async ({ scope, params, body, fail, req }) => {
     const outcome = await tests.submitAttempt(
       db(),
       scope,
@@ -84,7 +98,9 @@ export default function testRoutes(app: FastifyInstance, deps: RouteDeps): void 
     if (!outcome.ok && outcome.reason === 'closed') {
       return fail(409, { error: outcome.error, receipt: outcome.receipt });
     }
-    return settle(outcome);
+    const receipt = settle(outcome);
+    await queueGrading(req, scope, params.attemptId);
+    return receipt;
   });
 
   registerRoute(app, keepLocalCopy, async ({ scope, params, body, fail }) => {

@@ -23,6 +23,35 @@ function isProxyAddress(entry: string): boolean {
   return /^\d{1,3}$/.test(prefix) && Number(prefix) <= (family === 4 ? 32 : 128);
 }
 
+/**
+ * One approved runtime a code question may select (docs/design/runner.md §6.3). `image` is the
+ * reference the runner allowlists; production pins it by `digest`.
+ */
+const RunnerRuntime = z.strictObject({
+  id: z.string().regex(/^(python|r)-[0-9]+\.[0-9]+$/),
+  language: z.enum(['python', 'r']),
+  image: z.string().min(1),
+  digest: z
+    .string()
+    .regex(/^sha256:[0-9a-f]{64}$/)
+    .nullable(),
+  harnessVersion: z.string().regex(/^[0-9]+$/),
+  packages: z.array(z.string().min(1)),
+});
+export type RunnerRuntime = z.infer<typeof RunnerRuntime>;
+
+/** Development and CI: the image `scripts/runner-image.sh build python` tags `:dev`. */
+const DEV_RUNNER_RUNTIMES: RunnerRuntime[] = [
+  {
+    id: 'python-3.12',
+    language: 'python',
+    image: 'parallax-runner-python:dev',
+    digest: null,
+    harnessVersion: '1',
+    packages: ['numpy', 'pandas', 'scipy'],
+  },
+];
+
 const Env = z
   .object({
     NODE_ENV: z.enum(['development', 'test', 'production']).default('development'),
@@ -152,6 +181,26 @@ const Env = z
       .enum(['true', 'false'])
       .default('true')
       .transform((v) => v === 'true'),
+    /**
+     * The runtimes code questions may select, as a JSON array (docs/design/runner.md §6.3).
+     * Production requires a `digest` on every entry.
+     */
+    RUNNER_RUNTIMES: z
+      .string()
+      .optional()
+      .transform((v, ctx): RunnerRuntime[] | undefined => {
+        if (v === undefined) return undefined;
+        try {
+          return JSON.parse(v);
+        } catch {
+          ctx.addIssue({ code: 'custom', message: 'a JSON array of runtimes' });
+          return z.NEVER;
+        }
+      })
+      .pipe(z.array(RunnerRuntime).optional())
+      .refine((list) => !list || new Set(list.map((r) => r.id)).size === list.length, {
+        message: 'runtime ids must be unique',
+      }),
     /** `1` mounts the e2e fixture routes under /api/test (ADR-0006); refused in production. */
     TEST_ROUTES: z
       .enum(['0', '1'])
@@ -176,6 +225,13 @@ const Env = z
             "required in production: your proxies' addresses / CIDR ranges, true, or false when no proxy sits in front (otherwise every client shares the proxy's rate limits)",
         });
       }
+    }
+    if (env.NODE_ENV === 'production' && env.RUNNER_RUNTIMES?.some((r) => r.digest === null)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['RUNNER_RUNTIMES'],
+        message: 'every runtime needs a digest in production',
+      });
     }
     if (env.NODE_ENV === 'production' && env.TEST_ROUTES) {
       ctx.addIssue({ code: 'custom', path: ['TEST_ROUTES'], message: 'not allowed in production' });
@@ -243,6 +299,9 @@ const Env = z
     APP_ORIGIN: env.APP_ORIGIN ?? 'http://localhost:5173',
     CONTENT_ORIGIN: env.CONTENT_ORIGIN ?? `http://${env.CONTENT_HOST}:${env.PORT}`,
     CONTENT_TOKEN_SECRET: env.CONTENT_TOKEN_SECRET ?? DEV_CONTENT_TOKEN_SECRET,
+    // Production approves only what it lists; elsewhere the locally built image is the default.
+    RUNNER_RUNTIMES:
+      env.RUNNER_RUNTIMES ?? (env.NODE_ENV === 'production' ? [] : DEV_RUNNER_RUNTIMES),
   }));
 
 export type Config = z.infer<typeof Env>;

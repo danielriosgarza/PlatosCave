@@ -75,6 +75,8 @@ export type RouteArgs<C> =
         fail: <K extends keyof E & ErrorStatus>(status: K, body: BodyOf<E, K>) => never;
         /** Answers 409 with the contract's declared conflict body; `fail(409, body)` for settle. */
         conflict: (body: BodyOf<E, 409>) => never;
+        /** Answers with the contract's `alternativeStatus` instead of its `status`. */
+        useAlternativeStatus: () => void;
       }
     : never;
 
@@ -122,7 +124,11 @@ export function registerRoute<C extends RouteContract>(
   app: FastifyInstance,
   contract: C,
   handler: (args: RouteArgs<C>) => Promise<z.input<C['response']>> | z.input<C['response']>,
-  options: { rateLimit?: RateLimitOptions } = {},
+  options: {
+    rateLimit?: RateLimitOptions;
+    /** Largest request body in bytes, when a route takes more than Fastify's 1 MiB; needs a 413. */
+    bodyLimit?: number;
+  } = {},
 ): void {
   if (contract.websocket) {
     throw new Error(
@@ -133,8 +139,13 @@ export function registerRoute<C extends RouteContract>(
   if (options.rateLimit && !contract.errors?.[429]) {
     throw new Error(`${contract.method} ${contract.path} is rate limited but declares no 429`);
   }
+  if (options.bodyLimit && !contract.errors?.[413]) {
+    throw new Error(`${contract.method} ${contract.path} sets a body limit but declares no 413`);
+  }
   const status = contract.status ?? 200;
   const answers = errorResponses(contract);
+  const successes: Partial<Record<number, z.ZodType>> = { [status]: contract.response, ...answers };
+  if (contract.alternativeStatus) successes[contract.alternativeStatus] = contract.response;
   // The limiter runs before the scope resolver, so an over-limit request costs no session lookup.
   // Each limiter built by app.rateLimit() has its own store, so counts are per route.
   const limiter = options.rateLimit ? app.rateLimit(options.rateLimit) : undefined;
@@ -148,12 +159,13 @@ export function registerRoute<C extends RouteContract>(
     // with HEAD (Playwright and the deploy checks use GET), so HEAD on an API path answers the
     // not-found 404; isolation-matrix.itest.ts pins that.
     exposeHeadRoute: false,
+    ...(options.bodyLimit && { bodyLimit: options.bodyLimit }),
     schema: {
       summary: contract.summary,
       ...(contract.params && { params: contract.params }),
       ...(contract.query && { querystring: contract.query }),
       ...(contract.body && { body: contract.body }),
-      response: { [status]: contract.response, ...answers },
+      response: successes,
     },
     config: { scope: contract.scope, contract },
     onRequest: limiter ? [limiter, resolve] : resolve,
@@ -172,6 +184,12 @@ export function registerRoute<C extends RouteContract>(
           },
           conflict: (body: unknown) => {
             throw new RouteFailure(409, body);
+          },
+          useAlternativeStatus: () => {
+            if (!contract.alternativeStatus) {
+              throw new Error(`${contract.method} ${contract.path} has no alternative status`);
+            }
+            (reply as FastifyReply).code(contract.alternativeStatus);
           },
         } as unknown as RouteArgs<C>);
       } catch (err) {

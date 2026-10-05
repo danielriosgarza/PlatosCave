@@ -76,3 +76,10 @@ export const courseObjectPrefix = (courseId: string): string => `courses/${cours
 export const classSubmissionPrefix = (classId: string): string => `classes/${classId}/submissions`;
 
 export const objectKey = (prefix: string, sha256: string): string => `${prefix}/objects/${sha256}`;
+
+/** Where a class's notebook working-copy revisions live (P3-09). */
+export const classWorkingCopyPrefix = (classId: string): string =>
+  `classes/${classId}/working-copies`;
+
+/** Where files copied out of a notebook session's workspace live (P3-09). */
+export const classTransferPrefix = (classId: string): string => `classes/${classId}/transfers`;

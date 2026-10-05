@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { buildApp } from '../../src/app';
@@ -10,7 +10,14 @@ import { loadConfig } from '../../src/config';
 import { findReleaseTopic, loadClassTopics } from '../../src/db/classTopics';
 import { adoptRelease } from '../../src/db/content/adoption';
 import { publishRelease } from '../../src/db/content/releases';
-import { classes, resourceRevisions, resources, studyPositions, topics } from '../../src/db/schema';
+import {
+  classes,
+  releaseResources,
+  resourceRevisions,
+  resources,
+  studyPositions,
+  topics,
+} from '../../src/db/schema';
 import { FsStorage } from '../../src/storage/fs';
 import { storeCourseObject } from '../../src/storage/objects';
 import {
@@ -438,6 +445,42 @@ describe('reviewed marks and completion', () => {
         required: null,
       }),
     ]);
+  });
+
+  test("the sheet lists the items in the author's order, not the rows' storage order", async () => {
+    const { db } = testDb;
+    const [row] = await db
+      .select({ releaseId: classes.releaseId })
+      .from(classes)
+      .where(eq(classes.id, ids.classA));
+    const releaseId = row?.releaseId ?? '';
+    const setPositions = async (reading: number, quiz: number) => {
+      const position = (resourceId: string, value: number) =>
+        db
+          .update(releaseResources)
+          .set({ position: value })
+          .where(
+            and(
+              eq(releaseResources.releaseId, releaseId),
+              eq(releaseResources.resourceId, resourceId),
+            ),
+          );
+      // Rewriting the rows in this order puts the reading ahead of the quiz in storage.
+      await position(ids.samplingReading, reading);
+      await position(ids.samplingQuiz, quiz);
+    };
+    // Published releases refuse updates; lift that guard for this fixture only.
+    await db.execute(sql`alter table release_resources disable trigger user`);
+    await setPositions(1, 0);
+    try {
+      const { body } = await api('sam', 'GET', sheetUrl(ids.classA, ids.sampling));
+      expect(body.items.map((i) => i.graded)).toEqual([true, false]);
+    } finally {
+      await setPositions(0, 1);
+      await db.execute(sql`alter table release_resources enable trigger user`);
+    }
+    const restored = await api('sam', 'GET', sheetUrl(ids.classA, ids.sampling));
+    expect(restored.body.items.map((i) => i.graded)).toEqual([false, true]);
   });
 
   test('a locked topic has no review sheet, takes no mark and stays locked', async () => {
