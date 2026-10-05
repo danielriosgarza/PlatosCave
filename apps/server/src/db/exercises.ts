@@ -444,7 +444,11 @@ export async function restartExercise(db: Db, scope: ClassScope, attemptId: stri
   return act(db, scope, attemptId, now, async (ctx) => {
     const { tx, attempt } = ctx;
     // A revision that is not a valid exercise cannot be opened, so it cannot be restarted on.
-    if (!(await definitionOf(tx, ctx.revisionId))) {
+    const definition =
+      ctx.revisionId === attempt.resourceRevisionId
+        ? ctx.definition
+        : await definitionOf(tx, ctx.revisionId);
+    if (!definition) {
       return invalid('This exercise cannot be restarted: its definition is not valid');
     }
     await tx
