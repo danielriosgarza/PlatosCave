@@ -105,7 +105,7 @@ export function StageList({
               <span className={styles.state}>{STAGE_LABEL[name]}</span>
               <div className={styles.body}>
                 <span>{statusText(stage, Boolean(stopped))}</span>
-                {stage?.status === 'running' ? (
+                {stage?.status === 'running' && stage.data?.terminalPrompt ? (
                   <p>
                     Waiting for you: answer the prompt in the connector's terminal on the computer
                     running it.

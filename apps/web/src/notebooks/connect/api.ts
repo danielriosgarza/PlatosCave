@@ -148,6 +148,7 @@ export const useConnectionTest = (connectionId: string | undefined, testId: stri
   });
 
 const SESSION_POLL_MS = 1000;
+const SESSION_WATCH_MS = 3000;
 const OPEN_STATES = new Set(['starting', 'ready', 'disconnected', 'unconfirmed', 'stopping']);
 export const isOpenState = (state: string) => OPEN_STATES.has(state);
 
@@ -155,7 +156,10 @@ export const isOpenState = (state: string) => OPEN_STATES.has(state);
 export const useSessions = (classId: string) =>
   useApi(listNotebookSessions, { params: { classId } });
 
-/** One session, read every second while it is starting or stopping. */
+/**
+ * One session, read again every few seconds in every open state (Parallax shows only what it
+ * read: a ready session can become disconnected while the panel is open) until it has ended.
+ */
 export const useNotebookSession = (classId: string, sessionId: string | undefined) =>
   useQuery({
     queryKey: [getNotebookSession.method, getNotebookSession.path, classId, sessionId],
@@ -164,10 +168,11 @@ export const useNotebookSession = (classId: string, sessionId: string | undefine
       call(getNotebookSession, {
         params: { classId, sessionId: sessionId as string },
       }),
-    refetchInterval: (query) =>
-      query.state.data?.state === 'starting' || query.state.data?.state === 'stopping'
-        ? SESSION_POLL_MS
-        : false,
+    refetchInterval: (query) => {
+      const state = query.state.data?.state;
+      if (state === 'starting' || state === 'stopping') return SESSION_POLL_MS;
+      return state && isOpenState(state) ? SESSION_WATCH_MS : false;
+    },
   });
 
 /** The relay's view of the kernel: Ready is shown only when it reports `idle` (§5.6). */
@@ -177,12 +182,13 @@ export const useKernel = (classId: string, sessionId: string | undefined, active
     enabled: Boolean(sessionId) && active,
     queryFn: () => call(getSessionKernel, { params: { classId, sessionId: sessionId as string } }),
     refetchInterval: (query) =>
-      query.state.data?.kernel?.state === 'idle' ? false : SESSION_POLL_MS,
+      query.state.data?.kernel?.state === 'idle' ? SESSION_WATCH_MS : SESSION_POLL_MS,
   });
 
 export function useSessionActions(classId: string) {
   const client = useQueryClient();
-  const done = () => client.invalidateQueries({ queryKey: [getNotebookSession.method] });
+  const done = () =>
+    client.invalidateQueries({ queryKey: [getNotebookSession.method, getNotebookSession.path] });
   const refreshList = () =>
     client.invalidateQueries({
       queryKey: [listNotebookSessions.method, listNotebookSessions.path],

@@ -19,8 +19,6 @@ interface Props {
 export const leaseSentence = (idle: number, grace: number) =>
   `Closing this tab keeps your kernel for ${grace} ${grace === 1 ? 'minute' : 'minutes'}. An open notebook with no activity stops after ${idle} minutes. If this computer sleeps past that deadline, the session stops when it wakes.`;
 
-const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
-
 /**
  * What Connect will do, before it does it: the host, account and the exact working directory the
  * connector reported, whether Jupyter is started or attached, the lease in words and the networks
@@ -33,8 +31,14 @@ export function ConnectSummary({ connection, connector, test, busy, onConnect }:
   const [kernel, setKernel] = useState(
     specs.find((k) => k.name === wanted)?.name ?? specs[0]?.name ?? '',
   );
-  const [idle, setIdle] = useState(30);
-  const [grace, setGrace] = useState(5);
+  // Kept as typed and checked on Connect, so any value can be typed.
+  const [idleText, setIdleText] = useState('30');
+  const [graceText, setGraceText] = useState('5');
+  const [problem, setProblem] = useState<string | null>(null);
+  const idle = Number(idleText);
+  const grace = Number(graceText);
+  const idleOk = /^\d+$/.test(idleText.trim()) && idle >= 5 && idle <= 240;
+  const graceOk = /^\d+$/.test(graceText.trim()) && grace >= 1 && grace <= 60;
   const target = connection.target;
   const resolved = test.stages.find((s) => s.name === 'workspace')?.data?.resolvedPath;
   const workspace = resolved ?? ('workspace' in target ? target.workspace : '');
@@ -86,20 +90,25 @@ export function ConnectSummary({ connection, connector, test, busy, onConnect }:
           <span>Stop after minutes with no activity (5 to 240)</span>
           <input
             inputMode="numeric"
-            value={idle}
-            onChange={(e) => setIdle(clamp(Number.parseInt(e.target.value, 10) || 5, 5, 240))}
+            value={idleText}
+            onChange={(e) => setIdleText(e.target.value)}
           />
         </label>
         <label className={styles.field}>
           <span>Keep the kernel after closing this tab, minutes (1 to 60)</span>
           <input
             inputMode="numeric"
-            value={grace}
-            onChange={(e) => setGrace(clamp(Number.parseInt(e.target.value, 10) || 1, 1, 60))}
+            value={graceText}
+            onChange={(e) => setGraceText(e.target.value)}
           />
         </label>
       </div>
-      <p>{leaseSentence(idle, grace)}</p>
+      {problem ? (
+        <div className={styles.alert} role="alert">
+          <p>{problem}</p>
+        </div>
+      ) : null}
+      {idleOk && graceOk ? <p>{leaseSentence(idle, grace)}</p> : null}
       {reach ? <p className={styles.muted}>{reach}</p> : null}
       <p className={styles.muted}>
         This connection can read and change the files this account can, with that account's
@@ -110,13 +119,16 @@ export function ConnectSummary({ connection, connector, test, busy, onConnect }:
           type="button"
           className={buttons.primary}
           disabled={busy}
-          onClick={() =>
+          onClick={() => {
+            if (!idleOk) return setProblem('Stop after: enter whole minutes from 5 to 240.');
+            if (!graceOk) return setProblem('Keep the kernel: enter whole minutes from 1 to 60.');
+            setProblem(null);
             onConnect({
               kernelName: kernel || undefined,
               idleTimeoutMin: idle,
               gracePeriodMin: grace,
-            })
-          }
+            });
+          }}
         >
           Connect
         </button>

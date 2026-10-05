@@ -46,6 +46,10 @@ const REFUSALS: Record<string, string> = {
   class_archived: 'This class is archived.',
   rate_limited: 'Too many attempts. Wait a minute and try again.',
   forbidden: 'A draft preview cannot connect a computer.',
+  not_owned:
+    'Parallax did not start this Jupyter server, so it cannot stop it. Disconnect leaves it running.',
+  not_open: 'This session has already ended.',
+  not_forgettable: 'This session can no longer be given up on; its state has changed.',
 };
 
 function refusalText(error: unknown, fallback: string): string {
@@ -77,12 +81,17 @@ export function ConnectPanel({ classId, revisionId, onClose }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  // Sessions the person has left: the cached list may still call them open.
+  const [left, setLeft] = useState<string[]>([]);
+  const [kernelError, setKernelError] = useState<string | null>(null);
+  const [kernelTry, setKernelTry] = useState(0);
+  const [sessionError, setSessionError] = useState<string | null>(null);
 
   useEffect(() => heading.current?.focus(), []);
 
   const test = useConnectionTest(testRef?.connectionId, testRef?.testId);
   const open = sessions.data?.find(
-    (s) => s.resourceRevisionId === revisionId && isOpenState(s.state),
+    (s) => s.resourceRevisionId === revisionId && isOpenState(s.state) && !left.includes(s.id),
   );
   const activeId = sessionId ?? open?.id;
   const session = useNotebookSession(classId, activeId);
@@ -101,14 +110,21 @@ export function ConnectPanel({ classId, revisionId, onClose }: Props) {
     readySession?.kernelName ??
     readySession?.runtime.kernelName ??
     readySession?.runtime.kernelspecs?.[0]?.name;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `kernelTry` is the person's request to try again
   useEffect(() => {
-    if (!readySession || !kernelKnown || hasKernel || !kernelToStart) return;
-    if (startedKernel.current === readySession.id) return;
+    if (!readySession || !kernelKnown) return;
+    // A kernel that exists settles it; one that is lost later may be started again.
+    if (hasKernel) {
+      startedKernel.current = null;
+      setKernelError(null);
+      return;
+    }
+    if (!kernelToStart || startedKernel.current === readySession.id) return;
     startedKernel.current = readySession.id;
     startKernel(classId, readySession.id, kernelToStart).catch((e) =>
-      setError(refusalText(e, 'The kernel could not be started.')),
+      setKernelError(refusalText(e, 'The kernel could not be started.')),
     );
-  }, [readySession, kernelKnown, hasKernel, kernelToStart, classId]);
+  }, [readySession, kernelKnown, hasKernel, kernelToStart, classId, kernelTry]);
 
   const runTest = async (conn: Connection, confirmations?: Confirmation[]) => {
     const { testId } = await startTest(conn.id, confirmations);
@@ -202,6 +218,9 @@ export function ConnectPanel({ classId, revisionId, onClose }: Props) {
   };
 
   const leaveSession = () => {
+    if (activeId) setLeft((ids) => [...ids, activeId]);
+    void sessions.refetch();
+    setSessionError(null);
     setSessionId(undefined);
     setTestRef(undefined);
   };
@@ -246,8 +265,32 @@ export function ConnectPanel({ classId, revisionId, onClose }: Props) {
           kernelState={kernel.data?.kernel?.state}
           busy={sessionActions.close.isPending || sessionActions.forget.isPending}
           onRefresh={() => void session.refetch()}
-          onClose={(stop) => sessionActions.close.mutate({ sessionId: session.data.id, stop })}
-          onForget={() => sessionActions.forget.mutate(session.data.id)}
+          error={sessionError ?? (session.data.state === 'ready' ? kernelError : null)}
+          onRetryKernel={
+            kernelError
+              ? () => {
+                  startedKernel.current = null;
+                  setKernelError(null);
+                  setKernelTry((n) => n + 1);
+                }
+              : undefined
+          }
+          onClose={(stop) => {
+            setSessionError(null);
+            sessionActions.close.mutate(
+              { sessionId: session.data.id, stop },
+              {
+                onError: (e) => setSessionError(refusalText(e, 'The session could not be closed.')),
+              },
+            );
+          }}
+          onForget={() => {
+            setSessionError(null);
+            sessionActions.forget.mutate(session.data.id, {
+              onError: (e) =>
+                setSessionError(refusalText(e, 'The session could not be given up on.')),
+            });
+          }}
           onLeave={leaveSession}
         />
       ) : activeId ? (
@@ -371,6 +414,8 @@ function SessionBlock({
   connectionName,
   kernelState,
   busy,
+  error,
+  onRetryKernel,
   onRefresh,
   onClose,
   onForget,
@@ -380,6 +425,8 @@ function SessionBlock({
   connectionName: string | undefined;
   kernelState: string | undefined;
   busy: boolean;
+  error: string | null;
+  onRetryKernel: (() => void) | undefined;
   onRefresh: () => void;
   onClose: (stop: boolean) => void;
   onForget: () => void;
@@ -400,7 +447,17 @@ function SessionBlock({
         <p role="status">
           <span className={styles.state}>{`${name} · ${runtimeLabel(session)} · ${label}`}</span>
         </p>
-        {label === 'Starting' && session.state === 'ready' ? (
+        {error ? (
+          <div className={styles.alert} role="alert">
+            <p>{error}</p>
+            {onRetryKernel ? (
+              <button type="button" className={buttons.outline} onClick={onRetryKernel}>
+                Start the kernel again
+              </button>
+            ) : null}
+          </div>
+        ) : null}
+        {label === 'Starting' && session.state === 'ready' && !error ? (
           <p className={styles.muted}>Jupyter is running. Waiting for the kernel to be idle.</p>
         ) : null}
         <div className={styles.row}>
@@ -447,13 +504,20 @@ function SessionBlock({
     );
   }
   return (
-    <LossNotice
-      session={session}
-      busy={busy}
-      onReconnect={onRefresh}
-      onForget={onForget}
-      onChooseAnother={onLeave}
-      onNewSession={onLeave}
-    />
+    <>
+      {error ? (
+        <div className={styles.alert} role="alert">
+          <p>{error}</p>
+        </div>
+      ) : null}
+      <LossNotice
+        session={session}
+        busy={busy}
+        onReconnect={onRefresh}
+        onForget={onForget}
+        onChooseAnother={onLeave}
+        onNewSession={onLeave}
+      />
+    </>
   );
 }

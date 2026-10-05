@@ -46,9 +46,11 @@ export function LossNotice({
               ? 'This session has stopped.'
               : session.state === 'failed'
                 ? 'This session could not start.'
-                : 'This session is disconnected.'}
+                : session.state === 'stopping'
+                  ? 'Stopping this session. The connector has not confirmed that it stopped.'
+                  : 'This session is disconnected.'}
         </strong>{' '}
-        {cause}
+        {session.state === 'stopping' ? null : cause}
       </p>
       {open ? (
         <p>

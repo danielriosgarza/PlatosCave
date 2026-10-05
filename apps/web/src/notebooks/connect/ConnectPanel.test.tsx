@@ -46,6 +46,8 @@ interface World {
   posts: { url: string; body: unknown }[];
   /** Answers the next test start with this refusal. */
   refuseTest?: { status: number; error: string };
+  /** Answers close, forget and kernel start with this refusal. */
+  refuse?: { status: number; error: string };
 }
 
 /** An API for the panel with state a test can change between polls. */
@@ -91,6 +93,13 @@ function serve(w: World) {
     }
     if (url === `/api/classes/${CLASS_A}/notebook-sessions/${SESSION}`) {
       return w.session ? { status: 200, body: w.session } : { status: 404, body: {} };
+    }
+    if (
+      w.refuse &&
+      method === 'POST' &&
+      url.startsWith(`/api/classes/${CLASS_A}/notebook-sessions/${SESSION}/`)
+    ) {
+      return { status: w.refuse.status, body: { error: w.refuse.error } };
     }
     if (url === `/api/classes/${CLASS_A}/notebook-sessions/${SESSION}/kernel`) {
       return method === 'POST'
@@ -320,6 +329,101 @@ describe('ConnectPanel', () => {
     renderPanel();
     await fillLocal();
     expect(await screen.findByRole('alert')).toHaveTextContent(/not connected to Parallax/);
+  });
+
+  it('A36 a ready, idle session that becomes disconnected is replaced by the loss notice', async () => {
+    const w = world({
+      connections: [sshConnection()],
+      sessions: [session()],
+      session: session(),
+      kernel: kernel('idle'),
+    });
+    serve(w);
+    renderPanel();
+    expect(await screen.findByText('Cluster · Python · Ready')).toBeInTheDocument();
+    w.session = session({ state: 'disconnected', cause: 'sleep' });
+    const alert = await screen.findByRole('alert', {}, { timeout: 6000 });
+    expect(alert).toHaveTextContent('This computer was asleep.');
+    expect(screen.queryByText(/· Ready/)).toBeNull();
+  }, 15000);
+
+  it('A36 Start a new session leaves a session that failed on its own', async () => {
+    // The cached list still calls it starting; the session itself is failed.
+    const w = world({
+      connections: [sshConnection()],
+      sessions: [session({ state: 'starting' })],
+      session: session({ state: 'failed', cause: 'jupyter_missing' }),
+    });
+    serve(w);
+    renderPanel();
+    await userEvent.click(await screen.findByRole('button', { name: 'Start a new session' }));
+    expect(await screen.findByLabelText('Connection name')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Start a new session' })).toBeNull();
+  });
+
+  it('a refused Stop says why', async () => {
+    const w = world({
+      connections: [sshConnection()],
+      sessions: [session()],
+      session: session(),
+      kernel: kernel('idle'),
+      refuse: { status: 409, error: 'connector_offline' },
+    });
+    serve(w);
+    renderPanel();
+    await userEvent.click(await screen.findByRole('button', { name: 'Stop session' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Stop the session and its kernel' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/not connected to Parallax/);
+  });
+
+  it('a refused Forget says why', async () => {
+    const lost = session({ state: 'disconnected', cause: 'vpn' });
+    const w = world({
+      connections: [sshConnection()],
+      sessions: [lost],
+      session: lost,
+      refuse: { status: 409, error: 'not_forgettable' },
+    });
+    serve(w);
+    renderPanel();
+    await userEvent.click(await screen.findByRole('button', { name: 'Forget this session' }));
+    expect(await screen.findByText(/can no longer be given up on/)).toBeInTheDocument();
+  });
+
+  it('a kernel that would not start says so and can be started again', async () => {
+    const w = world({
+      connections: [sshConnection()],
+      sessions: [session()],
+      session: session(),
+      kernel: null,
+      refuse: { status: 409, error: 'not_ready' },
+    });
+    serve(w);
+    renderPanel();
+    expect(await screen.findByText(/The kernel could not be started/)).toBeInTheDocument();
+    w.refuse = undefined;
+    await userEvent.click(screen.getByRole('button', { name: 'Start the kernel again' }));
+    await waitFor(() =>
+      expect(
+        w.posts.filter((p) => p.url.endsWith('/kernel') && !(p.body === undefined)),
+      ).toHaveLength(2),
+    );
+  });
+
+  it('a saved connection keeps its computer: it is named and cannot be changed', async () => {
+    const w = world({
+      connectors: [
+        connector(),
+        connector({ id: '00000000-0000-4000-8000-0000000a0002', name: 'Desktop' }),
+      ],
+      connections: [sshConnection()],
+    });
+    serve(w);
+    renderPanel();
+    await userEvent.selectOptions(await screen.findByLabelText('Saved connection'), 'Cluster');
+    expect(screen.queryByLabelText('Computer running the connector')).toBeNull();
+    const note = screen.getByText(/Save a new connection to use another/);
+    expect(note.parentElement).toHaveTextContent('Laptop');
   });
 
   it('a disconnected session shows its cause and Forget', async () => {

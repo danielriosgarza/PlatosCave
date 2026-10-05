@@ -62,6 +62,17 @@ describe('LossNotice', () => {
     expect(on.onNewSession).toHaveBeenCalledTimes(1);
   });
 
+  it('A36 a stop the connector has not confirmed is stopping, not disconnected, and can be forgotten', async () => {
+    const on = setup({ state: 'stopping', cause: null });
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveTextContent('Stopping this session.');
+    expect(alert).toHaveTextContent('has not confirmed that it stopped');
+    expect(alert).not.toHaveTextContent(/disconnected|reason Parallax does not recognise/);
+    expect(screen.queryByRole('button', { name: 'Reconnect' })).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Forget this session' }));
+    expect(on.onForget).toHaveBeenCalledTimes(1);
+  });
+
   it('a session that failed to start shows the catalogue text for its code', () => {
     setup({ state: 'failed', cause: 'jupyter_missing' });
     expect(screen.getByRole('alert')).toHaveTextContent('This session could not start.');

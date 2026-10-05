@@ -140,16 +140,28 @@ export function TargetForm({ kind, connectors, saved, busy, error, onSubmit }: P
           <span>Connection name</span>
           <input value={name} maxLength={64} onChange={(e) => setName(e.target.value)} />
         </label>
-        <label className={styles.field}>
-          <span>Computer running the connector</span>
-          <select value={connectorId} onChange={(e) => setConnectorId(e.target.value)}>
-            {connectors.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.online ? c.name : `${c.name} (offline)`}
-              </option>
-            ))}
-          </select>
-        </label>
+        {saved ? (
+          <div className={styles.field}>
+            <span>Computer running the connector</span>
+            <strong>
+              {connectors.find((c) => c.id === saved.connectorId)?.name ?? 'Another computer'}
+            </strong>
+            <span className={styles.muted}>
+              A saved connection stays on its computer. Save a new connection to use another.
+            </span>
+          </div>
+        ) : (
+          <label className={styles.field}>
+            <span>Computer running the connector</span>
+            <select value={connectorId} onChange={(e) => setConnectorId(e.target.value)}>
+              {connectors.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.online ? c.name : `${c.name} (offline)`}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
         {kind === 'ssh' ? (
           <>
             <label className={styles.field}>
