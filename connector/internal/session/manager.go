@@ -398,6 +398,11 @@ func (m *Manager) start(t target.Target, s *Session, req *protocol.OpenSession) 
 	m.logf("Session %s ready (%s, Jupyter %s).", s.ID, ownedWord(s.Owned), rt.JupyterVersion)
 	st := m.stateMsg(s, req.RequestID)
 	st.JupyterVersion, st.Kernelspecs, st.Environment = rt.JupyterVersion, rt.Kernelspecs, rt.Environment
+	if root := rt.ContentRoot; jupyter.Addressable(root) {
+		st.ContentRoot = &root
+	} else {
+		m.logf("Session %s: its workspace cannot be addressed inside the Jupyter server's root, so files cannot be transferred.", s.ID)
+	}
 	m.send(st)
 	if exited := rt.Exited(); exited != nil {
 		go m.watch(s, exited)
