@@ -59,11 +59,13 @@ export type ConnectionView = z.infer<typeof ConnectionView>;
 /**
  * 400 for a target Parallax refuses before anything is sent: `invalid_target` breaks a rule of
  * §4.4 (`rules` names them), `network_scope_denied` is a loopback, private or shared address the
- * connector's reported scope does not cover (§8).
+ * connector's reported scope does not cover (§8), `template_mismatch` is a connection naming a
+ * class template whose target is not the one that template makes for the person's account
+ * (`targetFromTemplate` in routes/computeTemplates).
  */
 export const targetRefused = z.object({
   error: z.literal('target_not_allowed'),
-  code: z.enum(['invalid_target', 'network_scope_denied']),
+  code: z.enum(['invalid_target', 'network_scope_denied', 'template_mismatch']),
   rules: z.array(z.number().int()).optional(),
 });
 
@@ -89,8 +91,10 @@ export const listConnections = defineRoute({
 
 /**
  * Saves a connection (§2, step 2). The connector must be the caller's and active (else 404 or
- * 409 `connector_not_active`); a template must be one of a class the caller belongs to (404).
- * The schema has no field for a secret. 409 `name_taken` when another unarchived connection of
+ * 409 `connector_not_active`); a template must be an unarchived one of a class the caller
+ * belongs to (404), and the target exactly the one it makes for the caller's own account and
+ * credential reference (400 `template_mismatch`; audited as `template.used`). The schema has no
+ * field for a secret. 409 `name_taken` when another unarchived connection of
  * the person has the name.
  */
 export const createConnection = defineRoute({
@@ -135,7 +139,9 @@ export const getConnection = defineRoute({
 
 /**
  * Renames a connection or changes its target or runtime. A change of host, port or jump host
- * drops the trusted host keys the new target no longer names (§10.3).
+ * drops the trusted host keys the new target no longer names (§10.3). A connection made from a
+ * class template keeps that template's target for the account it names (400
+ * `template_mismatch`).
  */
 export const updateConnection = defineRoute({
   method: 'PATCH',
