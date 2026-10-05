@@ -1,12 +1,15 @@
+import { createHash, randomUUID } from 'node:crypto';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { buildApp } from '../../src/app';
 import { loadConfig } from '../../src/config';
 import { adoptRelease } from '../../src/db/content/adoption';
 import { publishRelease } from '../../src/db/content/releases';
+import { resourceRevisions, resources } from '../../src/db/schema';
 import { FsStorage } from '../../src/storage/fs';
 import { asClassScope, asCourseScope, buildWorld, ids, type PersonName } from '../fixtures/world';
 import { createTestDatabase, type TestDatabase } from './db';
@@ -59,8 +62,6 @@ beforeAll(async () => {
     approved: `${APPROVED}/sampling-lab/?lang=en`,
     otherOrigin: 'https://evil.example.org/sampling-lab/',
     lookalike: `${APPROVED}.evil.example.org/`,
-    credentials: `https://user:secret@shiny.example.org/`,
-    notAnAddress: 'not an address',
   };
   for (const [key, url] of Object.entries(addresses)) {
     const created = await api('elena', 'POST', `${course}/topics/${ids.sampling}/resources`, {
@@ -70,6 +71,38 @@ beforeAll(async () => {
     });
     expect(created.status).toBe(200);
     revisions[key] = created.body.headRevisionId;
+  }
+  // The draft API refuses these addresses now; data written before that check can still hold them.
+  for (const [key, url] of Object.entries({
+    credentials: 'https://user:secret@shiny.example.org/',
+    notAnAddress: 'not an address',
+  })) {
+    const id = randomUUID();
+    const revisionId = randomUUID();
+    const content = { url };
+    await testDb.db.insert(resources).values({
+      id,
+      courseId: ids.statistics,
+      topicId: ids.sampling,
+      type: 'shiny',
+      title: `Sampling lab ${key}`,
+      position: 90,
+      createdBy: ids.elena,
+    });
+    await testDb.db.insert(resourceRevisions).values({
+      id: revisionId,
+      resourceId: id,
+      courseId: ids.statistics,
+      type: 'shiny',
+      content,
+      contentHash: createHash('sha256').update(JSON.stringify(content)).digest('hex'),
+      createdBy: ids.elena,
+    });
+    await testDb.db
+      .update(resources)
+      .set({ headRevisionId: revisionId })
+      .where(eq(resources.id, id));
+    revisions[key] = revisionId;
   }
   const published = await publishRelease(testDb.db, asCourseScope(ids.statistics, ids.elena));
   if (!published.ok) throw new Error(JSON.stringify(published.report));

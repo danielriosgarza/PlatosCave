@@ -1,3 +1,4 @@
+import { LinkContentRoot } from '@parallax/contracts';
 import type {
   ConflictChoice,
   TransferRequest as TransferRequestSchema,
@@ -41,8 +42,10 @@ import {
 } from '../db/notebooks/workingCopies';
 import { classTransferPrefix, type Storage } from '../storage/storage';
 import {
+  type ContentsQuery,
   contents,
   httpMessage,
+  inRoot,
   JupyterArgumentError,
   type JupyterRequest,
   MAX_CONTENTS_BODY,
@@ -86,6 +89,16 @@ const MAX_COPY_IN_BYTES = 25 * 1024 * 1024;
 
 type TransferRequest = z.infer<typeof TransferRequestSchema>;
 
+/**
+ * `contents` calls named by workspace-relative paths, as the routes and the declared files name
+ * them; Jupyter names them below the session's content root (§7).
+ */
+const inWorkspace = {
+  list: (root: string, dir: string) => contents.list(root, inRoot(root, dir)),
+  get: (root: string, path: string, q?: ContentsQuery) => contents.get(root, inRoot(root, path), q),
+  put: (root: string, path: string, model: object) => contents.put(root, inRoot(root, path), model),
+};
+
 export type Refusal =
   | {
       ok: false;
@@ -122,6 +135,19 @@ const json = (body: Buffer): ContentsModel | undefined => {
     return undefined;
   }
 };
+
+/**
+ * The session's content root: the one its connector reported, checked again with the rules of
+ * §7; or empty for a session the connector started in the workspace before roots were reported.
+ */
+export function contentRoot(session: Pick<OwnedSession, 'runtime' | 'owned'>): string | undefined {
+  const runtime = session.runtime as { mode?: unknown; contentRoot?: unknown };
+  if (runtime.contentRoot !== undefined) {
+    const parsed = LinkContentRoot.safeParse(runtime.contentRoot);
+    return parsed.success ? parsed.data : undefined;
+  }
+  return runtime.mode === 'start' && session.owned ? '' : undefined;
+}
 
 /** `name (parallax).ext`: where *save mine as a copy* writes (design §11). */
 export function copyName(path: string): string {
@@ -206,19 +232,19 @@ export class TransferRelay {
 
   /**
    * The link and content root a transfer of `session` uses, or why there is none. The content
-   * root is the workspace relative to Jupyter's root: empty for a session the connector started
-   * there (§7). An attached server's root is not reported to the relay, so its workspace cannot
-   * be placed and transfers are refused (`workspace_unknown`).
+   * root is the workspace relative to Jupyter's root, as the connector reported it with `ready`
+   * (P3-09b): empty for a session the connector started there, the workspace's place inside the
+   * server's `root_dir` for an attached one (§7). A session whose connector reported no usable
+   * root (an older connector attached to a server) cannot place its workspace, and transfers are
+   * refused (`workspace_unknown`).
    */
   private reach(session: OwnedSession): { link: Link; root: string } | Refusal {
     if (session.state !== 'ready') return { ok: false, reason: 'not_ready' };
-    const runtime = session.runtime as { mode?: string };
-    if (runtime.mode !== 'start' || !session.owned) {
-      return { ok: false, reason: 'workspace_unknown' };
-    }
+    const root = contentRoot(session);
+    if (root === undefined) return { ok: false, reason: 'workspace_unknown' };
     const link = this.options.links.get(session.connectorId);
     if (!link) return { ok: false, reason: 'connector_offline' };
-    return { link, root: '' };
+    return { link, root };
   }
 
   /** One `contents` exchange; throws `TransferFailed` when it cannot complete. */
@@ -305,7 +331,7 @@ export class TransferRelay {
     const answer = await this.call(
       link,
       session.id,
-      contents.get(root, path, { content: 1, type: 'file', format }),
+      inWorkspace.get(root, path, { content: 1, type: 'file', format }),
     );
     if (answer.status === 404) return { missing: true };
     if (answer.status !== 200) {
@@ -331,7 +357,7 @@ export class TransferRelay {
       const made = await this.call(
         link,
         session.id,
-        contents.put(root, dir, { type: 'directory' }),
+        inWorkspace.put(root, dir, { type: 'directory' }),
       );
       if (made.status !== 200 && made.status !== 201) {
         return { ok: false, error: `jupyter_${made.status}` };
@@ -341,7 +367,7 @@ export class TransferRelay {
     const answer = await this.call(
       link,
       session.id,
-      contents.put(root, path, { type: 'file', format, content }),
+      inWorkspace.put(root, path, { type: 'file', format, content }),
     );
     return answer.status === 200 || answer.status === 201
       ? { ok: true }
@@ -397,7 +423,11 @@ export class TransferRelay {
     };
 
     // The size first: a file of another size differs, and is not read at all.
-    const head = await this.call(link, session.id, contents.get(root, file.path, { content: 0 }));
+    const head = await this.call(
+      link,
+      session.id,
+      inWorkspace.get(root, file.path, { content: 0 }),
+    );
     let remote: { sha256: string; size: number };
     if (head.status === 404) return writeTo(file.path, 'copied');
     const model = head.status === 200 ? json(head.body) : undefined;
@@ -467,7 +497,7 @@ export class TransferRelay {
     const declared = copy ? await declaredFiles(this.db, this.options.storage, scope, copy) : [];
     return this.guarded(async () => {
       const path = dir ?? '';
-      const answer = await this.call(reach.link, session.id, contents.list(reach.root, path));
+      const answer = await this.call(reach.link, session.id, inWorkspace.list(reach.root, path));
       if (answer.status === 404) {
         return { ok: false as const, reason: 'invalid' as const, message: 'No such folder' };
       }
@@ -727,7 +757,7 @@ export class TransferRelay {
       const head = await this.call(
         reach.link,
         session.id,
-        contents.get(reach.root, path, { content: 0 }),
+        inWorkspace.get(reach.root, path, { content: 0 }),
       );
       const model = head.status === 200 ? json(head.body) : undefined;
       if (head.status === 404) {

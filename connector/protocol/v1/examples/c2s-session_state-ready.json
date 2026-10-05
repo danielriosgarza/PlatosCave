@@ -19,6 +19,7 @@
     "arch": "amd64",
     "runtime": "Python 3.12.8"
   },
+  "contentRoot": "",
   "leaseExpiresAt": "2026-10-03T10:00:00Z",
   "ts": 1790000000
 }

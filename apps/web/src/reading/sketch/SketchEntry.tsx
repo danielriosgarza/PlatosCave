@@ -7,6 +7,8 @@ interface Props {
   /** Where it sits, as the reader names it: `Figure 2`, `Page 4`. */
   label: string;
   needsReattachment: boolean;
+  /** A newer revision is still being mapped: the sketch is waiting, not lost. */
+  pending: boolean;
   /** This sketch is open in the editor. */
   editing: boolean;
   /** Another sketch is open: opening this one would replace its unsaved work. */
@@ -23,6 +25,7 @@ export function SketchEntry({
   annotation,
   label,
   needsReattachment,
+  pending,
   editing,
   blocked,
   editable,
@@ -35,7 +38,9 @@ export function SketchEntry({
     <div className={styles.entry} data-active={editing}>
       <div className={styles.entryHead}>
         <span>Sketch · {label}</span>
-        <span className={styles.muted}>{needsReattachment ? 'Needs reattachment' : 'Private'}</span>
+        <span className={styles.muted}>
+          {pending ? 'Waiting to be placed' : needsReattachment ? 'Needs reattachment' : 'Private'}
+        </span>
       </div>
       {annotation.body ? <p className={styles.preview}>{annotation.body}</p> : null}
       <p>

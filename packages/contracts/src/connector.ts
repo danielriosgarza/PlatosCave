@@ -551,6 +551,16 @@ export const LinkOpenSession = msg('open_session', {
   runtime: LinkRuntime,
   lease: LinkLease,
 });
+/**
+ * `session_state.contentRoot` (P3-09b): the workspace relative to the Jupyter server's
+ * `root_dir`, `/`-separated, empty when they are equal. Names are never empty, `.`, `..` or
+ * hidden, and hold no backslash or control character (design §7).
+ */
+const rootName = String.raw`[^./\\\x00-\x1f\x7f][^/\\\x00-\x1f\x7f]*`;
+export const LinkContentRoot = z
+  .string()
+  .max(1024)
+  .regex(new RegExp(`^(${rootName}(/${rootName})*)?$`));
 export const LinkSessionState = msg('session_state', {
   sessionId: ConnectorUuid,
   requestId: ConnectorUuid.optional(),
@@ -563,6 +573,7 @@ export const LinkSessionState = msg('session_state', {
   jupyterVersion: z.string().max(32).optional(),
   kernelspecs: z.array(LinkKernelspec).max(32).optional(),
   environment: LinkEnvironment.optional(),
+  contentRoot: LinkContentRoot.optional(),
   leaseExpiresAt: UtcTimestamp.optional(),
   ts: UnixSeconds,
 });

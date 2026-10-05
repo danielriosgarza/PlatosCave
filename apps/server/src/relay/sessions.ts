@@ -478,6 +478,7 @@ export class SessionRelay {
         jupyterVersion: message.jupyterVersion,
         kernelspecs: message.kernelspecs,
         environment: message.environment,
+        contentRoot: message.contentRoot,
         leaseExpiresAt: message.leaseExpiresAt,
       },
     );

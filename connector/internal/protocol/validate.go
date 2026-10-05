@@ -33,6 +33,7 @@ var (
 	reAPIPath        = regexp.MustCompile(`^/api/[A-Za-z0-9._~%/:@!$&'()*+,;=?-]*$`)
 	reWSProtocol     = regexp.MustCompile(`^[A-Za-z0-9._-]+$`)
 	reKernelID       = regexp.MustCompile(`^[A-Za-z0-9-]{1,64}$`)
+	reContentRoot    = regexp.MustCompile(`^([^./\\\x00-\x1f\x7f][^/\\\x00-\x1f\x7f]*(/[^./\\\x00-\x1f\x7f][^/\\\x00-\x1f\x7f]*)*)?$`)
 )
 
 const maxUnixSeconds = 4102444800
@@ -455,10 +456,23 @@ func (m *SessionState) validate() error {
 		maxLen("jupyterVersion", m.JupyterVersion, 32),
 		checkKernelspecs(m.Kernelspecs),
 		m.Environment.check(),
+		checkContentRoot(m.ContentRoot),
 		optional(m.LeaseExpiresAt, func() error { return timestamp("leaseExpiresAt", m.LeaseExpiresAt) }),
 		unixSeconds("ts", m.TS),
 	)
 }
+
+// checkContentRoot applies the contentRoot rule: absent, or "" or `/`-separated names of design
+// §7 (none empty, `.`, `..` or hidden, no backslash or control character), at most 1024.
+func checkContentRoot(root *string) error {
+	if root == nil {
+		return nil
+	}
+	return match("contentRoot", reContentRoot, *root, 1024)
+}
+
+// ValidContentRoot reports whether root may be sent as session_state.contentRoot.
+func ValidContentRoot(root string) bool { return checkContentRoot(&root) == nil }
 
 func (m *CloseSession) validate() error {
 	return first(uuid("requestId", m.RequestID), uuid("sessionId", m.SessionID))

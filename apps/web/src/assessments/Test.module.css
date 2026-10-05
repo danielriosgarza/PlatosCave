@@ -1,0 +1,356 @@
+/* Ported from the wireframe: .pc-test-top, .pc-test-grid, .pc-prompt, .pc-terms, .pc-editor-head,
+   textarea.pc-editor, .pc-run-output, .pc-submit-review. */
+.stage {
+  min-height: 550px;
+}
+.top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid var(--pc-rule);
+  padding-bottom: 18px;
+  margin-bottom: 24px;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.between {
+  justify-content: space-between;
+}
+.context {
+  font-size: 12px;
+  color: var(--pc-muted);
+}
+.muted {
+  color: var(--pc-muted);
+}
+.small {
+  font-size: 12px;
+  line-height: 1.5;
+}
+.grid {
+  display: grid;
+  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
+  gap: 48px;
+}
+.grid > div:last-child {
+  border-left: 1px solid var(--pc-rule);
+  padding-left: 32px;
+  min-width: 0;
+}
+@media (max-width: 900px) {
+  .grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 32px;
+  }
+  .grid > div:last-child {
+    border: 0;
+    padding: 0;
+  }
+}
+.prompt h3 {
+  font: var(--pc-text-section);
+  margin-top: 12px;
+}
+.prompt p {
+  font-size: 18px;
+  line-height: 1.6;
+  margin: 18px 0;
+  white-space: pre-wrap;
+}
+.prompt code {
+  font:
+    14px ui-monospace,
+    Consolas,
+    monospace;
+  overflow-wrap: anywhere;
+}
+.rule {
+  border-top: 1px solid var(--pc-rule);
+  margin: 20px 0;
+}
+.terms {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 16px;
+  font-size: 13px;
+  margin: 0;
+}
+.terms dt {
+  color: var(--pc-muted);
+}
+.terms dd {
+  margin: 0;
+}
+.termsHead {
+  font: var(--pc-text-subsection);
+  margin: 0 0 10px;
+}
+.nav {
+  margin-bottom: 20px;
+}
+.nav ol {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.navItem {
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  min-height: 36px;
+  text-align: left;
+  padding: 6px 12px;
+  color: var(--pc-ink);
+  background: var(--pc-sheet);
+  border: 1px solid var(--pc-rule);
+  border-radius: var(--pc-radius-control);
+}
+.navItem[aria-current="step"] {
+  border-color: var(--pc-ink);
+  font-weight: 600;
+}
+.navState {
+  display: block;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--pc-muted);
+}
+.field {
+  display: block;
+  margin: 0 0 16px;
+}
+.options {
+  border: 0;
+  padding: 0;
+  margin: 0 0 16px;
+  min-width: 0;
+}
+.options legend {
+  font-size: 13px;
+  color: var(--pc-muted);
+  margin-bottom: 8px;
+}
+.option {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border: 1px solid var(--pc-rule);
+  border-radius: var(--pc-radius-control);
+  margin-bottom: 8px;
+  background: var(--pc-sheet);
+}
+.numeric {
+  width: 14em;
+  max-width: 100%;
+}
+.explain {
+  width: 100%;
+  min-height: 180px;
+  font: inherit;
+  line-height: 1.6;
+  padding: 12px;
+  resize: vertical;
+}
+.error {
+  color: var(--pc-ink);
+  font-size: 13px;
+  margin: 6px 0 0;
+  padding-left: 10px;
+  border-left: 3px solid var(--pc-ink);
+}
+.editorHead {
+  background: var(--pc-soft);
+  padding: 10px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  gap: 12px;
+  border: 1px solid var(--pc-rule);
+  border-bottom: 0;
+  flex-wrap: wrap;
+}
+.cm {
+  border: 1px solid var(--pc-muted);
+  background: var(--pc-sheet);
+  font:
+    15px / 1.7 ui-monospace,
+    Consolas,
+    monospace;
+  min-height: 260px;
+  overflow: auto;
+  max-width: 100%;
+}
+.cm :global(.cm-editor) {
+  min-height: 260px;
+  background: transparent;
+  color: var(--pc-ink);
+}
+.cm :global(.cm-gutters) {
+  background: var(--pc-soft);
+  color: var(--pc-muted);
+  border-right: 1px solid var(--pc-rule);
+}
+.cm :global(.cm-activeLine),
+.cm :global(.cm-activeLineGutter) {
+  background: transparent;
+}
+.cm :global(.cm-content) {
+  caret-color: var(--pc-ink);
+}
+.cm :global(.cm-cursor) {
+  border-left-color: var(--pc-ink);
+}
+.cm :global(.cm-editor.cm-focused) {
+  outline: 2px solid var(--pc-ink);
+  outline-offset: 2px;
+}
+.plainEditor {
+  display: block;
+  width: 100%;
+  min-height: 260px;
+  font:
+    16px / 1.75 ui-monospace,
+    Consolas,
+    monospace;
+  border-radius: 0;
+  border: 1px solid var(--pc-muted);
+  resize: vertical;
+  padding: 20px;
+  background: var(--pc-sheet);
+  tab-size: 4;
+  margin: 0;
+}
+.run {
+  margin-top: 12px;
+}
+.output {
+  background: var(--pc-sheet);
+  padding: 16px;
+  border: 1px solid var(--pc-rule);
+  margin-top: 16px;
+  border-radius: 4px;
+  /* The pane is adjustable and scrolls: a long log never pushes the prompt out of reach. */
+  resize: vertical;
+  overflow: auto;
+  min-height: 120px;
+  max-height: 420px;
+}
+.output pre {
+  border: 0;
+  padding: 8px 0;
+  margin: 0;
+  background: none;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font:
+    13px / 1.6 ui-monospace,
+    Consolas,
+    monospace;
+}
+.check {
+  border-top: 1px solid var(--pc-rule);
+  padding: 10px 0;
+}
+.check:first-of-type {
+  border-top: 0;
+}
+.check h4 {
+  font-size: 14px;
+  margin: 0;
+}
+.stale {
+  font-weight: 600;
+}
+.review {
+  border-top: 1px solid var(--pc-rule);
+  padding-top: 24px;
+  margin-top: 24px;
+}
+.review h3 {
+  font: var(--pc-text-subsection);
+  margin: 0 0 8px;
+}
+.stack {
+  display: grid;
+  gap: 14px;
+}
+.list {
+  margin: 0;
+  padding-left: 20px;
+}
+.attempts {
+  list-style: none;
+  padding: 0;
+  margin: 24px 0 0;
+  border-top: 1px solid var(--pc-rule);
+}
+.attempts li {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--pc-rule);
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.receipt {
+  max-width: 720px;
+  margin: 0 auto;
+}
+.receipt h2 {
+  font: var(--pc-text-section);
+}
+.receiptList {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 16px;
+  font-size: 14px;
+  margin: 16px 0;
+}
+.receiptList dt {
+  color: var(--pc-muted);
+}
+.receiptList dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.notice {
+  padding: 14px 16px;
+  background: var(--pc-soft);
+  border: 1px solid var(--pc-rule);
+  border-radius: var(--pc-radius-control);
+  margin: 0 0 20px;
+}
+.notice p {
+  margin: 0;
+}
+.notice p + p {
+  margin-top: 8px;
+}
+.statusLine {
+  font-size: 12px;
+  color: var(--pc-muted);
+}
+
+.files {
+  border: 0;
+  padding: 0;
+  margin: 0 0 8px;
+  min-width: 0;
+}
+
+.title {
+  font: var(--pc-text-section);
+  margin: 0 0 12px;
+}
