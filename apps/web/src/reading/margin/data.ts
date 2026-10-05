@@ -106,6 +106,14 @@ export interface MarginActions {
   createNote(anchor: Anchor, body: string): Promise<SendResult>;
   saveNote(id: string, expectedRevision: number, body: string, final: boolean): Promise<SendResult>;
   highlight(anchor: Anchor): Promise<SendResult>;
+  /** Saves a drawing on a figure or page; `anchor` carries the strokes and `body` its description. */
+  createSketch(anchor: Anchor, body: string): Promise<SendResult>;
+  saveSketch(
+    id: string,
+    expectedRevision: number,
+    anchor: Anchor,
+    body: string,
+  ): Promise<SendResult>;
   remove(id: string): Promise<boolean>;
   ask(audience: 'instructor' | 'class', anchor: Anchor, body: string): Promise<Thread | SendResult>;
   acknowledged(a: Annotation): void;
@@ -159,6 +167,32 @@ export function useMarginActions(classId: string, resourceId: string): MarginAct
           return { kind: 'ok', annotation };
         } catch (error) {
           return classify(error);
+        }
+      },
+      async createSketch(anchor, body) {
+        if (offline()) return { kind: 'offline' };
+        try {
+          const annotation = await call(createAnnotation, {
+            params,
+            body: { kind: 'sketch', anchor, body },
+          });
+          putAnnotation(client, classId, resourceId, annotation);
+          return { kind: 'ok', annotation };
+        } catch (error) {
+          return classify(error);
+        }
+      },
+      async saveSketch(id, expectedRevision, anchor, body) {
+        if (offline()) return { kind: 'offline' };
+        try {
+          const annotation = await call(saveAnnotation, {
+            params: { classId, annotationId: id },
+            body: { expectedRevision, anchor, body },
+          });
+          putAnnotation(client, classId, resourceId, annotation);
+          return { kind: 'ok', annotation };
+        } catch (error) {
+          return classify(error, true);
         }
       },
       async remove(id) {

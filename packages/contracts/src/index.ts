@@ -7,3 +7,4 @@ export * from './notebook';
 export * from './readingHtml';
 export * from './resources';
 export * from './runner';
+export * from './sketch';
