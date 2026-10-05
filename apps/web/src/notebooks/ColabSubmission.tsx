@@ -1,5 +1,6 @@
-import { type ChangeEvent, useRef, useState } from 'react';
+import { type ChangeEvent, Fragment, useRef, useState } from 'react';
 import buttons from '../components/Buttons.module.css';
+import { SnapshotView, snapshotEnvironment } from './files/SnapshotView';
 import styles from './Notebook.module.css';
 import {
   COLAB_URL,
@@ -189,33 +190,53 @@ function Submissions({
         </thead>
         <tbody>
           {rows.map((row) => (
-            <tr key={row.id}>
-              {withStudent ? (
-                <td>
-                  {'student' in row ? row.student.name : null}
-                  {'removed' in row && row.removed ? ' · Removed from class' : null}
-                </td>
-              ) : null}
-              <td>{row.version}</td>
-              <td>
-                {row.filename} · {kilobytes(row.size)}
-              </td>
-              <td>{when(row.receivedAt)}</td>
-              <td>{environmentText(row.environment)}</td>
-              <td>
-                <button
-                  type="button"
-                  className={buttons.textButton}
-                  onClick={() => void download(row.id)}
-                  aria-label={`Download version ${row.version}${'student' in row ? ` of ${row.student.name}` : ''}`}
-                >
-                  Download
-                </button>
-                {failed === row.id ? (
-                  <span role="status"> The file could not be downloaded.</span>
+            <Fragment key={row.id}>
+              <tr>
+                {withStudent ? (
+                  <td>
+                    {'student' in row ? row.student.name : null}
+                    {'removed' in row && row.removed ? ' · Removed from class' : null}
+                  </td>
                 ) : null}
-              </td>
-            </tr>
+                <td>{row.version}</td>
+                <td>
+                  {row.filename} · {kilobytes(row.size)}
+                </td>
+                <td>{when(row.receivedAt)}</td>
+                <td>
+                  {row.workingCopyRevision === undefined
+                    ? environmentText(row.environment)
+                    : snapshotEnvironment(row.environment)}
+                </td>
+                <td>
+                  <button
+                    type="button"
+                    className={buttons.textButton}
+                    onClick={() => void download(row.id)}
+                    aria-label={`Download version ${row.version}${'student' in row ? ` of ${row.student.name}` : ''}`}
+                  >
+                    Download
+                  </button>
+                  {failed === row.id ? (
+                    <span role="status"> The file could not be downloaded.</span>
+                  ) : null}
+                </td>
+              </tr>
+              {row.workingCopyRevision !== undefined ? (
+                <tr>
+                  <td colSpan={withStudent ? 6 : 5}>
+                    <SnapshotView
+                      classId={classId}
+                      submissionId={row.id}
+                      workingCopyRevision={row.workingCopyRevision}
+                      environment={row.environment}
+                      files={row.files ?? []}
+                      label={'student' in row ? row.student.name : undefined}
+                    />
+                  </td>
+                </tr>
+              ) : null}
+            </Fragment>
           ))}
         </tbody>
       </table>
