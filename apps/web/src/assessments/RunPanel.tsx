@@ -40,6 +40,8 @@ export function RunPanel({ classId, attemptId, question, files, flush, onClosed 
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [hash, setHash] = useState<string | null>(null);
+  // Counts failed reads, so a failure schedules the next one.
+  const [retries, setRetries] = useState(0);
   const runId = run?.runId;
   const live = run !== null && !settled(run);
   const mounted = useRef(true);
@@ -76,11 +78,12 @@ export function RunPanel({ classId, attemptId, question, files, flush, onClosed 
           if (mounted.current) setRun(asStudentRun(next));
         })
         .catch(() => {
-          // The next tick tries again; the last known state stays on screen.
+          // The last known state stays on screen and the read is tried again.
+          if (mounted.current) setRetries((n) => n + 1);
         });
     }, POLL_MS);
     return () => window.clearTimeout(timer);
-  }, [live, runId, run, classId, attemptId]);
+  }, [live, runId, run, retries, classId, attemptId]);
 
   // The hash of the code on screen, to compare with the snapshot the output belongs to.
   const signature = JSON.stringify(files);

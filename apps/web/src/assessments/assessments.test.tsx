@@ -90,11 +90,16 @@ interface Options {
   deadlineAt?: string | null;
   /** The overview lists an attempt in progress, as after a reload. */
   running?: boolean;
+  /** Terms the server states for this student (an override already included). */
+  terms?: Record<string, unknown>;
+  /** The n-th status read of a run: a response, or undefined for the default. */
+  pollRun?: (n: number) => { status: number; body: unknown } | undefined;
   runResult?: (n: number) => unknown;
 }
 
 /** An in-memory stand-in for the P3-15 and P3-16 routes: it keeps answers, receipts and runs. */
 function testApi(options: Options = {}) {
+  const effective = { ...terms, ...options.terms } as typeof terms;
   const me = makeMe({ classes: [studentIn(CLASS_A, 'Autumn 2026 A')] });
   const answers = new Map<
     string,
@@ -128,7 +133,7 @@ function testApi(options: Options = {}) {
     receipt: server.receipt,
     localCopyAt: server.localCopyAt,
     graderVersion: 'g1',
-    terms,
+    terms: effective,
     questions,
     answers: [...answers].map(([questionId, a]) => ({ questionId, ...a })),
     serverNow: new Date().toISOString(),
@@ -137,7 +142,7 @@ function testApi(options: Options = {}) {
   const overview = {
     resourceId: RESOURCE,
     resourceRevisionId: uuid(0xa3),
-    terms,
+    terms: effective,
     questionCount: questions.length,
     attempts: [] as unknown[],
     eligibility: {
@@ -167,6 +172,7 @@ function testApi(options: Options = {}) {
     };
   }
   let runCount = 0;
+  let polls = 0;
   const stub = stubApi((url, init) => {
     const body = init?.body ? JSON.parse(String(init.body)) : undefined;
     const method = init?.method ?? 'GET';
@@ -278,6 +284,12 @@ function testApi(options: Options = {}) {
       server.localCopyAt = new Date().toISOString();
       return { status: 200, body: { localCopyAt: server.localCopyAt } };
     }
+    if (/\/runs\/[^/?]+$/.test(url) && method === 'GET') {
+      polls += 1;
+      const answer = options.pollRun?.(polls);
+      if (answer) return answer;
+      return { status: 200, body: options.runResult?.(runCount + 1) };
+    }
     if (/\/questions\/q4\/runs\?latest=1$/.test(url)) return { status: 200, body: { run: null } };
     if (/\/questions\/q4\/runs$/.test(url) && method === 'POST') {
       log.runs.push(body);
@@ -365,6 +377,25 @@ describe('test UI: terms, navigation and answers', () => {
     const during = screen.getByRole('region', { name: 'Assignment terms' });
     expect(within(during).getByText('Attempt 1 of 1')).toBeVisible();
     expect(within(during).getByText('Untimed')).toBeVisible();
+  });
+
+  it('A14 the terms show the effective figures once, with an override already counted by the server', async () => {
+    const user = userEvent.setup();
+    testApi({
+      terms: {
+        attempts: 3,
+        durationMinutes: 90,
+        override: { extraAttempts: 1, extraMinutes: 30, closesAt: null },
+      },
+    });
+    open();
+    const before = await screen.findByRole('region', { name: 'Assignment terms' });
+    expect(within(before).getByText('3')).toBeVisible();
+    expect(within(before).getByText('90 minutes from the start')).toBeVisible();
+    await begin(user);
+    const during = screen.getByRole('region', { name: 'Assignment terms' });
+    expect(within(during).getByText('Attempt 1 of 3')).toBeVisible();
+    expect(within(during).getByText('90 minutes from the start')).toBeVisible();
   });
 
   it('A14 navigation labels each question Answered, Unanswered or Flagged', async () => {
@@ -488,6 +519,25 @@ describe('test UI: Run sample tests', () => {
     expect(editor.closest('.cm-editor')?.querySelector('.cm-lineNumbers')).not.toBeNull();
     expect(screen.getByRole('button', { name: /Screen-reader mode: off/ })).toBeVisible();
   });
+
+  it('A12 a failed status read does not stop the polling: the run still settles', async () => {
+    const user = userEvent.setup();
+    testApi({
+      runResult: (n) =>
+        n === 1
+          ? { ...run(n), state: 'running', result: undefined, finishedAt: undefined }
+          : run(1),
+      pollRun: (n) => (n === 1 ? { status: 503, body: {} } : undefined),
+    });
+    open();
+    await toCode(user);
+    await user.click(screen.getByRole('button', { name: 'Run sample tests' }));
+    expect(await screen.findByText('Running')).toBeVisible();
+    expect(
+      await screen.findByText(/Output for snapshot 609795cd/, undefined, { timeout: 8000 }),
+    ).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Run sample tests' })).toBeEnabled();
+  }, 15_000);
 
   it('A12 a rerun of the same code is not labelled out of date', async () => {
     const user = userEvent.setup();

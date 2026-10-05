@@ -211,8 +211,11 @@ export function AttemptWorkspace({
           void keepLocal(view);
           return;
         }
-        if (view?.deadlineAt && Date.parse(view.deadlineAt) > Date.parse(view.serverNow)) {
-          // Still open with a later deadline: the deadline timer is armed again for it.
+        if (
+          view &&
+          (!view.deadlineAt || Date.parse(view.deadlineAt) > Date.parse(view.serverNow))
+        ) {
+          // Still open, with no deadline or a later one: the deadline timer is armed again for it.
           adopt(view);
           return;
         }

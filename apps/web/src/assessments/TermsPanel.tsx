@@ -26,7 +26,8 @@ export function termsRows(
   options: { attemptNumber?: number; deadlineAt?: string | null } = {},
 ): [string, string][] {
   const zone = terms.timeZone;
-  const attempts = terms.attempts + (terms.override?.extraAttempts ?? 0);
+  // `terms` is already the student's effective terms: the server has added any override.
+  const attempts = terms.attempts;
   const rows: [string, string][] = [];
   rows.push([
     'Attempts',
@@ -34,9 +35,7 @@ export function termsRows(
   ]);
   rows.push([
     'Duration',
-    terms.durationMinutes === null
-      ? 'Untimed'
-      : `${terms.durationMinutes + (terms.override?.extraMinutes ?? 0)} minutes from the start`,
+    terms.durationMinutes === null ? 'Untimed' : `${terms.durationMinutes} minutes from the start`,
   ]);
   rows.push(['Points', String(terms.totalPoints)]);
   if (terms.opensAt) rows.push(['Opens', formatInZone(terms.opensAt, zone)]);
