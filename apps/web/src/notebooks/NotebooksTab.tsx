@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router';
-import { type ReactNode, useEffect, useState } from 'react';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { ApiError } from '../api/client';
 import buttons from '../components/Buttons.module.css';
 import { Loading } from '../components/Loading';
@@ -9,6 +9,7 @@ import { SourceDownload } from '../reading/SourceDownload';
 import { useSession } from '../session/useSession';
 import { ResourceTools } from '../workspace/ResourceTools';
 import { ColabSubmission } from './ColabSubmission';
+import { ConnectPanel } from './connect/ConnectPanel';
 import styles from './Notebook.module.css';
 import { NotebookView } from './NotebookView';
 import { type NotebookSummary, useNotebookContent, useNotebooks, useShiny } from './notebooks';
@@ -183,6 +184,8 @@ function NotebookPanel({
   const [showCode, setShowCode] = useState(true);
   const [showOutputs, setShowOutputs] = useState(true);
   const [outlineOpen, setOutlineOpen] = useState(false);
+  const [connectOpen, setConnectOpen] = useState(false);
+  const target = useRef<HTMLButtonElement>(null);
   const data = content.data;
   const ready = data?.status === 'ready' ? data.notebook : null;
 
@@ -191,7 +194,16 @@ function NotebookPanel({
     <ResourceTools>
       {picker}
       {/* The mode: no computer is connected, so these are the outputs the file was saved with. */}
-      <span className={styles.mode}>Saved outputs</span>
+      <button
+        type="button"
+        ref={target}
+        className={buttons.tool}
+        aria-expanded={connectOpen}
+        aria-controls="connect-panel"
+        onClick={() => setConnectOpen(!connectOpen)}
+      >
+        Saved outputs
+      </button>
       {ready ? (
         <>
           {ready.outline.length > 0 ? (
@@ -276,6 +288,18 @@ function NotebookPanel({
   return (
     <>
       {tools}
+      {connectOpen ? (
+        <div id="connect-panel">
+          <ConnectPanel
+            classId={classId}
+            revisionId={revisionId}
+            onClose={() => {
+              setConnectOpen(false);
+              target.current?.focus();
+            }}
+          />
+        </div>
+      ) : null}
       {body}
     </>
   );
