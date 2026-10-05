@@ -1,5 +1,6 @@
 import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import axe from 'axe-core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { COURSE, makeMe, renderApp, stubApi } from './render';
 
@@ -77,6 +78,10 @@ interface Server {
   processingStatus?: number;
   classArchived?: boolean;
   uploads: number;
+  /** Files received by the upload routes, in order. */
+  received: { route: string; file: File }[];
+  /** Content of the head revision of GET /resources, when a test sets it. */
+  headContent?: Record<string, unknown>;
   /** PATCH of this topic id answers with this status (reorder tests). */
   otherStatus?: number;
   /** The Markdown a web deck's head revision holds. */
@@ -95,9 +100,17 @@ function fresh(over: Partial<Server> = {}): Server {
     report: { errors: [], warnings: [] },
     patched: [],
     uploads: 0,
+    received: [],
     ...over,
   };
 }
+
+/** The `file` part of a multipart request body. */
+const formFile = (init?: RequestInit) => {
+  const file = init?.body instanceof FormData ? init.body.get('file') : null;
+  if (!(file instanceof File)) throw new Error('the request has no file part');
+  return file;
+};
 
 const json = (body: unknown, status = 200) => ({ status, body });
 
@@ -172,8 +185,22 @@ function api(me: ReturnType<typeof makeMe>, s: Server) {
       s.topic = topic({ ...s.topic, ...body, revision: s.topic.revision + 1 });
       return json(s.topic);
     }
+    if (path === `${base}/workspace-files` && method === 'POST') {
+      const file = formFile(init);
+      s.received.push({ route: 'workspace-files', file });
+      const n = s.received.filter((r) => r.route === 'workspace-files').length;
+      const sha = String(n).repeat(64);
+      return json({
+        id: `00000000-0000-4000-8000-0000000000d${n}`,
+        key: `courses/${COURSE}/objects/${sha}`,
+        sha256: sha,
+        size: file.size,
+        filename: file.name,
+      });
+    }
     if (path === `${base}/uploads` && method === 'POST') {
       s.uploads += 1;
+      s.received.push({ route: 'uploads', file: formFile(init) });
       return json({
         key: `courses/${COURSE}/objects/${'a'.repeat(64)}`,
         sha256: 'a'.repeat(64),
@@ -218,7 +245,7 @@ function api(me: ReturnType<typeof makeMe>, s: Server) {
 
 const head = (s: Server) => ({
   id: REVISION,
-  content: { markdown: s.deckMarkdown ?? '# Old' },
+  content: s.headContent ?? { markdown: s.deckMarkdown ?? '# Old' },
   objectKeys: [],
   accessibleAlternative: null,
   provenance: null,
@@ -511,6 +538,135 @@ describe('notebook upload', () => {
     await user.upload(within(reading).getByLabelText(/File/), new File(['{}'], 'lab.ipynb'));
     expect(await within(reading).findByRole('alert')).toHaveTextContent('Upload a Markdown');
     expect(s.uploads).toBe(0);
+  });
+});
+
+describe('notebook workspace files', () => {
+  const notebookText = JSON.stringify({
+    nbformat: 4,
+    nbformat_minor: 5,
+    cells: [],
+    metadata: { kernelspec: { name: 'python3' }, parallax: { note: 'kept' } },
+  });
+
+  async function openForm(s?: Server) {
+    const user = userEvent.setup({ applyAccept: false });
+    const opened = await open(grant(), s ?? fresh());
+    const notebooks = await screen.findByRole('region', { name: 'Notebooks resources' });
+    await user.click(within(notebooks).getByRole('button', { name: 'Add notebook' }));
+    const form = screen.getByRole('form', { name: 'Add notebook' });
+    await user.upload(
+      within(form).getByLabelText(/File \(Jupyter/),
+      new File([notebookText], 'Repeated samples.ipynb'),
+    );
+    return { user, form, s: opened.s };
+  }
+
+  it('A34 declares the uploaded data files in the notebook and lists them as its objects', async () => {
+    const { user, form, s } = await openForm();
+    await user.upload(
+      within(form).getByLabelText('Add data files'),
+      new File(['a,b\n1,2\n'], 'sample.csv'),
+    );
+    const path = within(form).getByLabelText('Workspace path of sample.csv');
+    await user.clear(path);
+    await user.type(path, 'data/sample.csv');
+    await user.click(within(form).getByRole('button', { name: 'Add notebook' }));
+    await waitFor(() => expect(s.patched.some((p) => p.url.endsWith('/resources'))).toBe(true));
+
+    const data = s.received.find((r) => r.route === 'workspace-files');
+    expect(data?.file.name).toBe('sample.csv');
+    const stored = JSON.parse(
+      (await s.received.find((r) => r.route === 'uploads')?.file.text()) ?? '',
+    ) as {
+      metadata: Record<string, unknown>;
+    };
+    expect(stored.metadata).toEqual({
+      kernelspec: { name: 'python3' },
+      parallax: {
+        note: 'kept',
+        files: [{ path: 'data/sample.csv', resourceId: '00000000-0000-4000-8000-0000000000d1' }],
+      },
+    });
+    const created = s.patched.find((p) => p.url.endsWith('/resources'))?.body as {
+      objectKeys: string[];
+      content: { workspaceFiles: unknown[] };
+    };
+    expect(created.objectKeys).toEqual([
+      `courses/${COURSE}/objects/${'a'.repeat(64)}`,
+      `courses/${COURSE}/objects/${'1'.repeat(64)}`,
+    ]);
+    expect(created.content.workspaceFiles).toEqual([
+      { path: 'data/sample.csv', resourceId: '00000000-0000-4000-8000-0000000000d1', size: 8 },
+    ]);
+  });
+
+  it('A34 refuses absolute, hidden, dot and duplicate paths before anything is sent', async () => {
+    const { user, form, s } = await openForm();
+    await user.upload(within(form).getByLabelText('Add data files'), [
+      new File(['1'], 'one.csv'),
+      new File(['2'], 'two.csv'),
+    ]);
+    const one = within(form).getByLabelText('Workspace path of one.csv');
+    const submit = within(form).getByRole('button', { name: 'Add notebook' });
+    expect(submit).toBeEnabled();
+    for (const bad of ['/etc/one.csv', '.hidden/one.csv', 'a/../one.csv', 'a//one.csv', '']) {
+      await user.clear(one);
+      if (bad) await user.type(one, bad);
+      expect(submit).toBeDisabled();
+      expect(one).toHaveAttribute('aria-invalid', 'true');
+    }
+    await user.clear(one);
+    await user.type(one, 'two.csv');
+    expect((await within(form).findAllByRole('alert')).map((a) => a.textContent)).toContain(
+      'Another file already has this path',
+    );
+    expect(submit).toBeDisabled();
+    await user.click(within(form).getByRole('button', { name: 'Remove two.csv' }));
+    expect(submit).toBeEnabled();
+    expect(s.received).toEqual([]);
+  });
+
+  it('A34 the draft view lists the files a notebook declares', async () => {
+    const user = userEvent.setup();
+    await open(
+      grant(),
+      fresh({
+        resources: [resource({ type: 'notebook', title: 'Repeated samples' })],
+        headContent: {
+          sourceKey: `courses/${COURSE}/objects/${'a'.repeat(64)}`,
+          workspaceFiles: [
+            {
+              path: 'data/sample.csv',
+              resourceId: '00000000-0000-4000-8000-0000000000d1',
+              size: 9,
+            },
+          ],
+        },
+        processing: { state: 'ready' },
+      }),
+    );
+    await user.click(
+      await screen.findByRole('button', { name: 'Workspace files of Repeated samples' }),
+    );
+    const list = await screen.findByRole('list', { name: 'Workspace files' });
+    expect(within(list).getByText('data/sample.csv')).toBeInTheDocument();
+  });
+
+  it('A34 the files form is keyboard operable and has no accessibility violations', async () => {
+    const { user, form } = await openForm();
+    const picker = within(form).getByLabelText('Add data files');
+    await user.upload(picker, new File(['1'], 'one.csv'));
+    const path = within(form).getByLabelText('Workspace path of one.csv');
+    await user.click(path);
+    await user.keyboard('x');
+    await user.tab();
+    expect(within(form).getByRole('button', { name: 'Remove one.csv' })).toHaveFocus();
+    await user.keyboard('{Enter}');
+    expect(within(form).queryByLabelText('Workspace path of one.csv')).toBeNull();
+    await user.upload(picker, new File(['1'], 'one.csv'));
+    const results = await axe.run(form, { rules: { 'color-contrast': { enabled: false } } });
+    expect(results.violations.map((v) => `${v.id}: ${v.nodes[0]?.html}`)).toEqual([]);
   });
 });
 
