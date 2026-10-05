@@ -9,7 +9,7 @@ Parallax is built by Claude sessions with minimal human involvement. This page i
 | Orchestrator | Hourly routine, plus the orchestrator's own follow-up check-ins, firing into one persistent Opus 5.5 session that has the repository checked out | Reads GitHub state, merges ready PRs, unblocks issues, launches implementer / reviewer / audit sessions, restarts stuck work, escalates, updates the dashboard issue | Write product code; merge anything that fails the merge rule |
 | Implementer | One cloud session per issue; model from the issue's `model:` label | Tests and code for exactly one issue, opens the PR, fixes CI and review findings | Merge, approve, widen scope, disable tests |
 | Reviewer | One cloud session per review round; a different model from the implementer | Reviews the PR head against issue, spec and ADRs; runs the checks; posts findings and a verdict label | Push code |
-| Phase auditor | Fable 5.1 session when every issue of phase 1, 2, 3 or 4 is closed | Compares `main` with the spec for that phase, files fix-up issues, writes the phase summary for the human | Change product scope |
+| Phase auditor | Sonnet 5.5 session at maximum effort when every issue of phase 1, 2, 3 or 4 is closed | Compares `main` with the spec for that phase, files fix-up issues, writes the phase summary for the human | Change product scope |
 
 Procedures live in `.claude/skills/` (`orchestrate`, `implement-issue`, `review-pr`, `phase-audit`), so every session loads the same rules from the repository.
 
@@ -28,7 +28,7 @@ status:blocked ──(all dependencies closed)──► status:ready ──(orch
 
 The issue body contains one line `Depends on: P1-01, P1-03` (plan IDs, or `none`) and, when the plan names them, one line `Touches: path, path` (files the item is likely to edit; the orchestrator avoids running two items that touch the same file). Work discovered later gets a suffixed ID (`P2-04a`); audit findings get `P2-AUD1`, `P2-AUD2`, ….
 
-**Pull requests** are titled like their issue and say `Closes #<issue>`. A process change the owner asks for without an issue says `Closes: none (…)` instead; Fable reviews it and the owner merges it. Every PR carries one review label:
+**Pull requests** are titled like their issue and say `Closes #<issue>`. A process change the owner asks for without an issue says `Closes: none (…)` instead; a Sonnet 5.5 reviewer at maximum effort reviews it and the owner merges it. Every PR carries one review label:
 
 | Label | Meaning |
 | --- | --- |
@@ -45,17 +45,17 @@ All sessions act through the owner's GitHub account, which cannot approve its ow
 | --- | --- | --- |
 | `model:sonnet` (UI from the wireframe, CRUD, tests, docs, config) | Sonnet 5.5 | Opus 5.5 |
 | `model:opus` (data model, permissions, anchoring, state machines, protocols) | Opus 5.5 | Sonnet 5.5 |
-| `model:fable` (design documents for the connector and the runner) | Fable 5.1 | Opus 5.5 |
-| Any issue labelled `security`, or a PR touching `.claude/`, `.github/`, `CLAUDE.md`, `docs/adr/`, `docs/delivery/README.md` or `scripts/session-start.sh` (not `docs/delivery/done/` or `plan.md`) | as above | Fable 5.1, with `/security-review` for `security` |
-| Third review round still requesting changes | — | Fable 5.1 as arbiter |
+| `model:fable` (design documents for the connector and the runner; the label keeps its name so existing issues and tooling work, and means Opus) | Opus 5.5 at maximum effort | Sonnet 5.5 |
+| Any issue labelled `security`, or a PR touching `.claude/`, `.github/`, `CLAUDE.md`, `docs/adr/`, `docs/delivery/README.md` or `scripts/session-start.sh` (not `docs/delivery/done/` or `plan.md`) | as above | Sonnet 5.5 at maximum effort, with `/security-review` for `security` |
+| Third review round still requesting changes | — | Sonnet 5.5 at maximum effort as arbiter |
 
-The reviewer is never the implementer's model: when a rule above would pick the same model, Opus 5.5 reviews (Sonnet 5.5 if the implementer was Opus). Reviewers start from `main`, so the rules they apply cannot be changed by the PR under review.
+**Maximum effort** means the launch prompt has the line `ultrathink` right after its slash-command line (a prompt must start with `/` to run a skill). It applies to the first turn of the session only; later turns, such as CI wake-ups, run at default effort. The reviewer is never the implementer's model: when a rule above would pick the same model (Sonnet 5.5 implementer, maximum-effort rule), Opus 5.5 at maximum effort reviews (Sonnet 5.5 at maximum effort if the implementer was Opus). Fable is no longer used (owner decision, 2026-10-05). Reviewers start from `main`, so the rules they apply cannot be changed by the PR under review.
 
-A failed implementation attempt is retried once with the same model, then once with the next model up (Sonnet → Opus → Fable). A third failure becomes `needs-human`. Review verdicts are PR issue comments starting `Review verdict:`; implementers never push while a review is running.
+A failed implementation attempt is retried once with the same model, then once with the next model up (Sonnet → Opus → Opus at maximum effort). A third failure becomes `needs-human`. Review verdicts are PR issue comments starting `Review verdict:`; implementers never push while a review is running.
 
 ## Merge rule
 
-The owner allowed Claude sessions in this repository to merge (`.claude/settings.json` permits `mcp__github__merge_pull_request`). Only the orchestrator uses that permission; implementer and reviewer skills forbid merging, and any PR that changes `.claude/` is reviewed by Fable. If the permission system still refuses a merge, the orchestrator escalates instead of working around it.
+The owner allowed Claude sessions in this repository to merge (`.claude/settings.json` permits `mcp__github__merge_pull_request`). Only the orchestrator uses that permission; implementer and reviewer skills forbid merging, and any PR that changes `.claude/` is reviewed at maximum effort. If the permission system still refuses a merge, the orchestrator escalates instead of working around it.
 
 The orchestrator squash-merges every pull request that satisfies all of these at the moment of merging; after each merge the next one must be brought up to date with the new `main` and pass CI again:
 
