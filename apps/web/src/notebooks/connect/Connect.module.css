@@ -1,0 +1,186 @@
+/* The Connect computer panel (spec §10.3). There is no wireframe for it (spec §15): it is built
+   from DESIGN.md tokens, and its buttons are the shared Buttons.module.css classes. */
+.panel {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: var(--pc-space-24) var(--pc-stage-inset);
+  border-bottom: 1px solid var(--pc-rule);
+  display: grid;
+  gap: var(--pc-space-24);
+  font: var(--pc-text-ui);
+}
+.head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: var(--pc-space-16);
+}
+.head h2 {
+  font: var(--pc-text-subsection);
+  letter-spacing: var(--pc-tracking-subsection);
+  margin: 0;
+}
+.section {
+  display: grid;
+  gap: var(--pc-space-12);
+}
+.section h3 {
+  font: var(--pc-text-label);
+  margin: 0;
+  color: var(--pc-muted);
+}
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--pc-space-8) var(--pc-space-16);
+}
+.muted {
+  color: var(--pc-muted);
+  font: var(--pc-text-label);
+}
+.mono {
+  font: var(--pc-text-code);
+  overflow-wrap: anywhere;
+}
+.line {
+  font: var(--pc-text-code);
+  background: var(--pc-soft);
+  border-radius: var(--pc-radius-control);
+  padding: var(--pc-space-8) var(--pc-space-12);
+  overflow-wrap: anywhere;
+  user-select: all;
+}
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+}
+.list > li {
+  padding: var(--pc-space-12) 0;
+  border-top: 1px solid var(--pc-rule);
+  display: grid;
+  gap: var(--pc-space-8);
+}
+.list > li:first-child {
+  border-top: 0;
+}
+.state {
+  font-weight: 600;
+}
+.notice {
+  border-left: 3px solid var(--pc-muted);
+  padding: var(--pc-space-8) var(--pc-space-12);
+  background: var(--pc-secondary);
+  display: grid;
+  gap: var(--pc-space-8);
+}
+.notice p {
+  margin: 0;
+}
+.alert {
+  border-left: 3px solid var(--pc-ink);
+  padding: var(--pc-space-8) var(--pc-space-12);
+  background: var(--pc-highlight);
+}
+.alert p {
+  margin: 0;
+}
+.form {
+  display: grid;
+  gap: var(--pc-space-16);
+}
+.fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--pc-space-12) var(--pc-space-16);
+}
+.field {
+  display: grid;
+  gap: var(--pc-space-4);
+  font: var(--pc-text-label);
+}
+.field input:not([type="radio"], [type="checkbox"]),
+.field select {
+  font: var(--pc-text-field);
+  min-height: 36px;
+  padding: var(--pc-space-4) var(--pc-space-8);
+  border: 1px solid var(--pc-muted);
+  border-radius: var(--pc-radius-control);
+  background: var(--pc-sheet);
+  color: var(--pc-ink);
+}
+.fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: var(--pc-space-8);
+}
+.fieldset legend {
+  font: var(--pc-text-label);
+  padding: 0;
+  margin-bottom: var(--pc-space-4);
+}
+.choice {
+  display: flex;
+  align-items: center;
+  gap: var(--pc-space-8);
+  font: var(--pc-text-ui);
+}
+.stages {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+}
+.stages > li {
+  display: grid;
+  grid-template-columns: 8.5em 1fr;
+  gap: var(--pc-space-4) var(--pc-space-16);
+  padding: var(--pc-space-8) 0;
+  border-top: 1px solid var(--pc-rule);
+}
+.stages > li:first-child {
+  border-top: 0;
+}
+.stages .body {
+  display: grid;
+  gap: var(--pc-space-8);
+}
+.stages .body p {
+  margin: 0;
+}
+.summary {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: var(--pc-space-4) var(--pc-space-24);
+  margin: 0;
+}
+.summary dt {
+  color: var(--pc-muted);
+  font: var(--pc-text-label);
+  padding-top: 2px;
+}
+.summary dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+@media (max-width: 640px) {
+  .panel {
+    padding: var(--pc-space-16);
+  }
+  .stages > li {
+    grid-template-columns: 1fr;
+  }
+}
