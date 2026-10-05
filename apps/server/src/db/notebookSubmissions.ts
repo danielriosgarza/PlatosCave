@@ -1,15 +1,21 @@
 import type * as contracts from '@parallax/contracts/routes/notebookSubmissions';
-import { and, asc, desc, eq, gt, max, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, max, sql } from 'drizzle-orm';
 import type { z } from 'zod';
 import type { ClassScope } from '../auth/scope';
 import { classArchived, invalid, notFound, type Outcome } from '../outcome';
 import type { StoredObject } from '../storage/storage';
 import { audit } from './audit';
-import type { Db } from './client';
+import type { Db, Executor } from './client';
 import { studyableResource } from './content/releases';
 import { excludePreview } from './preview';
 import { studentOrRemovedStudent } from './removedStudents';
-import { auditEvents, classMemberships, notebookSubmissions, users } from './schema';
+import {
+  auditEvents,
+  classMemberships,
+  notebookSubmissionFiles,
+  notebookSubmissions,
+  users,
+} from './schema';
 import { forClass } from './scoped';
 
 /**
@@ -22,8 +28,9 @@ import { forClass } from './scoped';
 type Receipt = z.input<typeof contracts.submissionReceipt>;
 type Reviewed = z.input<typeof contracts.reviewedSubmission>;
 type Row = typeof notebookSubmissions.$inferSelect;
+type FileRow = typeof notebookSubmissionFiles.$inferSelect;
 
-const receipt = (row: Row): Receipt => ({
+const receipt = (row: Row, files: FileRow[] = []): Receipt => ({
   id: row.id,
   resourceId: row.resourceId,
   resourceRevisionId: row.resourceRevisionId,
@@ -33,7 +40,29 @@ const receipt = (row: Row): Receipt => ({
   sha256: row.sha256,
   environment: row.environment,
   receivedAt: row.createdAt.toISOString(),
+  ...(row.workingCopyRevision !== null && {
+    workingCopyRevision: row.workingCopyRevision,
+    files: files
+      .filter((f) => f.submissionId === row.id)
+      .map((f) => ({ id: f.fileTransferId, path: f.path, size: f.size, sha256: f.sha256 })),
+  }),
 });
+
+/** The frozen files of `rows`, read in one query. */
+async function filesOf(db: Executor, scope: ClassScope, rows: Row[]): Promise<FileRow[]> {
+  const ids = rows.filter((r) => r.workingCopyRevision !== null).map((r) => r.id);
+  if (ids.length === 0) return [];
+  return db
+    .select()
+    .from(notebookSubmissionFiles)
+    .where(
+      and(
+        forClass(scope, notebookSubmissionFiles),
+        inArray(notebookSubmissionFiles.submissionId, ids),
+      ),
+    )
+    .orderBy(asc(notebookSubmissionFiles.path));
+}
 
 const own = (scope: ClassScope) =>
   and(forClass(scope, notebookSubmissions), eq(notebookSubmissions.userId, scope.user.id));
@@ -106,6 +135,18 @@ export interface NewSubmission {
   filename: string;
   stored: StoredObject;
   environment: Record<string, string | number>;
+  /**
+   * A submission from a connected session (P3-09): the acknowledged working-copy revision, the
+   * course notebook revision it was made from (pinned instead of the class's current one), the
+   * session whose environment is recorded, and the finished copy-outs to freeze with it.
+   */
+  connected?: {
+    workingCopyId: string;
+    workingCopyRevision: number;
+    sourceRevisionId: string;
+    sessionId: string;
+    files: { transferId: string; path: string; sha256: string; size: number; objectKey: string }[];
+  };
 }
 
 /**
@@ -140,7 +181,7 @@ export async function recordSubmission(
       if (existing.sha256 !== input.stored.sha256) {
         return invalid('This submission key was already used for a different file');
       }
-      return { ok: true, value: receipt(existing) };
+      return { ok: true, value: receipt(existing, await filesOf(tx, scope, [existing])) };
     }
     const [latest] = await tx
       .select({ version: max(notebookSubmissions.version) })
@@ -153,7 +194,7 @@ export async function recordSubmission(
         userId: scope.user.id,
         isPreview: scope.membership.isPreview,
         resourceId,
-        resourceRevisionId: found.value.revisionId,
+        resourceRevisionId: input.connected?.sourceRevisionId ?? found.value.revisionId,
         version: (latest?.version ?? 0) + 1,
         submissionKey: input.submissionKey,
         objectKey: input.stored.key,
@@ -161,10 +202,31 @@ export async function recordSubmission(
         size: input.stored.size,
         filename: input.filename,
         environment: input.environment,
+        ...(input.connected && {
+          workingCopyId: input.connected.workingCopyId,
+          workingCopyRevision: input.connected.workingCopyRevision,
+          sessionId: input.connected.sessionId,
+        }),
         createdAt: now,
       })
       .returning();
     if (!row) throw new Error('notebook submission insert returned no row');
+    const files = input.connected?.files.length
+      ? await tx
+          .insert(notebookSubmissionFiles)
+          .values(
+            input.connected.files.map((f) => ({
+              submissionId: row.id,
+              path: f.path,
+              classId: scope.classId,
+              fileTransferId: f.transferId,
+              sha256: f.sha256,
+              size: f.size,
+              objectKey: f.objectKey,
+            })),
+          )
+          .returning()
+      : [];
     if (!scope.membership.isPreview) {
       await audit(tx, {
         actorId: scope.user.id,
@@ -173,11 +235,19 @@ export async function recordSubmission(
         scopeId: scope.classId,
         targetType: 'notebook_submission',
         targetId: row.id,
-        after: { resourceId, version: row.version, sha256: row.sha256 },
+        after: {
+          resourceId,
+          version: row.version,
+          sha256: row.sha256,
+          ...(input.connected && {
+            workingCopyRevision: input.connected.workingCopyRevision,
+            files: files.length,
+          }),
+        },
         createdAt: now,
       });
     }
-    return { ok: true, value: receipt(row) };
+    return { ok: true, value: receipt(row, files) };
   });
 }
 
@@ -192,7 +262,8 @@ export async function listOwnSubmissions(
     .from(notebookSubmissions)
     .where(and(own(scope), eq(notebookSubmissions.resourceId, resourceId)))
     .orderBy(desc(notebookSubmissions.version));
-  return rows.map(receipt);
+  const files = await filesOf(db, scope, rows);
+  return rows.map((row) => receipt(row, files));
 }
 
 /** Every student's submissions of a notebook, by student name and newest version first. */
@@ -221,8 +292,13 @@ export async function reviewSubmissions(
       ),
     )
     .orderBy(asc(users.name), asc(notebookSubmissions.userId), desc(notebookSubmissions.version));
+  const files = await filesOf(
+    db,
+    scope,
+    rows.map((r) => r.submission),
+  );
   return rows.map(({ submission, name, role }) => ({
-    ...receipt(submission),
+    ...receipt(submission, files),
     student: { id: submission.userId, name },
     removed: role === null,
   }));
@@ -245,4 +321,28 @@ export async function submissionObject(
   const mine = row.userId === scope.user.id;
   const reviewable = scope.role === 'instructor' && !row.isPreview;
   return mine || reviewable ? { key: row.objectKey, filename: row.filename } : null;
+}
+
+/**
+ * One file frozen with a submission the caller may download (as `submissionObject` decides),
+ * named by the copy-out it came from; null otherwise.
+ */
+export async function submissionFileObject(
+  db: Db,
+  scope: ClassScope,
+  submissionId: string,
+  fileId: string,
+): Promise<{ key: string; path: string } | null> {
+  if (!(await submissionObject(db, scope, submissionId))) return null;
+  const [file] = await db
+    .select()
+    .from(notebookSubmissionFiles)
+    .where(
+      and(
+        forClass(scope, notebookSubmissionFiles),
+        eq(notebookSubmissionFiles.submissionId, submissionId),
+        eq(notebookSubmissionFiles.fileTransferId, fileId),
+      ),
+    );
+  return file ? { key: file.objectKey, path: file.path } : null;
 }
