@@ -1,6 +1,7 @@
 import type { Anchor } from '@parallax/contracts';
 import type { annotationView } from '@parallax/contracts/routes/annotations';
 import type { z } from 'zod';
+import { beginSend } from './drafts';
 
 export type Annotation = z.output<typeof annotationView>;
 
@@ -68,6 +69,8 @@ export interface NoteInit {
   revision: number | null;
   /** Restored from this device: the text has not reached the server yet. */
   unsent?: boolean;
+  /** The draft's key on this device: while a send runs, a returning margin waits for it. */
+  draftKey?: string | null;
 }
 
 /**
@@ -80,6 +83,7 @@ export class NoteController {
   state: NoteState;
   readonly anchor: Anchor;
   readonly key: string;
+  private readonly draftKey: string | null;
   annotationId: string | null;
   private revision: number | null;
   private serverBody: string | null;
@@ -102,6 +106,7 @@ export class NoteController {
   ) {
     this.anchor = init.anchor;
     this.key = init.key;
+    this.draftKey = init.draftKey ?? null;
     this.annotationId = init.annotationId;
     this.revision = init.revision;
     this.serverBody = init.unsent ? null : init.body;
@@ -202,6 +207,15 @@ export class NoteController {
       return;
     }
     this.sending = true;
+    const sent = this.draftKey ? beginSend(this.draftKey) : null;
+    try {
+      await this.send(body);
+    } finally {
+      sent?.();
+    }
+  }
+
+  private async send(body: string): Promise<void> {
     this.set({ status: 'saving', reason: null });
     const request =
       this.annotationId === null

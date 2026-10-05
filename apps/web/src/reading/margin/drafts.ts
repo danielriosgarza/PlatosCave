@@ -30,6 +30,38 @@ const STORE = 'drafts';
 export const draftKey = (userId: string, classId: string, resourceId: string, id: string) =>
   `${userId}|${classId}|${resourceId}|${id}`;
 
+/**
+ * Sends of unsent text that are still running in this tab, by draft key. A margin that went away
+ * keeps sending (§8), and the draft stays on the device until the server answers; a margin that
+ * comes back must not read that draft as unsent and send it a second time.
+ */
+const sending = new Set<{ key: string; done: Promise<void> }>();
+
+/** Marks the draft `key` as being sent; call the returned function once the send has finished. */
+export function beginSend(key: string): () => void {
+  let release = () => {};
+  const entry = { key, done: new Promise<void>((resolve) => (release = resolve)) };
+  sending.add(entry);
+  return () => {
+    sending.delete(entry);
+    release();
+  };
+}
+
+/** Resolves once no send of this person's drafts for this resource is running any more. */
+export async function sendsSettled(
+  userId: string,
+  classId: string,
+  resourceId: string,
+): Promise<void> {
+  const prefix = `${userId}|${classId}|${resourceId}|`;
+  for (;;) {
+    const running = [...sending].filter((s) => s.key.startsWith(prefix));
+    if (running.length === 0) return;
+    await Promise.all(running.map((s) => s.done));
+  }
+}
+
 /** What this tab holds right now; reads are answered from here, writes go through to IndexedDB. */
 const memory = new Map<string, Draft>();
 let opened: Promise<IDBDatabase | null> | null = null;
