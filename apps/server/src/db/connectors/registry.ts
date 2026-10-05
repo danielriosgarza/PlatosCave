@@ -387,3 +387,60 @@ export function unpairConnector(db: Db, connectorId: string, now: Date): Promise
     return true;
   });
 }
+
+/**
+ * What a link is authenticated and kept alive against (§4.2): the key, the state and the mode.
+ * Looked up by the id the `auth` message names; the signature is the credential.
+ */
+export async function findLinkConnector(db: Db, connectorId: string) {
+  const [row] = await db
+    .select({
+      id: connectors.id,
+      status: connectors.status,
+      mode: connectors.mode,
+      publicKey: connectors.publicKey,
+      approveBy: connectors.approveBy,
+    })
+    .from(connectors)
+    .where(eq(connectors.id, connectorId));
+  return row ?? null;
+}
+export type LinkConnectorRow = NonNullable<Awaited<ReturnType<typeof findLinkConnector>>>;
+
+/**
+ * Stores what an active connector reported in `hello` (§4.2) and when it was seen, for display
+ * and for the early rejection of literal addresses (§8). False when the connector is no longer
+ * active, so a revocation between `auth` and `hello` keeps the link from going live.
+ */
+export async function recordLinkHello(
+  db: Db,
+  connectorId: string,
+  hello: {
+    os: string;
+    arch: string;
+    version: string;
+    networkScope: { cidrs: string[]; hosts: string[] };
+  },
+  now: Date,
+): Promise<boolean> {
+  const rows = await db
+    .update(connectors)
+    .set({ ...hello, lastSeenAt: now })
+    .where(and(eq(connectors.id, connectorId), eq(connectors.status, 'active')))
+    .returning({ id: connectors.id });
+  return rows.length > 0;
+}
+
+/**
+ * The periodic re-read of a live link's connector (§3 "Revoke and unpair"): records it as seen
+ * and answers whether it is still active, so a revocation whose closing notice was lost still
+ * ends the link.
+ */
+export async function touchLinkConnector(db: Db, connectorId: string, now: Date): Promise<boolean> {
+  const rows = await db
+    .update(connectors)
+    .set({ lastSeenAt: now })
+    .where(and(eq(connectors.id, connectorId), eq(connectors.status, 'active')))
+    .returning({ id: connectors.id });
+  return rows.length > 0;
+}

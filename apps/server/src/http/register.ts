@@ -7,6 +7,7 @@ import {
   type Scope,
 } from '@parallax/contracts';
 import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import type { WebSocket } from 'ws';
 import type { z } from 'zod';
 import { type ResolverDeps, resolveScope, type ScopeFor } from '../auth/scope';
 import type { Outcome } from '../outcome';
@@ -96,6 +97,7 @@ declare module 'fastify' {
 /** Path parameters that name a scope must be resolved by that scope, never read raw. */
 function checkScopeParams(contract: RouteContract): void {
   const { path, scope } = contract;
+  if (!scope?.kind) throw new Error(`${contract.method} ${path} declares no scope`);
   if (path.includes(':classId') && scope.kind !== 'class') {
     throw new Error(`${contract.method} ${path} names :classId but has scope ${scope.kind}`);
   }
@@ -122,6 +124,11 @@ export function registerRoute<C extends RouteContract>(
   handler: (args: RouteArgs<C>) => Promise<z.input<C['response']>> | z.input<C['response']>,
   options: { rateLimit?: RateLimitOptions } = {},
 ): void {
+  if (contract.websocket) {
+    throw new Error(
+      `${contract.method} ${contract.path} is a WebSocket; use registerWebSocketRoute()`,
+    );
+  }
   checkScopeParams(contract);
   if (options.rateLimit && !contract.errors?.[429]) {
     throw new Error(`${contract.method} ${contract.path} is rate limited but declares no 429`);
@@ -131,15 +138,7 @@ export function registerRoute<C extends RouteContract>(
   // The limiter runs before the scope resolver, so an over-limit request costs no session lookup.
   // Each limiter built by app.rateLimit() has its own store, so counts are per route.
   const limiter = options.rateLimit ? app.rateLimit(options.rateLimit) : undefined;
-  const resolve = async (req: FastifyRequest, reply: FastifyReply) => {
-    const result = await resolveScope(req, contract.scope as Scope, app.resolverDeps);
-    if (!result.ok) {
-      req.log.debug({ reason: result.reason, url: redactUrl(req.url) }, 'scope denied');
-      // The typed reply only knows the contract's 200 schema; denials use the shared error body.
-      return reply.code(result.status).send({ error: result.error });
-    }
-    req.parallaxScope = result.scope;
-  };
+  const resolve = scopeResolver(app, contract);
   app.route({
     method: contract.method,
     url: contract.path,
@@ -189,6 +188,70 @@ export function registerRoute<C extends RouteContract>(
         if (!failure) throw err;
         return (reply as FastifyReply).code(failure.status).send(failure.body);
       }
+    },
+  });
+}
+
+/** The hook that resolves a contract's scope, answering the shared denial before the handler. */
+function scopeResolver(app: FastifyInstance, contract: RouteContract) {
+  return async (req: FastifyRequest, reply: FastifyReply) => {
+    const result = await resolveScope(req, contract.scope as Scope, app.resolverDeps);
+    if (!result.ok) {
+      req.log.debug({ reason: result.reason, url: redactUrl(req.url) }, 'scope denied');
+      // The typed reply only knows the contract's 200 schema; denials use the shared error body.
+      return reply.code(result.status).send({ error: result.error });
+    }
+    req.parallaxScope = result.scope;
+  };
+}
+
+export type WebSocketArgs<C> =
+  C extends RouteContract<infer P, infer Q, z.ZodType | undefined, z.ZodType, infer S>
+    ? { params: Out<P>; query: Out<Q>; scope: ScopeFor<S>; req: FastifyRequest }
+    : never;
+
+/**
+ * Registers a `websocket: true` contract (docs/design/connector.md §10.1) with
+ * `@fastify/websocket`, which `relay` mode installs. The scope is resolved in `preValidation`,
+ * before the upgrade: a refusal is the usual HTTP 401/403/404 and no socket is opened. A plain
+ * `GET` that asks for no upgrade gets the shared 404, which is how the isolation matrix replays
+ * such a contract. `handler` receives the open socket and owns it from then on.
+ */
+export function registerWebSocketRoute<C extends RouteContract>(
+  app: FastifyInstance,
+  contract: C,
+  handler: (socket: WebSocket, args: WebSocketArgs<C>) => void,
+): void {
+  if (!contract.websocket) {
+    throw new Error(`${contract.method} ${contract.path} is not a WebSocket; use registerRoute()`);
+  }
+  if (contract.method !== 'GET') throw new Error(`${contract.path}: a WebSocket route is a GET`);
+  if (contract.body) throw new Error(`${contract.path}: a WebSocket route takes no body`);
+  checkScopeParams(contract);
+  if (!app.hasDecorator('websocketServer')) {
+    throw new Error(`${contract.path}: WebSocket routes need @fastify/websocket (relay mode)`);
+  }
+  app.route({
+    method: 'GET',
+    url: contract.path,
+    exposeHeadRoute: false,
+    schema: {
+      summary: contract.summary,
+      ...(contract.params && { params: contract.params }),
+      ...(contract.query && { querystring: contract.query }),
+      response: errorResponses(contract),
+    },
+    config: { scope: contract.scope, contract },
+    preValidation: scopeResolver(app, contract),
+    // Without an upgrade there is nothing to serve.
+    handler: (_req, reply) => reply.code(404).send(NOT_FOUND),
+    wsHandler: (socket, req) => {
+      handler(socket, {
+        params: req.params,
+        query: req.query,
+        scope: req.parallaxScope,
+        req,
+      } as WebSocketArgs<C>);
     },
   });
 }

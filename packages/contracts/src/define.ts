@@ -55,6 +55,12 @@ export interface RouteContract<
   path: `/api/${string}`;
   scope: S;
   summary: string;
+  /**
+   * A WebSocket endpoint (docs/design/connector.md §10.1): `GET` only. The scope is resolved
+   * before the upgrade, so a refusal is the usual HTTP answer and no socket is opened; a plain
+   * `GET` without an upgrade answers the shared 404. `response` documents nothing for it.
+   */
+  websocket?: true;
   /** Success status; defaults to 200. A 302 route answers with a redirect and no body. */
   status?: 200 | 201 | 202 | 302;
   params?: P;
