@@ -225,7 +225,10 @@ export async function changeGrade(
     if (attempt.state === 'in_progress') return { ok: false, reason: 'attempt_open' };
     if (scope.archived) return classArchived;
     const [latest] = await gradesOf(tx, scope, attempt.id).limit(1);
-    if ((latest?.id ?? null) !== change.expectedGradeId || (!latest && change.source !== 'draft')) {
+    if (!latest && change.source !== 'draft') {
+      return invalid('This attempt has no grade yet: save a draft grade first');
+    }
+    if ((latest?.id ?? null) !== change.expectedGradeId) {
       return {
         ok: false,
         reason: 'conflict',
@@ -263,7 +266,10 @@ export async function changeGrade(
       const marks =
         change.source === 'draft'
           ? change.manual
-          : (latest?.questions ?? []).flatMap((q) => markOf(q.questionId, q.manual) ?? []);
+          : (latest?.questions ?? []).flatMap((stored) => {
+              const q = test.questions.find((x) => x.id === stored.questionId);
+              return (q && markOf(q, stored.manual)) ?? [];
+            });
       if (change.source === 'draft') {
         const problem = feedbackProblem(test, answers, change.feedback);
         if (problem) return invalid(problem);
@@ -496,7 +502,8 @@ async function ruleOf(
     return settingsOf(found.test, (await assignmentOf(ex, scope, resourceId))?.settings)
       .reportedGrade;
   }
-  return attempts[0]?.settings.reportedGrade;
+  const newest = [...attempts].sort((a, b) => b.startedAt.getTime() - a.startedAt.getTime())[0];
+  return newest?.settings.reportedGrade;
 }
 
 const summaryOf = (g: GradeRow | undefined) =>

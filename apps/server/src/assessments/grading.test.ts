@@ -1,8 +1,10 @@
-import { type TestV1, testV1 } from '@parallax/contracts';
+import { type TestQuestion, type TestV1, testV1 } from '@parallax/contracts';
+import type { ManualMark } from '@parallax/contracts/routes/grades';
 import { describe, expect, test } from 'vitest';
 import {
   type CodeResult,
   feedbackProblem,
+  manualFor,
   markOf,
   reportedOf,
   scoreAttempt,
@@ -186,18 +188,25 @@ describe('grade scoring', () => {
     for (const m of refused) expect(scoreAttempt(quiz, answers, new Map(), m, null).ok).toBe(false);
   });
 
-  test('a stored manual part reproduces its mark', () => {
-    expect(
-      markOf('why', { possible: 3, points: 2, criteria: [{ id: 'noise', points: 2 }] }),
-    ).toEqual({
-      questionId: 'why',
-      criteria: [{ id: 'noise', points: 2 }],
-    });
-    expect(markOf('free', { possible: 2, points: 1.5, criteria: [] })).toEqual({
-      questionId: 'free',
-      points: 1.5,
-    });
-    expect(markOf('free', { possible: 2, points: null, criteria: [] })).toBeUndefined();
+  test('a stored manual part round-trips through its mark, zero points included', () => {
+    const q = (id: string) => quiz.questions.find((x) => x.id === id) as TestQuestion;
+    const cases: [string, ManualMark][] = [
+      ['why', { questionId: 'why', criteria: [{ id: 'noise', points: 2 }] }],
+      ['why', { questionId: 'why', criteria: [] }],
+      ['why', { questionId: 'why', criteria: [{ id: 'root', points: 0 }] }],
+      ['mean', { questionId: 'mean', criteria: [] }],
+      ['free', { questionId: 'free', points: 1.5 }],
+      ['free', { questionId: 'free', points: 0 }],
+    ];
+    for (const [id, mark] of cases) {
+      const first = manualFor(q(id), mark);
+      if (!first.ok) throw new Error(first.message);
+      const again = markOf(q(id), first.value);
+      expect(again, `${id} ${JSON.stringify(mark)}`).toBeDefined();
+      const second = manualFor(q(id), again);
+      expect(second, `${id} ${JSON.stringify(mark)}`).toEqual(first);
+    }
+    expect(markOf(q('free'), { possible: 2, points: null, criteria: [] })).toBeUndefined();
   });
 
   test('feedback attaches to the attempt, a question or a line of submitted code', () => {

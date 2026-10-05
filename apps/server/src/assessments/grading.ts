@@ -121,12 +121,15 @@ export function manualFor(
   };
 }
 
-/** The mark that reproduces a stored manual part (a regrade or override carries it over). */
-export function markOf(questionId: string, manual: ManualScore | null): ManualMark | undefined {
+/**
+ * The mark that reproduces a stored manual part (a regrade or override carries it over). A
+ * question with rubric criteria is always marked by its criteria, even when none was awarded.
+ */
+export function markOf(q: TestQuestion, manual: ManualScore | null): ManualMark | undefined {
   if (!manual || manual.points === null) return undefined;
-  return manual.criteria.length > 0
-    ? { questionId, criteria: manual.criteria }
-    : { questionId, points: manual.points };
+  return q.rubric.length > 0
+    ? { questionId: q.id, criteria: manual.criteria }
+    : { questionId: q.id, points: manual.points };
 }
 
 export interface Scored {
