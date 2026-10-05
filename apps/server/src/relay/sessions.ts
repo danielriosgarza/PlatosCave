@@ -52,7 +52,15 @@ export const DEFAULT_LEASE = { idleTimeoutMin: 30, gracePeriodMin: 5 };
 
 export type OpenResult =
   | { ok: true; sessionId: string; state: 'starting' }
-  | { ok: false; reason: 'not_found' | 'class_archived' | 'connector_offline' | 'wrong_class' }
+  | {
+      ok: false;
+      reason:
+        | 'not_found'
+        | 'class_archived'
+        | 'connector_offline'
+        | 'wrong_class'
+        | 'template_archived';
+    }
   | { ok: false; reason: 'session_exists'; sessionId: string }
   | {
       ok: false;
@@ -253,12 +261,13 @@ export class SessionRelay {
     if (found.templateClassId !== null && found.templateClassId !== scope.classId) {
       return { ok: false, reason: 'wrong_class' };
     }
+    if (found.templateArchived) return { ok: false, reason: 'template_archived' };
     const link = this.options.links.get(connection.connectorId);
     if (!link || found.connector.status !== 'active') {
       return { ok: false, reason: 'connector_offline' };
     }
     const runtime = input.runtime ?? connection.runtime;
-    const lease = input.lease ?? DEFAULT_LEASE;
+    const lease = input.lease ?? found.templateLease ?? DEFAULT_LEASE;
     const target = connection.target;
     const hostKeys = connection.trustedHostKeys.map(({ host, port, sha256 }) => ({
       host,

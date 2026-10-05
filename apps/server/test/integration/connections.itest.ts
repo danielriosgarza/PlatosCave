@@ -261,7 +261,7 @@ describe('saved connections', () => {
         classId: ids.classB,
         name: 'Cluster',
         description: 'The department cluster',
-        target: { host: 'login.cluster.example.org', port: 22 },
+        target: { host: 'login.cluster.example.org', port: 22, workspace: '/home/{user}/parallax' },
         runtime: { mode: 'start' },
         isolation: 'account',
         hostOwnerConfirmedBy: ids.marcus,
