@@ -43,7 +43,9 @@ export function ReceiptView({
   return (
     <div className={styles.receipt}>
       <h2 tabIndex={-1} id="pc-receipt-heading">
-        {receipt.autoSubmitted ? 'Time ran out · your saved answers were submitted' : 'Test submitted'}
+        {receipt.autoSubmitted
+          ? 'Time ran out · your saved answers were submitted'
+          : 'Test submitted'}
       </h2>
       <p role="status">
         {receipt.autoSubmitted
