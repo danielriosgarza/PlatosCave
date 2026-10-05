@@ -216,11 +216,17 @@ export type WebSocketArgs<C> =
  * before the upgrade: a refusal is the usual HTTP 401/403/404 and no socket is opened. A plain
  * `GET` that asks for no upgrade gets the shared 404, which is how the isolation matrix replays
  * such a contract. `handler` receives the open socket and owns it from then on.
+ *
+ * `beforeUpgrade` runs after the scope resolver, only for a request that asks for an upgrade; an
+ * answer it sends (a status its contract declares) refuses the upgrade.
  */
 export function registerWebSocketRoute<C extends RouteContract>(
   app: FastifyInstance,
   contract: C,
   handler: (socket: WebSocket, args: WebSocketArgs<C>) => void,
+  options: {
+    beforeUpgrade?: (req: FastifyRequest, reply: FastifyReply) => Promise<void>;
+  } = {},
 ): void {
   if (!contract.websocket) {
     throw new Error(`${contract.method} ${contract.path} is not a WebSocket; use registerRoute()`);
@@ -242,7 +248,12 @@ export function registerWebSocketRoute<C extends RouteContract>(
       response: errorResponses(contract),
     },
     config: { scope: contract.scope, contract },
-    preValidation: scopeResolver(app, contract),
+    preValidation: [
+      scopeResolver(app, contract),
+      async (req: FastifyRequest, reply: FastifyReply) => {
+        if (req.ws && options.beforeUpgrade) await options.beforeUpgrade(req, reply);
+      },
+    ],
     // Without an upgrade there is nothing to serve.
     handler: (_req, reply) => reply.code(404).send(NOT_FOUND),
     wsHandler: (socket, req) => {
