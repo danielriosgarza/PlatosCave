@@ -286,8 +286,56 @@ describe('transfers', () => {
     expect(submit.status).toBe(400);
   });
 
+  test('an attached session lists and copies inside its content root and never beside it', async () => {
+    // The connector attached to a server whose root_dir is the workspace's parent (P3-09b).
+    const s = await ready({
+      connection: { runtime: { mode: 'attach', port: 8888, kernelName: 'python3' } },
+      report: { owned: false, contentRoot: 'parallax' },
+    });
+    s.jupyter.dirs.add('parallax');
+    s.jupyter.dirs.add('parallax-private');
+    s.jupyter.files.set('parallax/notes.txt', Buffer.from('mine'));
+    s.jupyter.files.set('parallax-private/answers.csv', Buffer.from('not yours'));
+    s.jupyter.files.set('top.txt', Buffer.from('beside the workspace'));
+
+    const listed = await call(relay, cookie, 'GET', `${s.url}/files`);
+    expect(listed.status, JSON.stringify(listed.body)).toBe(200);
+    expect(listed.body).toMatchObject({ dir: '', workspace: expect.any(String) });
+    expect(listed.body.entries.map((e: { path: string }) => e.path)).toEqual(['notes.txt']);
+
+    const copied = await transfer(s, { kind: 'copy_in' });
+    expect(copied.status, JSON.stringify(copied.body)).toBe(200);
+    expect(copied.body.transfers[0]).toMatchObject({
+      path: 'data/sample.csv',
+      state: 'done',
+      outcome: 'copied',
+    });
+    expect(s.jupyter.files.get('parallax/data/sample.csv')).toEqual(DATA_CSV);
+    expect(s.jupyter.files.has('data/sample.csv')).toBe(false);
+
+    const out = await transfer(s, { kind: 'copy_out', paths: ['notes.txt'] });
+    expect(out.body.transfers[0]).toMatchObject({ path: 'notes.txt', state: 'done', size: 4 });
+
+    // A path naming the sibling directory, or the server's root, is refused before any request.
+    const before = s.jupyter.contentsRequests.length;
+    for (const path of ['../parallax-private/answers.csv', '../top.txt']) {
+      expect((await transfer(s, { kind: 'copy_out', paths: [path] })).status, path).toBe(400);
+    }
+    for (const dir of ['..', '../parallax-private']) {
+      const res = await call(relay, cookie, 'GET', `${s.url}/files?dir=${encodeURIComponent(dir)}`);
+      expect(res.status, dir).toBe(400);
+    }
+    expect(s.jupyter.contentsRequests).toHaveLength(before);
+
+    // Every request the relay built names the content root or lies below it, segment by segment.
+    const paths = s.jupyter.contentsRequests.map((r) => r.path);
+    expect(paths.length).toBeGreaterThan(0);
+    expect(paths.every((p) => p === 'parallax' || p.startsWith('parallax/'))).toBe(true);
+    expect(paths.some((p) => p.startsWith('parallax-private'))).toBe(false);
+  });
+
   test('transfers need a ready session the server can place, on a live link', async () => {
-    // An attached Jupyter server's root is not known to the relay.
+    // An attached Jupyter server whose connector reported no content root cannot be placed.
     const attached = await ready({
       connection: { runtime: { mode: 'attach', port: 8888, kernelName: 'python3' } },
       report: { owned: false },

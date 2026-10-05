@@ -1,11 +1,14 @@
 import { useState } from 'react';
 import buttons from '../../components/Buttons.module.css';
-import type { Connection, ConnectionTest, Connector } from './api';
+import type { ComputeTemplate, Connection, ConnectionTest, Connector } from './api';
+import { ISOLATION_TEXT } from './ClassComputers';
 import styles from './Connect.module.css';
 
 interface Props {
   connection: Connection;
   connector: Connector | undefined;
+  /** The class computer the connection was made from; its lease is the default (§9). */
+  template?: ComputeTemplate | undefined;
   test: ConnectionTest;
   busy: boolean;
   onConnect: (choice: {
@@ -25,15 +28,15 @@ export const leaseSentence = (idle: number, grace: number) =>
  * the connector reaches. A personal connection may reach this person's files with their own
  * privileges.
  */
-export function ConnectSummary({ connection, connector, test, busy, onConnect }: Props) {
+export function ConnectSummary({ connection, connector, template, test, busy, onConnect }: Props) {
   const specs = test.kernelspecs ?? [];
   const wanted = connection.runtime.kernelName;
   const [kernel, setKernel] = useState(
     specs.find((k) => k.name === wanted)?.name ?? specs[0]?.name ?? '',
   );
   // Kept as typed and checked on Connect, so any value can be typed.
-  const [idleText, setIdleText] = useState('30');
-  const [graceText, setGraceText] = useState('5');
+  const [idleText, setIdleText] = useState(String(template?.lease?.idleTimeoutMin ?? 30));
+  const [graceText, setGraceText] = useState(String(template?.lease?.gracePeriodMin ?? 5));
   const [problem, setProblem] = useState<string | null>(null);
   const idle = Number(idleText);
   const grace = Number(graceText);
@@ -58,6 +61,12 @@ export function ConnectSummary({ connection, connector, test, busy, onConnect }:
         <dd>{where}</dd>
         <dt>Account</dt>
         <dd>{account}</dd>
+        {template ? (
+          <>
+            <dt>Class computer</dt>
+            <dd>{`${template.name}. ${ISOLATION_TEXT[template.isolation]}`}</dd>
+          </>
+        ) : null}
         <dt>Working directory</dt>
         <dd className={styles.mono}>{workspace}</dd>
         <dt>Jupyter</dt>

@@ -1,4 +1,9 @@
 import {
+  archiveComputeTemplate,
+  createComputeTemplate,
+  listComputeTemplates,
+} from '@parallax/contracts/routes/computeTemplates';
+import {
   archiveConnection,
   createConnection,
   getConnectionTest,
@@ -34,6 +39,8 @@ export type ConnectionRuntime = Connection['runtime'];
 export type ConnectionTest = z.output<typeof getConnectionTest.response>;
 export type Stage = ConnectionTest['stages'][number];
 export type NotebookSession = z.output<typeof getNotebookSession.response>;
+export type ComputeTemplate = z.output<typeof listComputeTemplates.response>[number];
+export type NewComputeTemplate = z.input<typeof createComputeTemplate.body>;
 /** A host key the person confirmed; `replacing` names the key it replaces (§5.2). */
 export interface Confirmation {
   host: string;
@@ -47,6 +54,8 @@ export interface NewConnection {
   connectorId: string;
   target: ConnectionTarget;
   runtime: ConnectionRuntime;
+  /** The class template the target was made from (design §11). */
+  templateId?: string;
 }
 
 export interface ConnectionChange {
@@ -234,3 +243,28 @@ export const startKernel = async (classId: string, sessionId: string, kernelName
 /** Restarts the session's kernel; its variables are lost (design §10.6). */
 export const restartKernel = (classId: string, sessionId: string) =>
   call(restartSessionKernel, { params: { classId, sessionId } });
+
+/** The class's compute templates; every member reads them (design §11). */
+export const useComputeTemplates = (classId: string) =>
+  useApi(listComputeTemplates, { params: { classId } });
+
+/** An instructor publishes and archives the class's templates. */
+export function useTemplateActions(classId: string) {
+  const client = useQueryClient();
+  const done = () =>
+    client.invalidateQueries({
+      queryKey: [listComputeTemplates.method, listComputeTemplates.path],
+    });
+  return {
+    create: useMutation({
+      mutationFn: (body: NewComputeTemplate) =>
+        call(createComputeTemplate, { params: { classId }, body }),
+      onSuccess: done,
+    }),
+    archive: useMutation({
+      mutationFn: (templateId: string) =>
+        call(archiveComputeTemplate, { params: { classId, templateId } }),
+      onSuccess: done,
+    }),
+  };
+}

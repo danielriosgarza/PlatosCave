@@ -6,6 +6,7 @@ import {
   contents,
   deleteKernel,
   httpMessage,
+  inRoot,
   interruptKernel,
   JupyterArgumentError,
   type JupyterRequest,
@@ -151,6 +152,19 @@ describe('typed Jupyter operations', () => {
     expect(() => contentPath('parallax', 'parallax-private/a.csv')).toThrow(JupyterArgumentError);
     expect(contentPath('parallax', 'parallax/a b.csv')).toBe('parallax/a%20b.csv');
     expect(() => contents.delete('parallax', 'parallax')).toThrow(JupyterArgumentError);
+  });
+
+  test('a workspace path is placed below the content root (P3-09b)', () => {
+    expect(inRoot('', 'a.csv')).toBe('a.csv');
+    expect(inRoot('parallax', '')).toBe('parallax');
+    expect(inRoot('courses/parallax', 'data/a.csv')).toBe('courses/parallax/data/a.csv');
+    const listed = contents.list('parallax', inRoot('parallax', ''));
+    expect(listed.path).toBe('/api/contents/parallax?content=1&type=directory');
+    expect(allowedByConnector(listed, 'parallax')).toBe(true);
+    // A workspace path cannot climb out: `..` is refused in the joined path.
+    expect(() => contents.get('parallax', inRoot('parallax', '../parallax-private/a.csv'))).toThrow(
+      JupyterArgumentError,
+    );
   });
 
   test('a create body holds only type and ext', () => {

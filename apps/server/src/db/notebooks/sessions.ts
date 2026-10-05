@@ -41,6 +41,8 @@ export interface SessionReport {
   jupyterVersion?: string | undefined;
   kernelspecs?: { name: string; displayName: string; language: string }[] | undefined;
   environment?: { os?: string; arch?: string; runtime?: string } | undefined;
+  /** The workspace relative to the Jupyter server's root (P3-09b); kept in `runtime`. */
+  contentRoot?: string | undefined;
   leaseExpiresAt?: string | undefined;
 }
 
@@ -187,8 +189,12 @@ async function applyLocked(
           ...(report.owned !== undefined && { owned: report.owned }),
           ...(report.jupyterVersion && { jupyterVersion: report.jupyterVersion }),
           ...(report.environment && { environment: report.environment }),
-          ...(report.kernelspecs && {
-            runtime: { ...row.runtime, kernelspecs: report.kernelspecs },
+          ...((report.kernelspecs || report.contentRoot !== undefined) && {
+            runtime: {
+              ...row.runtime,
+              ...(report.kernelspecs && { kernelspecs: report.kernelspecs }),
+              ...(report.contentRoot !== undefined && { contentRoot: report.contentRoot }),
+            },
           }),
           ...(report.leaseExpiresAt && { leaseExpiresAt: new Date(report.leaseExpiresAt) }),
           lastConfirmedAt: now,

@@ -276,8 +276,11 @@ type SessionState struct {
 	JupyterVersion string       `json:"jupyterVersion,omitempty" zero:"ok"`
 	Kernelspecs    []Kernelspec `json:"kernelspecs,omitempty" zero:"ok"`
 	Environment    *Environment `json:"environment,omitempty"`
-	LeaseExpiresAt string       `json:"leaseExpiresAt,omitempty"`
-	TS             int64        `json:"ts"`
+	// ContentRoot is the workspace relative to the Jupyter server's root_dir, sent with ready;
+	// "" (present) when they are equal. The relay places workspace paths below it (design §7).
+	ContentRoot    *string `json:"contentRoot,omitempty"`
+	LeaseExpiresAt string  `json:"leaseExpiresAt,omitempty"`
+	TS             int64   `json:"ts"`
 }
 
 // CloseSession detaches (Stop false) or stops an owned session (Stop true).

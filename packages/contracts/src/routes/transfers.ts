@@ -97,9 +97,9 @@ export const WorkspaceEntry = z.object({
 
 /**
  * 409 when the workspace cannot be reached now: `not_ready` (the session is not `ready`),
- * `connector_offline`, `workspace_unknown` (an attached session: the server cannot place paths
- * inside that Jupyter server's root), or `transfer_failed` with the catalogue code or Jupyter
- * status the connector answered.
+ * `connector_offline`, `workspace_unknown` (an attached session whose connector reported no
+ * content root: the server cannot place paths inside that Jupyter server's root), or
+ * `transfer_failed` with the catalogue code or Jupyter status the connector answered.
  */
 export const transferRefused = z.object({
   error: z.enum(['not_ready', 'connector_offline', 'workspace_unknown', 'transfer_failed']),
