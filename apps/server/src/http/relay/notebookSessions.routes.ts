@@ -10,8 +10,7 @@ import type { FastifyInstance } from 'fastify';
 import type { RouteDeps } from '../../app';
 import { connectionForSession } from '../../db/connectors/connections';
 import { findSession, listSessions, type SessionRow } from '../../db/notebooks/sessions';
-import { LiveLinkRegistry, systemTimers } from '../../relay/links';
-import { SessionRelay } from '../../relay/sessions';
+import { notebookRelays } from '../../relay/kernel';
 import { WindowLimit } from '../budgets';
 import { notFound, registerRoute } from '../register';
 
@@ -48,21 +47,9 @@ const sessionView = (row: SessionRow): SessionView => {
  * follows the links of this process, the only relay (§10.1).
  */
 export default function notebookSessionRoutes(app: FastifyInstance, deps: RouteDeps): void {
-  const { now, links } = deps;
+  const { now } = deps;
   const db = deps.requireDb;
-  const relay = deps.db
-    ? new SessionRelay({
-        db: deps.db,
-        links,
-        timers: links instanceof LiveLinkRegistry ? links.timers : systemTimers,
-        now,
-        log: app.log.child({ component: 'sessions' }),
-      })
-    : undefined;
-  if (relay && links instanceof LiveLinkRegistry) {
-    const stop = relay.start(links);
-    app.addHook('onClose', async () => stop());
-  }
+  const relay = notebookRelays(app, deps)?.sessions;
   // Without a database there is no relay: every route answers 503, as `requireDb` does.
   const sessions = () => {
     if (!relay) throw app.httpErrors.serviceUnavailable();

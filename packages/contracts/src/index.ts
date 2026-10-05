@@ -4,6 +4,7 @@ export * from './define';
 export * from './examples';
 export * from './exercise';
 export * from './notebook';
+export * from './notebookChannel';
 export * from './readingHtml';
 export * from './resources';
 export * from './runner';
