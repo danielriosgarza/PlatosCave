@@ -24,6 +24,11 @@ interface Options<V, S extends { revision: number }> {
    * unsaved: the status reports it instead of Saved, and leaving the page resends them.
    */
   partial?: (sent: V) => string | undefined;
+  /**
+   * While `partial` reports something withheld, true when a request would carry nothing the
+   * last acknowledged one did not; it is then not sent, so the revision does not move.
+   */
+  unchanged?: (sent: V, acknowledged: V) => boolean;
 }
 
 /** Edits the form itself can see are not worth sending; its message is shown as is. */
@@ -48,6 +53,7 @@ export function useAutosave<V extends object, S extends { revision: number }>({
   delayMs = 700,
   onSaved,
   partial,
+  unchanged,
 }: Options<V, S>) {
   const [values, setValues] = useState<V>(() => toValues(server));
   const [state, setState] = useState<SaveState<S>>({ kind: 'idle' });
@@ -64,6 +70,9 @@ export function useAutosave<V extends object, S extends { revision: number }>({
   onSavedRef.current = onSaved;
   const partialRef = useRef(partial);
   partialRef.current = partial;
+  const unchangedRef = useRef(unchanged);
+  unchangedRef.current = unchanged;
+  const acknowledged = useRef(values);
 
   const flush = useCallback(async () => {
     if (inFlight.current) {
@@ -72,10 +81,17 @@ export function useAutosave<V extends object, S extends { revision: number }>({
     }
     inFlight.current = true;
     const sent = latest.current;
+    const withheld = partialRef.current?.(sent);
+    if (withheld && unchangedRef.current?.(sent, acknowledged.current)) {
+      inFlight.current = false;
+      setState({ kind: 'partial', message: withheld });
+      return;
+    }
     setState({ kind: 'saving' });
     try {
       const saved = await saveRef.current(sent, revision.current);
       revision.current = saved.revision;
+      acknowledged.current = sent;
       onSavedRef.current?.(saved);
       const left = partialRef.current?.(sent);
       if (latest.current === sent && !left) dirty.current = false;
@@ -147,6 +163,7 @@ export function useAutosave<V extends object, S extends { revision: number }>({
       dirty.current = false;
       revision.current = current.revision;
       latest.current = toValues(current);
+      acknowledged.current = latest.current;
       setValues(latest.current);
       setState({ kind: 'idle' });
     },
@@ -158,9 +175,11 @@ export function useAutosave<V extends object, S extends { revision: number }>({
     (current: S) => {
       stopped.current = false;
       revision.current = current.revision;
+      // What the server holds now is what a skipped save would have to match.
+      acknowledged.current = toValues(current);
       void flush();
     },
-    [flush],
+    [flush, toValues],
   );
 
   return { values, change, state, retry, takeTheirs, keepMine };

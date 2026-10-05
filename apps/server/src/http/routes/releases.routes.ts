@@ -18,10 +18,14 @@ const iso = (d: Date) => d.toISOString();
 export default function releaseRoutes(app: FastifyInstance, deps: RouteDeps): void {
   const db = deps.requireDb;
 
-  registerRoute(app, validateDrafts, ({ scope }) => releases.validateDrafts(db(), scope));
+  registerRoute(app, validateDrafts, ({ scope }) =>
+    releases.validateDrafts(db(), scope, deps.config.SHINY_ORIGINS),
+  );
 
   registerRoute(app, publishRelease, async ({ scope, fail }) => {
-    const result = await releases.publishRelease(db(), scope);
+    const result = await releases.publishRelease(db(), scope, {
+      approvedShinyOrigins: deps.config.SHINY_ORIGINS,
+    });
     if (!result.ok) return fail(422, { error: 'validation_failed', report: result.report });
     const { id, version, createdAt } = result.release;
     return { release: { id, version, createdAt: iso(createdAt) }, report: result.report };
