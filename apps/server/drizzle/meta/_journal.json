@@ -64,6 +64,13 @@
       "when": 1791179287374,
       "tag": "0008_p3-15_assignments",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1791186423716,
+      "tag": "0009_p3-06_notebook_sessions",
+      "breakpoints": true
     }
   ]
 }

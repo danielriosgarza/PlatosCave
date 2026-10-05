@@ -3,6 +3,7 @@ import type { UserScope } from '../../auth/scope';
 import { fingerprintOf } from '../../relay/signing';
 import { audit } from '../audit';
 import type { Db, Executor, Tx } from '../client';
+import { markConnectorRevoked } from '../notebooks/sessions';
 import { connectors } from '../schema';
 import { forUser } from '../scoped';
 import { consumePairing, linkPairing, lockOwner } from './pairing';
@@ -242,7 +243,7 @@ export function approveConnector(
 /**
  * Revokes a connector of the scope's person: rejects a pending one (reason `rejected`) or
  * revokes an active one (`user`). Revoking a revoked connector changes nothing. The caller
- * closes its live link; sessions on it are marked from P3-06 on.
+ * closes its live link; the connector's open sessions become `unconfirmed` (`connector_revoked`).
  */
 export function revokeConnector(
   db: Db,
@@ -274,6 +275,8 @@ async function revoke(
     .update(connectors)
     .set({ status: 'revoked', approveBy: null, revokedAt: now, revokedReason: reason })
     .where(eq(connectors.id, connector.id));
+  // The server can no longer ask the connector, so it does not claim its sessions stopped (§3).
+  await markConnectorRevoked(tx, connector.id, now);
   await audit(
     tx,
     connectorEvent(

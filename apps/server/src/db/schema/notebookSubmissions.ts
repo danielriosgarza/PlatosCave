@@ -1,5 +1,6 @@
 import { sql } from 'drizzle-orm';
 import {
+  type AnyPgColumn,
   bigint,
   boolean,
   check,
@@ -14,6 +15,7 @@ import {
 } from 'drizzle-orm/pg-core';
 import { resourceRevisions, resources } from './content';
 import { classes } from './memberships';
+import { notebookSessions, notebookWorkingCopies } from './notebook-sessions';
 import { users } from './users';
 
 /**
@@ -59,6 +61,13 @@ export const notebookSubmissions = pgTable(
      * machine (§10.5).
      */
     environment: jsonb().$type<Record<string, string | number>>().notNull().default({}),
+    /**
+     * A notebook submitted from a connected session (P3-09): the working copy and acknowledged
+     * revision it froze, and the session whose environment it records. Null for an upload.
+     */
+    workingCopyId: uuid().references((): AnyPgColumn => notebookWorkingCopies.id),
+    workingCopyRevision: integer(),
+    sessionId: uuid().references((): AnyPgColumn => notebookSessions.id),
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [

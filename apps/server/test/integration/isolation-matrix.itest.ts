@@ -319,7 +319,8 @@ describe('A02 A26 preview principal on user-scope contracts', () => {
         expect(res.statusCode).toBe(403);
         expect(res.json()).toMatchObject({ error: 'invite_other_account' });
       },
-      // A preview principal never pairs, lists or manages devices (connector design §3).
+      // A preview principal never pairs, lists or manages devices, nor saves, tests or reads
+      // connections (connector design §3).
       ...Object.fromEntries(
         [
           'POST /api/me/connectors/pairings',
@@ -327,6 +328,13 @@ describe('A02 A26 preview principal on user-scope contracts', () => {
           'POST /api/me/connectors/:connectorId/approve',
           'POST /api/me/connectors/:connectorId/revoke',
           'PATCH /api/me/connectors/:connectorId',
+          'GET /api/me/connections',
+          'POST /api/me/connections',
+          'GET /api/me/connections/:connectionId',
+          'PATCH /api/me/connections/:connectionId',
+          'DELETE /api/me/connections/:connectionId',
+          'POST /api/me/connections/:connectionId/test',
+          'GET /api/me/connections/:connectionId/tests/:testId',
         ].map((key) => [
           key,
           async (c: RouteContract) => {

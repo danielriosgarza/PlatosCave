@@ -263,7 +263,7 @@ const Hop = z.strictObject({
   auth: LinkAuth.optional(),
 });
 const HostKey = z.strictObject({ host: LinkHost, port: Port, sha256: ConnectorFingerprint });
-const Confirmation = z.strictObject({
+export const LinkConfirmation = z.strictObject({
   host: LinkHost,
   port: Port,
   sha256: ConnectorFingerprint,
@@ -435,12 +435,12 @@ const stage = (allowRunning: boolean) =>
     });
 export const LinkStage = stage(true);
 
-const Kernelspec = z.strictObject({
+export const LinkKernelspec = z.strictObject({
   name: z.string().regex(/^[A-Za-z0-9._-]{1,64}$/),
   displayName: z.string().max(128),
   language: z.string().max(32),
 });
-const Environment = z.strictObject({
+export const LinkEnvironment = z.strictObject({
   os: z.string().max(64).optional(),
   arch: z.string().max(16).optional(),
   runtime: z.string().max(64).optional(),
@@ -522,7 +522,7 @@ export const LinkTestConnection = msg('test_connection', {
   requestId: ConnectorUuid,
   target: LinkTarget,
   runtime: LinkRuntime,
-  confirmations: z.array(Confirmation).max(2).optional(),
+  confirmations: z.array(LinkConfirmation).max(2).optional(),
 });
 export const LinkTestProgress = msg('test_progress', {
   requestId: ConnectorUuid,
@@ -532,7 +532,7 @@ export const LinkTestResult = msg('test_result', {
   requestId: ConnectorUuid,
   outcome: z.enum(['ready', 'ready_to_start', 'needs_action', 'failed']),
   stages: z.array(stage(false)).min(1).max(8),
-  kernelspecs: z.array(Kernelspec).max(32).optional(),
+  kernelspecs: z.array(LinkKernelspec).max(32).optional(),
   attachable: z
     .array(z.strictObject({ port: HighPort, pid: Pid.optional(), rootDir: LinkPath }))
     .max(16)
@@ -542,7 +542,7 @@ export const LinkTestResult = msg('test_result', {
     .max(32)
     .regex(/^[0-9]+\.[0-9]+(\.[0-9]+)?[A-Za-z0-9.+-]*$/)
     .optional(),
-  environment: Environment.optional(),
+  environment: LinkEnvironment.optional(),
 });
 export const LinkOpenSession = msg('open_session', {
   requestId: ConnectorUuid,
@@ -561,8 +561,8 @@ export const LinkSessionState = msg('session_state', {
   code: LinkCode.optional(),
   detail: LinkDetail.optional(),
   jupyterVersion: z.string().max(32).optional(),
-  kernelspecs: z.array(Kernelspec).max(32).optional(),
-  environment: Environment.optional(),
+  kernelspecs: z.array(LinkKernelspec).max(32).optional(),
+  environment: LinkEnvironment.optional(),
   leaseExpiresAt: UtcTimestamp.optional(),
   ts: UnixSeconds,
 });
@@ -717,7 +717,7 @@ const DOTTED_QUAD =
 const LABEL = /^[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?$/;
 
 /** The four bytes of a dotted-quad IPv4 address, or null. */
-function ipv4Bytes(host: string): number[] | null {
+export function ipv4Bytes(host: string): number[] | null {
   return DOTTED_QUAD.test(host) ? host.split('.').map(Number) : null;
 }
 
@@ -750,7 +750,7 @@ export function ipv6Bytes(host: string): number[] | null {
 }
 
 /** The IPv4 address an IPv6 address embeds by mapping, NAT64 or 6to4 (§8), or null. */
-function embeddedIpv4(b: number[]): number[] | null {
+export function embeddedIpv4(b: number[]): number[] | null {
   const zero = (from: number, to: number) => b.slice(from, to).every((x) => x === 0);
   if (zero(0, 10) && b[10] === 0xff && b[11] === 0xff) return b.slice(12);
   if (b[0] === 0x00 && b[1] === 0x64 && b[2] === 0xff && b[3] === 0x9b && zero(4, 12)) {
@@ -819,7 +819,7 @@ const sameEndpoint = (a: { host: string; port: number }, b: { host: string; port
 export function validateTarget(input: {
   target: LinkTarget;
   runtime?: LinkRuntime;
-  confirmations?: z.infer<typeof Confirmation>[];
+  confirmations?: z.infer<typeof LinkConfirmation>[];
 }): TargetIssue[] {
   const { target, runtime, confirmations } = input;
   const issues: TargetIssue[] = [];
