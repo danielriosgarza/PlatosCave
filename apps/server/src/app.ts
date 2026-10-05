@@ -41,6 +41,11 @@ export interface Deps {
   storage?: Storage;
   /** Job queue for routes that start background work; absent, such work is not queued. */
   boss?: PgBoss;
+  /**
+   * The runner's queue in schema `pgboss_exec` (docs/design/runner.md §8.4); absent, code runs
+   * answer 503 and submissions queue no grading.
+   */
+  bossExec?: PgBoss;
   /** Work that outlives its request (mail delivery); defaults to one the server drains on close. */
   background?: BackgroundTasks;
   /**
