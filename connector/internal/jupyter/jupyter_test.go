@@ -251,6 +251,20 @@ func TestAllowlistContentRootIsSegmentWise(t *testing.T) {
 	}
 }
 
+// P3-09b: only a content root the relay could name in a contents request is reported.
+func TestAddressableContentRoot(t *testing.T) {
+	for _, root := range []string{"", "parallax", "course/week 1", "data-2026"} {
+		if !Addressable(root) {
+			t.Errorf("%q not addressable", root)
+		}
+	}
+	for _, root := range []string{".work", "a/.hidden", "a//b", "a/", "/abs", "a/..", "a\\b", "a%41b", "q?x", "h#x", "nul\x00", strings.Repeat("a", 1025)} {
+		if Addressable(root) {
+			t.Errorf("%q addressable", root)
+		}
+	}
+}
+
 func TestContentsPostBodyRestricted(t *testing.T) {
 	for _, ok := range []string{`{}`, `{"type":"file"}`, `{"type":"notebook","ext":".ipynb"}`, `{"type":"directory"}`} {
 		if err := CheckContentsPost([]byte(ok)); err != nil {

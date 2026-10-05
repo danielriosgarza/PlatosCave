@@ -80,14 +80,15 @@ interface Server {
   uploads: number;
   /** Files received by the upload routes, in order. */
   received: { route: string; file: File }[];
-  /** Content of the head revision of GET /resources, when a test sets it. */
-  headContent?: Record<string, unknown>;
   /** PATCH of this topic id answers with this status (reorder tests). */
   otherStatus?: number;
   /** The Markdown a web deck's head revision holds. */
   deckMarkdown?: string;
   /** The next PATCH of the deck answers 409 with a copy holding this Markdown. */
   deckConflict?: string;
+  /** The content and alternative a non-deck head revision holds (a Shiny app's address, a notebook's workspace files). */
+  headContent?: Record<string, unknown>;
+  headAlternative?: { text: string } | null;
 }
 
 function fresh(over: Partial<Server> = {}): Server {
@@ -234,7 +235,14 @@ function api(me: ReturnType<typeof makeMe>, s: Server) {
             409,
           );
         }
-        if ('content' in body) s.deckMarkdown = (body.content as { markdown: string }).markdown;
+        if ('content' in body) {
+          const content = body.content as Record<string, unknown>;
+          if (found.type === 'shiny') s.headContent = content;
+          else s.deckMarkdown = content.markdown as string;
+        }
+        if ('accessibleAlternative' in body) {
+          s.headAlternative = body.accessibleAlternative as { text: string } | null;
+        }
         return json({ ...found, ...body, revision: found.revision + 1, head: head(s) });
       }
       return json({ ...found, head: head(s) });
@@ -247,7 +255,7 @@ const head = (s: Server) => ({
   id: REVISION,
   content: s.headContent ?? { markdown: s.deckMarkdown ?? '# Old' },
   objectKeys: [],
-  accessibleAlternative: null,
+  accessibleAlternative: s.headAlternative ?? null,
   provenance: null,
   contentHash: 'h',
   createdBy: SAM,
@@ -790,6 +798,103 @@ describe('web slides', () => {
   it('a finished web deck reads Ready to publish', async () => {
     await open(grant(), deck());
     expect(await screen.findByText('Ready to publish')).toBeInTheDocument();
+  });
+});
+
+describe('Shiny apps', () => {
+  const app = () =>
+    fresh({
+      resources: [resource({ type: 'shiny', title: 'Sampling lab' })],
+      headContent: { url: 'https://shiny.example.org/lab' },
+      headAlternative: { text: 'A table of repeated samples' },
+    });
+
+  it('P2-15a adds a Shiny app from a title, an address and an accessible alternative', async () => {
+    const user = userEvent.setup();
+    const { s } = await open();
+    const notebooks = await screen.findByRole('region', { name: 'Notebooks resources' });
+    await user.click(within(notebooks).getByRole('button', { name: 'Add Shiny app' }));
+    const form = screen.getByRole('form', { name: 'Add Shiny app' });
+    expect(within(form).getByRole('button', { name: 'Add Shiny app' })).toBeDisabled();
+    await user.type(within(form).getByLabelText('Title'), 'Sampling lab');
+    await user.type(within(form).getByLabelText('Address'), 'https://shiny.example.org/lab');
+    await user.type(within(form).getByLabelText('Accessible alternative'), 'Repeated samples');
+    await user.click(within(form).getByRole('button', { name: 'Add Shiny app' }));
+    await waitFor(() => expect(s.patched.some((p) => p.url.endsWith('/resources'))).toBe(true));
+    expect(s.patched.find((p) => p.url.endsWith('/resources'))?.body).toEqual({
+      type: 'shiny',
+      title: 'Sampling lab',
+      content: { url: 'https://shiny.example.org/lab' },
+      accessibleAlternative: { text: 'Repeated samples' },
+    });
+    expect(await screen.findByText('Sampling lab')).toBeInTheDocument();
+  });
+
+  it('P2-15a refuses an address the server would refuse before sending it', async () => {
+    const user = userEvent.setup();
+    const { s } = await open();
+    await user.click(await screen.findByRole('button', { name: 'Add Shiny app' }));
+    const form = screen.getByRole('form', { name: 'Add Shiny app' });
+    await user.type(within(form).getByLabelText('Title'), 'Sampling lab');
+    await user.type(within(form).getByLabelText('Address'), 'http://shiny.example.org/lab');
+    expect(await within(form).findByRole('alert')).toHaveTextContent('must start with https://');
+    expect(within(form).getByRole('button', { name: 'Add Shiny app' })).toBeDisabled();
+    await user.clear(within(form).getByLabelText('Address'));
+    await user.type(within(form).getByLabelText('Address'), 'https://a:b@shiny.example.org/');
+    expect(await within(form).findByRole('alert')).toHaveTextContent('username or password');
+    expect(s.patched).toHaveLength(0);
+  });
+
+  it('P2-15a edits the address and alternative of a Shiny app and sends them with the revision', async () => {
+    const user = userEvent.setup();
+    const { s } = await open(grant(), app());
+    await user.click(await screen.findByRole('button', { name: 'Edit Sampling lab' }));
+    const address = await screen.findByLabelText('Address');
+    expect(address).toHaveValue('https://shiny.example.org/lab');
+    expect(screen.getByLabelText('Accessible alternative')).toHaveValue(
+      'A table of repeated samples',
+    );
+    await user.clear(address);
+    await user.type(address, 'https://shiny.example.org/lab-2');
+    await waitFor(() => expect(s.patched).toHaveLength(1), { timeout: 4000 });
+    expect(s.patched[0]?.body).toMatchObject({
+      expectedRevision: 1,
+      content: { url: 'https://shiny.example.org/lab-2' },
+      accessibleAlternative: { text: 'A table of repeated samples' },
+    });
+    expect(await screen.findByText(/Draft saved at/)).toBeInTheDocument();
+  });
+
+  it('P2-15a does not save an invalid address and says so', async () => {
+    const user = userEvent.setup();
+    const { s } = await open(grant(), app());
+    await user.click(await screen.findByRole('button', { name: 'Edit Sampling lab' }));
+    const address = await screen.findByLabelText('Address');
+    await user.clear(address);
+    await user.type(address, 'ftp://shiny.example.org/lab');
+    expect(
+      await screen.findByText(/Nothing is saved until it is valid/, {}, { timeout: 4000 }),
+    ).toBeInTheDocument();
+    expect(s.patched).toHaveLength(0);
+  });
+
+  it('P2-15a shows the unapproved-origin warning in the publication check', async () => {
+    await open(
+      grant(),
+      fresh({
+        report: {
+          errors: [],
+          warnings: [
+            {
+              code: 'unapproved_shiny_origin',
+              message: '“Sampling lab” is not on an approved Shiny origin',
+              topicId: TOPIC,
+            },
+          ],
+        },
+      }),
+    );
+    expect(await screen.findByText(/not on an approved Shiny origin/)).toBeInTheDocument();
   });
 });
 

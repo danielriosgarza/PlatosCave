@@ -153,7 +153,10 @@ test('A05 the instructor sees only the shared question, answers it and resolves 
   await tools(page).getByRole('button', { name: 'Ask' }).click();
   await page.getByRole('textbox', { name: 'Comment or question' }).fill(question);
   await page.getByRole('button', { name: 'Post' }).click();
-  await expect(page.getByText('You → Instructor')).toBeVisible();
+  // Threads cannot be deleted, so the previous test's question may be listed too: find this one.
+  await expect(
+    page.locator('[class*="thread"]').filter({ hasText: question }).getByText('You → Instructor'),
+  ).toBeVisible();
 
   // The instructor reads the question; the student's private note is nowhere in what they get.
   const signedIn = await page.request.post('/api/test/signin-as', {
