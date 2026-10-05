@@ -18,11 +18,13 @@ import (
 	"unicode/utf8"
 
 	"parallax/connector/internal/identity"
+	"parallax/connector/internal/jupyter"
 	"parallax/connector/internal/link"
 	"parallax/connector/internal/netscope"
 	"parallax/connector/internal/protocol"
 	"parallax/connector/internal/redact"
 	"parallax/connector/internal/session"
+	"parallax/connector/internal/sshtarget"
 	"parallax/connector/internal/state"
 	"parallax/connector/internal/target"
 	"parallax/connector/internal/version"
@@ -107,7 +109,7 @@ func run(ctx context.Context, args []string, env Env) error {
 		OS:      env.GOOS,
 		Arch:    env.GOARCH,
 		Mode:    cfg.Mode,
-		// The design's personal-mode targets; ssh requests are refused until P3-05 serves them.
+		// The design's personal-mode targets.
 		Targets:      []string{protocol.TargetLocal, protocol.TargetSSH},
 		Features:     features(env),
 		NetworkScope: protocol.NetworkScope{CIDRs: scope.CIDRs(), Hosts: []string{}},
@@ -138,18 +140,35 @@ func run(ctx context.Context, args []string, env Env) error {
 	if *confirm {
 		fmt.Fprintln(out, "Each session will be shown here for you to allow or decline.")
 	}
+	jupyterLog := func(line string) { fmt.Fprintf(env.Stderr, "jupyter: %s\n", line) }
+	remote := &sshtarget.Remote{
+		SSH: &sshtarget.Target{
+			Dialer:     &netscope.Dialer{Scope: scope},
+			KnownHosts: &sshtarget.KnownHosts{Path: store.Path(state.KnownHostsFile)},
+			Agent:      sshtarget.DialAgent,
+			TTY:        hello.Features.TTY,
+			Terminal:   sshtarget.NewTTY(),
+			Log:        func(line string) { fmt.Fprintln(out, redact.Redact(line)) },
+		},
+		Log: jupyterLog,
+	}
 	mgrCfg := session.Config{
-		Targets: map[string]target.Target{protocol.TargetLocal: &target.Local{
-			OS: env.GOOS, Arch: env.GOARCH,
-			Log: func(line string) { fmt.Fprintf(env.Stderr, "jupyter: %s\n", line) },
-		}},
+		Targets: map[string]target.Target{
+			protocol.TargetLocal: &target.Local{OS: env.GOOS, Arch: env.GOARCH, Log: jupyterLog},
+			protocol.TargetSSH:   remote,
+		},
 		Log:   out,
 		Now:   env.Now,
 		Store: store,
 		OS:    env.GOOS,
+		// An owned remote server left by a crash is stopped over a non-interactive connection.
+		SweepRemote: func(ctx context.Context, rec session.Record) error {
+			return remote.SweepOrphan(ctx, rec.Target, rec.SessionID, rec.Process.PID, jupyter.DefaultStopTimes)
+		},
 	}
 	if cfg.Mode == "managed" {
 		mgrCfg.Targets = map[string]target.Target{}
+		mgrCfg.SweepRemote = nil
 	}
 	if *confirm {
 		mgrCfg.Confirm = newAsker(env.Stdin, out).ask

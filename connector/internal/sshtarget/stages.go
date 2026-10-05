@@ -494,3 +494,36 @@ func validPath(p string) bool {
 	}
 	return true
 }
+
+// Connect reaches, identifies and authenticates every hop of an `ssh` target, as the first three
+// stages of Check do, and nothing more: the reconnect of design §5.5 and the orphan sweep of §6
+// use it. A refusal is the *target.Failure of the stage that stopped the route.
+func (t *Target) Connect(ctx context.Context, req *protocol.TestConnection) (*Conn, error) {
+	s := &target.Stages{}
+	c := &checker{t: t, req: req, s: s}
+	c.reach = newBudget("reachability", t.deadline(s, "reachability"))
+	c.hostID = newBudget("host_identity", t.deadline(s, "host_identity"))
+	c.auth = newBudget("ssh_auth", t.deadline(s, "ssh_auth"))
+	if conn := c.connect(ctx); conn != nil {
+		return conn, nil
+	}
+	return nil, firstFailure(s.List)
+}
+
+// firstFailure is the failure of the first stage that failed or needs action.
+func firstFailure(stages []protocol.Stage) *target.Failure {
+	for _, st := range stages {
+		if st.Status == "failed" || st.Status == "needs_action" {
+			return &target.Failure{Code: st.Code, Detail: st.Detail, NeedsAction: st.Status == "needs_action"}
+		}
+	}
+	return &target.Failure{Code: protocol.CodeInternal, Detail: "the SSH connection could not be made"}
+}
+
+// first is the connection to the first hop: the jump host's, or the target's when there is none.
+func (c *Conn) first() *ssh.Client {
+	if c.jump != nil {
+		return c.jump
+	}
+	return c.Client
+}
