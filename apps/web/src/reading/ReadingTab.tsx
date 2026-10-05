@@ -423,7 +423,7 @@ function ReadingView({
           open={marginOpen}
           onOpen={onOpenMargin}
         >
-          {() => (
+          {(_root, sketch) => (
             <PdfReading
               url={(data.pdf as { url: string }).url}
               pageCount={(data.pdf as { pageCount: number }).pageCount}
@@ -431,6 +431,7 @@ function ReadingView({
               source={{ classId, revisionId, key: data.sourceKey }}
               initial={initial}
               onPosition={report}
+              sketch={sketch}
             />
           )}
         </ReadingMargin>

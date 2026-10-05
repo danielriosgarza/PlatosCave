@@ -104,6 +104,7 @@
   height: auto;
 }
 .native figure {
+  position: relative; /* the sketch layer lies over the picture */
   margin: 22px 0 0;
   border-top: 1px solid var(--pc-rule);
   padding-top: 16px;
