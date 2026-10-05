@@ -8,5 +8,6 @@ export * from './memberships';
 export * from './notebookSubmissions';
 export * from './releases';
 export * from './storage';
+export * from './tests';
 export * from './topicReviews';
 export * from './users';

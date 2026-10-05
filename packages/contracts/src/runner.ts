@@ -49,21 +49,23 @@ const chars = (max: number) =>
     message: `at most ${max} characters`,
   });
 
-const RuntimeId = z.string().regex(/^(python|r)-[0-9]+\.[0-9]+$/);
+export const RunnerRuntimeId = z.string().regex(/^(python|r)-[0-9]+\.[0-9]+$/);
 const Language = z.enum(['python', 'r']);
 const ImageRef = z
   .string()
   .regex(
     /^(sha256:[0-9a-f]{64}|[a-z0-9][a-z0-9._-]*(:[0-9]+)?(\/[a-z0-9][a-z0-9._-]*)*(:[A-Za-z0-9._-]+)?@sha256:[0-9a-f]{64})$/,
   );
-const Path = chars(200).regex(/^[A-Za-z0-9_][A-Za-z0-9._-]*(\/[A-Za-z0-9_][A-Za-z0-9._-]*)*$/);
+export const RunnerPath = chars(200).regex(
+  /^[A-Za-z0-9_][A-Za-z0-9._-]*(\/[A-Za-z0-9_][A-Za-z0-9._-]*)*$/,
+);
 const CheckName = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9 ._-]{0,63}$/);
 const Int = (min: number, max: number) => z.number().int().min(min).max(max);
 const Tolerance = z.number().min(0);
 const ProgramArgs = z.array(chars(1024)).max(32);
 
 const RunnerFile = z.strictObject({
-  path: Path,
+  path: RunnerPath,
   content: z.string(),
   encoding: z.enum(['utf8', 'base64']).optional(),
   hidden: z.boolean().optional(),
@@ -73,8 +75,8 @@ const checkBase = {
   name: CheckName,
   visibility: z.enum(['public', 'hidden']),
   timeoutSeconds: Int(1, 60).optional(),
-  files: z.array(Path).max(16).optional(),
-  file: Path,
+  files: z.array(RunnerPath).max(16).optional(),
+  file: RunnerPath,
   stdin: chars(MAX_TEXT).optional(),
 };
 
@@ -130,7 +132,7 @@ export const RunnerJob = z.strictObject({
   v: z.literal(1),
   // job.schema.json's `format: uuid` is only an annotation in draft 2020-12; the mirror asserts it.
   jobId: z.guid(),
-  runtime: z.strictObject({ id: RuntimeId, language: Language, image: ImageRef.optional() }),
+  runtime: z.strictObject({ id: RunnerRuntimeId, language: Language, image: ImageRef.optional() }),
   set: z.enum(['public', 'full']),
   limits: z.strictObject({
     wallSeconds: limit('wallSeconds'),

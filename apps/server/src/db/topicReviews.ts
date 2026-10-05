@@ -16,6 +16,7 @@ import {
   topicReviews,
 } from './schema';
 import { forClass } from './scoped';
+import { submittedTests } from './tests';
 
 /**
  * Reviewed marks and topic completion (§4). A student marks ungraded material reviewed; graded
@@ -168,9 +169,11 @@ async function evidenceOf(db: Db, classId: string, userId: string): Promise<Evid
         isNotNull(exerciseAttempts.completedAt),
       ),
     );
+  // A test is submitted once one of its attempts was (§11): by the student or at its deadline.
+  const tests = await submittedTests(db, classId, userId);
   return {
     reviewed: new Set(marks.map((m) => m.resourceId)),
-    submitted: new Set([...submissions, ...finished].map((s) => s.resourceId)),
+    submitted: new Set([...[...submissions, ...finished].map((s) => s.resourceId), ...tests]),
   };
 }
 
