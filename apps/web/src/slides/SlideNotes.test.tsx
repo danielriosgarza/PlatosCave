@@ -334,6 +334,69 @@ describe('slide notes', () => {
     await waitFor(async () => expect(await noteField(3)).toHaveValue('unsent text'));
   });
 
+  it('A24 a note still being sent when the margin is hidden is not sent again when it is shown again', async () => {
+    const user = userEvent.setup();
+    const w = world();
+    const mock = api(w);
+    const original = mock.getMockImplementation() as (
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ) => Promise<Response>;
+    let release: () => void = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let posts = 0;
+    mock.mockImplementation(async (input, init) => {
+      if (init?.method === 'POST' && String(input).endsWith('/annotations')) {
+        posts += 1;
+        await held;
+      }
+      return original(input, init);
+    });
+    await openNotes(user);
+    await user.type(await noteField(1), 'one note');
+    await user.click(screen.getByRole('button', { name: 'Hide notes' }));
+    await waitFor(() => expect(posts).toBe(1));
+    await user.click(screen.getByRole('button', { name: 'Notes' }));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(posts).toBe(1);
+    release();
+    await waitFor(() => expect(w.annotations).toHaveLength(1));
+    await waitFor(() => expect(screen.getAllByLabelText('Your note on slide 1')).toHaveLength(1));
+    expect(await noteField(1)).toHaveValue('one note');
+    expect(w.calls.filter((c) => c.method === 'POST')).toHaveLength(1);
+  });
+
+  it('A24 a question still being posted when the margin is hidden does not come back as unsent text', async () => {
+    const user = userEvent.setup();
+    const w = world();
+    const mock = api(w);
+    const original = mock.getMockImplementation() as (
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ) => Promise<Response>;
+    let release: () => void = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    mock.mockImplementation(async (input, init) => {
+      if (init?.method === 'POST' && String(input).endsWith('/threads')) await held;
+      return original(input, init);
+    });
+    await openNotes(user);
+    await user.click(screen.getByRole('button', { name: /^Discussion/ }));
+    await user.type(screen.getByLabelText('Comment or question'), 'Why n minus one?');
+    await user.click(screen.getByRole('button', { name: 'Post' }));
+    await user.click(screen.getByRole('button', { name: 'Hide notes' }));
+    await user.click(screen.getByRole('button', { name: 'Notes' }));
+    await user.click(screen.getByRole('button', { name: /^Discussion/ }));
+    release();
+    await waitFor(() => expect(w.threads).toHaveLength(1));
+    await waitFor(() => expect(screen.getByText('Why n minus one?')).toBeVisible());
+    expect(screen.getByLabelText('Comment or question')).toHaveValue('');
+  });
+
   it('A24 an unsent edit of a saved note is restored over the saved text', async () => {
     const user = userEvent.setup();
     const saved = note(uuid(60), 0, 'saved text');

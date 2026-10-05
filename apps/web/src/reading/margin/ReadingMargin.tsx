@@ -34,7 +34,15 @@ import {
   useMarginActions,
   useMarginList,
 } from './data';
-import { type Draft, draftKey, listDrafts, removeDraft, saveDraft } from './drafts';
+import {
+  beginSend,
+  type Draft,
+  draftKey,
+  listDrafts,
+  removeDraft,
+  saveDraft,
+  sendsSettled,
+} from './drafts';
 import styles from './Margin.module.css';
 import { NoteController, type NoteState } from './notes';
 import { shownAnchor } from './placement';
@@ -131,32 +139,35 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
     const scope = `${userId}|${classId}|${resourceId}`;
     if (restored.current === scope) return;
     let current = true;
-    void listDrafts(userId, classId, resourceId).then((drafts) => {
-      // Marked done only once applied: a StrictMode remount cancels the first read, not the restore.
-      if (!current) return;
-      restored.current = scope;
-      for (const d of drafts) {
-        const id = d.key.split('|')[3] ?? d.key;
-        if (d.kind === 'ask') {
-          setAsk((a) => ({
-            ...a,
-            anchor: d.anchor,
-            body: d.body,
-            audience: d.audience ?? 'instructor',
-          }));
-        } else if (!controllers.current.has(id)) {
-          make(id, {
-            key: id,
-            anchor: d.anchor,
-            body: d.body,
-            annotationId: d.annotationId,
-            revision: d.expectedRevision,
-            unsent: true,
-          });
+    // A save or question this reading's earlier visit is still sending is not restored as unsent.
+    void sendsSettled(userId, classId, resourceId)
+      .then(() => listDrafts(userId, classId, resourceId))
+      .then((drafts) => {
+        // Marked done only once applied: a StrictMode remount cancels the first read, not the restore.
+        if (!current) return;
+        restored.current = scope;
+        for (const d of drafts) {
+          const id = d.key.split('|')[3] ?? d.key;
+          if (d.kind === 'ask') {
+            setAsk((a) => ({
+              ...a,
+              anchor: d.anchor,
+              body: d.body,
+              audience: d.audience ?? 'instructor',
+            }));
+          } else if (!controllers.current.has(id)) {
+            make(id, {
+              key: id,
+              anchor: d.anchor,
+              body: d.body,
+              annotationId: d.annotationId,
+              revision: d.expectedRevision,
+              unsent: true,
+            });
+          }
         }
-      }
-      touch();
-    });
+        touch();
+      });
     return () => {
       current = false;
     };
@@ -183,17 +194,20 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
 
   const make = (key: string, init: ConstructorParameters<typeof NoteController>[0]) => {
     const scoped = userId ? draftKey(userId, classId, resourceId, key) : null;
-    const controller = new NoteController(init, {
-      create: (anchor, body) => actions.createNote(anchor, body),
-      save: (id, revision, body, final) => actions.saveNote(id, revision, body, final),
-      persist: (d) => {
-        if (!scoped || !userId) return;
-        if (!d) return void removeDraft(scoped);
-        void saveDraft(noteDraft(scoped, userId, init.anchor, d));
+    const controller = new NoteController(
+      { ...init, draftKey: scoped },
+      {
+        create: (anchor, body) => actions.createNote(anchor, body),
+        save: (id, revision, body, final) => actions.saveNote(id, revision, body, final),
+        persist: (d) => {
+          if (!scoped || !userId) return;
+          if (!d) return void removeDraft(scoped);
+          void saveDraft(noteDraft(scoped, userId, init.anchor, d));
+        },
+        acknowledged: (annotation) => actions.acknowledged(annotation),
+        forget: (id) => actions.forget(id),
       },
-      acknowledged: (annotation) => actions.acknowledged(annotation),
-      forget: (id) => actions.forget(id),
-    });
+    );
     controller.subscribe(touch);
     controllers.current.set(key, controller);
     return controller;
@@ -492,6 +506,15 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
     const posted = ask.body.trim();
     if (posted === '' || ask.posting) return;
     setAsk((a) => ({ ...a, posting: true, problem: null }));
+    // The question's draft stays until the server answers; a reading opened again meanwhile waits.
+    const sent = userId ? beginSend(draftKey(userId, classId, resourceId, ASK_ID)) : null;
+    try {
+      await postQuestion(posted);
+    } finally {
+      sent?.();
+    }
+  };
+  const postQuestion = async (posted: string) => {
     const result = await actions.ask(ask.audience, ask.anchor, posted);
     if ('id' in result) {
       setActiveId(result.id);

@@ -7,7 +7,15 @@ import {
   useMarginActions,
   useMarginList,
 } from '../reading/margin/data';
-import { type Draft, draftKey, listDrafts, removeDraft, saveDraft } from '../reading/margin/drafts';
+import {
+  beginSend,
+  type Draft,
+  draftKey,
+  listDrafts,
+  removeDraft,
+  saveDraft,
+  sendsSettled,
+} from '../reading/margin/drafts';
 import margin from '../reading/margin/Margin.module.css';
 import { NoteController, type NoteState } from '../reading/margin/notes';
 import { audienceLabel, ConflictView, SaveLine } from '../reading/margin/ReadingMargin';
@@ -82,7 +90,7 @@ export function SlideNotes({ classId, resourceId, page }: Props) {
     const anchor = anchorOf(slide);
     const scoped = userId ? draftKey(userId, classId, resourceId, key) : null;
     const controller = new NoteController(
-      { key, anchor, body: '', annotationId: null, revision: null, ...init },
+      { key, anchor, body: '', annotationId: null, revision: null, ...init, draftKey: scoped },
       {
         create: (a, body) => actions.createNote(a, body),
         save: (id, revision, body, final) => actions.saveNote(id, revision, body, final),
@@ -123,28 +131,31 @@ export function SlideNotes({ classId, resourceId, page }: Props) {
   useEffect(() => {
     if (!userId) return setRestoredFor(scope);
     let current = true;
-    void listDrafts(userId, classId, resourceId).then((drafts) => {
-      if (!current) return;
-      for (const d of drafts) {
-        const id = d.key.split('|')[3] ?? d.key;
-        const slide = slideOf(d.anchor);
-        if (slide === null) continue;
-        if (d.kind === 'ask') {
-          setAsks((all) => ({
-            ...all,
-            [slide]: { ...BLANK_ASK, body: d.body, audience: d.audience ?? 'instructor' },
-          }));
-        } else if (!controllers.current.has(id)) {
-          make(id, slide, {
-            body: d.body,
-            annotationId: d.annotationId,
-            revision: d.expectedRevision,
-            unsent: true,
-          });
+    // A save or question an earlier visit to this margin is still sending is not restored as unsent.
+    void sendsSettled(userId, classId, resourceId)
+      .then(() => listDrafts(userId, classId, resourceId))
+      .then((drafts) => {
+        if (!current) return;
+        for (const d of drafts) {
+          const id = d.key.split('|')[3] ?? d.key;
+          const slide = slideOf(d.anchor);
+          if (slide === null) continue;
+          if (d.kind === 'ask') {
+            setAsks((all) => ({
+              ...all,
+              [slide]: { ...BLANK_ASK, body: d.body, audience: d.audience ?? 'instructor' },
+            }));
+          } else if (!controllers.current.has(id)) {
+            make(id, slide, {
+              body: d.body,
+              annotationId: d.annotationId,
+              revision: d.expectedRevision,
+              unsent: true,
+            });
+          }
         }
-      }
-      setRestoredFor(scope);
-    });
+        setRestoredFor(scope);
+      });
     return () => {
       current = false;
     };
@@ -255,6 +266,15 @@ export function SlideNotes({ classId, resourceId, page }: Props) {
     const posted = ask.body.trim();
     if (posted === '' || ask.posting) return;
     setAsks((all) => ({ ...all, [slide]: { ...ask, posting: true, problem: null } }));
+    // The question's draft stays until the server answers; a margin shown again meanwhile waits.
+    const sent = userId ? beginSend(draftKey(userId, classId, resourceId, askKey(slide))) : null;
+    try {
+      await postQuestion(slide, posted, ask);
+    } finally {
+      sent?.();
+    }
+  };
+  const postQuestion = async (slide: number, posted: string, ask: Ask) => {
     const result = await actions.ask(ask.audience, anchorOf(slide), posted);
     const latest = askRef.current[slide] ?? BLANK_ASK;
     if ('id' in result) {

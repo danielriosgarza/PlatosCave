@@ -912,6 +912,71 @@ describe('reading margin: layout and sign-out', () => {
     await waitFor(() => expect(entry().style.marginTop).toBe('550px'));
   });
 
+  it('A05 a note still being sent when the reading is left is not sent again when it is opened again', async () => {
+    const w = world();
+    const mock = api(w);
+    const posts = () =>
+      mock.mock.calls.filter(([, init]) => (init as RequestInit | undefined)?.method === 'POST');
+    const user = userEvent.setup();
+    await open();
+    select(B3, 0, 13);
+    await user.click(within(await toolbar()).getByRole('button', { name: 'Note' }));
+    let release: () => void = () => {};
+    w.hold = new Promise((resolve) => {
+      release = resolve;
+    });
+    await user.type(await screen.findByRole('textbox', { name: 'Your note' }), 'one note');
+    // Leaving the Reading tab sends the pending text; the answer is still held.
+    await user.click(screen.getByRole('tab', { name: 'Slides' }));
+    await waitFor(() => expect(posts()).toHaveLength(1));
+    await user.click(screen.getByRole('tab', { name: 'Reading' }));
+    await screen.findByRole('button', { name: 'My notes' });
+    // Held: the text on the device is being sent, so it is not restored (and sent) a second time.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(posts()).toHaveLength(1);
+    release();
+    await waitFor(() => expect(w.annotations).toHaveLength(1));
+    await waitFor(() => expect(screen.getAllByText('one note')).toHaveLength(1));
+    expect(w.calls.filter((c) => c.method === 'POST')).toHaveLength(1);
+    expect(posts()).toHaveLength(1);
+    expect(await listDrafts(SAM_ID, CLASS_A, RES)).toEqual([]);
+  });
+
+  it('A05 a question still being posted when the reading is left does not come back as unsent text', async () => {
+    const w = world();
+    const mock = api(w);
+    const answer = mock.getMockImplementation() as (
+      i: RequestInfo | URL,
+      n?: RequestInit,
+    ) => Promise<Response>;
+    let release: () => void = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    mock.mockImplementation(async (input, init) => {
+      if (init?.method === 'POST' && /\/threads/.test(String(input))) await held;
+      return answer(input, init);
+    });
+    const user = userEvent.setup();
+    await open();
+    await user.click(screen.getByRole('button', { name: /^Discussion/ }));
+    await user.type(
+      screen.getByRole('textbox', { name: 'Comment or question' }),
+      'Why n minus one?',
+    );
+    await user.click(screen.getByRole('button', { name: 'Post' }));
+    await user.click(screen.getByRole('tab', { name: 'Slides' }));
+    await user.click(screen.getByRole('tab', { name: 'Reading' }));
+    await user.click(await screen.findByRole('button', { name: /^Discussion/ }));
+    // Still posting: the text kept on the device is not offered again as unsent.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    release();
+    await waitFor(() => expect(w.threads).toHaveLength(1));
+    await waitFor(() => expect(screen.getByText('Why n minus one?')).toBeInTheDocument());
+    expect(screen.getByRole('textbox', { name: 'Comment or question' })).toHaveValue('');
+    expect(await listDrafts(SAM_ID, CLASS_A, RES)).toEqual([]);
+  });
+
   it('A03 hides the margin on request and brings it back with the notes still there', async () => {
     api(world([noteOf(uuid(1), textAnchor(B3, 0, 5, P3), 'Kept')]));
     const user = userEvent.setup();
