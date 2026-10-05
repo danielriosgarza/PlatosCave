@@ -5,6 +5,7 @@ export * from './connectors';
 export * from './content';
 export * from './exercises';
 export * from './memberships';
+export * from './notebook-sessions';
 export * from './notebookSubmissions';
 export * from './releases';
 export * from './storage';

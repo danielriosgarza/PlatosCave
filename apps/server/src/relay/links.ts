@@ -152,7 +152,8 @@ export const emptyLinkRegistry: LinkRegistry = {
 export interface LinkTimers {
   after(ms: number, run: () => void): () => void;
 }
-const systemTimers: LinkTimers = {
+/** Real timers, unref'd so they never hold the process open. */
+export const systemTimers: LinkTimers = {
   after(ms, run) {
     const timer = setTimeout(run, ms);
     timer.unref?.();
