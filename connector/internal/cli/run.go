@@ -1,11 +1,13 @@
 package cli
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"io/fs"
 	"net/netip"
 	"os"
@@ -17,14 +19,20 @@ import (
 
 	"parallax/connector/internal/identity"
 	"parallax/connector/internal/link"
+	"parallax/connector/internal/netscope"
 	"parallax/connector/internal/protocol"
 	"parallax/connector/internal/redact"
+	"parallax/connector/internal/session"
 	"parallax/connector/internal/state"
+	"parallax/connector/internal/target"
 	"parallax/connector/internal/version"
 )
 
 // maxAllowNet is the number of --allow-net ranges hello can carry.
-const maxAllowNet = 64
+const maxAllowNet = netscope.MaxRanges
+
+// exitBudget is how long stopping the owned sessions may take when run exits (design §6).
+const exitBudget = 10 * time.Second
 
 // allowNet collects repeated --allow-net CIDR flags.
 type allowNet []string
@@ -48,8 +56,20 @@ func run(ctx context.Context, args []string, env Env) error {
 	var nets allowNet
 	flags.Var(&nets, "allow-net", "also allow this private range, such as 10.20.0.0/16 (repeatable)")
 	stateDir := flags.String("state-dir", "", "state directory (default: the one for this computer)")
+	confirm := flags.Bool("confirm-sessions", false, "ask on this terminal before opening each session")
 	if err := parse(flags, args); err != nil {
 		return err
+	}
+	getenv := env.Getenv
+	if getenv == nil {
+		getenv = func(string) string { return "" }
+	}
+	scope, err := netscope.ParseScope(nets, getenv(netscope.EnvAllowNet))
+	if err != nil {
+		return usageError{fmt.Sprintf("%s: %v", netscope.EnvAllowNet, err)}
+	}
+	if *confirm && (env.IsTerminal == nil || !env.IsTerminal()) {
+		return usageError{"--confirm-sessions needs a terminal to ask in; run the connector in a terminal"}
 	}
 	var store *state.Store
 	if *stateDir != "" {
@@ -87,10 +107,10 @@ func run(ctx context.Context, args []string, env Env) error {
 		OS:      env.GOOS,
 		Arch:    env.GOARCH,
 		Mode:    cfg.Mode,
-		// The design's personal-mode targets; requests are refused until P3-04 and P3-05 serve them.
+		// The design's personal-mode targets; ssh requests are refused until P3-05 serves them.
 		Targets:      []string{protocol.TargetLocal, protocol.TargetSSH},
 		Features:     features(env),
-		NetworkScope: protocol.NetworkScope{CIDRs: append([]string{}, nets...), Hosts: []string{}},
+		NetworkScope: protocol.NetworkScope{CIDRs: scope.CIDRs(), Hosts: []string{}},
 	}
 	if cfg.Mode == "managed" {
 		hello.Targets = []string{protocol.TargetManaged}
@@ -115,6 +135,29 @@ func run(ctx context.Context, args []string, env Env) error {
 
 	out := env.Stdout
 	fmt.Fprintf(out, "Connecting %q to %s.\n", cfg.Name, cfg.Server)
+	if *confirm {
+		fmt.Fprintln(out, "Each session will be shown here for you to allow or decline.")
+	}
+	mgrCfg := session.Config{
+		Targets: map[string]target.Target{protocol.TargetLocal: &target.Local{
+			OS: env.GOOS, Arch: env.GOARCH,
+			Log: func(line string) { fmt.Fprintf(env.Stderr, "jupyter: %s\n", line) },
+		}},
+		Log: out,
+		Now: env.Now,
+	}
+	if cfg.Mode == "managed" {
+		mgrCfg.Targets = map[string]target.Target{}
+	}
+	if *confirm {
+		mgrCfg.Confirm = newAsker(env.Stdin, out).ask
+	}
+	mgr := session.New(ctx, mgrCfg)
+	defer func() {
+		sctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), exitBudget)
+		mgr.Close(sctx)
+		cancel()
+	}()
 	var mu sync.Mutex
 	last := link.Connecting
 	err = link.Run(ctx, link.Config{
@@ -123,6 +166,8 @@ func run(ctx context.Context, args []string, env Env) error {
 		Identity:    id,
 		Hello:       hello,
 		HTTPClient:  env.HTTP,
+		Handler:     mgr,
+		Sessions:    mgr.Sessions,
 		Now:         env.Now,
 		OnEvent: func(e link.Event) {
 			mu.Lock()
@@ -172,6 +217,47 @@ func features(env Env) protocol.Features {
 		}
 	}
 	return f
+}
+
+// asker asks the person at this terminal and reads one answer per question.
+type asker struct {
+	out   io.Writer
+	lines chan string
+	mu    sync.Mutex
+}
+
+func newAsker(in io.Reader, out io.Writer) *asker {
+	a := &asker{out: out, lines: make(chan string)}
+	go func() {
+		sc := bufio.NewScanner(in)
+		for sc.Scan() {
+			a.lines <- sc.Text()
+		}
+		close(a.lines)
+	}()
+	return a
+}
+
+// ask prints the question and returns true only for an answer of y or yes before ctx ends.
+func (a *asker) ask(ctx context.Context, question string) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	fmt.Fprintf(a.out, "%s [y/N] ", question)
+	select {
+	case line, ok := <-a.lines:
+		if !ok {
+			fmt.Fprintln(a.out)
+			return false
+		}
+		switch strings.ToLower(strings.TrimSpace(line)) {
+		case "y", "yes":
+			return true
+		}
+		return false
+	case <-ctx.Done():
+		fmt.Fprintln(a.out, "\nNo answer; declined.")
+		return false
+	}
 }
 
 func stamp(t time.Time) string { return t.UTC().Format(time.RFC3339) }
