@@ -351,12 +351,17 @@ func TestUnpairKeepsNothing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(entries) != 0 {
+	// Only the empty run.lock stays: deleting a lock file other processes may have open would
+	// let two of them hold the lock at once.
+	if len(entries) != 1 || entries[0].Name() != state.LockFile {
 		names := []string{}
 		for _, e := range entries {
 			names = append(names, e.Name())
 		}
 		t.Fatalf("state left behind: %v", names)
+	}
+	if info, err := entries[0].Info(); err != nil || info.Size() != 0 {
+		t.Fatalf("run.lock is not empty: %v %v", info, err)
 	}
 	out := h.stdout.String()
 	if !strings.Contains(out, "revoked this device") || !strings.Contains(out, "does not revoke your SSH accounts") {

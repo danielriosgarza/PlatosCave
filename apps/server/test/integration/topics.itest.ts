@@ -295,6 +295,12 @@ describe('topic locks gate downloads', () => {
       return { revisionId: revision.id, key: stored.key };
     };
 
+    // Class A's release v2 asks only for Sampling's reading; its quiz would need a submission
+    // (the default rule), which no test can make yet. Class B stays on v1 and the default rule.
+    await db
+      .update(topics)
+      .set({ completionRule: { requires: ['reviewed:*'] } })
+      .where(eq(topics.id, ids.sampling));
     const locked = await addTopic(2, 'Inference', [ids.sampling]);
     inference = await addPdf(locked.id, 'Inference notes', 'inference pdf');
     const scheduled = await addTopic(3, 'Bayesian methods', []);
@@ -380,5 +386,152 @@ describe('topic locks gate downloads', () => {
     }
     // Class A's release and the draft hold a locked and a scheduled topic besides the open one.
     expect(compared).toBe(4 + 4 + 2 + 2 + 4);
+  });
+});
+
+describe('reviewed marks and completion', () => {
+  interface Body {
+    complete: boolean;
+    items: { reviewed: boolean; graded: boolean; required: string | null; submitted: boolean }[];
+    classes: { classId: string; reviewed: { count: number } }[];
+  }
+  const api = async (
+    who: PersonName,
+    method: 'GET' | 'PUT',
+    url: string,
+    payload?: { reviewed: boolean },
+  ) => {
+    const res = await app.inject({
+      method,
+      url,
+      headers: { host: '127.0.0.1:3100', cookie: world.cookie[who] },
+      ...(payload && { payload }),
+    });
+    return { status: res.statusCode, body: res.json() as Body };
+  };
+  const sheetUrl = (classId: string, topicId: string) =>
+    `/api/classes/${classId}/topics/${topicId}/reviews`;
+  const mark = (who: PersonName, classId: string, resourceId: string, reviewed: boolean) =>
+    api(who, 'PUT', `${sheetUrl(classId, ids.sampling)}/${resourceId}`, { reviewed });
+  const stateOf = async (who: PersonName, classId: string, title: string) =>
+    (await get(who, classId)).body.topics.find((t) => t.title === title)?.state;
+  const cardCount = async (who: PersonName, classId: string) => {
+    const { body } = await api(who, 'GET', '/api/courses');
+    return body.classes.find((c) => c.classId === classId)?.reviewed.count;
+  };
+
+  test('a topic lists its ungraded material for review and its graded work apart', async () => {
+    const { status, body } = await api('sam', 'GET', sheetUrl(ids.classA, ids.sampling));
+    expect(status).toBe(200);
+    expect(body.complete).toBe(false);
+    expect(body.items).toEqual([
+      expect.objectContaining({
+        resourceId: ids.samplingReading,
+        graded: false,
+        reviewed: false,
+        required: 'review',
+      }),
+      expect.objectContaining({
+        resourceId: ids.samplingQuiz,
+        graded: true,
+        reviewed: false,
+        required: null,
+      }),
+    ]);
+  });
+
+  test('a locked topic has no review sheet, takes no mark and stays locked', async () => {
+    const { db } = testDb;
+    const [row] = await db
+      .select({ id: resourceRevisions.resourceId })
+      .from(resourceRevisions)
+      .where(eq(resourceRevisions.id, inference.revisionId));
+    const resourceId = row?.id ?? '';
+    const inferenceTopic = (await get('sam', ids.classA)).body.topics.find(
+      (t) => t.title === 'Inference',
+    )?.topicId;
+    expect(inferenceTopic).toBeDefined();
+    const url = sheetUrl(ids.classA, inferenceTopic ?? '');
+    expect((await api('sam', 'GET', url)).status).toBe(404);
+    expect((await api('sam', 'PUT', `${url}/${resourceId}`, { reviewed: true })).status).toBe(404);
+    expect(await stateOf('sam', ids.classA, 'Inference')).toBe('locked');
+    expect(await mintStatus('sam', ids.classA, inference.key, inference.revisionId)).toBe(404);
+  });
+
+  test('a graded resource takes no reviewed mark', async () => {
+    const refused = await mark('sam', ids.classA, ids.samplingQuiz, true);
+    expect(refused.status).toBe(400);
+    expect((await api('sam', 'GET', sheetUrl(ids.classA, ids.sampling))).body.complete).toBe(false);
+  });
+
+  test('a saved study position is not a reviewed mark', async () => {
+    // Sam already has a position in Sampling's test from the resume tests above.
+    expect(await stateOf('sam', ids.classA, 'Sampling')).toBe('available');
+    expect(await stateOf('sam', ids.classA, 'Inference')).toBe('locked');
+    expect(await cardCount('sam', ids.classA)).toBe(0);
+  });
+
+  test('marking the prerequisite reviewed completes it and unlocks the dependent topic and its media', async () => {
+    expect(await mintStatus('sam', ids.classA, inference.key, inference.revisionId)).toBe(404);
+    const done = await mark('sam', ids.classA, ids.samplingReading, true);
+    expect(done.status).toBe(200);
+    expect(done.body.complete).toBe(true);
+
+    const { body } = await get('sam', ids.classA);
+    expect(body.topics.find((t) => t.title === 'Sampling')?.state).toBe('complete');
+    expect(body.topics.find((t) => t.title === 'Inference')?.state).toBe('available');
+    expect(body.reviewed.count).toBe(1);
+    expect(await cardCount('sam', ids.classA)).toBe(1);
+    expect(await mintStatus('sam', ids.classA, inference.key, inference.revisionId)).toBe(200);
+  });
+
+  test('the default rule also asks for graded work to be submitted', async () => {
+    // Class B is on release v1, where Sampling has the default rule and a quiz.
+    expect((await mark('bea', ids.classB, ids.samplingReading, true)).body.complete).toBe(false);
+    expect(await stateOf('bea', ids.classB, 'Sampling')).toBe('available');
+    expect(await stateOf('bea', ids.classB, 'Estimation')).toBe('locked');
+    const { body } = await api('bea', 'GET', sheetUrl(ids.classB, ids.sampling));
+    expect(body.items[1]).toMatchObject({ graded: true, required: 'submission', submitted: false });
+  });
+
+  test('marking twice changes nothing, and clearing the mark locks the dependants again', async () => {
+    expect((await mark('sam', ids.classA, ids.samplingReading, true)).body.complete).toBe(true);
+    const cleared = await mark('sam', ids.classA, ids.samplingReading, false);
+    expect(cleared.body.complete).toBe(false);
+    expect(cleared.body.items[0]?.reviewed).toBe(false);
+    expect(await stateOf('sam', ids.classA, 'Inference')).toBe('locked');
+    expect(await mintStatus('sam', ids.classA, inference.key, inference.revisionId)).toBe(404);
+    expect(await cardCount('sam', ids.classA)).toBe(0);
+  });
+
+  test("one student's marks reach no other student, class or instructor", async () => {
+    await mark('sam', ids.classA, ids.samplingReading, true);
+    // Priya studies Estimation in class B: her own progress is not Sam's.
+    expect(await stateOf('priya', ids.classB, 'Estimation')).toBe('locked');
+    expect((await get('bea', ids.classB)).body.reviewed.count).toBe(0);
+    // An instructor of the class keeps no marks, and a non-member finds nothing.
+    expect((await api('priya', 'GET', sheetUrl(ids.classA, ids.sampling))).status).toBe(403);
+    expect((await mark('priya', ids.classA, ids.samplingReading, true)).status).toBe(403);
+    expect((await api('elena', 'GET', sheetUrl(ids.classA, ids.sampling))).status).toBe(404);
+    // A resource that is not on the topic is not found.
+    expect(
+      (await mark('sam', ids.classA, '00000000-0000-4000-8000-0000000000ff', true)).status,
+    ).toBe(404);
+    expect(await cardCount('priya', ids.classA)).toBe(0);
+  });
+
+  test('an archived class keeps its marks and refuses changes', async () => {
+    expect((await mark('bea', ids.classB, ids.samplingReading, true)).status).toBe(200);
+    await testDb.db
+      .update(classes)
+      .set({ archivedAt: new Date('2026-10-01T08:59:00Z') })
+      .where(eq(classes.id, ids.classB));
+    const refused = await mark('bea', ids.classB, ids.samplingReading, false);
+    expect(refused.status).toBe(409);
+    expect(refused.body).toEqual({ error: 'class_archived' });
+    const sheet = await api('bea', 'GET', sheetUrl(ids.classB, ids.sampling));
+    expect(sheet.body.items[0]?.reviewed).toBe(true);
+    // The refused change left the count as it was: Sampling still waits on its quiz.
+    expect(await cardCount('bea', ids.classB)).toBe(0);
   });
 });

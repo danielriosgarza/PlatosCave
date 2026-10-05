@@ -428,7 +428,7 @@ Tracks: **slides** (P2-01 → P2-02 → P2-03, P2-09), **annotations** (P2-04 �
 - Spec: §10.7. Scenarios: A11. Depends on: P2-13. Model: sonnet. Security: yes. Size: M.
 
 ### P2-16 · Reviewed marks and course progress
-- Scope: table `topic_reviews`, mark ungraded material reviewed, completion rule evaluation (reviewed + graded requirements), reviewed counts on cards and syllabus footer, Resume location from positions.
+- Scope: table `topic_reviews`, mark ungraded material reviewed, completion rule evaluation (reviewed + graded requirements), reviewed counts on cards and syllabus footer, Resume location from positions. As built: `topic_reviews` holds one row per student, class and resource (unmarking deletes it); `GET`/`PUT /api/classes/:classId/topics/:topicId/reviews[/:resourceId]` are student-only. The default rule asks for every ungraded resource the student can open now to be reviewed and every graded one (test, exercise with credit) submitted (decision 15); `submitted:` is met by a notebook submission or a completed exercise attempt, and `test` submissions arrive with P3-15. The review sheet is 404 for a locked or scheduled topic. A topic with nothing to ask, or an unknown requirement, is never complete. Resume from positions was already built in P1-11.
 - Spec: §4. Scenarios: none. Depends on: P1-10, P1-11, P2-14 (migration chain). Model: sonnet. Security: no. Size: S.
 
 ## 4. Phase 3 — connected notebooks; isolated execution and submission
@@ -690,7 +690,7 @@ None of these blocks Phases 1–4, which run entirely locally and in GitHub Acti
 | 12 | Timed-attempt expiry while the student is offline | pg-boss job at the deadline submits the latest acknowledged draft as `auto_submitted`; local unsent work stays in IndexedDB for the recovery request (P3-15, P4-06) |
 | 13 | Idempotent submission key | Client-generated UUID per Submit action, unique per attempt (P3-15) |
 | 14 | Object storage in dev/CI | `fs` adapter default; MinIO unavailable on Docker Hub, Garage used for the S3 adapter test (ADR-0001) |
-| 15 | Topic completion rule shape | JSON `{ requires: ['reviewed:*', 'submitted:<resourceId>'] }`; default = all ungraded resources reviewed and graded requirements submitted (P2-16) |
+| 15 | Topic completion rule shape | JSON `{ requires: ['reviewed:*', 'submitted:<resourceId>'] }`; default (no rule) = `['reviewed:*', 'submitted:*']`: every ungraded resource reviewed and every graded resource (a `test`, or an exercise assigned for credit) submitted. As built in P2-16 a submission is a notebook submission or a completed exercise attempt; a test submission arrives with P3-15, so until then a topic with a test needs an author rule that omits it to complete. A topic is never complete while a prerequisite is incomplete. |
 | 16 | Cross-class visibility of discussions in one course | Never; discussions are class-scoped rows (A21) |
 | 17 | Naming collision "session" | `auth_sessions` vs `notebook_sessions` |
 | 18 | TypeScript 7 (native) is the npm `latest` | Use 5.9.3 for tooling and agent familiarity; revisit in 2027 |

@@ -15,6 +15,7 @@ import { ReadingTab } from '../../reading/ReadingTab';
 import { useClassContext } from '../../session/classContext';
 import type { SessionClass } from '../../session/useSession';
 import { SlidesTab } from '../../slides/SlidesTab';
+import { ReviewPanel } from '../../topics/ReviewPanel';
 import { TopicHeading } from '../../topics/TopicHeading';
 import {
   type ClassTopic,
@@ -246,6 +247,9 @@ function OpenTopic({
             <p className={styles.intro}>Nothing is available under {label} for this topic yet.</p>
           )}
         </div>
+        {role === 'student' && !mode.focus ? (
+          <ReviewPanel classId={classId} topicId={topicId} />
+        ) : null}
       </ToolsHost.Provider>
     </main>
   );

@@ -204,6 +204,10 @@ function exerciseApi(
     if (url === '/api/me') return { status: 200, body: me };
     if (/\/topics$/.test(url)) return { status: 200, body: makeTopics() };
     if (/\/release$/.test(url)) return { status: 200, body: release };
+    // The reviewed marks of the topic are not part of what these tests observe.
+    if (/\/reviews$/.test(url)) {
+      return { status: 200, body: { topicId: T_SAMPLING, complete: false, items: [] } };
+    }
     calls.push({ url, body });
     if (url.endsWith('/exercise-attempt')) {
       if (options.openFails) return options.openFails;

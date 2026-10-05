@@ -143,6 +143,10 @@ function api(w: World) {
       const list: MarginList = { annotations: w.annotations, threads: w.threads };
       return { status: 200, body: list };
     }
+    // The reviewed marks of the topic are not part of what these tests observe.
+    if (url === `${base}/topics/${T_SAMPLING}/reviews`) {
+      return { status: 200, body: { topicId: T_SAMPLING, complete: false, items: [] } };
+    }
     w.calls.push({ method, url, body });
     if (url === `${base}/resources/${RES}/annotations` && method === 'POST') {
       const made = noteOf(
