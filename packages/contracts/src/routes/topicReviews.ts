@@ -17,7 +17,7 @@ export const reviewItem = z.object({
   graded: z.boolean(),
   /** The student's own mark; always false for graded work. */
   reviewed: z.boolean(),
-  /** The student has submitted this resource (notebooks). */
+  /** The student has submitted this resource (a notebook, a test, or an exercise for credit). */
   submitted: z.boolean(),
   /** What the topic's completion rule asks of this resource, if anything. */
   required: z.enum(['review', 'submission']).nullable(),

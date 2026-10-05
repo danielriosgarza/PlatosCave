@@ -4,6 +4,9 @@ import type { ClassContext, CourseContext, DraftPreviewScope, UserScope } from '
 import {
   annotationPlacements,
   annotations,
+  assignmentOverrides,
+  assignments,
+  attemptAnswers,
   classComputeTemplates,
   classes,
   classInvites,
@@ -22,6 +25,8 @@ import {
   resources,
   storageObjects,
   studyPositions,
+  testAttempts,
+  testSubmissions,
   threads,
   topicReviews,
   topics,
@@ -46,6 +51,11 @@ export const classScopedTables: PgTable[] = [
   notebookSubmissions,
   topicReviews,
   classComputeTemplates,
+  assignments,
+  assignmentOverrides,
+  testAttempts,
+  attemptAnswers,
+  testSubmissions,
 ];
 export const courseScopedTables: PgTable[] = [
   classes,

@@ -79,7 +79,7 @@ function contentProblem(type: string, content: unknown): string | undefined {
 }
 
 /** JSON with object keys sorted, so equal content always hashes equally. */
-function canonical(value: unknown): string {
+export function canonical(value: unknown): string {
   if (Array.isArray(value)) return `[${value.map(canonical).join(',')}]`;
   if (value !== null && typeof value === 'object') {
     const entries = Object.entries(value as Json)
