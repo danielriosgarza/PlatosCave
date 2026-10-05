@@ -699,6 +699,7 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
                   annotation={annotation}
                   label={surfaceLabel(surface ?? surfaceOf(annotation.anchor))}
                   needsReattachment={surface === null}
+                  pending={annotation.placement?.status === 'pending'}
                   editing={sketches.open?.annotationId === annotation.id}
                   blocked={sketches.open !== null}
                   editable={editable}
@@ -811,6 +812,7 @@ function NoteEntry({
   const body = controller ? state.body : (annotation?.body ?? '');
   const quote = quoteOf(anchor) ?? quoteOf(annotation?.anchor ?? anchor);
   const needs = annotation?.placement?.status === 'needs_reattachment';
+  const pending = annotation?.placement?.status === 'pending';
   const label = highlight
     ? 'Highlight'
     : anchor.kind === 'none'
@@ -832,7 +834,9 @@ function NoteEntry({
         aria-label={`${label}${quote ? `: ${quote}` : ''}`}
       >
         <span>{label}</span>
-        <span className={styles.muted}>{needs ? 'Needs reattachment' : 'Private'}</span>
+        <span className={styles.muted}>
+          {pending ? 'Waiting to be placed' : needs ? 'Needs reattachment' : 'Private'}
+        </span>
       </button>
       {quote ? <blockquote className={styles.quote}>{quote}</blockquote> : null}
       {highlight ? (
