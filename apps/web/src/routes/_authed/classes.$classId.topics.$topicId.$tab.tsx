@@ -2,6 +2,7 @@ import { createFileRoute, redirect } from '@tanstack/react-router';
 import { useRef, useState } from 'react';
 import { z } from 'zod';
 import { ApiError } from '../../api/client';
+import { TestsPanel } from '../../assessments/TestsPanel';
 import { ClassUnavailable } from '../../components/AccessLost';
 import styles from '../../components/Page.module.css';
 import { usePageTitle } from '../../components/pageTitle';
@@ -244,7 +245,7 @@ function OpenTopic({
               }
             />
           ) : (
-            <p className={styles.intro}>Nothing is available under {label} for this topic yet.</p>
+            <TestsPanel classId={classId} topicId={topicId} role={role} />
           )}
         </div>
         {role === 'student' && !mode.focus ? (
