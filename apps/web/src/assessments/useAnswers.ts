@@ -142,10 +142,15 @@ export function useAnswers(
           try {
             const ack = await saveAnswer(classId, attemptId, id, { value, flagged, seq });
             const now = (store.current as Record<string, Entry>)[id] as Entry;
+            // The server keeps the value with the highest counter and answers with that counter. A
+            // higher one than this save's means another tab or device is ahead and this value was
+            // ignored: it is not saved. Move past that counter and send it again.
+            const ignored = ack.seq > seq;
             patch(id, {
               ackedSeq: Math.max(now.ackedSeq, ack.seq),
               savedAt: ack.savedAt,
-              status: now.seq === seq ? 'saved' : 'dirty',
+              seq: ignored ? Math.max(now.seq, ack.seq + 1) : now.seq,
+              status: !ignored && now.seq === seq ? 'saved' : 'dirty',
             });
           } catch (error) {
             const shut = closedReceipt(error);
@@ -224,6 +229,7 @@ export function useAnswers(
   // biome-ignore lint/correctness/useExhaustiveDependencies: once per opened attempt
   useEffect(() => {
     const entries = store.current as Record<string, Entry>;
+    if (attempt.state !== 'in_progress') return;
     for (const [id, e] of Object.entries(entries)) if (e.status === 'dirty') void send(id);
     return () => {
       for (const timer of timers.current.values()) clearTimeout(timer);

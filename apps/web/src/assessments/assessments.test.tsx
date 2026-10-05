@@ -88,6 +88,8 @@ interface Options {
   /** Calls to `submit` whose response is lost after the server stored the submission. */
   dropSubmits?: number;
   deadlineAt?: string | null;
+  /** The overview lists an attempt in progress, as after a reload. */
+  running?: boolean;
   runResult?: (n: number) => unknown;
 }
 
@@ -104,11 +106,15 @@ function testApi(options: Options = {}) {
     localCopies: [] as { answers: { questionId: string; value: unknown }[] }[],
     runs: [] as { files: { path: string; content: string }[] }[],
     order: [] as string[],
+    starts: 0,
+    reads: 0,
   };
   const server = {
     receipt: null as Receipt | null,
     localCopyAt: null as string | null,
     offline: false,
+    deadlineAt: (options.deadlineAt ?? null) as string | null,
+    failReads: 0,
   };
   let submitted = 0;
   const attemptView = (): AttemptView => ({
@@ -117,7 +123,7 @@ function testApi(options: Options = {}) {
     state: server.receipt ? 'submitted' : 'in_progress',
     resourceRevisionId: uuid(0xa3),
     startedAt: '2026-10-05T09:00:00Z',
-    deadlineAt: options.deadlineAt ?? null,
+    deadlineAt: server.deadlineAt,
     submittedAt: server.receipt?.submittedAt ?? null,
     receipt: server.receipt,
     localCopyAt: server.localCopyAt,
@@ -133,10 +139,33 @@ function testApi(options: Options = {}) {
     resourceRevisionId: uuid(0xa3),
     terms,
     questionCount: questions.length,
-    attempts: [],
-    eligibility: { canStart: true, reason: null, attemptsUsed: 0, attemptsAllowed: 1 },
+    attempts: [] as unknown[],
+    eligibility: {
+      canStart: true,
+      reason: null as string | null,
+      attemptsUsed: 0,
+      attemptsAllowed: 1,
+    },
     serverNow: new Date().toISOString(),
   };
+  if (options.running) {
+    const {
+      graderVersion,
+      terms: _t,
+      questions: _q,
+      answers: _a,
+      serverNow: _s,
+      ...summary
+    } = attemptView();
+    void graderVersion;
+    overview.attempts = [summary];
+    overview.eligibility = {
+      canStart: false,
+      reason: 'in_progress',
+      attemptsUsed: 1,
+      attemptsAllowed: 1,
+    };
+  }
   let runCount = 0;
   const stub = stubApi((url, init) => {
     const body = init?.body ? JSON.parse(String(init.body)) : undefined;
@@ -179,11 +208,34 @@ function testApi(options: Options = {}) {
         },
       };
     }
-    if (url === `${base}/resources/${RESOURCE}/test`) return { status: 200, body: overview };
+    if (url === `${base}/resources/${RESOURCE}/test`) {
+      if (options.running) {
+        const {
+          graderVersion,
+          terms: _t,
+          questions: _q,
+          answers: _a,
+          serverNow: _s,
+          ...summary
+        } = attemptView();
+        void graderVersion;
+        overview.attempts = [summary];
+      }
+      return { status: 200, body: overview };
+    }
     if (url === `${base}/resources/${RESOURCE}/test-attempts` && method === 'POST') {
+      log.starts += 1;
       return { status: 200, body: attemptView() };
     }
-    if (url === `${base}/test-attempts/${ATTEMPT}`) return { status: 200, body: attemptView() };
+    if (url === `${base}/test-attempts/${ATTEMPT}`) {
+      log.reads += 1;
+      log.order.push('read');
+      if (server.failReads > 0) {
+        server.failReads -= 1;
+        return { status: 503, body: {} };
+      }
+      return { status: 200, body: attemptView() };
+    }
     const put = url.match(/\/answers\/([^/]+)$/);
     if (put && method === 'PUT') {
       const id = put[1] as string;
@@ -197,7 +249,11 @@ function testApi(options: Options = {}) {
       if (!held || body.seq > held.seq) {
         answers.set(id, { value: body.value, flagged: body.flagged, seq: body.seq, savedAt });
       }
-      return { status: 200, body: { questionId: id, seq: body.seq, savedAt } };
+      // Like the server: an older counter changes nothing and the answer carries the stored one.
+      return {
+        status: 200,
+        body: { questionId: id, seq: answers.get(id)?.seq ?? body.seq, savedAt },
+      };
     }
     if (url.endsWith('/submit')) {
       log.submits.push({ key: body.submissionKey });
@@ -362,6 +418,24 @@ describe('test UI: terms, navigation and answers', () => {
     expect(screen.getByText(/Enter a number/)).toBeVisible();
     await new Promise((r) => setTimeout(r, 1000));
     expect(api.log.puts).toHaveLength(0);
+  });
+
+  it('A14 a save the server ignores because another tab is ahead is not shown as Saved and is sent again', async () => {
+    const user = userEvent.setup();
+    const api = testApi();
+    open();
+    await begin(user);
+    // Another tab saved Q1 with a higher counter after this page loaded.
+    api.answers.set('q1', {
+      value: ['sd'],
+      flagged: false,
+      seq: 5,
+      savedAt: new Date().toISOString(),
+    });
+    await user.click(screen.getByRole('radio', { name: 'Standard error' }));
+    await waitFor(() => expect(api.log.puts.map((p) => p.body.seq)).toEqual([1, 6]));
+    expect(api.answers.get('q1')?.value).toEqual(['se']);
+    expect(await screen.findByText(/^Saved \d/)).toBeVisible();
   });
 });
 
@@ -710,8 +784,73 @@ describe('test UI: expiry', () => {
       window.dispatchEvent(new Event('online'));
     });
     await waitFor(() => expect(api.answers.get('q3')?.value).toBe('Offline words'));
+    // The server's state was read before the unsent answer was sent.
+    expect(api.log.order.indexOf('read')).toBeGreaterThanOrEqual(0);
+    expect(api.log.order.indexOf('read')).toBeLessThan(api.log.order.indexOf('put:q3'));
     expect(await screen.findByText(/^Saved \d/)).toBeVisible();
     expect(screen.queryByRole('heading', { name: /Time ran out/ })).toBeNull();
+  });
+
+  it('A15 Resume after the deadline opens the closed attempt and its receipt instead of starting another', async () => {
+    const user = userEvent.setup();
+    const api = testApi({ running: true, deadlineAt: '2099-01-01T00:00:00Z' });
+    window.localStorage.setItem(
+      `pc-test-unsent:${ATTEMPT}`,
+      JSON.stringify({ q3: { value: 'words kept in the browser', flagged: false, seq: 2 } }),
+    );
+    open();
+    const resume = await screen.findByRole('button', { name: 'Resume attempt 1' });
+    // The deadline passes after the overview was loaded.
+    api.server.receipt = {
+      submissionId: uuid(0xb4),
+      attemptId: ATTEMPT,
+      submittedAt: '2026-10-05T09:30:00Z',
+      autoSubmitted: true,
+      late: false,
+      answers: [],
+      unanswered: ['q1', 'q2', 'q3', 'q4'],
+    };
+    await user.click(resume);
+    expect(await screen.findByRole('heading', { name: /Time ran out/ })).toBeVisible();
+    expect(api.log.starts).toBe(0);
+    await waitFor(() => expect(api.log.localCopies).toHaveLength(1));
+    expect(api.log.localCopies[0]?.answers).toEqual([
+      { questionId: 'q3', value: 'words kept in the browser' },
+    ]);
+    expect(await screen.findByText(/were kept for your instructor/)).toBeVisible();
+  });
+
+  it('A15 a deadline read that finds the attempt still open with a later deadline keeps the page working', async () => {
+    const user = userEvent.setup();
+    const api = testApi({ deadlineAt: new Date(Date.now() + 300).toISOString() });
+    open();
+    await begin(user);
+    // An instructor extends the attempt before the deadline read.
+    api.server.deadlineAt = '2099-01-01T00:00:00Z';
+    await waitFor(() => expect(api.log.reads).toBeGreaterThan(0), { timeout: 4000 });
+    await user.click(screen.getByRole('radio', { name: 'Standard error' }));
+    expect(await screen.findByText(/^Saved \d/)).toBeVisible();
+    expect(api.answers.get('q1')?.value).toEqual(['se']);
+    expect(screen.queryByRole('heading', { name: /Time ran out/ })).toBeNull();
+  });
+
+  it('A15 a deadline read that fails is repeated until the server answers', async () => {
+    const user = userEvent.setup();
+    const api = testApi({ deadlineAt: new Date(Date.now() + 300).toISOString() });
+    open();
+    await begin(user);
+    api.server.failReads = 1;
+    api.server.receipt = {
+      submissionId: uuid(0xb5),
+      attemptId: ATTEMPT,
+      submittedAt: new Date().toISOString(),
+      autoSubmitted: true,
+      late: false,
+      answers: [],
+      unanswered: ['q1', 'q2', 'q3', 'q4'],
+    };
+    expect(await screen.findByRole('heading', { name: /Time ran out/ })).toBeVisible();
+    expect(api.log.reads).toBeGreaterThanOrEqual(2);
   });
 });
 

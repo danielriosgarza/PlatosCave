@@ -187,14 +187,54 @@ export function AttemptWorkspace({
     [classId, entries, refresh],
   );
 
-  // The attempt closed under the page (a deadline, or a save the server refused): read the
-  // server's state, then keep anything it never received (§11).
-  closing.current = () => {
-    stop();
-    void refresh().then((view) => {
-      if (view && view.state !== 'in_progress') void keepLocal(view);
-    });
-  };
+  // The deadline came, or a save was refused as closed: ask the server what became of the
+  // attempt. The page stops taking answers only once the server says it is closed; while the
+  // read fails, or the attempt is still open (an extension moved its deadline), it keeps working
+  // and the read is repeated with a growing pause (§11).
+  const alive = useRef(true);
+  const settling = useRef(false);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
+  async function settle() {
+    if (settling.current) return;
+    settling.current = true;
+    try {
+      for (let round = 0; alive.current; round += 1) {
+        const view = await refresh();
+        if (!alive.current) return;
+        if (view && view.state !== 'in_progress') {
+          stop();
+          void keepLocal(view);
+          return;
+        }
+        if (view?.deadlineAt && Date.parse(view.deadlineAt) > Date.parse(view.serverNow)) {
+          // Still open with a later deadline: the deadline timer is armed again for it.
+          adopt(view);
+          return;
+        }
+        await new Promise((resolve) =>
+          window.setTimeout(resolve, Math.min(30_000, 1000 * 2 ** round)),
+        );
+      }
+    } finally {
+      settling.current = false;
+    }
+  }
+  closing.current = () => void settle();
+
+  // An attempt opened already closed (it expired before the page opened it) may still have work
+  // in this browser that the server never received.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: once, for the attempt as opened
+  useEffect(() => {
+    if (initial.state !== 'in_progress') {
+      stop();
+      void keepLocal(initial);
+    }
+  }, []);
 
   // Reconnect or return to the tab: the server's state first, then the unsent work (§11).
   const resume = () => {

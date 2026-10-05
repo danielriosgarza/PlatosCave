@@ -7,7 +7,13 @@ import { RetryNotice } from '../components/RetryNotice';
 import { type ReleasedResource, useClassRelease } from '../exercises/attempt';
 import { formatOpens } from '../topics/topics';
 import { AttemptWorkspace } from './AttemptWorkspace';
-import { type AttemptView, startAttempt, type TestOverview, useTestOverview } from './api';
+import {
+  type AttemptView,
+  fetchAttempt,
+  startAttempt,
+  type TestOverview,
+  useTestOverview,
+} from './api';
 import { formatInZone, TermsPanel } from './TermsPanel';
 import styles from './Test.module.css';
 
@@ -161,12 +167,17 @@ function TestEntry({
   }
   const data: TestOverview = overview.data;
   const running = data.attempts.find((a) => a.state === 'in_progress');
-  async function start() {
+  /** Opens the listed attempt by its id, or starts a new one; Resume never starts one (§11). */
+  async function start(resumeId?: string) {
     if (starting) return;
     setStarting(true);
     setProblem(null);
     try {
-      setOpen(await startAttempt(classId, resource.resourceId));
+      setOpen(
+        resumeId
+          ? await fetchAttempt(classId, resumeId)
+          : await startAttempt(classId, resource.resourceId),
+      );
     } catch (error) {
       const body = error instanceof ApiError ? (error.body as { reason?: string } | null) : null;
       setProblem(
@@ -206,7 +217,7 @@ function TestEntry({
           <button
             type="button"
             className={buttons.primary}
-            onClick={() => void start()}
+            onClick={() => void start(running.id)}
             disabled={starting}
           >
             Resume attempt {running.number}
