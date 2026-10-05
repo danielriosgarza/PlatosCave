@@ -1,6 +1,6 @@
 import { createTransfer, type TransferView } from '@parallax/contracts/routes/transfers';
 import { saveWorkingCopy, type WorkingCopyView } from '@parallax/contracts/routes/workingCopies';
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import { ApiError, call } from '../../api/client';
 import buttons from '../../components/Buttons.module.css';
 import { type Choice, type Conflict, ConflictDialog } from './ConflictDialog';
@@ -14,7 +14,7 @@ interface Props {
   workingCopy: WorkingCopyView;
   /** The notebook as it is in the editor now, with edits not yet saved. */
   getNotebook: () => Record<string, unknown>;
-  /** Called with every acknowledged copy: after a save, and after a conflict is read. */
+  /** Called with every acknowledged copy: after each acknowledged save. */
   onWorkingCopy: (copy: WorkingCopyView) => void;
   /** Absolute workspace and host from the files listing: the destination of Save to computer. */
   workspace: string;
@@ -52,7 +52,6 @@ export function SaveControls({
   const [result, setResult] = useState<{ transfer: TransferView } | { error: string } | null>(null);
   const [conflict, setConflict] = useState<Conflict[] | null>(null);
   const [busy, setBusy] = useState(false);
-  const saveButton = useRef<HTMLButtonElement | null>(null);
 
   async function saveToParallax(base: number) {
     setSave({ kind: 'saving' });
@@ -129,7 +128,6 @@ export function SaveControls({
           saved.
         </p>
         <button
-          ref={saveButton}
           type="button"
           className={buttons.tool}
           disabled={save.kind === 'saving'}
@@ -211,11 +209,15 @@ export function SaveControls({
           {busy ? 'Writing' : 'Save to computer'}
         </button>
         {result && 'transfer' in result ? (
-          <p role="status">
-            {result.transfer.outcome === 'kept_theirs' || result.transfer.outcome === 'unchanged'
-              ? outcomeText(result.transfer, host)
-              : `Saved to ${where(host)}: ${result.transfer.path} in ${workspace}`}
-          </p>
+          result.transfer.state === 'done' ? (
+            <p role="status">
+              {result.transfer.outcome === 'kept_theirs' || result.transfer.outcome === 'unchanged'
+                ? outcomeText(result.transfer, host)
+                : `Saved to ${where(host)}: ${result.transfer.path} in ${workspace}`}
+            </p>
+          ) : (
+            <p role="alert">Not saved to computer. {outcomeText(result.transfer, host)}.</p>
+          )
         ) : null}
         {result && 'error' in result ? (
           <p role="alert">Not saved to computer. {result.error}</p>

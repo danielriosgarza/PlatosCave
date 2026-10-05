@@ -17,10 +17,7 @@ interface Props {
 
 /** The environment line of a connected-session snapshot, from what the session reported. */
 export function snapshotEnvironment(env: Record<string, string | number>): string {
-  const language =
-    env.language && env.interpreter
-      ? String(env.interpreter)
-      : (env.language as string | undefined);
+  const language = env.interpreter ?? env.language;
   const parts = [env.os, env.arch, language, env.kernel].filter(Boolean);
   return parts.length > 0
     ? `${parts.join(' · ')} (reported by the connected computer)`

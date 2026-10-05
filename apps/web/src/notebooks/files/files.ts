@@ -81,7 +81,7 @@ export function outcomeText(t: TransferView, host: string | null): string {
     case 'conflict':
       return `A different file is already on ${where(host)}; nothing written`;
     case 'failed':
-      return `Not copied: ${transferError(t.error)}`;
+      return `${t.direction === 'out' ? 'Not copied' : 'Not written'}: ${transferError(t.error)}`;
     default:
       return 'In progress';
   }

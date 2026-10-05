@@ -8,6 +8,7 @@ import { CLASS_A, stubApi } from '../../test/render';
 import { ColabSubmission } from '../ColabSubmission';
 import { FilesPanel } from './FilesPanel';
 import { SaveControls } from './SaveControls';
+import { snapshotEnvironment } from './SnapshotView';
 import { SubmitPanel } from './SubmitPanel';
 
 const SESSION = '00000000-0000-4000-8000-0000000000cc';
@@ -155,6 +156,29 @@ describe('save controls', () => {
       revision: 2,
       path: 'notebook.ipynb',
     });
+  });
+
+  it('A34 a failed or unfinished save to computer is never reported as Saved', async () => {
+    let answer = transfer({
+      direction: 'in',
+      kind: 'save',
+      path: 'notebook.ipynb',
+      state: 'failed',
+      outcome: null,
+      error: 'copy_exists',
+    });
+    stubApi((_, init) =>
+      init?.method === 'POST' ? { status: 200, body: { transfers: [answer] } } : { status: 404 },
+    );
+    renderSave();
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: 'Save to computer' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/not saved to computer/i);
+    expect(screen.queryByText(/saved to hpc/i)).toBeNull();
+    answer = { ...answer, state: 'started', error: null as never };
+    await user.click(screen.getByRole('button', { name: 'Save to computer' }));
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/in progress/i));
+    expect(screen.queryByText(/saved to hpc/i)).toBeNull();
   });
 
   it('A34 a conflict offers three choices and overwrites nothing', async () => {
@@ -373,6 +397,57 @@ describe('files panel', () => {
       'out.csv · 4 KB · Copied to Parallax',
     );
     expect(json(posts(fetchMock)[0]?.[1])).toEqual({ kind: 'copy_out', paths: ['out.csv'] });
+  });
+
+  it('A34 opening a folder keeps the selection and the copied list', async () => {
+    const withDir = {
+      ...listing,
+      declared: [],
+      entries: [
+        ...listing.entries,
+        { path: 'sub', name: 'sub', type: 'directory', size: null, modified: null },
+      ],
+    };
+    stubApi((url, init) => {
+      if (init?.method === 'POST') {
+        return { status: 200, body: { transfers: [transfer({ path: 'out.csv', size: 4096 })] } };
+      }
+      if (!url.includes('/files')) return { status: 404 };
+      return url.includes('dir=sub')
+        ? {
+            status: 200,
+            body: {
+              ...listing,
+              declared: [],
+              dir: 'sub',
+              entries: [
+                { path: 'sub/b.csv', name: 'b.csv', type: 'file', size: 10, modified: NOW },
+              ],
+            },
+          }
+        : { status: 200, body: withDir };
+    });
+    render(
+      wrap(
+        <FilesPanel
+          classId={CLASS_A}
+          sessionId={SESSION}
+          workingCopy={copy() as never}
+          onWorkingCopy={vi.fn()}
+        />,
+      ),
+    );
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('checkbox', { name: 'Copy out.csv to Parallax' }));
+    await user.click(screen.getByRole('button', { name: 'sub/' }));
+    await user.click(await screen.findByRole('checkbox', { name: 'Copy b.csv to Parallax' }));
+    // The selection from the first folder is still there.
+    expect(screen.getByText('2 files selected · 4 KB')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Copy selected files to Parallax' }));
+    expect(await screen.findByLabelText('Files copied to Parallax')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Up one folder' }));
+    await screen.findByRole('checkbox', { name: 'Copy out.csv to Parallax' });
+    expect(screen.getByLabelText('Files copied to Parallax')).toBeInTheDocument();
   });
 
   it('A34 Import asks before it creates a new revision', async () => {
@@ -606,5 +681,15 @@ describe('instructor snapshot', () => {
     for (const [url] of fetchMock.mock.calls) {
       expect(String(url)).not.toMatch(/notebook-sessions|connections|connectors/);
     }
+  });
+});
+
+describe('snapshot environment line', () => {
+  it('A35 the reported interpreter is shown when the notebook declares no language', () => {
+    expect(snapshotEnvironment({ os: 'linux', arch: 'amd64', interpreter: 'Python 3.12.4' })).toBe(
+      'linux · amd64 · Python 3.12.4 (reported by the connected computer)',
+    );
+    expect(snapshotEnvironment({ language: 'python' })).toContain('python');
+    expect(snapshotEnvironment({})).toBe('Not reported');
   });
 });

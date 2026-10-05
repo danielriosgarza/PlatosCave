@@ -4,7 +4,7 @@ import {
   type TransferView,
 } from '@parallax/contracts/routes/transfers';
 import type { WorkingCopyView } from '@parallax/contracts/routes/workingCopies';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { keepPreviousData, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import type { z } from 'zod';
 import { ApiError, call } from '../../api/client';
@@ -58,12 +58,14 @@ export function FilesPanel({
         query: dir ? { dir } : {},
       }),
     retry: false,
+    // Opening a folder keeps the panel, its selection and its acknowledgements on screen.
+    placeholderData: keepPreviousData,
   });
   const data = listing.data;
   const refresh = () => queryClient.invalidateQueries({ queryKey: ['files', classId, sessionId] });
 
-  if (listing.isPending) return <p role="status">Reading the workspace</p>;
-  if (listing.isError || !data) {
+  if (listing.isPending && !listing.data) return <p role="status">Reading the workspace</p>;
+  if (!data) {
     return (
       <section className={styles.panel} aria-labelledby="files-heading">
         <h3 id="files-heading">Files</h3>
@@ -246,6 +248,7 @@ function Workspace({
   onWorkingCopy: (copy: WorkingCopyView) => void;
   onChanged: () => void;
 }) {
+  const queryClient = useQueryClient();
   const [selected, setSelected] = useState<Record<string, number>>({});
   const [importing, setImporting] = useState<Entry | null>(null);
   const [busy, setBusy] = useState(false);
@@ -273,6 +276,7 @@ function Workspace({
         body: { kind: 'copy_out', paths: chosen.map(([path]) => path) },
       });
       setCopied((previous) => [...transfers, ...previous]);
+      void queryClient.invalidateQueries({ queryKey: ['transfers', classId, sessionId] });
       setSelected({});
       const done = transfers.filter((t) => t.state === 'done').length;
       setMessage({
