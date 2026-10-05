@@ -16,7 +16,7 @@ import {
   readySession,
   upgradeStatus,
 } from './kernel-channel';
-import { insertNotebook, keepAlive } from './notebook-sessions';
+import { insertNotebook, keepAlive, relink } from './notebook-sessions';
 import { type Relay, startRelay } from './relay';
 
 /**
@@ -105,6 +105,25 @@ describe('browser channel', () => {
       true,
       false,
     ]);
+  });
+
+  test('an attached browser is announced again after every reconnect of the link', async () => {
+    const s = await readySession(relay, testDb, revisionId, { kernel: false });
+    const browser = await openChannel(relay, cookie, s.sessionId);
+    browser.send({ v: 1, t: 'hello' });
+    await browser.next('ready');
+    await s.connector.next('presence');
+    for (let round = 0; round < 2; round++) {
+      const link = relay.links.get(s.connectorId);
+      link?.close(1001, 'test');
+      await relay.until(() => relay.links.get(s.connectorId) !== link, 'the link to drop');
+      const back = await relink(relay, s.connectorId, s.key);
+      // Without it the connector counts the session as detached and stops it after the grace.
+      expect(await back.next('presence')).toMatchObject({
+        sessionId: s.sessionId,
+        attached: true,
+      });
+    }
   });
 
   test('a resumed browser gets the output it missed; another epoch gets all of it', async () => {
