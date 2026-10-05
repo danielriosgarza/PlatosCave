@@ -118,7 +118,14 @@ test('A05 a student highlights text, writes a private note and posts an instruct
   await expect(page.getByRole('combobox', { name: 'Visible to' })).toHaveValue('instructor');
   await page.getByRole('textbox', { name: 'Comment or question' }).fill('Is n or n − 1 used here?');
   await page.getByRole('button', { name: 'Post' }).click();
-  await expect(page.getByText('You → Instructor')).toBeVisible();
+  // Threads cannot be deleted, so an earlier attempt's identical question may be listed too.
+  await expect(
+    page
+      .locator('[class*="thread"]')
+      .filter({ hasText: 'Is n or n − 1 used here?' })
+      .getByText('You → Instructor')
+      .first(),
+  ).toBeVisible();
 
   // The server holds the highlight and the note as private, and the question as one thread.
   const stored = await held(page, resourceId);
@@ -173,7 +180,7 @@ test('A05 the instructor sees only the shared question, answers it and resolves 
   await entry.first().getByRole('button', { name: 'Reply' }).click();
   await page.getByRole('textbox', { name: /^Reply to/ }).fill('Because the mean is estimated.');
   await page.getByRole('button', { name: 'Post reply' }).click();
-  await expect(page.getByText('Because the mean is estimated.')).toBeVisible();
+  await expect(entry.first().getByText('Because the mean is estimated.')).toBeVisible();
   await expect(page.getByText('· Instructor', { exact: false }).first()).toBeVisible();
   await entry.first().getByRole('button', { name: 'Mark resolved' }).click();
   await expect(entry.first().getByText('Resolved')).toBeVisible();
