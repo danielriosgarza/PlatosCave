@@ -24,6 +24,10 @@ export function downloadSvg(svg: string, label: string): void {
   const link = document.createElement('a');
   link.href = url;
   link.download = `sketch-${label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}.svg`;
+  link.style.display = 'none';
+  document.body.appendChild(link);
   link.click();
-  URL.revokeObjectURL(url);
+  link.remove();
+  // Safari and older Firefox start the download after the click returns.
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }

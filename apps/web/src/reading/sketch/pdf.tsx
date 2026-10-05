@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { SketchControls, SketchLayer, SketchTools } from './Surface';
-import type { Sketches } from './useSketches';
+import { type Sketches, surfaceKey } from './useSketches';
 
 /** What the margin gives a PDF reader so pages can be sketched on (§8: a PDF page is a surface). */
 export interface PdfSketch {
@@ -11,6 +11,8 @@ export interface PdfSketch {
   tools(page: number): ReactNode;
   layer(page: number): ReactNode;
   panel(page: number): ReactNode;
+  /** Page `page`'s height over width from the document itself, for exporting a page not yet shown. */
+  measured(page: number, aspect: number): void;
 }
 
 /** `page` is 1-based, as the reader counts; anchors are 0-based. */
@@ -22,5 +24,10 @@ export function pdfSketch(api: Sketches, show: { page: number; seq: number } | n
     tools: (page) => <SketchTools surface={surface(page)} api={api} label={`Page ${page}`} />,
     layer: (page) => <SketchLayer surface={surface(page)} api={api} label={`Page ${page}`} />,
     panel: (page) => <SketchControls surface={surface(page)} api={api} label={`Page ${page}`} />,
+    measured: (page, aspect) => {
+      const key = surfaceKey(surface(page));
+      // A page drawn on screen keeps the size it was drawn at.
+      if (!api.aspects.current.has(key)) api.aspects.current.set(key, aspect);
+    },
   };
 }

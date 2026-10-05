@@ -369,6 +369,22 @@ describe('reading margin: selection and marks', () => {
     expect(marks()).toEqual([]);
     expect(screen.getByText('Wider')).toBeInTheDocument(); // the quote, kept as it was
   });
+
+  it('A05 a note on a revision still being mapped says it is waiting to be placed, not lost', async () => {
+    const waiting = {
+      ...noteOf(uuid(1), textAnchor(B3, 0, 5, P3), 'Old words'),
+      placement: {
+        ...placement(textAnchor(B3, 0, 5, P3)),
+        status: 'pending' as const,
+        anchor: null,
+      },
+    };
+    api(world([waiting]));
+    await open();
+    expect(await screen.findByText('Waiting to be placed')).toBeInTheDocument();
+    expect(screen.queryByText('Needs reattachment')).toBeNull();
+    expect(marks()).toEqual([]);
+  });
 });
 
 describe('reading margin: notes and autosave', () => {
