@@ -65,7 +65,10 @@ const (
 	defaultLoss      = 45 * time.Second
 	defaultReuse     = 120 * time.Second
 	stopBudget       = 30 * time.Second
-	maxAttachable    = 16
+	// rejectGrace is how long a start whose port refused the token waits for the start command
+	// to end, before the refusal counts as the session's own server's.
+	rejectGrace   = 5 * time.Second
+	maxAttachable = 16
 )
 
 func (r *Remote) readyTimeout() time.Duration { return orDefault(r.ReadyTimeout, defaultReady) }
@@ -816,6 +819,14 @@ func (rr *remoteRuntime) startOnce(ctx context.Context, workspace string, port i
 				rr.setPID(pid)
 				return nil
 			case errors.As(err, &jf) && jf.Code == protocol.CodeTokenRejected:
+				// Another process may hold the port and refuse our token; the start command then
+				// ends with "address already in use" and is retried on another port.
+				select {
+				case <-done:
+					rr.client.CloseIdle()
+					return startExit(waitErr, out.last(), rt.Python)
+				case <-time.After(min(rejectGrace, rr.r.readyTimeout())):
+				}
 				return giveUp(protocol.CodeTokenRejected, jf.Detail)
 			}
 		}

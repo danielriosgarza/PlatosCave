@@ -71,6 +71,7 @@ func newSSHEnv(t *testing.T) *sshEnv {
 	remote := &sshtarget.Remote{
 		SSH:          &sshtarget.Target{Dialer: &netscope.Dialer{Scope: scope, Timeout: 5 * time.Second}, KnownHosts: known},
 		PollInterval: 50 * time.Millisecond, Keepalive: 50 * time.Millisecond, KeepaliveLoss: 500 * time.Millisecond,
+		Ports: sshtest.QuietPorts,
 		Interfaces: func() (cause.Snapshot, error) {
 			return cause.Snapshot{Interfaces: []cause.Interface{{Name: "lo", Addrs: []string{"127.0.0.1/8"}}}}, nil
 		},

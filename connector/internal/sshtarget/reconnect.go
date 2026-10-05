@@ -210,7 +210,16 @@ func (rr *remoteRuntime) checkService(ctx context.Context, c *Conn) bool {
 	err := rr.client.Status(sctx)
 	cancel()
 	var jf *jupyter.Failure
-	if err == nil || ctx.Err() != nil || (errors.As(err, &jf) && jf.Code == protocol.CodeTokenRejected) {
+	if err == nil || ctx.Err() != nil {
+		return false
+	}
+	if errors.As(err, &jf) && jf.Code == protocol.CodeTokenRejected {
+		// Something answers on the port but refuses the token: the session's own server answers
+		// with it, so an owned server whose process is proved gone was replaced by another.
+		if rr.serviceLost(ctx) {
+			rr.stopMonitorIf(ctx)
+			return true
+		}
 		return false
 	}
 	rr.stopMonitorIf(ctx)

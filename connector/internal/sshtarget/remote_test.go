@@ -89,7 +89,7 @@ func newRemoteHost(t *testing.T, mode string, edit ...func(*sshtest.Options)) *r
 	logs := &lines{}
 	h := &remoteHost{t: t, f: f, srv: srv, key: key, stub: stub, ws: t.TempDir(), logs: logs,
 		r: &Remote{SSH: f.tg, Log: logs.add, ReadyTimeout: 10 * time.Second, PollInterval: 50 * time.Millisecond,
-			Keepalive: 50 * time.Millisecond, KeepaliveLoss: time.Second, Interfaces: loopbackOnly}}
+			Keepalive: 50 * time.Millisecond, KeepaliveLoss: time.Second, Interfaces: loopbackOnly, Ports: sshtest.QuietPorts}}
 	// Whatever a test leaves serving is killed when it ends.
 	t.Cleanup(func() {
 		for _, rec := range jupytertest.Records(t, stub) {
