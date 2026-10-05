@@ -47,8 +47,26 @@ def safe_repr(value):
 
 
 def read_spec():
-    raw = sys.stdin.buffer.readline()
-    return json.loads(raw.decode("utf-8"))
+    # Nothing may be consumed from fd 0 past the newline: the student function may read the
+    # check's stdin directly (open(0), os.read, a subprocess). The harness gives the driver a
+    # regular file, so read in chunks and seek back; on a pipe fall back to single bytes.
+    try:
+        start = os.lseek(0, 0, os.SEEK_CUR)
+    except OSError:
+        start = None
+    line = bytearray()
+    while True:
+        chunk = os.read(0, 65536 if start is not None else 1)
+        if not chunk:
+            break
+        newline = chunk.find(b"\n")
+        if newline >= 0:
+            line += chunk[:newline]
+            if start is not None:
+                os.lseek(0, start + len(line) + 1, os.SEEK_SET)
+            break
+        line += chunk
+    return json.loads(bytes(line).decode("utf-8"))
 
 
 def load_module(file):
