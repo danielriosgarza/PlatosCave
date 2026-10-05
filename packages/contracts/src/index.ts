@@ -1,4 +1,5 @@
 export * from './anchors';
+export * from './connector';
 export * from './define';
 export * from './examples';
 export * from './exercise';

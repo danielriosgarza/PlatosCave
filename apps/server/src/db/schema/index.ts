@@ -1,6 +1,7 @@
 export * from './annotations';
 export * from './app';
 export * from './audit';
+export * from './connectors';
 export * from './content';
 export * from './exercises';
 export * from './memberships';

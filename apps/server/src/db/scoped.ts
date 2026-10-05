@@ -1,17 +1,21 @@
 import { eq, type SQL } from 'drizzle-orm';
 import type { PgColumn, PgTable } from 'drizzle-orm/pg-core';
-import type { ClassContext, CourseContext, DraftPreviewScope } from '../auth/scope';
+import type { ClassContext, CourseContext, DraftPreviewScope, UserScope } from '../auth/scope';
 import {
   annotationPlacements,
   annotations,
+  classComputeTemplates,
   classes,
   classInvites,
   classMemberships,
   classReleaseHistory,
+  connectorPairings,
+  connectors,
   courseMemberships,
   courseReleases,
   exerciseAttempts,
   exerciseEvents,
+  notebookConnections,
   notebookSubmissions,
   posts,
   resourceRevisions,
@@ -41,6 +45,7 @@ export const classScopedTables: PgTable[] = [
   exerciseEvents,
   notebookSubmissions,
   topicReviews,
+  classComputeTemplates,
 ];
 export const courseScopedTables: PgTable[] = [
   classes,
@@ -51,6 +56,19 @@ export const courseScopedTables: PgTable[] = [
   courseReleases,
   storageObjects,
 ];
+
+/**
+ * Tables holding one person's own records (`owner_user_id`), not class data: connectors, their
+ * pairing codes and saved connections (docs/design/connector.md §10.2). scoped.test.ts fails when
+ * a table with that column is missing here. `connectors.owner_user_id` is null for a managed
+ * connector, which `forUser` therefore never returns.
+ */
+export const userOwnedTables = [connectors, connectorPairings, notebookConnections] as const;
+type UserOwnedTable = (typeof userOwnedTables)[number];
+
+/** `WHERE owner_user_id = …` for a user-owned table; takes only a resolved user scope. */
+export const forUser = (scope: UserScope, table: UserOwnedTable): SQL =>
+  eq(table.ownerUserId, scope.user.id);
 
 /** `WHERE class_id = …` for a class-scoped table; takes only a resolved scope, never a raw id. */
 export const forClass = (scope: ClassContext, table: { classId: PgColumn }): SQL =>

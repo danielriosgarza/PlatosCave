@@ -2,7 +2,7 @@ import { is } from 'drizzle-orm';
 import { getTableConfig, PgTable } from 'drizzle-orm/pg-core';
 import { expect, test } from 'vitest';
 import * as schema from './schema';
-import { classScopedTables, courseScopedTables } from './scoped';
+import { classScopedTables, courseScopedTables, userOwnedTables } from './scoped';
 
 const snake = (s: string) => s.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
 const tables = (Object.values(schema) as unknown[]).filter((v): v is PgTable => is(v, PgTable));
@@ -21,4 +21,10 @@ test.each([
     const col = getTableConfig(table).columns.find((c) => snake(c.name) === column);
     expect(col?.notNull, `${getTableConfig(table).name}.${column} must be NOT NULL`).toBe(true);
   }
+});
+
+test('every table with owner_user_id is registered as user-owned and vice versa', () => {
+  // `users.owner_user_id` names a preview principal's instructor (ADR-0003), not a data owner.
+  const owned = withColumn('owner_user_id').filter((t) => t !== schema.users);
+  expect(names([...userOwnedTables])).toEqual(names(owned));
 });

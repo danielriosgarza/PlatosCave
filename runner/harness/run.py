@@ -23,6 +23,7 @@ import subprocess
 import sys
 import threading
 import time
+from fractions import Fraction
 
 HARNESS_VERSION = "1"
 HARNESS_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -308,8 +309,12 @@ def read_stdin(fd=0, cap=MAX_JOB_BYTES + NONCE_LINE_BYTES, timeout=STDIN_TIMEOUT
 def numbers_match(actual, expected, abs_tol, rel_tol):
     try:
         return abs(actual - expected) <= abs_tol + rel_tol * abs(expected)
-    except OverflowError:  # an int too large for a float on one side: only equality can match
-        return actual == expected
+    except OverflowError:  # an int too large for a float on one side: compare exactly
+        try:
+            exact = Fraction(actual) - Fraction(expected)
+            return abs(exact) <= Fraction(abs_tol) + Fraction(rel_tol) * abs(Fraction(expected))
+        except (OverflowError, ValueError):  # inf or nan on one side
+            return actual == expected
 
 
 def _is_number(value):
