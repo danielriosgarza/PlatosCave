@@ -110,6 +110,22 @@ export function PdfReading({ url, pageCount, renew, initial, source, onPosition,
   }, []);
 
   const doc = load.state === 'ready' ? load.doc : null;
+  const measured = useRef(sketch?.measured);
+  measured.current = sketch?.measured;
+  // Every page's proportions, so a sketch on a page not yet shown exports at its real shape.
+  useEffect(() => {
+    if (!doc) return;
+    let cancelled = false;
+    void (async () => {
+      for (let n = 1; n <= doc.pageCount && !cancelled; n++) {
+        const ratio = await doc.pageRatio(n).catch(() => null);
+        if (!cancelled && ratio) measured.current?.(n, 1 / ratio);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [doc]);
   // Draws run one after another on the one canvas: pdf.js refuses a second render() while one is
   // still running, so a newer draw cancels the older and starts only after it has settled.
   const queue = useRef<Promise<unknown>>(Promise.resolve());
