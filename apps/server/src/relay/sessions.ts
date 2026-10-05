@@ -28,7 +28,7 @@ import type {
 } from './links';
 import { LinkRequestError } from './links';
 import { checkTargetPolicy } from './netpolicy';
-import { isOpen, type SessionEvent, type SessionStatus } from './session-state';
+import { isOpen, type SessionEvent, type SessionState, type SessionStatus } from './session-state';
 
 /**
  * Notebook sessions on the relay (docs/design/connector.md §2, §9, §10.4, §10.7). It sends
@@ -78,6 +78,8 @@ export class SessionRelay {
   private readonly awaitingFirstHeartbeat = new Set<Link>();
   private readonly stops = new Map<string, PendingStop>();
   private readonly starts = new Map<string, () => void>();
+  /** Sessions a browser is attached to (§9), by session id, with their connector. */
+  private readonly attached = new Map<string, string>();
   /** Sessions a clean-up `close_session` was sent for and not yet answered. */
   private readonly cleaning = new Set<string>();
   /** Per-connector chains, so one connector's reports are applied in the order they came. */
@@ -105,6 +107,7 @@ export class SessionRelay {
     return registry.on({
       open: (link) => {
         this.awaitingFirstHeartbeat.add(link);
+        this.resendPresence(link);
       },
       close: (link) => {
         this.awaitingFirstHeartbeat.delete(link);
@@ -162,8 +165,34 @@ export class SessionRelay {
     return applied;
   }
 
+  /**
+   * Tells the connector whether a browser is attached to an open session (§9); the browser
+   * channel (P3-06a) calls this. The relay remembers it, because a connector whose link drops
+   * counts its sessions as detached until it hears `presence` again.
+   */
+  presence(session: OwnedSession, attached: boolean): void {
+    if (attached && isOpen(session.state)) this.attached.set(session.id, session.connectorId);
+    else this.attached.delete(session.id);
+    this.options.links
+      .get(session.connectorId)
+      ?.send({ v: 1, t: 'presence', sessionId: session.id, attached });
+  }
+
+  /**
+   * A returning link gets `presence { attached: true }` again for every session whose browser
+   * is still attached, so the connector does not stop it when its grace period ends (§9).
+   */
+  private resendPresence(link: Link): void {
+    for (const [sessionId, connectorId] of this.attached) {
+      if (connectorId === link.connectorId) {
+        link.send({ v: 1, t: 'presence', sessionId, attached: true });
+      }
+    }
+  }
+
   /** Clears the deadlines a session in `state` no longer has. */
-  private settle(sessionId: string, state: string): void {
+  private settle(sessionId: string, state: SessionState): void {
+    if (!isOpen(state)) this.attached.delete(sessionId);
     if (state !== 'starting') {
       this.starts.get(sessionId)?.();
       this.starts.delete(sessionId);

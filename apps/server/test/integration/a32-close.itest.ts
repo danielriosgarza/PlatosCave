@@ -1,9 +1,10 @@
 import { and, eq, notInArray } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
+import { findSession } from '../../src/db/notebooks/sessions';
 import { auditEvents, notebookSessions } from '../../src/db/schema';
-import { START_TIMEOUT_MS, STOP_TIMEOUT_MS } from '../../src/relay/sessions';
+import { START_TIMEOUT_MS, STOP_TIMEOUT_MS, sessionRelays } from '../../src/relay/sessions';
 import type { FakeConnector, Received } from '../fixtures/fake-connector';
-import { ids } from '../fixtures/world';
+import { asClassScope, ids } from '../fixtures/world';
 import { createTestDatabase, type TestDatabase } from './db';
 import {
   call,
@@ -331,6 +332,36 @@ describe('deadlines and clean-up (§10.7)', () => {
       stop: true,
     });
     expect((await row(s.sessionId))?.state).toBe('failed');
+  });
+
+  test('a returning link is told again which sessions a browser is attached to (§9)', async () => {
+    const s = await opened(ready());
+    await reaches(s.sessionId, 'ready');
+    const relaySessions = sessionRelays.get(relay.links);
+    const owned = await findSession(
+      testDb.db,
+      asClassScope(ids.classA, ids.statistics, ids.sam),
+      s.sessionId,
+    );
+    if (!relaySessions || !owned) throw new Error('no session relay or session');
+    relaySessions.presence(owned, true);
+    expect(await s.connector.next('presence')).toMatchObject({
+      sessionId: s.sessionId,
+      attached: true,
+    });
+    s.connector.close();
+    await reaches(s.sessionId, 'unconfirmed');
+    const again = await relink(relay, s.id, s.key);
+    expect(await again.next('presence')).toMatchObject({ sessionId: s.sessionId, attached: true });
+
+    // Once detached, a later return of the link sends nothing for it.
+    relaySessions.presence(owned, false);
+    expect(await again.next('presence')).toMatchObject({ attached: false });
+    again.close();
+    const third = await relink(relay, s.id, s.key);
+    third.heartbeat(0, [{ sessionId: s.sessionId, state: 'ready' }]);
+    await reaches(s.sessionId, 'ready');
+    expect(third.received.filter((m) => m.t === 'presence')).toEqual([]);
   });
 
   test('a lost link marks open sessions unconfirmed, never stopped', async () => {
