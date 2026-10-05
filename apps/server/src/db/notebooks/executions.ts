@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { and, asc, eq, gt, inArray, max, sql } from 'drizzle-orm';
+import { and, asc, eq, gt, inArray, isNull, max, sql } from 'drizzle-orm';
 import type { ClassScope } from '../../auth/scope';
 import type { Db, Tx } from '../client';
 import { cellExecutions, notebookSessions } from '../schema';
@@ -142,6 +142,15 @@ export function openExecutions(db: Db, sessionId: string): Promise<ExecutionRow[
     .orderBy(asc(cellExecutions.seq));
 }
 
+/** The executions `ids` of `sessionId`. */
+export function executionsById(db: Db, sessionId: string, ids: string[]): Promise<ExecutionRow[]> {
+  return db
+    .select()
+    .from(cellExecutions)
+    .where(and(eq(cellExecutions.sessionId, sessionId), inArray(cellExecutions.id, ids)))
+    .orderBy(asc(cellExecutions.seq));
+}
+
 /** Moves every execution of `sessionId` in `from` to `to`; returns the rows moved. */
 export function moveSessionExecutions(
   db: Db | Tx,
@@ -203,21 +212,15 @@ export function markExecutionsUnconfirmedAtStart(db: Db): Promise<ExecutionRow[]
 /**
  * Records a new kernel (`kernel`) or none (`null`) on a session: the generation increases, the
  * executions of the kernel it replaces become `aborted`, and a `kernel_lost` cause is cleared.
+ * A new kernel is recorded only on a session without one; null otherwise (a concurrent start won).
  */
 export function setSessionKernel(
   db: Db,
   sessionId: string,
   kernel: { id: string; name: string } | null,
   now: Date,
-): Promise<{ session: SessionRow; aborted: ExecutionRow[] }> {
+): Promise<{ session: SessionRow; aborted: ExecutionRow[] } | null> {
   return db.transaction(async (tx) => {
-    const aborted = await moveSessionExecutions(
-      tx,
-      sessionId,
-      OPEN_EXECUTION_STATES,
-      'aborted',
-      now,
-    );
     const [session] = await tx
       .update(notebookSessions)
       .set({
@@ -226,9 +229,21 @@ export function setSessionKernel(
         kernelGeneration: sql`${notebookSessions.kernelGeneration} + ${kernel ? 1 : 0}`,
         cause: sql`case when ${notebookSessions.cause} = 'kernel_lost' then null else ${notebookSessions.cause} end`,
       })
-      .where(eq(notebookSessions.id, sessionId))
+      .where(
+        and(
+          eq(notebookSessions.id, sessionId),
+          kernel ? isNull(notebookSessions.kernelId) : undefined,
+        ),
+      )
       .returning();
-    if (!session) throw new Error('session vanished');
+    if (!session) return null;
+    const aborted = await moveSessionExecutions(
+      tx,
+      sessionId,
+      OPEN_EXECUTION_STATES,
+      'aborted',
+      now,
+    );
     return { session, aborted };
   });
 }

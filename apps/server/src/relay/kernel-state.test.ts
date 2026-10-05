@@ -45,7 +45,7 @@ const executionRows: {
   { event: { t: 'reconnected_busy' }, moves: { unconfirmed: 'running' } },
   {
     event: { t: 'drained' },
-    moves: { sent: 'incomplete', running: 'incomplete', unconfirmed: 'incomplete' },
+    moves: { unconfirmed: 'incomplete' },
   },
   {
     event: { t: 'restart' },

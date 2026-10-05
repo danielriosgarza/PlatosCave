@@ -132,7 +132,7 @@ export class BrowserChannel implements ChannelPeer {
     if (this.closed) return;
     const { kernels } = this.context;
     if (message.t === 'hello') {
-      kernels.hello(this.session, this, message.resume);
+      await kernels.hello(this.session, this, message.resume);
       return;
     }
     // Every other message names a resource of the session: the scope is checked again first.

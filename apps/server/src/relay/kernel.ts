@@ -12,6 +12,7 @@ import type { Db } from '../db/client';
 import {
   bindExecution,
   type ExecutionRow,
+  executionsById,
   markConnectorExecutionsUnconfirmed,
   markExecutionsUnconfirmedAtStart,
   markKernelLost,
@@ -79,6 +80,9 @@ const START_TIMEOUT_MS = 20_000;
 const CHANNEL_OPEN_WAIT_MS = 10_000;
 /** §10.6: after a reconnect to an idle kernel, the replay has drained after 2 s of quiet. */
 export const REPLAY_DRAIN_MS = 2_000;
+/** A kernel channel that keeps ending is asked again after 1 s, doubling up to 60 s. */
+const RECONNECT_BACKOFF_MS = 1_000;
+const MAX_RECONNECT_BACKOFF_MS = 60_000;
 /** §9: at most one `activity` per 10 s per session. */
 export const ACTIVITY_INTERVAL_MS = 10_000;
 /** §10.3: 30 `execute` a second per session. */
@@ -114,6 +118,14 @@ class SessionKernel {
   readonly map = new ExecutionMap();
   readonly buffer = new OutputBuffer();
   readonly peers = new Set<ChannelPeer>();
+  /** Peers that said `hello`: only they get live messages, after their `ready` and replay. */
+  readonly listening = new Set<ChannelPeer>();
+  /** Kernel `status` messages seen, so a late restart answer does not hide a newer state. */
+  statusSeen = 0;
+  /** When the channel was last lost while the link stayed up, and the next reconnect delay. */
+  lastLossAt = Number.NEGATIVE_INFINITY;
+  backoffMs = RECONNECT_BACKOFF_MS;
+  cancelBackoff: (() => void) | undefined;
   /** The execution waiting on an `input_request`, and that request's header. */
   prompt: { executionId: string; header: Record<string, unknown> } | undefined;
   /** Kernel messages and bindings are applied one at a time, in order. */
@@ -284,7 +296,7 @@ export class KernelRelay {
   }
 
   private broadcast(kernel: SessionKernel, message: ChannelServerMessageInput): void {
-    for (const peer of kernel.peers) {
+    for (const peer of kernel.listening) {
       try {
         peer.send(message);
       } catch (err) {
@@ -318,6 +330,7 @@ export class KernelRelay {
   /** The browser left; the last one leaving makes the session detached for the connector. */
   detach(session: OwnedSession, peer: ChannelPeer): void {
     const kernel = this.kernels.get(session.id);
+    kernel?.listening.delete(peer);
     if (!kernel?.peers.delete(peer)) return;
     if (kernel.peers.size === 0) this.options.sessions.presence(session, false);
   }
@@ -327,12 +340,29 @@ export class KernelRelay {
    * then the open executions and the output events the browser has not seen. A browser from
    * another epoch gets everything still held and treats the rest as incomplete.
    */
-  hello(
+  async hello(
     session: OwnedSession,
     peer: ChannelPeer,
     resume: { epoch: string; afterEventSeq: number } | undefined,
-  ): void {
+  ): Promise<void> {
     const kernel = this.kernelFor(session);
+    // Taken in the kernel's order, so no live message slips between the replay and the stream.
+    await this.serial(kernel, async () => {
+      const replay = kernel.buffer.replay(resume);
+      const evicted = replay.truncated.filter((id) => !kernel.map.byId(id));
+      const finished = evicted.length > 0 ? await executionsById(this.db, session.id, evicted) : [];
+      this.sendHello(kernel, session, peer, replay, finished);
+    });
+  }
+
+  private sendHello(
+    kernel: SessionKernel,
+    session: OwnedSession,
+    peer: ChannelPeer,
+    replay: ReturnType<OutputBuffer['replay']>,
+    finished: ExecutionRow[],
+  ): void {
+    if (!kernel.peers.has(peer)) return;
     peer.send({
       v: 1,
       t: 'ready',
@@ -347,12 +377,14 @@ export class KernelRelay {
       kernel: kernel.view(),
     });
     for (const execution of kernel.map.all()) peer.send(executionMessage(execution));
-    const replay = kernel.buffer.replay(resume);
     for (const event of replay.events) peer.send(event);
+    // Output of these executions was dropped from the buffer: incomplete for this browser.
     for (const id of replay.truncated) {
       const execution = kernel.map.byId(id);
       if (execution) peer.send(executionMessage({ ...execution, outputsIncomplete: true }));
     }
+    for (const row of finished) peer.send(rowMessage({ ...row, outputsIncomplete: true }));
+    kernel.listening.add(peer);
   }
 
   // ── execute, input and interrupt from the channel ────────────────────────────────────────
@@ -487,8 +519,16 @@ export class KernelRelay {
     if (!UUID.test(id)) return { ok: false, reason: 'kernel_failed', code: 'kernel_start_failed' };
     const name = typeof body?.name === 'string' ? body.name : kernelName;
     const reported = jupyterState(body?.execution_state) ?? 'starting';
+    let lost = false;
     await this.serial(kernel, async () => {
-      const set = await setSessionKernel(this.db, session.id, { id, name }, this.now);
+      // Another start may have won while Jupyter answered (a double click): keep the first.
+      const set = kernel.kernelId
+        ? null
+        : await setSessionKernel(this.db, session.id, { id, name }, this.now);
+      if (!set) {
+        lost = true;
+        return;
+      }
       this.closeStream(kernel);
       kernel.map.clear();
       kernel.prompt = undefined;
@@ -505,6 +545,10 @@ export class KernelRelay {
       });
       this.activity(kernel);
     });
+    if (lost) {
+      void this.call(link, session.id, deleteKernelRequest(id));
+      return { ok: false, reason: 'kernel_exists' };
+    }
     await this.waitChannel(kernel);
     return { ok: true, kernel: kernel.view() };
   }
@@ -526,7 +570,7 @@ export class KernelRelay {
       if (kernel.kernelId !== kernelId) return;
       const set = await setSessionKernel(this.db, session.id, null, this.now);
       this.closeStream(kernel);
-      this.forgetExecutions(kernel, set.aborted);
+      this.forgetExecutions(kernel, set?.aborted ?? []);
       kernel.kernelId = null;
       kernel.state = 'unknown';
       kernel.prompt = undefined;
@@ -564,6 +608,7 @@ export class KernelRelay {
     const link = this.options.links.get(session.connectorId);
     if (!link) return { ok: false, reason: 'connector_offline' };
     this.activity(kernel);
+    const seen = kernel.statusSeen;
     const answer = await this.call(link, session.id, restartKernelRequest(kernelId));
     if (!answer.ok) return answer;
     if (answer.value.status >= 300) {
@@ -575,11 +620,12 @@ export class KernelRelay {
       kernel.generation = restarted.session.kernelGeneration;
       kernel.prompt = undefined;
       this.forgetExecutions(kernel, restarted.aborted);
-      kernel.state = 'restarting';
+      // A status the restarted kernel already sent (idle) is newer than the restart's answer.
+      if (kernel.statusSeen === seen) kernel.state = 'restarting';
       this.broadcast(kernel, {
         v: 1,
         t: 'kernel_state',
-        state: 'restarting',
+        state: kernel.state,
         generation: kernel.generation,
       });
     });
@@ -607,6 +653,7 @@ export class KernelRelay {
           onControl: (message) => {
             if (message.t === 'ws_opened' && kernel.stream === stream) {
               kernel.channelOpen = true;
+              kernel.backoffMs = RECONNECT_BACKOFF_MS;
               for (const resolve of kernel.waitOpen.splice(0)) resolve();
             }
           },
@@ -700,6 +747,7 @@ export class KernelRelay {
     if (event.t === 'status') {
       // The kernel's own state, whoever asked; an execution moves only when it is the parent.
       if (channelKernel === kernel.kernelId) {
+        kernel.statusSeen++;
         this.setKernelState(kernel, { t: 'reported', state: event.state });
       }
       if (matched.ok && event.state === 'busy') {
@@ -809,8 +857,24 @@ export class KernelRelay {
       for (const row of rows) this.applyRow(kernel, row);
     }).then(() => {
       if (code === 'connector_offline') return;
-      void sessionRow(this.db, kernel.sessionId).then((row) => {
-        if (row) this.maybeReconnect(kernel, row);
+      // Asked again at once, unless the channel keeps ending: then after a growing delay.
+      const at = this.now.getTime();
+      const again = at - kernel.lastLossAt < MAX_RECONNECT_BACKOFF_MS;
+      kernel.lastLossAt = at;
+      const retry = () =>
+        void sessionRow(this.db, kernel.sessionId).then((row) => {
+          if (row) this.maybeReconnect(kernel, row);
+        });
+      if (!again) {
+        retry();
+        return;
+      }
+      const delay = kernel.backoffMs;
+      kernel.backoffMs = Math.min(delay * 2, MAX_RECONNECT_BACKOFF_MS);
+      kernel.cancelBackoff?.();
+      kernel.cancelBackoff = this.options.timers.after(delay, () => {
+        kernel.cancelBackoff = undefined;
+        retry();
       });
     });
   }
@@ -862,7 +926,9 @@ export class KernelRelay {
 
   private dispose(kernel: SessionKernel): void {
     this.closeStream(kernel);
+    kernel.cancelBackoff?.();
     kernel.peers.clear();
+    kernel.listening.clear();
   }
 
   /** Asks the kernel again when the session is ready, it has a kernel and its channel is down. */
@@ -947,8 +1013,8 @@ export class KernelRelay {
   }
 
   /**
-   * §10.6: after a reconnect to an idle kernel, executions still without a reply once the replay
-   * has been quiet for 2 s are `incomplete`: their outcome is unknown.
+   * §10.6: after a reconnect to an idle kernel, the unconfirmed executions still without a reply
+   * once the replay has been quiet for 2 s are `incomplete`: their outcome is unknown.
    */
   private armDrain(kernel: SessionKernel): void {
     kernel.cancelDrain?.();
@@ -958,10 +1024,12 @@ export class KernelRelay {
         kernel.cancelDrain = undefined;
         kernel.onDrained = undefined;
         void this.serial(kernel, async () => {
+          // Only the executions that were in flight when the link dropped: a cell run since the
+          // reconnect is live, however quiet it is.
           const rows = await moveSessionExecutions(
             this.db,
             kernel.sessionId,
-            OPEN_EXECUTION_STATES,
+            ['unconfirmed'],
             'incomplete',
             this.now,
             { outputsIncomplete: true },

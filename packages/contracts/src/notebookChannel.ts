@@ -10,7 +10,11 @@ import { NOTEBOOK_CELL_ID } from './notebook';
 
 /** §10.5: the code of one `execute` is at most 1 MiB (UTF-8). */
 export const MAX_EXECUTE_CODE_BYTES = 1024 * 1024;
-/** The largest frame the channel accepts from a browser; an `execute` at its limit fits. */
+/**
+ * The largest frame the channel accepts from a browser (a larger one is closed with 1009). An
+ * `execute` of ordinary code at its 1 MiB limit fits; code made mostly of characters JSON escapes
+ * (control characters) may not.
+ */
 export const MAX_CHANNEL_FRAME_BYTES = 2 * 1024 * 1024;
 /** The answer to an `input_request` (a typed line) is at most 64 KiB. */
 export const MAX_INPUT_REPLY_BYTES = 64 * 1024;

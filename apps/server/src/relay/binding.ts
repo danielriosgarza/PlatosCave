@@ -233,7 +233,8 @@ export function nextExecutionState(
     case 'reconnected_busy':
       return state === 'unconfirmed' ? 'running' : null;
     case 'drained':
-      return 'incomplete';
+      // Only what was in flight when the link dropped; a cell run since is a live execution.
+      return state === 'unconfirmed' ? 'incomplete' : null;
     case 'restart':
       return 'aborted';
     case 'kernel_lost':

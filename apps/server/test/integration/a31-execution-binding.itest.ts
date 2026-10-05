@@ -279,6 +279,39 @@ describe('A31 execution binding', () => {
     expect(s.jupyter.executeRequests.length + back.jupyter.executeRequests.length).toBe(1);
   });
 
+  test('A31 a cell run during the replay window is live, however quiet it is', async () => {
+    const s = await running();
+    const back = await dropAndRelink(s, 'idle');
+    await relay.until(() => back.jupyter.opened.length === 1, 'the kernel channel to reopen');
+    await drained(relay, s.connectorId, s.sessionId);
+    // A new cell inside the 2 s window that prints nothing for longer than the window.
+    const ref = crypto.randomUUID();
+    s.browser.send(execute('import time; time.sleep(5)', ref, 'cell-2'));
+    const sent = await s.browser.next((m) => m.t === 'execution' && m.ref === ref);
+    expect(sent).toMatchObject({ state: 'sent', seq: 2 });
+    await relay.until(() => back.jupyter.executeRequests.length === 1, 'the new execute_request');
+    relay.advance(REPLAY_DRAIN_MS);
+    // Only the execution that was in flight when the link dropped is incomplete.
+    const incomplete = await s.browser.next((m) => m.t === 'execution' && m.state === 'incomplete');
+    expect(incomplete.executionId).toBe(s.executionId);
+    await drained(relay, s.connectorId, s.sessionId);
+    const rows = await executionRows(testDb, s.sessionId);
+    expect(rows.map((r) => [r.seq, r.state])).toEqual([
+      [1, 'incomplete'],
+      [2, 'sent'],
+    ]);
+    const msgId = back.jupyter.executeRequests[0]?.message.header.msg_id as string;
+    back.jupyter.emit(kernelMessage('status', msgId, { execution_state: 'busy' }));
+    back.jupyter.emit(kernelMessage('stream', msgId, { name: 'stdout', text: 'woke\n' }));
+    back.jupyter.emit(
+      kernelMessage('execute_reply', msgId, { status: 'ok', execution_count: 2 }, 'shell'),
+    );
+    expect((await s.browser.next('output')).output.text).toBe('woke\n');
+    expect(
+      await s.browser.next((m) => m.t === 'execution' && m.ref === ref && m.state === 'ok'),
+    ).toMatchObject({ executionCount: 2, outputsIncomplete: false });
+  });
+
   test('A31 a reply in the replay of an idle kernel completes the execution', async () => {
     const s = await running();
     const back = await dropAndRelink(s, 'idle');
