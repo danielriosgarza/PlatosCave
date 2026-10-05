@@ -124,7 +124,11 @@ export function registerRoute<C extends RouteContract>(
   app: FastifyInstance,
   contract: C,
   handler: (args: RouteArgs<C>) => Promise<z.input<C['response']>> | z.input<C['response']>,
-  options: { rateLimit?: RateLimitOptions } = {},
+  options: {
+    rateLimit?: RateLimitOptions;
+    /** Largest request body in bytes, when a route takes more than Fastify's 1 MiB; needs a 413. */
+    bodyLimit?: number;
+  } = {},
 ): void {
   if (contract.websocket) {
     throw new Error(
@@ -134,6 +138,9 @@ export function registerRoute<C extends RouteContract>(
   checkScopeParams(contract);
   if (options.rateLimit && !contract.errors?.[429]) {
     throw new Error(`${contract.method} ${contract.path} is rate limited but declares no 429`);
+  }
+  if (options.bodyLimit && !contract.errors?.[413]) {
+    throw new Error(`${contract.method} ${contract.path} sets a body limit but declares no 413`);
   }
   const status = contract.status ?? 200;
   const answers = errorResponses(contract);
@@ -152,6 +159,7 @@ export function registerRoute<C extends RouteContract>(
     // with HEAD (Playwright and the deploy checks use GET), so HEAD on an API path answers the
     // not-found 404; isolation-matrix.itest.ts pins that.
     exposeHeadRoute: false,
+    ...(options.bodyLimit && { bodyLimit: options.bodyLimit }),
     schema: {
       summary: contract.summary,
       ...(contract.params && { params: contract.params }),

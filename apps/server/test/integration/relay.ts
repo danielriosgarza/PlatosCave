@@ -5,6 +5,7 @@ import { buildApp } from '../../src/app';
 import { loadConfig } from '../../src/config';
 import { LiveLinkRegistry } from '../../src/relay/links';
 import { normaliseOrigin } from '../../src/relay/signing';
+import type { Storage } from '../../src/storage/storage';
 import {
   type ConnectorKey,
   FakeConnector,
@@ -52,7 +53,7 @@ let seed = 0;
 export async function startRelay(
   testDb: TestDatabase,
   start: Date,
-  options: { minVersion?: string; testRoutes?: boolean } = {},
+  options: { minVersion?: string; testRoutes?: boolean; storage?: Storage } = {},
 ): Promise<Relay> {
   let clock = start;
   const now = () => clock;
@@ -75,7 +76,13 @@ export async function startRelay(
     timers,
     ...(options.minVersion && { minVersion: options.minVersion }),
   });
-  const app = await buildApp(config, { db: testDb.db, now, mode: 'relay', links });
+  const app = await buildApp(config, {
+    db: testDb.db,
+    now,
+    mode: 'relay',
+    links,
+    ...(options.storage && { storage: options.storage }),
+  });
   await app.listen({ port: 0, host: '127.0.0.1' });
   const { port } = app.server.address() as AddressInfo;
   const url = `ws://127.0.0.1:${port}/api/connector/v1/link`;

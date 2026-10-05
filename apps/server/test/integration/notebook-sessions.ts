@@ -55,7 +55,7 @@ export type Reply = { status: number; body: any };
 export async function call(
   relay: Relay,
   cookie: string,
-  method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
   url: string,
   payload?: object,
 ): Promise<Reply> {

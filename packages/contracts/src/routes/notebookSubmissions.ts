@@ -29,6 +29,16 @@ const resourceParams = z.object({ classId: z.uuid(), resourceId: z.uuid() });
  */
 export const submissionEnvironment = z.record(z.string(), z.union([z.string(), z.number()]));
 
+/** A copied-out file frozen with a submission from a connected session (P3-09). */
+export const submissionFile = z.object({
+  /** The copy-out it came from; its download is `…/notebook-submissions/:id/files/:fileId`. */
+  id: z.uuid(),
+  /** Where the file was in the workspace. */
+  path: z.string(),
+  size: z.int(),
+  sha256: z.string(),
+});
+
 /** The receipt of one acknowledged submission. */
 export const submissionReceipt = z.object({
   id: z.uuid(),
@@ -42,6 +52,12 @@ export const submissionReceipt = z.object({
   sha256: z.string(),
   environment: submissionEnvironment,
   receivedAt: timestamp,
+  /**
+   * A submission from a connected session (P3-09): the working-copy revision it froze and the
+   * selected files copied out of the workspace. Absent for an uploaded file.
+   */
+  workingCopyRevision: z.int().optional(),
+  files: z.array(submissionFile).optional(),
 });
 
 export const reviewedSubmission = submissionReceipt.extend({
@@ -120,4 +136,21 @@ export const getSubmissionDownload = defineRoute({
   params: z.object({ classId: z.uuid(), submissionId: z.uuid() }),
   response: z.object({ url: z.string(), expiresAt: timestamp }),
   examples: { params: { classId: exampleClass, submissionId: exampleSubmission } },
+});
+
+/**
+ * A link to download one file frozen with a submission from a connected session: the student's
+ * own, or any student's for an instructor. Served as an attachment from the content origin;
+ * nothing is asked of the student's computer (A35).
+ */
+export const getSubmissionFileDownload = defineRoute({
+  method: 'GET',
+  path: '/api/classes/:classId/notebook-submissions/:submissionId/files/:fileId/download',
+  scope: { kind: 'class', role: 'any' },
+  summary: 'A link to download one file of a submitted snapshot',
+  params: z.object({ classId: z.uuid(), submissionId: z.uuid(), fileId: z.uuid() }),
+  response: z.object({ url: z.string(), expiresAt: timestamp }),
+  examples: {
+    params: { classId: exampleClass, submissionId: exampleSubmission, fileId: exampleIds.dd },
+  },
 });

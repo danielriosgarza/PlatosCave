@@ -145,7 +145,7 @@ export const contents = {
     method: 'GET',
     path: contentsUrl(root, reldir, { content: 1, type: 'directory' }),
   }),
-  get: (root: string, relpath: string, q: Omit<ContentsQuery, 'type'> = {}): JupyterRequest => ({
+  get: (root: string, relpath: string, q: ContentsQuery = {}): JupyterRequest => ({
     purpose: 'contents',
     method: 'GET',
     path: contentsUrl(root, relpath, q),
