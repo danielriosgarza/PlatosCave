@@ -141,7 +141,7 @@ test('A12 hidden checks and files never reach the browser; a sample run shows it
   await page.getByRole('button', { name: 'Run sample tests' }).click();
   // No runner is attached to the end-to-end server: the run is queued or reported unavailable,
   // and the page says which instead of leaving the output blank.
-  await expect(page.getByRole('status', { name: 'Sample run' })).toContainText(
+  await expect(page.getByRole('region', { name: 'Sample tests' })).toContainText(
     /Queued|Running|Run unavailable/,
   );
   const text = bodies.join('\n');
