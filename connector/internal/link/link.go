@@ -57,6 +57,14 @@ type Handler interface {
 	Stream(ctx context.Context, l *Link, m protocol.Message, s *Stream)
 }
 
+// Watcher is implemented by a Handler that needs to know when a link is live: LinkUp runs once
+// hello and the first heartbeat (seq 0) have been sent, before any request is read, and
+// LinkDown runs when that link has ended. Neither may block for long.
+type Watcher interface {
+	LinkUp(ctx context.Context, l *Link)
+	LinkDown(l *Link)
+}
+
 // Config is what one connector needs to keep its link.
 type Config struct {
 	// Origin is the normalised server origin from config.json; the connector signs this one,
@@ -304,6 +312,10 @@ func runOnce(ctx context.Context, cfg *Config, u string) outcome {
 	}
 	if err := l.heartbeat(lctx); err != nil {
 		return l.ended(ctx, err)
+	}
+	if w, ok := cfg.Handler.(Watcher); ok {
+		w.LinkUp(lctx, l)
+		defer w.LinkDown(l)
 	}
 	var wg sync.WaitGroup
 	wg.Add(2)

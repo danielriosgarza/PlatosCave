@@ -143,8 +143,10 @@ func run(ctx context.Context, args []string, env Env) error {
 			OS: env.GOOS, Arch: env.GOARCH,
 			Log: func(line string) { fmt.Fprintf(env.Stderr, "jupyter: %s\n", line) },
 		}},
-		Log: out,
-		Now: env.Now,
+		Log:   out,
+		Now:   env.Now,
+		Store: store,
+		OS:    env.GOOS,
 	}
 	if cfg.Mode == "managed" {
 		mgrCfg.Targets = map[string]target.Target{}
@@ -153,6 +155,10 @@ func run(ctx context.Context, args []string, env Env) error {
 		mgrCfg.Confirm = newAsker(env.Stdin, out).ask
 	}
 	mgr := session.New(ctx, mgrCfg)
+	// Sessions an earlier run left: stopped ones wait for the first heartbeat, orphans are swept.
+	mgr.Restore(ctx)
+	// Ctrl-C, SIGTERM and a revoked link all end Run; every owned session is then stopped with
+	// cause connector_exit (design §3, §6).
 	defer func() {
 		sctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), exitBudget)
 		mgr.Close(sctx)
