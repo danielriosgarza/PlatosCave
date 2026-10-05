@@ -16,6 +16,7 @@ import {
   type ScopeFor,
 } from '../auth/scope';
 import type { Db } from '../db/client';
+import type { ExecDeps } from '../db/execution/runs';
 import type { Storage } from '../storage/storage';
 import type { JobLogger } from './logger';
 
@@ -32,12 +33,15 @@ export interface ScopedJobArgs<R extends JobRule, I extends z.ZodType> {
   storage?: Storage;
   /** The queue, for jobs that queue follow-up jobs; absent where the caller has none. */
   boss?: PgBoss;
+  /** The runner's queue and runtimes, for jobs that queue code runs; absent where none. */
+  exec?: ExecDeps;
 }
 
 /** Services a worker hands every job besides the database. */
 export interface JobServices {
   storage?: Storage;
   boss?: PgBoss;
+  exec?: ExecDeps;
 }
 
 export interface ScopedJob<R extends JobRule = JobRule, I extends z.ZodType = z.ZodType> {

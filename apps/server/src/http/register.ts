@@ -75,6 +75,8 @@ export type RouteArgs<C> =
         fail: <K extends keyof E & ErrorStatus>(status: K, body: BodyOf<E, K>) => never;
         /** Answers 409 with the contract's declared conflict body; `fail(409, body)` for settle. */
         conflict: (body: BodyOf<E, 409>) => never;
+        /** Answers with the contract's `alternativeStatus` instead of its `status`. */
+        useAlternativeStatus: () => void;
       }
     : never;
 
@@ -142,6 +144,8 @@ export function registerRoute<C extends RouteContract>(
   }
   const status = contract.status ?? 200;
   const answers = errorResponses(contract);
+  const successes: Partial<Record<number, z.ZodType>> = { [status]: contract.response, ...answers };
+  if (contract.alternativeStatus) successes[contract.alternativeStatus] = contract.response;
   // The limiter runs before the scope resolver, so an over-limit request costs no session lookup.
   // Each limiter built by app.rateLimit() has its own store, so counts are per route.
   const limiter = options.rateLimit ? app.rateLimit(options.rateLimit) : undefined;
@@ -161,7 +165,7 @@ export function registerRoute<C extends RouteContract>(
       ...(contract.params && { params: contract.params }),
       ...(contract.query && { querystring: contract.query }),
       ...(contract.body && { body: contract.body }),
-      response: { [status]: contract.response, ...answers },
+      response: successes,
     },
     config: { scope: contract.scope, contract },
     onRequest: limiter ? [limiter, resolve] : resolve,
@@ -180,6 +184,12 @@ export function registerRoute<C extends RouteContract>(
           },
           conflict: (body: unknown) => {
             throw new RouteFailure(409, body);
+          },
+          useAlternativeStatus: () => {
+            if (!contract.alternativeStatus) {
+              throw new Error(`${contract.method} ${contract.path} has no alternative status`);
+            }
+            (reply as FastifyReply).code(contract.alternativeStatus);
           },
         } as unknown as RouteArgs<C>);
       } catch (err) {

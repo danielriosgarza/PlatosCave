@@ -81,6 +81,12 @@ describe('A13 runner role (design §10.3)', () => {
     const denied = '42501';
     expect(await sqlState(runner, 'SELECT * FROM users LIMIT 1')).toBe(denied);
     expect(await sqlState(runner, 'SELECT * FROM resource_revisions LIMIT 1')).toBe(denied);
+    // P3-16: the run records, which name a student, attempt and question, stay out of reach.
+    expect(await sqlState(runner, 'SELECT * FROM execution_results LIMIT 1')).toBe(denied);
+    expect(await sqlState(runner, 'SELECT * FROM execution_jobs LIMIT 1')).toBe(denied);
+    expect(
+      await sqlState(runner, `UPDATE execution_results SET status = 'passed' WHERE false`),
+    ).toBe(denied);
     expect(await sqlState(runner, 'SELECT * FROM pgboss.job LIMIT 1')).toBe(denied);
     expect(
       await sqlState(
