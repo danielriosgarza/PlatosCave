@@ -56,7 +56,7 @@ export interface RouteContract<
   scope: S;
   summary: string;
   /** Success status; defaults to 200. A 302 route answers with a redirect and no body. */
-  status?: 200 | 202 | 302;
+  status?: 200 | 201 | 202 | 302;
   params?: P;
   query?: Q;
   body?: B;

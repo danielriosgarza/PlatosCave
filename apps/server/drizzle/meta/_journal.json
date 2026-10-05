@@ -50,6 +50,13 @@
       "when": 1791143043212,
       "tag": "0006_p2-16_topic_reviews",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1791157641153,
+      "tag": "0007_p3-02_connectors",
+      "breakpoints": true
     }
   ]
 }

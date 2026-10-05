@@ -112,6 +112,11 @@ const publicAllowlist = new Set([
   'GET /api/auth/verify',
   'POST /api/auth/signout',
   'POST /api/preview/exit',
+  // Connector pairing (docs/design/connector.md §3): a single-use pairing code or an Ed25519
+  // signature of the connector's stored key is the credential; connectors.itest.ts covers them.
+  'POST /api/connector/v1/pair',
+  'POST /api/connector/v1/pair/poll',
+  'POST /api/connector/v1/unpair',
   'POST /api/test/world',
   'POST /api/test/signin-as',
 ]);
@@ -308,6 +313,23 @@ describe('A02 A26 preview principal on user-scope contracts', () => {
         expect(res.statusCode).toBe(403);
         expect(res.json()).toMatchObject({ error: 'invite_other_account' });
       },
+      // A preview principal never pairs, lists or manages devices (connector design §3).
+      ...Object.fromEntries(
+        [
+          'POST /api/me/connectors/pairings',
+          'GET /api/me/connectors',
+          'POST /api/me/connectors/:connectorId/approve',
+          'POST /api/me/connectors/:connectorId/revoke',
+          'PATCH /api/me/connectors/:connectorId',
+        ].map((key) => [
+          key,
+          async (c: RouteContract) => {
+            const res = await asPreview(c, c.examples.body);
+            expect(res.statusCode).toBe(403);
+            expect(res.json()).toEqual({ error: 'forbidden' });
+          },
+        ]),
+      ),
     };
     const userContracts = app.contracts.filter((c) => c.scope.kind === 'user');
     expect(userContracts.length).toBeGreaterThan(0);

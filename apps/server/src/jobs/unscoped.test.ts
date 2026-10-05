@@ -5,7 +5,7 @@ import type { PgBoss } from 'pg-boss';
 import { describe, expect, test } from 'vitest';
 import type { Db } from '../db/client';
 import type { JobLogger } from './logger';
-import { PURGE_SIGNIN_TOKENS, workMaintenance } from './maintenance';
+import { PURGE_CONNECTOR_PAIRINGS, PURGE_SIGNIN_TOKENS, workMaintenance } from './maintenance';
 
 const srcDir = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -39,7 +39,7 @@ describe('queues outside workScopedJob', () => {
     expect(registersWorker('const network = 1; // frameworks')).toBe(false);
   });
 
-  test('the worker runs exactly one unscoped queue: maintenance.purge-signin-tokens', async () => {
+  test('the worker runs exactly the unscoped maintenance queues', async () => {
     const worked: string[] = [];
     const boss = {
       createQueue: async () => {},
@@ -48,7 +48,10 @@ describe('queues outside workScopedJob', () => {
     } as unknown as PgBoss;
     const quiet = { info() {}, warn() {}, error() {} } as unknown as JobLogger;
     const returned = await workMaintenance(boss, {} as Db, quiet);
-    expect(returned).toEqual(['maintenance.purge-signin-tokens']);
-    expect(worked).toEqual([PURGE_SIGNIN_TOKENS]);
+    expect(returned).toEqual([
+      'maintenance.purge-signin-tokens',
+      'maintenance.purge-connector-pairings',
+    ]);
+    expect(worked).toEqual([PURGE_SIGNIN_TOKENS, PURGE_CONNECTOR_PAIRINGS]);
   });
 });

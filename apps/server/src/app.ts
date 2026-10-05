@@ -23,6 +23,7 @@ import { NOT_FOUND } from './http/register';
 import { isApiPath, registerStatic } from './http/static';
 import { createMailer, type Mailer } from './mail/mailer';
 import { loadModules } from './modules';
+import type { LinkRegistry } from './relay/links';
 import { createStorage } from './storage/create';
 import type { Storage } from './storage/storage';
 
@@ -40,6 +41,8 @@ export interface Deps {
   boss?: PgBoss;
   /** Work that outlives its request (mail delivery); defaults to one the server drains on close. */
   background?: BackgroundTasks;
+  /** Live connector links; defaults to the empty registry until P3-02a. */
+  links?: LinkRegistry;
 }
 
 /** What every route module receives: the injected `Deps` with the defaults buildApp resolved. */
