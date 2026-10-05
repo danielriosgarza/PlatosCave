@@ -48,14 +48,17 @@ describe('exercise.v1 authoring rules', () => {
     ).toEqual([]);
   });
 
-  test('the grid test is relative to k and snaps to six decimals, so large step counts agree', () => {
+  test('the grid test uses the six-decimal snapping the control sends, so large step counts agree', () => {
     expect(onControlGrid(0.3, 0, 0.1)).toBe(true);
     expect(onControlGrid(0.35, 0, 0.1)).toBe(false);
     // k = 10 million: an absolute 1e-9 on k would refuse this grid point.
     expect(onControlGrid(1_000_000, 0, 0.1)).toBe(true);
     expect(onControlGrid(1_000_000.04, 0, 0.1)).toBe(false);
-    // A value below the six-decimal rounding of the control is the grid point the control sends.
-    expect(onControlGrid(0.3 + 1e-8, 0, 0.1)).toBe(true);
+    // A value that only rounds to a grid point is never sent by the control, so it is refused.
+    expect(onControlGrid(0.3 + 1e-8, 0, 0.1)).toBe(false);
+    expect(
+      exerciseProblems(simulation({ min: 0, max: 1, step: 0.1, initial: 0.3 }, [0.30000001])),
+    ).toEqual([expect.stringMatching(/compare values must be ones the control offers/)]);
   });
 
   test('credit is optional; points must be positive and the hint policy known', () => {

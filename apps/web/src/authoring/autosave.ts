@@ -175,9 +175,11 @@ export function useAutosave<V extends object, S extends { revision: number }>({
     (current: S) => {
       stopped.current = false;
       revision.current = current.revision;
+      // What the server holds now is what a skipped save would have to match.
+      acknowledged.current = toValues(current);
       void flush();
     },
-    [flush],
+    [flush, toValues],
   );
 
   return { values, change, state, retry, takeTheirs, keepMine };

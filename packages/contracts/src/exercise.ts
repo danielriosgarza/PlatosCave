@@ -134,17 +134,17 @@ const ids = (list: { id: string }[]) => list.map((o) => o.id);
 const sameSet = (a: string[], b: string[]) =>
   a.length === b.length && new Set(a).size === a.length && a.every((x) => b.includes(x));
 
-/** Cross-field rules a step's own shape cannot express; the message names what is wrong. */
 /**
- * Whether `value` is a point the simulation control offers: min + k·step for a whole k. Both
- * sides are snapped to six decimals, as the control does when it sends a value, so authors
- * and students agree for large step counts and for values below the rounding.
+ * Whether `value` is a point the simulation control offers: min + k·step for a whole k, as the
+ * control sends it (snapped to six decimals). A value that only rounds to a grid point is not
+ * one, because step completion compares the sent values exactly.
  */
 export function onControlGrid(value: number, min: number, step: number): boolean {
   const k = Math.round((value - min) / step);
-  return Number.isFinite(k) && Number(value.toFixed(6)) === Number((min + k * step).toFixed(6));
+  return Number.isFinite(k) && value === Number((min + k * step).toFixed(6));
 }
 
+/** Cross-field rules a step's own shape cannot express; the message names what is wrong. */
 function stepProblem(step: ExerciseStep): string | undefined {
   const unique = (list: { id: string }[]) => new Set(ids(list)).size === list.length;
   switch (step.kind) {
