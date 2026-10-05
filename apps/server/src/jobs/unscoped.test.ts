@@ -24,12 +24,14 @@ const registersWorker = (source: string) => /\.work\s*[<(]/.test(source);
 // check. This pins the set so a later job cannot copy the maintenance pattern for class- or
 // course-scoped data without a reviewer seeing this test change.
 describe('queues outside workScopedJob', () => {
-  test('only maintenance.ts registers a worker besides the scoped wrapper', () => {
+  test('only maintenance.ts and the runner channel register a worker besides the scoped wrapper', () => {
     const files = sourceFiles(srcDir)
       .filter((file) => registersWorker(readFileSync(file, 'utf8')))
       .map((file) => relative(srcDir, file).split('\\').join('/'))
       .sort();
-    expect(files).toEqual(['jobs/maintenance.ts', 'jobs/scoped.ts']);
+    // execution/handlers.ts consumes the runner's results and dead letters in pgboss_exec,
+    // which carry no actor (docs/design/runner.md §8.4, the exception ADR-0002 records).
+    expect(files).toEqual(['execution/handlers.ts', 'jobs/maintenance.ts', 'jobs/scoped.ts']);
   });
 
   test('the worker-registration pattern matches plain and typed calls only', () => {

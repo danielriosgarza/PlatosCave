@@ -189,3 +189,38 @@ test('A02 INSTRUCTOR_EMAILS is a trimmed, lower-cased email list, empty by defau
   ).toEqual(['ada@example.test', 'ben@example.test']);
   expect(() => loadConfig({ INSTRUCTOR_EMAILS: 'ada@example.test, not an email' })).toThrow();
 });
+
+test('RUNNER_RUNTIMES lists the approved runtimes; production pins each by digest', () => {
+  expect(loadConfig({}).RUNNER_RUNTIMES.map((r) => [r.id, r.image, r.digest])).toEqual([
+    ['python-3.12', 'parallax-runner-python:dev', null],
+  ]);
+  const runtime = {
+    id: 'python-3.12',
+    language: 'python',
+    image: 'registry.example.org/parallax-runner-python',
+    digest: `sha256:${'a'.repeat(64)}`,
+    harnessVersion: '1',
+    packages: ['numpy'],
+  };
+  expect(loadConfig({ RUNNER_RUNTIMES: JSON.stringify([runtime]) }).RUNNER_RUNTIMES).toEqual([
+    runtime,
+  ]);
+  expect(() => loadConfig({ RUNNER_RUNTIMES: 'not json' })).toThrow(/RUNNER_RUNTIMES/);
+  expect(() => loadConfig({ RUNNER_RUNTIMES: JSON.stringify([runtime, runtime]) })).toThrow(
+    /unique/,
+  );
+  const production = {
+    NODE_ENV: 'production',
+    SESSION_SECRET: 'x'.repeat(32),
+    APP_ORIGIN: 'https://parallax.example.org',
+    APP_HOST: 'parallax.example.org',
+    CONTENT_HOST: 'content.parallax.example.org',
+    CONTENT_ORIGIN: 'https://content.parallax.example.org',
+    CONTENT_TOKEN_SECRET: 's'.repeat(40),
+    TRUST_PROXY: 'false',
+  } as const;
+  expect(loadConfig(production).RUNNER_RUNTIMES).toEqual([]);
+  expect(() =>
+    loadConfig({ ...production, RUNNER_RUNTIMES: JSON.stringify([{ ...runtime, digest: null }]) }),
+  ).toThrow(/digest/);
+});

@@ -3,6 +3,7 @@ export * from './app';
 export * from './audit';
 export * from './connectors';
 export * from './content';
+export * from './execution';
 export * from './exercises';
 export * from './memberships';
 export * from './notebook-sessions';
