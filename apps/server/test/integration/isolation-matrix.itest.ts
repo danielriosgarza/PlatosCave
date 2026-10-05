@@ -117,6 +117,9 @@ const publicAllowlist = new Set([
   'POST /api/connector/v1/pair',
   'POST /api/connector/v1/pair/poll',
   'POST /api/connector/v1/unpair',
+  // The connector link (WebSocket): its challenge and the connector's signature authenticate
+  // it (connector design §4.2); link-auth.itest.ts covers every refusal.
+  'GET /api/connector/v1/link',
   'POST /api/test/world',
   'POST /api/test/signin-as',
 ]);
@@ -162,9 +165,12 @@ let world: World;
 beforeAll(async () => {
   testDb = await createTestDatabase();
   world = await buildWorld(testDb.db, now);
+  // `relay` mode serves every route `api` does plus the relay-only ones (connector design §10.1),
+  // so the matrix covers both; a WebSocket contract is replayed as a plain GET.
   app = await buildApp(loadConfig({ NODE_ENV: 'test', LOG_LEVEL: 'silent' }), {
     db: testDb.db,
     now: () => now,
+    mode: 'relay',
   });
   // Runs after the scope resolver and validation: marks requests the resolver let through.
   app.addHook('preHandler', async (_req, reply) => {

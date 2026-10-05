@@ -10,8 +10,13 @@ import { ensureQueues, workScopedJob } from './jobs/scoped';
 import { createStorage } from './storage/create';
 import type { Storage } from './storage/storage';
 
+/**
+ * `api` serves the HTTP API; `relay` serves the same and the routes that need a live connector
+ * link (docs/design/connector.md §10.1). The link registry is in memory, so a deployment runs
+ * exactly one `relay` process; `worker` runs the background jobs.
+ */
 const mode = process.argv[2] ?? 'api';
-if (mode !== 'api' && mode !== 'worker') {
+if (mode !== 'api' && mode !== 'relay' && mode !== 'worker') {
   console.error(`unknown mode: ${mode}`);
   process.exit(2);
 }
@@ -69,7 +74,7 @@ function onSignals(log: JobLogger, close: () => Promise<unknown>): void {
   process.on('SIGINT', stop);
 }
 
-if (mode === 'api') {
+if (mode === 'api' || mode === 'relay') {
   // The API only sends jobs (adoption queues annotation mapping); workers run them.
   let logBossError = (err: Error) => console.error('pg-boss error', err);
   let logBossWarning = (warning: object) => console.warn('pg-boss warning', warning);
@@ -94,7 +99,10 @@ if (mode === 'api') {
         return false;
       },
     );
-  const app = await buildApp(config, database ? { db: database.db, ...(started && { boss }) } : {});
+  const app = await buildApp(config, {
+    mode,
+    ...(database && { db: database.db, ...(started && { boss }) }),
+  });
   logPoolError = (err) => app.log.error({ err }, 'pg pool error');
   logBossError = (err) => app.log.error({ err }, 'pg-boss error');
   logBossWarning = (warning) => app.log.warn({ warning }, 'pg-boss warning');
