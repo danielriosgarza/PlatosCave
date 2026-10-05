@@ -98,11 +98,21 @@ export class SessionRelay {
   ) {}
 
   /**
-   * Marks sessions that were open when this process started as unconfirmed, then follows the
+   * Done once the sessions that were open when this process started are marked unconfirmed.
+   * Every report and every request waits for it. A failure (no database yet, as when the e2e
+   * server starts before its database is created) is logged, not fatal to the process.
+   */
+  private started: Promise<void> = Promise.resolve();
+
+  /**
+   * Marks sessions that were open when this process started as unconfirmed and follows the
    * links. Returns the unsubscribe.
    */
-  async start(registry: LiveLinkRegistry): Promise<() => void> {
-    await markRelayStart(this.options.db, this.options.now());
+  start(registry: LiveLinkRegistry): () => void {
+    this.started = markRelayStart(this.options.db, this.options.now()).then(
+      () => undefined,
+      (err) => this.options.log.error({ err }, 'marking sessions unconfirmed at start failed'),
+    );
     sessionRelays.set(registry, this);
     return registry.on({
       open: (link) => {
@@ -121,11 +131,12 @@ export class SessionRelay {
 
   /** Waits until everything already received for `connectorId` has been applied (tests). */
   async settled(connectorId: string): Promise<void> {
+    await this.started;
     await this.chains.get(connectorId);
   }
 
   private serial(connectorId: string, task: () => Promise<void>): void {
-    const next = (this.chains.get(connectorId) ?? Promise.resolve())
+    const next = (this.chains.get(connectorId) ?? this.started)
       .then(task)
       .catch((err) => this.options.log.error({ err, connectorId }, 'session update failed'));
     this.chains.set(connectorId, next);
@@ -217,6 +228,7 @@ export class SessionRelay {
       lease?: { idleTimeoutMin: number; gracePeriodMin: number } | undefined;
     },
   ): Promise<OpenResult> {
+    await this.started;
     const { connection } = found;
     if (found.templateClassId !== null && found.templateClassId !== scope.classId) {
       return { ok: false, reason: 'wrong_class' };

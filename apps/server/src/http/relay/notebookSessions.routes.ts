@@ -47,10 +47,7 @@ const sessionView = (row: SessionRow): SessionView => {
  * Forget. Served in `relay` mode because they need the connector's live link; the session relay
  * follows the links of this process, the only relay (§10.1).
  */
-export default async function notebookSessionRoutes(
-  app: FastifyInstance,
-  deps: RouteDeps,
-): Promise<void> {
+export default function notebookSessionRoutes(app: FastifyInstance, deps: RouteDeps): void {
   const { now, links } = deps;
   const db = deps.requireDb;
   const relay = deps.db
@@ -63,7 +60,7 @@ export default async function notebookSessionRoutes(
       })
     : undefined;
   if (relay && links instanceof LiveLinkRegistry) {
-    const stop = await relay.start(links);
+    const stop = relay.start(links);
     app.addHook('onClose', async () => stop());
   }
   // Without a database there is no relay: every route answers 503, as `requireDb` does.
