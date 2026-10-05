@@ -1,6 +1,6 @@
 // Package target is where code runs (docs/design/connector.md §5.1, §6): the stages of Test
-// connection and opening a session's runtime. P3-04 serves the `local` target; the `ssh` target
-// joins in P3-05.
+// connection and opening a session's runtime. P3-04 serves the `local` target; package sshtarget
+// runs the SSH stages of the `ssh` target on the same Stages.
 package target
 
 import (
@@ -82,33 +82,86 @@ type skip struct{ reason string }
 func (s *skip) Error() string { return "skipped: " + s.reason }
 
 // Stage deadlines of design §5.1, and the code a stage reports when it reaches its deadline.
+// ssh_auth's deadline rises to PromptDeadline once a terminal prompt starts, and its code is then
+// mfa_failed; sshtarget applies both.
 var (
 	stageDeadline = map[string]time.Duration{
+		"reachability":  20 * time.Second,
+		"host_identity": 20 * time.Second,
+		"ssh_auth":      60 * time.Second,
 		"workspace":     20 * time.Second,
+		"forwarding":    20 * time.Second,
 		"runtime":       45 * time.Second,
 		"notebook_auth": 20 * time.Second,
 		"kernels":       20 * time.Second,
 	}
 	deadlineCode = map[string]protocol.Code{
+		"reachability":  protocol.CodeConnectionTimeout,
+		"host_identity": protocol.CodeConnectionTimeout,
+		"ssh_auth":      protocol.CodeConnectionTimeout,
 		"workspace":     protocol.CodeConnectionTimeout,
+		"forwarding":    protocol.CodeTunnelUnavailable,
 		"runtime":       protocol.CodeJupyterStartTimeout,
 		"notebook_auth": protocol.CodeNotebookServiceUnreachable,
 		"kernels":       protocol.CodeInternal,
 	}
 )
 
-// stages runs stages in order: the first that fails or needs action makes every later one
-// skipped with reason blocked.
-type stages struct {
-	progress  Progress
-	list      []protocol.Stage
-	blockedBy string
-	// limit shortens every deadline, for tests; zero keeps design §5.1's.
-	limit time.Duration
+// PromptDeadline is ssh_auth's deadline once a terminal prompt has started (design §5.1).
+const PromptDeadline = 120 * time.Second
+
+// DeadlineFailure is the failure a stage reports when it reaches its deadline.
+func DeadlineFailure(name string, limit time.Duration) *Failure {
+	return &Failure{Code: deadlineCode[name], Detail: fmt.Sprintf("the %s stage did not finish within %s", name, limit)}
 }
 
-// run runs one stage and reports whether later stages may build on it.
-func (s *stages) run(ctx context.Context, name string, check func(ctx context.Context) (*protocol.StageData, error)) bool {
+// Stages runs stages in order: the first that fails or needs action makes every later one
+// skipped with reason blocked.
+type Stages struct {
+	Progress Progress
+	List     []protocol.Stage
+	// Limit shortens every deadline, for tests; zero keeps design §5.1's.
+	Limit     time.Duration
+	blockedBy string
+}
+
+// Deadline is the deadline a stage runs under.
+func (s *Stages) Deadline(name string) time.Duration {
+	if s.Limit > 0 {
+		return s.Limit
+	}
+	return stageDeadline[name]
+}
+
+// BlockedBy names the stage that stopped the run, or "".
+func (s *Stages) BlockedBy() string { return s.blockedBy }
+
+// Run runs one stage under its deadline and reports whether later stages may build on it. A
+// blocked stage is reported skipped without running check.
+func (s *Stages) Run(ctx context.Context, name string, check func(ctx context.Context) (*protocol.StageData, error)) bool {
+	if s.blockedBy != "" {
+		return s.Finish(name, 0, nil, nil)
+	}
+	limit := s.Deadline(name)
+	sctx, cancel := context.WithTimeout(ctx, limit)
+	start := time.Now()
+	data, err := check(sctx)
+	timedOut := sctx.Err() != nil && ctx.Err() == nil
+	cancel()
+	if err != nil && timedOut {
+		var sk *skip
+		if !errors.As(err, &sk) {
+			err = DeadlineFailure(name, limit)
+		}
+	}
+	return s.Finish(name, time.Since(start), data, err)
+}
+
+// Finish reports a stage that ran for elapsed and ended with data and err: ok when err is nil,
+// skipped for a skip, needs_action or failed for a *Failure (any other error is internal). When
+// an earlier stage stopped the run, the stage is skipped as blocked whatever it returned. It
+// reports whether later stages may build on it.
+func (s *Stages) Finish(name string, elapsed time.Duration, data *protocol.StageData, err error) bool {
 	st := protocol.Stage{Name: name}
 	if s.blockedBy != "" {
 		st.Status = "skipped"
@@ -116,16 +169,7 @@ func (s *stages) run(ctx context.Context, name string, check func(ctx context.Co
 		s.report(st)
 		return false
 	}
-	limit := stageDeadline[name]
-	if s.limit > 0 {
-		limit = s.limit
-	}
-	sctx, cancel := context.WithTimeout(ctx, limit)
-	start := time.Now()
-	data, err := check(sctx)
-	timedOut := sctx.Err() != nil && ctx.Err() == nil
-	cancel()
-	ms := time.Since(start).Milliseconds()
+	ms := elapsed.Milliseconds()
 	st.MS = &ms
 	var sk *skip
 	switch {
@@ -135,9 +179,6 @@ func (s *stages) run(ctx context.Context, name string, check func(ctx context.Co
 		st.Status, st.Data, st.MS = "skipped", &protocol.StageData{Reason: sk.reason}, nil
 	default:
 		f := asFailure(err, protocol.CodeInternal)
-		if timedOut {
-			f = &Failure{Code: deadlineCode[name], Detail: fmt.Sprintf("the %s stage did not finish within %s", name, limit)}
-		}
 		st.Status, st.Code, st.Detail, st.Data = "failed", f.Code, clipDetail(f.Detail), data
 		if f.NeedsAction {
 			st.Status = "needs_action"
@@ -148,18 +189,26 @@ func (s *stages) run(ctx context.Context, name string, check func(ctx context.Co
 	return st.Status == "ok"
 }
 
-func (s *stages) report(st protocol.Stage) {
-	s.list = append(s.list, st)
-	if s.progress != nil {
-		s.progress(st)
+// Running reports, through progress only, that a stage is waiting on the person (design §5.1:
+// ssh_auth waiting on the connector's terminal). It never appears in the result.
+func (s *Stages) Running(name string, data *protocol.StageData) {
+	if s.Progress != nil {
+		s.Progress(protocol.Stage{Name: name, Status: "running", Data: data})
 	}
 }
 
-// outcome applies design §5.1: needs_action or failed from the first stage that stopped,
+func (s *Stages) report(st protocol.Stage) {
+	s.List = append(s.List, st)
+	if s.Progress != nil {
+		s.Progress(st)
+	}
+}
+
+// Outcome applies design §5.1: needs_action or failed from the first stage that stopped,
 // ready_to_start when only notebook_auth was skipped because nothing runs yet, else ready.
-func (s *stages) outcome() string {
+func (s *Stages) Outcome() string {
 	notStarted := false
-	for _, st := range s.list {
+	for _, st := range s.List {
 		switch st.Status {
 		case "needs_action":
 			return "needs_action"
