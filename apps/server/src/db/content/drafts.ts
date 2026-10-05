@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { exerciseProblems } from '@parallax/contracts';
+import { exerciseProblems, shinyContentProblem } from '@parallax/contracts';
 import type * as contracts from '@parallax/contracts/routes/drafts';
 import { and, asc, eq, inArray, sql } from 'drizzle-orm';
 import type { z } from 'zod';
@@ -71,8 +71,12 @@ const toResource = (row: ResourceRow, head: RevisionRow | undefined): Resource =
     : null,
 });
 
-/** Why `content` is not valid for a resource of `type`; exercises must be `exercise.v1` (§9). */
+/**
+ * Why `content` is not valid for a resource of `type`; exercises must be `exercise.v1` (§9) and
+ * a Shiny app needs a usable address (§10.7).
+ */
 function contentProblem(type: string, content: unknown): string | undefined {
+  if (type === 'shiny') return shinyContentProblem(content);
   if (type !== 'exercise') return undefined;
   const [problem] = exerciseProblems(content);
   return problem && `exercise.v1 ${problem}`;
