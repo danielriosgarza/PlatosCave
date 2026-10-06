@@ -163,13 +163,16 @@ export const setPublisher = defineRoute({
 
 /**
  * Hands the course's ownership on or withdraws it (§3), so an owner can leave a course (account
- * closure refuses the only active owner, `owns_courses`). Granting needs a person who already
- * works on the course: a course membership or an instructor seat in one of its classes (409
- * `not_course_staff`), with an active account (404 otherwise, as for any unknown account).
- * Withdrawing keeps the editing and publishing grants the person held. 409 `last_owner` when no
- * other active owner would remain, whoever is withdrawn, the caller included. Granting to an owner
- * or withdrawing from a non-owner changes nothing. Works on an archived course, so an owner can
- * hand it over. Needs a recent sign-in; audited as `grant.owner`.
+ * closure refuses the only active owner, `owns_courses`). Owners are instructors: granting needs
+ * an active person who teaches a class of the course or holds its draft editing, so a delegate who
+ * only publishes cannot be made an owner (409 `not_course_staff`). 404 for an unknown or preview
+ * account, a deactivated one when granting, and a caller who stopped being an owner while the
+ * request waited. Withdrawing keeps the editing and publishing grants the person held, and
+ * revokes the open instructor invitations they issued in classes of the course where they hold no
+ * `manage_members` grant (audited as `invite.revoke`, reason `issuer_lost_ownership`). 409
+ * `last_owner` when no other active owner would remain, whoever is withdrawn, the caller included.
+ * Granting to an owner or withdrawing from a non-owner changes nothing. Works on an archived
+ * course, so an owner can hand it over. Needs a recent sign-in; audited as `grant.owner`.
  */
 export const setOwner = defineRoute({
   method: 'PUT',

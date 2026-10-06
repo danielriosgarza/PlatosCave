@@ -277,7 +277,10 @@ export function acceptInstructorInvite(
 }
 
 /** Why a cascade revoked an invitation; absent when a manager revoked it directly. */
-export type RevokeReason = 'issuer_removed' | 'issuer_lost_manage_members';
+export type RevokeReason =
+  | 'issuer_removed'
+  | 'issuer_lost_manage_members'
+  | 'issuer_lost_ownership';
 
 /**
  * Revokes the not-yet-revoked invitations of the scope's class that match `where` (required, so

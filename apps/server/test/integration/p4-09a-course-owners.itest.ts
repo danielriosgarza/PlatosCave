@@ -106,17 +106,12 @@ describe('granting and withdrawing course ownership', () => {
     expect(await events(ids.marcus)).toHaveLength(1);
   });
 
-  test('a publisher-only course member can be made an owner', async () => {
-    expect((await setOwner('elena', ids.ines, true)).status).toBe(200);
-    expect(await membership(ids.statistics, ids.ines)).toMatchObject({
-      owner: true,
-      publisher: true,
+  test('a delegate who only publishes is not an instructor and cannot be made an owner', async () => {
+    expect(await setOwner('elena', ids.ines, true)).toEqual({
+      status: 409,
+      body: { error: 'not_course_staff' },
     });
-    expect((await setOwner('elena', ids.ines, false)).status).toBe(200);
-    expect(await membership(ids.statistics, ids.ines)).toMatchObject({
-      owner: false,
-      publisher: true,
-    });
+    expect((await membership(ids.statistics, ids.ines))?.owner).toBe(false);
   });
 
   test('only an owner changes ownership, and only for people who work on the course', async () => {
@@ -128,13 +123,18 @@ describe('granting and withdrawing course ownership', () => {
       expect((await setOwner(who, ids.sam, true)).status, who).toBe(404);
     }
     // Students, outsiders and preview principals cannot be made owners.
-    for (const userId of [ids.sam, ids.bea, ids.olivia]) {
+    for (const userId of [ids.sam, ids.bea, ids.olivia, ids.ines]) {
       expect(await setOwner('elena', userId, true), userId).toEqual({
         status: 409,
         body: { error: 'not_course_staff' },
       });
     }
     expect((await setOwner('elena', ids.previewB, true)).status).toBe(404);
+    // Withdrawing answers the same for an account that does not exist or is a preview principal.
+    expect((await setOwner('elena', ids.previewB, false)).status).toBe(404);
+    expect((await setOwner('elena', '00000000-0000-4000-8000-0000000fffff', false)).status).toBe(
+      404,
+    );
     expect((await setOwner('elena', '00000000-0000-4000-8000-0000000fffff', true)).status).toBe(
       404,
     );
@@ -227,10 +227,12 @@ describe('handing a course over before leaving', () => {
       send(b.cookie, 'PUT', ownerUrl(courseId, a.id), { granted: false }),
     ]);
     // One withdrawal wins; the other is refused, either as the last owner or, when it was
-    // resolved after the first, as no longer an owner.
+    // resolved after the first, as no longer an owner (403 before the transaction, 404 inside it).
     expect([one.status, other.status].filter((status) => status === 200)).toHaveLength(1);
     expect(
-      [one.status, other.status].filter((status) => status === 409 || status === 403),
+      [one.status, other.status].filter(
+        (status) => status === 409 || status === 403 || status === 404,
+      ),
     ).toHaveLength(1);
     const owners = (
       await testDb.db
@@ -239,5 +241,119 @@ describe('handing a course over before leaving', () => {
         .where(eq(courseMemberships.courseId, courseId))
     ).filter((m) => m.owner);
     expect(owners).toHaveLength(1);
+  });
+});
+
+describe('authority around a withdrawal', () => {
+  /** Makes `person` an instructor of `classId` through an invitation, as the world does. */
+  async function teach(
+    ownerCookie: string,
+    classId: string,
+    person: { cookie: string },
+    key: string,
+  ) {
+    const invite = await send(ownerCookie, 'POST', `/api/classes/${classId}/invites`, {
+      kind: 'instructor',
+      email: `${key}@example.test`,
+    });
+    expect(invite.status).toBe(201 === invite.status ? 201 : 200);
+    const accepted = await send(person.cookie, 'POST', '/api/invitations/accept', {
+      token: invite.body.code,
+    });
+    expect(accepted.status).toBe(200);
+  }
+
+  test('withdrawing ownership revokes the invitations issued under it, except where the person manages', async () => {
+    const a = await newPerson('owner-a');
+    const m = await newPerson('owner-m');
+    const courseId = await createCourse(testDb.db, { title: 'Invitations', ownerId: a.id });
+    const classes = [];
+    for (const name of ['K', 'L']) {
+      const created = await send(a.cookie, 'POST', `/api/courses/${courseId}/classes`, { name });
+      classes.push(created.body.id as string);
+    }
+    const [k, l] = classes as [string, string];
+    await teach(a.cookie, k, m, 'owner-m');
+    await teach(a.cookie, l, m, 'owner-m');
+    expect((await send(a.cookie, 'PUT', ownerUrl(courseId, m.id), { granted: true })).status).toBe(
+      200,
+    );
+    const manage = `/api/classes/${l}/members/${m.id}/manage-members`;
+    expect((await send(a.cookie, 'PUT', manage, { granted: true })).status).toBe(200);
+
+    const issue = async (classId: string, email: string) =>
+      (
+        await send(m.cookie, 'POST', `/api/classes/${classId}/invites`, {
+          kind: 'instructor',
+          email,
+        })
+      ).body;
+    const lapsing = await issue(k, 'guest-k@example.test');
+    const kept = await issue(l, 'guest-l@example.test');
+
+    expect((await send(a.cookie, 'PUT', ownerUrl(courseId, m.id), { granted: false })).status).toBe(
+      200,
+    );
+    const guestK = await newPerson('guest-k');
+    const guestL = await newPerson('guest-l');
+    const takeK = await send(guestK.cookie, 'POST', '/api/invitations/accept', {
+      token: lapsing.code,
+    });
+    expect(takeK.status).toBe(410);
+    expect(takeK.body).toEqual({ error: 'invite_revoked' });
+    // Where Marcus-like authority remains through manage_members, the invitation stands.
+    expect(
+      (await send(guestL.cookie, 'POST', '/api/invitations/accept', { token: kept.code })).status,
+    ).toBe(200);
+    const [event] = await testDb.db
+      .select()
+      .from(auditEvents)
+      .where(and(eq(auditEvents.action, 'invite.revoke'), eq(auditEvents.targetId, lapsing.id)));
+    expect(event).toMatchObject({
+      actorId: a.id,
+      scopeKind: 'class',
+      scopeId: k,
+      after: { reason: 'issuer_lost_ownership' },
+    });
+  });
+
+  test('a withdrawn owner whose request is already in flight cannot take ownership back', async () => {
+    const a = await newPerson('race-a');
+    const m = await newPerson('race-m');
+    const friend = await newPerson('race-f');
+    const courseId = await createCourse(testDb.db, { title: 'Stale', ownerId: a.id });
+    await testDb.db.insert(courseMemberships).values([
+      { courseId, userId: m.id, owner: true, editor: true },
+      { courseId, userId: friend.id, editor: true },
+    ]);
+    for (let round = 0; round < 6; round++) {
+      await send(a.cookie, 'PUT', ownerUrl(courseId, m.id), { granted: true });
+      const results = await Promise.all([
+        send(a.cookie, 'PUT', ownerUrl(courseId, m.id), { granted: false }),
+        send(m.cookie, 'PUT', ownerUrl(courseId, m.id), { granted: true }),
+        send(m.cookie, 'PUT', ownerUrl(courseId, friend.id), { granted: true }),
+        send(m.cookie, 'PUT', ownerUrl(courseId, m.id), { granted: true }),
+      ]);
+      expect(results.map((r) => r.status).every((status) => status < 500)).toBe(true);
+      expect((await membership(courseId, m.id))?.owner, `round ${round}`).toBe(false);
+      await send(a.cookie, 'PUT', ownerUrl(courseId, friend.id), { granted: false });
+    }
+  });
+
+  test('withdrawing a co-owner while they close their account never fails with a server error', async () => {
+    for (let round = 0; round < 5; round++) {
+      const a = await newPerson(`dead-a${round}`);
+      const b = await newPerson(`dead-b${round}`);
+      const courseId = await createCourse(testDb.db, { title: 'Deadlock', ownerId: a.id });
+      await testDb.db
+        .insert(courseMemberships)
+        .values({ courseId, userId: b.id, owner: true, editor: true });
+      const [withdraw, close] = await Promise.all([
+        send(a.cookie, 'PUT', ownerUrl(courseId, b.id), { granted: false }),
+        send(b.cookie, 'POST', '/api/me/deactivate', { confirm: true }),
+      ]);
+      expect([withdraw.status, close.status], `round ${round}`).toEqual([200, 200]);
+      expect((await membership(courseId, a.id))?.owner).toBe(true);
+    }
   });
 });

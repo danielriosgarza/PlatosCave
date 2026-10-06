@@ -87,9 +87,12 @@ export default function memberRoutes(app: FastifyInstance, deps: RouteDeps): voi
 
   registerRoute(app, setOwner, async ({ scope, params, body, fail }) => {
     scope.requireRecentAuth();
-    const result = await members.setOwner(db(), scope, params.userId, body.granted);
-    if (!result.ok)
-      return result.reason === 'not_found' ? notFound() : fail(409, { error: result.reason });
+    const result = await members.setOwner(db(), scope, params.userId, body.granted, now());
+    if (!result.ok) {
+      return result.reason === 'not_found' || result.reason === 'not_owner'
+        ? notFound()
+        : fail(409, { error: result.reason });
+    }
     return { userId: params.userId, owner: body.granted };
   });
 
