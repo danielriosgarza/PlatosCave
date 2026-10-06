@@ -1,0 +1,161 @@
+import { useState } from 'react';
+import { ApiError } from '../api/client';
+import buttons from '../components/Buttons.module.css';
+import page from '../components/Page.module.css';
+import styles from './Grading.module.css';
+import {
+  points,
+  previewRelease,
+  type ReleasePreview,
+  release,
+  stamp,
+  useRefreshGrades,
+} from './grading';
+
+type State =
+  | { kind: 'idle' }
+  | { kind: 'loading' }
+  | { kind: 'preview'; preview: ReleasePreview; note?: string }
+  | { kind: 'sending'; preview: ReleasePreview }
+  | { kind: 'done'; count: number; at: string }
+  | { kind: 'error'; message: string };
+
+const SKIPPED: Record<ReleasePreview['skipped'][number]['reason'], string> = {
+  not_found: 'not found',
+  no_grade: 'no grade to release',
+  already_released: 'already released',
+  incomplete: 'some questions have no points',
+};
+
+/**
+ * Bulk release (§12): previews the exact students and results, and releases only after
+ * confirmation. Names the students that would be skipped and why.
+ */
+export function BulkRelease({
+  classId,
+  attemptIds,
+  names,
+  testTitle,
+}: {
+  classId: string;
+  attemptIds: string[];
+  /** Display names by attempt id, for the skipped list. */
+  names: Record<string, string>;
+  testTitle: string;
+}) {
+  const [state, setState] = useState<State>({ kind: 'idle' });
+  const refresh = useRefreshGrades(classId);
+  const open = async () => {
+    setState({ kind: 'loading' });
+    try {
+      setState({ kind: 'preview', preview: await previewRelease(classId, attemptIds) });
+    } catch {
+      setState({ kind: 'error', message: 'The release preview could not be loaded.' });
+    }
+  };
+  const confirm = async (preview: ReleasePreview) => {
+    setState({ kind: 'sending', preview });
+    try {
+      const done = await release(
+        classId,
+        preview.recipients.map((r) => ({ attemptId: r.attemptId, gradeId: r.gradeId })),
+      );
+      setState({ kind: 'done', count: done.recipients.length, at: done.releasedAt });
+      void refresh();
+    } catch (error) {
+      const body =
+        error instanceof ApiError
+          ? (error.body as { error?: string; preview?: ReleasePreview })
+          : null;
+      if (body?.error === 'release_changed' && body.preview) {
+        setState({
+          kind: 'preview',
+          preview: body.preview,
+          note: 'Grades changed while you were reviewing, so nothing was released. This is what a release would do now.',
+        });
+      } else {
+        setState({ kind: 'error', message: 'Nothing was released. Try again.' });
+      }
+    }
+  };
+  return (
+    <div className={styles.bulk}>
+      <div className={page.row}>
+        <button
+          type="button"
+          className={buttons.outline}
+          disabled={attemptIds.length === 0 || state.kind === 'loading'}
+          onClick={() => void open()}
+        >
+          Preview release ({attemptIds.length})
+        </button>
+        {attemptIds.length === 0 ? (
+          <span className={`${page.small} ${page.muted}`}>
+            Select students with a draft grade to release feedback.
+          </span>
+        ) : null}
+      </div>
+      {state.kind === 'preview' || state.kind === 'sending' ? (
+        <section className={styles.preview} aria-label="Release preview">
+          {state.kind === 'preview' && state.note ? <p>{state.note}</p> : null}
+          <strong>
+            {state.preview.recipients.length === 0
+              ? 'Nothing to release'
+              : `Release ${testTitle} to ${state.preview.recipients.length} ${state.preview.recipients.length === 1 ? 'student' : 'students'}`}
+          </strong>
+          <ul aria-label="Recipients">
+            {state.preview.recipients.map((r) => (
+              <li key={r.gradeId}>
+                {r.student.name} · Attempt {r.attemptNumber} · {points(r.points)} /{' '}
+                {points(r.possible)}
+              </li>
+            ))}
+          </ul>
+          {state.preview.skipped.length > 0 ? (
+            <>
+              <p className={page.small}>Not released:</p>
+              <ul aria-label="Skipped">
+                {state.preview.skipped.map((s) => (
+                  <li key={s.attemptId}>
+                    {names[s.attemptId] ?? 'An attempt'}: {SKIPPED[s.reason]}
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : null}
+          <div className={page.row}>
+            <button
+              type="button"
+              className={buttons.primary}
+              disabled={state.kind === 'sending' || state.preview.recipients.length === 0}
+              onClick={() => void confirm(state.preview)}
+            >
+              {state.kind === 'sending'
+                ? 'Releasing…'
+                : `Confirm release to ${state.preview.recipients.length} ${state.preview.recipients.length === 1 ? 'student' : 'students'}`}
+            </button>
+            <button
+              type="button"
+              className={buttons.textButton}
+              disabled={state.kind === 'sending'}
+              onClick={() => setState({ kind: 'idle' })}
+            >
+              Cancel
+            </button>
+          </div>
+        </section>
+      ) : null}
+      {state.kind === 'done' ? (
+        <p className={`${page.small} ${styles.success}`} role="status">
+          Released to {state.count} {state.count === 1 ? 'student' : 'students'} on{' '}
+          {stamp(state.at)}.
+        </p>
+      ) : null}
+      {state.kind === 'error' ? (
+        <p className={`${page.small} ${styles.error}`} role="alert">
+          {state.message}
+        </p>
+      ) : null}
+    </div>
+  );
+}

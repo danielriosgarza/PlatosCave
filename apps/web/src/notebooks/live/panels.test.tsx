@@ -309,6 +309,62 @@ describe('files, save and submit in the live notebook', () => {
     });
   });
 
+  it('A34 an Import conflict keeps the edited code and the next save is based on the newer copy', async () => {
+    const newer = {
+      ...stored,
+      currentRevision: 5,
+      revision: { ...revision, revision: 5 },
+      notebook: {
+        ...stored.notebook,
+        cells: [{ id: 'c1', cell_type: 'code', source: 'z = 5', metadata: {}, outputs: [] }],
+      },
+    };
+    const fetchMock = stubApi((url, init) => {
+      if (init?.method === 'POST')
+        return { status: 409, body: { error: 'revision_conflict', current: newer } };
+      if (init?.method === 'PUT') return { status: 200, body: { ...newer, currentRevision: 6 } };
+      if (url.includes('/notebook-working-copies/')) return { status: 200, body: stored };
+      if (url.includes('/transfers')) return { status: 200, body: { transfers: [] } };
+      if (url.includes('/files'))
+        return {
+          status: 200,
+          body: {
+            ...listing([]),
+            entries: [
+              { path: 'e.ipynb', name: 'e.ipynb', type: 'notebook', size: 9, modified: NOW },
+            ],
+          },
+        };
+      return { status: 404, body: {} };
+    });
+    render(
+      <QueryClientProvider client={createQueryClient({ retry: false })}>
+        <Host over={{}} />
+      </QueryClientProvider>,
+    );
+    attach();
+    await screen.findByRole('heading', { name: 'Save' });
+    const editor = document.querySelector('[data-cell-id="c1"] .cm-content') as HTMLElement;
+    const cm = EditorView.findFromDOM(editor.closest('.cm-editor') as HTMLElement) as EditorView;
+    act(() => cm.dispatch({ changes: { from: 0, to: cm.state.doc.length, insert: 'y = 2' } }));
+    fireEvent.click(await screen.findByRole('button', { name: 'Import e.ipynb' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Import as revision 3' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/now at revision 5/);
+    // The edited code stays in the editor; the newer copy's code is not shown.
+    expect(document.querySelector('[data-cell-id="c1"] .cm-content')).toHaveTextContent('y = 2');
+    expect(document.querySelector('[data-cell-id="c1"] .cm-content')).not.toHaveTextContent(
+      'z = 5',
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Save to Parallax' }));
+    await waitFor(() => {
+      const put = fetchMock.mock.calls.find(([, init]) => init?.method === 'PUT');
+      expect(JSON.parse(String(put?.[1]?.body))).toMatchObject({
+        baseRevision: 5,
+        notebook: { cells: [{ id: 'c1', source: 'y = 2' }] },
+      });
+    });
+  });
+
   it('A34 the working copy is not refetched behind the editor when the window regains focus', async () => {
     const fetchMock = mount([]);
     attach();
