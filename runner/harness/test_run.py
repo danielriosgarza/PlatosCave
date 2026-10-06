@@ -9,6 +9,7 @@ called in-process. Run with `python3 -m unittest discover -s runner/harness`.
 import base64
 import json
 import os
+import shutil
 import shlex
 import signal
 import subprocess
@@ -26,6 +27,7 @@ import run  # noqa: E402
 PROTOCOL = os.path.abspath(os.path.join(HERE, "..", "protocol", "v1"))
 NONCE = "0123456789abcdef0123456789abcdef"
 IN_IMAGE = os.environ.get("PARALLAX_IMAGE") == "1"
+HAS_R = shutil.which("Rscript") is not None
 # Optional command that runs the harness as pid 1 of its own namespace, for example
 # PARALLAX_HARNESS_PREFIX="unshare --pid --fork --mount-proc" (needs privileges).
 HARNESS_PREFIX = shlex.split(os.environ.get("PARALLAX_HARNESS_PREFIX", ""))
@@ -1304,6 +1306,150 @@ class Framing(HarnessCase):
     def test_result_names_follow_the_job_order(self):
         job = make_job({"p.py": "x = 1\n"}, [script("Zed", "p.py"), script("Alpha", "p.py")])
         self.assertEqual([c["name"] for c in self.go(job).result["checks"]], ["Zed", "Alpha"])
+
+
+# --------------------------------------------------------------------------------------
+# R (design sections 4.1 and 4.5; runs where Rscript exists: the r-4.6 image)
+# --------------------------------------------------------------------------------------
+
+
+def r_job(files, checks, **kwargs):
+    job = make_job(files, checks, **kwargs)
+    job["runtime"] = {"id": "r-4.6", "language": "r"}
+    return job
+
+
+def r_call(name, function, expected, mode="exact", **extra):
+    return call(name, function, expected, mode, file="solution.R", **extra)
+
+
+@unittest.skipUnless(HAS_R, "needs Rscript (the r-4.6 image)")
+class RRuntime(HarnessCase):
+    SOURCE = (
+        "add <- function(a, b) a + b\n"
+        "total <- function(v) sum(v)\n"
+        "vec <- function() c(1, 2, 3)\n"
+        "named <- function() list(a = 1, b = 'x')\n"
+        "kw <- function(a, b) a * b\n"
+        "nothing <- function() NULL\n"
+        "boom <- function() stop('bad input 42')\n"
+        "matrix_value <- function() matrix(1:4, 2)\n"
+        "nan <- function() NaN\n"
+        "missing_value <- function() NA_real_\n"
+        "bad_bytes <- function() rawToChar(as.raw(c(0x61, 0xff, 0x62)))\n"
+        "echo <- function() paste(readLines(file('stdin')), collapse = '\\n')\n"
+        "count <- function() length(readLines(file('stdin')))\n"
+        "noisy <- function() { cat('to stdout\\n'); 1 }\n"
+    )
+
+    def outcome_for(self, *checks):
+        return self.go(r_job({"solution.R": self.SOURCE}, list(checks)))
+
+    def test_stdio_script_and_runtime_version(self):
+        job = r_job(
+            {"hello.R": "cat('hello\\n')\n", "quit.R": "quit(status = 3)\n", "ok.R": "invisible(1)\n"},
+            [
+                stdio("Passed", "hello.R", "hello\n"),
+                stdio("Failed", "hello.R", "bye\n"),
+                stdio("Exit code", "quit.R", ""),
+                script("Script", "ok.R"),
+            ],
+        )
+        outcome = self.go(job)
+        self.assertEqual([c["status"] for c in outcome.result["checks"]], ["passed", "failed", "error", "passed"])
+        self.assertEqual(outcome.check(2)["message"], "Exited with code 3")
+        self.assertEqual(outcome.result["runtime"]["language"], "r")
+        self.assertRegex(outcome.result["runtime"]["version"], r"^\d+\.\d+")
+
+    def test_a_syntax_error_is_a_compile_error(self):
+        job = r_job({"bad.R": "x <- (\n", "ok.R": "1\n"}, [script("Run", "ok.R")])
+        outcome = self.go(job)
+        self.assertEqual(outcome.result["compileError"]["file"], "bad.R")
+        self.assertEqual(outcome.check()["status"], "skipped")
+        self.assertEqual(outcome.check()["message"], "Not run: bad.R does not compile")
+
+    def test_call_values(self):
+        outcome = self.outcome_for(
+            r_call("Add", "add", {"value": 3}, args=[1, 2]),
+            r_call("Vector argument", "total", {"value": 6}, args=[[1, 2, 3]]),
+            r_call("Vector result", "vec", {"value": [1, 2, 3]}),
+            r_call("Named list is an object", "named", {"value": {"a": 1, "b": "x"}}),
+            r_call("Kwargs", "kw", {"value": 8}, kwargs={"a": 4, "b": 2}),
+            r_call("Numeric", "add", {"value": 0.3}, "numeric", args=[0.1, 0.2]),
+            r_call("Repr", "vec", {"value": "c(1, 2, 3)"}, "repr"),
+            r_call("Matrix is not json", "matrix_value", {"value": "structure(1:4, dim = c(2L, 2L))"}),
+            r_call("NaN", "nan", {"value": "NaN"}),
+            r_call("Missing value is null", "missing_value", {"value": None}),
+            r_call("Wrong value", "add", {"value": 4}, args=[1, 2]),
+        )
+        self.assertEqual(
+            [c["status"] for c in outcome.result["checks"]],
+            ["passed"] * 10 + ["failed"],
+            outcome.result["checks"],
+        )
+        wrong = outcome.check(10)
+        self.assertEqual((wrong["expected"], wrong["actual"]), ("4", "3"))
+
+    def test_raises_is_matched_by_class_base_and_message(self):
+        outcome = self.outcome_for(
+            r_call("Exact class", "boom", {"raises": {"type": "simpleError"}}),
+            r_call("Base class", "boom", {"raises": {"type": "error"}}),
+            r_call("Message", "boom", {"raises": {"type": "error", "message": r"input \d+"}}),
+            r_call("Wrong message", "boom", {"raises": {"type": "error", "message": "^nope"}}),
+            r_call("Wrong class", "boom", {"raises": {"type": "ValueError"}}),
+            r_call("Not raised", "nothing", {"raises": {"type": "error"}}),
+            r_call("Unexpected", "boom", {"value": 1}),
+            r_call("Missing function", "absent", {"value": 1}),
+        )
+        self.assertEqual(
+            [c["status"] for c in outcome.result["checks"]],
+            ["passed", "passed", "passed", "failed", "failed", "failed", "error", "error"],
+            outcome.result["checks"],
+        )
+        self.assertEqual(outcome.check(5)["message"], "Expected error, but the call returned NULL")
+        self.assertEqual(outcome.check(6)["message"], "simpleError: bad input 42")
+        self.assertEqual(outcome.check(6)["errorKind"], "exception")
+        self.assertEqual(outcome.check(7)["errorKind"], "exception")
+        self.assertIn("was not found", outcome.check(7)["message"])
+
+    def test_an_outcome_never_carries_invalid_utf8(self):
+        entry = self.outcome_for(r_call("Bytes", "bad_bytes", {"value": "a\ufffdb"})).check()
+        self.assertEqual(entry["status"], "passed", entry)
+
+    def test_stdin_reaches_the_student_function_whole(self):
+        lines = "\n".join(str(i) for i in range(5000))
+        outcome = self.outcome_for(
+            r_call("Echo", "echo", {"value": "hello\nworld"}, stdin="hello\nworld"),
+            r_call("Count", "count", {"value": 5000}, stdin=lines),
+            r_call("Output", "noisy", {"value": 1}),
+        )
+        self.assertEqual([c["status"] for c in outcome.result["checks"]], ["passed"] * 3, outcome.result["checks"])
+        self.assertEqual(outcome.check(2)["stdout"], "to stdout\n")
+
+    def test_environment_and_sibling_source(self):
+        files = {
+            "main.R": (
+                "source('helper.R')\n"
+                "stopifnot(helper() == 'helped')\n"
+                "stopifnot(Sys.getenv('PARALLAX_JOB') == '1')\n"
+                "stopifnot(Sys.getenv('R_LIBS_USER') == '/tmp/none')\n"
+                "stopifnot(startsWith(Sys.getenv('HOME'), '/tmp') || nzchar(Sys.getenv('HOME')))\n"
+                "stopifnot(requireNamespace('jsonlite', quietly = TRUE))\n"
+            ),
+            "helper.R": "helper <- function() 'helped'\n",
+        }
+        entry = self.go(r_job(files, [script("Env", "main.R")])).check()
+        self.assertEqual(entry["status"], "passed", entry)
+
+    def test_a_per_check_timeout_is_followed_by_a_check_that_still_runs(self):
+        files = {"loop.R": "repeat {}\n", "ok.R": "invisible(1)\n"}
+        outcome = self.go(r_job(files, [script("Loop", "loop.R", timeoutSeconds=1), script("Ok", "ok.R")]))
+        self.assertEqual([c["status"] for c in outcome.result["checks"]], ["timeout", "passed"])
+
+    def test_hidden_files_stay_off_disk_for_public_checks(self):
+        files = {"main.R": "stopifnot(!file.exists('secret.R'))\n", "secret.R": ("x <- 1\n", True)}
+        outcome = self.go(r_job(files, [script("Public", "main.R")]))
+        self.assertEqual(outcome.check()["status"], "passed", outcome.check())
 
 
 if __name__ == "__main__":

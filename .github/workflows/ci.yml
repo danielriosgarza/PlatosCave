@@ -45,13 +45,16 @@ jobs:
 
   runner:
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 25
     env:
       IMAGE: parallax-runner-python:dev
+      IMAGE_R: parallax-runner-r:dev
     steps:
       - uses: actions/checkout@v5
       - name: Build the Python runner image
         run: bash scripts/runner-image.sh build python
+      - name: Build the R runner image
+        run: bash scripts/runner-image.sh build r
       - name: Harness tests inside the image
         run: >-
           docker run --rm --network none --user 10001:10001 --pids-limit 64
@@ -79,13 +82,28 @@ jobs:
           test "$(label org.parallax.runtime)" = python-3.12
           test "$(label org.parallax.harness)" = "$(sed -n 's/^HARNESS_VERSION = "\([0-9]*\)"$/\1/p' runner/harness/run.py)"
           test "$(label org.parallax.content-hash)" = "$(bash scripts/runner-image.sh hash python)"
+      - name: R harness tests inside the image
+        run: >-
+          docker run --rm --network none --user 10001:10001 --pids-limit 64
+          --read-only --tmpfs /tmp:rw,nosuid,nodev,size=64m --ulimit nofile=256
+          --cap-drop ALL --security-opt no-new-privileges
+          "$IMAGE_R" python3 -m unittest discover -s /opt/parallax/harness
+      - name: R image properties
+        run: |
+          test "$(docker run --rm --network none "$IMAGE_R" id -u)" = 10001
+          test -z "$(docker run --rm --network none --user 0 "$IMAGE_R" find / -xdev -type f -perm -4000)"
+          label() { docker image inspect --format "{{ index .Config.Labels \"$1\" }}" "$IMAGE_R"; }
+          test -n "$(label org.opencontainers.image.revision)"
+          test "$(label org.parallax.runtime)" = r-4.6
+          test "$(label org.parallax.harness)" = "$(sed -n 's/^HARNESS_VERSION = "\([0-9]*\)"$/\1/p' runner/harness/run.py)"
+          test "$(label org.parallax.content-hash)" = "$(bash scripts/runner-image.sh hash r)"
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v5
         with:
           node-version-file: .node-version
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - name: A13 sandbox probes against the image
+      - name: A13 sandbox probes against the images
         run: pnpm test:runner
 
   integration:
