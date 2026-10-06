@@ -305,21 +305,24 @@ export function renameConnector(db: Db, scope: UserScope, connectorId: string, n
  * reason `account`, as a system action. Returns the revoked ids, whose links the caller closes.
  */
 export function revokeUserConnectors(db: Db, userId: string, now: Date): Promise<string[]> {
-  return db.transaction(async (tx) => {
-    await lockOwner(tx, userId);
-    const rows = await tx
-      .select({ id: connectors.id, status: connectors.status })
-      .from(connectors)
-      .where(
-        and(eq(connectors.ownerUserId, userId), inArray(connectors.status, ['pending', 'active'])),
-      )
-      .for('update');
-    for (const row of rows) {
-      const status = row.status as 'pending' | 'active';
-      await revoke(tx, null, { id: row.id, ownerUserId: userId, status }, 'account', now);
-    }
-    return rows.map((r) => r.id);
-  });
+  return db.transaction((tx) => revokeUserConnectorsIn(tx, userId, now));
+}
+
+/** `revokeUserConnectors` inside the caller's transaction, so it commits with what called it. */
+export async function revokeUserConnectorsIn(tx: Tx, userId: string, now: Date): Promise<string[]> {
+  await lockOwner(tx, userId);
+  const rows = await tx
+    .select({ id: connectors.id, status: connectors.status })
+    .from(connectors)
+    .where(
+      and(eq(connectors.ownerUserId, userId), inArray(connectors.status, ['pending', 'active'])),
+    )
+    .for('update');
+  for (const row of rows) {
+    const status = row.status as 'pending' | 'active';
+    await revoke(tx, null, { id: row.id, ownerUserId: userId, status }, 'account', now);
+  }
+  return rows.map((r) => r.id);
 }
 
 /**

@@ -65,8 +65,10 @@ describe('test publication validation (design §8.1)', () => {
     expect(found.errors).toEqual([]);
     expect(found.warnings).toHaveLength(1);
     expect(found.warnings[0]).toMatchObject({ code: 'script_only_hidden_checks' });
-    // The warning names the cheat-resistant kinds as the remedy.
-    expect(found.warnings[0]?.message).toMatch(/call or stdio/);
+    // The warning states the condition and the action, not the design behind it.
+    expect(found.warnings[0]?.message).toBe(
+      'Question “mean”: every hidden check is a script check. Add a call or stdio hidden check.',
+    );
   });
 
   test('a script check beside a call check, or no hidden check at all, does not warn', () => {
@@ -155,6 +157,30 @@ describe('test publication validation (design §8.1)', () => {
         ),
       ),
     ).toEqual([expect.stringContaining('closing time must be after the opening time')]);
+  });
+
+  test('a rubric that adds up to the question’s decimal points is accepted', () => {
+    // 0.1 + 0.2 is 0.30000000000000004 as floats.
+    const rubric = [
+      { id: 'a', label: 'Reasoning', points: 0.1 },
+      { id: 'b', label: 'Clarity', points: 0.2 },
+    ];
+    expect(messages(test1({ rubric, points: 0.3 }))).toEqual([]);
+    const over = [...rubric, { id: 'c', label: 'Depth', points: 0.01 }];
+    expect(messages(test1({ rubric: over, points: 0.3 }))).toEqual([
+      expect.stringContaining('add up to 0.31, more than the question’s 0.3 points'),
+    ]);
+  });
+
+  test('a rubric that exceeds the points by fractions of a hundredth is rejected', () => {
+    const third = (id: string) => ({ id, label: id, points: 0.333 });
+    expect(messages(test1({ rubric: [third('a'), third('b'), third('c')], points: 0.99 }))).toEqual(
+      [expect.stringContaining('more than the question’s 0.99 points')],
+    );
+    const tiny = Array.from({ length: 10 }, (_, i) => ({ id: `c${i}`, label: 'x', points: 0.004 }));
+    expect(messages(test1({ rubric: tiny, points: 0.01 }))).toEqual([
+      expect.stringContaining('more than the question’s 0.01 points'),
+    ]);
   });
 
   test('two rubric criteria of one question with the same id are rejected', () => {

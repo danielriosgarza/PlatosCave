@@ -31,6 +31,7 @@ export async function listCourseCards(db: Db, scope: UserScope, now: Date) {
       courseTitle: courses.title,
       role: classMemberships.role,
       archivedAt: classes.archivedAt,
+      courseArchivedAt: courses.archivedAt,
       releaseId: classes.releaseId,
     })
     .from(classMemberships)
@@ -166,7 +167,7 @@ export async function listCourseCards(db: Db, scope: UserScope, now: Date) {
         courseId: c.courseId,
         courseTitle: c.courseTitle,
         role: c.role,
-        archived: c.archivedAt !== null,
+        archived: c.archivedAt !== null || c.courseArchivedAt !== null,
         topicCount: total,
         reviewed: { count: reviewedByClass.get(c.classId) ?? 0, total },
         resume: student ? (resumeByClass.get(c.classId) ?? null) : null,

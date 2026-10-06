@@ -71,6 +71,7 @@ export const launchColab = defineRoute({
   method: 'POST',
   path: '/api/classes/:classId/resources/:resourceId/colab-launch',
   scope: { kind: 'class', role: 'any' },
+  allowWhenArchived: true,
   summary: 'Record an Open in Colab launch of a notebook; no grade, no runtime sync',
   params: resourceParams,
   /** Null when nothing was recorded (a preview records nothing). */
