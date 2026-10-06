@@ -82,7 +82,7 @@ jobs:
       - name: Fixtures
         run: |
           bash scripts/connector-fixture-keys.sh
-          docker compose -f infra/compose.yml --profile connector up -d --build --wait
+          docker compose -f infra/compose.yml --profile connector up -d --build --wait sshd-jupyter jump
       - name: Go tests against real sshd
         working-directory: connector
         run: go test -tags fixture -count=1 ./internal/fixture/
