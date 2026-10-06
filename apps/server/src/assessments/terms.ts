@@ -143,7 +143,7 @@ type Parsed = { ok: true; value: unknown } | { ok: false; message: string };
 const refuse = (message: string): Parsed => ({ ok: false, message });
 
 /**
- * Text JSON can carry but Postgres's jsonb cannot store: a lone surrogate (`"\ud800"`). It is
+ * Text JSON can carry but Postgres's jsonb cannot store: a lone surrogate (`"\ud800"`) or a NUL (`"\u0000"`). It is
  * refused with 400 where the answer enters, as the runs contract does, rather than failing the
  * insert with a 500 (runner design §3.1). A paired surrogate, such as an emoji, is one code point.
  */
