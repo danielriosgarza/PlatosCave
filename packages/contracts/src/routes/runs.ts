@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { classArchived, defineRoute, invalidBody } from '../define';
 import { exampleIds } from '../examples';
 import { RUNNER_MAX_FILES, RunnerPath } from '../runner';
+import { isWellFormed } from '../wellFormed';
 
 /**
  * Code runs of a test attempt (§11; docs/design/runner.md §2, §8.6). Every route is class-scoped
@@ -43,8 +44,7 @@ export const executionCheckSets = ['public', 'full'] as const;
  * Text JSON can carry but no runner can: a lone surrogate (`"\ud800"`). It is refused here with
  * 400, before it could fail the snapshot write or the harness and show as Run unavailable.
  */
-const LONE_SURROGATE = /[\uD800-\uDFFF]/u;
-const wellFormed = z.string().refine((s) => !LONE_SURROGATE.test(s), {
+const wellFormed = z.string().refine(isWellFormed, {
   message: 'contains a lone surrogate',
 });
 
@@ -199,6 +199,7 @@ export const cancelRun = defineRoute({
   method: 'POST',
   path: '/api/classes/:classId/test-attempts/:attemptId/runs/:runId/cancel',
   scope: { kind: 'class', role: 'student' },
+  allowWhenArchived: true,
   summary: 'Cancel your queued sample run',
   params: attemptParams.extend({ runId: z.uuid() }),
   response: studentRun,
@@ -261,7 +262,8 @@ const previewParams = z.object({ courseId: z.uuid(), resourceId: z.uuid() });
  * same queue and runner as a student's run, with no attempt and no per-user cap. `set: 'full'`
  * includes the hidden checks and files. `files` are the editable files to run (a reference
  * solution); omitted, the starter files run. The answer is the instructor view, hidden checks
- * included. `no_class`: the caller teaches no live class of the course.
+ * included. `no_class`: the caller teaches no live class of the course; `class_archived`: the class
+ * picked was archived before the run was queued.
  */
 export const requestPreviewRun = defineRoute({
   method: 'POST',
@@ -274,7 +276,7 @@ export const requestPreviewRun = defineRoute({
   response: instructorRun,
   errors: {
     400: invalidBody,
-    409: z.object({ error: z.literal('no_class'), message: z.string() }),
+    409: z.union([z.object({ error: z.literal('no_class'), message: z.string() }), classArchived]),
   },
   examples: {
     params: { courseId: exampleClass, resourceId: exampleRun, questionId: 'q1' },

@@ -11,3 +11,4 @@ export * from './runner';
 export * from './shiny';
 export * from './sketch';
 export * from './test';
+export * from './wellFormed';

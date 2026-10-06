@@ -1,0 +1,93 @@
+name: load-test
+
+# Spec §14: a class of 200 students starts one test within a minute, with a visible execution
+# queue. Weekly and on demand; not on pull requests (it needs minutes of runner time).
+on:
+  schedule:
+    - cron: '17 4 * * 1'
+  workflow_dispatch:
+    inputs:
+      students:
+        description: Seeded students
+        default: '200'
+      runner_slots:
+        description: Runner slots (concurrent sandbox containers)
+        default: '4'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: load-test
+  cancel-in-progress: false
+
+jobs:
+  load-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    services:
+      postgres:
+        image: postgres:16.15
+        env:
+          POSTGRES_USER: parallax
+          POSTGRES_PASSWORD: parallax
+          POSTGRES_DB: parallax
+        ports:
+          - 54329:5432
+        options: >-
+          --health-cmd "pg_isready -U parallax"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://parallax:parallax@127.0.0.1:54329/parallax
+      PORT: '3000'
+      HOST: 127.0.0.1
+      NODE_ENV: test
+      TEST_ROUTES: '1'
+      APP_HOST: 127.0.0.1
+      CONTENT_HOST: localhost
+      APP_ORIGIN: http://127.0.0.1:3000
+      CONTENT_ORIGIN: http://localhost:3000
+      STORAGE_DRIVER: fs
+      STORAGE_DIR: ${{ github.workspace }}/.local/load-test-storage
+      MAIL_DIR: ${{ github.workspace }}/.local/mail
+    steps:
+      - uses: actions/checkout@v5
+      - name: Build the Python runner image
+        run: bash scripts/runner-image.sh build python
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm db:migrate
+      - name: Start API, worker and runner
+        env:
+          RUNNER_DATABASE_URL: postgres://parallax:parallax@127.0.0.1:54329/parallax
+          RUNNER_SLOTS: ${{ inputs.runner_slots || '4' }}
+          RUNNER_IMAGES: '{"python-3.12":["parallax-runner-python:dev"]}'
+          RUNNER_PULL: missing
+        run: |
+          mkdir -p "$STORAGE_DIR" "$MAIL_DIR" logs
+          pnpm --filter @parallax/server start > logs/api.log 2>&1 &
+          pnpm --filter @parallax/server exec tsx src/main.ts worker > logs/worker.log 2>&1 &
+          pnpm --filter @parallax/runner start > logs/runner.log 2>&1 &
+          for _ in $(seq 1 60); do
+            curl -fsS http://127.0.0.1:3000/api/health >/dev/null && break
+            sleep 2
+          done
+          curl -fsS http://127.0.0.1:3000/api/health
+      - name: Load test
+        env:
+          BASE_URL: http://127.0.0.1:3000
+          STUDENTS: ${{ inputs.students || '200' }}
+          WINDOW_SECONDS: '60'
+          SUMMARY_FILE: ${{ github.step_summary }}
+        run: pnpm load-test
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: load-test-logs
+          path: logs

@@ -22,7 +22,8 @@
     "db:generate": "pnpm --filter @parallax/server db:generate",
     "db:reset": "pnpm --filter @parallax/server db:reset",
     "db:local": "bash scripts/pg-local.sh",
-    "compose": "docker compose -f infra/compose.yml"
+    "compose": "docker compose -f infra/compose.yml",
+    "load-test": "tsx scripts/load-test/run.ts"
   },
   "devDependencies": {
     "@biomejs/biome": "2.5.14",

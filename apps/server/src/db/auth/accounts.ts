@@ -1,3 +1,4 @@
+import { eq } from 'drizzle-orm';
 import type { Executor } from '../client';
 import { users } from '../schema';
 
@@ -16,4 +17,13 @@ export async function userForVerifiedEmail(db: Executor, email: string): Promise
     .returning({ id: users.id });
   if (!row) throw new Error('user upsert returned no row');
   return row.id;
+}
+
+/** Whether the account was deactivated: it signs in no more and is not recreated by a link (§13). */
+export async function isDeactivated(db: Executor, userId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ deactivatedAt: users.deactivatedAt })
+    .from(users)
+    .where(eq(users.id, userId));
+  return row?.deactivatedAt != null;
 }
