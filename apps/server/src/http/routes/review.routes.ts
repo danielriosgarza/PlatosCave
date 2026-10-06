@@ -2,13 +2,17 @@ import { getClassReview, getStudentDiscussions } from '@parallax/contracts/route
 import type { FastifyInstance } from 'fastify';
 import type { RouteDeps } from '../../app';
 import { loadClassReview, loadStudentDiscussions } from '../../db/classReview';
-import { registerRoute } from '../register';
+import { notFound, registerRoute } from '../register';
 
 export default function reviewRoutes(app: FastifyInstance, deps: RouteDeps): void {
   registerRoute(app, getClassReview, ({ scope, query }) =>
     loadClassReview(deps.requireDb(), scope, query),
   );
-  registerRoute(app, getStudentDiscussions, ({ scope, params }) =>
-    loadStudentDiscussions(deps.requireDb(), scope, params.studentId, deps.now()),
+  registerRoute(
+    app,
+    getStudentDiscussions,
+    async ({ scope, params }) =>
+      (await loadStudentDiscussions(deps.requireDb(), scope, params.studentId, deps.now())) ??
+      notFound(),
   );
 }

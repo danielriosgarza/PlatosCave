@@ -205,6 +205,7 @@ function Body({
         <>
           {hasAssignment && data.assignment ? (
             <BulkRelease
+              key={data.assignment.assignmentId}
               classId={classId}
               testTitle={data.assignment.title}
               attemptIds={toRelease.flatMap((r) => (r.attempt ? [r.attempt.attemptId] : []))}

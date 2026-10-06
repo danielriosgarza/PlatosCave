@@ -95,6 +95,8 @@ export function GradingWorkspace({
   }
   return (
     <Workspace
+      // Everything inside (a release preview, an open change form, edits) belongs to one attempt.
+      key={attemptId}
       classId={classId}
       grade={grade.data}
       attempt={attempt.data}
@@ -154,6 +156,10 @@ function initialForm(grade: AttemptGrade, questions: TestQuestion[]): Form {
   return form;
 }
 
+/** What identifies the newest grade row as it stands: a release changes its state in place. */
+const signature = (g: AttemptGrade) =>
+  `${g.history[0]?.id ?? 'none'}:${g.history[0]?.state ?? ''}:${g.released?.id ?? ''}`;
+
 type Draft =
   | { kind: 'idle' }
   | { kind: 'saving' }
@@ -182,15 +188,17 @@ function Workspace({
   const [grade, setGrade] = useState(initial);
   const [dirty, setDirty] = useState(false);
   const [form, setForm] = useState(() => initialForm(initial, questions));
-  // A grade row this workspace did not write (another instructor, a regrade run) restarts the form.
-  const [seen, setSeen] = useState(initial.history[0]?.id);
-  if (initial.history[0]?.id !== seen) {
-    setSeen(initial.history[0]?.id);
-    if (initial.history[0]?.id !== grade.history[0]?.id) {
-      setGrade(initial);
-      setForm(initialForm(initial, questions));
-      setDirty(false);
-    }
+  const adopt = (next: AttemptGrade) => {
+    setGrade(next);
+    setForm(initialForm(next, questions));
+    setDirty(false);
+  };
+  // A grade this workspace did not write (another instructor, a release, a regrade run) replaces
+  // the one shown, and the form restarts from it. A release changes the row's state in place.
+  const [seen, setSeen] = useState(signature(initial));
+  if (signature(initial) !== seen) {
+    setSeen(signature(initial));
+    if (signature(initial) !== signature(grade)) adopt(initial);
   }
   const [draft, setDraft] = useState<Draft>({ kind: 'idle' });
   const current: GradeRow | undefined = grade.history[0];
@@ -248,7 +256,8 @@ function Workspace({
     if (found === 'archived') return 'This class is archived, so grades can no longer change.';
     if (found === 'open') return 'This attempt has not been submitted, so it cannot be graded yet.';
     if (found) {
-      setGrade(found);
+      // The edits were made on the old grade: start again from the latest one, never over it.
+      adopt(found);
       return 'The grade changed since you opened it. The workspace now shows the latest grade; your edits were not saved.';
     }
     return null;
@@ -407,8 +416,7 @@ function Workspace({
             grade={grade}
             attemptId={attempt.id}
             onGrade={(next) => {
-              setGrade(next);
-              setDirty(false);
+              adopt(next);
               void refresh();
             }}
             onConflict={onConflict}

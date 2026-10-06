@@ -253,6 +253,15 @@ describe('A25 a change saved after release, and what a student shared', () => {
     expect(JSON.stringify(sam.body)).not.toContain('Priya asks');
   });
 
+  test('A25 an id that is no student of the class is answered 404, not an empty list', async () => {
+    // A co-instructor's threads are not "what a student shared", and a stranger is no one's student.
+    expect((await call(w, 'marcus', 'GET', threadsUrl(ids.marcus))).status).toBe(404);
+    expect((await call(w, 'marcus', 'GET', threadsUrl(ids.previewB))).status).toBe(404);
+    expect(
+      (await call(w, 'marcus', 'GET', threadsUrl('00000000-0000-4000-8000-0000000fffff'))).status,
+    ).toBe(404);
+  });
+
   test('A25 only an instructor of the class reads a student’s discussions', async () => {
     expect((await call(w, 'bea', 'GET', threadsUrl(ids.sam))).status).toBe(403);
     expect(

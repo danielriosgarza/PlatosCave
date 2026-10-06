@@ -5,10 +5,12 @@ import { Loading } from '../components/Loading';
 import page from '../components/Page.module.css';
 import { RetryNotice } from '../components/RetryNotice';
 import { type TabDef, TabRow } from '../components/TabRow';
+import { searchFor } from '../reading/place';
 import type { ClassReview, ReviewSearch, ReviewTab } from './classReview';
 import styles from './Grading.module.css';
 import { GradingWorkspace } from './GradingWorkspace';
 import {
+  type Discussions,
   downloadLink,
   points,
   stamp,
@@ -233,13 +235,16 @@ function Notebook({
 }) {
   const query = useStudentSubmissions(classId, notebookId);
   const mine = (query.data?.submissions ?? []).filter((s) => s.student.id === studentId);
-  // A resource that takes no submissions answers an error; it has nothing to show here.
-  if (query.isError) return null;
   return (
     <section aria-label={`Notebook · ${title}`}>
       <h4>Notebook · {title}</h4>
       {query.isPending ? (
         <Loading label="Loading submissions" className={page.intro} />
+      ) : query.isError ? (
+        <RetryNotice
+          message="The submissions could not be loaded."
+          onRetry={() => void query.refetch()}
+        />
       ) : mine.length === 0 ? (
         <p className={page.muted}>Nothing has been submitted.</p>
       ) : (
@@ -314,6 +319,28 @@ function Snapshot({ classId, submission: s }: { classId: string; submission: Sub
   );
 }
 
+/**
+ * Where the thread's passage is in the reading or deck the class studies: the placement the
+ * mapping found, else the anchor it was written on. A text anchor opens at its block, a PDF page
+ * or slide at its page (pages are counted from zero in anchors and from one in the viewers).
+ */
+function passageSearch(thread: Discussions[number]['thread']) {
+  const place = thread.placement?.anchor ?? thread.anchor;
+  const resource = thread.resourceId;
+  if (place.kind === 'text') {
+    return searchFor(resource, { blockId: place.blockId, offset: place.start });
+  }
+  if (place.kind === 'pdf' || place.kind === 'slide') {
+    return searchFor(resource, { page: place.page + 1, offset: 0 });
+  }
+  return searchFor(resource, null);
+}
+
+const quoteOf = (thread: Discussions[number]['thread']) => {
+  const place = thread.placement?.anchor ?? thread.anchor;
+  return place.kind === 'text' || place.kind === 'pdf' ? place.quote : undefined;
+};
+
 function Comments({ classId, studentId }: { classId: string; studentId: string }) {
   const query = useDiscussions(classId, studentId);
   if (query.isPending) return <Loading label="Loading comments" className={page.intro} />;
@@ -344,6 +371,9 @@ function Comments({ classId, studentId }: { classId: string; studentId: string }
               </span>
               <span className={`${page.small} ${page.muted}`}>{stamp(thread.createdAt)}</span>
             </div>
+            {quoteOf(thread) ? (
+              <blockquote className={page.muted}>“{quoteOf(thread)}”</blockquote>
+            ) : null}
             <p>{first?.body ?? 'This post is not available.'}</p>
             {thread.posts
               .filter((p) => p.id !== first?.id)
@@ -359,7 +389,7 @@ function Comments({ classId, studentId }: { classId: string; studentId: string }
                 className={page.link}
                 to="/classes/$classId/topics/$topicId/$tab"
                 params={{ classId, topicId: resource.topicId, tab: resource.tab }}
-                search={{ resource: thread.resourceId }}
+                search={passageSearch(thread)}
               >
                 Open source passage · {resource.title}
               </Link>

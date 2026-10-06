@@ -48,7 +48,7 @@ export const useClassReview = (classId: string, search: ReviewSearch) =>
       'GET',
       getClassReview.path,
       classId,
-      // Only what the server reads: picking a student is client state and refetches nothing.
+      // Only what the server reads. Picking a student sets `attempt`, so it refetches the review.
       search.topic,
       search.assignment,
       search.student,

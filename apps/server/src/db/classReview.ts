@@ -1,11 +1,12 @@
 import type * as contracts from '@parallax/contracts/routes/review';
-import { and, asc, desc, eq, inArray, isNotNull } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 import type { z } from 'zod';
 import type { ClassScope } from '../auth/scope';
 import { listThreadsBy } from './annotations/annotations';
 import type { Db } from './client';
 import { readClassRelease } from './content/releases';
 import {
+  auditEvents,
   classMemberships,
   exerciseAttempts,
   grades,
@@ -251,7 +252,8 @@ export async function loadStudentDiscussions(
   scope: ClassScope,
   studentId: string,
   now: Date,
-): Promise<StudentDiscussions> {
+): Promise<StudentDiscussions | null> {
+  if (!(await isStudentOrRemovedStudent(db, scope, studentId))) return null;
   const [{ topics }, threadsOf] = await Promise.all([
     readClassRelease(db, scope),
     listThreadsBy(db, scope, studentId, now),
@@ -269,4 +271,31 @@ export async function loadStudentDiscussions(
       resource: where.get(thread.resourceId) ?? null,
     })),
   };
+}
+
+/**
+ * A real student of the class, or one removed from it (the latest removal recorded the role
+ * `student`, as `studentOrRemovedStudent` reads it). Instructors, preview principals and
+ * strangers are none of these, so their ids are no student's work to review.
+ */
+async function isStudentOrRemovedStudent(db: Db, scope: ClassScope, userId: string) {
+  const [member] = await db
+    .select({ role: classMemberships.role, isPreview: classMemberships.isPreview })
+    .from(classMemberships)
+    .where(and(forClass(scope, classMemberships), eq(classMemberships.userId, userId)));
+  if (member) return member.role === 'student' && !member.isPreview;
+  const [removal] = await db
+    .select({ role: sql<string | null>`${auditEvents.before} ->> 'role'` })
+    .from(auditEvents)
+    .where(
+      and(
+        eq(auditEvents.action, 'membership.remove'),
+        eq(auditEvents.scopeKind, 'class'),
+        eq(auditEvents.scopeId, scope.classId),
+        eq(auditEvents.targetId, userId),
+      ),
+    )
+    .orderBy(desc(auditEvents.createdAt))
+    .limit(1);
+  return removal?.role === 'student';
 }

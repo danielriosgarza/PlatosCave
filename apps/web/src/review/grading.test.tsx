@@ -254,6 +254,7 @@ function serve(options: {
     path: string,
     method: string,
     body: unknown,
+    url: URL,
   ) => { status: number; body?: unknown } | undefined;
 }) {
   const me = makeMe({ classes: [instructorIn(CLASS_A, 'Autumn 2026 A')] });
@@ -265,7 +266,7 @@ function serve(options: {
     const body = init?.body ? JSON.parse(String(init.body)) : undefined;
     const path = u.pathname.replace(`/api/classes/${CLASS_A}`, '');
     if (u.pathname.startsWith(`/api/classes/${CLASS_A}`)) calls.push({ method, path, body });
-    const extra = options.extra?.(path, method, body);
+    const extra = options.extra?.(path, method, body, u);
     if (extra) return extra;
     if (path === '/review') return { status: 200, body: options.reviewData ?? review() };
     if (path === `/resources/${QUIZ}/grades`) {
@@ -375,6 +376,10 @@ describe('grading workspace', () => {
       extra: (path, method) => {
         if (path === '/grade-releases/preview') return { status: 200, body: preview };
         if (path === '/grade-releases' && method === 'POST') {
+          // The server updates the grade row in place: same id, now released.
+          draft.state = 'released';
+          draft.releasedAt = NOW;
+          draft.releaseId = id(7000);
           return {
             status: 201,
             body: {
@@ -401,6 +406,11 @@ describe('grading workspace', () => {
     expect(calls.find((c) => c.method === 'POST' && c.path === '/grade-releases')?.body).toEqual({
       grades: [{ attemptId: A_PRIYA, gradeId: draft.id }],
     });
+    // The workspace shows the released state, not the draft it started from.
+    const workspace = screen.getByRole('region', { name: 'Grading workspace' });
+    await waitFor(() => expect(workspace).toHaveTextContent('Released to Priya Nair: 5 / 5'));
+    expect(workspace).toHaveTextContent('Rubric / released feedback');
+    expect(within(workspace).getByRole('button', { name: 'Feedback released' })).toBeDisabled();
   });
 
   it('A17 an override asks for a reason, and the history keeps the grade it replaced', async () => {
@@ -668,9 +678,127 @@ describe('grading workspace', () => {
     const link = screen.getByRole('link', {
       name: /Open source passage · Sampling and uncertainty/,
     });
-    expect(link).toHaveAttribute(
-      'href',
-      expect.stringContaining(`/classes/${CLASS_A}/topics/${TOPIC}/reading?resource=${READING}`),
+    // The link carries the passage, not just the resource: the block and offset of the anchor.
+    const href = new URL(link.getAttribute('href') ?? '', 'http://app.test');
+    expect(href.pathname).toBe(`/classes/${CLASS_A}/topics/${TOPIC}/reading`);
+    expect(href.searchParams.get('resource')).toBe(READING);
+    expect(href.searchParams.get('block')).toBe('b:0123456789ab');
+    expect(href.searchParams.get('offset')).toBe('6');
+    expect(screen.getByText('“sample”')).toBeVisible();
+  });
+
+  it('A17 a grade changed by someone else replaces the form, and the next Save cannot overwrite it', async () => {
+    const user = userEvent.setup();
+    const theirs = gradeRow(2, {
+      feedback: [{ target: { kind: 'attempt' }, text: 'Their feedback' }],
+    });
+    const calls = serve({
+      history: [gradeRow(1)],
+      extra: (path, method) =>
+        method === 'POST' && path.endsWith('/grade')
+          ? {
+              status: 409,
+              body: { error: 'revision_conflict', current: attemptGrade([theirs, gradeRow(1)]) },
+            }
+          : undefined,
+    });
+    renderApp(`/classes/${CLASS_A}/review?assignment=${QUIZ}&selected=${PRIYA}&attempt=${A_PRIYA}`);
+    await screen.findByRole('region', { name: 'Grading workspace' });
+    await user.type(screen.getByLabelText('Feedback to Priya Nair'), 'my stale edit');
+    await user.click(screen.getByRole('button', { name: 'Save draft grade' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('your edits were not saved');
+    // The inputs show the other grade, and there is nothing unsaved to send over it.
+    expect(screen.getByLabelText('Feedback to Priya Nair')).toHaveValue('Their feedback');
+    expect(screen.getByRole('button', { name: 'Save draft grade' })).toBeDisabled();
+    expect(calls.filter((c) => c.method === 'POST')).toHaveLength(1);
+  });
+
+  it('A17 an override replaces unsaved edits with the new grade instead of showing them as saved', async () => {
+    const user = userEvent.setup();
+    serve({ history: [gradeRow(1)] });
+    renderApp(`/classes/${CLASS_A}/review?assignment=${QUIZ}&selected=${PRIYA}&attempt=${A_PRIYA}`);
+    await screen.findByRole('region', { name: 'Grading workspace' });
+    await user.type(screen.getByLabelText('Feedback to Priya Nair'), 'unsent words');
+    await user.click(screen.getByRole('button', { name: 'Override grade' }));
+    const form = screen.getByRole('form', { name: 'Override grade' });
+    await user.type(within(form).getByLabelText(/Points of 5/), '4');
+    await user.type(within(form).getByLabelText('Reason'), 'Because');
+    await user.click(within(form).getByRole('button', { name: 'Save override as draft' }));
+    await waitFor(() => expect(screen.getByLabelText('Feedback to Priya Nair')).toHaveValue(''));
+  });
+
+  it('A25 opening another attempt starts a new workspace, so a release preview never carries over', async () => {
+    const user = userEvent.setup();
+    const draft = gradeRow(1);
+    serve({
+      history: [draft],
+      extra: (path) =>
+        path === '/grade-releases/preview'
+          ? {
+              status: 200,
+              body: {
+                recipients: [
+                  {
+                    student: { id: PRIYA, name: 'Priya Nair' },
+                    attemptId: A_PRIYA,
+                    attemptNumber: 1,
+                    resourceId: QUIZ,
+                    gradeId: draft.id,
+                    gradeNumber: 1,
+                    points: 5,
+                    possible: 5,
+                  },
+                ],
+                skipped: [],
+              },
+            }
+          : undefined,
+    });
+    renderApp(`/classes/${CLASS_A}/review?assignment=${QUIZ}&selected=${PRIYA}&attempt=${A_PRIYA}`);
+    await screen.findByRole('region', { name: 'Grading workspace' });
+    await user.click(await screen.findByRole('button', { name: 'Release feedback' }));
+    expect(await screen.findByRole('region', { name: 'Release preview' })).toBeVisible();
+    // Another attempt of the same student, then back: the preview is gone.
+    await user.click(screen.getByRole('button', { name: 'Sam Okafor' }));
+    expect(await screen.findByRole('heading', { name: 'Sam Okafor' })).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Priya Nair' }));
+    await screen.findByRole('region', { name: 'Grading workspace' });
+    expect(screen.queryByRole('region', { name: 'Release preview' })).toBeNull();
+  });
+
+  it('A25 a failed load of a notebook’s submissions says so and offers a retry', async () => {
+    serve({
+      extra: (path) =>
+        path === `/resources/${NOTEBOOK}/notebook-submissions` ? { status: 500 } : undefined,
+    });
+    renderApp(`/classes/${CLASS_A}/review?assignment=${QUIZ}&selected=${PRIYA}&tab=submissions`);
+    const notebook = await screen.findByRole('region', { name: 'Notebook · Sampling lab' });
+    expect(await within(notebook).findByText('The submissions could not be loaded.')).toBeVisible();
+    expect(within(notebook).getByRole('button', { name: 'Try again' })).toBeVisible();
+  });
+
+  it('A25 the bulk release preview is dropped when the assignment changes', async () => {
+    const user = userEvent.setup();
+    serve({
+      extra: (path, _method, _body, url) => {
+        if (path === '/grade-releases/preview') {
+          return { status: 200, body: { recipients: [], skipped: [] } };
+        }
+        // Without an assignment filter the server answers a table with no assignment chosen.
+        if (path === '/review' && !url.searchParams.get('assignmentId')) {
+          return { status: 200, body: { ...review(), assignment: null } };
+        }
+        return undefined;
+      },
+    });
+    renderApp(`/classes/${CLASS_A}/review?assignment=${QUIZ}`);
+    await screen.findByRole('table');
+    await user.click(screen.getByRole('checkbox', { name: 'Select Priya Nair for release' }));
+    await user.click(screen.getByRole('button', { name: 'Preview release (1)' }));
+    expect(await screen.findByRole('region', { name: 'Release preview' })).toBeVisible();
+    await user.selectOptions(screen.getByLabelText('Assignment'), '');
+    await waitFor(() =>
+      expect(screen.queryByRole('region', { name: 'Release preview' })).toBeNull(),
     );
   });
 });
