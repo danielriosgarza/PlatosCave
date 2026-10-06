@@ -36,6 +36,7 @@ test('A30 a rotated host key stops the connection and keeps the trust record', a
     expect(trusted).toContain(`[127.0.0.1]:${fixtures.rotating}`);
 
     rotateHostKey();
+    await takeTestBudget(page);
     await page.getByRole('button', { name: 'Save and test connection' }).click();
 
     // The connection stops at the host key: nothing after it ran, and both keys are shown.

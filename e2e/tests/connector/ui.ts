@@ -8,6 +8,22 @@ const id = (n: number) => `00000000-0000-4000-8000-${n.toString().padStart(12, '
 const lab = { class: id(211), topic: id(311) };
 export const notebooks = `/classes/${lab.class}/topics/${lab.topic}/notebooks`;
 
+const testStarts: number[] = [];
+
+/**
+ * Test connection is limited to six starts a minute per person (connectionTests.routes.ts). The
+ * flows share one person, so each start waits until the last minute holds fewer than five.
+ */
+export async function takeTestBudget(page: Page): Promise<void> {
+  for (;;) {
+    const now = Date.now();
+    while (testStarts.length > 0 && now - (testStarts[0] ?? 0) >= 61_000) testStarts.shift();
+    if (testStarts.length < 5) break;
+    await page.waitForTimeout(1_000);
+  }
+  testStarts.push(Date.now());
+}
+
 /** Signs the lab reader in and opens the lab notebook's Connect panel. */
 export async function openConnect(page: Page): Promise<void> {
   const signedIn = await page.request.post('/api/test/signin-as', {
@@ -67,6 +83,7 @@ export async function connectLocal(page: Page, name: string, workspace: string):
   await page.getByLabel('Connection name').fill(`${name} notebook`);
   await page.getByLabel('Working directory').fill(workspace);
   await page.getByLabel('Python interpreter (optional)').fill(localPython);
+  await takeTestBudget(page);
   await page.getByRole('button', { name: 'Save and test connection' }).click();
   await page.getByRole('button', { name: 'Connect', exact: true }).click();
 }
@@ -122,6 +139,7 @@ export async function testSsh(page: Page, o: SshTarget): Promise<void> {
     await page.getByLabel('Jump host account').fill(o.jump.user);
   }
   await page.getByLabel('Key file path').fill(fixtureKey);
+  await takeTestBudget(page);
   await page.getByRole('button', { name: 'Save and test connection' }).click();
 }
 
@@ -138,6 +156,7 @@ export async function trustUntilDone(page: Page): Promise<void> {
   for (let hop = 0; hop < 3; hop++) {
     await trust.or(done).first().waitFor({ timeout: 120_000 });
     if (!(await trust.isVisible())) return;
+    await takeTestBudget(page);
     await trust.click();
     await expect(trust).toBeHidden({ timeout: 30_000 });
   }
