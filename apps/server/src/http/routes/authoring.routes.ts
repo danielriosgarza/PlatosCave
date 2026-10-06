@@ -5,6 +5,7 @@ import { parseNotebook } from '@parallax/contracts';
 import {
   getCourseOverview,
   getProcessing,
+  getRuntimes,
   MAX_UPLOAD_BYTES,
   retryProcessing,
   type UploadFormat,
@@ -132,6 +133,14 @@ export default function authoringRoutes(app: FastifyInstance, deps: RouteDeps): 
   registerRoute(app, getCourseOverview, async ({ scope }) => {
     return (await courseOverview(db(), scope)) ?? notFound();
   });
+
+  registerRoute(app, getRuntimes, () => ({
+    runtimes: deps.config.RUNNER_RUNTIMES.map(({ id, language, packages }) => ({
+      id,
+      language,
+      packages,
+    })),
+  }));
 
   registerRoute(app, uploadCourseFile, async ({ scope, req, fail }) => {
     const invalid: (message: string) => never = (message) =>

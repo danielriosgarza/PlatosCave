@@ -1,0 +1,97 @@
+/* Live notebook: the same cell grid as Notebook.module.css; control styles from Buttons.module.css. */
+.cellEditor {
+  min-width: 0;
+}
+.editor {
+  border: 1px solid var(--pc-rule);
+  background: var(--pc-secondary);
+  border-radius: var(--pc-radius-control);
+  font: var(--pc-text-code);
+  min-height: 56px;
+  max-width: 100%;
+  overflow: auto;
+}
+.editor :global(.cm-editor) {
+  background: transparent;
+  color: var(--pc-ink);
+}
+.editor :global(.cm-gutters) {
+  background: var(--pc-soft);
+  color: var(--pc-muted);
+  border-right: 1px solid var(--pc-rule);
+}
+.editor :global(.cm-activeLine),
+.editor :global(.cm-activeLineGutter) {
+  background: transparent;
+}
+.editor :global(.cm-editor.cm-focused) {
+  outline: 2px solid var(--pc-ink);
+  outline-offset: 2px;
+}
+.cellTools {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 8px;
+}
+.status {
+  font: var(--pc-text-label);
+  color: var(--pc-muted);
+  margin: 8px 0 0;
+}
+.notice {
+  font: var(--pc-text-ui);
+  margin: 8px 0;
+  border-left: 2px solid var(--pc-ink);
+  padding-left: 12px;
+}
+.old {
+  opacity: 0.65;
+}
+.prompt {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--pc-rule);
+}
+.prompt input {
+  flex: 1 1 200px;
+  min-height: 32px;
+  border: 1px solid var(--pc-muted);
+  border-radius: var(--pc-radius-control);
+  background: var(--pc-sheet);
+  color: var(--pc-ink);
+  padding: 4px 8px;
+  font: var(--pc-text-code);
+}
+.banner {
+  max-width: 1160px;
+  margin: 0 auto 16px;
+  padding: 12px 16px;
+  border: 1px solid var(--pc-muted);
+  border-radius: var(--pc-radius-control);
+  background: var(--pc-soft);
+}
+.banner p {
+  margin: 0 0 8px;
+}
+.banner :last-child {
+  margin-bottom: 0;
+}
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.menu {
+  display: inline-flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.refusal {
+  font: var(--pc-text-label);
+  margin-top: 8px;
+}

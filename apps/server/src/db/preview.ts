@@ -1,5 +1,5 @@
-import { and, eq, isNull, type SQL } from 'drizzle-orm';
-import type { PgColumn } from 'drizzle-orm/pg-core';
+import { and, asc, eq, isNull, type SQL } from 'drizzle-orm';
+import { alias, type PgColumn } from 'drizzle-orm/pg-core';
 import type { CourseScope } from '../auth/scope';
 import { audit } from './audit';
 import { createSession } from './auth/sessions';
@@ -137,4 +137,90 @@ export async function recordPreviewExit(
       targetId: input.previewUserId,
     });
   });
+}
+
+/**
+ * The class a preview run happens in, and the preview principal that owns the run (design §8.3:
+ * preview runs have `attempt_id NULL` and the preview principal as `user_id`): the oldest live
+ * class of the course the caller teaches, with the principal made on first use. Locking the
+ * teaching membership serialises two first uses with each other and with `startPreview`, so a
+ * class has one principal. Reading a run back uses `previewPrincipals`, which takes no lock.
+ */
+export async function previewRunClass(
+  db: Db,
+  scope: CourseScope,
+): Promise<{ classId: string; previewUserId: string } | undefined> {
+  if (scope.user.kind !== 'user') return undefined;
+  const instructorId = scope.user.id;
+  return db.transaction(async (tx) => {
+    const [teaching] = await tx
+      .select({ id: classMemberships.id, classId: classMemberships.classId })
+      .from(classMemberships)
+      .innerJoin(classes, eq(classes.id, classMemberships.classId))
+      .where(
+        and(
+          forCourse(scope, classes),
+          isNull(classes.archivedAt),
+          eq(classMemberships.userId, instructorId),
+          eq(classMemberships.role, 'instructor'),
+        ),
+      )
+      .orderBy(asc(classes.createdAt), asc(classes.id))
+      .limit(1)
+      .for('update', { of: classMemberships });
+    if (!teaching) return undefined;
+    const [existing] = await tx
+      .select({ id: users.id })
+      .from(users)
+      .innerJoin(classMemberships, eq(classMemberships.userId, users.id))
+      .where(
+        and(
+          eq(users.kind, 'preview'),
+          eq(users.ownerUserId, instructorId),
+          eq(classMemberships.classId, teaching.classId),
+          eq(classMemberships.isPreview, true),
+        ),
+      )
+      .limit(1);
+    if (existing) return { classId: teaching.classId, previewUserId: existing.id };
+    const principal = await insertPreviewPrincipal(tx, {
+      classId: teaching.classId,
+      instructorId,
+    });
+    return { classId: teaching.classId, previewUserId: principal.id };
+  });
+}
+
+/**
+ * Every class of the course where the caller teaches and has a preview principal, with that
+ * principal, archived classes included. A preview run is read back through these rather than
+ * through `previewRunClass`, so a run stays readable when the class preview runs start in
+ * changes (an archived class, a newly taught older one). Reading takes no lock.
+ */
+export async function previewPrincipals(
+  db: Db,
+  scope: CourseScope,
+): Promise<{ classId: string; previewUserId: string }[]> {
+  if (scope.user.kind !== 'user') return [];
+  const instructorId = scope.user.id;
+  const preview = alias(classMemberships, 'preview_membership');
+  return db
+    .select({ classId: classMemberships.classId, previewUserId: users.id })
+    .from(classMemberships)
+    .innerJoin(classes, eq(classes.id, classMemberships.classId))
+    .innerJoin(
+      preview,
+      and(eq(preview.classId, classMemberships.classId), eq(preview.isPreview, true)),
+    )
+    .innerJoin(users, eq(users.id, preview.userId))
+    .where(
+      and(
+        forCourse(scope, classes),
+        eq(classMemberships.userId, instructorId),
+        eq(classMemberships.role, 'instructor'),
+        eq(users.kind, 'preview'),
+        eq(users.ownerUserId, instructorId),
+      ),
+    )
+    .orderBy(asc(classes.createdAt), asc(classes.id));
 }

@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { buildApp } from '../../src/app';
-import { loadConfig } from '../../src/config';
+import { DEV_RUNNER_RUNTIMES, loadConfig } from '../../src/config';
 import { adoptRelease } from '../../src/db/content/adoption';
 import { createResource } from '../../src/db/content/drafts';
 import { publishRelease } from '../../src/db/content/releases';
@@ -81,7 +81,9 @@ afterAll(async () => {
 /** Publishes the drafts with the exercise scheduled for `at` and moves class B onto them. */
 async function moveClassB(at: Date | null, from: string) {
   await testDb.db.update(resources).set({ releaseAt: at }).where(eq(resources.id, exerciseId));
-  const published = await publishRelease(testDb.db, asCourseScope(ids.statistics, ids.elena));
+  const published = await publishRelease(testDb.db, asCourseScope(ids.statistics, ids.elena), {
+    runtimes: DEV_RUNNER_RUNTIMES,
+  });
   if (!published.ok) throw new Error(JSON.stringify(published.report));
   const adopted = await adoptRelease(
     testDb.db,

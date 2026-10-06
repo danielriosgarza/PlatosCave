@@ -2,7 +2,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { buildApp } from '../../src/app';
-import { loadConfig } from '../../src/config';
+import { DEV_RUNNER_RUNTIMES, loadConfig } from '../../src/config';
 import { adoptRelease } from '../../src/db/content/adoption';
 import { createResource } from '../../src/db/content/drafts';
 import { publishRelease } from '../../src/db/content/releases';
@@ -79,7 +79,7 @@ beforeAll(async () => {
   );
   if (!created.ok) throw new Error(JSON.stringify(created));
   exerciseId = created.value.id;
-  const v2 = await publishRelease(testDb.db, course);
+  const v2 = await publishRelease(testDb.db, course, { runtimes: DEV_RUNNER_RUNTIMES });
   if (!v2.ok) throw new Error(JSON.stringify(v2.report));
   for (const [classId, instructor] of [
     [ids.classA, ids.priya],

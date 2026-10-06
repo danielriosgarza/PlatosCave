@@ -37,32 +37,9 @@ export function NotebookView({ notebook, showCode, showOutputs, outlineOpen }: P
       cells: { ...cells, [id]: { ...cells[id], [part]: true } },
     });
 
-  const goTo = (cellId: string) => {
-    const target = root.current?.querySelector<HTMLElement>(
-      `[data-cell-id="${CSS.escape(cellId)}"]`,
-    );
-    target?.scrollIntoView({ block: 'start' });
-    target?.focus({ preventScroll: true });
-  };
-
   return (
     <article ref={root} className={styles.notebook}>
-      {outlineOpen && notebook.outline.length > 0 ? (
-        <nav className={styles.toc} aria-label="Notebook outline">
-          <div className={styles.label}>Outline</div>
-          <ol>
-            {notebook.outline.map((h, i) => (
-              // A cell may hold several headings; the outline never reorders.
-              // biome-ignore lint/suspicious/noArrayIndexKey: see above
-              <li key={i} data-level={h.level}>
-                <button type="button" onClick={() => goTo(h.cellId)}>
-                  {h.text}
-                </button>
-              </li>
-            ))}
-          </ol>
-        </nav>
-      ) : null}
+      {outlineOpen ? <Outline notebook={notebook} root={root} /> : null}
       {notebook.cells.map((cell) => (
         <Cell
           key={cell.id}
@@ -81,7 +58,41 @@ export function NotebookView({ notebook, showCode, showOutputs, outlineOpen }: P
   );
 }
 
-function Markdown({ html, className }: { html: string; className: string }) {
+/** The notebook's headings as links that scroll to and focus their cell. */
+export function Outline({
+  notebook,
+  root,
+}: {
+  notebook: Notebook;
+  root: { current: HTMLElement | null };
+}) {
+  const goTo = (cellId: string) => {
+    const target = root.current?.querySelector<HTMLElement>(
+      `[data-cell-id="${CSS.escape(cellId)}"]`,
+    );
+    target?.scrollIntoView({ block: 'start' });
+    target?.focus({ preventScroll: true });
+  };
+  if (notebook.outline.length === 0) return null;
+  return (
+    <nav className={styles.toc} aria-label="Notebook outline">
+      <div className={styles.label}>Outline</div>
+      <ol>
+        {notebook.outline.map((h, i) => (
+          // A cell may hold several headings; the outline never reorders.
+          // biome-ignore lint/suspicious/noArrayIndexKey: see above
+          <li key={i} data-level={h.level}>
+            <button type="button" onClick={() => goTo(h.cellId)}>
+              {h.text}
+            </button>
+          </li>
+        ))}
+      </ol>
+    </nav>
+  );
+}
+
+export function Markdown({ html, className }: { html: string; className: string }) {
   const clean = useMemo(() => sanitizeReading(html), [html]);
   // biome-ignore lint/security/noDangerouslySetInnerHtml: sanitised at import and again just above
   return <div className={className} dangerouslySetInnerHTML={{ __html: clean }} />;
@@ -174,7 +185,7 @@ function Cell({
   );
 }
 
-function Output({ output, cellCount }: { output: CellOutput; cellCount: number | null }) {
+export function Output({ output, cellCount }: { output: CellOutput; cellCount: number | null }) {
   switch (output.type) {
     case 'text':
       return (

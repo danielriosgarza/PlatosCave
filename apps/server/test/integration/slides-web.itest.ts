@@ -6,7 +6,7 @@ import type { FastifyInstance } from 'fastify';
 import type { Job } from 'pg-boss';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { buildApp } from '../../src/app';
-import { loadConfig } from '../../src/config';
+import { DEV_RUNNER_RUNTIMES, loadConfig } from '../../src/config';
 import { adoptRelease } from '../../src/db/content/adoption';
 import { publishRelease } from '../../src/db/content/releases';
 import { resourceRevisions, resources } from '../../src/db/schema';
@@ -206,7 +206,7 @@ describe('web slides', () => {
   test('publication is blocked while a web deck has failed, and passes once it is archived', async () => {
     const { db } = testDb;
     const elena = asCourseScope(ids.statistics, ids.elena);
-    const blocked = await publishRelease(db, elena);
+    const blocked = await publishRelease(db, elena, { runtimes: DEV_RUNNER_RUNTIMES });
     expect(blocked.ok).toBe(false);
     if (blocked.ok) return;
     expect(blocked.report.errors).toEqual([
@@ -222,7 +222,7 @@ describe('web slides', () => {
         .where(eq(resourceRevisions.id, empty)),
     );
     await db.update(resources).set({ archivedAt: now }).where(eq(resources.id, emptyResource.id));
-    const published = await publishRelease(db, elena);
+    const published = await publishRelease(db, elena, { runtimes: DEV_RUNNER_RUNTIMES });
     if (!published.ok) throw new Error(JSON.stringify(published.report));
     const adopted = await adoptRelease(db, asClassScope(ids.classA, ids.statistics, ids.priya), {
       releaseId: published.release.id,
