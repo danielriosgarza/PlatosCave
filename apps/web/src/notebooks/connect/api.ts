@@ -169,6 +169,21 @@ export const useSessions = (classId: string) =>
   useApi(listNotebookSessions, { params: { classId } });
 
 /**
+ * The same list for a notebook that may go live: read again every few seconds while any session
+ * is open, because a session changes state on its own (starting, ready, lost). Its own query key
+ * keeps the Connect panel's list as it was; `refreshList` still invalidates both.
+ */
+export const useWatchedSessions = (classId: string) => {
+  const args = { params: { classId } };
+  return useQuery({
+    queryKey: [listNotebookSessions.method, listNotebookSessions.path, args, 'watch'],
+    queryFn: () => call(listNotebookSessions, args),
+    refetchInterval: (query) =>
+      query.state.data?.some((s) => isOpenState(s.state)) ? SESSION_WATCH_MS : false,
+  });
+};
+
+/**
  * One session, read again every few seconds in every open state (Parallax shows only what it
  * read: a ready session can become disconnected while the panel is open) until it has ended.
  */
