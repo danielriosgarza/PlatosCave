@@ -9,6 +9,11 @@ describe('well-formed text', () => {
     expect(isWellFormed('\udc00 half')).toBe(false);
   });
 
+  it('refuses the NUL character, which jsonb cannot store', () => {
+    expect(isWellFormed('a\u0000b')).toBe(false);
+    expect(isWellFormed('\u0000')).toBe(false);
+  });
+
   it('replaces a lone surrogate anywhere in a JSON value, keys included, and drops nothing', () => {
     expect(toWellFormedDeep(['ok', { files: [{ content: 'x = "\ud800"' }] }])).toEqual([
       'ok',
@@ -18,5 +23,11 @@ describe('well-formed text', () => {
     const fine = { a: ['😀', 1, null, true], b: { c: 'fine' } };
     expect(toWellFormedDeep(fine)).toEqual(fine);
     expect(toWellFormedDeep(null)).toBeNull();
+  });
+
+  it('replaces a NUL in a string or a key with U+FFFD and drops nothing', () => {
+    expect(toWellFormedDeep({ 'k\u0000': ['a\u0000b', { c: '\u0000\u0000' }] })).toEqual({
+      'k\ufffd': ['a\ufffdb', { c: '\ufffd\ufffd' }],
+    });
   });
 });
