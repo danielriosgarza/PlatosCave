@@ -217,6 +217,7 @@ function OpenTopic({
               topicId={topicId}
               instructor={role === 'instructor'}
               resource={search.resource}
+              slide={search.page}
               onResource={(resource, how) =>
                 navigate({
                   params: { classId, topicId, tab },

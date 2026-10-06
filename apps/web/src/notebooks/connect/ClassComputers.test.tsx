@@ -245,6 +245,32 @@ describe('Class computers for an instructor', () => {
     expect(state.posts.at(-1)).toMatchObject({ method: 'DELETE' });
   });
 
+  it('Escape in the archive confirmation cancels it, returns focus and leaves the panel open', async () => {
+    const state = { templates: [template()], posts: [] as never[] };
+    serveTemplates(state);
+    const closed = vi.fn();
+    wrap(
+      // biome-ignore lint/a11y/noStaticElementInteractions: stands in for the panel's Escape handler
+      <div
+        onKeyDown={(e) => {
+          if (e.key === 'Escape' && !e.defaultPrevented) closed();
+        }}
+      >
+        <TemplateManager classId={CLASS_A} />
+      </div>,
+    );
+    await screen.findByText('Department cluster');
+    await userEvent.click(screen.getByRole('button', { name: 'Archive Department cluster' }));
+    screen.getByRole('button', { name: 'Keep it' }).focus();
+    await userEvent.keyboard('{Escape}');
+    expect(closed).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: 'Keep it' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Archive Department cluster' })).toHaveFocus();
+    expect(state.posts).toEqual([]);
+    await userEvent.keyboard('{Escape}');
+    expect(closed).toHaveBeenCalledTimes(1);
+  });
+
   it('the publish form is usable from the keyboard alone', async () => {
     const state = { templates: [], posts: [] as { body: unknown }[] };
     serveTemplates(state as never);

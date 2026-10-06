@@ -184,6 +184,72 @@ describe('A31 execution binding', () => {
     expect(rows[0]).toMatchObject({ state: 'ok', outputsIncomplete: true, executionCount: 1 });
   });
 
+  test('A31 a resume gets the end of an execution that finished while the browser was away', async () => {
+    const s = await running('x = 1');
+    const ready = s.browser.received.find((m) => m.t === 'ready');
+    const position = Math.max(
+      0,
+      ...s.browser.received.filter((m) => m.t === 'output').map((m) => m.eventSeq as number),
+    );
+    s.browser.close();
+    await s.browser.closed;
+    // No output: only the reply says it is over, and nobody is listening.
+    s.jupyter.emit(
+      kernelMessage('execute_reply', s.msgId, { status: 'ok', execution_count: 3 }, 'shell'),
+    );
+    await relay.until(
+      async () => (await executionRows(testDb, s.sessionId))[0]?.state === 'ok',
+      'the execution to finish',
+    );
+    await drained(relay, s.connectorId, s.sessionId);
+
+    const back = await openChannel(relay, cookie, s.sessionId);
+    back.send({
+      v: 1,
+      t: 'hello',
+      resume: { epoch: ready?.epoch, afterEventSeq: position },
+    });
+    await back.next('ready');
+    const done = await back.next((m) => m.t === 'execution' && m.executionId === s.executionId);
+    expect(done).toMatchObject({
+      ref: s.ref,
+      cellId: 'cell-1',
+      state: 'ok',
+      executionCount: 3,
+      outputsIncomplete: false,
+    });
+    expect(s.jupyter.executeRequests).toHaveLength(1);
+  });
+
+  test('A31 a fresh page gets a finished execution before its replayed output', async () => {
+    const s = await running('print(7)');
+    s.jupyter.emit(kernelMessage('stream', s.msgId, { name: 'stdout', text: '7\n' }));
+    s.jupyter.emit(
+      kernelMessage('execute_reply', s.msgId, { status: 'ok', execution_count: 1 }, 'shell'),
+    );
+    await s.browser.next((m) => m.t === 'execution' && m.state === 'ok');
+    s.browser.close();
+    await s.browser.closed;
+
+    const fresh = await openChannel(relay, cookie, s.sessionId);
+    fresh.send({ v: 1, t: 'hello' });
+    await fresh.next('ready');
+    const output = await fresh.next('output');
+    expect(output).toMatchObject({ executionId: s.executionId, output: { text: '7\n' } });
+    const at = (t: string) =>
+      fresh.received.findIndex((m) => m.t === t && m.executionId === s.executionId);
+    expect(at('execution')).toBeGreaterThan(-1);
+    expect(at('execution')).toBeLessThan(at('output'));
+    expect(fresh.received[at('execution')]).toMatchObject({
+      ref: s.ref,
+      cellId: 'cell-1',
+      seq: 1,
+      state: 'ok',
+      executionCount: 1,
+      outputsIncomplete: false,
+    });
+  });
+
   test('A31 output with an unknown parent is dropped', async () => {
     const s = await running();
     const before = kernelRelays(relay.links)?.dropped.unknown_parent ?? 0;

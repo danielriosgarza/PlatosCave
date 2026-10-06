@@ -337,8 +337,10 @@ export class KernelRelay {
 
   /**
    * `hello` (§10.5): `ready` with the epoch, the last event number, the session and the kernel,
-   * then the open executions and the output events the browser has not seen. A browser from
-   * another epoch gets everything still held and treats the rest as incomplete.
+   * then the open executions, the rows of the finished ones the browser may not know the end of
+   * (those with events in the replay, and those that finished after its position), and the
+   * output events it has not seen. A browser from another epoch gets everything still held and
+   * treats the rest as incomplete.
    */
   async hello(
     session: OwnedSession,
@@ -349,8 +351,13 @@ export class KernelRelay {
     // Taken in the kernel's order, so no live message slips between the replay and the stream.
     await this.serial(kernel, async () => {
       const replay = kernel.buffer.replay(resume);
-      const evicted = replay.truncated.filter((id) => !kernel.map.byId(id));
-      const finished = evicted.length > 0 ? await executionsById(this.db, session.id, evicted) : [];
+      const ids = new Set([
+        ...replay.events.map((e) => e.executionId),
+        ...kernel.buffer.finishedSince(resume),
+        ...replay.truncated,
+      ]);
+      const closed = [...ids].filter((id) => !kernel.map.byId(id));
+      const finished = closed.length > 0 ? await executionsById(this.db, session.id, closed) : [];
       this.sendHello(kernel, session, peer, replay, finished);
     });
   }
@@ -377,13 +384,17 @@ export class KernelRelay {
       kernel: kernel.view(),
     });
     for (const execution of kernel.map.all()) peer.send(executionMessage(execution));
+    // Before the output, so the browser can place it; one whose output was all dropped from the
+    // buffer is incomplete for this browser.
+    const truncated = new Set(replay.truncated);
+    for (const row of finished) {
+      peer.send(rowMessage(truncated.has(row.id) ? { ...row, outputsIncomplete: true } : row));
+    }
     for (const event of replay.events) peer.send(event);
-    // Output of these executions was dropped from the buffer: incomplete for this browser.
     for (const id of replay.truncated) {
       const execution = kernel.map.byId(id);
       if (execution) peer.send(executionMessage({ ...execution, outputsIncomplete: true }));
     }
-    for (const row of finished) peer.send(rowMessage({ ...row, outputsIncomplete: true }));
     kernel.listening.add(peer);
   }
 

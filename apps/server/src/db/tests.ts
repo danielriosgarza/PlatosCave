@@ -4,6 +4,7 @@ import {
   settingsProblems,
   type TestV1,
   testV1,
+  toWellFormedDeep,
 } from '@parallax/contracts';
 import type * as contracts from '@parallax/contracts/routes/tests';
 import { and, asc, desc, eq, inArray, lte, max, ne, sql } from 'drizzle-orm';
@@ -593,11 +594,16 @@ export async function keepLocalCopy(
     if (scope.archived) return classArchived;
     const ids = new Set((await pinnedTest(tx, attempt)).questions.map((q) => q.id));
     if (!copy.every((a) => ids.has(a.questionId))) return invalid('This test has no such question');
+    // Autosave refuses a lone surrogate, so the browser keeps such an answer unsent and offers it
+    // here. Postgres's jsonb cannot store one; it is stored as U+FFFD, so no entry is lost.
     await tx
       .update(testAttempts)
       .set({
         localCopy: {
-          answers: copy.map((a) => ({ questionId: a.questionId, value: a.value ?? null })),
+          answers: copy.map((a) => ({
+            questionId: a.questionId,
+            value: toWellFormedDeep(a.value ?? null),
+          })),
         },
         localCopyAt: now,
       })

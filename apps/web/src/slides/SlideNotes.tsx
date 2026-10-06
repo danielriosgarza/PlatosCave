@@ -207,7 +207,24 @@ export function SlideNotes({ classId, resourceId, page }: Props) {
     if (made) touch();
   });
 
+  // The note's device draft stays pending for the whole delete (the editor's discard leaves it), so
+  // a margin that comes back while the server's delete runs does not restore the note as unsent.
   const removeNote = async (
+    key: string,
+    controller: NoteController | undefined,
+    id: string | null,
+  ) => {
+    const sent = userId
+      ? beginSend(draftKey(userId, classId, resourceId, controller?.key ?? key))
+      : null;
+    try {
+      await deleteNote(key, controller, id);
+    } finally {
+      sent?.();
+    }
+  };
+
+  const deleteNote = async (
     key: string,
     controller: NoteController | undefined,
     id: string | null,
@@ -278,16 +295,36 @@ export function SlideNotes({ classId, resourceId, page }: Props) {
     const result = await actions.ask(ask.audience, anchorOf(slide), posted);
     const latest = askRef.current[slide] ?? BLANK_ASK;
     if ('id' in result) {
-      // Text typed while the question was posting was never posted: it stays, as a new draft.
-      const next =
-        latest.body.trim() === posted
-          ? { ...latest, body: '', posting: false, problem: null }
-          : { ...latest, posting: false, problem: null };
+      // Text typed while the question was posting was never posted: only that part stays, as a new
+      // draft. (The posted text is what the body started with when Post was pressed.)
+      const typed = latest.body.startsWith(ask.body) ? latest.body.slice(ask.body.length) : null;
+      const next = {
+        ...latest,
+        body: latest.body.trim() === posted ? '' : (typed ?? latest.body),
+        posting: false,
+        problem: null,
+      };
       setAsks((all) => ({ ...all, [slide]: next }));
       if (userId) {
         const key = draftKey(userId, classId, resourceId, askKey(slide));
-        // The send stays open until the device copy is gone, so a reload cannot restore it.
+        // The send stays open until the device copy is really gone or holds only the new text:
+        // a reload before that would offer the posted question as unsent and post it twice.
         if (next.body.trim() === '') await removeDraft(key);
+        else {
+          await saveDraft({
+            key,
+            userId,
+            classId,
+            resourceId,
+            kind: 'ask',
+            annotationId: null,
+            expectedRevision: null,
+            anchor: anchorOf(slide),
+            body: next.body,
+            audience: next.audience,
+            updatedAt: Date.now(),
+          });
+        }
       }
       return;
     }

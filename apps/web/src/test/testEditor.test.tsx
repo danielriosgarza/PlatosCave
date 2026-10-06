@@ -158,6 +158,7 @@ interface Server {
   patched: Record<string, unknown>[];
   posted: { url: string; body: Record<string, unknown> }[];
   previewStatus: number;
+  previewError: Record<string, unknown>;
   readStatus: number;
   reads: number;
   current: ReturnType<typeof resource>;
@@ -169,6 +170,7 @@ function serve(over: Partial<Server> = {}): Server {
     patched: [],
     posted: [],
     previewStatus: 202,
+    previewError: { error: 'no_class', message: 'no class' },
     readStatus: 200,
     reads: 0,
     current: resource(),
@@ -197,7 +199,7 @@ function serve(over: Partial<Server> = {}): Server {
       s.posted.push({ url, body: JSON.parse(String(init?.body)) as Record<string, unknown> });
       return s.previewStatus === 202
         ? { status: 202, body: run({ state: 'queued', result: null, finishedAt: null }) }
-        : { status: s.previewStatus, body: { error: 'no_class', message: 'no class' } };
+        : { status: s.previewStatus, body: s.previewError };
     }
     if (url === `${base}/preview-runs/${RUN}`) {
       s.reads += 1;
@@ -432,5 +434,90 @@ describe('test editor', () => {
     mount();
     await userEvent.click(await screen.findByRole('button', { name: 'Run sample checks' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Teach a class of this course');
+  });
+
+  it('says the class was archived when it was archived before the run was queued', async () => {
+    serve({ previewStatus: 409, previewError: { error: 'class_archived' } });
+    mount();
+    await userEvent.click(await screen.findByRole('button', { name: 'Run sample checks' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('was archived');
+  });
+
+  it('keeps the answer-key radio groups of two open editors apart', async () => {
+    const choice = {
+      questions: [
+        {
+          id: 'q1',
+          kind: 'choice',
+          prompt: 'Pick one',
+          points: 1,
+          options: [
+            { id: 'a', label: 'One' },
+            { id: 'b', label: 'Two' },
+          ],
+          multiple: false,
+          correct: ['a'],
+          rubric: [],
+        },
+      ],
+    };
+    serve({ current: resource({ head: { ...resource().head, content: choice } }) });
+    const queryClient = createQueryClient({ retry: false });
+    render(
+      <QueryClientProvider client={queryClient}>
+        <TestEditor courseId={COURSE} resourceId={RESOURCE} onSaved={() => undefined} />
+        <TestEditor courseId={COURSE} resourceId={RESOURCE} onSaved={() => undefined} />
+      </QueryClientProvider>,
+    );
+    const radios = await screen.findAllByLabelText('Option 2 is correct');
+    expect(radios).toHaveLength(2);
+    await userEvent.click(radios[0] as HTMLElement);
+    expect(radios[0]).toBeChecked();
+    // The second editor's own answer key still shows its option 1, not unchecked by the first.
+    const first = screen.getAllByLabelText('Option 1 is correct');
+    expect(first[1]).toBeChecked();
+    expect(radios[1]).not.toBeChecked();
+  });
+
+  it('keeps the correct mark on its option while the id is retyped through a duplicate', async () => {
+    const choice = {
+      questions: [
+        {
+          id: 'q1',
+          kind: 'choice',
+          prompt: 'Pick one',
+          points: 1,
+          options: [
+            { id: 'a', label: 'One' },
+            { id: 'ab', label: 'Two' },
+          ],
+          multiple: false,
+          correct: ['ab'],
+          rubric: [],
+        },
+      ],
+    };
+    serve({ current: resource({ head: { ...resource().head, content: choice } }) });
+    mount();
+    const id = await screen.findByLabelText('Option 2 id');
+    // ab -> a (a duplicate of option 1) -> ac, one keystroke at a time.
+    await userEvent.type(id, '{Backspace}');
+    await userEvent.type(id, 'c');
+    expect(id).toHaveValue('ac');
+    expect(screen.getByLabelText('Option 2 is correct')).toBeChecked();
+    expect(screen.getByLabelText('Option 1 is correct')).not.toBeChecked();
+  });
+
+  it('keeps the checks on file 1 when its path is cleared beside a new empty file', async () => {
+    serve();
+    mount();
+    await userEvent.click(await screen.findByRole('button', { name: 'Add file' }));
+    const path = screen.getByLabelText('File 1 path');
+    await userEvent.clear(path);
+    await userEvent.type(path, 'main.py');
+    // The new file gets a path of its own: the checks stay on file 1.
+    await userEvent.type(screen.getByLabelText('File 2 path'), 'extra.py');
+    expect(screen.getByLabelText('Check 1 program file')).toHaveValue('main.py');
+    expect(screen.getByLabelText('Check 2 program file')).toHaveValue('main.py');
   });
 });
