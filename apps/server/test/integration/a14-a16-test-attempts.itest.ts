@@ -5,7 +5,7 @@ import type { Job } from 'pg-boss';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { buildApp } from '../../src/app';
 import { graderVersionOf } from '../../src/assessments/terms';
-import { loadConfig } from '../../src/config';
+import { DEV_RUNNER_RUNTIMES, loadConfig } from '../../src/config';
 import { adoptRelease } from '../../src/db/content/adoption';
 import { createResource, getResource, updateResource } from '../../src/db/content/drafts';
 import { publishRelease } from '../../src/db/content/releases';
@@ -138,7 +138,7 @@ let v1: string;
 const course = () => asCourseScope(ids.statistics, ids.elena);
 
 async function adoptLatest(classId: string, instructor: string, from: string) {
-  const published = await publishRelease(testDb.db, course());
+  const published = await publishRelease(testDb.db, course(), { runtimes: DEV_RUNNER_RUNTIMES });
   if (!published.ok) throw new Error(JSON.stringify(published.report));
   const adopted = await adoptRelease(
     testDb.db,
@@ -265,7 +265,14 @@ describe('A14 submit is idempotent', () => {
     const saved = await save('sam', ids.classA, samFirst, 'spread', { value: ['n100'], seq: 1 });
     expect(saved).toEqual({
       status: 200,
-      body: { questionId: 'spread', seq: 1, savedAt: minutes(2).toISOString() },
+      body: { questionId: 'spread', seq: 1, savedAt: minutes(2).toISOString(), applied: true },
+    });
+    // A second tab saves another value at the same counter: the acknowledgement says it was not
+    // applied, so that tab cannot take the stored answer's acknowledgement for its own (§11).
+    clock = minutes(2.5);
+    expect(await save('sam', ids.classA, samFirst, 'spread', { value: ['n10'], seq: 1 })).toEqual({
+      status: 200,
+      body: { questionId: 'spread', seq: 1, savedAt: minutes(2).toISOString(), applied: false },
     });
 
     clock = minutes(3);
@@ -359,7 +366,7 @@ describe('A15 deadline submission', () => {
     expect(await save('bea', ids.classB, beaAttempt, 'spread', { value: ['n10'], seq: 1 })).toEqual(
       {
         status: 200,
-        body: { questionId: 'spread', seq: 2, savedAt: minutes(6).toISOString() },
+        body: { questionId: 'spread', seq: 2, savedAt: minutes(6).toISOString(), applied: false },
       },
     );
     // The server, not the browser, refuses an answer the question cannot take.

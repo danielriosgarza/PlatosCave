@@ -197,6 +197,14 @@ export const testV1 = z
       const path = ['questions', i];
       if (ids.has(q.id)) ctx.addIssue({ code: 'custom', message: 'duplicate question id', path });
       ids.add(q.id);
+      const criteria = new Set(q.rubric.map((r) => r.id));
+      if (criteria.size !== q.rubric.length) {
+        ctx.addIssue({
+          code: 'custom',
+          message: 'duplicate criterion id',
+          path: [...path, 'rubric'],
+        });
+      }
       if (q.kind === 'choice') {
         const options = new Set(q.options.map((o) => o.id));
         if (options.size !== q.options.length || !q.correct.every((c) => options.has(c))) {

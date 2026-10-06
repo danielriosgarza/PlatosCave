@@ -19,12 +19,16 @@ export default function releaseRoutes(app: FastifyInstance, deps: RouteDeps): vo
   const db = deps.requireDb;
 
   registerRoute(app, validateDrafts, ({ scope }) =>
-    releases.validateDrafts(db(), scope, deps.config.SHINY_ORIGINS),
+    releases.validateDrafts(db(), scope, {
+      approvedShinyOrigins: deps.config.SHINY_ORIGINS,
+      runtimes: deps.config.RUNNER_RUNTIMES,
+    }),
   );
 
   registerRoute(app, publishRelease, async ({ scope, fail }) => {
     const result = await releases.publishRelease(db(), scope, {
       approvedShinyOrigins: deps.config.SHINY_ORIGINS,
+      runtimes: deps.config.RUNNER_RUNTIMES,
     });
     if (!result.ok) return fail(422, { error: 'validation_failed', report: result.report });
     const { id, version, createdAt } = result.release;

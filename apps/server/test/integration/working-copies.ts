@@ -2,6 +2,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { eq } from 'drizzle-orm';
+import { DEV_RUNNER_RUNTIMES } from '../../src/config';
 import type { Db } from '../../src/db/client';
 import { adoptRelease } from '../../src/db/content/adoption';
 import { createResource } from '../../src/db/content/drafts';
@@ -106,7 +107,7 @@ export async function connectedNotebook(
   if (!created.ok) throw new Error(JSON.stringify(created));
   const revisionId = created.value.headRevisionId;
   if (!revisionId) throw new Error('the notebook has no head revision');
-  const published = await publishRelease(db, course);
+  const published = await publishRelease(db, course, { runtimes: DEV_RUNNER_RUNTIMES });
   if (!published.ok) throw new Error(JSON.stringify(published.report));
   for (const [classId, instructor] of [
     [ids.classA, ids.priya],

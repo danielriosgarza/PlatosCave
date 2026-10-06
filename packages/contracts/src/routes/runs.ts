@@ -251,3 +251,46 @@ export const attemptResults = defineRoute({
   response: z.object({ runs: z.array(instructorRun) }),
   examples: { params: { classId: exampleClass, attemptId: exampleAttempt } },
 });
+
+const previewParams = z.object({ courseId: z.uuid(), resourceId: z.uuid() });
+
+/**
+ * Instructor preview run of a code question of a draft test (§12: "Preview can run sample and
+ * hidden checks in an isolated instructor context"; design §8.1, §8.3). It runs in the oldest
+ * live class of the course the caller teaches, as that class's preview principal, through the
+ * same queue and runner as a student's run, with no attempt and no per-user cap. `set: 'full'`
+ * includes the hidden checks and files. `files` are the editable files to run (a reference
+ * solution); omitted, the starter files run. The answer is the instructor view, hidden checks
+ * included. `no_class`: the caller teaches no live class of the course.
+ */
+export const requestPreviewRun = defineRoute({
+  method: 'POST',
+  path: '/api/courses/:courseId/resources/:resourceId/questions/:questionId/preview-runs',
+  scope: { kind: 'course', role: 'editor' },
+  summary: 'Run the sample or all checks of a draft code question in the instructor preview',
+  params: previewParams.extend({ questionId }),
+  body: z.object({ set: z.enum(executionCheckSets), files: runFiles.optional() }),
+  status: 202,
+  response: instructorRun,
+  errors: {
+    400: invalidBody,
+    409: z.object({ error: z.literal('no_class'), message: z.string() }),
+  },
+  examples: {
+    params: { courseId: exampleClass, resourceId: exampleRun, questionId: 'q1' },
+    body: {
+      set: 'full',
+      files: [{ path: 'solution.py', content: 'def mean(xs):\n    return 0\n' }],
+    },
+  },
+});
+
+export const readPreviewRun = defineRoute({
+  method: 'GET',
+  path: '/api/courses/:courseId/preview-runs/:runId',
+  scope: { kind: 'course', role: 'editor' },
+  summary: 'Read one of your instructor preview runs, hidden checks included',
+  params: z.object({ courseId: z.uuid(), runId: z.uuid() }),
+  response: instructorRun,
+  examples: { params: { courseId: exampleClass, runId: exampleRun } },
+});

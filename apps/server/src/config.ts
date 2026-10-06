@@ -41,7 +41,7 @@ const RunnerRuntime = z.strictObject({
 export type RunnerRuntime = z.infer<typeof RunnerRuntime>;
 
 /** Development and CI: the image `scripts/runner-image.sh build python` tags `:dev`. */
-const DEV_RUNNER_RUNTIMES: RunnerRuntime[] = [
+export const DEV_RUNNER_RUNTIMES: RunnerRuntime[] = [
   {
     id: 'python-3.12',
     language: 'python',
