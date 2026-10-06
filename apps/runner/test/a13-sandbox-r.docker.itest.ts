@@ -229,8 +229,8 @@ stopifnot(!any(grepl('docker.sock', readLines('/proc/mounts'), fixed = TRUE)))
     const outcome = await run(
       job(
         {
-          // Small processes: forked R interpreters would meet the memory limit before the pids limit.
-          'bomb.R': "repeat system2('sleep', '100', wait = FALSE)\n",
+          // Small processes from one shell: forked R interpreters would meet the memory limit first.
+          'bomb.R': "system('while :; do sleep 100 & done')\n",
           'after.R': "cat('still running')\n",
         },
         [
@@ -247,7 +247,8 @@ stopifnot(!any(grepl('docker.sock', readLines('/proc/mounts'), fixed = TRUE)))
       ),
     );
     expect(outcome.status).toBe('failed');
-    expect(['failed', 'error']).toContain(checkOf(outcome, 0).status);
+    // The shell loop never ends by itself: the per-check timeout stops it.
+    expect(['failed', 'error', 'timeout']).toContain(checkOf(outcome, 0).status);
     expect(checkOf(outcome, 1).status).toBe('passed');
   });
 
