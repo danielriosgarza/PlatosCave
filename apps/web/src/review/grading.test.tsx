@@ -1,14 +1,9 @@
-import { cleanup, configure, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CLASS_A, instructorIn, makeMe, renderApp, signedIn, stubApi } from '../test/render';
 import type { ClassReview } from './classReview';
 import type { AttemptGrade, GradeRow } from './grading';
-
-// Each test renders the whole app and drives a form; a shared runner can need more than 5 s.
-vi.setConfig({ testTimeout: 15_000 });
-// The workspace waits on three requests; findBy/waitFor wait 1 s by default.
-configure({ asyncUtilTimeout: 5000 });
 
 afterEach(() => {
   cleanup();
@@ -191,6 +186,7 @@ const reviewedAttempt = (
   submittedAt: NOW,
   receipt: null,
   localCopyAt: null,
+  recoveryRequestedAt: null,
   student,
   removed,
   graderVersion: 'grader-1',
