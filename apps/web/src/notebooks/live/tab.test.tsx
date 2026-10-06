@@ -126,9 +126,14 @@ describe('Notebooks tab live mode', () => {
     act(() => {
       view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: 'my_edit = 1' } });
     });
-    // Forget: the session leaves the list. The notebook stays, with the edit, and cannot run.
+    // The session leaves the list. The notebook stays, with the edit, and cannot run; Parallax
+    // says it has no news of the session and does not claim it stopped.
     list = [];
-    await screen.findByText('This session has stopped.', undefined, { timeout: 8000 });
+    await screen.findByText('Parallax no longer has news of this session.', undefined, {
+      timeout: 8000,
+    });
+    expect(screen.queryByText('This session has stopped.')).toBeNull();
+    expect(screen.getByRole('alert')).toHaveTextContent('last read as ready');
     expect((EditorView.findFromDOM(editor()) as EditorView).state.doc.toString()).toBe(
       'my_edit = 1',
     );
@@ -139,9 +144,10 @@ describe('Notebooks tab live mode', () => {
     act(() => {
       window.dispatchEvent(new Event('visibilitychange'));
     });
-    await waitFor(() => expect(screen.queryByText('This session has stopped.')).toBeNull(), {
-      timeout: 8000,
-    });
+    await waitFor(
+      () => expect(screen.queryByText('Parallax no longer has news of this session.')).toBeNull(),
+      { timeout: 8000 },
+    );
     expect((EditorView.findFromDOM(editor()) as EditorView).state.doc.toString()).toBe(
       'my_edit = 1',
     );
