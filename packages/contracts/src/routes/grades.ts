@@ -246,6 +246,7 @@ export const previewGradeRelease = defineRoute({
   method: 'POST',
   path: '/api/classes/:classId/grade-releases/preview',
   scope: { kind: 'class', role: 'instructor' },
+  allowWhenArchived: true,
   summary: 'Preview the students and grades a release would make visible',
   params: z.object({ classId: z.uuid() }),
   body: z.object({ attemptIds: z.array(z.uuid()).min(1).max(500) }),

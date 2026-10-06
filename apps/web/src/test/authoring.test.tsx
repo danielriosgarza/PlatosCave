@@ -133,6 +133,7 @@ function api(me: ReturnType<typeof makeMe>, s: Server) {
       return json({
         id: COURSE,
         title: 'Statistical thinking',
+        archived: false,
         latestRelease: s.latest ? { id: COURSE, version: s.latest, createdAt: stamp } : null,
         classes: [
           {

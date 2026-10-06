@@ -35,6 +35,7 @@ export async function courseOverview(db: Db, scope: CourseScope) {
   return {
     id: course.id,
     title: course.title,
+    archived: course.archivedAt !== null,
     latestRelease: latest
       ? { id: latest.id, version: latest.version, createdAt: latest.createdAt.toISOString() }
       : null,

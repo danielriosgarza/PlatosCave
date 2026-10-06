@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNull } from 'drizzle-orm';
 import type { Db } from '../client';
 import { classes, classMemberships, courseMemberships, courses, users } from '../schema';
 import { type Actor, actorColumns } from './sessions';
@@ -23,6 +23,7 @@ type Nullable<T> = { [K in keyof T]: T[K] | null };
 export type ClassAccess = Pick<ClassRow, 'courseId' | 'releaseId' | 'archivedAt'> & {
   className: ClassRow['name'];
   courseTitle: CourseRow['title'];
+  courseArchivedAt: CourseRow['archivedAt'];
 } & Nullable<Pick<ClassMembershipRow, 'id' | 'role' | 'manageMembers' | 'isPreview'>> & {
     ownsCourse: CourseMembershipRow['owner'] | null;
     editsCourse: CourseMembershipRow['editor'] | null;
@@ -31,13 +32,17 @@ export type ClassAccess = Pick<ClassRow, 'courseId' | 'releaseId' | 'archivedAt'
 /** The user's membership and grants in one course. */
 export type CourseAccess = Pick<CourseMembershipRow, 'id' | 'owner' | 'editor' | 'publisher'> & {
   courseTitle: CourseRow['title'];
+  courseArchivedAt: CourseRow['archivedAt'];
 };
 
 /**
  * The actor with this id, for a background job acting without a session; null when there is none.
  */
 export async function findActor(db: Db, actorId: string): Promise<Actor | null> {
-  const [user] = await db.select(actorColumns).from(users).where(eq(users.id, actorId));
+  const [user] = await db
+    .select(actorColumns)
+    .from(users)
+    .where(and(eq(users.id, actorId), isNull(users.deactivatedAt)));
   return user ?? null;
 }
 
@@ -56,6 +61,7 @@ export async function findClassAccess(
       className: classes.name,
       courseId: classes.courseId,
       courseTitle: courses.title,
+      courseArchivedAt: courses.archivedAt,
       releaseId: classes.releaseId,
       archivedAt: classes.archivedAt,
       id: classMemberships.id,
@@ -94,6 +100,7 @@ export async function findCourseAccess(
   const [row] = await db
     .select({
       courseTitle: courses.title,
+      courseArchivedAt: courses.archivedAt,
       id: courseMemberships.id,
       owner: courseMemberships.owner,
       editor: courseMemberships.editor,

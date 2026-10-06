@@ -15,6 +15,7 @@ export const startPreview = defineRoute({
   method: 'POST',
   path: '/api/courses/:courseId/preview',
   scope: { kind: 'course', role: 'editor' },
+  allowWhenArchived: true,
   summary: 'Start a student preview of the course draft in a class the caller teaches',
   params: z.object({ courseId: z.uuid() }),
   body: z.object({
