@@ -54,7 +54,7 @@ for (const route of [
       await expect(summary).toContainText(route.jump ? `${onwardName}:22` : `127.0.0.1:${fixtures.direct}`);
       await expect(summary).toContainText('student');
       await expect(summary).toContainText(studentWorkspace);
-      await expect(page.getByLabel('Kernel', { exact: true })).toContainText('Python 3');
+      await expect(stage(page, 'kernels')).toHaveAttribute('data-status', 'ok');
 
       await connectAndWaitReady(page);
       await expect(page.getByRole('status').filter({ hasText: 'Ready' })).toContainText(`${name} notebook`);
