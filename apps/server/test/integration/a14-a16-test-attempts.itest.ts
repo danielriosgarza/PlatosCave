@@ -422,8 +422,17 @@ describe('A15 deadline submission', () => {
       status: 409,
       body: { error: 'attempt_closed', receipt },
     });
-    const kept = await call('bea', 'POST', `${attemptUrl(ids.classB, beaAttempt)}/local-copy`, {
-      answers: [{ questionId: 'why', value: unsent.value }],
+    // A lone surrogate cannot be stored in jsonb: it is kept as U+FFFD, never a 500, and every
+    // entry of the copy is kept.
+    const localCopyUrl = `${attemptUrl(ids.classB, beaAttempt)}/local-copy`;
+    const kept = await call('bea', 'POST', localCopyUrl, {
+      answers: [
+        {
+          questionId: 'mean',
+          value: { files: [{ path: 'solution.py', content: 'x = "\ud800"' }] },
+        },
+        { questionId: 'why', value: unsent.value },
+      ],
     });
     expect(kept).toEqual({ status: 200, body: { localCopyAt: minutes(31).toISOString() } });
     const after = await call('bea', 'GET', attemptUrl(ids.classB, beaAttempt));
@@ -439,7 +448,13 @@ describe('A15 deadline submission', () => {
     expect(review.body).toMatchObject({
       state: 'submitted',
       receipt: { autoSubmitted: true },
-      localCopy: [{ questionId: 'why', value: unsent.value }],
+      localCopy: [
+        {
+          questionId: 'mean',
+          value: { files: [{ path: 'solution.py', content: 'x = "\ufffd"' }] },
+        },
+        { questionId: 'why', value: unsent.value },
+      ],
       localCopyAt: minutes(31).toISOString(),
     });
     expect(review.body.answers).toHaveLength(2);
