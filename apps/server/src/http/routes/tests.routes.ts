@@ -4,6 +4,7 @@ import {
   readAssignment,
   readTest,
   readTestAttempt,
+  requestRecovery,
   reviewTestAttempt,
   reviewTestAttempts,
   saveTestAnswer,
@@ -105,6 +106,14 @@ export default function testRoutes(app: FastifyInstance, deps: RouteDeps): void 
 
   registerRoute(app, keepLocalCopy, async ({ scope, params, body, fail }) => {
     const outcome = await tests.keepLocalCopy(db(), scope, params.attemptId, body.answers, now());
+    if (!outcome.ok && outcome.reason === 'attempt_open') {
+      return fail(409, { error: 'attempt_open' });
+    }
+    return settle(outcome);
+  });
+
+  registerRoute(app, requestRecovery, async ({ scope, params, body, fail }) => {
+    const outcome = await tests.requestRecovery(db(), scope, params.attemptId, body.reason, now());
     if (!outcome.ok && outcome.reason === 'attempt_open') {
       return fail(409, { error: 'attempt_open' });
     }

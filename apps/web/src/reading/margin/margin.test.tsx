@@ -16,6 +16,18 @@ import type { ReadingList } from '../readings';
 import type { Annotation, MarginList, Thread } from './data';
 import { allowDrafts, clearDrafts, draftKey, listDrafts, saveDraft } from './drafts';
 
+const deletes = vi.hoisted(() => ({ hold: null as Promise<void> | null }));
+vi.mock('./drafts', async (importOriginal) => {
+  const real = await importOriginal<typeof import('./drafts')>();
+  return {
+    ...real,
+    removeDraft: async (key: string) => {
+      await deletes.hold;
+      return real.removeDraft(key);
+    },
+  };
+});
+
 const RES = '00000000-0000-4000-8000-000000000401';
 const REV = '00000000-0000-4000-8000-000000000501';
 const READING = `/classes/${CLASS_A}/topics/${T_SAMPLING}/reading`;
@@ -1043,6 +1055,37 @@ describe('reading margin: layout and sign-out', () => {
     await waitFor(() => expect(w.threads).toHaveLength(1));
     await waitFor(() => expect(screen.getByText('Why n minus one?')).toBeInTheDocument());
     expect(screen.getByRole('textbox', { name: 'Comment or question' })).toHaveValue('');
+    expect(await listDrafts(SAM_ID, CLASS_A, RES)).toEqual([]);
+  });
+
+  it('A05 a reload before a posted question\u2019s device copy is gone does not bring it back as unsent', async () => {
+    const w = world();
+    api(w);
+    // The device's delete of the posted question's draft stays uncommitted until the test lets it go.
+    let release: () => void = () => {};
+    deletes.hold = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const user = userEvent.setup();
+    await open();
+    await user.click(screen.getByRole('button', { name: /^Discussion/ }));
+    await user.type(
+      screen.getByRole('textbox', { name: 'Comment or question' }),
+      'Why n minus one?',
+    );
+    await user.click(screen.getByRole('button', { name: 'Post' }));
+    await waitFor(() => expect(w.threads).toHaveLength(1));
+    // The reload: the margin comes back with whatever the device still holds.
+    await user.click(screen.getByRole('tab', { name: 'Slides' }));
+    await user.click(screen.getByRole('tab', { name: 'Reading' }));
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    // The posted question is still being cleared from the device, so the margin waits and does not
+    // offer it again.
+    expect(screen.queryByDisplayValue('Why n minus one?')).toBeNull();
+    release(); // the device commits at last
+    await user.click(await screen.findByRole('button', { name: /^Discussion/ }));
+    expect(screen.getByRole('textbox', { name: 'Comment or question' })).toHaveValue('');
+    expect(w.threads).toHaveLength(1);
     expect(await listDrafts(SAM_ID, CLASS_A, RES)).toEqual([]);
   });
 

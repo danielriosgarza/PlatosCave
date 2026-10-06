@@ -2,6 +2,13 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import buttons from '../components/Buttons.module.css';
 import { OfflineBanner, useOnline } from '../components/OfflineBanner';
+import {
+  attemptCopyKey,
+  readAttemptCopy,
+  removeAttemptCopy,
+  saveAttemptCopy,
+} from '../reading/margin/drafts';
+import { useSession } from '../session/useSession';
 import { AnswerInput } from './AnswerInput';
 import { isAnswered, navLabel } from './answers';
 import {
@@ -13,7 +20,7 @@ import {
   sendLocalCopy,
   submitAttempt,
 } from './api';
-import { ReceiptView } from './Receipt';
+import { ReceiptView, type Recovery } from './Receipt';
 import { ReviewSubmission, type SubmitState } from './ReviewSubmission';
 import { TermsPanel } from './TermsPanel';
 import styles from './Test.module.css';
@@ -98,6 +105,25 @@ function unsentText(attempt: AttemptView, entries: Record<string, Entry>) {
     .join('\n');
 }
 
+/** The text of a long answer or code that failed to save, as a file the student can keep (§14). */
+function recoveryFile(question: Question, index: number, value: unknown) {
+  if (typeof value === 'string' && value !== '') {
+    return { filename: `question-${index + 1}-answer.txt`, text: value };
+  }
+  const files = (value as { files?: { path?: unknown; content?: unknown }[] } | null)?.files;
+  const code = (files ?? []).filter(
+    (f): f is { path: string; content: string } =>
+      typeof f.path === 'string' && typeof f.content === 'string',
+  );
+  if (question.kind !== 'code' || code.length === 0) return null;
+  const [only] = code;
+  if (code.length === 1 && only) return { filename: only.path, text: only.content };
+  return {
+    filename: `question-${index + 1}-code.txt`,
+    text: code.map((f) => `# ${f.path}\n${f.content}`).join('\n\n'),
+  };
+}
+
 function saveFile(filename: string, text: string) {
   const url = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
   const link = document.createElement('a');
@@ -141,6 +167,10 @@ export function AttemptWorkspace({
   const [submit, setSubmit] = useState<SubmitState>({ kind: 'idle' });
   const [local, setLocal] = useState<'none' | 'sending' | 'kept' | 'failed'>('none');
   const [unsentCount, setUnsentCount] = useState(0);
+  const [recovery, setRecovery] = useState<Recovery>('idle');
+  const [heldLocally, setHeldLocally] = useState(false);
+  const session = useSession();
+  const userId = session.status === 'signed-in' ? session.me.user.id : null;
   const online = useOnline();
   const submitting = useRef(false);
   const refreshing = useRef(false);
@@ -173,6 +203,19 @@ export function AttemptWorkspace({
         .filter((q) => entries[q.id] && entries[q.id]?.status !== 'saved')
         .map((q) => ({ questionId: q.id, value: entries[q.id]?.value ?? null }));
       setUnsentCount(unsent.length);
+      // The copy outlives this page (IndexedDB, bound to the attempt) until the server has it.
+      if (unsent.length > 0 && userId && !view.localCopyAt) {
+        await saveAttemptCopy({
+          key: attemptCopyKey(userId, classId, view.id),
+          userId,
+          kind: 'attempt-copy',
+          classId,
+          attemptId: view.id,
+          answers: unsent,
+          updatedAt: Date.now(),
+        });
+        setHeldLocally(true);
+      }
       if (unsent.length === 0 || view.localCopyAt) return;
       setLocal('sending');
       try {
@@ -183,13 +226,72 @@ export function AttemptWorkspace({
         );
         setLocal('kept');
         clearUnsent(view.id);
+        if (userId) void removeAttemptCopy(userId, classId, view.id);
+        setHeldLocally(false);
         void refresh();
       } catch {
         setLocal('failed');
       }
     },
-    [classId, entries, refresh, queryClient, key],
+    [classId, entries, refresh, queryClient, key, userId],
   );
+
+  /** The recovery file, from the copy this browser kept or else the page's unsent answers. */
+  const downloadUnsent = useCallback(async () => {
+    const kept = userId ? await readAttemptCopy(userId, classId, attempt.id) : null;
+    const text = kept
+      ? kept.answers
+          .map((a) => {
+            const n = attempt.questions.findIndex((q) => q.id === a.questionId) + 1;
+            const body = typeof a.value === 'string' ? a.value : JSON.stringify(a.value, null, 2);
+            return `Question ${n}\n${body}\n`;
+          })
+          .join('\n')
+      : unsentText(attempt, entries);
+    saveFile('unsent-answers.txt', text);
+  }, [attempt, classId, entries, userId]);
+
+  /** Sends the copy this browser kept (or the page's unsent answers) after an instructor asked (A15). */
+  const sendRecovery = useCallback(async () => {
+    setRecovery('sending');
+    try {
+      const kept = userId ? await readAttemptCopy(userId, classId, attempt.id) : null;
+      const answers =
+        kept?.answers ??
+        attempt.questions
+          .filter((q) => entries[q.id] && entries[q.id]?.status !== 'saved')
+          .map((q) => ({ questionId: q.id, value: entries[q.id]?.value ?? null }));
+      if (answers.length === 0) {
+        setHeldLocally(false);
+        setRecovery('idle');
+        return;
+      }
+      const ack = await sendLocalCopy(classId, attempt.id, answers);
+      queryClient.setQueryData(key, (cached: AttemptView | undefined) =>
+        cached ? { ...cached, localCopyAt: ack.localCopyAt } : cached,
+      );
+      setLocal('kept');
+      clearUnsent(attempt.id);
+      if (userId) await removeAttemptCopy(userId, classId, attempt.id);
+      setHeldLocally(false);
+      setRecovery('sent');
+      void refresh();
+    } catch {
+      setRecovery('failed');
+    }
+  }, [attempt.id, attempt.questions, classId, entries, refresh, userId, queryClient, key]);
+
+  // A closed attempt opened on a later visit: is there a copy bound to it in this browser?
+  useEffect(() => {
+    if (open || !userId) return;
+    let live = true;
+    void readAttemptCopy(userId, classId, attempt.id).then((copy) => {
+      if (live && copy) setHeldLocally(true);
+    });
+    return () => {
+      live = false;
+    };
+  }, [open, userId, classId, attempt.id]);
 
   // The deadline came, or a save was refused as closed: ask the server what became of the
   // attempt. The page stops taking answers only once the server says it is closed; while the
@@ -337,7 +439,10 @@ export function AttemptWorkspace({
           unsentCount={unsentCount}
           local={local}
           onRetryLocal={() => void keepLocal(attempt)}
-          onDownload={() => saveFile('unsent-answers.txt', unsentText(attempt, entries))}
+          onDownload={() => void downloadUnsent()}
+          recovery={recovery}
+          heldLocally={heldLocally}
+          onSendRecovery={() => void sendRecovery()}
         />
         <p className={styles.receipt}>
           <button type="button" className={buttons.outline} onClick={onLeave}>
@@ -461,6 +566,18 @@ export function AttemptWorkspace({
                   >
                     Retry save
                   </button>
+                  {(() => {
+                    const file = recoveryFile(question, current, entry.value);
+                    return file ? (
+                      <button
+                        type="button"
+                        className={buttons.textButton}
+                        onClick={() => saveFile(file.filename, file.text)}
+                      >
+                        Download what you wrote
+                      </button>
+                    ) : null;
+                  })()}
                 </>
               ) : null}
             </span>
