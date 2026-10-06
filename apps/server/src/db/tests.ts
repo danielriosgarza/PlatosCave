@@ -1,5 +1,6 @@
 import {
   type AssignmentSettingsPatch,
+  hasLoneSurrogate,
   mergeSettings,
   settingsProblems,
   type TestV1,
@@ -555,11 +556,15 @@ export async function keepLocalCopy(
     if (scope.archived) return classArchived;
     const ids = new Set((await pinnedTest(tx, attempt)).questions.map((q) => q.id));
     if (!copy.every((a) => ids.has(a.questionId))) return invalid('This test has no such question');
+    // Autosave refuses a lone surrogate, so the browser keeps such an answer unsent and offers it
+    // here. Postgres's jsonb cannot store it; only that entry is dropped, so the rest is kept.
+    const storable = copy.filter((a) => !hasLoneSurrogate(a.value));
+    if (storable.length === 0) return invalid('Remove the character that cannot be saved');
     await tx
       .update(testAttempts)
       .set({
         localCopy: {
-          answers: copy.map((a) => ({ questionId: a.questionId, value: a.value ?? null })),
+          answers: storable.map((a) => ({ questionId: a.questionId, value: a.value ?? null })),
         },
         localCopyAt: now,
       })

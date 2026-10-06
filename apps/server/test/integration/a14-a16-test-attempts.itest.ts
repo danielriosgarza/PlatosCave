@@ -422,8 +422,21 @@ describe('A15 deadline submission', () => {
       status: 409,
       body: { error: 'attempt_closed', receipt },
     });
-    const kept = await call('bea', 'POST', `${attemptUrl(ids.classB, beaAttempt)}/local-copy`, {
-      answers: [{ questionId: 'why', value: unsent.value }],
+    // An entry holding a lone surrogate cannot be stored: it is dropped, never a 500, and the
+    // other entries are kept. A copy of nothing but such entries is refused with 400.
+    const localCopyUrl = `${attemptUrl(ids.classB, beaAttempt)}/local-copy`;
+    const onlyLone = await call('bea', 'POST', localCopyUrl, {
+      answers: [{ questionId: 'why', value: 'half \ud800' }],
+    });
+    expect(onlyLone.status).toBe(400);
+    const kept = await call('bea', 'POST', localCopyUrl, {
+      answers: [
+        {
+          questionId: 'mean',
+          value: { files: [{ path: 'solution.py', content: 'x = "\ud800"' }] },
+        },
+        { questionId: 'why', value: unsent.value },
+      ],
     });
     expect(kept).toEqual({ status: 200, body: { localCopyAt: minutes(31).toISOString() } });
     const after = await call('bea', 'GET', attemptUrl(ids.classB, beaAttempt));

@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { classArchived, defineRoute, invalidBody } from '../define';
 import { exampleIds } from '../examples';
 import { RUNNER_MAX_FILES, RunnerPath } from '../runner';
+import { isWellFormed } from '../wellFormed';
 
 /**
  * Code runs of a test attempt (§11; docs/design/runner.md §2, §8.6). Every route is class-scoped
@@ -43,8 +44,7 @@ export const executionCheckSets = ['public', 'full'] as const;
  * Text JSON can carry but no runner can: a lone surrogate (`"\ud800"`). It is refused here with
  * 400, before it could fail the snapshot write or the harness and show as Run unavailable.
  */
-const LONE_SURROGATE = /[\uD800-\uDFFF]/u;
-const wellFormed = z.string().refine((s) => !LONE_SURROGATE.test(s), {
+const wellFormed = z.string().refine(isWellFormed, {
   message: 'contains a lone surrogate',
 });
 
