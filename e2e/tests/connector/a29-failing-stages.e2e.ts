@@ -4,6 +4,7 @@ import {
   connect,
   endSessions,
   openConnect,
+  type Person,
   pairAndApprove,
   stage,
   testSsh,
@@ -20,9 +21,10 @@ async function failingTarget(
   name: string,
   user: string,
   port: number,
+  person: Person,
 ): Promise<Connector> {
   const connector = new Connector();
-  await openConnect(page);
+  await openConnect(page, person);
   await pairAndApprove(page, connector, name);
   await connect(page, connector, name);
   await testSsh(page, {
@@ -41,7 +43,13 @@ const notReady = (page: import('@playwright/test').Page) =>
 
 test('A29 forwarding forbidden names its stage and never reaches Ready', async ({ page }) => {
   test.setTimeout(180_000);
-  const connector = await failingTarget(page, 'A29 forwarding', 'student', fixtures.noForwarding);
+  const connector = await failingTarget(
+    page,
+    'A29 forwarding',
+    'student',
+    fixtures.noForwarding,
+    'reader',
+  );
   try {
     await expect(stage(page, 'forwarding')).toHaveAttribute('data-status', 'failed');
     await expect(stage(page, 'forwarding')).toContainText(
@@ -61,7 +69,7 @@ test('A29 forwarding forbidden names its stage and never reaches Ready', async (
 
 test('A29 Jupyter missing names its stage and never reaches Ready', async ({ page }) => {
   test.setTimeout(180_000);
-  const connector = await failingTarget(page, 'A29 missing', 'bare', fixtures.direct);
+  const connector = await failingTarget(page, 'A29 missing', 'bare', fixtures.direct, 'instructor');
   try {
     await expect(stage(page, 'runtime')).toHaveAttribute('data-status', 'failed');
     await expect(stage(page, 'runtime')).toContainText(
@@ -79,7 +87,7 @@ test('A29 Jupyter missing names its stage and never reaches Ready', async ({ pag
 
 test('A29 a token the server rejects names its stage and never reaches Ready', async ({ page }) => {
   test.setTimeout(240_000);
-  const connector = await failingTarget(page, 'A29 token', 'locked', fixtures.direct);
+  const connector = await failingTarget(page, 'A29 token', 'locked', fixtures.direct, 'instructor');
   try {
     // Test connection starts nothing, so every stage before the server passes...
     await expect(stage(page, 'ssh_auth')).toHaveAttribute('data-status', 'ok');

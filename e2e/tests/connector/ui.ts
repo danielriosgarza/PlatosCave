@@ -8,26 +8,35 @@ const id = (n: number) => `00000000-0000-4000-8000-${n.toString().padStart(12, '
 const lab = { class: id(211), topic: id(311) };
 export const notebooks = `/classes/${lab.class}/topics/${lab.topic}/notebooks`;
 
-const testStarts: number[] = [];
+export type Person = 'reader' | 'instructor';
+const emails: Record<Person, string> = {
+  reader: 'lab-reader@example.test',
+  instructor: 'lab-instructor@example.test',
+};
+const who = new WeakMap<Page, Person>();
+const testStarts: Record<Person, number[]> = { reader: [], instructor: [] };
 
 /**
- * Test connection is limited to six starts a minute per person (connectionTests.routes.ts). The
- * flows share one person, so each start waits until the last minute holds fewer than five.
+ * Test connection is limited to six starts a minute per person (connectionTests.routes.ts), and a
+ * person may create five pairing codes an hour. The flows therefore alternate between the class's
+ * reader and instructor, and each test start waits until the last minute holds fewer than five.
  */
 export async function takeTestBudget(page: Page): Promise<void> {
+  const starts = testStarts[who.get(page) ?? 'reader'];
   for (;;) {
     const now = Date.now();
-    while (testStarts.length > 0 && now - (testStarts[0] ?? 0) >= 61_000) testStarts.shift();
-    if (testStarts.length < 5) break;
+    while (starts.length > 0 && now - (starts[0] ?? 0) >= 61_000) starts.shift();
+    if (starts.length < 5) break;
     await page.waitForTimeout(1_000);
   }
-  testStarts.push(Date.now());
+  starts.push(Date.now());
 }
 
 /** Signs the lab reader in and opens the lab notebook's Connect panel. */
-export async function openConnect(page: Page): Promise<void> {
+export async function openConnect(page: Page, person: Person = 'reader'): Promise<void> {
+  who.set(page, person);
   const signedIn = await page.request.post('/api/test/signin-as', {
-    data: { email: 'lab-reader@example.test' },
+    data: { email: emails[person] },
   });
   expect(signedIn.ok()).toBe(true);
   await page.goto(notebooks);

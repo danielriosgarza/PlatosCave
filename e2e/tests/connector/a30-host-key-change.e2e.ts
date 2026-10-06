@@ -6,6 +6,7 @@ import {
   openConnect,
   pairAndApprove,
   stage,
+  takeTestBudget,
   testSsh,
   trustUntilDone,
 } from './ui';
@@ -20,7 +21,7 @@ test('A30 a rotated host key stops the connection and keeps the trust record', a
   const connector = new Connector();
   const name = 'A30 laptop';
   try {
-    await openConnect(page);
+    await openConnect(page, 'instructor');
     await pairAndApprove(page, connector, name);
     await connect(page, connector, name);
     await testSsh(page, {

@@ -38,7 +38,7 @@ for (const route of [
     const connector = new Connector();
     const name = `A28 ${route.jump ? 'jump' : 'direct'}`;
     try {
-      await openConnect(page);
+      await openConnect(page, route.jump ? 'instructor' : 'reader');
       await pairAndApprove(page, connector, name);
       await connect(page, connector, name);
       await testSsh(page, {
