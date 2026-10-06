@@ -10,6 +10,7 @@ export const exportClassResults = defineRoute({
   method: 'POST',
   path: '/api/classes/:classId/exports/results',
   scope: { kind: 'class', role: 'instructor' },
+  allowWhenArchived: true,
   summary: 'Export the class’s test results as CSV; answers with a short-lived download URL',
   params: z.object({ classId: z.uuid() }),
   status: 201,
