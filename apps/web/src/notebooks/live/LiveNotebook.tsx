@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import buttons from '../../components/Buttons.module.css';
 import readingStyles from '../../reading/Reading.module.css';
 import { ResourceTools } from '../../workspace/ResourceTools';
@@ -18,6 +18,7 @@ import { CellEditor } from './CellEditor';
 import { kernelIsBusy, type LiveExecution, latestByCell } from './executionState';
 import live from './Live.module.css';
 import { LiveOutputs } from './Outputs';
+import { SessionPanels, useCopyInGate } from './SessionPanels';
 import { LiveToolbar, type SessionAction } from './Toolbar';
 import { useChannel } from './useChannel';
 
@@ -144,7 +145,12 @@ export function LiveNotebook({
   const kernel = state.kernel;
   const kernelState = kernel?.state;
   const connected = sessionReady && channelOpen && !left;
-  const canRun = connected && kernelState !== undefined && RUNNABLE.has(kernelState);
+  const onEditRef = useRef(onEdit);
+  onEditRef.current = onEdit;
+  const stableEdit = useCallback((id: string, value: string) => onEditRef.current(id, value), []);
+  const gate = useCopyInGate(classId, session.id, sessionReady && !left);
+  const canRun =
+    connected && kernelState !== undefined && RUNNABLE.has(kernelState) && !gate.pending;
   const busy = connected && kernelIsBusy(kernelState);
   const owned = state.session?.owned ?? session.owned;
   const latest = useMemo(() => latestByCell(state), [state]);
@@ -308,6 +314,17 @@ export function LiveNotebook({
     }
   };
 
+  const kernelNameShown = kernel?.name ?? session.kernelName ?? undefined;
+  const environment = useMemo(
+    () => ({
+      os: session.environment?.os,
+      arch: session.environment?.arch,
+      interpreter: session.environment?.runtime,
+      kernel: kernelNameShown,
+    }),
+    [session.environment, kernelNameShown],
+  );
+
   const label = modeLabel({
     connectionName,
     language: languageOf(kernel?.name ?? session.kernelName, notebook.language),
@@ -377,6 +394,20 @@ export function LiveNotebook({
           kernel state shown is the last one Parallax read and is unconfirmed. Nothing runs again
           when the connection returns.
         </p>
+      </div>,
+    );
+  }
+  if (gate.pending) {
+    banner.push(
+      <div key="copyin" className={live.banner} role="status">
+        <p>
+          This notebook declares {gate.declared} {gate.declared === 1 ? 'file' : 'files'}. Cells
+          cannot run until you copy {gate.declared === 1 ? 'it' : 'them'} in from Files below, or
+          choose to run without {gate.declared === 1 ? 'it' : 'them'}.
+        </p>
+        <button type="button" className={buttons.outline} onClick={gate.settle}>
+          Run without the files
+        </button>
       </div>,
     );
   }
@@ -621,6 +652,21 @@ export function LiveNotebook({
           );
         })}
       </article>
+      {sessionReady && !left ? (
+        <SessionPanels
+          classId={classId}
+          sessionId={session.id}
+          revisionId={session.resourceRevisionId}
+          notebook={notebook}
+          sources={sources}
+          onEdit={stableEdit}
+          environment={environment}
+          workspace={gate.listing.data?.workspace}
+          host={gate.listing.data?.host ?? null}
+          workspacePending={gate.listing.isPending}
+          onCopyInSettled={gate.settle}
+        />
+      ) : null}
     </>
   );
 }
