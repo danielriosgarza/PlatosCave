@@ -448,6 +448,46 @@ describe('slide notes', () => {
     expect(screen.getByLabelText('Comment or question')).toHaveValue('');
   });
 
+  it('A05 text typed while a question is posting is all that stays in the box and on the device', async () => {
+    const user = userEvent.setup();
+    const w = world();
+    const mock = api(w);
+    const original = mock.getMockImplementation() as (
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ) => Promise<Response>;
+    let release: () => void = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    mock.mockImplementation(async (input, init) => {
+      if (init?.method === 'POST' && String(input).endsWith('/threads')) await held;
+      return original(input, init);
+    });
+    await openNotes(user);
+    await user.click(screen.getByRole('button', { name: /^Discussion/ }));
+    const box = screen.getByLabelText('Comment or question');
+    await user.type(box, 'Why n minus one?');
+    await user.click(screen.getByRole('button', { name: 'Post' }));
+    await user.type(box, ' And why not n?');
+    release();
+    await waitFor(() => expect(w.threads).toHaveLength(1));
+    await waitFor(() => expect(box).toHaveValue(' And why not n?'));
+    await waitFor(async () => {
+      const drafts = await listDrafts(SAM_ID, CLASS_A, RES);
+      expect(drafts.map((d) => d.body)).toEqual([' And why not n?']);
+    });
+    // After a reload the margin offers only the new text; the posted question is not sent again.
+    cleanup();
+    renderApp(SLIDES);
+    await user.click(await screen.findByRole('button', { name: 'Notes' }));
+    await user.click(await screen.findByRole('button', { name: /^Discussion/ }));
+    await waitFor(() =>
+      expect(screen.getByLabelText('Comment or question')).toHaveValue(' And why not n?'),
+    );
+    expect(w.calls.filter((c) => c.method === 'POST')).toHaveLength(1);
+  });
+
   it('A24 an unsent edit of a saved note is restored over the saved text', async () => {
     const user = userEvent.setup();
     const saved = note(uuid(60), 0, 'saved text');
