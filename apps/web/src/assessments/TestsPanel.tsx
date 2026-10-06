@@ -1,3 +1,4 @@
+import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
 import { ApiError } from '../api/client';
 import buttons from '../components/Buttons.module.css';
@@ -7,8 +8,10 @@ import { RetryNotice } from '../components/RetryNotice';
 import { type ReleasedResource, useClassRelease } from '../exercises/attempt';
 import { formatOpens } from '../topics/topics';
 import { AttemptWorkspace } from './AttemptWorkspace';
+import { recoveryAnswered } from './answers';
 import {
   type AttemptView,
+  attemptKey,
   fetchAttempt,
   type ResultAttempt,
   startAttempt,
@@ -16,6 +19,7 @@ import {
   useMyResults,
   useTestOverview,
 } from './api';
+import { RecoveryPanel } from './RecoveryPanel';
 import { ReportedGrade, ResultsView, resultLine } from './Results';
 import { formatInZone, TermsPanel } from './TermsPanel';
 import styles from './Test.module.css';
@@ -82,10 +86,12 @@ function TopicTests({
   if (selected && !locked(selected)) {
     if (role === 'instructor') {
       return (
-        <p className={pageStyles.intro}>
-          {selected.title}: students take this test here. Attempts and results are reviewed under
-          Class review.
-        </p>
+        <div>
+          <p className={pageStyles.intro}>
+            {selected.title}: students take this test here. Results are reviewed under Class review.
+          </p>
+          <RecoveryPanel classId={classId} resourceId={selected.resourceId} />
+        </div>
       );
     }
     return (
@@ -142,6 +148,7 @@ function TestEntry({
   const results = useMyResults(classId, resource.resourceId);
   const [viewing, setViewing] = useState<ResultAttempt | null>(null);
   const [open, setOpen] = useState<AttemptView | null>(null);
+  const queryClient = useQueryClient();
   const [starting, setStarting] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const returnTo = useRef<string | null>(null);
@@ -211,11 +218,12 @@ function TestEntry({
     setStarting(true);
     setProblem(null);
     try {
-      setOpen(
-        resumeId
-          ? await fetchAttempt(classId, resumeId)
-          : await startAttempt(classId, resource.resourceId),
-      );
+      const view = resumeId
+        ? await fetchAttempt(classId, resumeId)
+        : await startAttempt(classId, resource.resourceId);
+      // The view just read is the freshest; a cached copy from an earlier visit must not stand in.
+      queryClient.setQueryData(attemptKey(classId, view.id), view);
+      setOpen(view);
     } catch (error) {
       const body = error instanceof ApiError ? (error.body as { reason?: string } | null) : null;
       setProblem(
@@ -299,10 +307,26 @@ function TestEntry({
                     {a.receipt?.autoSubmitted ? ' · submitted by the server at the deadline' : ''}
                   </span>
                 </span>
+                {recoveryAnswered(a.recoveryRequestedAt, a.localCopyAt) ||
+                !a.recoveryRequestedAt ? null : (
+                  <span className={styles.small}>
+                    Your instructor asked for your unsent work from this attempt. Open the receipt
+                    to send it.
+                  </span>
+                )}
                 {a.receipt ? (
                   <span className={`${styles.small} ${styles.muted}`}>
                     Receipt {a.receipt.submissionId.slice(0, 8)} ·{' '}
-                    {formatInZone(a.receipt.submittedAt, data.terms.timeZone)}
+                    {formatInZone(a.receipt.submittedAt, data.terms.timeZone)}{' '}
+                    <button
+                      type="button"
+                      className={buttons.textButton}
+                      onClick={() => void start(a.id)}
+                      disabled={starting}
+                      aria-label={`Open the receipt of attempt ${a.number}`}
+                    >
+                      Open receipt
+                    </button>
                   </span>
                 ) : null}
                 {result?.status === 'released' ? (
