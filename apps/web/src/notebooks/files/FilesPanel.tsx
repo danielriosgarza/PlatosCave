@@ -31,10 +31,11 @@ interface Props {
   /** Called with the working copy an import created, so the editor can offer it. */
   onWorkingCopy: (copy: WorkingCopyView) => void;
   /**
-   * Called with the newer copy when an import found one. A host whose `onWorkingCopy` replaces
-   * the editor's draft passes this so a conflict keeps the draft; the default is `onWorkingCopy`.
+   * Called with the newer copy when an import found one. Required, and separate from
+   * `onWorkingCopy`, so that a host whose `onWorkingCopy` replaces the editor's draft cannot lose
+   * the draft on a conflict by omission.
    */
-  onStale?: (current: WorkingCopyView) => void;
+  onStale: (current: WorkingCopyView) => void;
   /** Called once the declared files are on the computer (or the person kept the existing ones). */
   onCopyInSettled?: () => void;
 }
@@ -135,7 +136,7 @@ export function FilesPanel({
         setDir={setDir}
         workingCopy={workingCopy}
         onWorkingCopy={onWorkingCopy}
-        onStale={onStale ?? onWorkingCopy}
+        onStale={onStale}
         onChanged={() => void refresh()}
       />
     </section>
@@ -282,7 +283,9 @@ function Workspace({
   const [selected, setSelected] = useState<Record<string, number>>({});
   const [importing, setImporting] = useState<Entry | null>(null);
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<{ kind: 'status' | 'alert'; text: string } | null>(null);
+  const [message, setMessage] = useState<
+    { kind: 'status' | 'alert'; text: string } | { kind: 'conflict'; entry: Entry } | null
+  >(null);
   const [copied, setCopied] = useState<TransferView[]>([]);
 
   const chosen = Object.entries(selected);
@@ -344,12 +347,8 @@ function Workspace({
       const body =
         err instanceof ApiError ? (err.body as { error?: string; current?: unknown } | null) : null;
       if (err instanceof ApiError && err.status === 409 && body?.error === 'revision_conflict') {
-        const current = body.current as WorkingCopyView;
-        onStale(current);
-        setMessage({
-          kind: 'alert',
-          text: `Your working copy changed since you opened it and is now at revision ${current.currentRevision}. Nothing was imported; import again to add ${entry.name} as revision ${current.currentRevision + 1}.`,
-        });
+        onStale(body.current as WorkingCopyView);
+        setMessage({ kind: 'conflict', entry });
       } else {
         setMessage({ kind: 'alert', text: refusalText(err, `${entry.name} was not imported.`) });
       }
@@ -482,7 +481,16 @@ function Workspace({
           {busy ? 'Copying' : 'Copy selected files to Parallax'}
         </button>
       </div>
-      {message ? <p role={message.kind}>{message.text}</p> : null}
+      {message?.kind === 'conflict' ? (
+        // The numbers come from the copy as it is now, so a later save or import keeps them true.
+        <p role="alert">
+          Your working copy changed since you opened it and is now at revision{' '}
+          {workingCopy.currentRevision}. Nothing was imported; import again to add{' '}
+          {message.entry.name} as revision {workingCopy.currentRevision + 1}.
+        </p>
+      ) : message ? (
+        <p role={message.kind}>{message.text}</p>
+      ) : null}
       {copied.length > 0 ? (
         <ul className={styles.list} aria-label="Files copied to Parallax">
           {copied.map((t) => (
