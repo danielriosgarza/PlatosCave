@@ -366,6 +366,14 @@ describe('A15 deadline submission', () => {
     expect(
       (await save('bea', ids.classB, beaAttempt, 'se', { value: 'half', seq: 2 })).status,
     ).toBe(400);
+    // A lone surrogate would pass JSON but fail Postgres's jsonb: 400, never a 500 (design §3.1).
+    const lone = await save('bea', ids.classB, beaAttempt, 'why', { value: 'half \ud800', seq: 2 });
+    expect(lone.status).toBe(400);
+    const loneCode = await save('bea', ids.classB, beaAttempt, 'mean', {
+      value: { files: [{ path: 'solution.py', content: 'x = "\udc00"\n' }] },
+      seq: 1,
+    });
+    expect(loneCode.status).toBe(400);
 
     // Bea goes offline and keeps typing; the deadline passes and the job runs.
     clock = minutes(31);

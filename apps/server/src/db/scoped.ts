@@ -28,6 +28,9 @@ import {
   exerciseAttempts,
   exerciseEvents,
   fileTransfers,
+  gradeOverrides,
+  gradeReleases,
+  grades,
   notebookConnections,
   notebookSessions,
   notebookSubmissionFiles,
@@ -78,6 +81,9 @@ export const classScopedTables: PgTable[] = [
   notebookSubmissionFiles,
   executionJobs,
   executionResults,
+  grades,
+  gradeOverrides,
+  gradeReleases,
 ];
 export const courseScopedTables: PgTable[] = [
   classes,

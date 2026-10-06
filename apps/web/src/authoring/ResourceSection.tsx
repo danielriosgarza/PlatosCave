@@ -20,7 +20,9 @@ import { ConflictView } from './ConflictView';
 import { ExerciseEditor } from './ExerciseEditor';
 import { authoringKey, processingQuery } from './queries';
 import { SaveStatus } from './SaveStatus';
+import { AddShiny, ShinyEditor } from './ShinyApp';
 import { AddWebSlides, WebSlidesEditor } from './WebSlides';
+import { declaredFromContent } from './workspaceFiles';
 
 export type ResourceSummary = z.output<typeof draftResourceSummary>;
 type Type = ResourceSummary['type'];
@@ -47,6 +49,7 @@ const typeNames: Record<Type, string> = {
 const isExercise = (t: Type) => t === 'exercise';
 const isReading = (t: Type) => t === 'reading_native' || t === 'reading_pdf';
 const isWebSlides = (t: Type) => t === 'slides_web';
+const isShiny = (t: Type) => t === 'shiny';
 
 interface Props {
   courseId: string;
@@ -64,6 +67,7 @@ export function ResourceSection({ courseId, topicId, resources }: Props) {
   const [adding, setAdding] = useState(false);
   const [addingNotebook, setAddingNotebook] = useState(false);
   const [addingSlides, setAddingSlides] = useState(false);
+  const [addingShiny, setAddingShiny] = useState(false);
   const refresh = useCallback(
     () => queryClient.invalidateQueries({ queryKey: authoringKey(courseId) }),
     [queryClient, courseId],
@@ -157,6 +161,29 @@ export function ResourceSection({ courseId, topicId, resources }: Props) {
                     onClick={() => setAddingNotebook(true)}
                   >
                     Add notebook
+                  </button>
+                </div>
+              )
+            ) : null}
+            {tab.name === 'Notebooks' ? (
+              addingShiny ? (
+                <AddShiny
+                  courseId={courseId}
+                  topicId={topicId}
+                  onCancel={() => setAddingShiny(false)}
+                  onAdded={() => {
+                    setAddingShiny(false);
+                    void refresh();
+                  }}
+                />
+              ) : (
+                <div className={styles.mt12}>
+                  <button
+                    type="button"
+                    className={buttons.outline}
+                    onClick={() => setAddingShiny(true)}
+                  >
+                    Add Shiny app
                   </button>
                 </div>
               )
@@ -275,7 +302,20 @@ function ResourceRow({
           </div>
           <StatusLine courseId={courseId} resource={resource} status={status} lookup={lookup} />
         </div>
-        {isReading(resource.type) || isWebSlides(resource.type) || isExercise(resource.type) ? (
+        {resource.type === 'notebook' ? (
+          <button
+            type="button"
+            className={buttons.textButton}
+            aria-expanded={open}
+            onClick={() => setOpen(!open)}
+          >
+            {open ? 'Hide workspace files' : `Workspace files of ${resource.title}`}
+          </button>
+        ) : null}
+        {isReading(resource.type) ||
+        isWebSlides(resource.type) ||
+        isShiny(resource.type) ||
+        isExercise(resource.type) ? (
           <button
             type="button"
             className={buttons.textButton}
@@ -286,16 +326,50 @@ function ResourceRow({
           </button>
         ) : null}
       </div>
+      {open && resource.type === 'notebook' ? (
+        <NotebookFiles courseId={courseId} resourceId={resource.id} />
+      ) : null}
       {open && isExercise(resource.type) ? (
         <ExerciseEditor courseId={courseId} resourceId={resource.id} onSaved={onChanged} />
       ) : null}
       {open && isWebSlides(resource.type) ? (
         <WebSlidesEditor courseId={courseId} resourceId={resource.id} onSaved={onChanged} />
       ) : null}
+      {open && isShiny(resource.type) ? (
+        <ShinyEditor courseId={courseId} resourceId={resource.id} onSaved={onChanged} />
+      ) : null}
       {open && isReading(resource.type) ? (
         <ReadingEditor courseId={courseId} resourceId={resource.id} onSaved={onChanged} />
       ) : null}
     </div>
+  );
+}
+
+/** The files a notebook's draft revision declares for a learner's workspace. */
+function NotebookFiles({ courseId, resourceId }: { courseId: string; resourceId: string }) {
+  const loaded = useQuery({
+    queryKey: [...authoringKey(courseId), 'resource', resourceId],
+    queryFn: () => call(getResource, { params: { courseId, resourceId } }),
+    gcTime: 0,
+  });
+  if (loaded.isError)
+    return (
+      <p role="alert" className={styles.small}>
+        The workspace files could not be loaded.
+      </p>
+    );
+  if (!loaded.data) return <p className={`${styles.small} ${styles.muted}`}>Loading…</p>;
+  const files = declaredFromContent(loaded.data.head?.content);
+  if (files.length === 0)
+    return <p className={`${styles.small} ${styles.muted}`}>No workspace files declared.</p>;
+  return (
+    <ul aria-label="Workspace files" className={styles.small}>
+      {files.map((f) => (
+        <li key={f.path}>
+          <code>{f.path}</code> · {f.size.toLocaleString('en')} bytes
+        </li>
+      ))}
+    </ul>
   );
 }
 

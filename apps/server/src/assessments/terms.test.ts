@@ -226,6 +226,11 @@ describe('answers are checked before they are acknowledged', () => {
     [code, { files: [{ path: 'solution.py', content: 'def mean(xs): ...' }] }, true],
     [code, { files: [{ path: 'secret.txt', content: '0' }] }, false],
     [code, { files: [{ path: 'missing.py', content: '' }] }, false],
+    [code, { files: [{ path: 'solution.py', content: 'x = "\ud800"' }] }, false],
+    [code, { files: [{ path: 'solution.py', content: 'x = "\udc00"' }] }, false],
+    [code, { files: [{ path: 'solution.py', content: 'x = "😀"' }] }, true],
+    [explanation, 'lone \ud800', false],
+    [explanation, 'paired 😀', true],
   ])('%#: %j', (question, value, ok) => {
     expect(parseAnswer(question, value).ok).toBe(ok);
   });

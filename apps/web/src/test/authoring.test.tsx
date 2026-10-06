@@ -1,5 +1,6 @@
 import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import axe from 'axe-core';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { COURSE, makeMe, renderApp, stubApi } from './render';
 
@@ -77,12 +78,17 @@ interface Server {
   processingStatus?: number;
   classArchived?: boolean;
   uploads: number;
+  /** Files received by the upload routes, in order. */
+  received: { route: string; file: File }[];
   /** PATCH of this topic id answers with this status (reorder tests). */
   otherStatus?: number;
   /** The Markdown a web deck's head revision holds. */
   deckMarkdown?: string;
   /** The next PATCH of the deck answers 409 with a copy holding this Markdown. */
   deckConflict?: string;
+  /** The content and alternative a non-deck head revision holds (a Shiny app's address, a notebook's workspace files). */
+  headContent?: Record<string, unknown>;
+  headAlternative?: { text: string } | null;
 }
 
 function fresh(over: Partial<Server> = {}): Server {
@@ -95,9 +101,17 @@ function fresh(over: Partial<Server> = {}): Server {
     report: { errors: [], warnings: [] },
     patched: [],
     uploads: 0,
+    received: [],
     ...over,
   };
 }
+
+/** The `file` part of a multipart request body. */
+const formFile = (init?: RequestInit) => {
+  const file = init?.body instanceof FormData ? init.body.get('file') : null;
+  if (!(file instanceof File)) throw new Error('the request has no file part');
+  return file;
+};
 
 const json = (body: unknown, status = 200) => ({ status, body });
 
@@ -172,8 +186,22 @@ function api(me: ReturnType<typeof makeMe>, s: Server) {
       s.topic = topic({ ...s.topic, ...body, revision: s.topic.revision + 1 });
       return json(s.topic);
     }
+    if (path === `${base}/workspace-files` && method === 'POST') {
+      const file = formFile(init);
+      s.received.push({ route: 'workspace-files', file });
+      const n = s.received.filter((r) => r.route === 'workspace-files').length;
+      const sha = String(n).repeat(64);
+      return json({
+        id: `00000000-0000-4000-8000-0000000000d${n}`,
+        key: `courses/${COURSE}/objects/${sha}`,
+        sha256: sha,
+        size: file.size,
+        filename: file.name,
+      });
+    }
     if (path === `${base}/uploads` && method === 'POST') {
       s.uploads += 1;
+      s.received.push({ route: 'uploads', file: formFile(init) });
       return json({
         key: `courses/${COURSE}/objects/${'a'.repeat(64)}`,
         sha256: 'a'.repeat(64),
@@ -207,7 +235,14 @@ function api(me: ReturnType<typeof makeMe>, s: Server) {
             409,
           );
         }
-        if ('content' in body) s.deckMarkdown = (body.content as { markdown: string }).markdown;
+        if ('content' in body) {
+          const content = body.content as Record<string, unknown>;
+          if (found.type === 'shiny') s.headContent = content;
+          else s.deckMarkdown = content.markdown as string;
+        }
+        if ('accessibleAlternative' in body) {
+          s.headAlternative = body.accessibleAlternative as { text: string } | null;
+        }
         return json({ ...found, ...body, revision: found.revision + 1, head: head(s) });
       }
       return json({ ...found, head: head(s) });
@@ -218,9 +253,9 @@ function api(me: ReturnType<typeof makeMe>, s: Server) {
 
 const head = (s: Server) => ({
   id: REVISION,
-  content: { markdown: s.deckMarkdown ?? '# Old' },
+  content: s.headContent ?? { markdown: s.deckMarkdown ?? '# Old' },
   objectKeys: [],
-  accessibleAlternative: null,
+  accessibleAlternative: s.headAlternative ?? null,
   provenance: null,
   contentHash: 'h',
   createdBy: SAM,
@@ -514,6 +549,185 @@ describe('notebook upload', () => {
   });
 });
 
+describe('notebook workspace files', () => {
+  const notebookText = JSON.stringify({
+    nbformat: 4,
+    nbformat_minor: 5,
+    cells: [],
+    metadata: { kernelspec: { name: 'python3' }, parallax: { note: 'kept' } },
+  });
+
+  async function openForm(s?: Server) {
+    const user = userEvent.setup({ applyAccept: false });
+    const opened = await open(grant(), s ?? fresh());
+    const notebooks = await screen.findByRole('region', { name: 'Notebooks resources' });
+    await user.click(within(notebooks).getByRole('button', { name: 'Add notebook' }));
+    const form = screen.getByRole('form', { name: 'Add notebook' });
+    await user.upload(
+      within(form).getByLabelText(/File \(Jupyter/),
+      new File([notebookText], 'Repeated samples.ipynb'),
+    );
+    return { user, form, s: opened.s };
+  }
+
+  it('A34 declares the uploaded data files in the notebook and lists them as its objects', async () => {
+    const { user, form, s } = await openForm();
+    await user.upload(
+      within(form).getByLabelText('Add data files'),
+      new File(['a,b\n1,2\n'], 'sample.csv'),
+    );
+    const path = within(form).getByLabelText('Workspace path of sample.csv');
+    await user.clear(path);
+    await user.type(path, 'data/sample.csv');
+    await user.click(within(form).getByRole('button', { name: 'Add notebook' }));
+    await waitFor(() => expect(s.patched.some((p) => p.url.endsWith('/resources'))).toBe(true));
+
+    const data = s.received.find((r) => r.route === 'workspace-files');
+    expect(data?.file.name).toBe('sample.csv');
+    const stored = JSON.parse(
+      (await s.received.find((r) => r.route === 'uploads')?.file.text()) ?? '',
+    ) as {
+      metadata: Record<string, unknown>;
+    };
+    expect(stored.metadata).toEqual({
+      kernelspec: { name: 'python3' },
+      parallax: {
+        note: 'kept',
+        files: [{ path: 'data/sample.csv', resourceId: '00000000-0000-4000-8000-0000000000d1' }],
+      },
+    });
+    const created = s.patched.find((p) => p.url.endsWith('/resources'))?.body as {
+      objectKeys: string[];
+      content: { workspaceFiles: unknown[] };
+    };
+    expect(created.objectKeys).toEqual([
+      `courses/${COURSE}/objects/${'a'.repeat(64)}`,
+      `courses/${COURSE}/objects/${'1'.repeat(64)}`,
+    ]);
+    expect(created.content.workspaceFiles).toEqual([
+      { path: 'data/sample.csv', resourceId: '00000000-0000-4000-8000-0000000000d1', size: 8 },
+    ]);
+  });
+
+  it('A34 refuses absolute, hidden, dot and duplicate paths before anything is sent', async () => {
+    const { user, form, s } = await openForm();
+    await user.upload(within(form).getByLabelText('Add data files'), [
+      new File(['1'], 'one.csv'),
+      new File(['2'], 'two.csv'),
+    ]);
+    const one = within(form).getByLabelText('Workspace path of one.csv');
+    const submit = within(form).getByRole('button', { name: 'Add notebook' });
+    expect(submit).toBeEnabled();
+    for (const bad of ['/etc/one.csv', '.hidden/one.csv', 'a/../one.csv', 'a//one.csv', '']) {
+      await user.clear(one);
+      if (bad) await user.type(one, bad);
+      expect(submit).toBeDisabled();
+      expect(one).toHaveAttribute('aria-invalid', 'true');
+    }
+    await user.clear(one);
+    await user.type(one, 'two.csv');
+    expect((await within(form).findAllByRole('alert')).map((a) => a.textContent)).toContain(
+      'Another file already has this path',
+    );
+    expect(submit).toBeDisabled();
+    await user.click(within(form).getByRole('button', { name: 'Remove two.csv' }));
+    expect(submit).toBeEnabled();
+    expect(s.received).toEqual([]);
+  });
+
+  it('A34 the draft view lists the files a notebook declares', async () => {
+    const user = userEvent.setup();
+    await open(
+      grant(),
+      fresh({
+        resources: [resource({ type: 'notebook', title: 'Repeated samples' })],
+        headContent: {
+          sourceKey: `courses/${COURSE}/objects/${'a'.repeat(64)}`,
+          workspaceFiles: [
+            {
+              path: 'data/sample.csv',
+              resourceId: '00000000-0000-4000-8000-0000000000d1',
+              size: 9,
+            },
+          ],
+        },
+        processing: { state: 'ready' },
+      }),
+    );
+    await user.click(
+      await screen.findByRole('button', { name: 'Workspace files of Repeated samples' }),
+    );
+    const list = await screen.findByRole('list', { name: 'Workspace files' });
+    expect(within(list).getByText('data/sample.csv')).toBeInTheDocument();
+  });
+
+  it('A34 removing and re-adding a file keeps entries distinct and flags the duplicate path', async () => {
+    const { user, form } = await openForm();
+    const picker = within(form).getByLabelText('Add data files');
+    await user.upload(picker, [new File(['1'], 'a.csv'), new File(['2'], 'b.csv')]);
+    await user.click(within(form).getByRole('button', { name: 'Remove a.csv' }));
+    await user.upload(within(form).getByLabelText('Add data files'), new File(['3'], 'b.csv'));
+    const paths = within(form).getAllByLabelText('Workspace path of b.csv');
+    expect(paths).toHaveLength(2);
+    expect(
+      within(form)
+        .getAllByRole('alert')
+        .map((a) => a.textContent),
+    ).toEqual(['Another file already has this path', 'Another file already has this path']);
+    expect(within(form).getByRole('button', { name: 'Add notebook' })).toBeDisabled();
+    await user.type(paths[1] as HTMLElement, 'x');
+    expect(within(form).queryAllByRole('alert')).toHaveLength(0);
+    const describedBy = paths.map((p) => p.getAttribute('aria-describedby'));
+    expect(describedBy.every((d) => d === null || !/\s/.test(d))).toBe(true);
+  });
+
+  it('A34 a file name with spaces still points its input at the path error', async () => {
+    const { user, form } = await openForm();
+    await user.upload(
+      within(form).getByLabelText('Add data files'),
+      new File(['1'], 'my data.csv'),
+    );
+    const path = within(form).getByLabelText('Workspace path of my data.csv');
+    await user.clear(path);
+    await user.type(path, '.hidden');
+    const id = path.getAttribute('aria-describedby') ?? '';
+    expect(id).not.toMatch(/\s/);
+    expect(document.getElementById(id)).toHaveTextContent(/relative path/);
+  });
+
+  it('A34 a notebook that is not JSON is refused before any data file is uploaded', async () => {
+    const user = userEvent.setup({ applyAccept: false });
+    const { s } = await open(grant(), fresh());
+    const notebooks = await screen.findByRole('region', { name: 'Notebooks resources' });
+    await user.click(within(notebooks).getByRole('button', { name: 'Add notebook' }));
+    const form = screen.getByRole('form', { name: 'Add notebook' });
+    await user.upload(
+      within(form).getByLabelText(/File \(Jupyter/),
+      new File(['not json'], 'n.ipynb'),
+    );
+    await user.upload(within(form).getByLabelText('Add data files'), new File(['1'], 'one.csv'));
+    await user.click(within(form).getByRole('button', { name: 'Add notebook' }));
+    expect(await within(form).findByText(/The notebook is not valid JSON/)).toBeInTheDocument();
+    expect(s.received).toEqual([]);
+  });
+
+  it('A34 the files form is keyboard operable and has no accessibility violations', async () => {
+    const { user, form } = await openForm();
+    const picker = within(form).getByLabelText('Add data files');
+    await user.upload(picker, new File(['1'], 'one.csv'));
+    const path = within(form).getByLabelText('Workspace path of one.csv');
+    await user.click(path);
+    await user.keyboard('x');
+    await user.tab();
+    expect(within(form).getByRole('button', { name: 'Remove one.csv' })).toHaveFocus();
+    await user.keyboard('{Enter}');
+    expect(within(form).queryByLabelText('Workspace path of one.csv')).toBeNull();
+    await user.upload(picker, new File(['1'], 'one.csv'));
+    const results = await axe.run(form, { rules: { 'color-contrast': { enabled: false } } });
+    expect(results.violations.map((v) => `${v.id}: ${v.nodes[0]?.html}`)).toEqual([]);
+  });
+});
+
 describe('web slides', () => {
   const deck = () =>
     fresh({
@@ -584,6 +798,103 @@ describe('web slides', () => {
   it('a finished web deck reads Ready to publish', async () => {
     await open(grant(), deck());
     expect(await screen.findByText('Ready to publish')).toBeInTheDocument();
+  });
+});
+
+describe('Shiny apps', () => {
+  const app = () =>
+    fresh({
+      resources: [resource({ type: 'shiny', title: 'Sampling lab' })],
+      headContent: { url: 'https://shiny.example.org/lab' },
+      headAlternative: { text: 'A table of repeated samples' },
+    });
+
+  it('P2-15a adds a Shiny app from a title, an address and an accessible alternative', async () => {
+    const user = userEvent.setup();
+    const { s } = await open();
+    const notebooks = await screen.findByRole('region', { name: 'Notebooks resources' });
+    await user.click(within(notebooks).getByRole('button', { name: 'Add Shiny app' }));
+    const form = screen.getByRole('form', { name: 'Add Shiny app' });
+    expect(within(form).getByRole('button', { name: 'Add Shiny app' })).toBeDisabled();
+    await user.type(within(form).getByLabelText('Title'), 'Sampling lab');
+    await user.type(within(form).getByLabelText('Address'), 'https://shiny.example.org/lab');
+    await user.type(within(form).getByLabelText('Accessible alternative'), 'Repeated samples');
+    await user.click(within(form).getByRole('button', { name: 'Add Shiny app' }));
+    await waitFor(() => expect(s.patched.some((p) => p.url.endsWith('/resources'))).toBe(true));
+    expect(s.patched.find((p) => p.url.endsWith('/resources'))?.body).toEqual({
+      type: 'shiny',
+      title: 'Sampling lab',
+      content: { url: 'https://shiny.example.org/lab' },
+      accessibleAlternative: { text: 'Repeated samples' },
+    });
+    expect(await screen.findByText('Sampling lab')).toBeInTheDocument();
+  });
+
+  it('P2-15a refuses an address the server would refuse before sending it', async () => {
+    const user = userEvent.setup();
+    const { s } = await open();
+    await user.click(await screen.findByRole('button', { name: 'Add Shiny app' }));
+    const form = screen.getByRole('form', { name: 'Add Shiny app' });
+    await user.type(within(form).getByLabelText('Title'), 'Sampling lab');
+    await user.type(within(form).getByLabelText('Address'), 'http://shiny.example.org/lab');
+    expect(await within(form).findByRole('alert')).toHaveTextContent('must start with https://');
+    expect(within(form).getByRole('button', { name: 'Add Shiny app' })).toBeDisabled();
+    await user.clear(within(form).getByLabelText('Address'));
+    await user.type(within(form).getByLabelText('Address'), 'https://a:b@shiny.example.org/');
+    expect(await within(form).findByRole('alert')).toHaveTextContent('username or password');
+    expect(s.patched).toHaveLength(0);
+  });
+
+  it('P2-15a edits the address and alternative of a Shiny app and sends them with the revision', async () => {
+    const user = userEvent.setup();
+    const { s } = await open(grant(), app());
+    await user.click(await screen.findByRole('button', { name: 'Edit Sampling lab' }));
+    const address = await screen.findByLabelText('Address');
+    expect(address).toHaveValue('https://shiny.example.org/lab');
+    expect(screen.getByLabelText('Accessible alternative')).toHaveValue(
+      'A table of repeated samples',
+    );
+    await user.clear(address);
+    await user.type(address, 'https://shiny.example.org/lab-2');
+    await waitFor(() => expect(s.patched).toHaveLength(1), { timeout: 4000 });
+    expect(s.patched[0]?.body).toMatchObject({
+      expectedRevision: 1,
+      content: { url: 'https://shiny.example.org/lab-2' },
+      accessibleAlternative: { text: 'A table of repeated samples' },
+    });
+    expect(await screen.findByText(/Draft saved at/)).toBeInTheDocument();
+  });
+
+  it('P2-15a does not save an invalid address and says so', async () => {
+    const user = userEvent.setup();
+    const { s } = await open(grant(), app());
+    await user.click(await screen.findByRole('button', { name: 'Edit Sampling lab' }));
+    const address = await screen.findByLabelText('Address');
+    await user.clear(address);
+    await user.type(address, 'ftp://shiny.example.org/lab');
+    expect(
+      await screen.findByText(/Nothing is saved until it is valid/, {}, { timeout: 4000 }),
+    ).toBeInTheDocument();
+    expect(s.patched).toHaveLength(0);
+  });
+
+  it('P2-15a shows the unapproved-origin warning in the publication check', async () => {
+    await open(
+      grant(),
+      fresh({
+        report: {
+          errors: [],
+          warnings: [
+            {
+              code: 'unapproved_shiny_origin',
+              message: '“Sampling lab” is not on an approved Shiny origin',
+              topicId: TOPIC,
+            },
+          ],
+        },
+      }),
+    );
+    expect(await screen.findByText(/not on an approved Shiny origin/)).toBeInTheDocument();
   });
 });
 

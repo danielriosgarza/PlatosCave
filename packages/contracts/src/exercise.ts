@@ -134,6 +134,16 @@ const ids = (list: { id: string }[]) => list.map((o) => o.id);
 const sameSet = (a: string[], b: string[]) =>
   a.length === b.length && new Set(a).size === a.length && a.every((x) => b.includes(x));
 
+/**
+ * Whether `value` is a point the simulation control offers: min + k·step for a whole k, as the
+ * control sends it (snapped to six decimals). A value that only rounds to a grid point is not
+ * one, because step completion compares the sent values exactly.
+ */
+export function onControlGrid(value: number, min: number, step: number): boolean {
+  const k = Math.round((value - min) / step);
+  return Number.isFinite(k) && value === Number((min + k * step).toFixed(6));
+}
+
 /** Cross-field rules a step's own shape cannot express; the message names what is wrong. */
 function stepProblem(step: ExerciseStep): string | undefined {
   const unique = (list: { id: string }[]) => new Set(ids(list)).size === list.length;
@@ -158,8 +168,7 @@ function stepProblem(step: ExerciseStep): string | undefined {
       const { min, max, initial, step: size } = step.control;
       const inRange = (v: number) => v >= min && v <= max;
       // The control only offers min + k·step, so a value off that grid could never be checked.
-      const onGrid = (v: number) =>
-        Math.abs((v - min) / size - Math.round((v - min) / size)) < 1e-9;
+      const onGrid = (v: number) => onControlGrid(v, min, size);
       if (min >= max || !inRange(initial)) return 'control range is invalid';
       if (!onGrid(initial)) return 'initial value must be one the control offers (min + k·step)';
       if (!unique(step.observations)) return 'observation ids must be unique';

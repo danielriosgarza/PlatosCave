@@ -10,6 +10,7 @@ import {
   restartKernel,
   startKernel,
   startTest,
+  useComputeTemplates,
   useConnectionActions,
   useConnections,
   useConnectionTest,
@@ -19,6 +20,7 @@ import {
   useSessionActions,
   useSessions,
 } from './api';
+import { TemplateConnectForm } from './ClassComputers';
 import styles from './Connect.module.css';
 import { ConnectSummary } from './ConnectSummary';
 import { DeviceList } from './DeviceList';
@@ -26,11 +28,14 @@ import { LossNotice } from './LossNotice';
 import { causeText, codeText } from './messages';
 import { StageList } from './StageList';
 import { TargetForm, type TargetKind, type TargetValues } from './TargetForm';
+import { TemplateManager } from './TemplateManager';
 
 interface Props {
   classId: string;
   /** The notebook revision a session is opened for. */
   revisionId: string;
+  /** An instructor of the class also publishes its class computers here. */
+  instructor?: boolean;
   onClose: () => void;
 }
 
@@ -51,6 +56,8 @@ const REFUSALS: Record<string, string> = {
     'Parallax did not start this Jupyter server, so it cannot stop it. Disconnect leaves it running.',
   not_open: 'This session has already ended.',
   not_forgettable: 'This session can no longer be given up on; its state has changed.',
+  template_archived:
+    'Your instructor archived this class computer. Choose another class computer or target.',
 };
 
 function refusalText(error: unknown, fallback: string): string {
@@ -65,15 +72,16 @@ function refusalText(error: unknown, fallback: string): string {
  * connect. **Ready** appears only when the session is ready and its kernel reports idle (§5.6);
  * SSH alone never shows Connected.
  */
-export function ConnectPanel({ classId, revisionId, onClose }: Props) {
+export function ConnectPanel({ classId, revisionId, instructor = false, onClose }: Props) {
   const heading = useRef<HTMLHeadingElement>(null);
   const connectors = useConnectors();
   const connections = useConnections();
+  const templates = useComputeTemplates(classId);
   const sessions = useSessions(classId);
   const connectionActions = useConnectionActions();
   const sessionActions = useSessionActions(classId);
 
-  const [kind, setKind] = useState<TargetKind>('local');
+  const [kind, setKind] = useState<TargetKind | 'template'>('local');
   const [selected, setSelected] = useState<string>('new');
   const [connection, setConnection] = useState<Connection | undefined>();
   const [testRef, setTestRef] = useState<{ connectionId: string; testId: string } | undefined>();
@@ -102,6 +110,7 @@ export function ConnectPanel({ classId, revisionId, onClose }: Props) {
 
   const active = (connectors.data ?? []).filter((c) => c.status === 'active');
   const saved = connections.data ?? [];
+  const classComputers = templates.data ?? [];
 
   // Ready is a state of the kernel, so the chosen kernel is started once, for a session that has
   // never had one. A kernel the relay lost is only replaced when the person asks (design §10.6).
@@ -174,7 +183,7 @@ export function ConnectPanel({ classId, revisionId, onClose }: Props) {
     setTestRef({ connectionId: conn.id, testId });
   };
 
-  const submit = async (values: TargetValues) => {
+  const submit = async (values: TargetValues & { templateId?: string }) => {
     setBusy(true);
     setError(null);
     setActionError(null);
@@ -259,7 +268,8 @@ export function ConnectPanel({ classId, revisionId, onClose }: Props) {
     setConnection(undefined);
     setError(null);
     const found = saved.find((c) => c.id === id);
-    if (found) setKind(found.target.kind === 'ssh' ? 'ssh' : 'local');
+    if (found)
+      setKind(found.templateId ? 'template' : found.target.kind === 'ssh' ? 'ssh' : 'local');
   };
 
   const leaveSession = () => {
@@ -284,6 +294,15 @@ export function ConnectPanel({ classId, revisionId, onClose }: Props) {
   const connectable =
     testDone && (testDone.outcome === 'ready' || testDone.outcome === 'ready_to_start');
   const editing = selected === 'new' ? undefined : saved.find((c) => c.id === selected);
+  const choose = (next: TargetKind | 'template') => {
+    setKind(next);
+    setSelected('new');
+    setTestRef(undefined);
+  };
+  const templateMissing =
+    kind === 'template' &&
+    editing?.templateId &&
+    !classComputers.some((t) => t.id === editing.templateId);
 
   return (
     <section
@@ -356,11 +375,7 @@ export function ConnectPanel({ classId, revisionId, onClose }: Props) {
                   type="radio"
                   name="connect-kind"
                   checked={kind === 'local'}
-                  onChange={() => {
-                    setKind('local');
-                    setSelected('new');
-                    setTestRef(undefined);
-                  }}
+                  onChange={() => choose('local')}
                 />
                 This computer
               </label>
@@ -369,14 +384,21 @@ export function ConnectPanel({ classId, revisionId, onClose }: Props) {
                   type="radio"
                   name="connect-kind"
                   checked={kind === 'ssh'}
-                  onChange={() => {
-                    setKind('ssh');
-                    setSelected('new');
-                    setTestRef(undefined);
-                  }}
+                  onChange={() => choose('ssh')}
                 />
                 SSH host
               </label>
+              {classComputers.length > 0 || kind === 'template' ? (
+                <label className={styles.choice}>
+                  <input
+                    type="radio"
+                    name="connect-kind"
+                    checked={kind === 'template'}
+                    onChange={() => choose('template')}
+                  />
+                  Class computers
+                </label>
+              ) : null}
             </fieldset>
             {saved.length > 0 ? (
               <label className={styles.field}>
@@ -393,6 +415,20 @@ export function ConnectPanel({ classId, revisionId, onClose }: Props) {
             ) : null}
             {active.length === 0 ? (
               <p>Pair and approve a computer above, then describe the target.</p>
+            ) : templateMissing ? (
+              <p>
+                This connection was made from a class computer this class does not offer now. Choose
+                another target.
+              </p>
+            ) : kind === 'template' ? (
+              <TemplateConnectForm
+                key={`template-${selected}`}
+                templates={classComputers}
+                connectors={active}
+                saved={editing}
+                busy={busy}
+                onSubmit={(v) => void submit(v)}
+              />
             ) : (
               <TargetForm
                 key={`${kind}-${selected}`}
@@ -431,12 +467,14 @@ export function ConnectPanel({ classId, revisionId, onClose }: Props) {
               <ConnectSummary
                 connection={connection}
                 connector={(connectors.data ?? []).find((c) => c.id === connection.connectorId)}
+                template={classComputers.find((t) => t.id === connection.templateId)}
                 test={testDone}
                 busy={busy}
                 onConnect={(c) => void connect(c)}
               />
             </div>
           ) : null}
+          {instructor ? <TemplateManager classId={classId} /> : null}
         </>
       )}
     </section>

@@ -161,15 +161,37 @@ describe('exercise editor', () => {
     expect(
       within(problems).getByText(/not saved yet; publishing would release the last saved version/),
     ).toBeInTheDocument();
-    await waitFor(() => expect(patched).toHaveLength(1), { timeout: 3000 });
-    expect(patched[0]).not.toHaveProperty('content');
-    // Only the title and visibility were acknowledged, and the status says so.
+    // Title and visibility already match the stored copy, so no request is made, and the status
+    // says the steps are not saved.
     expect(
       await screen.findByText(
         'Title, visibility and archive state saved; step and credit edits are not saved yet',
+        undefined,
+        { timeout: 3000 },
       ),
     ).toBeInTheDocument();
+    expect(patched).toHaveLength(0);
     expect(screen.queryByText(/Draft saved at/)).not.toBeInTheDocument();
+  });
+
+  it('sends nothing more while only the steps change and they stay invalid', async () => {
+    const { user, patched } = await editor();
+    const compare = screen.getByLabelText(/Step 1 values to compare/);
+    await user.clear(compare);
+    await user.type(compare, '25, 102');
+    // Title and visibility are unchanged from the stored copy, so nothing is worth sending.
+    await screen.findByText(
+      'Title, visibility and archive state saved; step and credit edits are not saved yet',
+      undefined,
+      { timeout: 3000 },
+    );
+    await user.type(compare, '0');
+    await new Promise((r) => setTimeout(r, 1200));
+    expect(patched).toHaveLength(0);
+    // A title edit is still sent, without the withheld steps.
+    await user.type(screen.getByLabelText('Exercise title'), '!');
+    await waitFor(() => expect(patched).toHaveLength(1), { timeout: 3000 });
+    expect(patched[0]).not.toHaveProperty('content');
   });
 
   it('says publishing is blocked only while the stored head is invalid, not after a valid save', async () => {
