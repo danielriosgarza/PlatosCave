@@ -46,6 +46,13 @@ export const answerAck = z.object({
 });
 
 /**
+ * The acknowledgement of one autosave. `applied` says whether this request's value is the one the
+ * server now holds; when it is false the server kept an answer with a counter at or above this
+ * save's (another tab or device, or an earlier copy of this save), and `seq` is that answer's.
+ */
+export const saveAck = answerAck.extend({ applied: z.boolean() });
+
+/**
  * Given only after the server has stored the submission (§11): which answers it received, as
  * acknowledged, and which questions it received nothing for.
  */
@@ -163,7 +170,7 @@ export const saveTestAnswer = defineRoute({
   summary: 'Autosave one answer of your attempt in progress',
   params: attemptParams.extend({ questionId }),
   body: z.object({ value: z.unknown(), flagged: z.boolean().default(false), seq: z.int().min(1) }),
-  response: answerAck,
+  response: saveAck,
   errors: { 400: invalidBody, 409: z.union([closed, classArchived]) },
   examples: {
     params: { classId: exampleClass, attemptId: exampleAttempt, questionId: 'q1' },

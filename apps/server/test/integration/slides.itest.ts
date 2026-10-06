@@ -5,7 +5,7 @@ import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { buildApp } from '../../src/app';
-import { loadConfig } from '../../src/config';
+import { DEV_RUNNER_RUNTIMES, loadConfig } from '../../src/config';
 import { adoptRelease } from '../../src/db/content/adoption';
 import { publishRelease } from '../../src/db/content/releases';
 import { writeDerivedOutputs } from '../../src/db/jobs/derived';
@@ -149,7 +149,7 @@ beforeAll(async () => {
     );
   }
 
-  const published = await publishRelease(db, elena);
+  const published = await publishRelease(db, elena, { runtimes: DEV_RUNNER_RUNTIMES });
   if (!published.ok) throw new Error(JSON.stringify(published.report));
   const adopted = await adoptRelease(db, asClassScope(ids.classA, ids.statistics, ids.priya), {
     releaseId: published.release.id,

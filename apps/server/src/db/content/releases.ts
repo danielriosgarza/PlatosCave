@@ -13,7 +13,9 @@ import {
   type DraftPreviewScope,
   isDraftPreview,
 } from '../../auth/scope';
+import type { RunnerRuntime } from '../../config';
 import { openToStudent } from '../../content/availability';
+import { testPublicationIssues } from '../../execution/publication';
 import { audit } from '../audit';
 import type { Db } from '../client';
 import { derivedReady, resolveDerivedStatuses } from '../jobs/derived';
@@ -96,15 +98,21 @@ async function loadDrafts(tx: Tx, scope: CourseScope) {
 }
 type Drafts = Awaited<ReturnType<typeof loadDrafts>>;
 
+export interface ValidateOptions {
+  approvedShinyOrigins?: readonly string[];
+  /** The runtimes a code question may select: the configured `RUNNER_RUNTIMES`. */
+  runtimes: readonly RunnerRuntime[];
+}
+
 /**
  * Publication checks (§12, ADR-0003): broken references, missing alternatives and unconverted
- * decks, and Shiny apps whose origin the host has not approved (students would see only the
- * preview label and the external route, §10.7). Grading-rule and execution-configuration checks join this function with the items
- * that define those resource contents (P2-10, P3-15).
+ * decks, exercise definitions, tests (grading rules and execution configuration, P3-18), and
+ * Shiny apps whose origin the host has not approved (students would see only the preview label
+ * and the external route, §10.7).
  */
 export function validate(
   drafts: Drafts,
-  approvedShinyOrigins: readonly string[] = [],
+  { approvedShinyOrigins = [], runtimes }: ValidateOptions,
 ): ValidationReport {
   const errors: Issue[] = [];
   const warnings: Issue[] = [];
@@ -203,6 +211,15 @@ export function validate(
           });
         }
       }
+      if (revision.type === 'test') {
+        const found = testPublicationIssues(revision.content, runtimes);
+        for (const { code, message } of found.errors) {
+          errors.push({ code, message: `“${resource.title}”: ${message}`, ...at });
+        }
+        for (const { code, message } of found.warnings) {
+          warnings.push({ code, message: `“${resource.title}”: ${message}`, ...at });
+        }
+      }
       if (
         revision.type === 'shiny' &&
         !shinyOriginApproved(revision.content, approvedShinyOrigins)
@@ -229,9 +246,9 @@ export function validate(
 export function validateDrafts(
   db: Db,
   scope: CourseScope,
-  approvedShinyOrigins: readonly string[] = [],
+  opts: ValidateOptions,
 ): Promise<ValidationReport> {
-  return db.transaction(async (tx) => validate(await loadDrafts(tx, scope), approvedShinyOrigins));
+  return db.transaction(async (tx) => validate(await loadDrafts(tx, scope), opts));
 }
 
 export type PublishResult =
@@ -249,7 +266,7 @@ export type PublishResult =
 export function publishRelease(
   db: Db,
   scope: CourseScope,
-  opts: { id?: string; approvedShinyOrigins?: readonly string[] } = {},
+  opts: { id?: string } & ValidateOptions,
 ): Promise<PublishResult> {
   return db.transaction(async (tx) => {
     await tx
@@ -258,7 +275,7 @@ export function publishRelease(
       .where(eq(courses.id, scope.courseId))
       .for('update');
     const drafts = await loadDrafts(tx, scope);
-    const report = validate(drafts, opts.approvedShinyOrigins);
+    const report = validate(drafts, opts);
     if (report.errors.length > 0) return { ok: false, report };
 
     const [last] = await tx
