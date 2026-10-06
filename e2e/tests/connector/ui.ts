@@ -63,6 +63,7 @@ export async function connect(page: Page, connector: Connector, name: string): P
 /** Fills and submits the "This computer" form, then connects once the test passes. */
 export async function connectLocal(page: Page, name: string, workspace: string): Promise<void> {
   await page.getByRole('radio', { name: 'This computer' }).check();
+  await newConnection(page);
   await page.getByLabel('Connection name').fill(`${name} notebook`);
   await page.getByLabel('Working directory').fill(workspace);
   await page.getByLabel('Python interpreter (optional)').fill(localPython);
@@ -108,6 +109,7 @@ export interface SshTarget {
 /** Fills the SSH form with the fixture key and starts Test connection. */
 export async function testSsh(page: Page, o: SshTarget): Promise<void> {
   await page.getByRole('radio', { name: 'SSH host' }).check();
+  await newConnection(page);
   await page.getByLabel('Connection name').fill(o.name);
   await page.getByLabel('Host', { exact: true }).fill(o.host);
   await page.getByLabel('Port', { exact: true }).fill(String(o.port));
@@ -170,4 +172,18 @@ export async function endSessions(page: Page): Promise<void> {
   const deadline = Date.now() + 30_000;
   while ((await list()).length > 0 && Date.now() < deadline) await page.waitForTimeout(500);
   for (const s of await list()) await page.request.post(`${base}/${s.id}/forget`);
+  // The computers go too: the next test pairs its own, and an old one must not be the default.
+  const computers = (await (await page.request.get('/api/me/connectors')).json()) as {
+    id: string;
+    status: string;
+  }[];
+  for (const c of computers.filter((c) => c.status !== 'revoked')) {
+    await page.request.post(`/api/me/connectors/${c.id}/revoke`);
+  }
+}
+
+/** A saved connection of an earlier test must not be edited by this one. */
+async function newConnection(page: Page): Promise<void> {
+  const saved = page.getByLabel('Saved connection');
+  if (await saved.count()) await saved.selectOption('new');
 }
