@@ -218,7 +218,7 @@ describe('live notebook', () => {
         kernelState: 'idle',
         confirmed: false,
       }),
-    ).toBe('Connected computer · Python · Unconfirmed');
+    ).toBe('Computer · Python · Unconfirmed');
   });
 
   it('A27 opening the notebook never runs a cell', () => {
@@ -395,6 +395,11 @@ describe('live notebook', () => {
     const { socket } = attach();
     fireEvent.click(screen.getByRole('button', { name: 'Session' }));
     fireEvent.click(screen.getByRole('button', { name: 'Disconnect' }));
+    // It asks first, and nothing is sent until it is confirmed.
+    const confirm = screen.getByLabelText('Disconnect', { selector: 'section' });
+    expect(confirm).toHaveTextContent('does not stop it');
+    expect(posts).toHaveLength(0);
+    fireEvent.click(within(confirm).getByRole('button', { name: 'Disconnect' }));
     await waitFor(() => expect(posts[0]).toMatchObject({ body: { stop: false } }));
     const note = await screen.findByText(/You disconnected from this session/);
     const banner = note.closest('div') as HTMLElement;
@@ -518,86 +523,98 @@ describe('live notebook', () => {
     expect(screen.queryByText(/did not stop after Interrupt/)).not.toBeInTheDocument();
   });
 
-  it('A09 live HTML output stays in the sandbox', () => {
-    const { socket } = attach();
-    fireEvent.click(runOf('c1'));
+  const answerOk = (socket: FakeSocket, cellId: string) => {
+    fireEvent.click(runOf(cellId));
     const [sent] = socket.frames('execute');
     socket.receive({
       t: 'execution',
       executionId: exec(1),
       ref: sent?.ref,
-      cellId: 'c1',
+      cellId,
       seq: 1,
       state: 'ok',
-      executionCount: 1,
       outputsIncomplete: false,
       generation: 0,
     });
+  };
+  const richOutput = (socket: FakeSocket, eventSeq: number, data: Record<string, unknown>) =>
     socket.receive({
       t: 'output',
       executionId: exec(1),
-      eventSeq: 1,
+      eventSeq,
       generation: 0,
       kind: 'output',
-      output: {
-        output_type: 'display_data',
-        metadata: {},
-        data: {
-          'text/html':
-            '<table><tr><td>42</td></tr></table><img src=x onerror="window.__pwned=1"><script>window.__pwned=2</script><iframe src="https://example.com"></iframe><a href="javascript:window.__pwned=3">x</a>',
-        },
-      },
+      output: { output_type: 'display_data', metadata: {}, data },
     });
-    const frame = within(cellSection('c1')).getByTitle(/Live output of cell/) as HTMLIFrameElement;
-    // Every sandbox restriction: the attribute is present and empty.
-    expect(frame.getAttribute('sandbox')).toBe('');
-    const doc = frame.getAttribute('srcdoc') ?? '';
-    expect(doc).toContain('<td>42</td>');
-    expect(doc).not.toMatch(/<script/i);
-    expect(doc).not.toMatch(/onerror/i);
-    expect(doc).not.toMatch(/<iframe/i);
-    expect(doc).not.toMatch(/javascript:/i);
-    expect(doc).toContain("default-src 'none'");
-    // Nothing of it is markup of the page itself, and nothing ran.
-    expect(within(cellSection('c1')).queryByRole('table')).not.toBeInTheDocument();
+
+  it('A09 live HTML output stays in the sandbox: it is never put on the app origin', () => {
+    const { socket } = attach();
+    answerOk(socket, 'c1');
+    richOutput(socket, 1, {
+      'text/html':
+        '<table><tr><td>x online = 3</td></tr></table><img src=x onerror="window.__pwned=1"><script>window.__pwned=2</script><iframe src="https://example.com"></iframe>',
+      'text/plain': 'one row',
+    });
+    const section = cellSection('c1');
+    // No markup of the output reaches the page, no frame is made, and nothing ran.
+    expect(section.querySelector('iframe, script, img, table')).toBeNull();
+    expect(section.innerHTML).not.toContain('onerror');
     expect((window as unknown as { __pwned?: number }).__pwned).toBeUndefined();
-    expect(cellSection('c1')).toHaveTextContent('Scripts in this output were removed and not run');
+    // The plain alternative is shown, and the cell says what is not shown, truthfully.
+    expect(section).toHaveTextContent('one row');
+    expect(section).toHaveTextContent(
+      'Rich output (text/html) is not shown in a live notebook yet',
+    );
+    expect(section).not.toHaveTextContent('Scripts in this output were removed');
   });
 
-  it('A09 live output of an image, an SVG and an unknown type is never run', () => {
+  it('A09 live images and SVG are named, not rendered, and an unknown type is never run', () => {
     const { socket } = attach();
-    fireEvent.click(runOf('c1'));
-    const [sent] = socket.frames('execute');
-    socket.receive({
-      t: 'execution',
-      executionId: exec(1),
-      ref: sent?.ref,
-      cellId: 'c1',
-      seq: 1,
-      state: 'ok',
-      outputsIncomplete: false,
-      generation: 0,
-    });
-    const out = (eventSeq: number, data: Record<string, unknown>) =>
-      socket.receive({
-        t: 'output',
-        executionId: exec(1),
-        eventSeq,
-        generation: 0,
-        kind: 'output',
-        output: { output_type: 'display_data', metadata: {}, data },
-      });
-    out(1, { 'image/png': 'iVBORw0KGgo=', 'text/plain': '<Figure>' });
-    out(2, { 'image/png': '"><script>alert(1)</script>' });
-    out(3, { 'application/vnd.jupyter.widget-view+json': { model_id: 'x' } });
+    answerOk(socket, 'c1');
+    richOutput(socket, 1, { 'image/png': 'iVBORw0KGgo=', 'text/plain': '<Figure size 640x480>' });
+    richOutput(socket, 2, { 'image/svg+xml': '<svg onload="window.__pwned=1"></svg>' });
+    richOutput(socket, 3, { 'application/vnd.jupyter.widget-view+json': { model_id: 'x' } });
+    richOutput(socket, 4, { 'text/plain': '4' });
     const section = cellSection('c1');
-    expect(within(section).getByAltText('<Figure>').getAttribute('src')).toBe(
-      'data:image/png;base64,iVBORw0KGgo=',
-    );
-    expect(section.querySelector('script')).toBeNull();
-    expect(section).toHaveTextContent(
-      'Interactive output not shown (application/vnd.jupyter.widget-view+json)',
-    );
+    expect(section.querySelector('img, svg, iframe, script')).toBeNull();
+    expect(section).toHaveTextContent('<Figure size 640x480>');
+    expect(section).toHaveTextContent('Rich output (image/png) is not shown');
+    expect(section).toHaveTextContent('Rich output (image/svg+xml) is not shown');
+    expect(section).toHaveTextContent('Rich output (application/vnd.jupyter.widget-view+json)');
+    expect(section).toHaveTextContent('4');
+    expect((window as unknown as { __pwned?: number }).__pwned).toBeUndefined();
+  });
+
+  it('keyboard runs and Run again are locked while Run all is going', () => {
+    const { socket } = attach();
+    fireEvent.click(screen.getByRole('button', { name: 'Run all' }));
+    const before = socket.frames('execute').length;
+    const content = cellSection('c3').querySelector('.cm-content') as HTMLElement;
+    fireEvent.keyDown(content, { key: 'Enter', shiftKey: true });
+    expect(socket.frames('execute')).toHaveLength(before);
+  });
+
+  it('A31 a socket replaced while closing does not clear the live one', () => {
+    vi.useFakeTimers();
+    const { socket } = attach();
+    // The effect runs again (a session change or an offline/online toggle) before the old
+    // socket's close event arrives.
+    vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    act(() => {
+      window.dispatchEvent(new Event('offline'));
+    });
+    vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true);
+    act(() => {
+      window.dispatchEvent(new Event('online'));
+    });
+    const next = last();
+    expect(next).not.toBe(socket);
+    next.open();
+    next.receive(ready());
+    // Only now does the old socket's close arrive.
+    socket.drop();
+    fireEvent.click(runOf('c1'));
+    expect(next.frames('execute')).toHaveLength(1);
   });
 
   it('Run all stops on an error', () => {
@@ -625,7 +642,7 @@ describe('live notebook', () => {
     // The third cell was never sent, and the notebook says where it stopped.
     expect(socket.frames('execute').map((m) => m.cellId)).toEqual(['c1', 'c2']);
     expect(
-      screen.getByText(/Run all stopped at cell c2: it ended with an error/),
+      screen.getByText(/Run all stopped at cell 3 \[ \]: it ended with an error/),
     ).toBeInTheDocument();
   });
 

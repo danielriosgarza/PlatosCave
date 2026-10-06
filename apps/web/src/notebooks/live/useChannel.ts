@@ -80,6 +80,7 @@ export function useChannel(classId: string, sessionId: string, enabled: boolean)
       current = ws;
       socket.current = ws;
       ws.onopen = () => {
+        if (stopped) return;
         const { epoch, eventSeq } = live.current;
         ws.send(
           JSON.stringify({
@@ -90,6 +91,7 @@ export function useChannel(classId: string, sessionId: string, enabled: boolean)
         );
       };
       ws.onmessage = (event) => {
+        if (stopped) return;
         let parsed: unknown;
         try {
           parsed = JSON.parse(String(event.data));
@@ -120,9 +122,9 @@ export function useChannel(classId: string, sessionId: string, enabled: boolean)
         dispatch({ type: 'message', message: message.data });
       };
       ws.onclose = (event) => {
-        if (current !== ws) return;
-        socket.current = null;
-        if (stopped) return;
+        // A socket that was replaced closes late: it must not clear the one that replaced it.
+        if (socket.current === ws) socket.current = null;
+        if (stopped || current !== ws) return;
         if (FINAL_CLOSES.has(event.code)) {
           setStatus('ended');
           return;
@@ -142,7 +144,7 @@ export function useChannel(classId: string, sessionId: string, enabled: boolean)
       stopped = true;
       window.clearTimeout(timer);
       current?.close();
-      socket.current = null;
+      if (socket.current === current) socket.current = null;
     };
   }, [classId, sessionId, enabled, offline]);
 

@@ -77,7 +77,7 @@ export function LiveOutputs({
             kernelGeneration !== undefined && item.generation < kernelGeneration ? live.old : ''
           }`}
         >
-          <Shown item={item} cellCount={execution.executionCount ?? null} />
+          <Shown item={item} />
         </div>
       ))}
       {truncated || execution.truncated ? (
@@ -101,13 +101,7 @@ export function LiveOutputs({
   );
 }
 
-function Shown({
-  item,
-  cellCount,
-}: {
-  item: ReturnType<typeof groupOutputs>['shown'][number];
-  cellCount: number | null;
-}) {
+function Shown({ item }: { item: ReturnType<typeof groupOutputs>['shown'][number] }) {
   switch (item.kind) {
     case 'text':
       return (
@@ -124,30 +118,16 @@ function Shown({
           {item.traceback ? <pre className={styles.text}>{item.traceback}</pre> : null}
         </div>
       );
-    case 'image':
-      return <img className={styles.image} src={item.url} alt={item.alt} />;
-    case 'html':
+    case 'withheld':
       return (
         <>
-          <div className={styles.frameBox} style={{ height: 240 }}>
-            <iframe
-              className={styles.frame}
-              // Every sandbox restriction: no script, no same origin, no forms, popups or
-              // navigation. The document is sanitised first and carries its own policy.
-              sandbox=""
-              srcDoc={item.doc}
-              title={`Live output of cell [${cellCount ?? ' '}]`}
-              referrerPolicy="no-referrer"
-            />
+          {item.text !== null ? <pre className={styles.text}>{item.text}</pre> : null}
+          <div className={styles.provenance}>
+            {item.mimeTypes.length > 0
+              ? `Rich output (${item.mimeTypes.join(', ')}) is not shown in a live notebook yet`
+              : 'Rich output is not shown in a live notebook yet'}
           </div>
-          {item.scriptsRemoved ? (
-            <div className={styles.provenance}>Scripts in this output were removed and not run</div>
-          ) : null}
         </>
-      );
-    case 'unsupported':
-      return (
-        <p className={styles.label}>Interactive output not shown ({item.mimeTypes.join(', ')})</p>
       );
   }
 }

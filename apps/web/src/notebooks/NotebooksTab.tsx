@@ -9,7 +9,7 @@ import { SourceDownload } from '../reading/SourceDownload';
 import { useSession } from '../session/useSession';
 import { ResourceTools } from '../workspace/ResourceTools';
 import { ColabSubmission } from './ColabSubmission';
-import { isOpenState, useConnections, useSessions } from './connect/api';
+import { isOpenState, useConnections, useWatchedSessions } from './connect/api';
 import { ConnectPanel } from './connect/ConnectPanel';
 import { LiveNotebook } from './live';
 import styles from './Notebook.module.css';
@@ -193,7 +193,7 @@ function NotebookPanel({
 
   // The notebook runs live while this person has an open session for it. A session that was live
   // on this page stays on it after it ends, so the edits and the cause stay in view.
-  const sessions = useSessions(classId);
+  const sessions = useWatchedSessions(classId);
   const connections = useConnections();
   const [liveId, setLiveId] = useState<string>();
   const open = sessions.data?.find(

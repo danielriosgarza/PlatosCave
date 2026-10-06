@@ -37,6 +37,8 @@ export interface LiveExecution {
   /** Earlier output of this execution was dropped from the relay's buffer (§10.6). */
   truncated: boolean;
   prompt: InputPrompt | null;
+  /** It was running when the relay changed: its output stays incomplete whatever the relay says next. */
+  carriedOver: boolean;
 }
 
 /** An `execute` the browser sent that no `execution` message has answered yet. */
@@ -138,7 +140,7 @@ function apply(state: LiveState, message: ChannelServerMessage): LiveState {
           Object.entries(state.executions).map(([id, e]) => [
             id,
             isActive(e.state) || e.state === 'unconfirmed'
-              ? { ...e, outputsIncomplete: true, prompt: null }
+              ? { ...e, outputsIncomplete: true, prompt: null, carriedOver: true }
               : e,
           ]),
         );
@@ -172,11 +174,12 @@ function apply(state: LiveState, message: ChannelServerMessage): LiveState {
         seq: message.seq,
         state: message.state,
         executionCount: message.executionCount ?? existing?.executionCount,
-        outputsIncomplete: message.outputsIncomplete,
+        outputsIncomplete: message.outputsIncomplete || (existing?.carriedOver ?? false),
         generation: message.generation,
         outputs: existing?.outputs ?? [],
         truncated: existing?.truncated ?? false,
         prompt: existing && !FINAL.has(message.state) ? existing.prompt : null,
+        carriedOver: existing?.carriedOver ?? false,
       };
       return {
         ...state,

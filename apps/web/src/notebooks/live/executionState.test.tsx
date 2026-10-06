@@ -85,6 +85,12 @@ describe('execution state', () => {
     expect(s.executions[E1]?.state).toBe('running');
   });
 
+  it('A31 an execution carried over a relay restart stays incomplete when the relay reports it again', () => {
+    let s = apply(initialLiveState, ready(), execution('running'));
+    s = apply(s, ready('00000000-0000-4000-8000-0000000f0009', 0), execution('running'));
+    expect(s.executions[E1]?.outputsIncomplete).toBe(true);
+  });
+
   it('the same epoch keeps the position', () => {
     let s = apply(initialLiveState, ready(), execution('running'), output(1, 'a'));
     s = apply(s, ready(EPOCH, 1));
@@ -153,19 +159,13 @@ describe('live output', () => {
     expect(shown).toEqual({ kind: 'text', stream: 'stdout', text: '<script>alert(1)</script>' });
   });
 
-  it('A09 an HTML output becomes a sanitised frame document with its own policy', () => {
+  it('A09 an HTML output is withheld: its plain alternative is kept and no markup is produced', () => {
     const shown = shownOutput({
       output_type: 'display_data',
       metadata: {},
-      data: {
-        'text/html': '<p onclick="x()">hi</p><script>1</script><form action="/x"><input></form>',
-      },
+      data: { 'text/html': '<p onclick="x()">hi</p><script>1</script>', 'text/plain': 'hi' },
     });
-    expect(shown.kind).toBe('html');
-    if (shown.kind !== 'html') return;
-    expect(shown.doc).toContain('<p>hi</p>');
-    expect(shown.doc).not.toMatch(/<script|onclick|<form|<input/i);
-    expect(shown.scriptsRemoved).toBe(true);
+    expect(shown).toEqual({ kind: 'withheld', mimeTypes: ['text/html'], text: 'hi' });
   });
 
   it('streams of one kind join and the text is capped', () => {

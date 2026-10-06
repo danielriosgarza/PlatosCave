@@ -72,12 +72,14 @@ export function modeLabel(args: {
   else if (sessionState === 'failed') state = 'Failed';
   else if (sessionState === 'unconfirmed' || !confirmed) state = 'Unconfirmed';
   else state = KERNEL_LABEL[kernelState ?? 'unknown'] ?? 'Unconfirmed';
-  return `${args.connectionName ?? 'Connected computer'} · ${args.language} · ${state}`;
+  return `${args.connectionName ?? 'Computer'} · ${args.language} · ${state}`;
 }
 
 interface RunAll {
   queue: string[];
   cellId: string;
+  /** The cell as the page names it, for messages. */
+  name: string;
   ref: string | null;
 }
 
@@ -130,6 +132,15 @@ export function LiveNotebook({
   const codeOf = (cell: NotebookCell) =>
     cell.type === 'code' ? (sources[cell.id] ?? cell.source) : '';
 
+  // The cell as the page names it ("3 [2]"), not by its id in the file.
+  const nameOf = (cellId: string) => {
+    const index = notebook.cells.findIndex((c) => c.id === cellId);
+    const cell = notebook.cells[index];
+    const count =
+      latest[cellId]?.executionCount ?? (cell?.type === 'code' ? cell.executionCount : null);
+    return `${index + 1} [${count ?? ' '}]`;
+  };
+
   const runCell = (cellId: string): string | null => {
     const cell = notebook.cells.find((c) => c.id === cellId);
     if (cell?.type !== 'code') return null;
@@ -165,12 +176,12 @@ export function LiveNotebook({
       }
       const ref = runCell(next);
       if (ref === null) stop('Run all stopped because the connection was lost.');
-      else setRunAll({ queue: rest, cellId: next, ref });
+      else setRunAll({ queue: rest, cellId: next, name: nameOf(next), ref });
     } else if (execution.state === 'sent' || execution.state === 'running') {
       // Still going.
     } else {
       stop(
-        `Run all stopped at cell ${runAll.cellId}: it ${
+        `Run all stopped at cell ${runAll.name}: it ${
           execution.state === 'error' ? 'ended with an error' : 'did not finish'
         }.`,
       );
@@ -185,7 +196,7 @@ export function LiveNotebook({
     setRunAllNote(null);
     if (first === undefined) return;
     const ref = runCell(first);
-    if (ref) setRunAll({ queue: rest, cellId: first, ref });
+    if (ref) setRunAll({ queue: rest, cellId: first, name: nameOf(first), ref });
   };
 
   // An Interrupt that has not returned the kernel to idle after 5 s offers a restart (spec §10.4).
@@ -241,7 +252,10 @@ export function LiveNotebook({
     actions.close.mutate(
       { sessionId: session.id, stop: false },
       {
-        onSuccess: () => setLeft(true),
+        onSuccess: () => {
+          setAsk(null);
+          setLeft(true);
+        },
         onError: (e) => fail(e, 'The session could not be disconnected.'),
       },
     );
@@ -396,6 +410,12 @@ export function LiveNotebook({
             Restart the kernel? Its variables will be lost and cells that are running stop. Output
             already shown stays, marked as from the previous kernel session.
           </p>
+        ) : ask === 'disconnect' ? (
+          <p>
+            Disconnect from this session? Parallax leaves the kernel running under the session's
+            lease and does not stop it; it cannot tell you whether it is still running. Your edits
+            are kept, and cells cannot run until you reconnect.
+          </p>
         ) : (
           <p>
             Stop this session? The connector stops the Jupyter server it started and its kernel, and
@@ -407,9 +427,19 @@ export function LiveNotebook({
             type="button"
             className={buttons.primary}
             disabled={busyAction || actions.close.isPending}
-            onClick={() => (ask === 'restart' ? void doRestart() : doStop())}
+            onClick={() =>
+              ask === 'restart'
+                ? void doRestart()
+                : ask === 'disconnect'
+                  ? doDisconnect()
+                  : doStop()
+            }
           >
-            {ask === 'restart' ? 'Restart kernel' : 'Stop session'}
+            {ask === 'restart'
+              ? 'Restart kernel'
+              : ask === 'disconnect'
+                ? 'Disconnect'
+                : 'Stop session'}
           </button>
           <button type="button" className={buttons.outline} onClick={() => setAsk(null)}>
             Cancel
@@ -440,8 +470,7 @@ export function LiveNotebook({
             }
           }}
           onAsk={(action) => {
-            if (action === 'disconnect') doDisconnect();
-            else setAsk(action);
+            setAsk(action);
           }}
         />
       </ResourceTools>
@@ -494,7 +523,7 @@ export function LiveNotebook({
                       label={`Code of cell ${name}`}
                       value={sources[cell.id] ?? cell.source}
                       onChange={(value) => setSources((s) => ({ ...s, [cell.id]: value }))}
-                      onRun={() => canRun && runCell(cell.id)}
+                      onRun={() => canRun && runAll === null && runCell(cell.id)}
                     />
                   )}
                   <div className={live.cellTools}>
@@ -521,8 +550,10 @@ export function LiveNotebook({
                   <LiveOutputs
                     execution={execution}
                     kernelGeneration={kernel?.generation}
-                    canRun={canRun}
-                    onRunAgain={() => runCell(cell.id)}
+                    canRun={canRun && runAll === null}
+                    onRunAgain={() => {
+                      if (runAll === null) runCell(cell.id);
+                    }}
                     onInputReply={(value) => channel.inputReply(execution.executionId, value)}
                   />
                 </div>
