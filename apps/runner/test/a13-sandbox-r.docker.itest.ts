@@ -229,7 +229,8 @@ stopifnot(!any(grepl('docker.sock', readLines('/proc/mounts'), fixed = TRUE)))
     const outcome = await run(
       job(
         {
-          'bomb.R': 'repeat parallel::mcparallel(Sys.sleep(100))\n',
+          // Small processes: forked R interpreters would meet the memory limit before the pids limit.
+          'bomb.R': "repeat system2('sleep', '100', wait = FALSE)\n",
           'after.R': "cat('still running')\n",
         },
         [
