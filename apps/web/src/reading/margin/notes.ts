@@ -42,7 +42,7 @@ export interface NoteDeps {
   /** Keeps (or with null, drops) the unsent text on this device; resolves when it is written. */
   persist(
     draft: { annotationId: string | null; revision: number | null; body: string } | null,
-  ): void;
+  ): void | Promise<void>;
   /** Tells the page what the server now holds, after an acknowledgement or a chosen server copy. */
   acknowledged(annotation: Annotation): void;
   /** The page stops listing this annotation (its text now lives in a new note). */
@@ -202,8 +202,7 @@ export class NoteController {
       return;
     }
     if (this.annotationId !== null && body === this.serverBody) {
-      this.deps.persist(null);
-      this.set({ status: 'saved' });
+      await this.clearDevice(body);
       return;
     }
     this.sending = true;
@@ -213,6 +212,20 @@ export class NoteController {
     } finally {
       sent?.();
     }
+  }
+
+  /**
+   * The server holds `body`: drops the device copy and only then says Saved. The wait is
+   * registered like a send, so a margin that comes back meanwhile does not restore the copy.
+   */
+  private async clearDevice(body: string): Promise<void> {
+    const sent = this.draftKey ? beginSend(this.draftKey) : null;
+    try {
+      await this.deps.persist(null);
+    } finally {
+      sent?.();
+    }
+    if (this.state.body === body && !this.removed) this.set({ status: 'saved' });
   }
 
   private async send(body: string): Promise<void> {
@@ -255,8 +268,10 @@ export class NoteController {
         this.set({ status: 'saving' });
         return;
       }
-      this.deps.persist(null);
-      this.set({ status: 'saved' });
+      // "Saved" waits until the device copy is really gone: a reload before that would list the
+      // acknowledged text again as unsent and send it a second time.
+      await this.deps.persist(null);
+      if (this.state.body === body && !this.removed) this.set({ status: 'saved' });
     } else if (result.kind === 'conflict') {
       this.set({ status: 'conflict', conflict: result.current });
     } else if (result.kind === 'gone') {
@@ -300,8 +315,8 @@ export class NoteController {
     if (!current) return;
     this.revision = current.revision;
     this.serverBody = current.body ?? '';
-    this.deps.persist(null);
     this.deps.acknowledged(current);
-    this.set({ conflict: null, body: current.body ?? '', status: 'saved' });
+    this.set({ conflict: null, body: current.body ?? '', status: 'saving' });
+    void this.clearDevice(current.body ?? '');
   }
 }
