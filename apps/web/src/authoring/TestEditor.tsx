@@ -1,6 +1,6 @@
 import { type draftResource, getResource, updateResource } from '@parallax/contracts/routes/drafts';
 import { useQuery } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import type { z } from 'zod';
 import { call } from '../api/client';
 import buttons from '../components/Buttons.module.css';
@@ -19,6 +19,7 @@ import {
   type DraftQuestion,
   type DraftSettings,
   type DraftTest,
+  newUid,
   nextCriterionId,
   nextOptionId,
   nextQuestionId,
@@ -503,6 +504,8 @@ function ChoiceFields({
   q: DraftQuestion;
   onChange: (patch: Partial<DraftQuestion>) => void;
 }) {
+  // One group per question editor: a shared name unchecks radios of another open test.
+  const groupName = useId();
   const setOption = (i: number, patch: Partial<DraftQuestion['options'][number]>) =>
     onChange({
       options: replaceAt(q.options, i, {
@@ -521,16 +524,13 @@ function ChoiceFields({
         }
       />
       {q.options.map((o, i) => (
-        // biome-ignore lint/suspicious/noArrayIndexKey: option ids are edited, so the position is the only stable key.
-        <div key={i} className={local.inlineFields}>
+        <div key={o.uid} className={local.inlineFields}>
           <Text
             label={`Option ${i + 1} id`}
             value={o.id}
             onChange={(v) =>
               onChange({
                 options: replaceAt(q.options, i, { ...o, id: v }),
-                // The correct mark follows the option it was set on.
-                correct: q.correct.map((c) => (c === o.id ? v : c)),
               })
             }
           />
@@ -541,17 +541,17 @@ function ChoiceFields({
           />
           <Check
             type={q.multiple ? 'checkbox' : 'radio'}
-            name={`correct-${n}`}
+            name={groupName}
             label={`Option ${i + 1} is correct`}
-            checked={q.correct.includes(o.id)}
+            checked={q.correct.includes(o.uid)}
             onChange={(on) =>
               onChange({
                 correct: q.multiple
                   ? on
-                    ? [...q.correct, o.id]
-                    : q.correct.filter((c) => c !== o.id)
+                    ? [...q.correct, o.uid]
+                    : q.correct.filter((c) => c !== o.uid)
                   : on
-                    ? [o.id]
+                    ? [o.uid]
                     : [],
               })
             }
@@ -563,7 +563,7 @@ function ChoiceFields({
             onClick={() =>
               onChange({
                 options: q.options.filter((_, j) => j !== i),
-                correct: q.correct.filter((c) => c !== o.id),
+                correct: q.correct.filter((c) => c !== o.uid),
               })
             }
           >
@@ -578,7 +578,10 @@ function ChoiceFields({
           disabled={q.options.length >= 12}
           onClick={() =>
             onChange({
-              options: [...q.options, { id: nextOptionId(q.options), label: '' }],
+              options: [
+                ...q.options,
+                { uid: newUid('option'), id: nextOptionId(q.options), label: '' },
+              ],
             })
           }
         >

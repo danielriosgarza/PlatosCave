@@ -262,7 +262,8 @@ const previewParams = z.object({ courseId: z.uuid(), resourceId: z.uuid() });
  * same queue and runner as a student's run, with no attempt and no per-user cap. `set: 'full'`
  * includes the hidden checks and files. `files` are the editable files to run (a reference
  * solution); omitted, the starter files run. The answer is the instructor view, hidden checks
- * included. `no_class`: the caller teaches no live class of the course.
+ * included. `no_class`: the caller teaches no live class of the course; `class_archived`: the class
+ * picked was archived before the run was queued.
  */
 export const requestPreviewRun = defineRoute({
   method: 'POST',
@@ -275,7 +276,7 @@ export const requestPreviewRun = defineRoute({
   response: instructorRun,
   errors: {
     400: invalidBody,
-    409: z.object({ error: z.literal('no_class'), message: z.string() }),
+    409: z.union([z.object({ error: z.literal('no_class'), message: z.string() }), classArchived]),
   },
   examples: {
     params: { courseId: exampleClass, resourceId: exampleRun, questionId: 'q1' },

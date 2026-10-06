@@ -32,7 +32,10 @@ const isSettled = (run: Run) => run.state !== 'queued' && run.state !== 'running
 
 const problemOf = (err: unknown): string => {
   if (err instanceof ApiError && err.status === 409) {
-    return 'Teach a class of this course to preview runs.';
+    const body = err.body as { error?: string } | null;
+    return body?.error === 'class_archived'
+      ? 'The class this preview run used was archived. Run it again.'
+      : 'Teach a class of this course to preview runs.';
   }
   if (err instanceof ApiError && err.status === 400) {
     const body = err.body as { message?: string } | null;
