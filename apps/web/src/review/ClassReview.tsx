@@ -1,4 +1,5 @@
 import { useNavigate } from '@tanstack/react-router';
+import { useState } from 'react';
 import { ApiError } from '../api/client';
 import { ClassUnavailable } from '../components/AccessLost';
 import { Loading } from '../components/Loading';
@@ -8,17 +9,22 @@ import { RetryNotice } from '../components/RetryNotice';
 import { Unavailable } from '../components/Unavailable';
 import { useClassContext } from '../session/classContext';
 import type { SessionClass } from '../session/useSession';
+import { BulkRelease } from './BulkRelease';
 import styles from './ClassReview.module.css';
 import {
   exercisesText,
   parseReviewSearch,
   type ClassReview as Review,
   type ReviewSearch,
+  releasable,
   reviewText,
   submittedText,
   testText,
   useClassReview,
 } from './classReview';
+import grading from './Grading.module.css';
+import { useTestGrades } from './grading';
+import { StudentWork } from './StudentWork';
 
 /** Class review (§12): a table of the class's real students; filters live in the address. */
 export function ClassReview({
@@ -71,7 +77,7 @@ function Table({
           onRetry={() => void query.refetch()}
         />
       ) : (
-        <Body data={data} search={search} go={go} />
+        <Body data={data} search={search} go={go} classId={classId} cohort={context.className} />
       )}
     </main>
   );
@@ -81,12 +87,32 @@ function Body({
   data,
   search,
   go,
+  classId,
+  cohort,
 }: {
   data: Review;
   search: ReviewSearch;
   go: (next: ReviewSearch) => void;
+  classId: string;
+  cohort: string;
 }) {
   const hasAssignment = data.assignment !== null;
+  const [chosen, setChosen] = useState<ReadonlySet<string>>(new Set());
+  const grades = useTestGrades(classId, data.assignment?.assignmentId);
+  // Removed students are not in the table, but their submissions stay reviewable (§4).
+  const removed = (grades.data?.students ?? [])
+    .filter((s) => s.removed)
+    .map((s) => ({ ...s, attempts: s.attempts.filter((a) => a.state !== 'in_progress') }))
+    .filter((s) => s.attempts.length > 0);
+  const toRelease = data.rows.filter(
+    (r) => releasable(r) && r.attempt && chosen.has(r.attempt.attemptId),
+  );
+  const toggle = (attemptId: string) =>
+    setChosen((was) => {
+      const next = new Set(was);
+      if (!next.delete(attemptId)) next.add(attemptId);
+      return next;
+    });
   const assignments = search.topic
     ? data.assignments.filter((a) => a.topicId === search.topic)
     : data.assignments;
@@ -152,7 +178,14 @@ function Body({
           </select>
         </label>
       </section>
-      <Selection data={data} search={search} go={go} />
+      <Selection
+        data={data}
+        search={search}
+        go={go}
+        classId={classId}
+        cohort={cohort}
+        removed={removed.map((r) => ({ id: r.student.id, name: r.student.name }))}
+      />
       {empty ? (
         <section className={styles.empty} aria-label="No students">
           <h2>
@@ -170,10 +203,25 @@ function Body({
         </section>
       ) : (
         <>
+          {hasAssignment && data.assignment ? (
+            <BulkRelease
+              classId={classId}
+              testTitle={data.assignment.title}
+              attemptIds={toRelease.flatMap((r) => (r.attempt ? [r.attempt.attemptId] : []))}
+              names={Object.fromEntries(
+                data.rows.flatMap((r) => (r.attempt ? [[r.attempt.attemptId, r.name]] : [])),
+              )}
+            />
+          ) : null}
           <section className={styles.wrap} aria-label="Students">
             <table className={styles.table}>
               <thead>
                 <tr>
+                  {hasAssignment ? (
+                    <th scope="col">
+                      <span className={grading.srOnly}>Release</span>
+                    </th>
+                  ) : null}
                   <th scope="col">Student</th>
                   <th scope="col">Exercises</th>
                   <th scope="col">Test</th>
@@ -188,6 +236,18 @@ function Body({
                     key={row.studentId}
                     className={search.selected === row.studentId ? styles.selected : undefined}
                   >
+                    {hasAssignment ? (
+                      <td>
+                        {releasable(row) && row.attempt ? (
+                          <input
+                            type="checkbox"
+                            aria-label={`Select ${row.name} for release`}
+                            checked={chosen.has(row.attempt.attemptId)}
+                            onChange={() => row.attempt && toggle(row.attempt.attemptId)}
+                          />
+                        ) : null}
+                      </td>
+                    ) : null}
                     <th scope="row">
                       <button
                         type="button"
@@ -239,6 +299,37 @@ function Body({
           ) : null}
         </>
       )}
+      {removed.length > 0 ? (
+        <section className={styles.removed} aria-label="Removed students">
+          <h2>Removed students</h2>
+          <p className={`${page.small} ${page.muted}`}>
+            Not in the table. Their submitted work stays reviewable.
+          </p>
+          <ul className={page.bareList}>
+            {removed.map((r) => (
+              <li key={r.student.id}>
+                {r.attempts.map((a) => (
+                  <button
+                    key={a.attemptId}
+                    type="button"
+                    className={styles.pick}
+                    onClick={() =>
+                      go({
+                        ...search,
+                        selected: r.student.id,
+                        attempt: a.attemptId,
+                        tab: undefined,
+                      })
+                    }
+                  >
+                    {r.student.name} · Attempt {a.number}
+                  </button>
+                ))}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
     </>
   );
 }
@@ -251,14 +342,39 @@ function Selection({
   data,
   search,
   go,
+  classId,
+  cohort,
+  removed,
 }: {
   data: Review;
   search: ReviewSearch;
   go: (next: ReviewSearch) => void;
+  classId: string;
+  cohort: string;
+  removed: { id: string; name: string }[];
 }) {
   const index = data.students.findIndex((s) => s.id === search.selected);
-  const student = data.students[index];
+  const listed = data.students[index];
+  const gone = removed.find((r) => r.id === search.selected);
+  // A student whose attempt is open stays in view when a release (or a filter) takes them out
+  // of the list, so the outcome of what was just done is not lost with them.
+  const held =
+    search.attempt &&
+    data.selected?.attemptId === search.attempt &&
+    data.selected.studentId === search.selected
+      ? data.roster.find((r) => r.id === search.selected)
+      : undefined;
+  const unlisted = gone ?? held;
+  const student = listed ?? (unlisted && { ...unlisted, attempt: null });
   if (!search.selected || !student) return null;
+  // The attempt that is open, not the newest one: the server resolves it (§12).
+  const open =
+    search.attempt &&
+    data.selected?.attemptId === search.attempt &&
+    data.selected.studentId === student.id
+      ? data.selected
+      : null;
+  const attemptNumber = open?.number ?? student.attempt?.number;
   const to = (i: number) => {
     const next = data.students[i];
     if (!next) return;
@@ -276,12 +392,12 @@ function Selection({
       <div className={page.row}>
         <h2>{student.name}</h2>
         <div className={styles.nav}>
-          <button type="button" disabled={index <= 0} onClick={() => to(index - 1)}>
+          <button type="button" disabled={!listed || index <= 0} onClick={() => to(index - 1)}>
             Previous student
           </button>
           <button
             type="button"
-            disabled={index >= data.students.length - 1}
+            disabled={!listed || index >= data.students.length - 1}
             onClick={() => to(index + 1)}
           >
             Next student
@@ -290,9 +406,22 @@ function Selection({
       </div>
       <p className={`${page.small} ${page.muted}`}>
         {data.assignment ? `Test · ${data.assignment.title}` : 'All assignments'}
-        {student.attempt ? ` · Attempt ${student.attempt.number}` : ''}
-        {` · Student ${index + 1} of ${data.students.length}`}
+        {attemptNumber !== undefined ? ` · Attempt ${attemptNumber}` : ''}
+        {listed
+          ? ` · Student ${index + 1} of ${data.students.length}`
+          : gone
+            ? ' · Removed from the class'
+            : ' · Not in the current filter'}
+        {` · ${cohort}`}
       </p>
+      <StudentWork
+        classId={classId}
+        cohort={cohort}
+        data={data}
+        search={search}
+        studentId={student.id}
+        go={go}
+      />
     </section>
   );
 }

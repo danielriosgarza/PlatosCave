@@ -15,8 +15,13 @@ export interface ReviewSearch {
   /** The student whose work is open, beside the previous/next controls. */
   selected?: string;
   attempt?: string;
+  /** The student view's tab; Results when absent. */
+  tab?: ReviewTab;
   page?: number;
 }
+
+export type ReviewTab = 'results' | 'submissions' | 'comments';
+const TABS: readonly string[] = ['results', 'submissions', 'comments'];
 
 const text = (v: unknown) => (typeof v === 'string' && v !== '' ? v : undefined);
 
@@ -29,6 +34,10 @@ export function parseReviewSearch(search: Record<string, unknown>): ReviewSearch
     needsReview: search.needsReview === true || search.needsReview === 'true' ? true : undefined,
     selected: text(search.selected),
     attempt: text(search.attempt),
+    tab:
+      TABS.includes(search.tab as string) && search.tab !== 'results'
+        ? (search.tab as ReviewTab)
+        : undefined,
     page: Number.isInteger(page) && page > 1 ? page : undefined,
   };
 }
@@ -45,6 +54,8 @@ export const useClassReview = (classId: string, search: ReviewSearch) =>
       search.student,
       search.needsReview,
       search.page,
+      // The open attempt is asked for so `selected` describes it, not the newest attempt.
+      search.attempt,
     ],
     queryFn: () =>
       call(getClassReview, {
@@ -54,6 +65,7 @@ export const useClassReview = (classId: string, search: ReviewSearch) =>
           assignmentId: search.assignment,
           studentId: search.student,
           needsReview: search.needsReview ? true : undefined,
+          attemptId: search.attempt,
           page: search.page,
         },
       }),
@@ -77,7 +89,8 @@ export function testText(row: ReviewRow, assignment: boolean): string {
     const score = a.score
       ? ` · ${a.score.points} / ${a.score.possible} ${a.score.state === 'released' ? 'released' : 'draft'}`
       : '';
-    return `Attempt ${a.number} · ${ATTEMPT_STATE[a.state]}${score}`;
+    const waiting = a.unreleasedChange ? ' · unreleased change' : '';
+    return `Attempt ${a.number} · ${ATTEMPT_STATE[a.state]}${score}${waiting}`;
   }
   if (row.tests.total === 0) return '—';
   return `${row.tests.submitted} of ${row.tests.total} submitted`;
@@ -88,6 +101,12 @@ export const exercisesText = (row: ReviewRow) =>
 
 export const reviewText = (row: ReviewRow) =>
   row.needsReview ? 'Needs review' : row.tests.submitted > 0 ? 'Reviewed' : '—';
+
+/** An attempt whose newest grade is an unreleased draft: the table can offer it for release. */
+export const releasable = (row: ReviewRow) =>
+  row.attempt !== null &&
+  row.attempt.score !== null &&
+  (row.attempt.score.state === 'draft' || row.attempt.unreleasedChange);
 
 /** A submission time in the viewer's own zone, named so it is never implicit (§14). */
 export const submittedText = (row: ReviewRow) =>

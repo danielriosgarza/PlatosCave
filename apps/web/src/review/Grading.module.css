@@ -1,0 +1,160 @@
+/* Ported from the wireframe: .pc-student-work, .pc-review-grid, .pc-rubric, .pc-thread. */
+.work {
+  margin-top: 32px;
+  padding-top: 24px;
+  border-top: 1px solid var(--pc-ink);
+}
+.work h2 {
+  margin: 6px 0 0;
+}
+.tabs {
+  margin-top: 16px;
+}
+.panel {
+  margin-top: 24px;
+}
+.panel h3 {
+  margin: 24px 0 8px;
+}
+.attemptRow {
+  display: flex;
+  gap: 16px;
+  align-items: baseline;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  padding: 12px 0;
+  border-top: 1px solid var(--pc-rule);
+  font-size: 13px;
+}
+.split {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 310px;
+  gap: 32px;
+  margin-top: 24px;
+}
+.rubric {
+  border-left: 1px solid var(--pc-rule);
+  padding-left: 24px;
+}
+.rubric label {
+  display: block;
+  margin: 12px 0 5px;
+  font-size: 12px;
+}
+.rubric input[type="number"] {
+  width: 80px;
+}
+.rubric textarea {
+  width: 100%;
+}
+.rubric input[type="text"] {
+  width: 100%;
+}
+.criterion {
+  display: flex;
+  justify-content: space-between;
+  align-items: end;
+  gap: 12px;
+}
+.question {
+  padding: 16px 0;
+  border-top: 1px solid var(--pc-rule);
+}
+.question pre,
+.code {
+  margin: 12px 0;
+  padding: 12px;
+  background: var(--pc-secondary);
+  border: 1px solid var(--pc-rule);
+  overflow-x: auto;
+  font-family: var(--pc-font-mono);
+  font-size: var(--pc-text-code);
+  white-space: pre;
+}
+.line {
+  display: block;
+}
+.lineNo {
+  display: inline-block;
+  width: 3ch;
+  margin-right: 12px;
+  color: var(--pc-muted);
+  text-align: right;
+  user-select: none;
+}
+.stack {
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+}
+.checks {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0;
+  font-size: 12px;
+}
+.checks li {
+  padding: 2px 0;
+}
+.error {
+  color: var(--pc-ink);
+  font-weight: 600;
+}
+.success {
+  color: var(--pc-success);
+}
+.preview {
+  margin-top: 16px;
+  padding: 16px;
+  background: var(--pc-soft);
+  border: 1px solid var(--pc-rule);
+  border-radius: var(--pc-radius-control);
+}
+.preview ul {
+  padding-left: 20px;
+  margin: 8px 0;
+}
+.thread {
+  padding: 16px 0;
+  border-top: 1px solid var(--pc-rule);
+}
+.thread p {
+  margin: 9px 0;
+  font-size: 14px;
+  line-height: 1.55;
+}
+.select {
+  width: 36px;
+}
+.bulk {
+  margin: 0 0 16px;
+}
+.removed {
+  margin-top: 24px;
+}
+.history {
+  font-size: 12px;
+  padding-left: 18px;
+  margin: 8px 0;
+}
+@media (max-width: 720px) {
+  .split {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .rubric {
+    border-left: 0;
+    border-top: 1px solid var(--pc-rule);
+    padding: 24px 0 0;
+  }
+}
+.srOnly {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
