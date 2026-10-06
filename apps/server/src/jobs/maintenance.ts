@@ -82,6 +82,13 @@ export async function workMaintenance(
         },
       ]
     : maintenance;
+  if (!policy) {
+    // pg-boss keeps schedules in the database: one left by an earlier policy would keep queuing
+    // jobs that nothing works.
+    await boss.unschedule(RETENTION).catch((err: unknown) => {
+      log.warn({ err, job: RETENTION }, 'maintenance unschedule failed');
+    });
+  }
   for (const { name, cron, run } of all) {
     await boss.createQueue(name);
     await boss.schedule(name, cron);

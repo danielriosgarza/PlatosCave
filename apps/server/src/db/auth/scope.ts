@@ -1,4 +1,4 @@
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import type { Db } from '../client';
 import { classes, classMemberships, courseMemberships, courses, users } from '../schema';
 import { type Actor, actorColumns } from './sessions';
@@ -37,12 +37,11 @@ export type CourseAccess = Pick<CourseMembershipRow, 'id' | 'owner' | 'editor' |
 
 /**
  * The actor with this id, for a background job acting without a session; null when there is none.
+ * A deactivated account still resolves: deactivation ends sign-in and sessions (`findPrincipal`),
+ * not work already accepted for a course or class, such as a reading's ingestion.
  */
 export async function findActor(db: Db, actorId: string): Promise<Actor | null> {
-  const [user] = await db
-    .select(actorColumns)
-    .from(users)
-    .where(and(eq(users.id, actorId), isNull(users.deactivatedAt)));
+  const [user] = await db.select(actorColumns).from(users).where(eq(users.id, actorId));
   return user ?? null;
 }
 

@@ -4,8 +4,10 @@ import type { FastifyInstance } from 'fastify';
 import type { PgBoss } from 'pg-boss';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { buildApp } from '../../src/app';
+import { resolveActorScope } from '../../src/auth/scope';
 import { loadConfig } from '../../src/config';
 import { createSession, signInWithProof } from '../../src/db/auth/sessions';
+import { createCourse, createUser } from '../../src/db/identity';
 import { applyRetention } from '../../src/db/lifecycle';
 import {
   annotations,
@@ -17,6 +19,9 @@ import {
   connectors,
   courseMemberships,
   courses,
+  notebookConnections,
+  notebookSessions,
+  notebookSubmissions,
   notebookWorkingCopies,
   notebookWorkingCopyRevisions,
   posts,
@@ -497,6 +502,14 @@ describe('account deactivation and deletion', () => {
       .from(authSessions)
       .where(eq(authSessions.userId, ids.priya));
     expect(live.every((s) => s.revokedAt !== null)).toBe(true);
+    // Work already accepted for her classes still runs: a job resolves its actor without a session.
+    const job = await resolveActorScope(
+      testDb.db,
+      ids.priya,
+      { kind: 'class', role: 'any' },
+      ids.classA,
+    );
+    expect(job.ok).toBe(true);
     // Her memberships stay for the organisation's records.
     const kept = await testDb.db
       .select()
@@ -529,6 +542,38 @@ describe('account deactivation and deletion', () => {
     );
   });
 
+  test('two co-owners closing at the same moment leave the course one active owner', async () => {
+    const [first, second] = await Promise.all(
+      ['coowner-a@example.test', 'coowner-b@example.test'].map(async (email) => {
+        const id = await createUser(testDb.db, { email, name: email });
+        const { token } = await createSession(testDb.db, id, { now: clock });
+        return { id, cookie: cookieFor(token) };
+      }),
+    );
+    if (!first || !second) throw new Error('fixtures');
+    const courseId = await createCourse(testDb.db, {
+      title: 'Shared course',
+      ownerId: first.id,
+    });
+    await testDb.db.insert(courseMemberships).values({ courseId, userId: second.id, owner: true });
+    const close = (who: { cookie: string }) =>
+      app.inject({
+        method: 'POST',
+        url: '/api/me/deactivate',
+        headers: { cookie: who.cookie },
+        payload: { confirm: true },
+      });
+    const results = await Promise.all([close(first), close(second)]);
+    // Without the lock each sees the other as active and both succeed.
+    expect(results.map((r) => r.statusCode).sort()).toEqual([200, 409]);
+    const owners = await testDb.db
+      .select({ id: users.id, deactivatedAt: users.deactivatedAt })
+      .from(courseMemberships)
+      .innerJoin(users, eq(users.id, courseMemberships.userId))
+      .where(eq(courseMemberships.courseId, courseId));
+    expect(owners.filter((o) => o.deactivatedAt === null)).toHaveLength(1);
+  });
+
   test('deletion anonymises the identity, deletes private notes and keeps records under the pseudonym', async () => {
     const connectorId = await activeConnector(ids.sam, 'SHA256:delete');
     const mine = await call('sam', 'POST', `${readingUrl(ids.classA)}/annotations`, {
@@ -547,22 +592,73 @@ describe('account deactivation and deletion', () => {
       .from(annotations)
       .where(eq(annotations.authorId, ids.sam));
     expect(before.length).toBeGreaterThan(0);
-    const [copy] = await testDb.db
+    // Connect ties every session to its working copy, so the copy is linked to one, as in use.
+    const revision = (workingCopyId: string, n: number) => ({
+      workingCopyId,
+      revision: n,
+      classId: ids.classA,
+      objectKey: `classes/x/working-copies/${workingCopyId}/${n}`,
+      sha256: 'a'.repeat(64),
+      size: 10,
+      source: 'server' as const,
+    });
+    const [loose] = await testDb.db
+      .insert(notebookWorkingCopies)
+      .values({ classId: ids.classA, userId: ids.sam, sourceRevisionId: ids.samplingReadingV1 })
+      .returning({ id: notebookWorkingCopies.id });
+    const [frozen] = await testDb.db
       .insert(notebookWorkingCopies)
       .values({
         classId: ids.classA,
         userId: ids.sam,
-        sourceRevisionId: ids.samplingReadingV1,
+        sourceRevisionId: ids.answerKeyV1,
+        currentRevision: 3,
       })
       .returning({ id: notebookWorkingCopies.id });
-    await testDb.db.insert(notebookWorkingCopyRevisions).values({
-      workingCopyId: copy?.id ?? '',
-      revision: 1,
+    const looseId = loose?.id ?? '';
+    const frozenId = frozen?.id ?? '';
+    await testDb.db
+      .insert(notebookWorkingCopyRevisions)
+      .values([revision(looseId, 1), revision(looseId, 2)]);
+    await testDb.db
+      .insert(notebookWorkingCopyRevisions)
+      .values([revision(frozenId, 1), revision(frozenId, 2), revision(frozenId, 3)]);
+    await testDb.db.insert(notebookSubmissions).values({
       classId: ids.classA,
-      objectKey: 'classes/x/working-copies/y',
-      sha256: 'a'.repeat(64),
+      userId: ids.sam,
+      resourceId: ids.samplingReading,
+      resourceRevisionId: ids.samplingReadingV1,
+      version: 1,
+      submissionKey: 'frozen-key',
+      objectKey: 'classes/x/submissions/1',
+      sha256: 'b'.repeat(64),
       size: 10,
-      source: 'server',
+      filename: 'work.ipynb',
+      workingCopyId: frozenId,
+      workingCopyRevision: 2,
+    });
+    const [connection] = await testDb.db
+      .insert(notebookConnections)
+      .values({
+        ownerUserId: ids.sam,
+        connectorId,
+        name: 'Laptop',
+        target: {},
+        runtime: {},
+      })
+      .returning({ id: notebookConnections.id });
+    await testDb.db.insert(notebookSessions).values({
+      classId: ids.classA,
+      userId: ids.sam,
+      connectionId: connection?.id ?? '',
+      connectorId,
+      resourceRevisionId: ids.samplingReadingV1,
+      workingCopyId: looseId,
+      state: 'stopped',
+      stoppedAt: start,
+      owned: false,
+      runtime: {},
+      lease: { idleTimeoutMin: 30, gracePeriodMin: 5 },
     });
 
     const res = await call('sam', 'POST', '/api/me/delete', { confirm: true });
@@ -580,13 +676,20 @@ describe('account deactivation and deletion', () => {
     expect(
       await testDb.db.select().from(annotations).where(eq(annotations.authorId, ids.sam)),
     ).toEqual([]);
-    // Unsubmitted working copies of notebooks go with them.
-    expect(
-      await testDb.db
-        .select()
-        .from(notebookWorkingCopies)
-        .where(eq(notebookWorkingCopies.userId, ids.sam)),
-    ).toEqual([]);
+    // Unsubmitted working copies go with them, session link or not; one a submission froze stays
+    // with only the revision it froze, and its current revision still exists.
+    const copies = await testDb.db
+      .select()
+      .from(notebookWorkingCopies)
+      .where(eq(notebookWorkingCopies.userId, ids.sam));
+    expect(copies.map((c) => [c.id, c.currentRevision])).toEqual([[frozenId, 2]]);
+    const kept = await testDb.db.select().from(notebookWorkingCopyRevisions);
+    expect(kept.map((r) => [r.workingCopyId, r.revision])).toEqual([[frozenId, 2]]);
+    const [session] = await testDb.db
+      .select()
+      .from(notebookSessions)
+      .where(eq(notebookSessions.userId, ids.sam));
+    expect(session?.workingCopyId).toBeNull();
     expect(
       (await testDb.db.select().from(posts).where(eq(posts.authorId, ids.sam))).length,
     ).toBeGreaterThan(0);
@@ -702,11 +805,13 @@ describe('retention job', () => {
   });
 
   test('the maintenance worker schedules the retention queue only with an explicit policy', async () => {
+    const unscheduled: string[] = [];
     const run = async (retention?: RetentionPolicy) => {
       const queues: string[] = [];
       const boss = {
         createQueue: async () => {},
         schedule: async () => {},
+        unschedule: async (name: string) => void unscheduled.push(name),
         work: async (name: string) => void queues.push(name),
       } as unknown as PgBoss;
       const quiet = { info() {}, error() {}, warn() {} } as never;
@@ -714,7 +819,10 @@ describe('retention job', () => {
       return queues;
     };
     expect(await run()).not.toContain(RETENTION);
+    // A schedule an earlier policy left in the database is removed when the policy is gone.
+    expect(unscheduled).toEqual([RETENTION]);
     expect(await run(policy({ auditEventDays: 365 }))).toContain(RETENTION);
+    expect(unscheduled).toEqual([RETENTION]);
     // With every period unset the configuration yields no policy, so no queue is scheduled.
     expect(retentionPolicy({})).toBeUndefined();
     expect(retentionPolicy({ RETENTION_AUDIT_DAYS: 90 })).toEqual({

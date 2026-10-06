@@ -1,7 +1,7 @@
 import { strokesToSvg } from '@parallax/contracts';
 import type * as contracts from '@parallax/contracts/routes/lifecycle';
-import { and, asc, eq, inArray, isNull, lt, notInArray, sql } from 'drizzle-orm';
-import type { AnyPgColumn } from 'drizzle-orm/pg-core';
+import { and, asc, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
+import type { AnyPgColumn, PgColumn } from 'drizzle-orm/pg-core';
 import type { z } from 'zod';
 import type { ClassManagerScope, ClassScope, CourseScope, UserScope } from '../auth/scope';
 import { audit } from './audit';
@@ -205,11 +205,6 @@ export function exportOwnAnnotations(db: Db, scope: ClassScope, now: Date): Prom
       .innerJoin(resources, eq(resources.id, threads.resourceId))
       .where(and(forClass(scope, posts), eq(posts.authorId, scope.user.id)))
       .orderBy(asc(posts.createdAt), asc(posts.id));
-    const [info] = await tx
-      .select({ name: classes.name, courseId: courses.id, courseTitle: courses.title })
-      .from(classes)
-      .innerJoin(courses, eq(courses.id, classes.courseId))
-      .where(eq(classes.id, scope.classId));
     await audit(tx, {
       actorId: scope.user.id,
       action: 'export.annotations',
@@ -221,8 +216,8 @@ export function exportOwnAnnotations(db: Db, scope: ClassScope, now: Date): Prom
     });
     return {
       exportedAt: now.toISOString(),
-      class: { id: scope.classId, name: info?.name ?? scope.className },
-      course: { id: scope.courseId, title: info?.courseTitle ?? scope.courseTitle },
+      class: { id: scope.classId, name: scope.className },
+      course: { id: scope.courseId, title: scope.courseTitle },
       annotations: marks.map(({ annotation: a, resourceTitle, topicTitle }) => {
         const { reference, quote } = describeAnchor(a.anchor);
         return {
@@ -322,40 +317,48 @@ export async function anonymiseIdentity(tx: Tx, userId: string, now: Date): Prom
 }
 
 /**
- * Deletes working copies of notebooks that no submission froze, with their revisions (the rows;
- * stored objects are not removed here). A copy a submission froze stays, and keeps only the
- * revisions submissions reference. A copy a session still points at stays too.
+ * Deletes the people's working copies of notebooks that no submission froze, with their revisions
+ * (the rows; stored objects are not removed here, and a key may be shared, so a later cleanup must
+ * check references first). A copy a submission froze stays with only the revisions submissions
+ * reference, and its current revision moves to the newest of them. Sessions that pointed at a
+ * copy are unlinked first, because Connect ties every session to its copy.
  */
 async function deleteUnsubmittedWorkingCopies(tx: Tx, userIds: string[]): Promise<void> {
-  const copies = await tx
+  const copies = tx
     .select({ id: notebookWorkingCopies.id })
     .from(notebookWorkingCopies)
     .where(inArray(notebookWorkingCopies.userId, userIds));
-  for (const { id } of copies) {
-    const frozen = await tx
-      .select({ revision: notebookSubmissions.workingCopyRevision })
-      .from(notebookSubmissions)
-      .where(eq(notebookSubmissions.workingCopyId, id));
-    if (frozen.length === 0) {
-      const used = await tx
-        .select({ id: notebookSessions.id })
-        .from(notebookSessions)
-        .where(eq(notebookSessions.workingCopyId, id))
-        .limit(1);
-      if (used.length > 0) continue;
-      await tx.delete(notebookWorkingCopies).where(eq(notebookWorkingCopies.id, id));
-      continue;
-    }
-    const keep = frozen.flatMap((f) => (f.revision === null ? [] : [f.revision]));
-    await tx
-      .delete(notebookWorkingCopyRevisions)
-      .where(
-        and(
-          eq(notebookWorkingCopyRevisions.workingCopyId, id),
-          keep.length > 0 ? notInArray(notebookWorkingCopyRevisions.revision, keep) : sql`true`,
-        ),
-      );
-  }
+  await tx
+    .update(notebookSessions)
+    .set({ workingCopyId: null })
+    .where(inArray(notebookSessions.workingCopyId, copies));
+  const frozen = (copyId: PgColumn) =>
+    sql`exists (select 1 from ${notebookSubmissions} s where s.working_copy_id = ${copyId})`;
+  await tx
+    .delete(notebookWorkingCopies)
+    .where(
+      and(
+        inArray(notebookWorkingCopies.userId, userIds),
+        sql`not ${frozen(notebookWorkingCopies.id)}`,
+      ),
+    );
+  // What is left was frozen by a submission: keep the revisions submissions reference.
+  await tx.execute(sql`
+    delete from ${notebookWorkingCopyRevisions} r
+    using ${notebookWorkingCopies} c
+    where r.working_copy_id = c.id and c.user_id in (${sql.join(
+      userIds.map((id) => sql`${id}`),
+      sql`, `,
+    )})
+      and not exists (select 1 from ${notebookSubmissions} s
+        where s.working_copy_id = r.working_copy_id and s.working_copy_revision = r.revision)`);
+  await tx
+    .update(notebookWorkingCopies)
+    .set({
+      currentRevision: sql`(select max(r.revision) from ${notebookWorkingCopyRevisions} r
+        where r.working_copy_id = ${notebookWorkingCopies.id})`,
+    })
+    .where(inArray(notebookWorkingCopies.userId, userIds));
 }
 
 export type CloseOutcome =
@@ -377,6 +380,13 @@ export function closeAccount(
   const userId = scope.user.id;
   return db.transaction(async (tx) => {
     await tx.select({ id: users.id }).from(users).where(eq(users.id, userId)).for('update');
+    // Co-owners closing at once must not each see the other as still active: lock every owner
+    // membership of the caller's courses, in id order, so the second waits for the first.
+    await tx.execute(sql`
+      select o.id from course_memberships o
+      where o.owner and o.course_id in
+        (select m.course_id from course_memberships m where m.user_id = ${userId} and m.owner)
+      order by o.id for update`);
     // A course whose only active owner leaves could never be managed or restored (§3).
     const soleOwned = await tx
       .select({ courseId: courseMemberships.courseId })
