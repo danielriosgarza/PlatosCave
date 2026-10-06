@@ -1,9 +1,11 @@
 import type * as contracts from '@parallax/contracts/routes/review';
-import { and, asc, desc, eq, inArray, isNotNull } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
 import type { z } from 'zod';
 import type { ClassScope } from '../auth/scope';
+import { listThreadsBy } from './annotations/annotations';
 import type { Db } from './client';
 import { readClassRelease } from './content/releases';
+import { removedAsStudent } from './removedStudents';
 import {
   classMemberships,
   exerciseAttempts,
@@ -23,6 +25,7 @@ import { forClass } from './scoped';
  */
 
 export type ClassReview = z.input<typeof contracts.classReview>;
+export type StudentDiscussions = z.input<typeof contracts.getStudentDiscussions.response>;
 export type ReviewFilters = z.output<typeof contracts.reviewQuery>;
 type Row = ClassReview['rows'][number];
 
@@ -57,6 +60,9 @@ export async function loadClassReview(
     .map((r) => ({ assignmentId: r.resourceId, title: r.title, topicId: r.topicId }));
   const assignment =
     assignments.find((a) => a.assignmentId === filters.assignmentId && inTopic(a)) ?? null;
+  const notebooks = resources
+    .filter((r) => r.tab === 'notebooks' && inTopic(r))
+    .map((r) => ({ notebookId: r.resourceId, title: r.title, topicId: r.topicId }));
   const exerciseIds = new Set(
     resources.filter((r) => r.tab === 'exercises' && inTopic(r)).map((r) => r.resourceId),
   );
@@ -81,7 +87,7 @@ export async function loadClassReview(
     .orderBy(asc(users.name), asc(users.id));
   const studentIds = new Set(roster.map((s) => s.id));
 
-  const [allAttempts, completed, questions, notebooks] = await Promise.all([
+  const [allAttempts, completed, questions, submissions] = await Promise.all([
     db
       .select()
       .from(testAttempts)
@@ -142,13 +148,15 @@ export async function loadClassReview(
     (q) => q.authorId,
   );
   const lastNotebook = new Map<string, Date>();
-  for (const n of notebooks) if (!lastNotebook.has(n.userId)) lastNotebook.set(n.userId, n.at);
+  for (const n of submissions) if (!lastNotebook.has(n.userId)) lastNotebook.set(n.userId, n.at);
 
   const all: Row[] = roster.map((s) => {
     const mine = attemptsOf.get(s.id) ?? [];
     const inScope = mine.filter((a) => testIds.has(a.resourceId));
     const submitted = inScope.filter((a) => a.state !== 'in_progress');
     const latest = assignment ? inScope[0] : undefined;
+    // A regrade or override saved after release is a draft above the released grade.
+    const changed = (id: string) => released.has(id) && newest.get(id)?.state === 'draft';
     const grade = latest && (released.get(latest.id) ?? newest.get(latest.id));
     const lastTest = mine
       .map((a) => a.submittedAt)
@@ -179,9 +187,10 @@ export async function loadClassReview(
             score: grade
               ? { points: grade.points, possible: grade.possible, state: grade.state }
               : null,
+            unreleasedChange: changed(latest.id),
           }
         : null,
-      needsReview: inScope.some((a) => AWAITING.has(a.state)),
+      needsReview: inScope.some((a) => AWAITING.has(a.state) || changed(a.id)),
       openQuestions: (questionsOf.get(s.id) ?? []).length,
       lastSubmission: last ? { at: last.toISOString(), kind: lastKind } : null,
     };
@@ -195,12 +204,25 @@ export async function loadClassReview(
   // A page past the end (a stale link, or Needs review shrinking the list) shows the last page.
   const page = Math.min(filters.page, Math.max(1, Math.ceil(filtered.length / filters.pageSize)));
   const start = (page - 1) * filters.pageSize;
-  const selectedAttempt = filters.attemptId
-    ? attempts.find((a) => a.id === filters.attemptId)
+  // The open attempt may be a removed student's: their work stays reviewable (§4).
+  let selectedAttempt = filters.attemptId
+    ? allAttempts.find((a) => a.id === filters.attemptId)
     : undefined;
+  let selectedName = roster.find((r) => r.id === selectedAttempt?.userId)?.name;
+  if (selectedAttempt && selectedName === undefined) {
+    const [person] = (await isStudentOrRemovedStudent(db, scope, selectedAttempt.userId))
+      ? await db
+          .select({ name: users.name })
+          .from(users)
+          .where(eq(users.id, selectedAttempt.userId))
+      : [];
+    if (person) selectedName = person.name;
+    else selectedAttempt = undefined;
+  }
   return {
     topics,
     assignments,
+    notebooks,
     roster,
     students: filtered.map((r) => ({
       id: r.studentId,
@@ -215,6 +237,7 @@ export async function loadClassReview(
     selected: selectedAttempt
       ? {
           studentId: selectedAttempt.userId,
+          studentName: selectedName ?? '',
           attemptId: selectedAttempt.id,
           number: selectedAttempt.number,
           assignmentId: selectedAttempt.resourceId,
@@ -231,4 +254,51 @@ function groupBy<T>(items: T[], key: (item: T) => string): Map<string, T[]> {
     else groups.set(key(item), [item]);
   }
   return groups;
+}
+
+/**
+ * What one student shared: questions and comments for instructors or the class, each with the
+ * resource it is about so the instructor can open the passage. Works for a removed student too.
+ */
+export async function loadStudentDiscussions(
+  db: Db,
+  scope: ClassScope,
+  studentId: string,
+  now: Date,
+): Promise<StudentDiscussions | null> {
+  if (!(await isStudentOrRemovedStudent(db, scope, studentId))) return null;
+  const [{ topics }, threadsOf] = await Promise.all([
+    readClassRelease(db, scope),
+    listThreadsBy(db, scope, studentId, now),
+  ]);
+  const where = new Map(
+    topics.flatMap((t) =>
+      t.resources.map(
+        (r) => [r.resourceId, { title: r.title, tab: r.tab, topicId: t.topicId }] as const,
+      ),
+    ),
+  );
+  return {
+    discussions: threadsOf.map((thread) => ({
+      thread,
+      resource: where.get(thread.resourceId) ?? null,
+    })),
+  };
+}
+
+/**
+ * A real student of the class, or one removed from it (`removedAsStudent`). Instructors, preview
+ * principals and strangers are none of these, so their ids are no student's work to review.
+ */
+async function isStudentOrRemovedStudent(db: Db, scope: ClassScope, userId: string) {
+  const [member] = await db
+    .select({ role: classMemberships.role, isPreview: classMemberships.isPreview })
+    .from(classMemberships)
+    .where(and(forClass(scope, classMemberships), eq(classMemberships.userId, userId)));
+  if (member) return member.role === 'student' && !member.isPreview;
+  const [removed] = await db
+    .select({ yes: removedAsStudent(sql`${scope.classId}::uuid`, sql`${userId}::uuid`) })
+    .from(users)
+    .where(eq(users.id, userId));
+  return removed?.yes === true;
 }
