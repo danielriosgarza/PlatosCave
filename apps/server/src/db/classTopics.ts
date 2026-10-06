@@ -10,7 +10,7 @@ import {
   type TopicAvailability,
   topicOpens,
 } from '../content/availability';
-import type { Db } from './client';
+import type { Db, Executor } from './client';
 import { type DraftSnapshot, draftSnapshot } from './content/releases';
 import {
   classMemberships,
@@ -67,7 +67,7 @@ async function instructorNames(db: Db, scope: ClassScope): Promise<string[]> {
  * Topic and resource rows of the class's adopted release, or of the course draft for a draft
  * preview (ADR-0003: a preview principal reads the draft snapshot, never the adopted release).
  */
-async function syllabusRows(db: Db, scope: ClassScope) {
+async function syllabusRows(db: Executor, scope: ClassScope) {
   if (isDraftPreview(scope)) {
     const draft = await draftSnapshot(db, scope);
     return { release: null, topicRows: draft.topics, resourceRows: draft.resources };
@@ -155,7 +155,7 @@ type ResourceRow = AvailabilityTopic['resources'][number] & { releaseTopicId: st
  * `resourceRows`: the one assembly behind `loadClassTopics` and `findReleaseTopic`.
  */
 async function availabilityOf(
-  db: Db,
+  db: Executor,
   scope: ClassScope,
   topicRows: TopicRow[],
   resourceRows: ResourceRow[],
@@ -184,7 +184,7 @@ async function availabilityOf(
  * snapshot it already read, so one request reads the draft once.
  */
 export async function findReleaseTopic(
-  db: Db,
+  db: Executor,
   scope: ClassScope,
   by: { topicId: string } | { releaseTopicId: string },
   now: Date,
@@ -281,6 +281,47 @@ export async function findReleaseTopic(
     releaseTopicId: topic.id,
     open: state !== undefined && topicOpens(state),
   };
+}
+
+/**
+ * Whether the caller may open release topic `releaseTopicId` (of the draft snapshot for a draft
+ * preview) now: the availability the topic list shows (§4), so a locked topic's resources are
+ * unknown to a student on every per-resource route. The id must come from a row of the caller's
+ * release or draft, so for an instructor the topic is open.
+ */
+export async function releaseTopicOpens(
+  db: Executor,
+  scope: ClassScope,
+  releaseTopicId: string,
+  now: Date,
+  draft?: DraftSnapshot,
+): Promise<boolean> {
+  if (scope.role !== 'student') return true;
+  return (await findReleaseTopic(db, scope, { releaseTopicId }, now, draft))?.open ?? false;
+}
+
+/**
+ * Release topic ids (draft topic ids for a draft preview) the caller may open now, judged once
+ * for a whole list such as the notifications; null when every topic opens (instructors).
+ */
+export async function openReleaseTopicIds(
+  db: Executor,
+  scope: ClassScope,
+  now: Date,
+): Promise<ReadonlySet<string> | null> {
+  if (scope.role !== 'student') return null;
+  const source = await syllabusRows(db, scope);
+  if (!source) return new Set();
+  const { topicRows, resourceRows } = source;
+  const availability = await availabilityOf(db, scope, topicRows, resourceRows, now);
+  return new Set(
+    topicRows
+      .filter((t) => {
+        const state = availability.get(t.topicId);
+        return state !== undefined && topicOpens(state);
+      })
+      .map((t) => t.id),
+  );
 }
 
 /** Release topic and tab of each pinned revision, to place a saved study position. */

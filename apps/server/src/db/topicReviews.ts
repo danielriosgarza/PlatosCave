@@ -4,7 +4,7 @@ import type { z } from 'zod';
 import { type ClassScope, isDraftPreview } from '../auth/scope';
 import { computeAvailability, openToStudent, type Tab, topicOpens } from '../content/availability';
 import { classArchived, invalid, notFound, type Outcome } from '../outcome';
-import type { Db } from './client';
+import type { Db, Executor } from './client';
 import { creditColumn, creditOf, type DraftSnapshot, draftSnapshot } from './content/releases';
 import {
   courseReleases,
@@ -149,7 +149,7 @@ export function completedFrom(
 }
 
 /** The caller's evidence in one class. */
-async function evidenceOf(db: Db, classId: string, userId: string): Promise<Evidence> {
+async function evidenceOf(db: Executor, classId: string, userId: string): Promise<Evidence> {
   const marks = await db
     .select({ resourceId: topicReviews.resourceId })
     .from(topicReviews)
@@ -178,7 +178,7 @@ async function evidenceOf(db: Db, classId: string, userId: string): Promise<Evid
 }
 
 /** Topic and resource rows of an adopted release, shaped for the completion rule. */
-export async function releaseRuleRows(db: Db, releaseId: string, courseId: string) {
+export async function releaseRuleRows(db: Executor, releaseId: string, courseId: string) {
   const topicRows = await db
     .select({
       id: releaseTopics.id,
@@ -228,7 +228,7 @@ export async function completedInClass(
  * preview is judged on the draft snapshot it studies.
  */
 export async function completedTopics(
-  db: Db,
+  db: Executor,
   scope: ClassScope,
   now: Date,
   draftRead?: DraftSnapshot,
