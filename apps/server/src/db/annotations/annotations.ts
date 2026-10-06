@@ -292,6 +292,20 @@ export async function listForResource(db: Db, scope: ClassScope, resourceId: str
   };
 }
 
+/**
+ * The threads one student started that the instructor may read (`instructor` and `class`
+ * audience, never a preview principal's), with their posts and placements. Private notes are
+ * never among them: the audience rule filters them out.
+ */
+export async function listThreadsBy(db: Db, scope: ClassScope, authorId: string, now: Date) {
+  return loadThreads(
+    db,
+    scope,
+    and(visibleTo(scope, threads), eq(threads.authorId, authorId)) as SQL,
+    now,
+  );
+}
+
 export async function createAnnotation(
   db: Db,
   scope: ClassScope,

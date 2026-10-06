@@ -112,6 +112,7 @@ describe('A25 class review', () => {
     expect(res.body.assignment.assignmentId).toBe(w.quizId);
     expect(res.body.selected).toEqual({
       studentId: ids.sam,
+      studentName: 'Sam Okafor',
       attemptId: attempt.sam,
       number: 1,
       assignmentId: w.quizId,
@@ -166,5 +167,130 @@ describe('A25 class review', () => {
     const res = await call(w, 'bea', 'GET', reviewUrl());
     expect(res.status).toBe(403);
     expect(res.body.rows).toBeUndefined();
+  });
+});
+
+describe('A25 a change saved after release, and what a student shared', () => {
+  const url = (who: PersonName) => `${attemptUrl(ids.classB, attempt[who] as string)}/grade`;
+
+  test('A25 an override saved after release returns the student to Needs review until it is released', async () => {
+    const before = await call(w, 'marcus', 'GET', url('priya'));
+    expect(before.body.released).not.toBeNull();
+    const saved = await call(w, 'marcus', 'POST', `${url('priya')}/override`, {
+      expectedGradeId: before.body.history[0].id,
+      points: 12,
+      reason: 'Check misjudged a correct answer',
+    });
+    expect(saved.status).toBe(200);
+
+    const waiting = await review(`?needsReview=true&assignmentId=${w.quizId}`);
+    expect(names(waiting.body.students)).toEqual(['Priya Nair']);
+    // The student still sees the released grade; the draft above it is the instructor's alone.
+    expect(waiting.body.rows[0].attempt).toMatchObject({
+      state: 'released',
+      score: { points: 13, state: 'released' },
+      unreleasedChange: true,
+    });
+
+    tick();
+    const released = await call(w, 'marcus', 'POST', `/api/classes/${ids.classB}/grade-releases`, {
+      grades: [{ attemptId: attempt.priya, gradeId: saved.body.history[0].id }],
+    });
+    expect(released.status).toBe(201);
+    const after = await review(`?needsReview=true&assignmentId=${w.quizId}`);
+    expect(after.body.total).toBe(0);
+    const row = (await review(`?assignmentId=${w.quizId}&studentId=${ids.priya}`)).body.rows[0];
+    expect(row.attempt).toMatchObject({ score: { points: 12, state: 'released' } });
+    expect(row.attempt.unreleasedChange).toBe(false);
+  });
+
+  const threadsUrl = (who: string) => `/api/classes/${ids.classB}/students/${who}/discussions`;
+  const post = (who: PersonName, path: string, payload: object) =>
+    call(
+      w,
+      who,
+      'POST',
+      `/api/classes/${ids.classB}/resources/${ids.samplingReading}/${path}`,
+      payload,
+    );
+  const passage = {
+    kind: 'text',
+    blockId: '0123456789ab',
+    start: 6,
+    end: 12,
+    quote: 'sample',
+    prefix: 'Every ',
+    suffix: ' tells a slightly',
+  };
+
+  test('A25 the student view lists the questions and comments the student shared, with their source, and no private notes', async () => {
+    expect(
+      (
+        await post('sam', 'threads', {
+          audience: 'instructor',
+          anchor: passage,
+          body: 'Why n - 1?',
+        })
+      ).status,
+    ).toBe(200);
+    expect(
+      (await post('priya', 'threads', { audience: 'class', anchor: passage, body: 'Priya asks' }))
+        .status,
+    ).toBe(200);
+    expect(
+      (await post('sam', 'annotations', { kind: 'note', anchor: passage, body: 'my private note' }))
+        .status,
+    ).toBe(200);
+
+    const sam = await call(w, 'marcus', 'GET', threadsUrl(ids.sam));
+    expect(sam.status).toBe(200);
+    expect(sam.body.discussions).toHaveLength(1);
+    expect(sam.body.discussions[0]).toMatchObject({
+      thread: { audience: 'instructor', author: { id: ids.sam }, status: 'open' },
+      resource: { tab: 'reading', topicId: ids.sampling },
+    });
+    expect(sam.body.discussions[0].thread.posts[0].body).toBe('Why n - 1?');
+    expect(JSON.stringify(sam.body)).not.toContain('my private note');
+    expect(JSON.stringify(sam.body)).not.toContain('Priya asks');
+  });
+
+  test('A25 an id that is no student of the class is answered 404, not an empty list', async () => {
+    // A co-instructor's threads are not "what a student shared", and a stranger is no one's student.
+    expect((await call(w, 'marcus', 'GET', threadsUrl(ids.marcus))).status).toBe(404);
+    expect((await call(w, 'marcus', 'GET', threadsUrl(ids.previewB))).status).toBe(404);
+    expect(
+      (await call(w, 'marcus', 'GET', threadsUrl('00000000-0000-4000-8000-0000000fffff'))).status,
+    ).toBe(404);
+  });
+
+  test('A25 only an instructor of the class reads a student’s discussions', async () => {
+    expect((await call(w, 'bea', 'GET', threadsUrl(ids.sam))).status).toBe(403);
+    expect(
+      (await call(w, 'marcus', 'GET', `/api/classes/${ids.classA}/students/${ids.sam}/discussions`))
+        .status,
+    ).toBe(404);
+  });
+
+  test('A25 a removed student’s open attempt and shared questions stay reachable', async () => {
+    const removed = await w.app.inject({
+      method: 'DELETE',
+      url: `/api/classes/${ids.classB}/members/${ids.sam}`,
+      headers: { host: '127.0.0.1:3100', cookie: w.world.cookie.elena },
+    });
+    expect(removed.statusCode).toBe(200);
+    // Not in the table any more, but the open attempt still resolves, with the name.
+    const res = await review(`?assignmentId=${w.quizId}&attemptId=${attempt.sam}`);
+    expect(names(res.body.roster)).not.toContain('Sam Okafor');
+    expect(res.body.selected).toMatchObject({
+      studentId: ids.sam,
+      studentName: 'Sam Okafor',
+      attemptId: attempt.sam,
+    });
+    const shared = await call(w, 'marcus', 'GET', threadsUrl(ids.sam));
+    expect(shared.status).toBe(200);
+    expect(shared.body.discussions).toHaveLength(1);
+    // A co-instructor's attempt id (never a student's) resolves to nothing.
+    const none = await review(`?assignmentId=${w.quizId}&attemptId=${attempt.previewB}`);
+    expect(none.body.selected).toBeNull();
   });
 });
