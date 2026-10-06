@@ -1,39 +1,32 @@
-import { mkdtempSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { expect, type Page } from '@playwright/test';
 import { type Connector, codeFrom, fixtureKey, localPython, type Run } from './connector';
+import { countPairing, type Person, personWithPairingLeft, takeTestStart } from './limits';
 
 const id = (n: number) => `00000000-0000-4000-8000-${n.toString().padStart(12, '0')}`;
 const lab = { class: id(211), topic: id(311) };
+export const labClass = lab.class;
 export const notebooks = `/classes/${lab.class}/topics/${lab.topic}/notebooks`;
 
-export type Person = 'reader' | 'instructor';
+export type { Person };
+
 const emails: Record<Person, string> = {
   reader: 'lab-reader@example.test',
   instructor: 'lab-instructor@example.test',
 };
 const who = new WeakMap<Page, Person>();
-const testStarts: Record<Person, number[]> = { reader: [], instructor: [] };
 
 /**
- * Test connection is limited to six starts a minute per person (connectionTests.routes.ts), and a
- * person may create five pairing codes an hour. The flows therefore alternate between the class's
- * reader and instructor, and each test start waits until the last minute holds fewer than five.
+ * Test connection starts and pairing codes are limited per person (limits.ts): every start waits
+ * for room in the last minute.
  */
 export async function takeTestBudget(page: Page): Promise<void> {
-  const starts = testStarts[who.get(page) ?? 'reader'];
-  for (;;) {
-    const now = Date.now();
-    while (starts.length > 0 && now - (starts[0] ?? 0) >= 61_000) starts.shift();
-    if (starts.length < 5) break;
-    await page.waitForTimeout(1_000);
-  }
-  starts.push(Date.now());
+  await takeTestStart(who.get(page) ?? 'reader', (ms) => page.waitForTimeout(ms));
 }
 
 /** Signs the lab reader in and opens the lab notebook's Connect panel. */
-export async function openConnect(page: Page, person: Person = 'reader'): Promise<void> {
+export async function openConnect(page: Page, preferred: Person = 'reader'): Promise<void> {
+  // A retried test starts with the server's limits already partly used: the other person may pair.
+  const person = personWithPairingLeft(preferred);
   who.set(page, person);
   const signedIn = await page.request.post('/api/test/signin-as', {
     data: { email: emails[person] },
@@ -55,6 +48,7 @@ export async function pairAndApprove(
   name: string,
   how: 'button' | 'route' = 'route',
 ): Promise<Run> {
+  countPairing(who.get(page) ?? 'reader');
   await page.getByRole('button', { name: 'Pair a computer' }).click();
   const code = codeFrom(await page.getByText(/--code [0-9A-Z]{4}-[0-9A-Z]{4}/).innerText());
   const pairing = connector.pair(code, name);
@@ -106,7 +100,7 @@ export async function liveLocalNotebook(
   await openConnect(page);
   await pairAndApprove(page, connector, name);
   const run = await connect(page, connector, name);
-  await connectLocal(page, name, mkdtempSync(join(tmpdir(), 'connector-workspace-')));
+  await connectLocal(page, name, connector.workspace());
   await expect(page.getByRole('status').filter({ hasText: 'Ready' })).toBeVisible({
     timeout: 90_000,
   });

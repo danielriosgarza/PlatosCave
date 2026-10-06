@@ -112,6 +112,9 @@ func presentedKey(addr string, via *ssh.Client) (string, error) {
 		return "", fmt.Errorf("dial %s: %w", addr, err)
 	}
 	defer conn.Close()
+	// ClientConfig.Timeout covers only ssh.Dial: a key exchange that stalls (sshd re-executing
+	// after SIGHUP) must not hang the poll that calls this.
+	conn.SetDeadline(time.Now().Add(10 * time.Second))
 	ssh.NewClientConn(conn, addr, cfg) // fails by design once the key is read
 	if got == "" {
 		return "", fmt.Errorf("%s presented no host key", addr)

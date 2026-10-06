@@ -1,13 +1,11 @@
 import { expect, test } from '@playwright/test';
 import { Connector } from './connector';
-import { endSessions, liveLocalNotebook, typeInCell } from './ui';
+import { labClass as classId, endSessions, liveLocalNotebook, typeInCell } from './ui';
 
 test.beforeAll(async ({ playwright, baseURL }) => {
   const setup = await playwright.request.newContext({ baseURL });
   expect((await setup.post('/api/test/world')).ok()).toBe(true);
 });
-
-const classId = '00000000-0000-4000-8000-000000000211';
 
 test('A31 offline then online runs the cell once', async ({ page, context }) => {
   test.setTimeout(240_000);
@@ -19,16 +17,13 @@ test('A31 offline then online runs the cell once', async ({ page, context }) => 
     // The chart cell was stored with execution count 2, so a count of 1 can only come from this run.
     await typeInCell(page, /^Code of cell 3 \[2\]/, "import time; time.sleep(8); print('slept')");
     await notebook.getByRole('button', { name: /^Run cell 3/ }).click();
-    await expect(
-      notebook
-        .getByRole('status')
-        .or(notebook.getByText(/Running/))
-        .first(),
-    ).toBeVisible();
+    // The kernel is running this cell now: the drop below lands in the middle of an execution.
+    const cell = notebook.getByRole('region', { name: /^Code cell 3/ });
+    await expect(cell.getByText('Running', { exact: true })).toBeVisible({ timeout: 30_000 });
 
     // The browser loses its connection, comes back, and the connector's link drops and returns.
     await context.setOffline(true);
-    await page.waitForTimeout(2_000);
+    await expect(page.getByText('This browser is offline.')).toBeVisible({ timeout: 30_000 });
     await context.setOffline(false);
     const sessions = (await (
       await page.request.get(`/api/classes/${classId}/notebook-sessions`)

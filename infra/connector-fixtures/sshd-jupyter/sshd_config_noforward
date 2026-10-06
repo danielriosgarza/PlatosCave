@@ -1,13 +1,5 @@
-Protocol 2
-PermitRootLogin no
-PasswordAuthentication no
-KbdInteractiveAuthentication no
-PubkeyAuthentication yes
-AuthorizedKeysFile .ssh/authorized_keys
-PermitUserEnvironment yes
-AllowUsers student bare locked
-LogLevel INFO
 Port 2223
 HostKey /etc/ssh/keys/ssh_host_ed25519_key
 PidFile /run/sshd-noforward.pid
 AllowTcpForwarding no
+Include /etc/ssh/sshd_config_base

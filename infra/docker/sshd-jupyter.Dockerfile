@@ -27,6 +27,7 @@ RUN mkdir -p /run/sshd /etc/ssh/keys /etc/ssh/keys-rotating \
  && chown -R locked:locked /home/locked/.jupyter /home/locked/.ssh \
  && chown student:student /home/student/.ssh/environment && chown bare:bare /home/bare/.ssh/environment
 
+COPY infra/connector-fixtures/sshd-jupyter/sshd_config_base /etc/ssh/sshd_config_base
 COPY infra/connector-fixtures/sshd-jupyter/sshd_config /etc/ssh/sshd_config
 COPY infra/connector-fixtures/sshd-jupyter/sshd_config_noforward /etc/ssh/sshd_config_noforward
 COPY infra/connector-fixtures/sshd-jupyter/sshd_config_rotating /etc/ssh/sshd_config_rotating

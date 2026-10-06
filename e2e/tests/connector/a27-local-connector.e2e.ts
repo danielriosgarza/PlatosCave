@@ -1,6 +1,3 @@
-import { mkdtempSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { Connector, expectLoopbackOnly } from './connector';
 import { connect, connectLocal, endSessions, openConnect, pairAndApprove } from './ui';
@@ -20,7 +17,7 @@ test('A27 a student pairs a local connector and runs a cell', async ({ page }) =
     await pairAndApprove(page, connector, name, 'button');
     const run = await connect(page, connector, name);
 
-    await connectLocal(page, name, mkdtempSync(join(tmpdir(), 'a27-workspace-')));
+    await connectLocal(page, name, connector.workspace());
     // Ready is the kernel's word: the notebook goes live only once the kernel is idle.
     await expect(page.getByRole('status').filter({ hasText: 'Ready' })).toBeVisible({
       timeout: 90_000,

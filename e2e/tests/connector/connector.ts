@@ -50,6 +50,8 @@ export function connectorBinary(): string {
 /** A running connector command: its output so far, and a way to wait for a line. */
 export class Run {
   output = '';
+  /** The streams have ended: 'exit' can come before the last chunk is read, 'close' cannot. */
+  closed = false;
   readonly exited: Promise<number | null>;
 
   constructor(readonly child: ChildProcess) {
@@ -58,7 +60,10 @@ export class Run {
     };
     child.stdout?.on('data', collect);
     child.stderr?.on('data', collect);
-    this.exited = new Promise((done) => child.once('exit', (code) => done(code)));
+    child.once('close', () => {
+      this.closed = true;
+    });
+    this.exited = new Promise((done) => child.once('close', (code) => done(code)));
   }
 
   /** Resolves with the first match of `pattern` in the output, or fails with the output. */
@@ -67,14 +72,16 @@ export class Run {
     while (Date.now() < deadline) {
       const match = this.output.match(pattern);
       if (match) return match;
-      if (this.child.exitCode !== null) break;
+      if (this.closed) break;
       await new Promise((r) => setTimeout(r, 100));
     }
+    const last = this.output.match(pattern);
+    if (last) return last;
     throw new Error(`connector output never matched ${pattern}:\n${this.output}`);
   }
 
   stop(): void {
-    if (this.child.exitCode === null) this.child.kill('SIGTERM');
+    if (!this.closed) this.child.kill('SIGTERM');
   }
 }
 
@@ -82,6 +89,7 @@ export class Run {
 export class Connector {
   readonly home = mkdtempSync(join(tmpdir(), 'parallax-connector-e2e-'));
   private runs: Run[] = [];
+  private workspaces: string[] = [];
   private bin = connectorBinary();
 
   private start(args: string[]): Run {
@@ -93,6 +101,13 @@ export class Connector {
     );
     this.runs.push(run);
     return run;
+  }
+
+  /** A working directory for a local session, removed with this connector. */
+  workspace(): string {
+    const dir = mkdtempSync(join(tmpdir(), 'connector-workspace-'));
+    this.workspaces.push(dir);
+    return dir;
   }
 
   /** `pair`, which prints its fingerprint and then waits for the person to approve it. */
@@ -112,8 +127,10 @@ export class Connector {
       Promise.all(this.runs.map((r) => r.exited)),
       new Promise((done) => setTimeout(done, 20_000)),
     ]);
-    for (const r of this.runs) if (r.child.exitCode === null) r.child.kill('SIGKILL');
-    rmSync(this.home, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    for (const r of this.runs) if (!r.closed) r.child.kill('SIGKILL');
+    for (const dir of [this.home, ...this.workspaces]) {
+      rmSync(dir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    }
   }
 }
 
@@ -211,7 +228,13 @@ const compose = ['compose', '-f', join(root, 'infra', 'compose.yml'), '--profile
 export function publishedPorts(): number[] {
   // A local sshd without containers (CONNECTOR_FIXTURE_NO_DOCKER=1) shares this computer's network.
   if (process.env.CONNECTOR_FIXTURE_NO_DOCKER) return [];
-  const out = execFileSync('docker', [...compose, 'ps', '--format', 'json'], { encoding: 'utf8' });
+  const out = execFileSync(
+    'docker',
+    [...compose, 'ps', '--format', 'json', 'sshd-jupyter', 'jump'],
+    {
+      encoding: 'utf8',
+    },
+  );
   const ports = new Set<number>();
   for (const line of out.split('\n')) {
     if (!line.trim()) continue;
