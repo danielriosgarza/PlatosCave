@@ -4,12 +4,14 @@
 #
 #   DATABASE_URL=… STORAGE_DIR=… scripts/restore.sh <backup-dir>
 #
-# Nothing is overwritten: the database in DATABASE_URL must hold no tables, views, sequences or
-# schemas of its own (create it first, for example with createdb), and STORAGE_DIR must not
-# exist or be an empty directory. Before touching either, every object in the backup is hashed
+# Nothing is overwritten: the database in DATABASE_URL must hold no tables, views, sequences,
+# functions, types, extensions or schemas of its own (create it first, for example with
+# createdb), and STORAGE_DIR must not exist or be an empty directory (a mount point is fine). Before touching either, every object in the backup is hashed
 # and checked against storage.manifest and its own key, and the dump against backup.info. The
 # objects are then copied into a staging directory beside STORAGE_DIR and checked again; the
-# database is restored in one transaction; the staging directory is renamed to STORAGE_DIR last.
+# database is restored in one transaction; the staging directory is renamed to STORAGE_DIR last
+# (mode 0755), or, when STORAGE_DIR already exists, its objects are copied into it and its mode
+# is kept.
 # Roles are cluster-wide and not in the dump: the restoring role owns the restored objects, and
 # grants to other roles (parallax_runner, scripts/runner-role.sql) need those roles to exist.
 # Only STORAGE_DRIVER=fs is supported; see docs/backup-restore.md.
@@ -64,18 +66,26 @@ verify_objects "$IN/storage"
 # 2. The targets are empty.
 if [ -e "$STORAGE" ]; then
   [ -d "$STORAGE" ] && [ -z "$(ls -A "$STORAGE")" ] || die "storage root $STORAGE is not empty"
+  [ -w "$STORAGE" ] && [ -x "$STORAGE" ] || die "storage root $STORAGE is not writable"
 fi
 own="$(psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -Atc "
   select count(*) from pg_class c join pg_namespace n on n.oid = c.relnamespace
    where n.nspname not in ('pg_catalog', 'information_schema') and n.nspname not like 'pg_toast%'
      and n.nspname not like 'pg_temp%'
-  " )" || die "cannot query the target database"
+  " )"
+procs="$(psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -Atc "
+  select (select count(*) from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+           where n.nspname = 'public')
+       + (select count(*) from pg_type t join pg_namespace n on n.oid = t.typnamespace
+           where n.nspname = 'public' and t.typrelid = 0 and t.typcategory <> 'A')
+       + (select count(*) from pg_extension where extname <> 'plpgsql')
+  ")" || die "cannot query the target database"
 schemas="$(psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -Atc "
   select count(*) from pg_namespace
    where nspname not in ('pg_catalog', 'information_schema', 'public')
      and nspname not like 'pg_toast%' and nspname not like 'pg_temp%'
   ")"
-[ "$own" = 0 ] && [ "$schemas" = 0 ] || die "the target database is not empty"
+[ "$own" = 0 ] && [ "$schemas" = 0 ] && [ "$procs" = 0 ] || die "the target database is not empty"
 
 # 3. Objects into a staging directory beside the storage root, checked again.
 parent="$(dirname "$STORAGE")"
@@ -89,7 +99,12 @@ verify_objects "$STAGE"
 pg_restore --exit-on-error --single-transaction --no-owner --dbname="$DATABASE_URL" "$IN/database.dump"
 
 # 5. The storage root.
-if [ -d "$STORAGE" ]; then rmdir "$STORAGE"; fi
-mv "$STAGE" "$STORAGE"
-trap - EXIT
+if [ -d "$STORAGE" ]; then
+  cp -R "$STAGE/." "$STORAGE/"
+  verify_objects "$STORAGE"
+else
+  chmod 0755 "$STAGE"
+  mv "$STAGE" "$STORAGE"
+  trap - EXIT
+fi
 echo "restore: restored $IN ($(wc -l < "$IN/storage.manifest" | tr -d ' ') objects) into $STORAGE"

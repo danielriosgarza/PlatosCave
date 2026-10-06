@@ -1,6 +1,16 @@
 import { execFile } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
-import { cp, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import {
+  chmod,
+  cp,
+  mkdir,
+  mkdtemp,
+  readdir,
+  readFile,
+  rm,
+  stat,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -114,6 +124,14 @@ async function records(db: Db) {
   return out;
 }
 
+/** Every byte of a stored object. */
+async function readAll(storage: FsStorage, key: string) {
+  const { body } = await storage.get(key);
+  const chunks: Buffer[] = [];
+  for await (const chunk of body) chunks.push(chunk as Buffer);
+  return Buffer.concat(chunks);
+}
+
 const sha256 = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
 
 let w: ExecWorld;
@@ -128,7 +146,6 @@ const before: {
   grade?: unknown;
 } = {};
 let restored: { url: string; db: Db; end: () => Promise<void>; app: FastifyInstance };
-const clock = { now: new Date() };
 
 /** A request as a person against the restored application. */
 async function restoredCall(who: PersonName, url: string) {
@@ -225,7 +242,6 @@ beforeAll(async () => {
   before.records = await records(w.testDb.db);
   before.results = (await call(w, 'bea', 'GET', resultsUrl())).body;
   before.grade = (await call(w, 'marcus', 'GET', gradeUrl())).body;
-  clock.now = w.clock.now;
 
   // Back up, then lose the originals: the restore has nothing else to draw on.
   const backup = await script('backup', join(tmp, 'backup'), w.testDb.url, source);
@@ -240,7 +256,7 @@ beforeAll(async () => {
   const { db, pool } = createDb(url2);
   const app = await buildApp(config, {
     db,
-    now: () => clock.now,
+    now: () => w.clock.now,
     storage: new FsStorage(storageDir),
   });
   await app.ready();
@@ -299,17 +315,16 @@ describe('A22 backup and restore', () => {
     const objects = await restored.db.select().from(storageObjects);
     expect(objects.map((o) => o.key)).toEqual([datasetKey]);
     for (const object of objects) {
-      const { body } = await storage.get(object.key);
-      const chunks: Buffer[] = [];
-      for await (const chunk of body) chunks.push(chunk as Buffer);
-      const bytes = Buffer.concat(chunks);
+      const bytes = await readAll(storage, object.key);
       expect(sha256(bytes)).toBe(object.sha256);
       expect(bytes.length).toBe(object.size);
     }
-    const { body } = await storage.get(datasetKey);
-    const chunks: Buffer[] = [];
-    for await (const chunk of body) chunks.push(chunk as Buffer);
-    expect(new Uint8Array(Buffer.concat(chunks))).toEqual(DATASET);
+    expect(new Uint8Array(await readAll(storage, datasetKey))).toEqual(DATASET);
+  });
+
+  test('A22 the restored storage root is readable by users other than its owner', async () => {
+    const mode = (await stat(join(tmp, 'restored-storage'))).mode & 0o777;
+    expect(mode).toBe(0o755);
   });
 
   test('A22 the restored application shows the student the released feedback, and only it', async () => {
@@ -396,6 +411,41 @@ describe('A22 restore refuses what it cannot restore faithfully', () => {
     expect(res.stderr).toContain(`storage root ${storageDir} is not empty`);
     expect(await readdir(storageDir)).toEqual(['keep.txt']);
     expect(await tableCount(url)).toBe(0);
+  });
+
+  test.each([
+    ['function', 'create function public.f() returns int language sql as $$ select 1 $$'],
+    ['type', `create type public.mood as enum ('ok')`],
+  ])('A22 a database holding only a %s in public is refused', async (_kind, ddl) => {
+    const url = await emptyDatabase();
+    const client = new pg.Client({ connectionString: url });
+    await client.connect();
+    try {
+      await client.query(ddl);
+    } finally {
+      await client.end();
+    }
+    const storageDir = join(tmp, 'ddl-refused-storage');
+    const res = await script('restore', join(tmp, 'backup'), url, storageDir);
+    expect(res.code).not.toBe(0);
+    expect(res.stderr).toContain('the target database is not empty');
+    expect(await tableCount(url)).toBe(0);
+    await expect(readdir(storageDir)).rejects.toThrow();
+  });
+
+  test('A22 an existing empty storage root is filled in place and keeps its mode', async () => {
+    const url = await emptyDatabase();
+    const storageDir = join(tmp, 'mounted-storage');
+    await mkdir(storageDir);
+    await chmod(storageDir, 0o750);
+    const { ino } = await stat(storageDir);
+    const res = await script('restore', join(tmp, 'backup'), url, storageDir);
+    expect(res, res.stderr).toMatchObject({ code: 0 });
+    const after = await stat(storageDir);
+    expect(after.ino).toBe(ino);
+    expect(after.mode & 0o777).toBe(0o750);
+    expect(new Uint8Array(await readAll(new FsStorage(storageDir), datasetKey))).toEqual(DATASET);
+    expect((await readdir(tmp)).filter((n) => n.startsWith('.restore-'))).toEqual([]);
   });
 
   test('A22 a backup with a corrupted object restores nothing', async () => {
