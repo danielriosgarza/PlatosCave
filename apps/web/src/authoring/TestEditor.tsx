@@ -15,11 +15,11 @@ import { SaveStatus } from './SaveStatus';
 import { Area, Check, moved, replaceAt, Select, Text } from './TestFields';
 import {
   blankQuestion,
-  correctAfterRename,
   type DraftCriterion,
   type DraftQuestion,
   type DraftSettings,
   type DraftTest,
+  newUid,
   nextCriterionId,
   nextOptionId,
   nextQuestionId,
@@ -524,15 +524,13 @@ function ChoiceFields({
         }
       />
       {q.options.map((o, i) => (
-        // biome-ignore lint/suspicious/noArrayIndexKey: option ids are edited, so the position is the only stable key.
-        <div key={i} className={local.inlineFields}>
+        <div key={o.uid} className={local.inlineFields}>
           <Text
             label={`Option ${i + 1} id`}
             value={o.id}
             onChange={(v) =>
               onChange({
                 options: replaceAt(q.options, i, { ...o, id: v }),
-                correct: correctAfterRename(q.options, q.correct, i, v),
               })
             }
           />
@@ -545,15 +543,15 @@ function ChoiceFields({
             type={q.multiple ? 'checkbox' : 'radio'}
             name={groupName}
             label={`Option ${i + 1} is correct`}
-            checked={q.correct.includes(o.id)}
+            checked={q.correct.includes(o.uid)}
             onChange={(on) =>
               onChange({
                 correct: q.multiple
                   ? on
-                    ? [...q.correct, o.id]
-                    : q.correct.filter((c) => c !== o.id)
+                    ? [...q.correct, o.uid]
+                    : q.correct.filter((c) => c !== o.uid)
                   : on
-                    ? [o.id]
+                    ? [o.uid]
                     : [],
               })
             }
@@ -565,7 +563,7 @@ function ChoiceFields({
             onClick={() =>
               onChange({
                 options: q.options.filter((_, j) => j !== i),
-                correct: q.correct.filter((c) => c !== o.id),
+                correct: q.correct.filter((c) => c !== o.uid),
               })
             }
           >
@@ -580,7 +578,10 @@ function ChoiceFields({
           disabled={q.options.length >= 12}
           onClick={() =>
             onChange({
-              options: [...q.options, { id: nextOptionId(q.options), label: '' }],
+              options: [
+                ...q.options,
+                { uid: newUid('option'), id: nextOptionId(q.options), label: '' },
+              ],
             })
           }
         >

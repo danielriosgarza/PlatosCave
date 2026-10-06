@@ -172,6 +172,17 @@ describe('test publication validation (design §8.1)', () => {
     ]);
   });
 
+  test('a rubric that exceeds the points by fractions of a hundredth is rejected', () => {
+    const third = (id: string) => ({ id, label: id, points: 0.333 });
+    expect(messages(test1({ rubric: [third('a'), third('b'), third('c')], points: 0.99 }))).toEqual(
+      [expect.stringContaining('more than the question’s 0.99 points')],
+    );
+    const tiny = Array.from({ length: 10 }, (_, i) => ({ id: `c${i}`, label: 'x', points: 0.004 }));
+    expect(messages(test1({ rubric: tiny, points: 0.01 }))).toEqual([
+      expect.stringContaining('more than the question’s 0.01 points'),
+    ]);
+  });
+
   test('two rubric criteria of one question with the same id are rejected', () => {
     const rubric = [
       { id: 'c2', label: 'Reasoning', points: 1 },

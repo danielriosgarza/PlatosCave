@@ -68,14 +68,14 @@ function scriptOnlyHidden(q: CodeQuestion): TestIssue[] {
 }
 
 const rubricIssue = (q: TestQuestion): TestIssue[] => {
-  // Points are decimals, so the sum is compared in hundredths, not as floats.
-  const hundredths = (n: number) => Math.round(n * 100);
-  const total = q.rubric.reduce((sum, c) => sum + hundredths(c.points), 0) / 100;
-  return total > hundredths(q.points) / 100
+  // Points are decimals: the float sum is rounded once, to a millionth, before the comparison.
+  const millionths = (n: number) => Math.round(n * 1e6);
+  const total = q.rubric.reduce((sum, c) => sum + c.points, 0);
+  return millionths(total) > millionths(q.points)
     ? [
         {
           code: 'invalid_test',
-          message: `Question “${q.id}”: the rubric criteria add up to ${total}, more than the question’s ${q.points} points`,
+          message: `Question “${q.id}”: the rubric criteria add up to ${millionths(total) / 1e6}, more than the question’s ${q.points} points`,
         },
       ]
     : [];

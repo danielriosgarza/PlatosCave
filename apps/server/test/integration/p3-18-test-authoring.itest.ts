@@ -251,7 +251,9 @@ describe('P3-18 instructor preview runs', () => {
       expect(res.body).toEqual({ error: 'class_archived' });
     } finally {
       spy.mockRestore();
-      await w.testDb.db.update(classes).set({ archivedAt: null }).where(eq(classes.id, archived));
+      if (archived) {
+        await w.testDb.db.update(classes).set({ archivedAt: null }).where(eq(classes.id, archived));
+      }
     }
   });
 });

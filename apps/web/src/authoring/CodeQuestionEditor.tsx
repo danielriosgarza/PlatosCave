@@ -8,13 +8,16 @@ import { authoringKey } from './queries';
 import { Area, Check, moved, replaceAt, Select, Text } from './TestFields';
 import {
   blankCheck,
+  blankFile,
   type CheckKind,
   checksAfterFileChange,
   type DraftCheck,
   type DraftFile,
   type DraftQuestion,
+  fileUidOf,
   limitBounds,
   lines,
+  withKind,
 } from './testForm';
 
 const checkKinds = [
@@ -99,7 +102,7 @@ export function CodeQuestionEditor({ question: q, courseId, onChange }: Props) {
                 onClick={() =>
                   onChange({
                     files: q.files.filter((_, j) => j !== i),
-                    checks: checksAfterFileChange(q.checks, f.path, undefined, q.files),
+                    checks: checksAfterFileChange(q.checks, f, undefined, q.files),
                   })
                 }
               >
@@ -113,7 +116,7 @@ export function CodeQuestionEditor({ question: q, courseId, onChange }: Props) {
                 onChange({
                   files: replaceAt(q.files, i, { ...f, path: v }),
                   // The checks that named the file follow it.
-                  checks: checksAfterFileChange(q.checks, f.path, v, q.files),
+                  checks: checksAfterFileChange(q.checks, f, v, q.files),
                 })
               }
             />
@@ -144,7 +147,7 @@ export function CodeQuestionEditor({ question: q, courseId, onChange }: Props) {
             disabled={q.files.length >= 64}
             onClick={() =>
               onChange({
-                files: [...q.files, { path: '', content: '', editable: false, hidden: false }],
+                files: [...q.files, blankFile()],
               })
             }
           >
@@ -225,6 +228,7 @@ export function CodeQuestionEditor({ question: q, courseId, onChange }: Props) {
             count={q.checks.length}
             check={c}
             paths={paths}
+            files={q.files}
             onChange={(patch) => setCheck(i, patch)}
             onMove={(by) => onChange({ checks: moved(q.checks, i, by) })}
             onRemove={() => onChange({ checks: q.checks.filter((_, j) => j !== i) })}
@@ -235,7 +239,14 @@ export function CodeQuestionEditor({ question: q, courseId, onChange }: Props) {
             type="button"
             className={buttons.outline}
             disabled={q.checks.length >= 50}
-            onClick={() => onChange({ checks: [...q.checks, blankCheck(paths[0] ?? '')] })}
+            onClick={() =>
+              onChange({
+                checks: [
+                  ...q.checks,
+                  blankCheck(paths[0] ?? '', fileUidOf(q.files, paths[0] ?? '')),
+                ],
+              })
+            }
           >
             Add check
           </button>
@@ -250,6 +261,7 @@ function CheckEditor({
   count,
   check: c,
   paths,
+  files,
   onChange,
   onMove,
   onRemove,
@@ -258,6 +270,7 @@ function CheckEditor({
   count: number;
   check: DraftCheck;
   paths: string[];
+  files: DraftFile[];
   onChange: (patch: Partial<DraftCheck>) => void;
   onMove: (by: number) => void;
   onRemove: () => void;
@@ -323,19 +336,13 @@ function CheckEditor({
       <Select
         label={`Check ${n} kind`}
         value={c.kind}
-        onChange={(kind: CheckKind) =>
-          onChange({
-            kind,
-            compareMode: kind === 'call' ? 'exact' : 'trimmed',
-            args: kind === 'call' ? '[]' : '',
-          })
-        }
+        onChange={(kind: CheckKind) => onChange(withKind(c, kind))}
         options={checkKinds}
       />
       <Select
         label={c.kind === 'script' ? `Check ${n} script file` : `Check ${n} program file`}
         value={c.file}
-        onChange={(v) => onChange({ file: v })}
+        onChange={(v) => onChange({ file: v, fileUid: fileUidOf(files, v) })}
         options={[
           ...(paths.includes(c.file) ? [] : ([[c.file, c.file || 'Choose a file']] as const)),
           ...paths.map((p) => [p, p] as const),

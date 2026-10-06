@@ -478,4 +478,46 @@ describe('test editor', () => {
     expect(first[1]).toBeChecked();
     expect(radios[1]).not.toBeChecked();
   });
+
+  it('keeps the correct mark on its option while the id is retyped through a duplicate', async () => {
+    const choice = {
+      questions: [
+        {
+          id: 'q1',
+          kind: 'choice',
+          prompt: 'Pick one',
+          points: 1,
+          options: [
+            { id: 'a', label: 'One' },
+            { id: 'ab', label: 'Two' },
+          ],
+          multiple: false,
+          correct: ['ab'],
+          rubric: [],
+        },
+      ],
+    };
+    serve({ current: resource({ head: { ...resource().head, content: choice } }) });
+    mount();
+    const id = await screen.findByLabelText('Option 2 id');
+    // ab -> a (a duplicate of option 1) -> ac, one keystroke at a time.
+    await userEvent.type(id, '{Backspace}');
+    await userEvent.type(id, 'c');
+    expect(id).toHaveValue('ac');
+    expect(screen.getByLabelText('Option 2 is correct')).toBeChecked();
+    expect(screen.getByLabelText('Option 1 is correct')).not.toBeChecked();
+  });
+
+  it('keeps the checks on file 1 when its path is cleared beside a new empty file', async () => {
+    serve();
+    mount();
+    await userEvent.click(await screen.findByRole('button', { name: 'Add file' }));
+    const path = screen.getByLabelText('File 1 path');
+    await userEvent.clear(path);
+    await userEvent.type(path, 'main.py');
+    // The new file gets a path of its own: the checks stay on file 1.
+    await userEvent.type(screen.getByLabelText('File 2 path'), 'extra.py');
+    expect(screen.getByLabelText('Check 1 program file')).toHaveValue('main.py');
+    expect(screen.getByLabelText('Check 2 program file')).toHaveValue('main.py');
+  });
 });
