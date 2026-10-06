@@ -158,13 +158,9 @@ function Device(p: DeviceProps) {
   const rename = useCancelOnEscape(p.renaming, p.onCancelRename);
   const revoke = useCancelOnEscape(p.revoking, p.onCancelRevoke);
   return (
-    <li
-      onKeyDown={(e) => {
-        rename.onKeyDown(e);
-        revoke.onKeyDown(e);
-      }}
-    >
-      <div className={styles.row}>
+    <li>
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: Escape cancels the open confirmation in this row */}
+      <div className={styles.row} onKeyDown={rename.onKeyDown}>
         {p.renaming ? (
           <>
             <label className={styles.field}>
@@ -206,7 +202,8 @@ function Device(p: DeviceProps) {
         </p>
       ) : null}
       {p.revoking ? (
-        <div className={styles.notice}>
+        // biome-ignore lint/a11y/noStaticElementInteractions: Escape cancels the open confirmation in this row
+        <div className={styles.notice} onKeyDown={revoke.onKeyDown}>
           <p>
             {`Revoke ${c.name}? It will disconnect now, and sessions on it will be shown as unconfirmed. This does not revoke any SSH account.`}
           </p>

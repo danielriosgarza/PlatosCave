@@ -527,6 +527,41 @@ describe('ConnectPanel', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
+  it('Escape with Rename and Revoke both open cancels the revoke first and keeps the typed name', async () => {
+    const w = world({ connections: [], sessions: [] });
+    serve(w);
+    const { onClose } = renderPanel();
+    await userEvent.click(await screen.findByRole('button', { name: 'Rename Laptop' }));
+    await userEvent.type(screen.getByLabelText('New name for Laptop'), ' lab');
+    await userEvent.click(screen.getByRole('button', { name: 'Revoke Laptop' }));
+    screen.getByRole('button', { name: 'Revoke Laptop' }).focus();
+    await userEvent.keyboard('{Escape}');
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.queryByText(/does not revoke any SSH account/)).toBeNull();
+    expect(screen.getByLabelText('New name for Laptop')).toHaveValue('Laptop lab');
+    expect(screen.getByRole('button', { name: 'Revoke Laptop' })).toHaveFocus();
+  });
+
+  it('a refused restart is forgotten once the kernel is running again', async () => {
+    const w = world({
+      connections: [sshConnection()],
+      sessions: [session()],
+      session: session(),
+      kernel: kernel('dead'),
+      refuse: { status: 409, error: 'not_ready' },
+    });
+    serve(w);
+    renderPanel();
+    await userEvent.click(await screen.findByRole('button', { name: 'Restart the kernel' }));
+    expect(await screen.findByText(/The kernel could not be restarted/)).toBeInTheDocument();
+    w.kernel = kernel('idle');
+    await waitFor(
+      () => expect(screen.queryByText(/The kernel could not be restarted/)).toBeNull(),
+      { timeout: 6000 },
+    );
+    expect(screen.queryByRole('button', { name: 'Restart the kernel' })).toBeNull();
+  }, 15000);
+
   it('Escape in the replace-key confirmation cancels only that confirmation', async () => {
     const w = world({
       connections: [sshConnection()],

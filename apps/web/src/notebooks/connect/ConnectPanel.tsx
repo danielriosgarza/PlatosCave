@@ -169,8 +169,17 @@ export function ConnectPanel({ classId, revisionId, instructor = false, onClose 
     void startFor(readySession.id, kernelToStart);
   }, [readySession, kernelKnown, kernelView, kernelLost, kernelToStart, classId]);
 
+  // A refusal says nothing once the kernel is running again: its note and retry would act on a
+  // healthy kernel.
+  const kernelRecovered =
+    kernelView !== null && kernelView.state !== 'dead' && kernelView.state !== 'unknown';
+  useEffect(() => {
+    if (kernelRecovered) setKernelError(null);
+  }, [kernelRecovered]);
   const kernelFailure =
-    kernelError && kernelError.id === readySession?.id ? kernelError.text : null;
+    kernelError && !kernelRecovered && kernelError.id === readySession?.id
+      ? kernelError.text
+      : null;
   let kernelNote: KernelNote | null = null;
   if (readySession && kernelFailure) {
     kernelNote = {

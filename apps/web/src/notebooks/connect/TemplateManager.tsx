@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useId, useRef, useState } from 'react';
+import { type FormEvent, useId, useState } from 'react';
 import buttons from '../../components/Buttons.module.css';
 import {
   type ComputeTemplate,
@@ -9,6 +9,7 @@ import {
 } from './api';
 import { hostLabel, ISOLATION_TEXT } from './ClassComputers';
 import styles from './Connect.module.css';
+import { useCancelOnEscape } from './escape';
 import { codeText } from './messages';
 
 const ISOLATION_CHOICES: { value: ComputeTemplate['isolation']; label: string }[] = [
@@ -42,13 +43,6 @@ export function TemplateManager({ classId }: { classId: string }) {
   const [archiving, setArchiving] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const list = templates.data ?? [];
-  const archiveButtons = useRef(new Map<string, HTMLButtonElement>());
-  const escapedFrom = useRef<string | null>(null);
-  useEffect(() => {
-    if (archiving !== null || escapedFrom.current === null) return;
-    archiveButtons.current.get(escapedFrom.current)?.focus();
-    escapedFrom.current = null;
-  }, [archiving]);
 
   return (
     <div className={styles.section}>
@@ -69,65 +63,22 @@ export function TemplateManager({ classId }: { classId: string }) {
       ) : list.length > 0 ? (
         <ul className={styles.list} aria-label="Class computers">
           {list.map((t) => (
-            <li
+            <TemplateRow
               key={t.id}
-              onKeyDown={(e) => {
-                if (archiving !== t.id || e.key !== 'Escape' || e.defaultPrevented) return;
-                e.preventDefault();
-                escapedFrom.current = t.id;
-                setArchiving(null);
+              template={t}
+              archiving={archiving === t.id}
+              busy={actions.archive.isPending}
+              onAsk={() => setArchiving(t.id)}
+              onCancel={() => setArchiving(null)}
+              onArchive={() => {
+                setError(null);
+                actions.archive.mutate(t.id, {
+                  onSuccess: () => setArchiving(null),
+                  onError: (e) =>
+                    setError(refusalText(e, 'The class computer could not be archived.')),
+                });
               }}
-            >
-              <strong>{t.name}</strong>
-              <span className={styles.mono}>{`${hostLabel(t)} · ${t.target.workspace}`}</span>
-              {t.target.jump ? (
-                <span className={styles.muted}>
-                  {`Through ${t.target.jump.host}:${t.target.jump.port}`}
-                </span>
-              ) : null}
-              <span>{ISOLATION_TEXT[t.isolation]}</span>
-              <div className={styles.row}>
-                {archiving === t.id ? (
-                  <>
-                    <span>{`Archive ${t.name}? Students can no longer connect through it.`}</span>
-                    <button
-                      type="button"
-                      className={buttons.primary}
-                      disabled={actions.archive.isPending}
-                      onClick={() => {
-                        setError(null);
-                        actions.archive.mutate(t.id, {
-                          onSuccess: () => setArchiving(null),
-                          onError: (e) =>
-                            setError(refusalText(e, 'The class computer could not be archived.')),
-                        });
-                      }}
-                    >
-                      Archive
-                    </button>
-                    <button
-                      type="button"
-                      className={buttons.textButton}
-                      onClick={() => setArchiving(null)}
-                    >
-                      Keep it
-                    </button>
-                  </>
-                ) : (
-                  <button
-                    ref={(el) => {
-                      if (el) archiveButtons.current.set(t.id, el);
-                      else archiveButtons.current.delete(t.id);
-                    }}
-                    type="button"
-                    className={buttons.outline}
-                    onClick={() => setArchiving(t.id)}
-                  >
-                    {`Archive ${t.name}`}
-                  </button>
-                )}
-              </div>
-            </li>
+            />
           ))}
         </ul>
       ) : templates.data ? (
@@ -154,6 +105,55 @@ export function TemplateManager({ classId }: { classId: string }) {
         </div>
       )}
     </div>
+  );
+}
+
+/** One published class computer; Archive asks first, and Escape cancels the question. */
+function TemplateRow({
+  template: t,
+  archiving,
+  busy,
+  onAsk,
+  onCancel,
+  onArchive,
+}: {
+  template: ComputeTemplate;
+  archiving: boolean;
+  busy: boolean;
+  onAsk: () => void;
+  onCancel: () => void;
+  onArchive: () => void;
+}) {
+  const archive = useCancelOnEscape(archiving, onCancel);
+  return (
+    <li>
+      <strong>{t.name}</strong>
+      <span className={styles.mono}>{`${hostLabel(t)} · ${t.target.workspace}`}</span>
+      {t.target.jump ? (
+        <span className={styles.muted}>
+          {`Through ${t.target.jump.host}:${t.target.jump.port}`}
+        </span>
+      ) : null}
+      <span>{ISOLATION_TEXT[t.isolation]}</span>
+      {/* biome-ignore lint/a11y/noStaticElementInteractions: Escape cancels the open confirmation in this row */}
+      <div className={styles.row} onKeyDown={archive.onKeyDown}>
+        {archiving ? (
+          <>
+            <span>{`Archive ${t.name}? Students can no longer connect through it.`}</span>
+            <button type="button" className={buttons.primary} disabled={busy} onClick={onArchive}>
+              Archive
+            </button>
+            <button type="button" className={buttons.textButton} onClick={onCancel}>
+              Keep it
+            </button>
+          </>
+        ) : (
+          <button ref={archive.trigger} type="button" className={buttons.outline} onClick={onAsk}>
+            {`Archive ${t.name}`}
+          </button>
+        )}
+      </div>
+    </li>
   );
 }
 
