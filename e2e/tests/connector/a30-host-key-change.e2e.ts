@@ -45,8 +45,8 @@ test('A30 a rotated host key stops the connection and keeps the trust record', a
       timeout: 60_000,
     });
     await expect(stage(page, 'host_identity')).toContainText('differs from the one you trusted');
-    await expect(page.getByText('Trusted key')).toBeVisible();
-    await expect(page.getByText('Presented key')).toBeVisible();
+    await expect(page.getByText('Trusted key', { exact: true })).toBeVisible();
+    await expect(page.getByText('Presented key', { exact: true })).toBeVisible();
     for (const later of ['ssh_auth', 'workspace', 'forwarding']) {
       await expect(stage(page, later)).toHaveAttribute('data-status', 'skipped');
     }
