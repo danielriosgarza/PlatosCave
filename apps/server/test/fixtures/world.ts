@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
 import type { ClassManagerScope, ClassScope, CourseScope, UserScope } from '../../src/auth/scope';
 import { sessionCookieHeader } from '../../src/auth/sessions';
-import { DEV_SESSION_SECRET } from '../../src/config';
+import { DEV_RUNNER_RUNTIMES, DEV_SESSION_SECRET } from '../../src/config';
 import { extractPdfText } from '../../src/content/pdf-text';
 import { renderReading, renderSlides } from '../../src/content/reading';
 import { createSession } from '../../src/db/auth/sessions';
@@ -181,6 +181,7 @@ export async function buildWorld(db: Db, now = new Date()): Promise<World> {
   await seedDrafts(db);
   const published = await publishRelease(db, asCourseScope(course, ids.elena), {
     id: ids.releaseV1,
+    runtimes: DEV_RUNNER_RUNTIMES,
   });
   if (!published.ok) throw new Error(`world release: ${JSON.stringify(published.report)}`);
   for (const [classId, instructor] of [
@@ -417,7 +418,10 @@ export async function seedReadingLab(db: Db, storage: Storage, now: Date): Promi
     await writeDerivedOutputs(db, owner, revisionId, derived, ready);
   }
 
-  const published = await publishRelease(db, owner, { id: lab.release });
+  const published = await publishRelease(db, owner, {
+    id: lab.release,
+    runtimes: DEV_RUNNER_RUNTIMES,
+  });
   if (!published.ok) throw new Error(`lab release: ${JSON.stringify(published.report)}`);
   const adopted = await adoptRelease(db, asClassScope(lab.class, lab.course, lab.author), {
     releaseId: lab.release,
@@ -515,7 +519,11 @@ async function seedDrafts(db: Db): Promise<void> {
       type: 'test' as const,
       title: 'Sampling quiz',
       position: 1,
-      content: { questions: [{ id: 'q1', prompt: 'What is a sampling distribution?' }] },
+      content: {
+        questions: [
+          { id: 'q1', kind: 'explanation', prompt: 'What is a sampling distribution?', points: 1 },
+        ],
+      },
     },
     {
       id: ids.answerKey,

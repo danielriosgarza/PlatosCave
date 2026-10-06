@@ -7,7 +7,7 @@ import {
   indentUnit,
   syntaxHighlighting,
 } from '@codemirror/language';
-import { EditorState } from '@codemirror/state';
+import { EditorState, Transaction } from '@codemirror/state';
 import {
   drawSelection,
   EditorView,
@@ -91,7 +91,13 @@ function Editor({ label, value, onChange, language }: Omit<Props, 'plain'>) {
             spellcheck: 'false',
           }),
           EditorView.updateListener.of((update) => {
-            if (update.docChanged) change.current(update.state.doc.toString());
+            // A value adopted from outside is not something the student typed.
+            if (
+              update.docChanged &&
+              !update.transactions.some((t) => t.annotation(Transaction.remote))
+            ) {
+              change.current(update.state.doc.toString());
+            }
           }),
         ],
       }),
@@ -107,7 +113,11 @@ function Editor({ label, value, onChange, language }: Omit<Props, 'plain'>) {
   useEffect(() => {
     const current = view.current;
     if (current && current.state.doc.toString() !== value) {
-      current.dispatch({ changes: { from: 0, to: current.state.doc.length, insert: value } });
+      current.dispatch({
+        changes: { from: 0, to: current.state.doc.length, insert: value },
+        // Not undoable: an undo would bring back older local text and save it over the newer one.
+        annotations: [Transaction.remote.of(true), Transaction.addToHistory.of(false)],
+      });
     }
   }, [value]);
 

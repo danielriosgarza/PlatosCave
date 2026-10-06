@@ -2,7 +2,7 @@ import { eq, sql } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { buildApp } from '../../src/app';
-import { loadConfig } from '../../src/config';
+import { DEV_RUNNER_RUNTIMES, loadConfig } from '../../src/config';
 import { adoptRelease } from '../../src/db/content/adoption';
 import { createResource, updateResource } from '../../src/db/content/drafts';
 import { publishRelease, validateDrafts } from '../../src/db/content/releases';
@@ -132,7 +132,7 @@ describe('exercise authoring', () => {
       .where(eq(resourceRevisions.id, created.head?.id ?? ''));
     await testDb.db.execute(sql`alter table resource_revisions enable trigger user`);
 
-    const report = await validateDrafts(testDb.db, course);
+    const report = await validateDrafts(testDb.db, course, { runtimes: DEV_RUNNER_RUNTIMES });
     expect(report.errors).toEqual([
       expect.objectContaining({
         code: 'invalid_exercise',
@@ -140,9 +140,13 @@ describe('exercise authoring', () => {
         message: expect.stringContaining('“Legacy”'),
       }),
     ]);
-    expect((await publishRelease(testDb.db, course)).ok).toBe(false);
+    expect((await publishRelease(testDb.db, course, { runtimes: DEV_RUNNER_RUNTIMES })).ok).toBe(
+      false,
+    );
     await testDb.db.update(resources).set({ archivedAt: now }).where(eq(resources.id, created.id));
-    expect((await validateDrafts(testDb.db, course)).errors).toEqual([]);
+    expect(
+      (await validateDrafts(testDb.db, course, { runtimes: DEV_RUNNER_RUNTIMES })).errors,
+    ).toEqual([]);
   });
 
   test('students see the points and hint policy of an exercise for credit, and none for practice', async () => {
@@ -151,7 +155,7 @@ describe('exercise authoring', () => {
       exercise({ credit: { points: 12, hintPolicy: 'reduces_credit' } }),
     );
     const practice = await add('Practice', exercise());
-    const published = await publishRelease(testDb.db, course);
+    const published = await publishRelease(testDb.db, course, { runtimes: DEV_RUNNER_RUNTIMES });
     if (!published.ok) throw new Error(JSON.stringify(published.report));
     await adoptRelease(
       testDb.db,
@@ -186,7 +190,7 @@ describe('exercise authoring', () => {
       );
       if (!adopted.ok) throw new Error(adopted.reason);
     };
-    const first = await publishRelease(testDb.db, course);
+    const first = await publishRelease(testDb.db, course, { runtimes: DEV_RUNNER_RUNTIMES });
     if (!first.ok) throw new Error(JSON.stringify(first.report));
     await adopt(first.release.id, ids.releaseV1);
     const url = `/api/classes/${ids.classB}`;
@@ -204,7 +208,7 @@ describe('exercise authoring', () => {
       now,
     );
     if (!revised.ok) throw new Error(JSON.stringify(revised));
-    const second = await publishRelease(testDb.db, course);
+    const second = await publishRelease(testDb.db, course, { runtimes: DEV_RUNNER_RUNTIMES });
     if (!second.ok) throw new Error(JSON.stringify(second.report));
     await adopt(second.release.id, first.release.id);
     await testDb.db.execute(sql`alter table resource_revisions disable trigger user`);

@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { buildApp } from '../../src/app';
 import { PREVIEW_RETURN_COOKIE } from '../../src/auth/preview';
 import { SESSION_COOKIE } from '../../src/auth/sessions';
-import { loadConfig } from '../../src/config';
+import { DEV_RUNNER_RUNTIMES, loadConfig } from '../../src/config';
 import { renderReading } from '../../src/content/reading';
 import { adoptRelease } from '../../src/db/content/adoption';
 import { publishRelease } from '../../src/db/content/releases';
@@ -261,7 +261,7 @@ beforeAll(async () => {
 
   // Release v2 of Statistical thinking carries these resources; only class A adopts it, so
   // class B stays on the world's v1, which has none of them.
-  const published = await publishRelease(db, elenaScope);
+  const published = await publishRelease(db, elenaScope, { runtimes: DEV_RUNNER_RUNTIMES });
   if (!published.ok) throw new Error(JSON.stringify(published.report));
   const adopted = await adoptRelease(db, asClassScope(ids.classA, ids.statistics, ids.priya), {
     releaseId: published.release.id,

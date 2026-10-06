@@ -104,7 +104,10 @@ describe('courses contexts', () => {
     await user.click(screen.getByRole('link', { name: 'Instructor view' }));
     expect(await screen.findByRole('heading', { name: 'Courses you teach' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Class A/ })).toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: 'Class review' })).toBeNull();
+    expect(screen.getByRole('link', { name: 'Class review' })).toHaveAttribute(
+      'href',
+      `/classes/${CLASS_A}/review`,
+    );
     expect(screen.queryByRole('link', { name: /Class B/ })).toBeNull();
     expect(screen.getByRole('link', { name: 'Instructor view' })).toHaveAttribute(
       'aria-current',
@@ -119,7 +122,10 @@ describe('courses default view', () => {
     renderApp('/courses');
     expect(await screen.findByRole('heading', { name: 'Courses you teach' })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Class A/ })).toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: 'Class review' })).toBeNull();
+    expect(screen.getByRole('link', { name: 'Class review' })).toHaveAttribute(
+      'href',
+      `/classes/${CLASS_A}/review`,
+    );
   });
 });
 
