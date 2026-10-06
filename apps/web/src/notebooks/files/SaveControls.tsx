@@ -14,10 +14,8 @@ interface Props {
   workingCopy: WorkingCopyView;
   /** The notebook as it is in the editor now, with edits not yet saved. */
   getNotebook: () => Record<string, unknown>;
-  /** Called with every acknowledged copy: after each acknowledged save. */
+  /** Called with every copy Parallax holds: after each acknowledged save, and with the newer copy when a save found one. */
   onWorkingCopy: (copy: WorkingCopyView) => void;
-  /** Called with the current copy when a save found another revision already stored. */
-  onStale?: (current: WorkingCopyView) => void;
   /** Absolute workspace and host from the files listing: the destination of Save to computer. */
   workspace?: string;
   /** The workspace listing has not answered yet. */
@@ -32,7 +30,7 @@ type SaveState =
   | { kind: 'saving' }
   | { kind: 'saved'; revision: number; savedAt: string }
   | { kind: 'failed'; message: string }
-  | { kind: 'stale'; current: WorkingCopyView };
+  | { kind: 'stale' };
 
 /**
  * The two kinds of save, kept apart (§10.5): **Saved to Parallax** is the working copy stored by
@@ -46,7 +44,6 @@ export function SaveControls({
   workingCopy,
   getNotebook,
   onWorkingCopy,
-  onStale,
   workspace,
   workspacePending = false,
   host,
@@ -72,8 +69,8 @@ export function SaveControls({
       const body =
         err instanceof ApiError ? (err.body as { error?: string; current?: unknown }) : null;
       if (err instanceof ApiError && err.status === 409 && body?.error === 'revision_conflict') {
-        setSave({ kind: 'stale', current: body.current as WorkingCopyView });
-        onStale?.(body.current as WorkingCopyView);
+        setSave({ kind: 'stale' });
+        onWorkingCopy(body.current as WorkingCopyView);
       } else if (err instanceof ApiError && err.status === 413) {
         setSave({ kind: 'failed', message: 'The notebook is too large to store.' });
       } else if (err instanceof ApiError && err.status === 400) {
@@ -175,15 +172,15 @@ export function SaveControls({
         {save.kind === 'stale' ? (
           <div role="alert">
             <p>
-              Not saved to Parallax. Your working copy is at revision {save.current.currentRevision}{' '}
+              Not saved to Parallax. Your working copy is at revision {workingCopy.currentRevision}{' '}
               from another save; your draft is still in this page and nothing was overwritten.
             </p>
             <button
               type="button"
               className={buttons.tool}
-              onClick={() => void saveToParallax(save.current.currentRevision)}
+              onClick={() => void saveToParallax(workingCopy.currentRevision)}
             >
-              Save my draft as revision {save.current.currentRevision + 1}
+              Save my draft as revision {workingCopy.currentRevision + 1}
             </button>{' '}
             <button
               type="button"

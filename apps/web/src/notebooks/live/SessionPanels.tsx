@@ -181,6 +181,7 @@ function Panels({
         sessionId={sessionId}
         workingCopy={copy}
         onWorkingCopy={imported}
+        onStale={keep}
         onCopyInSettled={onCopyInSettled}
       />
       <SaveControls
@@ -189,7 +190,6 @@ function Panels({
         workingCopy={copy}
         getNotebook={getNotebook}
         onWorkingCopy={keep}
-        onStale={keep}
         workspace={workspace}
         workspacePending={workspacePending}
         host={host}
