@@ -23,6 +23,7 @@ import { SaveStatus } from './SaveStatus';
 import { AddShiny, ShinyEditor } from './ShinyApp';
 import { TestEditor } from './TestEditor';
 import { AddWebSlides, WebSlidesEditor } from './WebSlides';
+import { declaredFromContent } from './workspaceFiles';
 
 export type ResourceSummary = z.output<typeof draftResourceSummary>;
 type Type = ResourceSummary['type'];
@@ -311,6 +312,16 @@ function ResourceRow({
           </div>
           <StatusLine courseId={courseId} resource={resource} status={status} lookup={lookup} />
         </div>
+        {resource.type === 'notebook' ? (
+          <button
+            type="button"
+            className={buttons.textButton}
+            aria-expanded={open}
+            onClick={() => setOpen(!open)}
+          >
+            {open ? 'Hide workspace files' : `Workspace files of ${resource.title}`}
+          </button>
+        ) : null}
         {isReading(resource.type) ||
         isWebSlides(resource.type) ||
         isShiny(resource.type) ||
@@ -326,6 +337,9 @@ function ResourceRow({
           </button>
         ) : null}
       </div>
+      {open && resource.type === 'notebook' ? (
+        <NotebookFiles courseId={courseId} resourceId={resource.id} />
+      ) : null}
       {open && isExercise(resource.type) ? (
         <ExerciseEditor courseId={courseId} resourceId={resource.id} onSaved={onChanged} />
       ) : null}
@@ -342,6 +356,34 @@ function ResourceRow({
         <ReadingEditor courseId={courseId} resourceId={resource.id} onSaved={onChanged} />
       ) : null}
     </div>
+  );
+}
+
+/** The files a notebook's draft revision declares for a learner's workspace. */
+function NotebookFiles({ courseId, resourceId }: { courseId: string; resourceId: string }) {
+  const loaded = useQuery({
+    queryKey: [...authoringKey(courseId), 'resource', resourceId],
+    queryFn: () => call(getResource, { params: { courseId, resourceId } }),
+    gcTime: 0,
+  });
+  if (loaded.isError)
+    return (
+      <p role="alert" className={styles.small}>
+        The workspace files could not be loaded.
+      </p>
+    );
+  if (!loaded.data) return <p className={`${styles.small} ${styles.muted}`}>Loading…</p>;
+  const files = declaredFromContent(loaded.data.head?.content);
+  if (files.length === 0)
+    return <p className={`${styles.small} ${styles.muted}`}>No workspace files declared.</p>;
+  return (
+    <ul aria-label="Workspace files" className={styles.small}>
+      {files.map((f) => (
+        <li key={f.path}>
+          <code>{f.path}</code> · {f.size.toLocaleString('en')} bytes
+        </li>
+      ))}
+    </ul>
   );
 }
 
