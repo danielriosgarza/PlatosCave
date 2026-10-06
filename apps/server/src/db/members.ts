@@ -168,7 +168,7 @@ async function dropPreviews(tx: Tx, scope: ClassManagerScope, userId: string, no
  * course and an invitation acceptance re-granting draft editing run one after the other. Its
  * owner flag also decides whether the person's invitations outlive their class authority
  * (`revokeIssuedBy`). The grant toggle reads `owner` through it only to share that one code
- * path: nothing writes `owner`, so the lock is not what makes that read safe.
+ * path; `setOwner` is what writes `owner`, and it serialises on the course's owner rows itself.
  */
 async function lockCourseMembership(tx: Tx, scope: CourseContext, userId: string) {
   const [row] = await tx
@@ -261,6 +261,87 @@ async function revokeIssuedBy(
     openInvite(now),
   ) as SQL;
   await revokeInvites(tx, scope, issued, now, { reason });
+}
+
+/**
+ * Grants or withdraws course ownership (§3). Every owner membership of the course is locked in id
+ * order, the order `closeAccount` takes them in, so two owners withdrawing each other, or an
+ * owner closing their account meanwhile, run one after the other and the course keeps an active
+ * owner. A deactivated owner does not count as one.
+ */
+export function setOwner(db: Db, scope: CourseScope, userId: string, granted: boolean) {
+  return db.transaction(async (tx) => {
+    const owners = await tx
+      .select({ userId: courseMemberships.userId, deactivatedAt: users.deactivatedAt })
+      .from(courseMemberships)
+      .innerJoin(users, eq(users.id, courseMemberships.userId))
+      .where(and(forCourse(scope, courseMemberships), eq(courseMemberships.owner, true)))
+      .orderBy(asc(courseMemberships.id))
+      .for('update', { of: courseMemberships });
+    const [user] = await tx
+      .select({ kind: users.kind, deactivatedAt: users.deactivatedAt })
+      .from(users)
+      .where(eq(users.id, userId))
+      .for('share');
+    const isOwner = owners.some((o) => o.userId === userId);
+    if (!granted) {
+      if (!isOwner) return { ok: true as const };
+      if (!owners.some((o) => o.userId !== userId && o.deactivatedAt === null))
+        return { ok: false as const, reason: 'last_owner' as const };
+    } else {
+      if (user?.kind !== 'user' || user.deactivatedAt !== null)
+        return { ok: false as const, reason: 'not_found' as const };
+      if (isOwner) return { ok: true as const };
+      const [member] = await tx
+        .select({ id: courseMemberships.id })
+        .from(courseMemberships)
+        .where(and(forCourse(scope, courseMemberships), eq(courseMemberships.userId, userId)));
+      const [teaching] = member
+        ? []
+        : await tx
+            .select({ id: classMemberships.id })
+            .from(classMemberships)
+            .innerJoin(classes, eq(classes.id, classMemberships.classId))
+            .where(
+              and(
+                forCourse(scope, classes),
+                eq(classMemberships.userId, userId),
+                eq(classMemberships.role, 'instructor'),
+                eq(classMemberships.isPreview, false),
+              ),
+            )
+            .limit(1);
+      if (!member && !teaching) return { ok: false as const, reason: 'not_course_staff' as const };
+    }
+    const current = await lockCourseMembership(tx, scope, userId);
+    if (granted) {
+      // Teaching a class already carries draft editing (§3); a new row keeps that.
+      await tx
+        .insert(courseMemberships)
+        .values({ courseId: scope.courseId, userId, owner: true, editor: true })
+        .onConflictDoUpdate({
+          target: [courseMemberships.courseId, courseMemberships.userId],
+          set: { owner: true },
+        });
+    } else {
+      await tx
+        .update(courseMemberships)
+        .set({ owner: false })
+        .where(and(forCourse(scope, courseMemberships), eq(courseMemberships.userId, userId)));
+    }
+    const membershipRemoved = granted ? false : await tryDeleteEmpty(tx, scope, userId);
+    await audit(tx, {
+      actorId: scope.user.id,
+      action: 'grant.owner',
+      scopeKind: 'course',
+      scopeId: scope.courseId,
+      targetType: 'user',
+      targetId: userId,
+      before: { owner: current?.owner ?? false },
+      after: { owner: granted, membershipRemoved },
+    });
+    return { ok: true as const };
+  });
 }
 
 /** Publication is a course grant only the owner hands out (§3: "If delegated"). */

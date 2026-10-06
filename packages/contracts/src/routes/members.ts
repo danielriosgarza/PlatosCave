@@ -161,6 +161,31 @@ export const setPublisher = defineRoute({
   examples: { params: { courseId: zero, userId: zero }, body: { granted: true } },
 });
 
+/**
+ * Hands the course's ownership on or withdraws it (§3), so an owner can leave a course (account
+ * closure refuses the only active owner, `owns_courses`). Granting needs a person who already
+ * works on the course: a course membership or an instructor seat in one of its classes (409
+ * `not_course_staff`), with an active account (404 otherwise, as for any unknown account).
+ * Withdrawing keeps the editing and publishing grants the person held. 409 `last_owner` when no
+ * other active owner would remain, whoever is withdrawn, the caller included. Granting to an owner
+ * or withdrawing from a non-owner changes nothing. Works on an archived course, so an owner can
+ * hand it over. Needs a recent sign-in; audited as `grant.owner`.
+ */
+export const setOwner = defineRoute({
+  method: 'PUT',
+  path: '/api/courses/:courseId/members/:userId/owner',
+  scope: { kind: 'course', role: 'owner' },
+  allowWhenArchived: true,
+  summary: 'Grant or withdraw ownership of the course',
+  params: z.object({ courseId: z.uuid(), userId: z.uuid() }),
+  body: z.object({ granted: z.boolean() }),
+  response: z.object({ userId: z.uuid(), owner: z.boolean() }),
+  errors: {
+    409: z.object({ error: z.enum(['not_course_staff', 'last_owner']) }),
+  },
+  examples: { params: { courseId: zero, userId: zero }, body: { granted: true } },
+});
+
 const joined = z.object({
   classId: z.uuid(),
   className: z.string(),
