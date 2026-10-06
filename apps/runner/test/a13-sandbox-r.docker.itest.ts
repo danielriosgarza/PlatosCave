@@ -16,7 +16,21 @@ import { parseJob, runJob } from '../src/worker';
  * Skipped without a Docker daemon or the image; mandatory in CI.
  */
 const IMAGE = process.env.IMAGE_R ?? 'parallax-runner-r:dev';
-const docker = new Docker();
+/**
+ * The Python suite beside this file sweeps every container labelled `parallax.runner` when it
+ * ends, which would remove one of ours mid-run. These containers carry the job label only, so
+ * that sweep (and a sweep from here) cannot reach them; the policy is otherwise untouched.
+ */
+class IsolatedDocker extends Docker {
+  // biome-ignore lint/suspicious/noExplicitAny: dockerode's overloaded signature
+  override createContainer(options: any, ...rest: any[]): any {
+    const { [SANDBOX_LABEL]: _label, ...labels } = options.Labels ?? {};
+    // biome-ignore lint/suspicious/noExplicitAny: dockerode's overloaded signature
+    return (super.createContainer as any)({ ...options, Labels: labels }, ...rest);
+  }
+}
+
+const docker = new IsolatedDocker();
 const daemon = await docker.ping().then(
   () => true,
   () => false,
@@ -109,9 +123,6 @@ function expectPassed(outcome: RunnerOutcome) {
   expect(checkOf(outcome).status).toBe('passed');
   expect(outcome.status).toBe('passed');
 }
-
-// No sweep here: it removes every sandbox container, including those of the Python suite that
-// runs beside this file. Each run removes its own container.
 
 test.runIf(process.env.CI)('CI provides the R runner image', () => {
   expect(daemon).toBe(true);
@@ -369,7 +380,7 @@ cat('harness still alive\\n')
       const deadline = Date.now() + 30_000;
       while (Date.now() < deadline) {
         const [found] = await docker.listContainers({
-          filters: { label: [`${SANDBOX_LABEL}=1`, `${JOB_LABEL}=${sleeper.jobId}`] },
+          filters: { label: [`${JOB_LABEL}=${sleeper.jobId}`] },
         });
         if (found?.State === 'running') return found.Id;
         await new Promise((resolve) => setTimeout(resolve, 200));
