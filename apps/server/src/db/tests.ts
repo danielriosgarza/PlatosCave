@@ -56,6 +56,7 @@ type Summary = z.input<typeof contracts.attemptSummary>;
 type AttemptView = z.input<typeof contracts.attemptView>;
 type Overview = z.input<typeof contracts.testOverview>;
 type Ack = z.input<typeof contracts.answerAck>;
+type SaveAck = z.input<typeof contracts.saveAck>;
 type AssignmentView = z.input<typeof contracts.assignmentView>;
 type Granted = z.input<typeof contracts.grantedOverride>;
 type Reviewed = z.input<typeof contracts.reviewedAttempt>;
@@ -445,7 +446,8 @@ async function closedWith(ex: Ex, scope: ClassScope, attempt: AttemptRow): Promi
 
 /**
  * Autosave: stores one answer of the caller's attempt in progress and acknowledges it. A save
- * whose `seq` is not above the stored one changes nothing and answers the stored acknowledgement.
+ * whose `seq` is not above the stored one changes nothing and answers the stored acknowledgement
+ * with `applied: false`, so the client never takes another write's acknowledgement for its own.
  */
 export async function saveAnswer(
   db: Db,
@@ -454,7 +456,7 @@ export async function saveAnswer(
   questionId: string,
   input: { value: unknown; flagged: boolean; seq: number },
   now: Date,
-): Promise<Outcome<Ack> | Closed> {
+): Promise<Outcome<SaveAck> | Closed> {
   return db.transaction(async (tx) => {
     const attempt = await lockAttempt(tx, scope, attemptId, now);
     if (!attempt) return notFound;
@@ -486,7 +488,12 @@ export async function saveAnswer(
     if (!row) throw new Error('answer upsert returned no row');
     return {
       ok: true,
-      value: { questionId, seq: row.seq, savedAt: row.savedAt.toISOString() },
+      value: {
+        questionId,
+        seq: row.seq,
+        savedAt: row.savedAt.toISOString(),
+        applied: saved !== undefined,
+      },
     };
   });
 }
