@@ -82,4 +82,7 @@ export const classWorkingCopyPrefix = (classId: string): string =>
   `classes/${classId}/working-copies`;
 
 /** Where files copied out of a notebook session's workspace live (P3-09). */
+/** Where a class's results exports live; retention (P4-09) finds them here. */
+export const classExportPrefix = (classId: string): string => `classes/${classId}/exports`;
+
 export const classTransferPrefix = (classId: string): string => `classes/${classId}/transfers`;

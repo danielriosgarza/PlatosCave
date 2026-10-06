@@ -42,7 +42,10 @@ test('A02 a person teaching class A and studying in class B switches between two
   const taught = page.getByRole('list', { name: 'Classes you teach' });
   await expect(taught.getByText('2 topics · Autumn 2026 A')).toBeVisible();
   await expect(taught.getByText('Autumn 2026 B')).toHaveCount(0);
-  await expect(taught.getByRole('link', { name: 'Class review' })).toHaveCount(0);
+  await expect(taught.getByRole('link', { name: 'Class review' })).toHaveAttribute(
+    'href',
+    /\/classes\/[0-9a-f-]+\/review$/,
+  );
   await expect(page.getByRole('button', { name: 'Create course' })).toBeVisible();
 
   await page.getByRole('link', { name: 'Student view' }).click();

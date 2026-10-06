@@ -16,6 +16,18 @@ import type { ReadingList } from '../readings';
 import type { Annotation, MarginList, Thread } from './data';
 import { allowDrafts, clearDrafts, draftKey, listDrafts, saveDraft } from './drafts';
 
+const deletes = vi.hoisted(() => ({ hold: null as Promise<void> | null }));
+vi.mock('./drafts', async (importOriginal) => {
+  const real = await importOriginal<typeof import('./drafts')>();
+  return {
+    ...real,
+    removeDraft: async (key: string) => {
+      await deletes.hold;
+      return real.removeDraft(key);
+    },
+  };
+});
+
 const RES = '00000000-0000-4000-8000-000000000401';
 const REV = '00000000-0000-4000-8000-000000000501';
 const READING = `/classes/${CLASS_A}/topics/${T_SAMPLING}/reading`;
@@ -958,6 +970,59 @@ describe('reading margin: layout and sign-out', () => {
     expect(await listDrafts(SAM_ID, CLASS_A, RES)).toEqual([]);
   });
 
+  it('A03 a reload before the device copy is gone does not bring back an acknowledged note as unsent', async () => {
+    const w = world();
+    const mock = api(w);
+    const posts = () =>
+      mock.mock.calls.filter(([, init]) => (init as RequestInit | undefined)?.method === 'POST');
+    // The device's delete of the acknowledged note's copy stays uncommitted: its transaction is
+    // kept open by further requests until the test lets it finish.
+    const realDelete = IDBObjectStore.prototype.delete;
+    let released = false;
+    const held: (() => void)[] = [];
+    vi.spyOn(IDBObjectStore.prototype, 'delete').mockImplementation(function (
+      this: IDBObjectStore,
+      key,
+    ) {
+      if (typeof key !== 'string' || !key.startsWith(`${SAM_ID}|`)) {
+        return realDelete.call(this, key);
+      }
+      const keepOpen = () => {
+        const probe = this.get(key);
+        probe.onsuccess = () => {
+          if (!released) keepOpen();
+          else realDelete.call(this, key);
+        };
+      };
+      keepOpen();
+      return {} as IDBRequest;
+    });
+    held.push(() => {
+      released = true;
+    });
+    const user = userEvent.setup();
+    await open();
+    select(B3, 0, 13);
+    await user.click(within(await toolbar()).getByRole('button', { name: 'Note' }));
+    await user.type(await screen.findByRole('textbox', { name: 'Your note' }), 'one note');
+    await waitFor(() => expect(posts()).toHaveLength(1));
+    // "Saved" is only said once the device copy is really gone, so it cannot be said while held.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(screen.queryByText('Saved')).not.toBeInTheDocument();
+    // The reload: the margin comes back with whatever the device still holds.
+    await user.click(screen.getByRole('tab', { name: 'Slides' }));
+    await user.click(screen.getByRole('tab', { name: 'Reading' }));
+    await screen.findByRole('button', { name: 'My notes' });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(screen.getAllByText('one note')).toHaveLength(1);
+    expect(posts()).toHaveLength(1);
+    expect(w.annotations).toHaveLength(1);
+    expect(screen.queryByText('Saved')).not.toBeInTheDocument();
+    for (const finish of held) finish(); // the device commits at last; nothing is left pending
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    vi.restoreAllMocks();
+  });
+
   it('A05 a question still being posted when the reading is left does not come back as unsent text', async () => {
     const w = world();
     const mock = api(w);
@@ -990,6 +1055,37 @@ describe('reading margin: layout and sign-out', () => {
     await waitFor(() => expect(w.threads).toHaveLength(1));
     await waitFor(() => expect(screen.getByText('Why n minus one?')).toBeInTheDocument());
     expect(screen.getByRole('textbox', { name: 'Comment or question' })).toHaveValue('');
+    expect(await listDrafts(SAM_ID, CLASS_A, RES)).toEqual([]);
+  });
+
+  it('A05 a reload before a posted question\u2019s device copy is gone does not bring it back as unsent', async () => {
+    const w = world();
+    api(w);
+    // The device's delete of the posted question's draft stays uncommitted until the test lets it go.
+    let release: () => void = () => {};
+    deletes.hold = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const user = userEvent.setup();
+    await open();
+    await user.click(screen.getByRole('button', { name: /^Discussion/ }));
+    await user.type(
+      screen.getByRole('textbox', { name: 'Comment or question' }),
+      'Why n minus one?',
+    );
+    await user.click(screen.getByRole('button', { name: 'Post' }));
+    await waitFor(() => expect(w.threads).toHaveLength(1));
+    // The reload: the margin comes back with whatever the device still holds.
+    await user.click(screen.getByRole('tab', { name: 'Slides' }));
+    await user.click(screen.getByRole('tab', { name: 'Reading' }));
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    // The posted question is still being cleared from the device, so the margin waits and does not
+    // offer it again.
+    expect(screen.queryByDisplayValue('Why n minus one?')).toBeNull();
+    release(); // the device commits at last
+    await user.click(await screen.findByRole('button', { name: /^Discussion/ }));
+    expect(screen.getByRole('textbox', { name: 'Comment or question' })).toHaveValue('');
+    expect(w.threads).toHaveLength(1);
     expect(await listDrafts(SAM_ID, CLASS_A, RES)).toEqual([]);
   });
 

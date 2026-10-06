@@ -79,6 +79,8 @@ export const attemptSummary = z.object({
   receipt: submissionReceipt.nullable(),
   /** When unsent work from the student's browser was kept for recovery; never a submission. */
   localCopyAt: timestamp.nullable(),
+  /** When an instructor last asked for the work the student's browser may still hold; null if never. */
+  recoveryRequestedAt: timestamp.nullable(),
 });
 
 export const ineligibility = z.enum([
@@ -218,6 +220,30 @@ export const keepLocalCopy = defineRoute({
   examples: {
     params: { classId: exampleClass, attemptId: exampleAttempt },
     body: { answers: [{ questionId: 'q1', value: ['a'] }] },
+  },
+});
+
+/**
+ * Instructor: asks the student to send the unsent work their browser kept for a closed attempt
+ * (§11, A15). It changes neither the attempt nor its receipt; the student's page shows the request
+ * and the student answers it by sending the copy (`keepLocalCopy`).
+ */
+export const requestRecovery = defineRoute({
+  method: 'POST',
+  path: '/api/classes/:classId/test-attempts/:attemptId/recovery-request',
+  scope: { kind: 'class', role: 'instructor' },
+  summary: 'Ask a student for the unsent local work of a closed attempt, with a reason',
+  params: attemptParams,
+  body: z.object({ reason: z.string().trim().min(1).max(500) }),
+  status: 201,
+  response: z.object({ requestedAt: timestamp }),
+  errors: {
+    400: invalidBody,
+    409: z.object({ error: z.enum(['attempt_open', 'class_archived']) }),
+  },
+  examples: {
+    params: { classId: exampleClass, attemptId: exampleAttempt },
+    body: { reason: 'The connection dropped before the deadline' },
   },
 });
 

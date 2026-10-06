@@ -1,0 +1,45 @@
+name: backup-restore
+
+# Weekly restore check (spec §13, A22): backs up the fixture world with a graded attempt using
+# scripts/backup.sh, restores it with scripts/restore.sh into a fresh database and storage root,
+# and verifies the attempt, resource revision, code, grader version and released feedback.
+on:
+  schedule:
+    - cron: '17 5 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  restore:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    services:
+      postgres:
+        image: postgres:16.15
+        env:
+          POSTGRES_USER: parallax
+          POSTGRES_PASSWORD: parallax
+          POSTGRES_DB: parallax
+        ports:
+          - 54329:5432
+        options: >-
+          --health-cmd "pg_isready -U parallax"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DATABASE_URL: postgres://parallax:parallax@127.0.0.1:54329/parallax
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: PostgreSQL client tools
+        run: pg_dump --version && pg_restore --version
+      - name: A22 backup and restore
+        run: pnpm vitest run --project integration apps/server/test/integration/a22-backup-restore.itest.ts

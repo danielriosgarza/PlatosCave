@@ -96,7 +96,7 @@ export function SlideNotes({ classId, resourceId, page }: Props) {
         save: (id, revision, body, final) => actions.saveNote(id, revision, body, final),
         persist: (d) => {
           if (!scoped || !userId) return;
-          if (!d) return void removeDraft(scoped);
+          if (!d) return removeDraft(scoped);
           const draft: Draft = {
             key: scoped,
             userId,
@@ -286,7 +286,8 @@ export function SlideNotes({ classId, resourceId, page }: Props) {
       setAsks((all) => ({ ...all, [slide]: next }));
       if (userId) {
         const key = draftKey(userId, classId, resourceId, askKey(slide));
-        if (next.body.trim() === '') void removeDraft(key);
+        // The send stays open until the device copy is gone, so a reload cannot restore it.
+        if (next.body.trim() === '') await removeDraft(key);
       }
       return;
     }

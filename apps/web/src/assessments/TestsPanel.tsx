@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
+import { useEffect, useRef, useState } from 'react';
 import { ApiError } from '../api/client';
 import buttons from '../components/Buttons.module.css';
 import { Loading } from '../components/Loading';
@@ -7,13 +8,19 @@ import { RetryNotice } from '../components/RetryNotice';
 import { type ReleasedResource, useClassRelease } from '../exercises/attempt';
 import { formatOpens } from '../topics/topics';
 import { AttemptWorkspace } from './AttemptWorkspace';
+import { recoveryAnswered } from './answers';
 import {
   type AttemptView,
+  attemptKey,
   fetchAttempt,
+  type ResultAttempt,
   startAttempt,
   type TestOverview,
+  useMyResults,
   useTestOverview,
 } from './api';
+import { RecoveryPanel } from './RecoveryPanel';
+import { ReportedGrade, ResultsView, resultLine } from './Results';
 import { formatInZone, TermsPanel } from './TermsPanel';
 import styles from './Test.module.css';
 
@@ -79,10 +86,12 @@ function TopicTests({
   if (selected && !locked(selected)) {
     if (role === 'instructor') {
       return (
-        <p className={pageStyles.intro}>
-          {selected.title}: students take this test here. Attempts and results are reviewed under
-          Class review.
-        </p>
+        <div>
+          <p className={pageStyles.intro}>
+            {selected.title}: students take this test here. Results are reviewed under Class review.
+          </p>
+          <RecoveryPanel classId={classId} resourceId={selected.resourceId} />
+        </div>
       );
     }
     return (
@@ -136,9 +145,24 @@ function TestEntry({
   onAll?: () => void;
 }) {
   const overview = useTestOverview(classId, resource.resourceId);
+  const results = useMyResults(classId, resource.resourceId);
+  const [viewing, setViewing] = useState<ResultAttempt | null>(null);
   const [open, setOpen] = useState<AttemptView | null>(null);
+  const queryClient = useQueryClient();
   const [starting, setStarting] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  const returnTo = useRef<string | null>(null);
+  // Back from feedback puts focus on the button that opened it, so keyboard users keep their place.
+  useEffect(() => {
+    if (viewing === null && returnTo.current) {
+      document.getElementById(`pc-feedback-${returnTo.current}`)?.focus();
+      returnTo.current = null;
+    }
+  }, [viewing]);
+  const refresh = () => {
+    void overview.refetch();
+    void results.refetch();
+  };
   if (open) {
     return (
       <AttemptWorkspace
@@ -148,8 +172,29 @@ function TestEntry({
         initial={open}
         onLeave={() => {
           setOpen(null);
-          void overview.refetch();
+          refresh();
         }}
+      />
+    );
+  }
+  if (viewing) {
+    return (
+      <ResultsView
+        key={viewing.attemptId}
+        classId={classId}
+        title={resource.title}
+        attempt={viewing}
+        onBack={() => {
+          returnTo.current = viewing.attemptId;
+          setViewing(null);
+        }}
+        onReleaseChanged={() =>
+          void results
+            .refetch()
+            .then((r) =>
+              setViewing(r.data?.attempts.find((a) => a.attemptId === viewing.attemptId) ?? null),
+            )
+        }
       />
     );
   }
@@ -173,18 +218,19 @@ function TestEntry({
     setStarting(true);
     setProblem(null);
     try {
-      setOpen(
-        resumeId
-          ? await fetchAttempt(classId, resumeId)
-          : await startAttempt(classId, resource.resourceId),
-      );
+      const view = resumeId
+        ? await fetchAttempt(classId, resumeId)
+        : await startAttempt(classId, resource.resourceId);
+      // The view just read is the freshest; a cached copy from an earlier visit must not stand in.
+      queryClient.setQueryData(attemptKey(classId, view.id), view);
+      setOpen(view);
     } catch (error) {
       const body = error instanceof ApiError ? (error.body as { reason?: string } | null) : null;
       setProblem(
         (body?.reason ? INELIGIBLE[body.reason] : undefined) ??
           'The attempt could not be started. Check your connection and try again.',
       );
-      void overview.refetch();
+      refresh();
     } finally {
       setStarting(false);
     }
@@ -241,26 +287,61 @@ function TestEntry({
       ) : (
         <p>{reason ? (INELIGIBLE[reason] ?? 'You cannot start an attempt now.') : ''}</p>
       )}
+      {results.data ? <ReportedGrade results={results.data} /> : null}
       {data.attempts.length > 0 ? (
         <ul className={styles.attempts} aria-label="Your attempts">
-          {data.attempts.map((a) => (
-            <li key={a.id}>
-              <span>
-                <strong>Attempt {a.number}</strong>
-                <br />
-                <span className={`${styles.small} ${styles.muted}`}>
-                  {STATE_LABEL[a.state] ?? a.state}
-                  {a.receipt?.autoSubmitted ? ' · submitted by the server at the deadline' : ''}
+          {data.attempts.map((a) => {
+            const listed = results.data?.attempts.find((r) => r.attemptId === a.id);
+            // The overview is the fresher read once it says submitted; never show "not submitted" then.
+            const result =
+              listed && a.state !== 'in_progress' && listed.status === 'in_progress'
+                ? undefined
+                : listed;
+            return (
+              <li key={a.id}>
+                <span>
+                  <strong>Attempt {a.number}</strong>
+                  <br />
+                  <span className={`${styles.small} ${styles.muted}`}>
+                    {result ? resultLine(result) : (STATE_LABEL[a.state] ?? a.state)}
+                    {a.receipt?.autoSubmitted ? ' · submitted by the server at the deadline' : ''}
+                  </span>
                 </span>
-              </span>
-              {a.receipt ? (
-                <span className={`${styles.small} ${styles.muted}`}>
-                  Receipt {a.receipt.submissionId.slice(0, 8)} ·{' '}
-                  {formatInZone(a.receipt.submittedAt, data.terms.timeZone)}
-                </span>
-              ) : null}
-            </li>
-          ))}
+                {recoveryAnswered(a.recoveryRequestedAt, a.localCopyAt) ||
+                !a.recoveryRequestedAt ? null : (
+                  <span className={styles.small}>
+                    Your instructor asked for your unsent work from this attempt. Open the receipt
+                    to send it.
+                  </span>
+                )}
+                {a.receipt ? (
+                  <span className={`${styles.small} ${styles.muted}`}>
+                    Receipt {a.receipt.submissionId.slice(0, 8)} ·{' '}
+                    {formatInZone(a.receipt.submittedAt, data.terms.timeZone)}{' '}
+                    <button
+                      type="button"
+                      className={buttons.textButton}
+                      onClick={() => void start(a.id)}
+                      disabled={starting}
+                      aria-label={`Open the receipt of attempt ${a.number}`}
+                    >
+                      Open receipt
+                    </button>
+                  </span>
+                ) : null}
+                {result?.status === 'released' ? (
+                  <button
+                    type="button"
+                    id={`pc-feedback-${result.attemptId}`}
+                    className={buttons.outline}
+                    onClick={() => setViewing(result)}
+                  >
+                    View feedback for attempt {a.number}
+                  </button>
+                ) : null}
+              </li>
+            );
+          })}
         </ul>
       ) : null}
     </div>

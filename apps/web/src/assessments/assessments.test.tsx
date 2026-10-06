@@ -1,10 +1,12 @@
 import '@testing-library/jest-dom/vitest';
+import 'fake-indexeddb/auto';
 import { onlineManager } from '@tanstack/react-query';
 import { act, cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import {
   CLASS_A,
+  instructorIn,
   makeMe,
   makeTopics,
   renderApp,
@@ -95,6 +97,8 @@ interface Options {
   /** The n-th status read of a run: a response, or undefined for the default. */
   pollRun?: (n: number) => { status: number; body: unknown } | undefined;
   runResult?: (n: number) => unknown;
+  /** The caller teaches the class: the instructor routes of the recovery request are served. */
+  instructor?: boolean;
   /** Every attempt read fails once the server has stored a local copy. */
   failReadsAfterLocalCopy?: boolean;
 }
@@ -102,7 +106,13 @@ interface Options {
 /** An in-memory stand-in for the P3-15 and P3-16 routes: it keeps answers, receipts and runs. */
 function testApi(options: Options = {}) {
   const effective = { ...terms, ...options.terms } as typeof terms;
-  const me = makeMe({ classes: [studentIn(CLASS_A, 'Autumn 2026 A')] });
+  const me = makeMe({
+    classes: [
+      options.instructor
+        ? instructorIn(CLASS_A, 'Autumn 2026 A')
+        : studentIn(CLASS_A, 'Autumn 2026 A'),
+    ],
+  });
   const answers = new Map<
     string,
     { value: unknown; flagged: boolean; seq: number; savedAt: string }
@@ -110,6 +120,7 @@ function testApi(options: Options = {}) {
   const log = {
     puts: [] as { id: string; body: { value: unknown; flagged: boolean; seq: number } }[],
     submits: [] as { key: string }[],
+    recoveryRequests: [] as { reason: string }[],
     localCopies: [] as { answers: { questionId: string; value: unknown }[] }[],
     runs: [] as { files: { path: string; content: string }[] }[],
     order: [] as string[],
@@ -119,7 +130,9 @@ function testApi(options: Options = {}) {
   const server = {
     receipt: null as Receipt | null,
     localCopyAt: null as string | null,
+    recoveryRequestedAt: null as string | null,
     offline: false,
+    failLocalCopy: false,
     deadlineAt: (options.deadlineAt ?? null) as string | null,
     failReads: 0,
   };
@@ -134,6 +147,7 @@ function testApi(options: Options = {}) {
     submittedAt: server.receipt?.submittedAt ?? null,
     receipt: server.receipt,
     localCopyAt: server.localCopyAt,
+    recoveryRequestedAt: server.recoveryRequestedAt,
     graderVersion: 'g1',
     terms: effective,
     questions,
@@ -217,7 +231,7 @@ function testApi(options: Options = {}) {
       };
     }
     if (url === `${base}/resources/${RESOURCE}/test`) {
-      if (options.running) {
+      if (options.running || server.receipt) {
         const {
           graderVersion,
           terms: _t,
@@ -288,7 +302,48 @@ function testApi(options: Options = {}) {
       };
       return { status: 200, body: server.receipt };
     }
+    if (url === `${base}/resources/${RESOURCE}/test-attempts`) {
+      return {
+        status: 200,
+        body: {
+          attempts: [
+            {
+              ...(({
+                graderVersion: _g,
+                terms: _t,
+                questions: _q,
+                answers: _a,
+                serverNow: _s,
+                ...r
+              }) => r)(attemptView()),
+              student: { id: uuid(0xd1), name: 'Bea' },
+              removed: false,
+              graderVersion: 'g1',
+            },
+          ],
+        },
+      };
+    }
+    if (url === `${base}/test-attempts/${ATTEMPT}/recovery-request`) {
+      log.recoveryRequests.push(body);
+      server.recoveryRequestedAt = '2026-10-05T10:00:00Z';
+      return { status: 201, body: { requestedAt: server.recoveryRequestedAt } };
+    }
+    if (url === `${base}/test-attempts/${ATTEMPT}/review`) {
+      return {
+        status: 200,
+        body: {
+          ...attemptView(),
+          student: { id: uuid(0xd1), name: 'Bea' },
+          removed: false,
+          test: { questions },
+          answers: [],
+          localCopy: log.localCopies[0]?.answers ?? null,
+        },
+      };
+    }
     if (url.endsWith('/local-copy')) {
+      if (server.failLocalCopy) return { status: 503, body: {} };
       log.localCopies.push(body);
       server.localCopyAt = new Date().toISOString();
       if (options.failReadsAfterLocalCopy) server.failReads = 1000;
@@ -460,6 +515,25 @@ describe('test UI: terms, navigation and answers', () => {
     await user.click(screen.getByRole('button', { name: 'Retry save' }));
     expect(await screen.findByText(/^Saved \d/)).toBeVisible();
     expect(api.answers.get('q2')?.value).toBe(3);
+  });
+
+  it('A14 a failed save of a long explanation offers a download of exactly what was typed', async () => {
+    const user = userEvent.setup();
+    const api = testApi();
+    open();
+    await begin(user);
+    await user.click(screen.getByRole('button', { name: 'Question 3 Unanswered' }));
+    api.server.offline = true;
+    const create = vi.fn(() => 'blob:answer');
+    vi.stubGlobal('URL', Object.assign(URL, { createObjectURL: create, revokeObjectURL: vi.fn() }));
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    await user.click(screen.getByRole('textbox', { name: 'Your explanation' }));
+    await user.paste('A longer explanation that has not reached the server.');
+    expect(await screen.findByText(/Not saved/)).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Download what you wrote' }));
+    expect(create).toHaveBeenCalledTimes(1);
+    const blob = (create.mock.calls[0] as unknown as [Blob])[0];
+    expect(await blob.text()).toBe('A longer explanation that has not reached the server.');
   });
 
   it('A14 text that is not a number is flagged and not saved', async () => {
@@ -685,6 +759,28 @@ describe('test UI: Run sample tests', () => {
     expect(editor).toHaveValue(`${STARTER}# keep`);
   });
 
+  it('A18 Retry after Run unavailable starts a new run and the code is unchanged', async () => {
+    const user = userEvent.setup();
+    const api = testApi({
+      runResult: (n) =>
+        n === 1
+          ? { ...run(n), state: 'infrastructure_error', result: undefined }
+          : { ...run(n), state: 'passed', result: { ...run(n).result, status: 'passed' } },
+    });
+    open();
+    const editor = await toCode(user);
+    await user.type(editor, '# keep');
+    await user.click(screen.getByRole('button', { name: 'Run sample tests' }));
+    expect(await screen.findByText(/Run unavailable/)).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Retry' }));
+    await waitFor(() => expect(api.log.runs).toHaveLength(2));
+    expect(api.log.runs[1]?.files).toEqual(api.log.runs[0]?.files);
+    expect(screen.queryByText(/Run unavailable/)).toBeNull();
+    expect(editor).toHaveValue(`${STARTER}# keep`);
+    // Nothing about the attempt changed: it was never submitted by a failed run.
+    expect(api.log.submits).toHaveLength(0);
+  });
+
   it('A12 a queued run shows its place in the queue and can be cancelled', async () => {
     const user = userEvent.setup();
     testApi({
@@ -826,6 +922,100 @@ describe('test UI: expiry', () => {
     ]);
     expect(await screen.findByText(/were kept for your instructor/)).toBeVisible();
     expect(screen.getByText(/They are not submitted/)).toBeVisible();
+  });
+
+  it('A15 recovery: unsent work that could not be sent stays bound to the attempt and goes to the instructor once they ask', async () => {
+    const user = userEvent.setup();
+    const api = testApi({ deadlineAt: '2099-01-01T00:00:00Z' });
+    open();
+    await begin(user);
+    await user.click(screen.getByRole('button', { name: 'Question 3 Unanswered' }));
+    api.server.offline = true;
+    Object.defineProperty(window.navigator, 'onLine', { configurable: true, value: false });
+    act(() => {
+      window.dispatchEvent(new Event('offline'));
+    });
+    await user.type(
+      screen.getByRole('textbox', { name: 'Your explanation' }),
+      'Averages vary less',
+    );
+    expect(await screen.findByText(/Not saved/)).toBeVisible();
+    // The attempt closes; the server then cannot take the copy either.
+    api.server.failLocalCopy = true;
+    api.server.receipt = {
+      submissionId: uuid(0xb2),
+      attemptId: ATTEMPT,
+      submittedAt: '2026-10-05T09:30:00Z',
+      autoSubmitted: true,
+      late: false,
+      answers: [],
+      unanswered: ['q1', 'q2', 'q3', 'q4'],
+    };
+    api.server.offline = false;
+    Object.defineProperty(window.navigator, 'onLine', { configurable: true, value: true });
+    act(() => {
+      window.dispatchEvent(new Event('online'));
+    });
+    expect(await screen.findByText(/could not be sent yet/)).toBeVisible();
+    expect(api.log.localCopies).toHaveLength(0);
+    expect(screen.queryByText(/asked for your unsent work/)).toBeNull();
+    // Later the instructor asks. The student opens the receipt from the attempts list.
+    api.server.recoveryRequestedAt = '2026-10-05T10:00:00Z';
+    await user.click(screen.getByRole('button', { name: 'Back to the test' }));
+    expect(await screen.findByText(/Your instructor asked for your unsent work/)).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Open the receipt of attempt 1' }));
+    expect(await screen.findByText(/It is not part of the submission/)).toBeVisible();
+    // The reopened page tried the copy again and the server still refused it.
+    expect(await screen.findByText(/could not be sent yet/)).toBeVisible();
+    api.server.failLocalCopy = false;
+    await user.click(screen.getByRole('button', { name: 'Send unsent work' }));
+    await waitFor(() => expect(api.log.localCopies).toHaveLength(1));
+    expect(api.log.localCopies[0]?.answers).toEqual([
+      { questionId: 'q3', value: 'Averages vary less' },
+    ]);
+    expect(await screen.findByText(/^Sent to your instructor/)).toBeVisible();
+    // Sent work is not kept twice: the browser's copy is gone.
+    expect(screen.queryByRole('button', { name: 'Send unsent work' })).toBeNull();
+    // The answered request is not offered again, on the receipt or in the attempts list.
+    expect(screen.queryByText(/could not be sent yet/)).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Back to the test' }));
+    expect(await screen.findByRole('list', { name: 'Your attempts' })).toBeVisible();
+    expect(screen.queryByText(/asked for your unsent work/)).toBeNull();
+  });
+
+  it('A15 an instructor asks a student for unsent work with a reason and then reads what arrived, apart from the submission', async () => {
+    const user = userEvent.setup();
+    const api = testApi({ instructor: true });
+    api.server.receipt = {
+      submissionId: uuid(0xb2),
+      attemptId: ATTEMPT,
+      submittedAt: '2026-10-05T09:30:00Z',
+      autoSubmitted: true,
+      late: false,
+      answers: [],
+      unanswered: ['q1', 'q2', 'q3', 'q4'],
+    };
+    open();
+    expect(await screen.findByText(/Bea · attempt 1/)).toBeVisible();
+    expect(screen.getByText(/No unsent work kept by the server/)).toBeVisible();
+    await user.click(screen.getByRole('button', { name: 'Ask for unsent work' }));
+    await user.click(screen.getByRole('button', { name: 'Send request' }));
+    // A reason is required before anything is sent.
+    expect(api.log.recoveryRequests).toHaveLength(0);
+    await user.type(screen.getByLabelText(/Reason/), 'Connection dropped before the deadline');
+    await user.click(screen.getByRole('button', { name: 'Send request' }));
+    await waitFor(() => expect(api.log.recoveryRequests).toHaveLength(1));
+    expect(api.log.recoveryRequests[0]).toEqual({
+      reason: 'Connection dropped before the deadline',
+    });
+    expect(await screen.findByText(/asked for .*waiting/)).toBeVisible();
+    // The student's copy arrives.
+    api.log.localCopies.push({ answers: [{ questionId: 'q3', value: 'Averages vary less' }] });
+    api.server.localCopyAt = '2026-10-05T11:00:00Z';
+    await user.click(screen.getByRole('button', { name: 'Check for sent work' }));
+    await user.click(await screen.findByRole('button', { name: 'View unsent work' }));
+    expect(await screen.findByText('Averages vary less')).toBeVisible();
+    expect(screen.getByText(/Not part of the submission/)).toBeVisible();
   });
 
   it('A15 at the deadline the page asks the server and shows what the server submitted', async () => {
