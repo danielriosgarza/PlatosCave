@@ -96,7 +96,7 @@ export function SlideNotes({ classId, resourceId, page }: Props) {
         save: (id, revision, body, final) => actions.saveNote(id, revision, body, final),
         persist: (d) => {
           if (!scoped || !userId) return;
-          if (!d) return void removeDraft(scoped);
+          if (!d) return removeDraft(scoped);
           const draft: Draft = {
             key: scoped,
             userId,

@@ -1,3 +1,4 @@
+import { readMyResultDetail, readMyResults } from '@parallax/contracts/routes/grades';
 import { cancelRun, latestRun, readRun, requestRun } from '@parallax/contracts/routes/runs';
 import {
   keepLocalCopy,
@@ -79,3 +80,14 @@ export function closedReceipt(error: unknown): { closed: true; receipt: Receipt 
   }
   return null;
 }
+
+export type MyResults = z.output<typeof readMyResults.response>;
+export type ResultAttempt = MyResults['attempts'][number];
+export type ResultDetail = z.output<typeof readMyResultDetail.response>;
+export type ResultQuestion = ResultDetail['questions'][number];
+
+export const useMyResults = (classId: string, resourceId: string) =>
+  useApi(readMyResults, { params: { classId, resourceId } });
+
+export const useResultDetail = (classId: string, attemptId: string) =>
+  useApi(readMyResultDetail, { params: { classId, attemptId } });

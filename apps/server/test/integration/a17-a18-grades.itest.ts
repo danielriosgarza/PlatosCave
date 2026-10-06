@@ -116,7 +116,7 @@ describe('A17 draft grades and release', () => {
     const seen = await results('priya');
     expect(seen.status).toBe(200);
     expect(seen.body.attempts).toEqual([
-      { attemptId: attempt.priya, number: 1, status: 'pending', grade: null },
+      { attemptId: attempt.priya, number: 1, status: 'pending', state: 'graded', grade: null },
     ]);
     expect(seen.body.reported).toBeNull();
     expect(JSON.stringify(seen.body)).not.toContain('Draft note');
