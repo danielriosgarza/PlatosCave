@@ -4,6 +4,7 @@ import { useState } from 'react';
 import buttons from '../components/Buttons.module.css';
 import { Loading } from '../components/Loading';
 import { RetryNotice } from '../components/RetryNotice';
+import { recoveryAnswered } from './answers';
 import { askForRecovery, useReviewedAttempt, useReviewedAttempts } from './api';
 import styles from './Test.module.css';
 
@@ -27,6 +28,7 @@ interface Reviewed {
  * part of the submission and is labelled so.
  */
 export function RecoveryPanel({ classId, resourceId }: { classId: string; resourceId: string }) {
+  const queryClient = useQueryClient();
   const list = useReviewedAttempts(classId, resourceId);
   if (list.isError) {
     return (
@@ -42,7 +44,10 @@ export function RecoveryPanel({ classId, resourceId }: { classId: string; resour
         <button
           type="button"
           className={buttons.textButton}
-          onClick={() => void list.refetch()}
+          onClick={() => {
+            void queryClient.invalidateQueries({ queryKey: ['review-attempt', classId] });
+            void list.refetch();
+          }}
           disabled={list.isFetching}
         >
           {list.isFetching ? 'Checking…' : 'Check for sent work'}
@@ -67,7 +72,7 @@ function RecoveryRow({ classId, attempt }: { classId: string; attempt: Reviewed 
   const detail = useReviewedAttempt(classId, attempt.id, viewing);
   const requested = attempt.recoveryRequestedAt;
   const received = attempt.localCopyAt;
-  const answered = requested !== null && received !== null && received >= requested;
+  const answered = recoveryAnswered(requested, received);
 
   async function ask() {
     if (busy || reason.trim() === '') return;
@@ -93,7 +98,7 @@ function RecoveryRow({ classId, attempt }: { classId: string; attempt: Reviewed 
     ),
   );
   return (
-    <li style={{ display: 'block' }}>
+    <li className={styles.block}>
       <strong>
         {attempt.student.name} · attempt {attempt.number}
       </strong>

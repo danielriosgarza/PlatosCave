@@ -1,4 +1,5 @@
 import buttons from '../components/Buttons.module.css';
+import { recoveryAnswered } from './answers';
 import type { AttemptView, Question } from './api';
 import { formatInZone } from './TermsPanel';
 import styles from './Test.module.css';
@@ -50,9 +51,8 @@ export function ReceiptView({
   }
   const answered = receipt.answers.length;
   const requestedAt = attempt.recoveryRequestedAt;
-  const answeredRequest =
-    recovery === 'sent' ||
-    (requestedAt !== null && attempt.localCopyAt !== null && attempt.localCopyAt >= requestedAt);
+  const answeredRequest = recovery === 'sent' || recoveryAnswered(requestedAt, attempt.localCopyAt);
+  const asked = requestedAt !== null && !answeredRequest;
   return (
     <div className={styles.receipt}>
       <h2 tabIndex={-1} id="pc-receipt-heading">
@@ -122,7 +122,7 @@ export function ReceiptView({
                     )}. They are not submitted; your instructor can restore them on request.`
                   : 'Your unsent changes are in this browser only.'}
           </p>
-          {local === 'failed' ? (
+          {local === 'failed' && !asked ? (
             <p className={styles.row}>
               <button type="button" className={buttons.outline} onClick={onRetryLocal}>
                 Retry

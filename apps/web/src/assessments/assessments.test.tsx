@@ -976,6 +976,11 @@ describe('test UI: expiry', () => {
     expect(await screen.findByText(/^Sent to your instructor/)).toBeVisible();
     // Sent work is not kept twice: the browser's copy is gone.
     expect(screen.queryByRole('button', { name: 'Send unsent work' })).toBeNull();
+    // The answered request is not offered again, on the receipt or in the attempts list.
+    expect(screen.queryByText(/could not be sent yet/)).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Back to the test' }));
+    expect(await screen.findByRole('list', { name: 'Your attempts' })).toBeVisible();
+    expect(screen.queryByText(/asked for your unsent work/)).toBeNull();
   });
 
   it('A15 an instructor asks a student for unsent work with a reason and then reads what arrived, apart from the submission', async () => {

@@ -252,24 +252,32 @@ async function lockAttempt(tx: Tx, scope: ClassScope, attemptId: string, now: Da
 const RECOVERY_REQUESTED = 'test_attempt.recovery_requested';
 
 /** When an instructor last asked for the attempt's unsent local work (an audit event; no table of its own). */
-async function recoveryRequestedAt(ex: Ex, scope: ClassScope, attemptId: string) {
-  const [row] = await ex
-    .select({ createdAt: auditEvents.createdAt })
+async function recoveryRequests(ex: Ex, scope: ClassScope, attemptIds: string[]) {
+  const latest = new Map<string, string>();
+  if (attemptIds.length === 0) return latest;
+  const rows = await ex
+    .select({ id: auditEvents.targetId, at: max(auditEvents.createdAt) })
     .from(auditEvents)
     .where(
       and(
         eq(auditEvents.action, RECOVERY_REQUESTED),
         eq(auditEvents.scopeKind, 'class'),
         eq(auditEvents.scopeId, scope.classId),
-        eq(auditEvents.targetId, attemptId),
+        inArray(auditEvents.targetId, attemptIds),
       ),
     )
-    .orderBy(desc(auditEvents.createdAt))
-    .limit(1);
-  return iso(row?.createdAt ?? null);
+    .groupBy(auditEvents.targetId);
+  for (const r of rows) if (r.id && r.at) latest.set(r.id, r.at.toISOString());
+  return latest;
 }
 
-async function summaryOf(ex: Ex, scope: ClassScope, attempt: AttemptRow, test: TestV1) {
+async function summaryOf(
+  ex: Ex,
+  scope: ClassScope,
+  attempt: AttemptRow,
+  test: TestV1,
+  requests?: Map<string, string>,
+) {
   const submission =
     attempt.state === 'in_progress' ? undefined : await submissionOf(ex, scope, attempt.id);
   return {
@@ -282,7 +290,8 @@ async function summaryOf(ex: Ex, scope: ClassScope, attempt: AttemptRow, test: T
     submittedAt: iso(attempt.submittedAt),
     receipt: submission ? receiptOf(submission, test) : null,
     localCopyAt: iso(attempt.localCopyAt),
-    recoveryRequestedAt: await recoveryRequestedAt(ex, scope, attempt.id),
+    recoveryRequestedAt:
+      (requests ?? (await recoveryRequests(ex, scope, [attempt.id]))).get(attempt.id) ?? null,
   } satisfies Summary;
 }
 
@@ -363,7 +372,14 @@ export async function readTest(
   );
   const rows = await ownAttemptsOf(db, scope, resourceId);
   const attempts = [];
-  for (const row of rows) attempts.push(await summaryOf(db, scope, row, await pinnedTest(db, row)));
+  const requests = await recoveryRequests(
+    db,
+    scope,
+    rows.map((r) => r.id),
+  );
+  for (const row of rows) {
+    attempts.push(await summaryOf(db, scope, row, await pinnedTest(db, row), requests));
+  }
   const why = scope.archived ? 'class_archived' : ineligibility(terms, rows, now);
   return {
     ok: true,
@@ -878,10 +894,15 @@ async function reviewedOf(db: Db, scope: ClassScope, where: ReturnType<typeof an
     .where(and(reviewable(scope), where))
     .orderBy(asc(users.name), asc(testAttempts.userId), desc(testAttempts.number));
   const reviewed: (Reviewed & { row: AttemptRow; test: TestV1 })[] = [];
+  const requests = await recoveryRequests(
+    db,
+    scope,
+    rows.map((r) => r.attempt.id),
+  );
   for (const { attempt, name, role } of rows) {
     const test = await pinnedTest(db, attempt);
     reviewed.push({
-      ...(await summaryOf(db, scope, attempt, test)),
+      ...(await summaryOf(db, scope, attempt, test, requests)),
       student: { id: attempt.userId, name },
       removed: role === null,
       graderVersion: attempt.graderVersion,

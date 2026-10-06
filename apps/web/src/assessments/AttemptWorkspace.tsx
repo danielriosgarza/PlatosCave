@@ -161,12 +161,6 @@ export function AttemptWorkspace({
     refetchOnWindowFocus: false,
     retry: false,
   });
-  // The view the page was opened with is the freshest one: a cached copy from an earlier visit
-  // (a request that arrived since, a state that changed) must not stand in for it.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: once per opened attempt
-  useEffect(() => {
-    queryClient.setQueryData(key, initial);
-  }, []);
   const attempt = query.data;
   const [current, setCurrent] = useState(0);
   const [reviewing, setReviewing] = useState(false);
@@ -242,6 +236,21 @@ export function AttemptWorkspace({
     [classId, entries, refresh, queryClient, key, userId],
   );
 
+  /** The recovery file, from the copy this browser kept or else the page's unsent answers. */
+  const downloadUnsent = useCallback(async () => {
+    const kept = userId ? await readAttemptCopy(userId, classId, attempt.id) : null;
+    const text = kept
+      ? kept.answers
+          .map((a) => {
+            const n = attempt.questions.findIndex((q) => q.id === a.questionId) + 1;
+            const body = typeof a.value === 'string' ? a.value : JSON.stringify(a.value, null, 2);
+            return `Question ${n}\n${body}\n`;
+          })
+          .join('\n')
+      : unsentText(attempt, entries);
+    saveFile('unsent-answers.txt', text);
+  }, [attempt, classId, entries, userId]);
+
   /** Sends the copy this browser kept (or the page's unsent answers) after an instructor asked (A15). */
   const sendRecovery = useCallback(async () => {
     setRecovery('sending');
@@ -257,7 +266,11 @@ export function AttemptWorkspace({
         setRecovery('idle');
         return;
       }
-      await sendLocalCopy(classId, attempt.id, answers);
+      const ack = await sendLocalCopy(classId, attempt.id, answers);
+      queryClient.setQueryData(key, (cached: AttemptView | undefined) =>
+        cached ? { ...cached, localCopyAt: ack.localCopyAt } : cached,
+      );
+      setLocal('kept');
       clearUnsent(attempt.id);
       if (userId) await removeAttemptCopy(userId, classId, attempt.id);
       setHeldLocally(false);
@@ -266,7 +279,7 @@ export function AttemptWorkspace({
     } catch {
       setRecovery('failed');
     }
-  }, [attempt.id, attempt.questions, classId, entries, refresh, userId]);
+  }, [attempt.id, attempt.questions, classId, entries, refresh, userId, queryClient, key]);
 
   // A closed attempt opened on a later visit: is there a copy bound to it in this browser?
   useEffect(() => {
@@ -426,7 +439,7 @@ export function AttemptWorkspace({
           unsentCount={unsentCount}
           local={local}
           onRetryLocal={() => void keepLocal(attempt)}
-          onDownload={() => saveFile('unsent-answers.txt', unsentText(attempt, entries))}
+          onDownload={() => void downloadUnsent()}
           recovery={recovery}
           heldLocally={heldLocally}
           onSendRecovery={() => void sendRecovery()}

@@ -280,6 +280,14 @@ export async function clearDrafts(userId: string | null): Promise<void> {
   listen();
   memory.clear();
   copies.clear();
+  // Unsent test answers kept by the Test page are the account's too (§8).
+  try {
+    for (const k of Object.keys(window.localStorage)) {
+      if (k.startsWith('pc-test-unsent:')) window.localStorage.removeItem(k);
+    }
+  } catch {
+    // blocked storage holds nothing to clear
+  }
   if (userId) signedOut.add(userId);
   const db = await database();
   if (db) {
