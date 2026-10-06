@@ -42,7 +42,7 @@ function setup(init: Partial<ConstructorParameters<typeof NoteController>[0]> = 
       sent.push(`save:${id}@${rev}:${body}`);
       return reply(body);
     },
-    persist: (d) => persisted.push(d ? d.body : null),
+    persist: (d) => void persisted.push(d ? d.body : null),
     acknowledged: (a) => acknowledged.push(a),
     forget: (id) => forgotten.push(id),
   };
@@ -64,6 +64,32 @@ beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
 
 describe('note autosave', () => {
+  it('A03 says Saved only once the device copy is gone', async () => {
+    let finish: () => void = () => {};
+    const deps: NoteDeps = {
+      create: async (_a, body) => ({ kind: 'ok', annotation: annotation(1, body) }),
+      save: async (_i, _r, body) => ({ kind: 'ok', annotation: annotation(2, body) }),
+      persist: (d) =>
+        d
+          ? undefined
+          : new Promise<void>((resolve) => {
+              finish = resolve;
+            }),
+      acknowledged: () => {},
+      forget: () => {},
+    };
+    const controller = new NoteController(
+      { key: 'k', anchor: ANCHOR, body: '', annotationId: null, revision: null },
+      deps,
+    );
+    controller.edit('Words');
+    await vi.advanceTimersByTimeAsync(AUTOSAVE_MS);
+    expect(controller.state.status).toBe('saving');
+    finish();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(controller.state.status).toBe('saved');
+  });
+
   it('A03 saves one second after the last edit, and says Saved only after the server answers', async () => {
     const { controller, sent, persisted } = setup();
     controller.edit('First');
@@ -197,6 +223,7 @@ describe('note autosave', () => {
     controller.blur();
     await vi.advanceTimersByTimeAsync(0);
     controller.takeSaved();
+    await vi.advanceTimersByTimeAsync(0); // Saved follows the device copy's removal
     expect(controller.state).toMatchObject({
       body: 'Saved elsewhere',
       status: 'saved',

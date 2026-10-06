@@ -1,0 +1,115 @@
+/* Ported from the wireframe: .pc-review-filters, .pc-table-wrap, .pc-review-table, .pc-selected, .pc-student-nav. */
+.context {
+  margin-top: 12px;
+}
+.filters {
+  display: flex;
+  gap: 24px;
+  align-items: end;
+  flex-wrap: wrap;
+  margin: 32px 0 24px;
+}
+.filters label {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+}
+.wrap {
+  overflow-x: auto;
+  max-width: 100%;
+}
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  min-width: 580px;
+  font-variant-numeric: tabular-nums;
+}
+.table th {
+  text-align: left;
+  font-size: 12px;
+  color: var(--pc-muted);
+  font-weight: 600;
+  padding: 12px;
+  border-bottom: 1px solid var(--pc-rule);
+  background: var(--pc-secondary);
+}
+.table td {
+  padding: 14px 12px;
+  border-bottom: 1px solid var(--pc-rule);
+  vertical-align: top;
+}
+.table tr.selected td {
+  background: var(--pc-soft);
+}
+.table tr.selected td:first-child {
+  font-weight: 600;
+}
+.pick {
+  color: var(--pc-ink);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.selection {
+  margin-bottom: 24px;
+  padding-top: 24px;
+  border-top: 1px solid var(--pc-ink);
+}
+.nav {
+  display: flex;
+  gap: 4px;
+  align-items: center;
+}
+.nav button {
+  font-size: 12px;
+  color: var(--pc-muted);
+  background: none;
+  border: 0;
+  padding: 4px 8px;
+  cursor: pointer;
+}
+.nav button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.pages {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  margin-top: 16px;
+  font-size: 12px;
+  color: var(--pc-muted);
+}
+.pages button {
+  font-size: 12px;
+  background: none;
+  border: 0;
+  padding: 4px 0;
+  color: var(--pc-ink);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  cursor: pointer;
+}
+.pages button:disabled {
+  color: var(--pc-muted);
+  text-decoration: none;
+  cursor: default;
+}
+.empty {
+  margin-top: 24px;
+}
+.empty h2 {
+  font-size: 20px;
+  margin: 0 0 12px;
+}
+@media (max-width: 720px) {
+  .filters {
+    gap: 16px;
+  }
+}
