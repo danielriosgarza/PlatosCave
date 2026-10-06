@@ -1,6 +1,6 @@
 import { and, eq, sql } from 'drizzle-orm';
 import { type ClassScope, type DraftPreviewScope, isDraftPreview } from '../../auth/scope';
-import { findReleaseTopic } from '../classTopics';
+import { releaseTopicOpens } from '../classTopics';
 import type { Db } from '../client';
 import { nativeSourceWithheld } from '../readings';
 import { releaseResources, resourceRevisions, storageObjects } from '../schema';
@@ -62,19 +62,6 @@ const revisionState = {
   derived: resourceRevisions.derived,
   createdAt: resourceRevisions.createdAt,
 };
-
-/** The same availability the topic list shows: a locked topic's media is not downloadable (§4). */
-async function releaseTopicOpens(
-  db: Db,
-  scope: ClassScope,
-  releaseTopicId: string,
-  now: Date,
-  draft?: DraftSnapshot,
-) {
-  // The row came from the caller's release or draft, so for an instructor its topic is open.
-  if (scope.role !== 'student') return true;
-  return (await findReleaseTopic(db, scope, { releaseTopicId }, now, draft))?.open ?? false;
-}
 
 /**
  * The draft-preview counterpart of `findReleasedObject`: one object of a head revision in the

@@ -17,6 +17,7 @@ import type { RunnerRuntime } from '../../config';
 import { openToStudent } from '../../content/availability';
 import { testPublicationIssues } from '../../execution/publication';
 import { audit } from '../audit';
+import { releaseTopicOpens } from '../classTopics';
 import type { Db } from '../client';
 import { derivedReady, resolveDerivedStatuses } from '../jobs/derived';
 import {
@@ -367,7 +368,8 @@ export const studyOpen = (scope: ClassScope, now: Date): SQL =>
 /**
  * `release_resources` rows of the class's adopted release, which must be a release of the
  * class's own course, that the caller may study at `now`. False when the class has adopted
- * nothing.
+ * nothing. Topic availability (§4: prerequisites) is not part of this predicate: a student's
+ * read through it also checks `releaseTopicOpens`, as `studyableResource` does.
  */
 export function studyableRows(scope: ClassScope, now: Date): SQL {
   // A draft preview studies the course draft, never the release the class adopted.
@@ -382,7 +384,9 @@ export function studyableRows(scope: ClassScope, now: Date): SQL {
 
 /**
  * The pinned revision (id and type) of draft resource `resourceId` in the release the class
- * adopted, if the caller may study it at `now`; undefined otherwise, including for drafts.
+ * adopted, if the caller may study it at `now`; undefined otherwise, including for drafts. A
+ * student also needs the resource's topic to be open (§4: not prerequisite-locked or scheduled),
+ * the availability the topic list shows, so every per-resource route refuses a locked topic.
  */
 export async function studyableResource(
   db: Db | Tx,
@@ -391,19 +395,27 @@ export async function studyableResource(
   now: Date,
 ) {
   if (isDraftPreview(scope)) {
-    const found = (await studyableDraft(db, scope, now)).find((r) => r.resourceId === resourceId);
-    return found && { revisionId: found.revisionId, type: found.type };
+    // Read once: the topic gate judges availability from the same snapshot.
+    const draft = await draftSnapshot(db, scope);
+    const found = (await studyableDraft(db, scope, now, draft)).find(
+      (r) => r.resourceId === resourceId,
+    );
+    if (!found || !(await releaseTopicOpens(db, scope, found.releaseTopicId, now, draft)))
+      return undefined;
+    return { revisionId: found.revisionId, type: found.type };
   }
   if (!scope.releaseId) return undefined;
   const [row] = await db
     .select({
       revisionId: releaseResources.resourceRevisionId,
       type: resourceRevisions.type,
+      releaseTopicId: releaseResources.releaseTopicId,
     })
     .from(releaseResources)
     .innerJoin(resourceRevisions, eq(resourceRevisions.id, releaseResources.resourceRevisionId))
     .where(and(studyableRows(scope, now), eq(releaseResources.resourceId, resourceId)));
-  return row;
+  if (!row || !(await releaseTopicOpens(db, scope, row.releaseTopicId, now))) return undefined;
+  return { revisionId: row.revisionId, type: row.type };
 }
 
 /**
