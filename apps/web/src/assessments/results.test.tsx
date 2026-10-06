@@ -55,6 +55,7 @@ const attempt = (
     submittedAt: status === 'in_progress' ? null : '2026-10-05T09:30:00Z',
     receipt: null,
     localCopyAt: null,
+    recoveryRequestedAt: null,
   },
   result: { attemptId: uuid(0xa00 + n), number: n, status, state, grade },
 });
