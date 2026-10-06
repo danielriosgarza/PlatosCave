@@ -445,6 +445,67 @@ describe('A15 deadline submission', () => {
     expect(review.body.answers).toHaveLength(2);
   });
 
+  test('A15 an instructor asks for unsent local work of a closed attempt; the student sees the request and the receipt stays unchanged', async () => {
+    const reason = 'The connection dropped before the deadline';
+    const url = `${attemptUrl(ids.classB, beaAttempt)}/recovery-request`;
+    const before = await call('bea', 'GET', attemptUrl(ids.classB, beaAttempt));
+    expect(before.body.recoveryRequestedAt).toBeNull();
+
+    // Only an instructor of this class can ask; another class's instructor finds no such attempt.
+    clock = minutes(90);
+    expect((await call('bea', 'POST', url, { reason })).status).toBe(403);
+    expect((await call('priya', 'POST', url, { reason })).status).toBe(403);
+    expect((await call('marcus', 'POST', url, { reason: '  ' })).status).toBe(400);
+    expect(
+      (
+        await call('priya', 'POST', `${attemptUrl(ids.classA, beaAttempt)}/recovery-request`, {
+          reason,
+        })
+      ).status,
+    ).toBe(404);
+
+    const asked = await call('marcus', 'POST', url, { reason });
+    expect(asked).toEqual({ status: 201, body: { requestedAt: minutes(90).toISOString() } });
+
+    // The student's own read carries the request; the attempt, receipt and answers are unchanged.
+    const after = await call('bea', 'GET', attemptUrl(ids.classB, beaAttempt));
+    expect(after.body.recoveryRequestedAt).toBe(minutes(90).toISOString());
+    expect(after.body.receipt).toEqual(before.body.receipt);
+    expect(after.body.state).toBe('submitted');
+    // A classmate does not see it, and the request is in the audit history with its reason.
+    const classmate = await call('priya', 'GET', `${testUrl(ids.classB)}/test`);
+    expect(JSON.stringify(classmate.body)).not.toContain(beaAttempt);
+    expect(JSON.stringify(classmate.body)).not.toContain('recoveryRequestedAt":"2026');
+    const audits = await testDb.db
+      .select()
+      .from(auditEvents)
+      .where(
+        and(
+          eq(auditEvents.action, 'test_attempt.recovery_requested'),
+          eq(auditEvents.targetId, beaAttempt),
+        ),
+      );
+    expect(audits).toHaveLength(1);
+    expect(audits[0]).toMatchObject({
+      actorId: ids.marcus,
+      scopeId: ids.classB,
+      after: { reason, studentId: ids.bea },
+    });
+    // The student answers by sending the copy; the instructor reads it, labelled apart from answers.
+    clock = minutes(95);
+    const sent = await call('bea', 'POST', `${attemptUrl(ids.classB, beaAttempt)}/local-copy`, {
+      answers: [{ questionId: 'why', value: 'Larger samples average out noise.' }],
+    });
+    expect(sent.status).toBe(200);
+    const review = await call('marcus', 'GET', `${attemptUrl(ids.classB, beaAttempt)}/review`);
+    expect(review.body).toMatchObject({
+      recoveryRequestedAt: minutes(90).toISOString(),
+      localCopyAt: minutes(95).toISOString(),
+      localCopy: [{ questionId: 'why', value: 'Larger samples average out noise.' }],
+    });
+    expect((await submissionsOf(beaAttempt))[0]?.answers).toHaveLength(2);
+  });
+
   test('A15 an attempt past its deadline is submitted on the next read even if the job never ran', async () => {
     clock = minutes(40);
     const started = await call('priya', 'POST', `${testUrl(ids.classB)}/test-attempts`);

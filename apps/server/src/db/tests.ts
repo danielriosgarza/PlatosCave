@@ -33,6 +33,7 @@ import {
   assignmentOverrides,
   assignments,
   attemptAnswers,
+  auditEvents,
   classMemberships,
   resourceRevisions,
   type SubmittedAnswer,
@@ -248,6 +249,26 @@ async function lockAttempt(tx: Tx, scope: ClassScope, attemptId: string, now: Da
   return row && settle(tx, scope, row, now);
 }
 
+const RECOVERY_REQUESTED = 'test_attempt.recovery_requested';
+
+/** When an instructor last asked for the attempt's unsent local work (an audit event; no table of its own). */
+async function recoveryRequestedAt(ex: Ex, scope: ClassScope, attemptId: string) {
+  const [row] = await ex
+    .select({ createdAt: auditEvents.createdAt })
+    .from(auditEvents)
+    .where(
+      and(
+        eq(auditEvents.action, RECOVERY_REQUESTED),
+        eq(auditEvents.scopeKind, 'class'),
+        eq(auditEvents.scopeId, scope.classId),
+        eq(auditEvents.targetId, attemptId),
+      ),
+    )
+    .orderBy(desc(auditEvents.createdAt))
+    .limit(1);
+  return iso(row?.createdAt ?? null);
+}
+
 async function summaryOf(ex: Ex, scope: ClassScope, attempt: AttemptRow, test: TestV1) {
   const submission =
     attempt.state === 'in_progress' ? undefined : await submissionOf(ex, scope, attempt.id);
@@ -261,6 +282,7 @@ async function summaryOf(ex: Ex, scope: ClassScope, attempt: AttemptRow, test: T
     submittedAt: iso(attempt.submittedAt),
     receipt: submission ? receiptOf(submission, test) : null,
     localCopyAt: iso(attempt.localCopyAt),
+    recoveryRequestedAt: await recoveryRequestedAt(ex, scope, attempt.id),
   } satisfies Summary;
 }
 
@@ -565,6 +587,36 @@ export async function keepLocalCopy(
       })
       .where(and(own(scope), eq(testAttempts.id, attemptId)));
     return { ok: true, value: { localCopyAt: now.toISOString() } };
+  });
+}
+
+/**
+ * Instructor: asks the student for the unsent local work of a closed attempt, with a reason
+ * (§11, A15). Recorded as an audit event; the attempt and its receipt are unchanged.
+ */
+export async function requestRecovery(
+  db: Db,
+  scope: ClassScope,
+  attemptId: string,
+  reason: string,
+  now: Date,
+): Promise<Outcome<{ requestedAt: string }> | { ok: false; reason: 'attempt_open' }> {
+  return db.transaction(async (tx) => {
+    const found = await lockReviewable(tx, scope, attemptId, now);
+    if (!found) return notFound;
+    if (found.attempt.state === 'in_progress') return { ok: false, reason: 'attempt_open' };
+    if (scope.archived) return classArchived;
+    await audit(tx, {
+      actorId: scope.user.id,
+      action: RECOVERY_REQUESTED,
+      scopeKind: 'class',
+      scopeId: scope.classId,
+      targetType: 'test_attempt',
+      targetId: attemptId,
+      after: { reason, studentId: found.student.id },
+      createdAt: now,
+    });
+    return { ok: true, value: { requestedAt: now.toISOString() } };
   });
 }
 
