@@ -265,7 +265,7 @@ export async function removeAttemptCopy(
 export async function removeDraft(key: string): Promise<void> {
   memory.delete(key);
   await pending(key, async () => {
-    await draftWriteHold.deletes;
+    if (draftWriteHold.deletes) await draftWriteHold.deletes;
     const db = await database();
     if (!db) return;
     await new Promise<void>((resolve) => {

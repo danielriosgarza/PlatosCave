@@ -331,7 +331,7 @@ describe('slide notes', () => {
     await waitFor(async () => expect(await listDrafts(SAM_ID, CLASS_A, RES)).toEqual([]));
   });
 
-  it('A24 a remount before a deleted note\u2019s device copy is gone does not bring the note back', async () => {
+  it('A03 a remount before a deleted note\u2019s device copy is gone does not bring the note back', async () => {
     const user = userEvent.setup();
     const w = world([note(uuid(1), 0, 'Gone soon')]);
     const mock = api(w);
@@ -379,6 +379,60 @@ describe('slide notes', () => {
     if (!notes) await user.click(await screen.findByRole('button', { name: 'Notes' }));
     expect(await noteField(1)).toHaveValue('');
     await waitFor(async () => expect(await listDrafts(SAM_ID, CLASS_A, RES)).toEqual([]));
+  });
+
+  it('A03 a remount while a note\u2019s server delete is still running does not bring the note back', async () => {
+    const user = userEvent.setup();
+    const w = world([note(uuid(1), 0, 'Gone soon')]);
+    const mock = api(w);
+    const original = mock.getMockImplementation() as (
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ) => Promise<Response>;
+    let finish: () => void = () => {};
+    const serverDelete = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    mock.mockImplementation(async (input, init) => {
+      if (init?.method === 'DELETE') {
+        // The text typed before Delete is on the device (and unsent) while the server answers.
+        await saveDraft({
+          key: draftKey(SAM_ID, CLASS_A, RES, uuid(1)),
+          userId: SAM_ID,
+          classId: CLASS_A,
+          resourceId: RES,
+          kind: 'note',
+          annotationId: uuid(1),
+          expectedRevision: 1,
+          anchor: { kind: 'slide', page: 0 },
+          body: 'Unsent edit',
+          audience: null,
+          updatedAt: Date.now(),
+        });
+        const answer = await original(input, init);
+        await serverDelete;
+        return answer;
+      }
+      return original(input, init);
+    });
+    await openNotes(user);
+    expect(await noteField(1)).toHaveValue('Gone soon');
+    await user.click(screen.getByRole('button', { name: 'Delete note' }));
+    await waitFor(async () => expect(await listDrafts(SAM_ID, CLASS_A, RES)).toHaveLength(1));
+    cleanup();
+    renderApp(SLIDES);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    const notes = screen.queryByRole('button', { name: 'Notes' });
+    if (notes) await user.click(notes);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    // Still deleting: the margin waits and does not offer the text again.
+    expect(screen.queryByDisplayValue('Unsent edit')).toBeNull();
+    finish();
+    if (!notes) await user.click(await screen.findByRole('button', { name: 'Notes' }));
+    expect(await noteField(1)).toHaveValue('');
+    await waitFor(async () => expect(await listDrafts(SAM_ID, CLASS_A, RES)).toEqual([]));
+    expect(w.annotations).toEqual([]);
+    expect(w.calls.filter((c) => c.method === 'PUT' || c.method === 'POST')).toEqual([]);
   });
 
   it('A05 a remount before a cleared question box\u2019s device copy is gone does not bring the text back', async () => {

@@ -677,6 +677,61 @@ describe('reading margin: notes and autosave', () => {
     expect(screen.queryByText('Gone soon')).toBeNull();
   });
 
+  it('A03 a remount while a note\u2019s server delete is still running does not bring the note back', async () => {
+    const w = world([noteOf(uuid(1), textAnchor(B3, 0, 5, P3), 'Gone soon')]);
+    Element.prototype.scrollIntoView = vi.fn();
+    const mock = api(w);
+    const original = mock.getMockImplementation() as (
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ) => Promise<Response>;
+    let finish: () => void = () => {};
+    const serverDelete = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    mock.mockImplementation(async (input, init) => {
+      if (init?.method === 'DELETE') {
+        // The text typed before Delete is on the device (and unsent) while the server answers.
+        await saveDraft({
+          key: draftKey(SAM_ID, CLASS_A, RES, uuid(1)),
+          userId: SAM_ID,
+          classId: CLASS_A,
+          resourceId: RES,
+          kind: 'note',
+          annotationId: uuid(1),
+          expectedRevision: 1,
+          anchor: textAnchor(B3, 0, 5, P3),
+          body: 'Unsent edit',
+          audience: null,
+          updatedAt: Date.now(),
+        });
+        const answer = await original(input, init);
+        await serverDelete;
+        return answer;
+      }
+      return original(input, init);
+    });
+    const user = userEvent.setup();
+    await open();
+    await user.click(await screen.findByRole('button', { name: /^Note 1/ }));
+    await user.type(screen.getByRole('textbox', { name: 'Your note' }), ' more');
+    await user.click(screen.getByRole('button', { name: 'Delete note' }));
+    await waitFor(async () => expect(await listDrafts(SAM_ID, CLASS_A, RES)).toHaveLength(1));
+    await user.click(screen.getByRole('tab', { name: 'Slides' }));
+    await user.click(screen.getByRole('tab', { name: 'Reading' }));
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    // Still deleting: the margin waits and does not offer the text again.
+    expect(screen.queryByDisplayValue('Unsent edit')).toBeNull();
+    finish();
+    await screen.findByRole('button', { name: /^Discussion/ });
+    await waitFor(async () => expect(await listDrafts(SAM_ID, CLASS_A, RES)).toEqual([]));
+    expect(screen.queryByDisplayValue('Unsent edit')).toBeNull();
+    expect(w.annotations).toEqual([]);
+    // Nothing was sent after the delete: the note was not restored and saved again.
+    const after = w.calls.slice(w.calls.findIndex((c) => c.method === 'DELETE') + 1);
+    expect(after.filter((c) => c.method === 'PUT' || c.method === 'POST')).toEqual([]);
+  });
+
   it('A03 restores a note typed but never sent from this device, and sends it', async () => {
     const w = world([noteOf(uuid(1), textAnchor(B3, 0, 5, P3), 'Draft')]);
     api(w);
