@@ -958,6 +958,50 @@ describe('reading margin: layout and sign-out', () => {
     expect(await listDrafts(SAM_ID, CLASS_A, RES)).toEqual([]);
   });
 
+  it('A03 a reload before the device copy is gone does not bring back an acknowledged note as unsent', async () => {
+    const w = world();
+    const mock = api(w);
+    const posts = () =>
+      mock.mock.calls.filter(([, init]) => (init as RequestInit | undefined)?.method === 'POST');
+    // The device's delete of the acknowledged note's copy never commits before the page goes away.
+    const realDelete = IDBObjectStore.prototype.delete;
+    const held: (() => void)[] = [];
+    vi.spyOn(IDBObjectStore.prototype, 'delete').mockImplementation(function (
+      this: IDBObjectStore,
+      key,
+    ) {
+      if (typeof key === 'string' && key.startsWith(`${SAM_ID}|`)) {
+        const request = { result: undefined } as unknown as IDBRequest;
+        const db = this.transaction.db;
+        held.push(() => {
+          realDelete.call(db.transaction(this.name, 'readwrite').objectStore(this.name), key);
+          request.onsuccess?.(new Event('success'));
+        });
+        return request;
+      }
+      return realDelete.call(this, key);
+    });
+    const user = userEvent.setup();
+    await open();
+    select(B3, 0, 13);
+    await user.click(within(await toolbar()).getByRole('button', { name: 'Note' }));
+    await user.type(await screen.findByRole('textbox', { name: 'Your note' }), 'one note');
+    await waitFor(() => expect(posts()).toHaveLength(1));
+    // "Saved" is only said once the device copy is really gone, so it cannot be said while held.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    // The reload: the margin comes back with whatever the device still holds.
+    await user.click(screen.getByRole('tab', { name: 'Slides' }));
+    await user.click(screen.getByRole('tab', { name: 'Reading' }));
+    await screen.findByRole('button', { name: 'My notes' });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(screen.getAllByText('one note')).toHaveLength(1);
+    expect(posts()).toHaveLength(1);
+    expect(w.annotations).toHaveLength(1);
+    expect(screen.queryByText('Saved')).not.toBeInTheDocument();
+    vi.restoreAllMocks();
+    for (const finish of held) finish(); // the device answers at last; nothing is left pending
+  });
+
   it('A05 a question still being posted when the reading is left does not come back as unsent text', async () => {
     const w = world();
     const mock = api(w);

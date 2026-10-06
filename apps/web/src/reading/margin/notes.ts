@@ -42,7 +42,7 @@ export interface NoteDeps {
   /** Keeps (or with null, drops) the unsent text on this device; resolves when it is written. */
   persist(
     draft: { annotationId: string | null; revision: number | null; body: string } | null,
-  ): void;
+  ): void | Promise<void>;
   /** Tells the page what the server now holds, after an acknowledgement or a chosen server copy. */
   acknowledged(annotation: Annotation): void;
   /** The page stops listing this annotation (its text now lives in a new note). */
@@ -202,8 +202,8 @@ export class NoteController {
       return;
     }
     if (this.annotationId !== null && body === this.serverBody) {
-      this.deps.persist(null);
-      this.set({ status: 'saved' });
+      await this.deps.persist(null);
+      if (this.state.body === body) this.set({ status: 'saved' });
       return;
     }
     this.sending = true;
@@ -255,8 +255,10 @@ export class NoteController {
         this.set({ status: 'saving' });
         return;
       }
-      this.deps.persist(null);
-      this.set({ status: 'saved' });
+      // "Saved" waits until the device copy is really gone: a reload before that would list the
+      // acknowledged text again as unsent and send it a second time.
+      await this.deps.persist(null);
+      if (this.state.body === body && !this.removed) this.set({ status: 'saved' });
     } else if (result.kind === 'conflict') {
       this.set({ status: 'conflict', conflict: result.current });
     } else if (result.kind === 'gone') {
