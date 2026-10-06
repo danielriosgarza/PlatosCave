@@ -2,7 +2,7 @@ import '@testing-library/jest-dom/vitest';
 import { onlineManager } from '@tanstack/react-query';
 import { act, cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import {
   CLASS_A,
   makeMe,
@@ -333,6 +333,19 @@ function testApi(options: Options = {}) {
     },
   };
 }
+
+const goOffline = () => {
+  Object.defineProperty(window.navigator, 'onLine', { configurable: true, value: false });
+  act(() => {
+    window.dispatchEvent(new Event('offline'));
+  });
+};
+const goOnline = () => {
+  Object.defineProperty(window.navigator, 'onLine', { configurable: true, value: true });
+  act(() => {
+    window.dispatchEvent(new Event('online'));
+  });
+};
 
 const open = () => renderApp(`/classes/${CLASS_A}/topics/${T_SAMPLING}/tests`);
 
@@ -765,10 +778,7 @@ describe('test UI: submission', () => {
     testApi();
     open();
     await reviewable(user);
-    Object.defineProperty(window.navigator, 'onLine', { configurable: true, value: false });
-    act(() => {
-      window.dispatchEvent(new Event('offline'));
-    });
+    goOffline();
     expect(screen.getByRole('button', { name: 'Submit test' })).toBeDisabled();
     expect(screen.getByText(/Submitting is unavailable while you are offline/)).toBeVisible();
   });
@@ -785,10 +795,7 @@ describe('test UI: expiry', () => {
     expect(await screen.findByText(/^Saved \d/)).toBeVisible();
     // The connection drops; the explanation is typed but never reaches the server.
     api.server.offline = true;
-    Object.defineProperty(window.navigator, 'onLine', { configurable: true, value: false });
-    act(() => {
-      window.dispatchEvent(new Event('offline'));
-    });
+    goOffline();
     await user.click(screen.getByRole('button', { name: 'Question 3 Unanswered' }));
     await user.type(
       screen.getByRole('textbox', { name: 'Your explanation' }),
@@ -806,10 +813,7 @@ describe('test UI: expiry', () => {
       unanswered: ['q2', 'q3', 'q4'],
     };
     api.server.offline = false;
-    Object.defineProperty(window.navigator, 'onLine', { configurable: true, value: true });
-    act(() => {
-      window.dispatchEvent(new Event('online'));
-    });
+    goOnline();
     expect(await screen.findByRole('heading', { name: /Time ran out/ })).toBeVisible();
     expect(screen.getByText(/It received 1 answer/)).toBeVisible();
     expect(screen.getByText('Question 2, Question 3, Question 4')).toBeVisible();
@@ -849,18 +853,12 @@ describe('test UI: expiry', () => {
     open();
     await begin(user);
     api.server.offline = true;
-    Object.defineProperty(window.navigator, 'onLine', { configurable: true, value: false });
-    act(() => {
-      window.dispatchEvent(new Event('offline'));
-    });
+    goOffline();
     await user.click(screen.getByRole('button', { name: 'Question 3 Unanswered' }));
     await user.type(screen.getByRole('textbox', { name: 'Your explanation' }), 'Offline words');
     expect(await screen.findByText(/Not saved/)).toBeVisible();
     api.server.offline = false;
-    Object.defineProperty(window.navigator, 'onLine', { configurable: true, value: true });
-    act(() => {
-      window.dispatchEvent(new Event('online'));
-    });
+    goOnline();
     await waitFor(() => expect(api.answers.get('q3')?.value).toBe('Offline words'));
     // The server's state was read before the unsent answer was sent.
     expect(api.log.order.indexOf('read')).toBeGreaterThanOrEqual(0);
@@ -971,19 +969,6 @@ describe('test UI: keyboard and screen reader', () => {
   });
 });
 
-const goOffline = () => {
-  Object.defineProperty(window.navigator, 'onLine', { configurable: true, value: false });
-  act(() => {
-    window.dispatchEvent(new Event('offline'));
-  });
-};
-const goOnline = () => {
-  Object.defineProperty(window.navigator, 'onLine', { configurable: true, value: true });
-  act(() => {
-    window.dispatchEvent(new Event('online'));
-  });
-};
-
 describe('test UI: follow-ups to the first release', () => {
   it('A14 a numeric answer with an ambiguous comma is refused, never reinterpreted', async () => {
     const user = userEvent.setup();
@@ -992,22 +977,56 @@ describe('test UI: follow-ups to the first release', () => {
     await begin(user);
     await user.click(screen.getByRole('button', { name: 'Question 2 Unanswered' }));
     const field = screen.getByRole('textbox', { name: /Your answer/ });
+    // Typed key by key, the way people enter a number: "1,0" and "1,00" read as 1 on the way.
     for (const text of ['1,000', '1,000.5', '1,2,3', '12,345']) {
       await user.clear(field);
-      // Pasted, so no shorter prefix such as "12,3" is saved on the way.
-      await user.click(field);
-      await user.paste(text);
+      await user.type(field, text);
       expect(screen.getByText(/A comma can mean thousands or a decimal point/)).toBeVisible();
+      expect(screen.getByText(/Your saved answer is cleared/)).toBeVisible();
       expect(field).toHaveAttribute('aria-invalid', 'true');
     }
-    await new Promise((r) => setTimeout(r, 1000));
-    // Clearing the field is saved as an empty answer; no number was.
+    await new Promise((r) => setTimeout(r, 1200));
+    // The error says what is stored: nothing. No guessed prefix is left as the answer.
+    expect(api.answers.get('q2')?.value ?? null).toBeNull();
     expect(api.log.puts.filter((p) => p.id === 'q2' && p.body.value !== null)).toEqual([]);
     // An unambiguous decimal comma is still read as a decimal point.
     await user.clear(field);
     await user.type(field, '1,5');
     expect(screen.queryByText(/A comma can mean/)).toBeNull();
     await waitFor(() => expect(api.answers.get('q2')?.value).toBe(1.5));
+  });
+
+  it('A14 text that is not a number gets the plain error, even with a comma in it', async () => {
+    const user = userEvent.setup();
+    testApi();
+    open();
+    await begin(user);
+    await user.click(screen.getByRole('button', { name: 'Question 2 Unanswered' }));
+    const field = screen.getByRole('textbox', { name: /Your answer/ });
+    for (const text of ['abc,def.', '1.5,', 'x,y,z']) {
+      await user.clear(field);
+      await user.type(field, text);
+      expect(screen.getByText(/Enter a number/)).toBeVisible();
+      expect(screen.queryByText(/A comma can mean/)).toBeNull();
+    }
+  });
+
+  it('A15 text still being typed is not replaced by a value adopted after a reconnect', async () => {
+    const user = userEvent.setup();
+    const api = testApi({ deadlineAt: '2099-01-01T00:00:00Z' });
+    open();
+    await begin(user);
+    await user.click(screen.getByRole('button', { name: 'Question 2 Unanswered' }));
+    const field = screen.getByRole('textbox', { name: /Your answer/ });
+    await user.type(field, '3');
+    expect(await screen.findByText(/^Saved \d/)).toBeVisible();
+    await user.type(field, 'e');
+    api.answers.set('q2', { value: 7, flagged: false, seq: 50, savedAt: new Date().toISOString() });
+    goOffline();
+    goOnline();
+    await waitFor(() => expect(api.log.reads).toBeGreaterThan(0));
+    await new Promise((r) => setTimeout(r, 300));
+    expect(field).toHaveValue('3e');
   });
 
   it('A15 a newer numeric value adopted after a reconnect reaches the field', async () => {
@@ -1028,10 +1047,17 @@ describe('test UI: follow-ups to the first release', () => {
   });
 
   it('A15 a code answer adopted after a reconnect is not reported as a student edit', async () => {
-    // jsdom has no layout; CodeMirror measures text ranges.
+    // jsdom has no layout; CodeMirror measures text ranges. Restored when the test ends.
     const rect = { x: 0, y: 0, top: 0, left: 0, right: 0, bottom: 0, width: 0, height: 0 };
+    const original = {
+      getClientRects: Range.prototype.getClientRects,
+      getBoundingClientRect: Range.prototype.getBoundingClientRect,
+    };
     Range.prototype.getClientRects = () => [] as unknown as DOMRectList;
     Range.prototype.getBoundingClientRect = () => ({ ...rect, toJSON: () => rect });
+    onTestFinished(() => {
+      Object.assign(Range.prototype, original);
+    });
     const user = userEvent.setup();
     const api = testApi({ deadlineAt: '2099-01-01T00:00:00Z' });
     open();

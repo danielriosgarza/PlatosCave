@@ -141,8 +141,6 @@ export function AttemptWorkspace({
   const [submit, setSubmit] = useState<SubmitState>({ kind: 'idle' });
   const [local, setLocal] = useState<'none' | 'sending' | 'kept' | 'failed'>('none');
   const [unsentCount, setUnsentCount] = useState(0);
-  // When the server acknowledged the local copy, so the receipt does not depend on a second read.
-  const [keptAt, setKeptAt] = useState<string | null>(null);
   const online = useOnline();
   const submitting = useRef(false);
   const refreshing = useRef(false);
@@ -179,7 +177,10 @@ export function AttemptWorkspace({
       setLocal('sending');
       try {
         const ack = await sendLocalCopy(classId, view.id, unsent);
-        setKeptAt(ack.localCopyAt);
+        // The acknowledgement goes into the cached attempt, where every reader finds it.
+        queryClient.setQueryData(key, (cached: AttemptView | undefined) =>
+          cached ? { ...cached, localCopyAt: ack.localCopyAt } : cached,
+        );
         setLocal('kept');
         clearUnsent(view.id);
         void refresh();
@@ -187,7 +188,7 @@ export function AttemptWorkspace({
         setLocal('failed');
       }
     },
-    [classId, entries, refresh],
+    [classId, entries, refresh, queryClient, key],
   );
 
   // The deadline came, or a save was refused as closed: ask the server what became of the
@@ -335,7 +336,6 @@ export function AttemptWorkspace({
           attempt={attempt}
           unsentCount={unsentCount}
           local={local}
-          keptAt={keptAt}
           onRetryLocal={() => void keepLocal(attempt)}
           onDownload={() => saveFile('unsent-answers.txt', unsentText(attempt, entries))}
         />

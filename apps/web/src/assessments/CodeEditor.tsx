@@ -115,7 +115,8 @@ function Editor({ label, value, onChange, language }: Omit<Props, 'plain'>) {
     if (current && current.state.doc.toString() !== value) {
       current.dispatch({
         changes: { from: 0, to: current.state.doc.length, insert: value },
-        annotations: Transaction.remote.of(true),
+        // Not undoable: an undo would bring back older local text and save it over the newer one.
+        annotations: [Transaction.remote.of(true), Transaction.addToHistory.of(false)],
       });
     }
   }, [value]);
