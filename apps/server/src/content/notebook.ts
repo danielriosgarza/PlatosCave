@@ -26,8 +26,10 @@ import { renderReading } from './reading';
  * - Text, errors and HTML tables become plain text the reader renders as text.
  * - Images and every other HTML output become separate objects on the content origin: images
  *   are shown with `<img>`, HTML in a frame with no script permission, served under the
- *   content origin's `sandbox` CSP. Scripts and event handlers are removed from that HTML too,
- *   so a stored output never runs script anywhere.
+ *   content origin's `sandbox` CSP. Scripts and event handlers are removed from that HTML too.
+ * - SVG outputs and attachments are parsed and rebuilt from an SVG allow-list (no script, event
+ *   handler, `foreignObject`, animation, or reference leaving the document), so a stored output
+ *   holds no script even where it is opened on its own.
  */
 
 /** An object the notebook's outputs need, under the key its bytes give it. */
@@ -144,6 +146,98 @@ function hasScript(tree: Root): boolean {
       ) {
         found = true;
       }
+    }
+  });
+  return found;
+}
+
+/** Drawing elements and presentation attributes an SVG output may keep; all else is dropped. */
+const SVG_TAGS = (
+  'svg g defs symbol use path rect circle ellipse line polyline polygon text tspan textPath ' +
+  'title desc linearGradient radialGradient stop pattern clipPath mask marker style ' +
+  'filter feBlend feColorMatrix feComponentTransfer feComposite feConvolveMatrix ' +
+  'feDiffuseLighting feDisplacementMap feDistantLight feDropShadow feFlood feFuncA feFuncB ' +
+  'feFuncG feFuncR feGaussianBlur feMerge feMergeNode feMorphology feOffset fePointLight ' +
+  'feSpecularLighting feSpotLight feTile feTurbulence'
+).split(' ');
+const SVG_ATTRIBUTES = (
+  'xmlns id className style transform viewBox width height x y x1 x2 y1 y2 cx cy r rx ry d ' +
+  'points dx dy rotate textLength lengthAdjust href preserveAspectRatio version baseProfile ' +
+  'fill fillOpacity fillRule stroke strokeWidth strokeOpacity strokeLinecap strokeLinejoin ' +
+  'strokeMiterLimit strokeDasharray strokeDashOffset opacity visibility display overflow ' +
+  'clipPath clipRule clipPathUnits mask maskUnits maskContentUnits filter filterUnits ' +
+  'primitiveUnits markerStart markerMid markerEnd markerWidth markerHeight markerUnits ' +
+  'refX refY orient fontFamily fontSize fontStyle fontWeight fontVariant textAnchor ' +
+  'dominantBaseline alignmentBaseline baselineShift letterSpacing wordSpacing textDecoration ' +
+  'writingMode direction unicodeBidi stopColor stopOpacity offset gradientUnits ' +
+  'gradientTransform spreadMethod fx fy fr patternUnits patternContentUnits patternTransform ' +
+  'in in2 result mode type values stdDeviation operator k1 k2 k3 k4 order kernelMatrix ' +
+  'divisor bias targetX targetY edgeMode scale xChannelSelector yChannelSelector tableValues ' +
+  'slope intercept amplitude exponent floodColor floodOpacity colorInterpolationFilters ' +
+  'baseFrequency numOctaves seed stitchTiles surfaceScale diffuseConstant specularConstant ' +
+  'specularExponent lightingColor azimuth elevation z pointsAtX pointsAtY pointsAtZ ' +
+  'limitingConeAngle radius vectorEffect shapeRendering textRendering colorInterpolation ' +
+  'startOffset method spacing side'
+).split(' ');
+const svgSchema: SanitizeSchema = {
+  tagNames: SVG_TAGS,
+  attributes: { '*': SVG_ATTRIBUTES },
+  protocols: {},
+  clobber: [],
+  strip: ['script', 'foreignObject', 'animate', 'animateMotion', 'animateTransform', 'set'],
+};
+const svgSanitizer = unified()
+  .use(rehypeSanitize, svgSchema)
+  .use(rehypeStringify, { space: 'svg' })
+  .freeze();
+const svgParser = unified().use(rehypeParse, { fragment: true, space: 'svg' }).freeze();
+
+/** A CSS value that fetches or runs something: any `url(` that is not a same-document `#id`. */
+const CSS_FETCH = /@import|expression\s*\(|javascript:|url\(\s*['"]?\s*(?!#)/i;
+
+/** Removes what the allow-list cannot judge by name: references leaving the document. */
+function dropExternal(tree: Root): void {
+  visit(tree, 'element', (el, index, parent) => {
+    if (
+      el.tagName === 'style' &&
+      CSS_FETCH.test(hastToString(el)) &&
+      parent &&
+      index !== undefined
+    ) {
+      parent.children.splice(index, 1);
+      return ['skip', index];
+    }
+    for (const [name, value] of Object.entries(el.properties)) {
+      const text = Array.isArray(value) ? value.join(' ') : String(value);
+      if (
+        (name === 'href' && !text.trim().startsWith('#')) ||
+        (/^(style|fill|stroke|filter|mask|clipPath|marker.*)$/.test(name) && CSS_FETCH.test(text))
+      ) {
+        delete el.properties[name];
+      }
+    }
+    return undefined;
+  });
+}
+
+/** SVG text as it may be stored: only allow-listed markup; `removed` when anything was dropped. */
+export function sanitizeSvg(svg: string): { text: string; scriptsRemoved: boolean } {
+  const tree = svgParser.parse(svg);
+  const scriptsRemoved = hasSvgScript(tree);
+  dropExternal(tree);
+  const clean = svgSanitizer.runSync(tree);
+  return { text: svgSanitizer.stringify(clean), scriptsRemoved };
+}
+
+/** True when the SVG held script, an event handler, a script URL or embedded foreign markup. */
+function hasSvgScript(tree: Root): boolean {
+  let found = false;
+  visit(tree, 'element', (el) => {
+    if (['script', 'foreignObject'].includes(el.tagName)) found = true;
+    for (const [name, value] of Object.entries(el.properties)) {
+      if (/^on[a-z]/i.test(name)) found = true;
+      // biome-ignore lint/suspicious/noControlCharactersInRegex: browsers ignore them in schemes
+      if (/^javascript:/i.test(String(value).replace(/[\u0000- ]/g, ''))) found = true;
     }
   });
   return found;
@@ -301,8 +395,8 @@ class Builder {
     for (const type of IMAGE_TYPES) {
       const value = textOf(data[type]);
       if (value === null) continue;
-      const bytes =
-        type === 'image/svg+xml' ? new TextEncoder().encode(value) : decodeBase64(value);
+      const svg = type === 'image/svg+xml' ? sanitizeSvg(value) : null;
+      const bytes = svg ? new TextEncoder().encode(svg.text) : decodeBase64(value);
       if (!bytes) continue;
       const alt = textOf(data['text/plain']);
       return {
@@ -311,6 +405,7 @@ class Builder {
         key: this.object(bytes, type),
         contentType: type,
         alt: alt && alt.length <= 300 ? plainText(alt).trim() : 'Image output',
+        ...(svg?.scriptsRemoved && { scriptsRemoved: true }),
       };
     }
     for (const type of ['text/markdown', 'text/latex']) {
@@ -374,7 +469,9 @@ class Builder {
       const value = type && textOf(data[type]);
       if (!type || !value) continue;
       const bytes =
-        type === 'image/svg+xml' ? new TextEncoder().encode(value) : decodeBase64(value);
+        type === 'image/svg+xml'
+          ? new TextEncoder().encode(sanitizeSvg(value).text)
+          : decodeBase64(value);
       if (bytes) assets[name] = this.object(bytes, type);
     }
     return assets;

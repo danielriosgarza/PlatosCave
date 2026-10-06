@@ -328,6 +328,63 @@ describe('A09 stored HTML and JavaScript outputs cannot run script', () => {
     expect(doc).not.toMatch(/<iframe/i);
   });
 
+  const hostileSvg =
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10" onload="alert(1)">' +
+    '<script>alert(1)</script><foreignObject><div>x</div></foreignObject>' +
+    '<a href="javascript:alert(2)"><rect width="5" height="5" fill="red" onclick="alert(3)"/></a>' +
+    '<image href="https://evil.example/x.png"/><use href="https://evil.example/s.svg#a"/>' +
+    '<style>@import url(https://evil.example/a.css);rect{fill:blue}</style>' +
+    '<circle r="2" style="fill:url(https://evil.example/p)"/><animate attributeName="href" to="javascript:alert(4)"/>' +
+    '<circle id="keep" cx="5" cy="5" r="2" fill="#00f"/></svg>';
+
+  test('A09 an SVG output is stored without script, handlers, foreign content or external references', () => {
+    const svgRendered = render([
+      code('s', 'plot()', [
+        { output_type: 'display_data', metadata: {}, data: { 'image/svg+xml': hostileSvg } },
+      ]),
+    ]);
+    const [svgOut] = outputsOf(svgRendered);
+    expect(svgOut).toMatchObject({
+      type: 'image',
+      contentType: 'image/svg+xml',
+      scriptsRemoved: true,
+    });
+    const stored = new TextDecoder().decode(svgRendered.objects[0]?.bytes);
+    expect(stored).toContain('<circle id="keep"');
+    expect(stored).not.toMatch(/<script|<foreignObject|<animate|<image|<a[ >]/i);
+    expect(stored).not.toMatch(/\son[a-z]+=|javascript:|evil\.example|@import|url\(/i);
+  });
+
+  test('A09 a clean SVG output is kept and not flagged', () => {
+    const svg =
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 4 4"><path d="M0 0L4 4" stroke="#000"/></svg>';
+    const clean = render([
+      code('s', 'plot()', [
+        { output_type: 'display_data', metadata: {}, data: { 'image/svg+xml': svg } },
+      ]),
+    ]);
+    const [out] = outputsOf(clean);
+    expect(out).not.toHaveProperty('scriptsRemoved');
+    const stored = new TextDecoder().decode(clean.objects[0]?.bytes);
+    expect(stored).toContain('<path d="M0 0L4 4" stroke="#000">');
+    expect(stored).toContain('viewBox="0 0 4 4"');
+  });
+
+  test('A09 an SVG attachment of a Markdown cell is sanitised like an SVG output', () => {
+    const attached = render([
+      {
+        id: 'm',
+        cell_type: 'markdown',
+        metadata: {},
+        source: '![d](attachment:d.svg)',
+        attachments: { 'd.svg': { 'image/svg+xml': hostileSvg } },
+      },
+    ]);
+    const stored = new TextDecoder().decode(attached.objects[0]?.bytes);
+    expect(attached.objects[0]?.contentType).toBe('image/svg+xml');
+    expect(stored).not.toMatch(/<script|\son[a-z]+=|javascript:|evil\.example/i);
+  });
+
   test('A09 Markdown cells cannot carry raw HTML or script into the app origin', () => {
     const { notebook: nb } = render([
       {
