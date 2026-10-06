@@ -859,6 +859,10 @@ async function settleDue(db: Db, scope: ClassScope, where: ReturnType<typeof and
   for (const { id } of due) await db.transaction((tx) => lockAttempt(tx, scope, id, now, false));
 }
 
+/** Submits every overdue in-progress attempt of the class, as the review reads do. */
+export const settleClassDue = (db: Db, scope: ClassScope, now: Date) =>
+  settleDue(db, scope, forClass(scope, testAttempts), now);
+
 async function reviewedOf(db: Db, scope: ClassScope, where: ReturnType<typeof and>) {
   const rows = await db
     .select({ attempt: testAttempts, name: users.name, role: classMemberships.role })

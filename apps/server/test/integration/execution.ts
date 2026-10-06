@@ -18,6 +18,8 @@ import {
   RESULT_QUEUE,
   RUN_QUEUE,
 } from '../../src/execution/queues';
+import { storeCourseObject } from '../../src/storage/objects';
+import type { Storage } from '../../src/storage/storage';
 import {
   asClassScope,
   asCourseScope,
@@ -117,15 +119,30 @@ export interface ExecWorld {
   close: () => Promise<void>;
 }
 
-export async function execWorld(): Promise<ExecWorld> {
+export interface ExecWorldOptions {
+  /** The API's object store (default: the one the config selects). */
+  storage?: Storage;
+  /** Files stored in the course and named by the quiz revision's `objectKeys`; needs `storage`. */
+  quizObjects?: { bytes: Uint8Array; contentType: string }[];
+}
+
+export async function execWorld(options: ExecWorldOptions = {}): Promise<ExecWorld> {
+  const { storage, quizObjects = [] } = options;
+  if (quizObjects.length > 0 && !storage) throw new Error('quizObjects need a storage');
   const testDb = await createTestDatabase();
   const world = await buildWorld(testDb.db, start);
   const course = asCourseScope(ids.statistics, ids.elena);
+  const objectKeys: string[] = [];
+  for (const { bytes, contentType } of quizObjects) {
+    objectKeys.push(
+      (await storeCourseObject(testDb.db, storage as Storage, course, bytes, contentType)).key,
+    );
+  }
   const created = await createResource(
     testDb.db,
     course,
     ids.sampling,
-    { type: 'test', title: 'Spread check', content: quiz },
+    { type: 'test', title: 'Spread check', content: quiz, objectKeys },
     start,
   );
   if (!created.ok) throw new Error(JSON.stringify(created));
@@ -158,7 +175,12 @@ export async function execWorld(): Promise<ExecWorld> {
   const runner = new FakeRunner(testDb.url);
   await runner.start();
   const clock = { now: start };
-  const app = await buildApp(config, { db: testDb.db, now: () => clock.now, bossExec: boss });
+  const app = await buildApp(config, {
+    db: testDb.db,
+    now: () => clock.now,
+    bossExec: boss,
+    ...(storage && { storage }),
+  });
   await app.ready();
   return {
     testDb,
