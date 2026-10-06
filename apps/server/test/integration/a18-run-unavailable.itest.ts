@@ -2,6 +2,7 @@ import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { requestReplay } from '../../src/db/execution/runs';
 import { auditEvents, testAttempts } from '../../src/db/schema';
+import { RUN_QUEUE } from '../../src/execution/queues';
 import { asClassScope, ids } from '../fixtures/world';
 import {
   attemptUrl,
@@ -240,5 +241,33 @@ describe('A18 run unavailable', () => {
     expect(
       (await call(w, 'sam', 'POST', `${base}/questions/mean/replays`, { reason: 'replay' })).status,
     ).toBe(403);
+  });
+  test('submission cancels the sample runs no slot has fetched and leaves an active one to finish', async () => {
+    const bea = await startAttempt(w, 'bea', ids.classB);
+    tick();
+    const fetchedRun = await requestRun(w, 'bea', ids.classB, bea, 'mean', CODE);
+    const unfetchedRun = await requestRun(w, 'bea', ids.classB, bea, 'median', CODE);
+    expect(fetchedRun.status).toBe(202);
+    expect(unfetchedRun.status).toBe(202);
+    const fetched = await w.runner.take();
+    expect(fetched.data.jobId).toBe(fetchedRun.body.runId);
+    const unfetched = await rowOf(w, unfetchedRun.body.runId);
+    expect((await w.boss.getJobById(RUN_QUEUE, unfetched.bossJobId))?.state).toBe('created');
+
+    tick();
+    const submitted = await call(w, 'bea', 'POST', `${attemptUrl(ids.classB, bea)}/submit`, {
+      submissionKey: 'a18-submit-samples',
+    });
+    expect(submitted.status).toBe(200);
+
+    // The run no slot fetched is cancelled with its job.
+    expect(await rowOf(w, unfetchedRun.body.runId)).toMatchObject({ state: 'cancelled' });
+    expect((await w.boss.getJobById(RUN_QUEUE, unfetched.bossJobId))?.state).toBe('cancelled');
+    // The fetched one stays queued, its job active, and its result is recorded when it finishes.
+    expect(await rowOf(w, fetchedRun.body.runId)).toMatchObject({ state: 'queued' });
+    expect((await w.boss.getJobById(RUN_QUEUE, fetched.id))?.state).toBe('active');
+    await w.runner.finish(fetched);
+    expect((await drain(w)).results).toBeGreaterThanOrEqual(1);
+    expect(await rowOf(w, fetchedRun.body.runId)).toMatchObject({ state: 'passed' });
   });
 });
