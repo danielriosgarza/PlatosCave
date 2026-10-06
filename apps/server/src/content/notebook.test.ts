@@ -1,6 +1,12 @@
 import { parseNotebook } from '@parallax/contracts';
 import { describe, expect, test } from 'vitest';
-import { buildNotebook, MAX_OUTPUT_CHARS, plainText, renderNotebook } from './notebook';
+import {
+  buildNotebook,
+  MAX_OUTPUT_CHARS,
+  plainText,
+  renderNotebook,
+  sanitizeSvg,
+} from './notebook';
 
 const prefix = 'courses/00000000-0000-4000-8000-000000000001';
 const PNG =
@@ -353,6 +359,62 @@ describe('A09 stored HTML and JavaScript outputs cannot run script', () => {
     expect(stored).toContain('<circle id="keep"');
     expect(stored).not.toMatch(/<script|<foreignObject|<animate|<image|<a[ >]/i);
     expect(stored).not.toMatch(/\son[a-z]+=|javascript:|evil\.example|@import|url\(/i);
+  });
+
+  const NS = 'xmlns="http://www.w3.org/2000/svg"';
+  const storedSvg = (svg: string) => {
+    const out = sanitizeSvg(svg);
+    // The stored text read back as SVG holds no script, foreign content or handler.
+    expect(out.text).not.toMatch(
+      /<script|<foreignObject|\son[a-z]+=|<img|<style[^>]*>[^<]*<(?!\/style>)/i,
+    );
+    expect(out.text.startsWith('<svg')).toBe(true);
+    expect(out.text.endsWith('</svg>')).toBe(true);
+    return out;
+  };
+
+  test('A09 entity-escaped or CDATA markup in an SVG style never comes back as an element', () => {
+    for (const payload of [
+      '&lt;script&gt;alert(1)&lt;/script&gt;',
+      '<![CDATA[</style><script>alert(1)</script><style>]]>',
+      '&lt;foreignObject&gt;&lt;img src="x" onerror="alert(1)"/&gt;&lt;/foreignObject&gt;',
+    ]) {
+      const out = storedSvg(`<svg ${NS}><style>${payload}</style><circle r="1"/></svg>`);
+      expect(out.scriptsRemoved).toBe(true);
+      expect(out.text).toContain('<circle');
+    }
+  });
+
+  test('A09 SVG CSS that escapes, imports or fetches is dropped; local url() references stay', () => {
+    const out = storedSvg(
+      `<svg ${NS}><style>@\\69 mport "https://evil.example/a.css";</style>` +
+        '<rect fill="\\75 rl(https://evil.example/p)" width="1"/>' +
+        '<rect style="fill:image-set(\'https://evil.example/q\')" width="2"/>' +
+        `<g clip-path="url('#c')" filter="url(  #f)" fill="url(&quot;#p&quot;)"><path d="M0 0"/></g>` +
+        '<style>rect{stroke:#000}</style></svg>',
+    );
+    expect(out.text).not.toMatch(/evil\.example|@|\\/);
+    expect(out.text).toContain('clip-path="url(&#x27;#c&#x27;)"');
+    expect(out.text).toContain('rect{stroke:#000}');
+  });
+
+  test('A09 a matplotlib-shaped SVG keeps its in-document xlink references and loses its metadata', () => {
+    const out = storedSvg(
+      `<svg ${NS} xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 9 9">` +
+        '<metadata><rdf:RDF>Matplotlib v3, 2026-01-01</rdf:RDF></metadata>' +
+        '<defs><path id="g" d="M0 0"/></defs><use xlink:href="#g" x="1"/>' +
+        '<use xlink:href="https://evil.example/s.svg#g"/></svg>',
+    );
+    expect(out.text).toMatch(/<use [^>]*xlink:href="#g"/);
+    expect(out.text).not.toMatch(/Matplotlib|evil\.example/);
+  });
+
+  test('A09 HTML-only tags inside an SVG do not leave content after the root element', () => {
+    const out = storedSvg(`<svg ${NS}><p>x</p><circle r="1"/></svg>`);
+    expect(out.text.match(/<svg/g)).toHaveLength(1);
+    expect(sanitizeSvg('<div>no svg</div>').text).toBe(
+      '<svg xmlns="http://www.w3.org/2000/svg"></svg>',
+    );
   });
 
   test('A09 a clean SVG output is kept and not flagged', () => {

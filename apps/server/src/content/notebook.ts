@@ -131,15 +131,22 @@ export const outputSchema: SanitizeSchema = {
 };
 const outputSanitizer = unified().use(rehypeSanitize, outputSchema).use(rehypeStringify).freeze();
 
-/** True when the HTML held something that would run script were it not removed. */
-function hasScript(tree: Root): boolean {
+/**
+ * True when the markup held something that would run script were it not removed. `tags` names
+ * more elements that count (SVG's `foreignObject`).
+ */
+function hasScript(tree: Root, tags: string[] = []): boolean {
   let found = false;
   visit(tree, 'element', (el) => {
-    if (el.tagName === 'script') found = true;
+    if (el.tagName === 'script' || tags.includes(el.tagName)) found = true;
     for (const [name, value] of Object.entries(el.properties)) {
       if (/^on[a-z]/i.test(name)) found = true;
       if (
-        (name === 'href' || name === 'src' || name === 'action' || name === 'formAction') &&
+        (name === 'href' ||
+          name === 'xLinkHref' ||
+          name === 'src' ||
+          name === 'action' ||
+          name === 'formAction') &&
         typeof value === 'string' &&
         // biome-ignore lint/suspicious/noControlCharactersInRegex: browsers ignore them in schemes
         /^javascript:/i.test(value.replace(/[\u0000- ]/g, ''))
@@ -177,14 +184,22 @@ const SVG_ATTRIBUTES = (
   'baseFrequency numOctaves seed stitchTiles surfaceScale diffuseConstant specularConstant ' +
   'specularExponent lightingColor azimuth elevation z pointsAtX pointsAtY pointsAtZ ' +
   'limitingConeAngle radius vectorEffect shapeRendering textRendering colorInterpolation ' +
-  'startOffset method spacing side'
+  'startOffset method spacing side xmlnsXLink xLinkHref'
 ).split(' ');
 const svgSchema: SanitizeSchema = {
   tagNames: SVG_TAGS,
   attributes: { '*': SVG_ATTRIBUTES },
   protocols: {},
   clobber: [],
-  strip: ['script', 'foreignObject', 'animate', 'animateMotion', 'animateTransform', 'set'],
+  strip: [
+    'script',
+    'foreignObject',
+    'metadata',
+    'animate',
+    'animateMotion',
+    'animateTransform',
+    'set',
+  ],
 };
 const svgSanitizer = unified()
   .use(rehypeSanitize, svgSchema)
@@ -192,55 +207,64 @@ const svgSanitizer = unified()
   .freeze();
 const svgParser = unified().use(rehypeParse, { fragment: true, space: 'svg' }).freeze();
 
-/** A CSS value that fetches or runs something: any `url(` that is not a same-document `#id`. */
-const CSS_FETCH = /@import|expression\s*\(|javascript:|url\(\s*['"]?\s*(?!#)/i;
+/** In-document references: `url(#id)`, quoted or spaced. */
+const LOCAL_URL = /url\(\s*(['"]?)\s*#[^)'"\s]*\s*\1\s*\)/gi;
 
-/** Removes what the allow-list cannot judge by name: references leaving the document. */
-function dropExternal(tree: Root): void {
+/**
+ * Whether CSS text (a `<style>` body or a presentation attribute) may be stored. It is kept only
+ * when it is plain: no markup characters (the serialiser writes `<style>` text raw, so `<` here
+ * would become an element), no escapes or at-rules (they hide `url(` and `@import`), and every
+ * `url(` points into the document. Anything else is dropped, never repaired.
+ */
+function cssIsPlain(css: string): boolean {
+  if (/[<&\\@]/.test(css) || css.includes(']]>')) return false;
+  return !/url\(|image-set|image\(|expression|javascript:/i.test(css.replace(LOCAL_URL, ''));
+}
+
+const CSS_ATTRIBUTES = /^(style|fill|stroke|filter|mask|clipPath|marker(Start|Mid|End)|cursor)$/;
+
+/** Removes what the allow-list cannot judge by name: CSS that fetches, references that leave. */
+function dropExternal(tree: Root): boolean {
+  let markup = false;
   visit(tree, 'element', (el, index, parent) => {
-    if (
-      el.tagName === 'style' &&
-      CSS_FETCH.test(hastToString(el)) &&
-      parent &&
-      index !== undefined
-    ) {
+    if (el.tagName === 'style' && parent && index !== undefined) {
+      const css = hastToString(el);
+      if (cssIsPlain(css)) return undefined;
+      markup ||= css.includes('<');
       parent.children.splice(index, 1);
       return ['skip', index];
     }
     for (const [name, value] of Object.entries(el.properties)) {
       const text = Array.isArray(value) ? value.join(' ') : String(value);
       if (
-        (name === 'href' && !text.trim().startsWith('#')) ||
-        (/^(style|fill|stroke|filter|mask|clipPath|marker.*)$/.test(name) && CSS_FETCH.test(text))
+        ((name === 'href' || name === 'xLinkHref') && !text.trim().startsWith('#')) ||
+        (CSS_ATTRIBUTES.test(name) && !cssIsPlain(text))
       ) {
         delete el.properties[name];
       }
     }
     return undefined;
   });
+  return markup;
 }
 
-/** SVG text as it may be stored: only allow-listed markup; `removed` when anything was dropped. */
+const EMPTY_SVG = '<svg xmlns="http://www.w3.org/2000/svg"></svg>';
+
+/**
+ * SVG text as it may be stored: only the root `svg` element, rebuilt from the allow-list.
+ * `scriptsRemoved` when it held script, a handler, a script URL, foreign markup or CSS that
+ * carried markup. Parsing as HTML lets HTML-only tags close the `svg` early; what follows the
+ * root is dropped so the stored text stays one well-formed element.
+ */
 export function sanitizeSvg(svg: string): { text: string; scriptsRemoved: boolean } {
-  const tree = svgParser.parse(svg);
-  const scriptsRemoved = hasSvgScript(tree);
-  dropExternal(tree);
+  const parsed = svgParser.parse(svg);
+  const root = parsed.children.find((n) => isElement(n) && n.tagName === 'svg');
+  if (!root) return { text: EMPTY_SVG, scriptsRemoved: hasScript(parsed, ['foreignObject']) };
+  const tree: Root = { type: 'root', children: [root] };
+  const scriptsRemoved = hasScript(parsed, ['foreignObject']);
+  const markup = dropExternal(tree);
   const clean = svgSanitizer.runSync(tree);
-  return { text: svgSanitizer.stringify(clean), scriptsRemoved };
-}
-
-/** True when the SVG held script, an event handler, a script URL or embedded foreign markup. */
-function hasSvgScript(tree: Root): boolean {
-  let found = false;
-  visit(tree, 'element', (el) => {
-    if (['script', 'foreignObject'].includes(el.tagName)) found = true;
-    for (const [name, value] of Object.entries(el.properties)) {
-      if (/^on[a-z]/i.test(name)) found = true;
-      // biome-ignore lint/suspicious/noControlCharactersInRegex: browsers ignore them in schemes
-      if (/^javascript:/i.test(String(value).replace(/[\u0000- ]/g, ''))) found = true;
-    }
-  });
-  return found;
+  return { text: svgSanitizer.stringify(clean), scriptsRemoved: scriptsRemoved || markup };
 }
 
 const FRAME_STYLE =
