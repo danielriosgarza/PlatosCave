@@ -1,4 +1,4 @@
-import { type FormEvent, useId, useState } from 'react';
+import { type FormEvent, useEffect, useId, useRef, useState } from 'react';
 import buttons from '../../components/Buttons.module.css';
 import {
   type ComputeTemplate,
@@ -42,6 +42,13 @@ export function TemplateManager({ classId }: { classId: string }) {
   const [archiving, setArchiving] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const list = templates.data ?? [];
+  const archiveButtons = useRef(new Map<string, HTMLButtonElement>());
+  const escapedFrom = useRef<string | null>(null);
+  useEffect(() => {
+    if (archiving !== null || escapedFrom.current === null) return;
+    archiveButtons.current.get(escapedFrom.current)?.focus();
+    escapedFrom.current = null;
+  }, [archiving]);
 
   return (
     <div className={styles.section}>
@@ -62,7 +69,15 @@ export function TemplateManager({ classId }: { classId: string }) {
       ) : list.length > 0 ? (
         <ul className={styles.list} aria-label="Class computers">
           {list.map((t) => (
-            <li key={t.id}>
+            <li
+              key={t.id}
+              onKeyDown={(e) => {
+                if (archiving !== t.id || e.key !== 'Escape' || e.defaultPrevented) return;
+                e.preventDefault();
+                escapedFrom.current = t.id;
+                setArchiving(null);
+              }}
+            >
               <strong>{t.name}</strong>
               <span className={styles.mono}>{`${hostLabel(t)} · ${t.target.workspace}`}</span>
               {t.target.jump ? (
@@ -100,6 +115,10 @@ export function TemplateManager({ classId }: { classId: string }) {
                   </>
                 ) : (
                   <button
+                    ref={(el) => {
+                      if (el) archiveButtons.current.set(t.id, el);
+                      else archiveButtons.current.delete(t.id);
+                    }}
                     type="button"
                     className={buttons.outline}
                     onClick={() => setArchiving(t.id)}

@@ -4,6 +4,7 @@ import { Loading } from '../../components/Loading';
 import { RetryNotice } from '../../components/RetryNotice';
 import { type Connector, errorCode, useConnectorActions, useConnectors } from './api';
 import styles from './Connect.module.css';
+import { useCancelOnEscape } from './escape';
 
 const time = (iso: string) =>
   new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -154,8 +155,15 @@ interface DeviceProps {
 function Device(p: DeviceProps) {
   const c = p.connector;
   const pending = c.status === 'pending';
+  const rename = useCancelOnEscape(p.renaming, p.onCancelRename);
+  const revoke = useCancelOnEscape(p.revoking, p.onCancelRevoke);
   return (
-    <li>
+    <li
+      onKeyDown={(e) => {
+        rename.onKeyDown(e);
+        revoke.onKeyDown(e);
+      }}
+    >
       <div className={styles.row}>
         {p.renaming ? (
           <>
@@ -241,6 +249,7 @@ function Device(p: DeviceProps) {
             </>
           ) : (
             <button
+              ref={revoke.trigger}
               type="button"
               className={buttons.outline}
               onClick={p.onAskRevoke}
@@ -251,6 +260,7 @@ function Device(p: DeviceProps) {
           )}
           {p.renaming ? null : (
             <button
+              ref={rename.trigger}
               type="button"
               className={buttons.textButton}
               onClick={p.onStartRename}

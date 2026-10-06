@@ -24,8 +24,9 @@ import { TemplateConnectForm } from './ClassComputers';
 import styles from './Connect.module.css';
 import { ConnectSummary } from './ConnectSummary';
 import { DeviceList } from './DeviceList';
+import { useCancelOnEscape } from './escape';
 import { LossNotice } from './LossNotice';
-import { causeText, codeText } from './messages';
+import { CODE_COPY, CODE_RECOVERIES, causeText, codeText, recoveryText } from './messages';
 import { StageList } from './StageList';
 import { TargetForm, type TargetKind, type TargetValues } from './TargetForm';
 import { TemplateManager } from './TemplateManager';
@@ -67,6 +68,17 @@ function refusalText(error: unknown, fallback: string): string {
 }
 
 /**
+ * Why a kernel start or restart was refused. A 409 `kernel_failed` carries a catalogue code
+ * (design §5.4): its copy and recovery follow the generic sentence.
+ */
+function kernelRefusalText(error: unknown, fallback: string): string {
+  const body = (error as { body?: { error?: string; code?: string } } | null)?.body;
+  const code = body?.error === 'kernel_failed' ? body.code : undefined;
+  if (!code || !CODE_COPY[code]) return refusalText(error, fallback);
+  return [fallback, CODE_COPY[code], ...recoveryText(CODE_RECOVERIES[code] ?? [])].join(' ');
+}
+
+/**
  * Connect computer (spec §10.3), opened from the notebook toolbar's target label: pair and
  * approve the computers that run the connector, describe a target, test it stage by stage, and
  * connect. **Ready** appears only when the session is ready and its kernel reports idle (§5.6);
@@ -93,8 +105,12 @@ export function ConnectPanel({ classId, revisionId, instructor = false, onClose 
   // Sessions the person has left: the cached list may still call them open.
   const [left, setLeft] = useState<string[]>([]);
   // Keyed by session: a refusal for one session says nothing about the next.
-  const [kernelError, setKernelError] = useState<{ id: string; text: string } | null>(null);
-  const [kernelTry, setKernelTry] = useState(0);
+  // `again` is the action that was refused, so the retry repeats it.
+  const [kernelError, setKernelError] = useState<{
+    id: string;
+    text: string;
+    again: 'start' | 'restart';
+  } | null>(null);
   const [sessionError, setSessionError] = useState<string | null>(null);
 
   useEffect(() => heading.current?.focus(), []);
@@ -129,15 +145,29 @@ export function ConnectPanel({ classId, revisionId, instructor = false, onClose 
     startKernel(classId, id, name)
       .then(() => setKernelError(null))
       .catch((e) =>
-        setKernelError({ id, text: refusalText(e, 'The kernel could not be started.') }),
+        setKernelError({
+          id,
+          text: kernelRefusalText(e, 'The kernel could not be started.'),
+          again: 'start',
+        }),
       );
-  // biome-ignore lint/correctness/useExhaustiveDependencies: `kernelTry` is the person's request to try again
+  const restartFor = (id: string) =>
+    restartKernel(classId, id)
+      .then(() => setKernelError(null))
+      .catch((e) =>
+        setKernelError({
+          id,
+          text: kernelRefusalText(e, 'The kernel could not be restarted.'),
+          again: 'restart',
+        }),
+      );
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `startFor` is rebuilt every render; the effect runs once per ready session
   useEffect(() => {
     if (!readySession || !kernelKnown || kernelView || kernelLost || !kernelToStart) return;
     if (startedKernel.current === readySession.id) return;
     startedKernel.current = readySession.id;
     void startFor(readySession.id, kernelToStart);
-  }, [readySession, kernelKnown, kernelView, kernelLost, kernelToStart, classId, kernelTry]);
+  }, [readySession, kernelKnown, kernelView, kernelLost, kernelToStart, classId]);
 
   const kernelFailure =
     kernelError && kernelError.id === readySession?.id ? kernelError.text : null;
@@ -145,11 +175,12 @@ export function ConnectPanel({ classId, revisionId, instructor = false, onClose 
   if (readySession && kernelFailure) {
     kernelNote = {
       text: kernelFailure,
-      actionLabel: 'Start the kernel again',
+      actionLabel:
+        kernelError?.again === 'restart' ? 'Restart the kernel' : 'Start the kernel again',
       onAction: () => {
-        startedKernel.current = null;
         setKernelError(null);
-        setKernelTry((n) => n + 1);
+        if (kernelError?.again === 'restart') void restartFor(readySession.id);
+        else if (kernelToStart) void startFor(readySession.id, kernelToStart);
       },
     };
   } else if (readySession && kernelLost) {
@@ -168,12 +199,7 @@ export function ConnectPanel({ classId, revisionId, instructor = false, onClose 
           : 'Parallax cannot tell what state the kernel is in. Restarting it loses its variables.',
       actionLabel: 'Restart the kernel',
       onAction: () => {
-        restartKernel(classId, readySession.id).catch((e) =>
-          setKernelError({
-            id: readySession.id,
-            text: refusalText(e, 'The kernel could not be restarted.'),
-          }),
-        );
+        void restartFor(readySession.id);
       },
     };
   }
@@ -309,7 +335,8 @@ export function ConnectPanel({ classId, revisionId, instructor = false, onClose 
       className={styles.panel}
       aria-labelledby="connect-heading"
       onKeyDown={(e) => {
-        if (e.key === 'Escape') {
+        // An inline confirmation that is open took the key and cancelled itself.
+        if (e.key === 'Escape' && !e.defaultPrevented) {
           e.preventDefault();
           onClose();
         }
@@ -526,6 +553,7 @@ function SessionBlock({
   onLeave: () => void;
 }) {
   const [stopping, setStopping] = useState(false);
+  const stop = useCancelOnEscape(stopping, () => setStopping(false));
   const name = connectionName ?? 'Connection';
   if (session.state === 'starting' || session.state === 'ready') {
     // Ready is the kernel's word, not the session's (§5.6).
@@ -534,7 +562,8 @@ function SessionBlock({
         ? 'Starting'
         : (KERNEL_LABEL[kernelState] ?? 'Kernel state unknown');
     return (
-      <div className={styles.section}>
+      // biome-ignore lint/a11y/noStaticElementInteractions: Escape cancels the open stop confirmation
+      <div className={styles.section} onKeyDown={stop.onKeyDown}>
         <p role="status">
           <span className={styles.state}>{`${name} · ${runtimeLabel(session)} · ${label}`}</span>
         </p>
@@ -583,7 +612,12 @@ function SessionBlock({
                 </button>
               </>
             ) : (
-              <button type="button" className={buttons.outline} onClick={() => setStopping(true)}>
+              <button
+                ref={stop.trigger}
+                type="button"
+                className={buttons.outline}
+                onClick={() => setStopping(true)}
+              >
                 Stop session
               </button>
             )

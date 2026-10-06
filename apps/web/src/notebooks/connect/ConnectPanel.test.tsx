@@ -47,7 +47,7 @@ interface World {
   /** Answers the next test start with this refusal. */
   refuseTest?: { status: number; error: string };
   /** Answers close, forget and kernel start with this refusal. */
-  refuse?: { status: number; error: string };
+  refuse?: { status: number; error: string; code?: string };
   /** A second session, answered under its own id. */
   other?: { session: unknown; kernel: unknown };
 }
@@ -107,12 +107,18 @@ function serve(w: World) {
       method === 'POST' &&
       url.startsWith(`/api/classes/${CLASS_A}/notebook-sessions/${SESSION}/`)
     ) {
-      return { status: w.refuse.status, body: { error: w.refuse.error } };
+      return {
+        status: w.refuse.status,
+        body: { error: w.refuse.error, ...(w.refuse.code ? { code: w.refuse.code } : {}) },
+      };
     }
     if (url === `/api/classes/${CLASS_A}/notebook-sessions/${SESSION}/kernel`) {
       return method === 'POST'
         ? { status: 201, body: { kernel: w.kernel } }
         : { status: 200, body: { kernel: w.kernel } };
+    }
+    if (url === `/api/classes/${CLASS_A}/notebook-sessions/${SESSION}/kernel/restart`) {
+      return { status: 200, body: { kernel: w.kernel } };
     }
     return { status: 404, body: {} };
   });
@@ -418,6 +424,152 @@ describe('ConnectPanel', () => {
         w.posts.filter((p) => p.url.endsWith('/kernel') && !(p.body === undefined)),
       ).toHaveLength(2),
     );
+  });
+
+  it('a refused restart is retried as a restart, not as a start', async () => {
+    const w = world({
+      connections: [sshConnection()],
+      sessions: [session()],
+      session: session(),
+      kernel: kernel('dead'),
+      refuse: { status: 409, error: 'not_ready' },
+    });
+    serve(w);
+    renderPanel();
+    await userEvent.click(await screen.findByRole('button', { name: 'Restart the kernel' }));
+    expect(await screen.findByText(/The kernel could not be restarted/)).toBeInTheDocument();
+    w.refuse = undefined;
+    w.kernel = kernel('restarting');
+    await userEvent.click(screen.getByRole('button', { name: 'Restart the kernel' }));
+    await waitFor(() =>
+      expect(w.posts.filter((p) => p.url.endsWith('/kernel/restart'))).toHaveLength(2),
+    );
+    expect(w.posts.filter((p) => p.url.endsWith('/kernel'))).toHaveLength(0);
+    await waitFor(() => expect(screen.queryByText(/The kernel could not be restarted/)).toBeNull());
+  });
+
+  it('a refused new kernel after a lost one is started again by the retry', async () => {
+    const w = world({
+      connections: [sshConnection()],
+      sessions: [session({ cause: 'kernel_lost' })],
+      session: session({ cause: 'kernel_lost' }),
+      kernel: null,
+      refuse: { status: 409, error: 'not_ready' },
+    });
+    serve(w);
+    renderPanel();
+    await userEvent.click(await screen.findByRole('button', { name: 'Start a new kernel' }));
+    expect(await screen.findByText(/The kernel could not be started/)).toBeInTheDocument();
+    expect(w.posts.filter((p) => p.url.endsWith('/kernel'))).toHaveLength(1);
+    w.refuse = undefined;
+    w.kernel = kernel('starting');
+    await userEvent.click(screen.getByRole('button', { name: 'Start the kernel again' }));
+    await waitFor(() => expect(w.posts.filter((p) => p.url.endsWith('/kernel'))).toHaveLength(2));
+    expect(w.posts.filter((p) => p.url.endsWith('/kernel')).at(-1)?.body).toEqual({
+      kernelName: 'python3',
+    });
+  });
+
+  it('a kernel_failed refusal says why, with the catalogue copy and recovery', async () => {
+    const w = world({
+      connections: [sshConnection()],
+      sessions: [session()],
+      session: session(),
+      kernel: null,
+      refuse: { status: 409, error: 'kernel_failed', code: 'kernelspec_not_found' },
+    });
+    serve(w);
+    renderPanel();
+    const alert = await screen.findByText(/The kernel could not be started/);
+    expect(alert).toHaveTextContent('The chosen kernel is not installed there.');
+    expect(alert).toHaveTextContent('Choose another Python interpreter or kernel.');
+  });
+
+  it('a kernel_failed code the catalogue does not know keeps the plain sentence', async () => {
+    const w = world({
+      connections: [sshConnection()],
+      sessions: [session()],
+      session: session(),
+      kernel: null,
+      refuse: { status: 409, error: 'kernel_failed', code: 'jupyter_500' },
+    });
+    serve(w);
+    renderPanel();
+    expect(await screen.findByText('The kernel could not be started.')).toBeInTheDocument();
+  });
+
+  it('Escape in an open confirmation cancels it, returns focus, and keeps the form', async () => {
+    const w = world({ connections: [], sessions: [] });
+    serve(w);
+    const { onClose } = renderPanel();
+    const name = await screen.findByLabelText('Connection name');
+    await userEvent.type(name, 'My laptop');
+
+    // Rename
+    await userEvent.click(await screen.findByRole('button', { name: 'Rename Laptop' }));
+    await userEvent.type(screen.getByLabelText('New name for Laptop'), 'x');
+    await userEvent.keyboard('{Escape}');
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText('New name for Laptop')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Rename Laptop' })).toHaveFocus();
+
+    // Revoke
+    await userEvent.click(screen.getByRole('button', { name: 'Revoke Laptop' }));
+    screen.getByRole('button', { name: 'Revoke Laptop' }).focus();
+    await userEvent.keyboard('{Escape}');
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.queryByText(/does not revoke any SSH account/)).toBeNull();
+    expect(screen.getByRole('button', { name: 'Revoke Laptop' })).toHaveFocus();
+
+    // The form kept what was typed, and Escape with nothing open closes the panel.
+    expect(screen.getByLabelText('Connection name')).toHaveValue('My laptop');
+    await userEvent.keyboard('{Escape}');
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('Escape in the replace-key confirmation cancels only that confirmation', async () => {
+    const w = world({
+      connections: [sshConnection()],
+      test: testView({
+        outcome: 'failed',
+        stages: [
+          {
+            name: 'host_identity',
+            status: 'failed',
+            code: 'host_key_changed',
+            data: { hop: 'target', expected: FP_A, presented: FP_B },
+          },
+        ],
+      }),
+    });
+    serve(w);
+    const { onClose } = renderPanel();
+    await userEvent.selectOptions(await screen.findByLabelText('Saved connection'), 'Cluster');
+    await userEvent.click(screen.getByRole('button', { name: 'Save and test connection' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Replace trusted key…' }));
+    screen.getByRole('button', { name: 'Keep the trusted key' }).focus();
+    await userEvent.keyboard('{Escape}');
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: /Replace key for/ })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Replace trusted key…' })).toHaveFocus();
+    expect(screen.getByLabelText('Saved connection')).toHaveValue(CONNECTION);
+  });
+
+  it('Escape in the stop confirmation keeps the session and returns focus', async () => {
+    const w = world({
+      connections: [sshConnection()],
+      sessions: [session()],
+      session: session(),
+      kernel: kernel('idle'),
+    });
+    serve(w);
+    const { onClose } = renderPanel();
+    await userEvent.click(await screen.findByRole('button', { name: 'Stop session' }));
+    screen.getByRole('button', { name: 'Keep it running' }).focus();
+    await userEvent.keyboard('{Escape}');
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.queryByRole('button', { name: 'Stop the session and its kernel' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Stop session' })).toHaveFocus();
   });
 
   it('A36 a lost kernel is not replaced silently: the warning shows and a new kernel starts only on request', async () => {
