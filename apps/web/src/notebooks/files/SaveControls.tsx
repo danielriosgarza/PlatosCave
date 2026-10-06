@@ -20,6 +20,8 @@ interface Props {
   onStale?: (current: WorkingCopyView) => void;
   /** Absolute workspace and host from the files listing: the destination of Save to computer. */
   workspace?: string;
+  /** The workspace listing has not answered yet. */
+  workspacePending?: boolean;
   host: string | null;
   /** Where Save to computer writes by default (relative to the workspace). */
   defaultPath?: string;
@@ -46,6 +48,7 @@ export function SaveControls({
   onWorkingCopy,
   onStale,
   workspace,
+  workspacePending = false,
   host,
   defaultPath = 'notebook.ipynb',
 }: Props) {
@@ -119,9 +122,10 @@ export function SaveControls({
   }
 
   // The panel re-renders with every message of a running notebook; compare only when an input moved.
+  const storedJson = useMemo(() => JSON.stringify(workingCopy.notebook), [workingCopy.notebook]);
   const unsaved = useMemo(
-    () => JSON.stringify(getNotebook()) !== JSON.stringify(workingCopy.notebook),
-    [getNotebook, workingCopy.notebook],
+    () => JSON.stringify(getNotebook()) !== storedJson,
+    [getNotebook, storedJson],
   );
 
   return (
@@ -196,8 +200,9 @@ export function SaveControls({
         <div className={styles.row}>
           <h4>Save to computer</h4>
           <p role="status">
-            The workspace on the computer could not be read, so saving to the computer is
-            unavailable. Saving to Parallax is not affected.
+            {workspacePending
+              ? 'Reading the workspace on the computer. Saving to Parallax does not wait for it.'
+              : 'The workspace on the computer could not be read, so saving to the computer is unavailable. Saving to Parallax is not affected.'}
           </p>
         </div>
       ) : (

@@ -45,33 +45,40 @@ const codeCells = (notebook: Json): Json[] =>
     (cell) => cell.cell_type === 'code',
   );
 
-/** The stored code by live cell id: by nbformat id, else by position among code cells. */
-export function sourcesFor(stored: Json, live: Notebook): Record<string, string> {
-  const out: Record<string, string> = {};
+/** Each live code cell with the stored cell it shows: by nbformat id, else by position. */
+function pairsOf(stored: Json, live: Notebook): { id: string; text: string; cell: Json }[] {
   const theirs = codeCells(stored);
-  const liveCode = live.cells.filter((c) => c.type === 'code');
   const byId = new Map(
     theirs.filter((c) => typeof c.id === 'string').map((c) => [c.id as string, c]),
   );
-  liveCode.forEach((cell, index) => {
-    const match =
-      byId.get(cell.id) ?? (theirs[index]?.id === undefined ? theirs[index] : undefined);
-    if (match) out[cell.id] = sourceText(match.source);
-  });
+  const out: { id: string; text: string; cell: Json }[] = [];
+  live.cells
+    .filter((c) => c.type === 'code')
+    .forEach((cell, index) => {
+      const match = byId.get(cell.id) ?? theirs[index];
+      if (match)
+        out.push({ id: cell.id, text: cell.type === 'code' ? cell.source : '', cell: match });
+    });
+  return out;
+}
+
+/** The stored code by live cell id. */
+export function sourcesFor(stored: Json, live: Notebook): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const { id, cell } of pairsOf(stored, live)) out[id] = sourceText(cell.source);
   return out;
 }
 
 /** The stored copy with the code the editor shows for every live code cell written into it. */
 export function notebookWith(base: Json, live: Notebook, sources: Record<string, string>): Json {
-  const shown = new Map(
-    live.cells.filter((c) => c.type === 'code').map((c) => [c.id, sources[c.id] ?? c.source]),
+  const shown = new Map<Json, string>(
+    pairsOf(base, live).map(({ id, text, cell }) => [cell, sources[id] ?? text]),
   );
   const cells = Array.isArray(base.cells) ? (base.cells as Json[]) : [];
   return {
     ...base,
     cells: cells.map((cell) => {
-      const text =
-        cell.cell_type === 'code' && typeof cell.id === 'string' ? shown.get(cell.id) : undefined;
+      const text = shown.get(cell);
       return text === undefined || text === sourceText(cell.source)
         ? cell
         : { ...cell, source: text };
@@ -87,7 +94,10 @@ interface Props {
   sources: Record<string, string>;
   onEdit: (cellId: string, value: string) => void;
   environment: Record<string, string | undefined>;
-  listing: WorkspaceListing;
+  /** From the workspace listing: undefined until it is read, or when it cannot be. */
+  workspace: string | undefined;
+  host: string | null;
+  workspacePending: boolean;
   onCopyInSettled: () => void;
 }
 
@@ -104,7 +114,9 @@ function Panels({
   sources,
   onEdit,
   environment,
-  listing,
+  workspace,
+  host,
+  workspacePending,
   onCopyInSettled,
 }: Props) {
   const queryClient = useQueryClient();
@@ -113,6 +125,11 @@ function Panels({
     queryKey: key,
     queryFn: () => call(getWorkingCopy, { params: { classId, revisionId }, query: {} }),
     retry: false,
+    // The copy changes only through responses Parallax acknowledged (save, import, a stale
+    // answer): a background refetch would move the base revision under the editor's code.
+    staleTime: Number.POSITIVE_INFINITY,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
   });
   const copy = stored.data;
   const keep = (next: WorkingCopyView) => queryClient.setQueryData(key, next);
@@ -156,7 +173,6 @@ function Panels({
     for (const [id, source] of Object.entries(sourcesFor(next.notebook, notebook)))
       onEdit(id, source);
   };
-  const workspace = listing.data?.workspace;
 
   return (
     <div className={live.panels}>
@@ -165,21 +181,19 @@ function Panels({
         sessionId={sessionId}
         workingCopy={copy}
         onWorkingCopy={imported}
-        onRevisionConflict={() => void queryClient.invalidateQueries({ queryKey: key })}
         onCopyInSettled={onCopyInSettled}
       />
-      {listing.isPending ? null : (
-        <SaveControls
-          classId={classId}
-          sessionId={sessionId}
-          workingCopy={copy}
-          getNotebook={getNotebook}
-          onWorkingCopy={keep}
-          onStale={keep}
-          workspace={workspace}
-          host={listing.data?.host ?? null}
-        />
-      )}
+      <SaveControls
+        classId={classId}
+        sessionId={sessionId}
+        workingCopy={copy}
+        getNotebook={getNotebook}
+        onWorkingCopy={keep}
+        onStale={keep}
+        workspace={workspace}
+        workspacePending={workspacePending}
+        host={host}
+      />
       <SubmitPanel
         classId={classId}
         sessionId={sessionId}

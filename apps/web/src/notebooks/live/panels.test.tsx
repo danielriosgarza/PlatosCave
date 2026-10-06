@@ -1,5 +1,5 @@
 import { EditorView } from '@codemirror/view';
-import { QueryClientProvider } from '@tanstack/react-query';
+import { focusManager, QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { type ReactNode, useState } from 'react';
@@ -282,5 +282,46 @@ describe('files, save and submit in the live notebook', () => {
     expect(await screen.findByRole('button', { name: 'Save to Parallax' })).toBeEnabled();
     expect(screen.getByText(/saving to the computer is unavailable/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Save to computer' })).not.toBeInTheDocument();
+  });
+
+  it('A34 edits to cells without nbformat ids are saved', async () => {
+    const idless = {
+      ...stored,
+      notebook: {
+        ...stored.notebook,
+        cells: [{ cell_type: 'code', source: 'x = 1', metadata: {}, outputs: [] }],
+      },
+    };
+    const fetchMock = mount([], {}, { copy: idless });
+    attach();
+    await screen.findByRole('heading', { name: 'Save' });
+    const editor = document.querySelector('[data-cell-id="c1"] .cm-content') as HTMLElement;
+    const cm = EditorView.findFromDOM(editor.closest('.cm-editor') as HTMLElement) as EditorView;
+    act(() => cm.dispatch({ changes: { from: 0, to: cm.state.doc.length, insert: 'y = 2' } }));
+    await screen.findByText(/changes that are not saved yet/);
+    fireEvent.click(screen.getByRole('button', { name: 'Save to Parallax' }));
+    await waitFor(() => {
+      const put = fetchMock.mock.calls.find(([, init]) => init?.method === 'PUT');
+      expect(JSON.parse(String(put?.[1]?.body))).toMatchObject({
+        baseRevision: 2,
+        notebook: { cells: [{ source: 'y = 2' }] },
+      });
+    });
+  });
+
+  it('A34 the working copy is not refetched behind the editor when the window regains focus', async () => {
+    const fetchMock = mount([]);
+    attach();
+    await screen.findByRole('heading', { name: 'Save' });
+    const reads = () =>
+      fetchMock.mock.calls.filter(([url]) => String(url).includes('/notebook-working-copies/'))
+        .length;
+    const before = reads();
+    act(() => {
+      focusManager.setFocused(false);
+      focusManager.setFocused(true);
+    });
+    await act(async () => {});
+    expect(reads()).toBe(before);
   });
 });

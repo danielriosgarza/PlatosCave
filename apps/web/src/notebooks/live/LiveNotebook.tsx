@@ -661,7 +661,9 @@ export function LiveNotebook({
           sources={sources}
           onEdit={stableEdit}
           environment={environment}
-          listing={gate.listing}
+          workspace={gate.listing.data?.workspace}
+          host={gate.listing.data?.host ?? null}
+          workspacePending={gate.listing.isPending}
           onCopyInSettled={gate.settle}
         />
       ) : null}
