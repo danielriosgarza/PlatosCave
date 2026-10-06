@@ -396,10 +396,80 @@ export const readMyResults = defineRoute({
         attemptId: z.uuid(),
         number: z.int(),
         status: z.enum(['in_progress', 'pending', 'released']),
+        /**
+         * Where the attempt is in the §11 diagram, so a `pending` attempt waiting on grading,
+         * on an instructor's review (a grading failure) or on release never share a display.
+         */
+        state: z.enum(testAttemptStates),
         grade: releasedGrade.nullable(),
       }),
     ),
   }),
   errors: { 400: invalidBody },
   examples: { params: { classId: exampleClass, resourceId: exampleResource } },
+});
+
+/** One check of a code question's grading run, as the release policy lets its student see it. */
+export const resultCheck = z.strictObject({
+  name: z.string(),
+  status: z.string(),
+  visibility: z.enum(['public', 'hidden']),
+  message: z.string().optional(),
+  expected: z.unknown().optional(),
+  actual: z.unknown().optional(),
+});
+
+/**
+ * A question of a released attempt: the prompt, the student's own submitted answer, and, only
+ * where the attempt's release policy permits, the solution and the hidden checks' details.
+ */
+export const resultQuestion = z.strictObject({
+  questionId: z.string(),
+  kind: z.enum(['choice', 'numeric', 'explanation', 'code']),
+  prompt: z.string(),
+  possible: z.number(),
+  options: z.array(z.strictObject({ id: z.string(), label: z.string() })).optional(),
+  unit: z.string().optional(),
+  /** The rubric criteria, so released criterion points read as labels. */
+  rubric: z.array(z.strictObject({ id: z.string(), label: z.string(), points: z.number() })),
+  /** The submitted answer as saved; null when the question was left unanswered. */
+  answer: z.unknown().nullable(),
+  /** Answer key of a choice or numeric question; null unless solutions are released. */
+  solution: z
+    .strictObject({
+      correct: z.array(z.string()).optional(),
+      value: z.number().optional(),
+      tolerance: z.number().optional(),
+    })
+    .nullable(),
+  /** Submitted files and the grading run's checks; null for a question that is not code. */
+  code: z
+    .strictObject({
+      files: z.array(z.strictObject({ path: z.string(), content: z.string() })),
+      /** Public checks always; hidden ones only when hidden test details are released. */
+      checks: z.array(resultCheck),
+      /** Passed and total among the checks listed, so hidden ones stay uncounted until released. */
+      checkTotals: z.strictObject({ passed: z.int(), total: z.int() }),
+    })
+    .nullable(),
+});
+
+/**
+ * Student: one released attempt in detail. 404 unless the attempt is the caller's own and has a
+ * released grade, so a draft, a pending grading or another student's attempt reveals nothing.
+ */
+export const readMyResultDetail = defineRoute({
+  method: 'GET',
+  path: '/api/classes/:classId/test-attempts/:attemptId/released',
+  scope: { kind: 'class', role: 'any' },
+  summary: 'Your released attempt: questions, your answers and what the release policy allows',
+  params: attemptParams,
+  response: z.strictObject({
+    attemptId: z.uuid(),
+    gradeId: z.uuid(),
+    solutionsShown: z.boolean(),
+    hiddenTestDetailsShown: z.boolean(),
+    questions: z.array(resultQuestion),
+  }),
+  examples: { params: { classId: exampleClass, attemptId: exampleAttempt } },
 });
