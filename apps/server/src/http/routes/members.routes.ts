@@ -89,9 +89,10 @@ export default function memberRoutes(app: FastifyInstance, deps: RouteDeps): voi
     scope.requireRecentAuth();
     const result = await members.setOwner(db(), scope, params.userId, body.granted, now());
     if (!result.ok) {
-      return result.reason === 'not_found' || result.reason === 'not_owner'
-        ? notFound()
-        : fail(409, { error: result.reason });
+      if (result.reason === 'not_found') return notFound();
+      // The caller stopped being an owner while the request waited: what the scope answers next time.
+      if (result.reason === 'not_owner') return fail(403, { error: 'forbidden' });
+      return fail(409, { error: result.reason });
     }
     return { userId: params.userId, owner: body.granted };
   });

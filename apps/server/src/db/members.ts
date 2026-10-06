@@ -3,7 +3,7 @@ import type { ClassManagerScope, CourseContext, CourseScope } from '../auth/scop
 import { audit } from './audit';
 import type { Db, Tx } from './client';
 import { otherActiveOwnerExists } from './courseOwners';
-import { openInvite, type RevokeReason, revokeInvites } from './invites';
+import { auditRevoked, openInvite, type RevokeReason, revokeInvites } from './invites';
 import {
   authSessions,
   classes,
@@ -187,12 +187,12 @@ async function lockCourseMembership(tx: Tx, scope: CourseContext, userId: string
 /** `current` is the person's course membership, read under `lockCourseMembership`. */
 async function dropEditorIfNotTeaching(
   tx: Tx,
-  scope: ClassManagerScope,
+  scope: CourseContext,
   userId: string,
   current: Awaited<ReturnType<typeof lockCourseMembership>>,
-) {
-  if (!current?.editor || current.owner) return;
-  if (await teachesCourse(tx, scope, userId)) return;
+): Promise<boolean | null> {
+  if (!current?.editor || current.owner) return null;
+  if (await teachesCourse(tx, scope, userId)) return null;
   await tx
     .update(courseMemberships)
     .set({ editor: false })
@@ -206,8 +206,9 @@ async function dropEditorIfNotTeaching(
     targetType: 'user',
     targetId: userId,
     before: { editor: true },
-    after: { editor: false, membershipRemoved, via: scope.via },
+    after: { editor: false, membershipRemoved, ...('via' in scope && { via: scope.via }) },
   });
+  return membershipRemoved;
 }
 
 /** A course membership holding no grant carries no meaning; drop it. True when it was dropped. */
@@ -304,10 +305,10 @@ export function setOwner(db: Db, scope: CourseScope, userId: string, granted: bo
         return { ok: false as const, reason: 'not_course_staff' as const };
     } else {
       if (!current?.owner) return { ok: true as const };
-      const [row] = await tx
-        .select({ other: sql<boolean>`${otherActiveOwnerExists(scope.courseId, userId)}` })
-        .from(sql`(select 1) as one`);
-      if (!row?.other) return { ok: false as const, reason: 'last_owner' as const };
+      const { rows } = await tx.execute<{ other: boolean }>(
+        sql`select ${otherActiveOwnerExists(scope.courseId, userId)} as other`,
+      );
+      if (!rows[0]?.other) return { ok: false as const, reason: 'last_owner' as const };
     }
     let membershipRemoved = false;
     if (granted) {
@@ -317,14 +318,21 @@ export function setOwner(db: Db, scope: CourseScope, userId: string, granted: bo
         .values({ courseId: scope.courseId, userId, owner: true, editor: true })
         .onConflictDoUpdate({
           target: [courseMemberships.courseId, courseMemberships.userId],
-          set: { owner: true },
+          set: { owner: true, editor: true },
         });
     } else {
       await tx
         .update(courseMemberships)
         .set({ owner: false })
         .where(and(forCourse(scope, courseMemberships), eq(courseMemberships.userId, userId)));
-      membershipRemoved = await tryDeleteEmpty(tx, scope, userId);
+      // Outside the owner's exemption, draft editing lasts only while teaching a class (§3), and
+      // nobody could take it away from a creator who never taught.
+      const editorDropped = await dropEditorIfNotTeaching(tx, scope, userId, {
+        owner: false,
+        editor: current?.editor ?? false,
+        publisher: current?.publisher ?? false,
+      });
+      membershipRemoved = editorDropped ?? (await tryDeleteEmpty(tx, scope, userId));
     }
     await audit(tx, {
       actorId: scope.user.id,
@@ -366,20 +374,9 @@ async function revokeOwnerInvites(tx: Tx, scope: CourseScope, userId: string, no
       ),
     )
     .returning({ id: classInvites.id, classId: classInvites.classId });
-  if (lapsed.length === 0) return;
-  await audit(
-    tx,
-    lapsed.map((invite) => ({
-      actorId: scope.user.id,
-      action: 'invite.revoke',
-      scopeKind: 'class' as const,
-      scopeId: invite.classId,
-      targetType: 'invite',
-      targetId: invite.id,
-      before: { revokedAt: null },
-      after: { reason: 'issuer_lost_ownership', revokedAt: now, via: 'course_owner' },
-    })),
-  );
+  await auditRevoked(tx, lapsed, scope.user.id, 'course_owner', now, {
+    reason: 'issuer_lost_ownership',
+  });
 }
 
 /** Publication is a course grant only the owner hands out (§3: "If delegated"). */

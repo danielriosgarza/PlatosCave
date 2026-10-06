@@ -301,18 +301,41 @@ export async function revokeInvites(
     .set({ revokedAt: now })
     .where(and(forClass(scope, classInvites), isNull(classInvites.revokedAt), where))
     .returning({ id: classInvites.id });
+  await auditRevoked(
+    tx,
+    revoked.map((invite) => ({ id: invite.id, classId: scope.classId })),
+    scope.user.id,
+    scope.via,
+    now,
+    extra,
+  );
+}
+
+/**
+ * The `invite.revoke` event of a revocation, one per invitation: the one shape every cascade
+ * records, whether it runs in one class (`revokeInvites`) or across the course (an owner's
+ * invitations lapsing with their ownership).
+ */
+export async function auditRevoked(
+  tx: Tx,
+  revoked: { id: string; classId: string }[],
+  actorId: string,
+  via: 'course_owner' | 'manage_members',
+  now: Date,
+  extra: { reason?: RevokeReason } = {},
+): Promise<void> {
   if (revoked.length === 0) return;
   await audit(
     tx,
     revoked.map((invite) => ({
-      actorId: scope.user.id,
+      actorId,
       action: 'invite.revoke',
-      scopeKind: 'class',
-      scopeId: scope.classId,
+      scopeKind: 'class' as const,
+      scopeId: invite.classId,
       targetType: 'invite',
       targetId: invite.id,
       before: { revokedAt: null },
-      after: { ...extra, revokedAt: now, via: scope.via },
+      after: { ...extra, revokedAt: now, via },
     })),
   );
 }

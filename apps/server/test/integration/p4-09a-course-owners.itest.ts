@@ -154,12 +154,13 @@ describe('granting and withdrawing course ownership', () => {
     expect((await membership(ids.statistics, ids.noor))?.owner).toBe(false);
   });
 
-  test('withdrawing keeps the other grants, and ends the old owner’s owner-only access', async () => {
+  test('withdrawing keeps publishing, and ends the old owner’s owner-only access', async () => {
     // Marcus owns the course with Elena; she hands it to him and steps back.
     expect((await setOwner('elena', ids.elena, false)).status).toBe(200);
+    // Elena created the course and teaches no class, so draft editing ends with ownership.
     expect(await membership(ids.statistics, ids.elena)).toMatchObject({
       owner: false,
-      editor: true,
+      editor: false,
       publisher: true,
     });
     expect((await setOwner('elena', ids.noor, true)).status).toBe(403);
@@ -227,12 +228,10 @@ describe('handing a course over before leaving', () => {
       send(b.cookie, 'PUT', ownerUrl(courseId, a.id), { granted: false }),
     ]);
     // One withdrawal wins; the other is refused, either as the last owner or, when it was
-    // resolved after the first, as no longer an owner (403 before the transaction, 404 inside it).
+    // resolved after the first, as no longer an owner (403 whether the role was checked before the transaction or inside it).
     expect([one.status, other.status].filter((status) => status === 200)).toHaveLength(1);
     expect(
-      [one.status, other.status].filter(
-        (status) => status === 409 || status === 403 || status === 404,
-      ),
+      [one.status, other.status].filter((status) => status === 409 || status === 403),
     ).toHaveLength(1);
     const owners = (
       await testDb.db
@@ -256,7 +255,7 @@ describe('authority around a withdrawal', () => {
       kind: 'instructor',
       email: `${key}@example.test`,
     });
-    expect(invite.status).toBe(201 === invite.status ? 201 : 200);
+    expect(invite.status).toBe(200);
     const accepted = await send(person.cookie, 'POST', '/api/invitations/accept', {
       token: invite.body.code,
     });
@@ -322,12 +321,20 @@ describe('authority around a withdrawal', () => {
     const m = await newPerson('race-m');
     const friend = await newPerson('race-f');
     const courseId = await createCourse(testDb.db, { title: 'Stale', ownerId: a.id });
-    await testDb.db.insert(courseMemberships).values([
-      { courseId, userId: m.id, owner: true, editor: true },
-      { courseId, userId: friend.id, editor: true },
-    ]);
     for (let round = 0; round < 6; round++) {
-      await send(a.cookie, 'PUT', ownerUrl(courseId, m.id), { granted: true });
+      // Neither teaches, so withdrawal also removes their draft editing and the row: set both up again.
+      for (const [userId, owner] of [
+        [m.id, true],
+        [friend.id, false],
+      ] as const) {
+        await testDb.db
+          .insert(courseMemberships)
+          .values({ courseId, userId, owner, editor: true })
+          .onConflictDoUpdate({
+            target: [courseMemberships.courseId, courseMemberships.userId],
+            set: { owner, editor: true },
+          });
+      }
       const results = await Promise.all([
         send(a.cookie, 'PUT', ownerUrl(courseId, m.id), { granted: false }),
         send(m.cookie, 'PUT', ownerUrl(courseId, m.id), { granted: true }),
@@ -335,9 +342,58 @@ describe('authority around a withdrawal', () => {
         send(m.cookie, 'PUT', ownerUrl(courseId, m.id), { granted: true }),
       ]);
       expect(results.map((r) => r.status).every((status) => status < 500)).toBe(true);
-      expect((await membership(courseId, m.id))?.owner, `round ${round}`).toBe(false);
-      await send(a.cookie, 'PUT', ownerUrl(courseId, friend.id), { granted: false });
+      expect((await membership(courseId, m.id))?.owner ?? false, `round ${round}`).toBe(false);
+      // A grant to the friend is legitimate when it ran before the withdrawal, so only the
+      // withdrawn owner's own standing is fixed: nothing may bring it back.
     }
+  });
+
+  test('a former owner keeps draft editing only while teaching a class of the course', async () => {
+    const draftsUrl = (courseId: string) => `/api/courses/${courseId}/drafts`;
+    // A creator who never taught: withdrawn, they lose the drafts and nobody has to remove them.
+    const creator = await newPerson('edit-creator');
+    const heir = await newPerson('edit-heir');
+    const courseId = await createCourse(testDb.db, { title: 'Hand over', ownerId: creator.id });
+    const created = await send(creator.cookie, 'POST', `/api/courses/${courseId}/classes`, {
+      name: 'K',
+    });
+    await teach(creator.cookie, created.body.id, heir, 'edit-heir');
+    expect((await send(creator.cookie, 'GET', draftsUrl(courseId))).status).toBe(200);
+    expect(
+      (await send(creator.cookie, 'PUT', ownerUrl(courseId, heir.id), { granted: true })).status,
+    ).toBe(200);
+    expect(
+      (await send(heir.cookie, 'PUT', ownerUrl(courseId, creator.id), { granted: false })).status,
+    ).toBe(200);
+    expect(await membership(courseId, creator.id)).toMatchObject({
+      owner: false,
+      editor: false,
+      publisher: true,
+    });
+    expect((await send(creator.cookie, 'GET', draftsUrl(courseId))).status).toBe(403);
+    const [dropped] = await testDb.db
+      .select()
+      .from(auditEvents)
+      .where(and(eq(auditEvents.action, 'grant.editor'), eq(auditEvents.targetId, creator.id)));
+    expect(dropped).toMatchObject({ actorId: heir.id, after: { editor: false } });
+
+    // One who teaches a class of the course keeps editing after the same hand-over.
+    const teacher = await newPerson('edit-teacher');
+    const other = await newPerson('edit-other');
+    const second = await createCourse(testDb.db, { title: 'Teaching owner', ownerId: teacher.id });
+    const klass = await send(teacher.cookie, 'POST', `/api/courses/${second}/classes`, {
+      name: 'L',
+    });
+    await teach(teacher.cookie, klass.body.id, teacher, 'edit-teacher');
+    await teach(teacher.cookie, klass.body.id, other, 'edit-other');
+    expect(
+      (await send(teacher.cookie, 'PUT', ownerUrl(second, other.id), { granted: true })).status,
+    ).toBe(200);
+    expect(
+      (await send(other.cookie, 'PUT', ownerUrl(second, teacher.id), { granted: false })).status,
+    ).toBe(200);
+    expect(await membership(second, teacher.id)).toMatchObject({ owner: false, editor: true });
+    expect((await send(teacher.cookie, 'GET', draftsUrl(second))).status).toBe(200);
   });
 
   test('withdrawing a co-owner while they close their account never fails with a server error', async () => {
