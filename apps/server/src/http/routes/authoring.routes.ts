@@ -10,11 +10,13 @@ import {
   type UploadFormat,
   uploadCourseFile,
   uploadFormats,
+  uploadWorkspaceFile,
 } from '@parallax/contracts/routes/authoring';
 import type { FastifyInstance } from 'fastify';
 import type { RouteDeps } from '../../app';
 import { courseOverview } from '../../db/courseOverview';
 import { listResourceJobStatus, type ResourceJobStatus } from '../../db/jobs/derived';
+import { courseObjectId } from '../../db/storage/objects';
 import { enqueueReadingIngest, isProcessed } from '../../jobs/reading-ingest.job';
 import { storeCourseObject } from '../../storage/objects';
 import { notFound, registerRoute } from '../register';
@@ -91,6 +93,19 @@ async function* checked(stream: Readable & { truncated?: boolean }, format: Uplo
   }
 }
 
+/** Passes the bytes through, refusing an empty file or one cut off at the size limit. */
+async function* nonEmpty(stream: Readable & { truncated?: boolean }) {
+  let empty = true;
+  for await (const chunk of stream.iterator({
+    destroyOnReturn: false,
+  }) as AsyncIterable<Buffer>) {
+    empty = false;
+    yield chunk;
+  }
+  if (stream.truncated) throw new UploadTooLarge();
+  if (empty) throw new UploadRejected('The file is empty');
+}
+
 /** Reads a stream to its end, discarding the bytes; stops quietly if it fails or is destroyed. */
 async function drain(stream: Readable): Promise<void> {
   if (stream.destroyed || stream.readableEnded) return;
@@ -153,6 +168,39 @@ export default function authoringRoutes(app: FastifyInstance, deps: RouteDeps): 
     } catch (err) {
       // Read the rest of a refused file and discard it before answering: unread, it stops the
       // request body and holds the connection until the client gives up.
+      await drain(part.file);
+      if (err instanceof UploadRejected) invalid(err.message);
+      if (err instanceof UploadTooLarge) {
+        throw app.httpErrors.payloadTooLarge(
+          `The file is larger than ${MAX_UPLOAD_BYTES / (1024 * 1024)} MB`,
+        );
+      }
+      throw err;
+    }
+  });
+
+  registerRoute(app, uploadWorkspaceFile, async ({ scope, req, fail }) => {
+    const invalid: (message: string) => never = (message) =>
+      fail(400, { error: 'invalid', message });
+    if (!req.isMultipart()) invalid('send the file as multipart/form-data');
+    const part = await req.file();
+    if (part?.fieldname !== 'file') invalid('the request has no file part');
+    if (!part.filename) invalid('the file part has no file name');
+    const filename = displayName(part.filename);
+    try {
+      // Objects are shared by hash within a course, so bytes first stored here keep this type
+      // for any later use of the same bytes (the object is recorded once).
+      const stored = await storeCourseObject(
+        db(),
+        deps.storage,
+        scope,
+        nonEmpty(part.file),
+        'application/octet-stream',
+      );
+      const id = await courseObjectId(db(), scope, stored.key);
+      if (!id) throw new Error('the stored object was not recorded');
+      return { id, key: stored.key, sha256: stored.sha256, size: stored.size, filename };
+    } catch (err) {
       await drain(part.file);
       if (err instanceof UploadRejected) invalid(err.message);
       if (err instanceof UploadTooLarge) {
