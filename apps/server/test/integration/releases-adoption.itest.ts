@@ -314,7 +314,7 @@ describe('class release and adoption', () => {
     );
     try {
       const quizV2 = await revise(ids.samplingQuiz, {
-        questions: [{ id: 'q1', prompt: 'Changed' }],
+        questions: [{ id: 'q1', kind: 'explanation', prompt: 'Changed', points: 1 }],
       });
       await db.update(resources).set({ archivedAt: now }).where(eq(resources.id, ids.answerKey));
       const v3 = (await publish('elena')).body.release;
@@ -359,7 +359,9 @@ describe('class release and adoption', () => {
         .from(resourceRevisions)
         .where(eq(resourceRevisions.id, ids.samplingQuizV1));
       expect(original?.content).toEqual({
-        questions: [{ id: 'q1', prompt: 'What is a sampling distribution?' }],
+        questions: [
+          { id: 'q1', kind: 'explanation', prompt: 'What is a sampling distribution?', points: 1 },
+        ],
       });
       const v1Pins = await db
         .select({ revisionId: releaseResources.resourceRevisionId })

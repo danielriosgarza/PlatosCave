@@ -142,10 +142,10 @@ export function useAnswers(
           try {
             const ack = await saveAnswer(classId, attemptId, id, { value, flagged, seq });
             const now = (store.current as Record<string, Entry>)[id] as Entry;
-            // The server keeps the value with the highest counter and answers with that counter. A
-            // higher one than this save's means another tab or device is ahead and this value was
-            // ignored: it is not saved. Move past that counter and send it again.
-            const ignored = ack.seq > seq;
+            // The server keeps the value with the highest counter and says whether this request's
+            // value is the one it stored. When it is not (another tab or device saved at this
+            // counter or above), this value is not saved: move past that counter and send it again.
+            const ignored = !ack.applied || ack.seq > seq;
             patch(id, {
               ackedSeq: Math.max(now.ackedSeq, ack.seq),
               savedAt: ack.savedAt,

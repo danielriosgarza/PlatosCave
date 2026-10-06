@@ -5,7 +5,7 @@ import type { FastifyInstance } from 'fastify';
 import pg from 'pg';
 import { type JobWithMetadata, PgBoss } from 'pg-boss';
 import { buildApp } from '../../src/app';
-import { loadConfig } from '../../src/config';
+import { DEV_RUNNER_RUNTIMES, loadConfig } from '../../src/config';
 import { adoptRelease } from '../../src/db/content/adoption';
 import { createResource } from '../../src/db/content/drafts';
 import { publishRelease } from '../../src/db/content/releases';
@@ -129,7 +129,7 @@ export async function execWorld(): Promise<ExecWorld> {
     start,
   );
   if (!created.ok) throw new Error(JSON.stringify(created));
-  const published = await publishRelease(testDb.db, course);
+  const published = await publishRelease(testDb.db, course, { runtimes: DEV_RUNNER_RUNTIMES });
   if (!published.ok) throw new Error(JSON.stringify(published.report));
   for (const [classId, instructor] of [
     [ids.classA, ids.priya],

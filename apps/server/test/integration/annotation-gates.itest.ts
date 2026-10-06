@@ -2,7 +2,7 @@ import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { buildApp } from '../../src/app';
-import { loadConfig } from '../../src/config';
+import { DEV_RUNNER_RUNTIMES, loadConfig } from '../../src/config';
 import { adoptRelease } from '../../src/db/content/adoption';
 import { publishRelease } from '../../src/db/content/releases';
 import { classes, posts, resources } from '../../src/db/schema';
@@ -167,7 +167,9 @@ async function scheduleInClassB(at: Date) {
     .update(resources)
     .set({ releaseAt: at })
     .where(eq(resources.id, ids.samplingReading));
-  const v2 = await publishRelease(testDb.db, asCourseScope(ids.statistics, ids.elena));
+  const v2 = await publishRelease(testDb.db, asCourseScope(ids.statistics, ids.elena), {
+    runtimes: DEV_RUNNER_RUNTIMES,
+  });
   if (!v2.ok) throw new Error(JSON.stringify(v2.report));
   const adopted = await adoptRelease(
     testDb.db,
