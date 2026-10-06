@@ -49,6 +49,33 @@ export const uploadCourseFile = defineRoute({
   examples: { params: { courseId: exampleCourseId } },
 });
 
+export const uploadedWorkspaceFile = z.object({
+  /** `storage_objects.id`: what a notebook's `metadata.parallax.files` names as `resourceId`. */
+  id: z.uuid(),
+  /** Content-addressed storage key; what the notebook revision lists in `objectKeys`. */
+  key: z.string(),
+  sha256: z.string(),
+  size: z.int(),
+  filename: z.string(),
+});
+
+/**
+ * Multipart body with one `file` part: a data file a notebook declares for its workspace
+ * (§10.5), of any type, up to MAX_UPLOAD_BYTES. The bytes are kept as opaque data
+ * (`application/octet-stream`) and are never rendered; they reach only a connector's workspace.
+ * 400 for an empty file; 413 for a file over the limit.
+ */
+export const uploadWorkspaceFile = defineRoute({
+  method: 'POST',
+  path: '/api/courses/:courseId/workspace-files',
+  scope: { kind: 'course', role: 'editor' },
+  summary: 'Store a data file for a notebook’s workspace in the course’s content-addressed storage',
+  params: courseParams,
+  response: uploadedWorkspaceFile,
+  errors: { 400: invalidBody, 413: errorBody },
+  examples: { params: { courseId: exampleCourseId } },
+});
+
 export const processingState = z.enum(['queued', 'running', 'ready', 'failed']);
 
 export const processingEntry = z.object({

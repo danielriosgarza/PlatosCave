@@ -254,13 +254,20 @@ function testApi(options: Options = {}) {
       }
       const savedAt = new Date().toISOString();
       const held = answers.get(id);
-      if (!held || body.seq > held.seq) {
+      const applied = !held || body.seq > held.seq;
+      if (applied) {
         answers.set(id, { value: body.value, flagged: body.flagged, seq: body.seq, savedAt });
       }
-      // Like the server: an older counter changes nothing and the answer carries the stored one.
+      // Like the server: a counter not above the stored one changes nothing, and the answer
+      // carries the stored counter and says this write was not applied.
       return {
         status: 200,
-        body: { questionId: id, seq: answers.get(id)?.seq ?? body.seq, savedAt },
+        body: {
+          questionId: id,
+          seq: answers.get(id)?.seq ?? body.seq,
+          savedAt: answers.get(id)?.savedAt ?? savedAt,
+          applied,
+        },
       };
     }
     if (url.endsWith('/submit')) {
@@ -469,6 +476,24 @@ describe('test UI: terms, navigation and answers', () => {
     await user.click(screen.getByRole('radio', { name: 'Standard error' }));
     await waitFor(() => expect(api.log.puts.map((p) => p.body.seq)).toEqual([1, 6]));
     expect(api.answers.get('q1')?.value).toEqual(['se']);
+    expect(await screen.findByText(/^Saved \d/)).toBeVisible();
+  });
+
+  it('A14 a save the server does not apply because another tab saved at the same counter is not shown as Saved and is sent again', async () => {
+    const user = userEvent.setup();
+    const api = testApi();
+    open();
+    await begin(user);
+    // Another tab saved Q1 with the counter this page is about to use.
+    api.answers.set('q1', {
+      value: ['sd'],
+      flagged: false,
+      seq: 1,
+      savedAt: new Date().toISOString(),
+    });
+    await user.click(screen.getByRole('radio', { name: 'Standard error' }));
+    await waitFor(() => expect(api.log.puts.map((p) => p.body.seq)).toEqual([1, 2]));
+    expect(api.answers.get('q1')).toMatchObject({ value: ['se'], seq: 2 });
     expect(await screen.findByText(/^Saved \d/)).toBeVisible();
   });
 });
