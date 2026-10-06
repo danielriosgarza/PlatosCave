@@ -380,17 +380,14 @@
   margin: 6px 0;
   padding-left: 10px;
   border-left: 3px solid var(--pc-ink);
-  font-size: 14px;
+  font: var(--pc-text-ui);
 }
 .codeLines {
   list-style: none;
   margin: 8px 0;
   padding: 0;
   border: 1px solid var(--pc-rule);
-  font:
-    14px / 1.6 ui-monospace,
-    Consolas,
-    monospace;
+  font: var(--pc-text-code);
   overflow-x: auto;
 }
 .codeLines li {
@@ -411,14 +408,14 @@
 }
 .codeLines .feedbackNote {
   grid-column: 2;
-  font-family: inherit;
+  font: var(--pc-text-ui);
   margin: 2px 10px 6px;
 }
 .checks {
   list-style: none;
   margin: 8px 0;
   padding: 0;
-  font-size: 14px;
+  font: var(--pc-text-ui);
 }
 .checks li {
   padding: 6px 0;

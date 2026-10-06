@@ -91,10 +91,38 @@ function Solution({ q }: { q: ResultQuestion }) {
   );
 }
 
+/** Line notes that match no line of a submitted file (another file, past the end, no answer). */
+function UnmatchedLines({ q, notes }: { q: ResultQuestion; notes: Feedback[] }) {
+  const lost = notes.filter((f) => {
+    if (f.target.kind !== 'line') return false;
+    const { path, line } = f.target;
+    const file = q.code?.files.find((x) => x.path === path);
+    return !file || line > file.content.split('\n').length;
+  });
+  if (lost.length === 0) return null;
+  return (
+    <>
+      {lost.map((f, k) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: notes may repeat their text.
+        <p key={k} className={styles.feedbackNote}>
+          <strong>
+            Instructor feedback on{' '}
+            {f.target.kind === 'line' ? `${f.target.path}, line ${f.target.line}` : ''}:
+          </strong>{' '}
+          {f.text}
+        </p>
+      ))}
+    </>
+  );
+}
+
 function CodeAnswer({ q, lineFeedback }: { q: ResultQuestion; lineFeedback: Feedback[] }) {
   if (!q.code) return null;
   return (
     <>
+      {q.code.files.length === 0 ? (
+        <p className={styles.muted}>You left this question unanswered.</p>
+      ) : null}
       {q.code.files.map((file) => (
         <div key={file.path}>
           <p className={styles.small}>
@@ -112,8 +140,9 @@ function CodeAnswer({ q, lineFeedback }: { q: ResultQuestion; lineFeedback: Feed
                 <li key={i}>
                   <span>{line}</span>
                   <pre>{text || ' '}</pre>
-                  {notes.map((n) => (
-                    <FeedbackNote key={n.text} item={n} />
+                  {notes.map((n, k) => (
+                    // biome-ignore lint/suspicious/noArrayIndexKey: notes may repeat their text.
+                    <FeedbackNote key={k} item={n} />
                   ))}
                 </li>
               );
@@ -123,10 +152,7 @@ function CodeAnswer({ q, lineFeedback }: { q: ResultQuestion; lineFeedback: Feed
       ))}
       <h4>Checks</h4>
       <p>
-        {q.code.checkTotals.passed} of {q.code.checkTotals.total} checks passed
-        {q.code.checks.length < q.code.checkTotals.total
-          ? '. Details of the remaining checks are not shown for this test.'
-          : '.'}
+        {q.code.checkTotals.passed} of {q.code.checkTotals.total} checks passed.
       </p>
       <ul className={styles.checks}>
         {q.code.checks.map((c) => (
@@ -179,9 +205,11 @@ function QuestionResult({ index, q, grade }: { index: number; q: ResultQuestion;
           })}
         </ul>
       ) : null}
-      {ofQuestion.map((f) => (
-        <FeedbackNote key={f.text} item={f} />
+      {ofQuestion.map((f, k) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: notes may repeat their text.
+        <FeedbackNote key={k} item={f} />
       ))}
+      {q.kind === 'code' ? <UnmatchedLines q={q} notes={ofLines} /> : null}
     </section>
   );
 }
@@ -192,16 +220,23 @@ export function ResultsView({
   title,
   attempt,
   onBack,
+  onReleaseChanged,
 }: {
   classId: string;
   title: string;
   attempt: ResultAttempt;
   onBack: () => void;
+  /** The detail belongs to a newer release than the grade held: reload the list and reopen. */
+  onReleaseChanged: () => void;
 }) {
   const detail = useResultDetail(classId, attempt.attemptId);
   const heading = useRef<HTMLHeadingElement>(null);
   const grade = attempt.grade;
   useEffect(() => heading.current?.focus(), []);
+  const stale = detail.data !== undefined && detail.data.gradeId !== grade?.gradeId;
+  useEffect(() => {
+    if (stale) onReleaseChanged();
+  }, [stale, onReleaseChanged]);
   if (!grade) return null;
   const wholeAttempt = grade.feedback.filter((f) => f.target.kind === 'attempt');
   return (
@@ -220,10 +255,11 @@ export function ResultsView({
           Your instructor adjusted this score after grading.
         </p>
       ) : null}
-      {wholeAttempt.map((f) => (
-        <FeedbackNote key={f.text} item={f} />
+      {wholeAttempt.map((f, k) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: notes may repeat their text.
+        <FeedbackNote key={k} item={f} />
       ))}
-      {detail.data ? (
+      {detail.data && !stale ? (
         detail.data.questions.map((q, i) => (
           <QuestionResult key={q.questionId} index={i} q={q} grade={grade} />
         ))

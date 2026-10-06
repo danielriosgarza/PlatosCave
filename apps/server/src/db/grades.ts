@@ -715,25 +715,29 @@ type StoredCheck = {
   actual?: unknown;
 };
 
-/** The checks recorded by a grading result, hidden ones included; only the server reads this. */
+/** The checks recorded by grading results, hidden ones included; only the server reads this. */
 async function storedChecks(
   ex: Ex,
   scope: ClassScope,
   attemptId: string,
-  resultId: string,
-): Promise<StoredCheck[]> {
-  const [row] = await ex
-    .select({ outcome: executionResults.outcome })
+  resultIds: string[],
+): Promise<Map<string, StoredCheck[]>> {
+  if (resultIds.length === 0) return new Map();
+  const rows = await ex
+    .select({ id: executionResults.id, outcome: executionResults.outcome })
     .from(executionResults)
     .where(
       and(
         forClass(scope, executionResults),
         eq(executionResults.attemptId, attemptId),
-        eq(executionResults.id, resultId),
+        inArray(executionResults.id, resultIds),
       ),
     );
-  return (
-    (row?.outcome as { result?: { checks?: StoredCheck[] } } | undefined)?.result?.checks ?? []
+  return new Map(
+    rows.map((r) => [
+      r.id,
+      (r.outcome as { result?: { checks?: StoredCheck[] } }).result?.checks ?? [],
+    ]),
   );
 }
 
@@ -767,8 +771,14 @@ export async function myResultDetail(
   );
   const grade = released.get(attempt.id);
   if (!grade) return undefined;
-  const test = await pinnedTest(db, attempt);
-  const answers = await answersOf(db, scope, attempt.id);
+  const resultIds = grade.questions.flatMap((s) =>
+    s.automated?.resultId ? [s.automated.resultId] : [],
+  );
+  const [test, answers, stored] = await Promise.all([
+    pinnedTest(db, attempt),
+    answersOf(db, scope, attempt.id),
+    storedChecks(db, scope, attempt.id, resultIds),
+  ]);
   const { solutions, hiddenTestDetails } = attempt.settings.release;
   const solutionsShown = solutions === 'with_results';
   const questions: ResultQuestion[] = [];
@@ -804,31 +814,30 @@ export async function myResultDetail(
         break;
       case 'code': {
         const resultId = grade.questions.find((s) => s.questionId === q.id)?.automated?.resultId;
-        const stored = resultId ? await storedChecks(db, scope, attempt.id, resultId) : [];
         const visibility = new Map(q.checks.map((c) => [c.name, c.visibility]));
-        const checks = stored.map((c) => ({
+        const checks = (resultId ? (stored.get(resultId) ?? []) : []).map((c) => ({
           ...c,
           visibility: visibility.get(c.name) ?? 'hidden',
         }));
+        const shown = checks.filter((c) => c.visibility === 'public' || hiddenTestDetails);
         const files = (answer as { files?: { path: string; content: string }[] } | null)?.files;
         questions.push({
           ...base,
           solution: null,
           code: {
             files: (files ?? []).map((f) => ({ path: f.path, content: f.content })),
-            checks: checks
-              .filter((c) => c.visibility === 'public' || hiddenTestDetails)
-              .map((c) => ({
-                name: c.name,
-                status: c.status,
-                visibility: c.visibility,
-                ...(c.message !== undefined && { message: c.message }),
-                ...(c.expected !== undefined && { expected: c.expected }),
-                ...(c.actual !== undefined && { actual: c.actual }),
-              })),
+            checks: shown.map((c) => ({
+              name: c.name,
+              status: c.status,
+              visibility: c.visibility,
+              ...(c.message !== undefined && { message: c.message }),
+              ...(c.expected !== undefined && { expected: c.expected }),
+              ...(c.actual !== undefined && { actual: c.actual }),
+            })),
+            /** Of the checks shown: hidden ones are counted only when their details are. */
             checkTotals: {
-              passed: checks.filter((c) => c.status === 'passed').length,
-              total: checks.length,
+              passed: shown.filter((c) => c.status === 'passed').length,
+              total: shown.length,
             },
           },
         });

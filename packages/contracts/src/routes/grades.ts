@@ -448,7 +448,7 @@ export const resultQuestion = z.strictObject({
       files: z.array(z.strictObject({ path: z.string(), content: z.string() })),
       /** Public checks always; hidden ones only when hidden test details are released. */
       checks: z.array(resultCheck),
-      /** Every check of the grading run, shown or not. */
+      /** Passed and total among the checks listed, so hidden ones stay uncounted until released. */
       checkTotals: z.strictObject({ passed: z.int(), total: z.int() }),
     })
     .nullable(),

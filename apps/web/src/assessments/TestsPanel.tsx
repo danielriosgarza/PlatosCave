@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ApiError } from '../api/client';
 import buttons from '../components/Buttons.module.css';
 import { Loading } from '../components/Loading';
@@ -144,6 +144,18 @@ function TestEntry({
   const [open, setOpen] = useState<AttemptView | null>(null);
   const [starting, setStarting] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  const returnTo = useRef<string | null>(null);
+  // Back from feedback puts focus on the button that opened it, so keyboard users keep their place.
+  useEffect(() => {
+    if (viewing === null && returnTo.current) {
+      document.getElementById(`pc-feedback-${returnTo.current}`)?.focus();
+      returnTo.current = null;
+    }
+  }, [viewing]);
+  const refresh = () => {
+    void overview.refetch();
+    void results.refetch();
+  };
   if (open) {
     return (
       <AttemptWorkspace
@@ -153,7 +165,7 @@ function TestEntry({
         initial={open}
         onLeave={() => {
           setOpen(null);
-          void overview.refetch();
+          refresh();
         }}
       />
     );
@@ -165,7 +177,17 @@ function TestEntry({
         classId={classId}
         title={resource.title}
         attempt={viewing}
-        onBack={() => setViewing(null)}
+        onBack={() => {
+          returnTo.current = viewing.attemptId;
+          setViewing(null);
+        }}
+        onReleaseChanged={() =>
+          void results
+            .refetch()
+            .then((r) =>
+              setViewing(r.data?.attempts.find((a) => a.attemptId === viewing.attemptId) ?? null),
+            )
+        }
       />
     );
   }
@@ -200,7 +222,7 @@ function TestEntry({
         (body?.reason ? INELIGIBLE[body.reason] : undefined) ??
           'The attempt could not be started. Check your connection and try again.',
       );
-      void overview.refetch();
+      refresh();
     } finally {
       setStarting(false);
     }
@@ -261,7 +283,12 @@ function TestEntry({
       {data.attempts.length > 0 ? (
         <ul className={styles.attempts} aria-label="Your attempts">
           {data.attempts.map((a) => {
-            const result = results.data?.attempts.find((r) => r.attemptId === a.id);
+            const listed = results.data?.attempts.find((r) => r.attemptId === a.id);
+            // The overview is the fresher read once it says submitted; never show "not submitted" then.
+            const result =
+              listed && a.state !== 'in_progress' && listed.status === 'in_progress'
+                ? undefined
+                : listed;
             return (
               <li key={a.id}>
                 <span>
@@ -281,6 +308,7 @@ function TestEntry({
                 {result?.status === 'released' ? (
                   <button
                     type="button"
+                    id={`pc-feedback-${result.attemptId}`}
                     className={buttons.outline}
                     onClick={() => setViewing(result)}
                   >

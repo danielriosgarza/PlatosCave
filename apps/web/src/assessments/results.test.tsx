@@ -38,11 +38,17 @@ const terms = {
 };
 
 /** An attempt as the overview lists it and as the results route reports it. */
-const attempt = (n: number, state: string, status: string, grade: unknown = null) => ({
+const attempt = (
+  n: number,
+  state: string,
+  status: string,
+  grade: unknown = null,
+  listedAs?: string,
+) => ({
   summary: {
     id: uuid(0xa00 + n),
     number: n,
-    state: status === 'in_progress' ? 'in_progress' : state,
+    state: listedAs ?? (status === 'in_progress' ? 'in_progress' : state),
     resourceRevisionId: uuid(0xa3),
     startedAt: '2026-10-05T09:00:00Z',
     deadlineAt: null,
@@ -97,7 +103,7 @@ const detail = {
       code: {
         files: [{ path: 'solution.py', content: CODE }],
         checks: [{ name: 'sample', status: 'passed', visibility: 'public' }],
-        checkTotals: { passed: 1, total: 2 },
+        checkTotals: { passed: 1, total: 1 },
       },
     },
     {
@@ -213,7 +219,9 @@ describe('student results view', () => {
       await screen.findByText('Reported grade: 8 of 10 points (latest attempt)'),
     ).toBeVisible();
     expect(screen.getByText('Result: 8 of 10 points')).toBeVisible();
-    await user.click(screen.getByRole('button', { name: 'View feedback for attempt 1' }));
+    const opener = screen.getByRole('button', { name: 'View feedback for attempt 1' });
+    opener.focus();
+    await user.keyboard('{Enter}');
 
     expect(
       await screen.findByRole('heading', { name: 'Sampling and uncertainty · attempt 1 feedback' }),
@@ -235,10 +243,8 @@ describe('student results view', () => {
     expect(within(lines[0] as HTMLElement).queryByText(/Hard-coded value/)).toBeNull();
     expect(within(lines[1] as HTMLElement).getByText(/Hard-coded value/)).toBeVisible();
 
-    // Hidden checks are counted, not described, under the default release policy.
-    expect(
-      screen.getByText(/1 of 2 checks passed\. Details of the remaining checks/),
-    ).toBeVisible();
+    // Hidden checks are neither named nor counted under the default release policy.
+    expect(screen.getByText('1 of 1 checks passed.')).toBeVisible();
     expect(screen.queryByText(/hidden-large/)).toBeNull();
 
     await user.click(screen.getByRole('button', { name: 'Back to attempts' }));
@@ -266,5 +272,45 @@ describe('student results view', () => {
     expect(text(5)).toContain('Submitted · not graded yet');
     // Only the released attempt offers feedback to open.
     expect(within(list).getAllByRole('button')).toHaveLength(1);
+  });
+
+  it('A20 feedback on a line the submitted files do not have is listed with its location', async () => {
+    const user = userEvent.setup();
+    serve([
+      attempt(
+        1,
+        'released',
+        'released',
+        released(8, [
+          {
+            target: { kind: 'line', questionId: 'mean', path: 'solution.py', line: 40 },
+            text: 'Past the end.',
+          },
+          {
+            target: { kind: 'line', questionId: 'mean', path: 'helpers.py', line: 1 },
+            text: 'Not your file.',
+          },
+          {
+            target: { kind: 'line', questionId: 'mean', path: 'helpers.py', line: 2 },
+            text: 'Not your file.',
+          },
+        ]),
+      ),
+    ]);
+    open();
+    await user.click(await screen.findByRole('button', { name: 'View feedback for attempt 1' }));
+    expect(await screen.findByText('Instructor feedback on solution.py, line 40:')).toBeVisible();
+    expect(screen.getByText('Past the end.')).toBeVisible();
+    expect(screen.getByText('Instructor feedback on helpers.py, line 1:')).toBeVisible();
+    expect(screen.getByText('Instructor feedback on helpers.py, line 2:')).toBeVisible();
+  });
+
+  it('A20 an attempt the overview says is submitted never reads as not submitted', async () => {
+    serve([attempt(1, 'in_progress', 'in_progress', null, 'submitted')]);
+    // The results read predates the submission; the overview already lists the attempt as submitted.
+    open();
+    const list = await screen.findByRole('list', { name: 'Your attempts' });
+    expect(within(list).queryByText(/Not submitted yet/)).toBeNull();
+    expect(within(list).getByText(/Submitted/)).toBeVisible();
   });
 });

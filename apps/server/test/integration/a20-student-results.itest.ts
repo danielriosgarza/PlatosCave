@@ -128,7 +128,7 @@ describe('A20 released feedback in detail', () => {
       code: {
         files: [{ path: 'solution.py', content: CODE }],
         checks: [{ name: 'sample', status: 'passed', visibility: 'public' }],
-        checkTotals: { passed: 2, total: 2 },
+        checkTotals: { passed: 1, total: 1 },
       },
     });
     expect(mean.code.checks).toHaveLength(1);
@@ -149,6 +149,7 @@ describe('A20 released feedback in detail', () => {
       'hidden-large',
     ]);
     expect(mean.code.checks[1]).toMatchObject({ visibility: 'hidden', status: 'passed' });
+    expect(mean.code.checkTotals).toEqual({ passed: 2, total: 2 });
     expect(pick.solution).toEqual({ correct: ['b'] });
   });
 
