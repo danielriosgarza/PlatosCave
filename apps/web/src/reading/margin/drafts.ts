@@ -48,6 +48,26 @@ export function beginSend(key: string): () => void {
   };
 }
 
+/**
+ * Runs a device write of draft `key` as a pending write: `sendsSettled` waits on it, so a margin
+ * that comes back before it commits cannot read the draft as it stood (a deleted note or a cleared
+ * question restored as unsent). Writes register themselves; callers need not await them.
+ */
+async function pending<T>(key: string, write: () => Promise<T>): Promise<T> {
+  const done = beginSend(key);
+  try {
+    return await write();
+  } finally {
+    done();
+  }
+}
+
+/**
+ * Test seam: while set, `removeDraft` waits for it before touching the store (after registering
+ * itself as pending). Use `holdDraftDeletes` from `test/draftHold.ts`; production code never sets it.
+ */
+export const draftWriteHold: { deletes: Promise<void> | null } = { deletes: null };
+
 /** Resolves once no send of this person's drafts for this resource is running any more. */
 export async function sendsSettled(
   userId: string,
@@ -149,7 +169,7 @@ export async function saveDraft(draft: Draft): Promise<boolean> {
   listen();
   if (signedOut.has(draft.userId)) return false;
   memory.set(draft.key, draft);
-  return put(draft);
+  return pending(draft.key, () => put(draft));
 }
 
 async function put(record: { key: string; userId: string }): Promise<boolean> {
@@ -244,18 +264,21 @@ export async function removeAttemptCopy(
 /** Resolves once the browser's store has committed the delete (or could not take it). */
 export async function removeDraft(key: string): Promise<void> {
   memory.delete(key);
-  const db = await database();
-  if (!db) return;
-  await new Promise<void>((resolve) => {
-    try {
-      const tx = db.transaction(STORE, 'readwrite');
-      tx.objectStore(STORE).delete(key);
-      tx.oncomplete = () => resolve();
-      tx.onerror = () => resolve();
-      tx.onabort = () => resolve();
-    } catch {
-      resolve();
-    }
+  await pending(key, async () => {
+    await draftWriteHold.deletes;
+    const db = await database();
+    if (!db) return;
+    await new Promise<void>((resolve) => {
+      try {
+        const tx = db.transaction(STORE, 'readwrite');
+        tx.objectStore(STORE).delete(key);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => resolve();
+        tx.onabort = () => resolve();
+      } catch {
+        resolve();
+      }
+    });
   });
 }
 

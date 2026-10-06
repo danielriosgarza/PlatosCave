@@ -11,6 +11,7 @@ import {
   saveDraft,
 } from '../reading/margin/drafts';
 import type { PdfDocument } from '../reading/pdfjs';
+import { holdDraftDeletes } from '../test/draftHold';
 import {
   CLASS_A,
   makeMe,
@@ -24,18 +25,6 @@ import {
 
 const openPdf = vi.hoisted(() => vi.fn());
 vi.mock('../reading/pdfjs', () => ({ openPdf }));
-
-const deletes = vi.hoisted(() => ({ hold: null as Promise<void> | null }));
-vi.mock('../reading/margin/drafts', async (importOriginal) => {
-  const real = await importOriginal<typeof import('../reading/margin/drafts')>();
-  return {
-    ...real,
-    removeDraft: async (key: string) => {
-      await deletes.hold;
-      return real.removeDraft(key);
-    },
-  };
-});
 
 const RES = '00000000-0000-4000-8000-000000000401';
 const REV = '00000000-0000-4000-8000-000000000601';
@@ -140,6 +129,10 @@ function api(w: World) {
       const saved = { ...held, body: String(body?.body), revision: held.revision + 1 };
       w.annotations = w.annotations.map((a) => (a.id === saved.id ? saved : a));
       return { status: 200, body: saved };
+    }
+    if (saving && method === 'DELETE') {
+      w.annotations = w.annotations.filter((a) => a.id !== saving[1]);
+      return { status: 200, body: { id: saving[1] } };
     }
     if (url === `${BASE}/resources/${RES}/threads` && method === 'POST') {
       const anchor = body?.anchor as Thread['anchor'];
@@ -313,10 +306,7 @@ describe('slide notes', () => {
     const w = world();
     api(w);
     // The device's delete of the posted question's draft stays uncommitted until the test lets it go.
-    let release: () => void = () => {};
-    deletes.hold = new Promise<void>((resolve) => {
-      release = resolve;
-    });
+    const release = holdDraftDeletes();
     const { margin } = await openNotes(user);
     await user.click(screen.getByRole('button', { name: /^Discussion/ }));
     await user.type(screen.getByLabelText('Comment or question'), 'Is slide 1 on the test?');
@@ -338,6 +328,81 @@ describe('slide notes', () => {
     if (!discussion) await user.click(await screen.findByRole('button', { name: /^Discussion/ }));
     expect(screen.getByLabelText('Comment or question')).toHaveValue('');
     expect(w.calls.filter((c) => c.method === 'POST')).toHaveLength(1);
+    await waitFor(async () => expect(await listDrafts(SAM_ID, CLASS_A, RES)).toEqual([]));
+  });
+
+  it('A24 a remount before a deleted note\u2019s device copy is gone does not bring the note back', async () => {
+    const user = userEvent.setup();
+    const w = world([note(uuid(1), 0, 'Gone soon')]);
+    const mock = api(w);
+    const original = mock.getMockImplementation() as (
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ) => Promise<Response>;
+    // The device's delete is held from the moment the server's delete arrives: the one that follows
+    // the server's answer is the one under test.
+    let release: () => void = () => {};
+    mock.mockImplementation(async (input, init) => {
+      if (init?.method === 'DELETE') {
+        // A save that finished during the delete wrote the device copy again; clearing it is held.
+        await saveDraft(late);
+        release = holdDraftDeletes();
+      }
+      return original(input, init);
+    });
+    const late = {
+      key: draftKey(SAM_ID, CLASS_A, RES, uuid(1)),
+      userId: SAM_ID,
+      classId: CLASS_A,
+      resourceId: RES,
+      kind: 'note' as const,
+      annotationId: uuid(1),
+      expectedRevision: 1,
+      anchor: { kind: 'slide' as const, page: 0 },
+      body: 'Unsent edit',
+      audience: null,
+      updatedAt: Date.now(),
+    };
+    await saveDraft(late);
+    await openNotes(user);
+    await waitFor(async () => expect(await noteField(1)).toHaveValue('Unsent edit'));
+    await user.click(screen.getByRole('button', { name: 'Delete note' }));
+    await waitFor(() => expect(w.annotations).toEqual([]));
+    cleanup();
+    renderApp(SLIDES);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    const notes = screen.queryByRole('button', { name: 'Notes' });
+    if (notes) await user.click(notes);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(screen.queryByDisplayValue('Unsent edit')).toBeNull();
+    release();
+    if (!notes) await user.click(await screen.findByRole('button', { name: 'Notes' }));
+    expect(await noteField(1)).toHaveValue('');
+    await waitFor(async () => expect(await listDrafts(SAM_ID, CLASS_A, RES)).toEqual([]));
+  });
+
+  it('A05 a remount before a cleared question box\u2019s device copy is gone does not bring the text back', async () => {
+    const user = userEvent.setup();
+    api(world());
+    const release = holdDraftDeletes();
+    await openNotes(user);
+    await user.click(screen.getByRole('button', { name: /^Discussion/ }));
+    const box = screen.getByLabelText('Comment or question');
+    await user.type(box, 'Is slide 1 on the test?');
+    await waitFor(async () => expect(await listDrafts(SAM_ID, CLASS_A, RES)).toHaveLength(1));
+    await user.clear(box);
+    cleanup();
+    renderApp(SLIDES);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    const notes = screen.queryByRole('button', { name: 'Notes' });
+    if (notes) await user.click(notes);
+    const discussion = screen.queryByRole('button', { name: /^Discussion/ });
+    if (discussion) await user.click(discussion);
+    expect(screen.queryByDisplayValue('Is slide 1 on the test?')).toBeNull();
+    release();
+    if (!notes) await user.click(await screen.findByRole('button', { name: 'Notes' }));
+    if (!discussion) await user.click(await screen.findByRole('button', { name: /^Discussion/ }));
+    expect(screen.getByLabelText('Comment or question')).toHaveValue('');
     await waitFor(async () => expect(await listDrafts(SAM_ID, CLASS_A, RES)).toEqual([]));
   });
 

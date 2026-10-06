@@ -2,6 +2,7 @@ import 'fake-indexeddb/auto';
 import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { holdDraftDeletes } from '../../test/draftHold';
 import {
   CLASS_A,
   makeMe,
@@ -15,18 +16,6 @@ import {
 import type { ReadingList } from '../readings';
 import type { Annotation, MarginList, Thread } from './data';
 import { allowDrafts, clearDrafts, draftKey, listDrafts, saveDraft } from './drafts';
-
-const deletes = vi.hoisted(() => ({ hold: null as Promise<void> | null }));
-vi.mock('./drafts', async (importOriginal) => {
-  const real = await importOriginal<typeof import('./drafts')>();
-  return {
-    ...real,
-    removeDraft: async (key: string) => {
-      await deletes.hold;
-      return real.removeDraft(key);
-    },
-  };
-});
 
 const RES = '00000000-0000-4000-8000-000000000401';
 const REV = '00000000-0000-4000-8000-000000000501';
@@ -1062,10 +1051,7 @@ describe('reading margin: layout and sign-out', () => {
     const w = world();
     api(w);
     // The device's delete of the posted question's draft stays uncommitted until the test lets it go.
-    let release: () => void = () => {};
-    deletes.hold = new Promise<void>((resolve) => {
-      release = resolve;
-    });
+    const release = holdDraftDeletes();
     const user = userEvent.setup();
     await open();
     await user.click(screen.getByRole('button', { name: /^Discussion/ }));
@@ -1086,6 +1072,74 @@ describe('reading margin: layout and sign-out', () => {
     await user.click(await screen.findByRole('button', { name: /^Discussion/ }));
     expect(screen.getByRole('textbox', { name: 'Comment or question' })).toHaveValue('');
     expect(w.threads).toHaveLength(1);
+    expect(await listDrafts(SAM_ID, CLASS_A, RES)).toEqual([]);
+  });
+
+  it('A03 a remount before a deleted note\u2019s device copy is gone does not bring the note back', async () => {
+    const w = world([noteOf(uuid(1), textAnchor(B3, 0, 5, P3), 'Gone soon')]);
+    const mock = api(w);
+    const original = mock.getMockImplementation() as (
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ) => Promise<Response>;
+    let release: () => void = () => {};
+    const late = {
+      key: draftKey(SAM_ID, CLASS_A, RES, uuid(1)),
+      userId: SAM_ID,
+      classId: CLASS_A,
+      resourceId: RES,
+      kind: 'note' as const,
+      annotationId: uuid(1),
+      expectedRevision: 1,
+      anchor: textAnchor(B3, 0, 5, P3),
+      body: 'Unsent edit',
+      audience: null,
+      updatedAt: Date.now(),
+    };
+    mock.mockImplementation(async (input, init) => {
+      if (init?.method === 'DELETE') {
+        // A save that finished during the delete wrote the device copy again; clearing it is held.
+        await saveDraft(late);
+        release = holdDraftDeletes();
+      }
+      return original(input, init);
+    });
+    await saveDraft(late);
+    const user = userEvent.setup();
+    await open();
+    await user.click(await screen.findByRole('button', { name: /^Note 1/ }));
+    await user.click(screen.getByRole('button', { name: 'Delete note' }));
+    await waitFor(() => expect(w.annotations).toEqual([]));
+    // The server has deleted it; the device's copy is still being removed when the margin remounts.
+    await user.click(screen.getByRole('tab', { name: 'Slides' }));
+    await user.click(screen.getByRole('tab', { name: 'Reading' }));
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(screen.queryByDisplayValue('Unsent edit')).toBeNull();
+    release();
+    await screen.findByRole('button', { name: 'My notes' });
+    await waitFor(async () => expect(await listDrafts(SAM_ID, CLASS_A, RES)).toEqual([]));
+    expect(screen.queryByDisplayValue('Unsent edit')).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Note 1/ })).toBeNull();
+    expect(w.annotations).toEqual([]);
+  });
+
+  it('A05 a remount before a cleared question box\u2019s device copy is gone does not bring the text back', async () => {
+    api(world());
+    const release = holdDraftDeletes();
+    const user = userEvent.setup();
+    await open();
+    await user.click(screen.getByRole('button', { name: /^Discussion/ }));
+    const box = screen.getByRole('textbox', { name: 'Comment or question' });
+    await user.type(box, 'Why n minus one?');
+    await waitFor(async () => expect(await listDrafts(SAM_ID, CLASS_A, RES)).toHaveLength(1));
+    await user.clear(box);
+    await user.click(screen.getByRole('tab', { name: 'Slides' }));
+    await user.click(screen.getByRole('tab', { name: 'Reading' }));
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(screen.queryByDisplayValue('Why n minus one?')).toBeNull();
+    release();
+    await user.click(await screen.findByRole('button', { name: /^Discussion/ }));
+    expect(screen.getByRole('textbox', { name: 'Comment or question' })).toHaveValue('');
     expect(await listDrafts(SAM_ID, CLASS_A, RES)).toEqual([]);
   });
 
