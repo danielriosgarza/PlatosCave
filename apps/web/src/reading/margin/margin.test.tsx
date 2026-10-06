@@ -963,23 +963,30 @@ describe('reading margin: layout and sign-out', () => {
     const mock = api(w);
     const posts = () =>
       mock.mock.calls.filter(([, init]) => (init as RequestInit | undefined)?.method === 'POST');
-    // The device's delete of the acknowledged note's copy never commits before the page goes away.
+    // The device's delete of the acknowledged note's copy stays uncommitted: its transaction is
+    // kept open by further requests until the test lets it finish.
     const realDelete = IDBObjectStore.prototype.delete;
+    let released = false;
     const held: (() => void)[] = [];
     vi.spyOn(IDBObjectStore.prototype, 'delete').mockImplementation(function (
       this: IDBObjectStore,
       key,
     ) {
-      if (typeof key === 'string' && key.startsWith(`${SAM_ID}|`)) {
-        const request = { result: undefined } as unknown as IDBRequest;
-        const db = this.transaction.db;
-        held.push(() => {
-          realDelete.call(db.transaction(this.name, 'readwrite').objectStore(this.name), key);
-          request.onsuccess?.(new Event('success'));
-        });
-        return request;
+      if (typeof key !== 'string' || !key.startsWith(`${SAM_ID}|`)) {
+        return realDelete.call(this, key);
       }
-      return realDelete.call(this, key);
+      const keepOpen = () => {
+        const probe = this.get(key);
+        probe.onsuccess = () => {
+          if (!released) keepOpen();
+          else realDelete.call(this, key);
+        };
+      };
+      keepOpen();
+      return {} as IDBRequest;
+    });
+    held.push(() => {
+      released = true;
     });
     const user = userEvent.setup();
     await open();
@@ -989,6 +996,7 @@ describe('reading margin: layout and sign-out', () => {
     await waitFor(() => expect(posts()).toHaveLength(1));
     // "Saved" is only said once the device copy is really gone, so it cannot be said while held.
     await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(screen.queryByText('Saved')).not.toBeInTheDocument();
     // The reload: the margin comes back with whatever the device still holds.
     await user.click(screen.getByRole('tab', { name: 'Slides' }));
     await user.click(screen.getByRole('tab', { name: 'Reading' }));
@@ -998,8 +1006,9 @@ describe('reading margin: layout and sign-out', () => {
     expect(posts()).toHaveLength(1);
     expect(w.annotations).toHaveLength(1);
     expect(screen.queryByText('Saved')).not.toBeInTheDocument();
+    for (const finish of held) finish(); // the device commits at last; nothing is left pending
+    await new Promise((resolve) => setTimeout(resolve, 30));
     vi.restoreAllMocks();
-    for (const finish of held) finish(); // the device answers at last; nothing is left pending
   });
 
   it('A05 a question still being posted when the reading is left does not come back as unsent text', async () => {

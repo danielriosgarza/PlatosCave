@@ -223,6 +223,7 @@ describe('note autosave', () => {
     controller.blur();
     await vi.advanceTimersByTimeAsync(0);
     controller.takeSaved();
+    await vi.advanceTimersByTimeAsync(0); // Saved follows the device copy's removal
     expect(controller.state).toMatchObject({
       body: 'Saved elsewhere',
       status: 'saved',
