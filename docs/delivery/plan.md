@@ -596,6 +596,7 @@ Tracks: **connector** (P3-01 → server P3-02 → P3-02a → P3-06 → P3-06a �
 
 ### P4-02 · Class review table
 - Scope: `GET /api/classes/:classId/review` (name, exercise status, test status/score, open questions, last submission; preview users excluded), filters topic/assignment/student/Needs review, pagination, selected assignment and attempt kept visible, previous/next student over the filtered list, empty state with Show all students.
+- As built: `GET /api/classes/:classId/review` (`contracts/routes/review.ts`, `db/classReview.ts`, instructor scope) lists the class's real students (preview principals and removed students excluded) with exercises completed of those in scope, tests submitted (or, with an assignment, the newest attempt's state and released/draft score), open questions the student started, last submitted work and a Needs review flag (an attempt in scope that is submitted but not yet released). Query `topicId`, `assignmentId` (a test resource), `studentId`, `needsReview`, `attemptId`, `page`, `pageSize`; the response carries the whole filtered `students` list for previous/next and the selected assignment and attempt. Web: `review/ClassReview.tsx` keeps its filters, selected student and attempt in the address; the Class review link is back on instructor cards.
 - Spec: §12. Scenarios: A25. Depends on: P4-01. Model: sonnet. Security: no. Size: M.
 
 ### P4-03 · Grading workspace and student views

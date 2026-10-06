@@ -1,0 +1,146 @@
+import { afterAll, beforeAll, describe, expect, test } from 'vitest';
+import type { PersonName } from '../fixtures/world';
+import { ids } from '../fixtures/world';
+import { attemptUrl, call, drain, type ExecWorld, execWorld, startAttempt } from './execution';
+
+/**
+ * Class review (§12), A25: with Needs review active the filtered list holds exactly the
+ * students whose results await release, preview principals never appear, and releasing the last
+ * of them empties the list while every released grade stays in the unfiltered table. Class B:
+ * Marcus teaches Bea (no work), Priya and Sam, who submit the test; Marcus's preview principal
+ * also takes it.
+ */
+
+let w: ExecWorld;
+const attempt: Partial<Record<PersonName, string>> = {};
+const CODE = 'def f(xs):\n    return 2\n';
+const tick = () => {
+  w.clock.now = new Date(w.clock.now.getTime() + 60_000);
+  return w.clock.now;
+};
+
+async function put(who: PersonName, url: string, payload: object) {
+  const res = await w.app.inject({
+    method: 'PUT',
+    url,
+    headers: { host: '127.0.0.1:3100', cookie: w.world.cookie[who] },
+    payload,
+  });
+  return res.statusCode;
+}
+
+const reviewUrl = (query = '') => `/api/classes/${ids.classB}/review${query}`;
+const review = (query = '') => call(w, 'marcus', 'GET', reviewUrl(query));
+const names = (list: { name: string }[]) => list.map((s) => s.name);
+
+async function submit(who: PersonName) {
+  tick();
+  const id = await startAttempt(w, who, ids.classB);
+  attempt[who] = id;
+  if (who === 'previewB') return;
+  for (const questionId of ['mean', 'median', 'spread']) {
+    expect(
+      await put(who, `${attemptUrl(ids.classB, id)}/answers/${questionId}`, {
+        value: { files: [{ path: 'solution.py', content: CODE }] },
+        seq: 1,
+      }),
+    ).toBe(200);
+  }
+  await put(who, `${attemptUrl(ids.classB, id)}/answers/pick`, { value: ['b'], seq: 1 });
+  const done = await call(w, who, 'POST', `${attemptUrl(ids.classB, id)}/submit`, {
+    submissionKey: `review-${who}`,
+  });
+  expect(done.status).toBe(200);
+}
+
+async function release(who: PersonName) {
+  const url = `${attemptUrl(ids.classB, attempt[who] as string)}/grade`;
+  const draft = await call(w, 'marcus', 'POST', url, {
+    expectedGradeId: null,
+    manual: [],
+    feedback: [{ target: { kind: 'attempt' }, text: `Well done, ${who}` }],
+  });
+  expect(draft.status).toBe(200);
+  const gradeId = draft.body.history[0].id as string;
+  tick();
+  const released = await call(w, 'marcus', 'POST', `/api/classes/${ids.classB}/grade-releases`, {
+    grades: [{ attemptId: attempt[who], gradeId }],
+  });
+  expect(released.status).toBe(201);
+}
+
+beforeAll(async () => {
+  w = await execWorld();
+  for (const who of ['priya', 'sam'] as const) await submit(who);
+  for (let i = 0; i < 6; i++) await w.runner.finish(await w.runner.take());
+  expect(await drain(w)).toEqual({ results: 6, deadLetters: 0 });
+});
+afterAll(async () => {
+  await w?.close();
+});
+
+describe('A25 class review', () => {
+  test('A25 the table lists real students with their test status, never a preview principal', async () => {
+    const res = await review(`?assignmentId=${w.quizId}`);
+    expect(res.status).toBe(200);
+    expect(names(res.body.roster)).toEqual(['Bea Lindqvist', 'Priya Nair', 'Sam Okafor'].sort());
+    expect(res.body.assignment).toMatchObject({ assignmentId: w.quizId, title: 'Spread check' });
+    const byName = Object.fromEntries(
+      res.body.rows.map((r: { name: string }) => [r.name.split(' ')[0], r]),
+    );
+    expect(byName.Bea).toMatchObject({ attempt: null, needsReview: false, lastSubmission: null });
+    expect(byName.Priya.attempt).toMatchObject({ number: 1, score: null });
+    expect(byName.Priya.attempt.state).not.toBe('in_progress');
+    expect(byName.Priya).toMatchObject({ needsReview: true, lastSubmission: { kind: 'test' } });
+    expect(JSON.stringify(res.body)).not.toContain(ids.previewB);
+  });
+
+  test('A25 with Needs review active previous/next stays in that filter', async () => {
+    const res = await review('?needsReview=true');
+    expect(names(res.body.students)).toEqual(['Priya Nair', 'Sam Okafor']);
+    expect(res.body.total).toBe(2);
+    // The traversed list is whole whatever page the table shows.
+    const second = await review('?needsReview=true&pageSize=1&page=2');
+    expect(names(second.body.rows)).toEqual(['Sam Okafor']);
+    expect(names(second.body.students)).toEqual(['Priya Nair', 'Sam Okafor']);
+    const one = await review(`?needsReview=true&studentId=${ids.sam}`);
+    expect(names(one.body.students)).toEqual(['Sam Okafor']);
+  });
+
+  test('A25 the selected assignment and attempt stay visible in the response', async () => {
+    const res = await review(`?needsReview=true&assignmentId=${w.quizId}&attemptId=${attempt.sam}`);
+    expect(res.body.assignment.assignmentId).toBe(w.quizId);
+    expect(res.body.selected).toEqual({
+      studentId: ids.sam,
+      attemptId: attempt.sam,
+      number: 1,
+      assignmentId: w.quizId,
+    });
+  });
+
+  test('A25 releasing the final result in Needs review empties the filter and retains every released grade', async () => {
+    await release('priya');
+    const afterFirst = await review('?needsReview=true');
+    expect(names(afterFirst.body.students)).toEqual(['Sam Okafor']);
+
+    await release('sam');
+    const empty = await review('?needsReview=true');
+    expect(empty.body).toMatchObject({ total: 0, rows: [], students: [] });
+
+    const all = await review(`?assignmentId=${w.quizId}`);
+    for (const row of all.body.rows.filter((r: { name: string }) => !r.name.startsWith('Bea'))) {
+      expect(row.needsReview).toBe(false);
+      expect(row.attempt).toMatchObject({
+        state: 'released',
+        score: { points: 13, possible: 13, state: 'released' },
+      });
+    }
+    expect(all.body.total).toBe(3);
+  });
+
+  test('A25 a student of the class is refused the table', async () => {
+    const res = await call(w, 'bea', 'GET', reviewUrl());
+    expect(res.status).toBe(403);
+    expect(res.body.rows).toBeUndefined();
+  });
+});

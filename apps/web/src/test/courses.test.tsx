@@ -80,7 +80,7 @@ describe('course cards', () => {
     expect(screen.queryByRole('link', { name: 'Class review' })).toBeNull();
   });
 
-  it('A02 an instructor card shows class context without a link to the unfinished Class review, and the page offers Create course', async () => {
+  it('A02 an instructor card shows class context and a Class review link, and the page offers Create course', async () => {
     const me = makeMe({ classes: [instructorIn(CLASS_A, 'Autumn 2026 A')] });
     serve(me, {
       classes: [card({ role: 'instructor', studentCount: 3 })],
@@ -90,7 +90,10 @@ describe('course cards', () => {
     renderApp('/courses');
     expect(await screen.findByRole('heading', { name: 'Courses you teach' })).toBeInTheDocument();
     expect(screen.getByText('3 students')).toBeInTheDocument();
-    expect(screen.queryByRole('link', { name: 'Class review' })).toBeNull();
+    expect(screen.getByRole('link', { name: 'Class review' })).toHaveAttribute(
+      'href',
+      `/classes/${CLASS_A}/review`,
+    );
     expect(screen.getByRole('button', { name: 'Create course' })).toBeInTheDocument();
     expect(screen.queryByText(/reviewed/)).toBeNull();
     expect(screen.queryByRole('button', { name: 'Join a class' })).toBeNull();
