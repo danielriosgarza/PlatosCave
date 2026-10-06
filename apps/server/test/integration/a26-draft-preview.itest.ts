@@ -6,7 +6,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { buildApp } from '../../src/app';
 import { PREVIEW_RETURN_COOKIE } from '../../src/auth/preview';
 import { SESSION_COOKIE } from '../../src/auth/sessions';
-import { DEV_SESSION_SECRET, loadConfig } from '../../src/config';
+import { DEV_RUNNER_RUNTIMES, DEV_SESSION_SECRET, loadConfig } from '../../src/config';
 import { createSession } from '../../src/db/auth/sessions';
 import { adoptRelease } from '../../src/db/content/adoption';
 import { createResource } from '../../src/db/content/drafts';
@@ -531,7 +531,7 @@ describe('A26 draft preview', () => {
     );
     if (!created.ok) throw new Error(JSON.stringify(created));
     const exerciseId = created.value.id;
-    const v2 = await publishRelease(testDb.db, course);
+    const v2 = await publishRelease(testDb.db, course, { runtimes: DEV_RUNNER_RUNTIMES });
     if (!v2.ok) throw new Error(JSON.stringify(v2.report));
     const adopted = await adoptRelease(
       testDb.db,

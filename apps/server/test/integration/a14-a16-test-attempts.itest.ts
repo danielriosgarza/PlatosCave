@@ -5,7 +5,7 @@ import type { Job } from 'pg-boss';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { buildApp } from '../../src/app';
 import { graderVersionOf } from '../../src/assessments/terms';
-import { loadConfig } from '../../src/config';
+import { DEV_RUNNER_RUNTIMES, loadConfig } from '../../src/config';
 import { adoptRelease } from '../../src/db/content/adoption';
 import { createResource, getResource, updateResource } from '../../src/db/content/drafts';
 import { publishRelease } from '../../src/db/content/releases';
@@ -138,7 +138,7 @@ let v1: string;
 const course = () => asCourseScope(ids.statistics, ids.elena);
 
 async function adoptLatest(classId: string, instructor: string, from: string) {
-  const published = await publishRelease(testDb.db, course());
+  const published = await publishRelease(testDb.db, course(), { runtimes: DEV_RUNNER_RUNTIMES });
   if (!published.ok) throw new Error(JSON.stringify(published.report));
   const adopted = await adoptRelease(
     testDb.db,
