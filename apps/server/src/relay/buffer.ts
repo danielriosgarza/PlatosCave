@@ -15,6 +15,8 @@ import type { ChannelServerMessageInput } from '@parallax/contracts';
 export const EXECUTION_BUFFER_BYTES = 256 * 1024;
 export const SESSION_BUFFER_BYTES = 8 * 1024 * 1024;
 const MAX_EMPTY_RECORDS = 1000;
+/** Finishes remembered for a resume, newest kept (at most 30 executions a second are bound). */
+export const MAX_FINISHES = 1000;
 
 export type OutputEvent = Extract<ChannelServerMessageInput, { t: 'output' }>;
 /** An event before the buffer numbers it. */
@@ -39,6 +41,12 @@ export class OutputBuffer {
   private bytes = 0;
   /** Executions in the order their first event arrived, for oldest-first eviction. */
   private readonly executions = new Map<string, ExecutionEvents>();
+  /**
+   * Executions that reached a final state in this epoch, with the last `eventSeq` assigned when
+   * they did, oldest first: a browser that resumes learns the outcome of those it missed, output
+   * or not (§10.6).
+   */
+  private readonly finishes = new Map<string, number>();
 
   constructor(
     private readonly limits = {
@@ -80,6 +88,22 @@ export class OutputBuffer {
   finish(executionId: string): void {
     const entry = this.executions.get(executionId);
     if (entry) entry.finished = true;
+    this.finishes.delete(executionId);
+    this.finishes.set(executionId, this.seq);
+    for (const id of this.finishes.keys()) {
+      if (this.finishes.size <= MAX_FINISHES) break;
+      this.finishes.delete(id);
+    }
+  }
+
+  /**
+   * The executions that finished after `resume`'s position in this epoch, oldest finish first.
+   * One that finished at the position itself is included: the browser may have left between
+   * that event and the finish. With another epoch (or none) every remembered finish is returned.
+   */
+  finishedSince(resume?: { epoch: string; afterEventSeq: number }): string[] {
+    const after = resume?.epoch === this.epoch ? resume.afterEventSeq : 0;
+    return [...this.finishes].filter(([, at]) => at >= after).map(([id]) => id);
   }
 
   /**
