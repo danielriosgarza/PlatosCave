@@ -265,7 +265,14 @@ describe('A14 submit is idempotent', () => {
     const saved = await save('sam', ids.classA, samFirst, 'spread', { value: ['n100'], seq: 1 });
     expect(saved).toEqual({
       status: 200,
-      body: { questionId: 'spread', seq: 1, savedAt: minutes(2).toISOString() },
+      body: { questionId: 'spread', seq: 1, savedAt: minutes(2).toISOString(), applied: true },
+    });
+    // A second tab saves another value at the same counter: the acknowledgement says it was not
+    // applied, so that tab cannot take the stored answer's acknowledgement for its own (§11).
+    clock = minutes(2.5);
+    expect(await save('sam', ids.classA, samFirst, 'spread', { value: ['n10'], seq: 1 })).toEqual({
+      status: 200,
+      body: { questionId: 'spread', seq: 1, savedAt: minutes(2).toISOString(), applied: false },
     });
 
     clock = minutes(3);
@@ -359,7 +366,7 @@ describe('A15 deadline submission', () => {
     expect(await save('bea', ids.classB, beaAttempt, 'spread', { value: ['n10'], seq: 1 })).toEqual(
       {
         status: 200,
-        body: { questionId: 'spread', seq: 2, savedAt: minutes(6).toISOString() },
+        body: { questionId: 'spread', seq: 2, savedAt: minutes(6).toISOString(), applied: false },
       },
     );
     // The server, not the browser, refuses an answer the question cannot take.
