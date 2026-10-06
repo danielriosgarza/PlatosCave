@@ -546,7 +546,20 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
     }));
   };
 
+  // The note's device draft stays pending for the whole delete (the editor's discard leaves it), so
+  // a margin that comes back while the server's delete runs does not restore the note as unsent.
   const removeNote = async (entryId: string, controller: NoteController | undefined) => {
+    const sent = userId
+      ? beginSend(draftKey(userId, classId, resourceId, controller?.key ?? entryId))
+      : null;
+    try {
+      await deleteNote(entryId, controller);
+    } finally {
+      sent?.();
+    }
+  };
+
+  const deleteNote = async (entryId: string, controller: NoteController | undefined) => {
     setDeleteProblem(null);
     // A save still running is waited for, so a note it creates is deleted too and cannot return.
     const left = controller ? await controller.discard() : null;

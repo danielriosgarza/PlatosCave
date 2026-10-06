@@ -207,7 +207,24 @@ export function SlideNotes({ classId, resourceId, page }: Props) {
     if (made) touch();
   });
 
+  // The note's device draft stays pending for the whole delete (the editor's discard leaves it), so
+  // a margin that comes back while the server's delete runs does not restore the note as unsent.
   const removeNote = async (
+    key: string,
+    controller: NoteController | undefined,
+    id: string | null,
+  ) => {
+    const sent = userId
+      ? beginSend(draftKey(userId, classId, resourceId, controller?.key ?? key))
+      : null;
+    try {
+      await deleteNote(key, controller, id);
+    } finally {
+      sent?.();
+    }
+  };
+
+  const deleteNote = async (
     key: string,
     controller: NoteController | undefined,
     id: string | null,

@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import { EXECUTION_BUFFER_BYTES, OutputBuffer, SESSION_BUFFER_BYTES } from './buffer';
+import { EXECUTION_BUFFER_BYTES, MAX_FINISHES, OutputBuffer, SESSION_BUFFER_BYTES } from './buffer';
 
 /**
  * The relay's output buffer (docs/design/connector.md §10.6): 256 KiB per execution, 8 MiB per
@@ -89,5 +89,35 @@ describe('output buffer', () => {
     const replay = buffer.replay();
     expect(replay.events.map((e) => e.executionId)).toEqual([B, B]);
     expect(replay.truncated).toEqual([C]);
+  });
+
+  test('A31 names the executions that finished at or after a position, output or not', () => {
+    const buffer = new OutputBuffer();
+    buffer.append(stream(A, 'one'));
+    buffer.finish(A);
+    // B printed nothing and finished while the browser, at event 1, was away.
+    buffer.finish(B);
+    buffer.append(stream(C, 'three'));
+    buffer.finish(C);
+    expect(buffer.finishedSince({ epoch: buffer.epoch, afterEventSeq: 1 })).toEqual([A, B, C]);
+    expect(buffer.finishedSince({ epoch: buffer.epoch, afterEventSeq: 2 })).toEqual([C]);
+    expect(buffer.finishedSince({ epoch: buffer.epoch, afterEventSeq: 3 })).toEqual([]);
+    // Another epoch, or none, knows no position: every remembered finish.
+    expect(buffer.finishedSince({ epoch: new OutputBuffer().epoch, afterEventSeq: 3 })).toEqual([
+      A,
+      B,
+      C,
+    ]);
+    expect(buffer.finishedSince()).toEqual([A, B, C]);
+  });
+
+  test('remembers the newest finishes only', () => {
+    const buffer = new OutputBuffer();
+    const id = (i: number) => `00000000-0000-4000-8000-${String(i).padStart(12, '0')}`;
+    for (let i = 0; i <= MAX_FINISHES; i++) buffer.finish(id(i));
+    const finished = buffer.finishedSince();
+    expect(finished).toHaveLength(MAX_FINISHES);
+    expect(finished[0]).toBe(id(1));
+    expect(finished.at(-1)).toBe(id(MAX_FINISHES));
   });
 });

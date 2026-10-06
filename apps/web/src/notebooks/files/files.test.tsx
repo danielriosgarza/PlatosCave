@@ -1,7 +1,7 @@
 import { QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import type { ReactNode } from 'react';
+import { type ReactNode, useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createQueryClient } from '../../session/revocation';
 import { CLASS_A, stubApi } from '../../test/render';
@@ -77,21 +77,34 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
+// The host keeps the copy the panel is given, as the live notebook does.
+function SaveHost({
+  getNotebook,
+  onWorkingCopy,
+}: {
+  getNotebook: () => Record<string, unknown>;
+  onWorkingCopy: (copy: unknown) => void;
+}) {
+  const [current, setCurrent] = useState(copy());
+  return (
+    <SaveControls
+      classId={CLASS_A}
+      sessionId={SESSION}
+      workingCopy={current as never}
+      getNotebook={getNotebook}
+      onWorkingCopy={(next) => {
+        onWorkingCopy(next);
+        setCurrent(next as never);
+      }}
+      workspace={WORKSPACE}
+      host="hpc.example.edu"
+    />
+  );
+}
+
 function renderSave(getNotebook = () => notebook) {
   const onWorkingCopy = vi.fn();
-  render(
-    wrap(
-      <SaveControls
-        classId={CLASS_A}
-        sessionId={SESSION}
-        workingCopy={copy() as never}
-        getNotebook={getNotebook}
-        onWorkingCopy={onWorkingCopy}
-        workspace={WORKSPACE}
-        host="hpc.example.edu"
-      />,
-    ),
-  );
+  render(wrap(<SaveHost getNotebook={getNotebook} onWorkingCopy={onWorkingCopy} />));
   return { onWorkingCopy };
 }
 
@@ -354,6 +367,7 @@ describe('files panel', () => {
           sessionId={SESSION}
           workingCopy={copy() as never}
           onWorkingCopy={vi.fn()}
+          onStale={vi.fn()}
         />,
       ),
     );
@@ -382,6 +396,7 @@ describe('files panel', () => {
           sessionId={SESSION}
           workingCopy={copy() as never}
           onWorkingCopy={vi.fn()}
+          onStale={vi.fn()}
         />,
       ),
     );
@@ -434,6 +449,7 @@ describe('files panel', () => {
           sessionId={SESSION}
           workingCopy={copy() as never}
           onWorkingCopy={vi.fn()}
+          onStale={vi.fn()}
         />,
       ),
     );
@@ -473,6 +489,7 @@ describe('files panel', () => {
           sessionId={SESSION}
           workingCopy={copy() as never}
           onWorkingCopy={vi.fn()}
+          onStale={vi.fn()}
         />,
       ),
     );
@@ -505,6 +522,7 @@ describe('files panel', () => {
           sessionId={SESSION}
           workingCopy={copy() as never}
           onWorkingCopy={onWorkingCopy}
+          onStale={vi.fn()}
         />,
       ),
     );
@@ -521,6 +539,94 @@ describe('files panel', () => {
       path: 'edited.ipynb',
       baseRevision: 2,
     });
+  });
+});
+
+describe('revision conflicts', () => {
+  const listing = {
+    workspace: WORKSPACE,
+    host: 'hpc.example.edu',
+    dir: '',
+    entries: [
+      { path: 'edited.ipynb', name: 'edited.ipynb', type: 'notebook', size: 900, modified: NOW },
+    ],
+    declared: [],
+  };
+
+  it('A34 an Import conflict passes the newer copy to onStale and a retry sends its revision', async () => {
+    const newer = copy({ currentRevision: 5, revision: { ...revision, revision: 5 } });
+    const onWorkingCopy = vi.fn();
+    const onStale = vi.fn();
+    let conflict = true;
+    const fetchMock = stubApi((url, init) =>
+      init?.method === 'POST'
+        ? conflict
+          ? { status: 409, body: { error: 'revision_conflict', current: newer } }
+          : { status: 200, body: { transfers: [], workingCopy: copy({ currentRevision: 6 }) } }
+        : url.includes('/files')
+          ? { status: 200, body: listing }
+          : { status: 404 },
+    );
+    const panel = (workingCopy: unknown) =>
+      wrap(
+        <FilesPanel
+          classId={CLASS_A}
+          sessionId={SESSION}
+          workingCopy={workingCopy as never}
+          onWorkingCopy={onWorkingCopy}
+          onStale={onStale}
+        />,
+      );
+    const view = render(panel(copy()));
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Import edited.ipynb' }));
+    await user.click(screen.getByRole('button', { name: 'Import as revision 3' }));
+    await screen.findByRole('alert');
+    expect(onStale).toHaveBeenCalledWith(newer);
+    // The conflict never goes through the callback that replaces the editor's draft.
+    expect(onWorkingCopy).not.toHaveBeenCalled();
+    // The host hands the newer copy back; the message and the retry are based on it.
+    conflict = false;
+    view.rerender(panel(newer));
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveTextContent(/now at revision 5/);
+    expect(alert).toHaveTextContent(/as revision 6/);
+    expect(alert).not.toHaveTextContent(/reload/i);
+    await user.click(await screen.findByRole('button', { name: 'Import edited.ipynb' }));
+    await user.click(screen.getByRole('button', { name: 'Import as revision 6' }));
+    await waitFor(() => expect(posts(fetchMock)).toHaveLength(2));
+    expect(json(posts(fetchMock)[0]?.[1]).baseRevision).toBe(2);
+    expect(json(posts(fetchMock)[1]?.[1]).baseRevision).toBe(5);
+  });
+
+  it('A34 a Save to Parallax conflict passes the newer copy on and the retry sends the draft on it', async () => {
+    const newer = copy({ currentRevision: 5 });
+    const draft = { ...notebook, cells: [{ cell_type: 'code', source: 'mine' }] };
+    let conflict = true;
+    const fetchMock = stubApi(() =>
+      conflict
+        ? { status: 409, body: { error: 'revision_conflict', current: newer } }
+        : {
+            status: 200,
+            body: copy({ currentRevision: 6, revision: { ...revision, revision: 6 } }),
+          },
+    );
+    const { onWorkingCopy } = renderSave(() => draft);
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: 'Save to Parallax' }));
+    await screen.findByRole('alert');
+    expect(onWorkingCopy).toHaveBeenCalledOnce();
+    expect(onWorkingCopy).toHaveBeenCalledWith(newer);
+    // Save to computer now writes the revision Parallax holds.
+    expect(screen.getByText(/Writes revision 5/)).toBeInTheDocument();
+    conflict = false;
+    await user.click(screen.getByRole('button', { name: 'Save my draft as revision 6' }));
+    await screen.findByText(/saved to parallax as revision 6/i);
+    const puts = fetchMock.mock.calls.filter(([, init]) => init?.method === 'PUT');
+    expect(puts.map(([, init]) => json(init))).toEqual([
+      { baseRevision: 2, notebook: draft },
+      { baseRevision: 5, notebook: draft },
+    ]);
   });
 });
 
