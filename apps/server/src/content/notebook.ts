@@ -161,7 +161,7 @@ function hasScript(tree: Root, tags: string[] = []): boolean {
 /** Drawing elements and presentation attributes an SVG output may keep; all else is dropped. */
 const SVG_TAGS = (
   'svg g defs symbol use path rect circle ellipse line polyline polygon text tspan textPath ' +
-  'title desc linearGradient radialGradient stop pattern clipPath mask marker style ' +
+  'title desc image linearGradient radialGradient stop pattern clipPath mask marker style ' +
   'filter feBlend feColorMatrix feComponentTransfer feComposite feConvolveMatrix ' +
   'feDiffuseLighting feDisplacementMap feDistantLight feDropShadow feFlood feFuncA feFuncB ' +
   'feFuncG feFuncR feGaussianBlur feMerge feMergeNode feMorphology feOffset fePointLight ' +
@@ -170,8 +170,8 @@ const SVG_TAGS = (
 const SVG_ATTRIBUTES = (
   'xmlns id className style transform viewBox width height x y x1 x2 y1 y2 cx cy r rx ry d ' +
   'points dx dy rotate textLength lengthAdjust href preserveAspectRatio version baseProfile ' +
-  'fill fillOpacity fillRule stroke strokeWidth strokeOpacity strokeLinecap strokeLinejoin ' +
-  'strokeMiterLimit strokeDasharray strokeDashOffset opacity visibility display overflow ' +
+  'fill fillOpacity fillRule stroke strokeWidth strokeOpacity strokeLineCap strokeLineJoin ' +
+  'strokeMiterLimit strokeDashArray strokeDashOffset opacity visibility display overflow ' +
   'clipPath clipRule clipPathUnits mask maskUnits maskContentUnits filter filterUnits ' +
   'primitiveUnits markerStart markerMid markerEnd markerWidth markerHeight markerUnits ' +
   'refX refY orient fontFamily fontSize fontStyle fontWeight fontVariant textAnchor ' +
@@ -184,7 +184,8 @@ const SVG_ATTRIBUTES = (
   'baseFrequency numOctaves seed stitchTiles surfaceScale diffuseConstant specularConstant ' +
   'specularExponent lightingColor azimuth elevation z pointsAtX pointsAtY pointsAtZ ' +
   'limitingConeAngle radius vectorEffect shapeRendering textRendering colorInterpolation ' +
-  'startOffset method spacing side xmlnsXLink xLinkHref'
+  'startOffset method spacing side xmlnsXLink xLinkHref xmlSpace color paintOrder pathLength ' +
+  'pointerEvents font'
 ).split(' ');
 const svgSchema: SanitizeSchema = {
   tagNames: SVG_TAGS,
@@ -211,59 +212,85 @@ const svgParser = unified().use(rehypeParse, { fragment: true, space: 'svg' }).f
 const LOCAL_URL = /url\(\s*(['"]?)\s*#[^)'"\s]*\s*\1\s*\)/gi;
 
 /**
- * Whether CSS text (a `<style>` body or a presentation attribute) may be stored. It is kept only
- * when it is plain: no markup characters (the serialiser writes `<style>` text raw, so `<` here
- * would become an element), no escapes or at-rules (they hide `url(` and `@import`), and every
- * `url(` points into the document. Anything else is dropped, never repaired.
+ * Whether CSS (a `<style>` body or a presentation attribute) may be stored. It is kept only when
+ * it is plain: no escapes or at-rules (they hide `url(` and `@import`) and every `url(` points
+ * into the document. A `<style>` body is also written raw, so it may hold none of `<`, `&` or
+ * `]]>`, which would be markup or malformed XML there. Anything else is dropped, never repaired.
  */
-function cssIsPlain(css: string): boolean {
-  if (/[<&\\@]/.test(css) || css.includes(']]>')) return false;
-  return !/url\(|image-set|image\(|expression|javascript:/i.test(css.replace(LOCAL_URL, ''));
+function cssIsPlain(css: string, raw = false): boolean {
+  if (/[\\@]/.test(css) || (raw && (/[<&]/.test(css) || css.includes(']]>')))) return false;
+  return !/url\(|image-set|image\(|expression\s*\(|javascript:/i.test(css.replace(LOCAL_URL, ''));
 }
 
 const CSS_ATTRIBUTES = /^(style|fill|stroke|filter|mask|clipPath|marker(Start|Mid|End)|cursor)$/;
+/** Rasters an SVG may carry in itself; `data:image/svg+xml` is not one of them. */
+const DATA_IMAGE = /^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/=\s]*$/i;
+const SVG_NS = 'http://www.w3.org/2000/svg';
+const SCRIPT_TAGS = ['foreignObject', 'animate', 'animateMotion', 'animateTransform', 'set'];
 
-/** Removes what the allow-list cannot judge by name: CSS that fetches, references that leave. */
-function dropExternal(tree: Root): boolean {
+/**
+ * Runs on the sanitised tree, so a stripped element cannot sit inside a token the check reads.
+ * Drops CSS that fetches or holds markup, references that leave the document, and values the
+ * serialiser would write as invalid XML; pins the namespaces of the root. True when a `<style>`
+ * held markup.
+ */
+function finishSvg(root: Element): boolean {
   let markup = false;
-  visit(tree, 'element', (el, index, parent) => {
+  let xlink = false;
+  visit(root, (node, index, parent) => {
+    if (node.type === 'text') {
+      node.value = node.value.replaceAll(']]>', ']] >');
+      return undefined;
+    }
+    if (node.type !== 'element') return undefined;
+    const el = node;
     if (el.tagName === 'style' && parent && index !== undefined) {
       const css = hastToString(el);
-      if (cssIsPlain(css)) return undefined;
-      markup ||= css.includes('<');
+      if (el.children.every((c) => c.type === 'text') && cssIsPlain(css, true)) return undefined;
+      markup ||= css.includes('<') || el.children.some((c) => c.type === 'element');
       parent.children.splice(index, 1);
       return ['skip', index];
     }
     for (const [name, value] of Object.entries(el.properties)) {
       const text = Array.isArray(value) ? value.join(' ') : String(value);
+      const reference = name === 'href' || name === 'xLinkHref';
       if (
-        ((name === 'href' || name === 'xLinkHref') && !text.trim().startsWith('#')) ||
+        text.includes('<') ||
+        (name === 'xmlns' && el !== root) ||
+        name === 'xmlnsXLink' ||
+        (reference &&
+          !text.trim().startsWith('#') &&
+          !(el.tagName === 'image' && DATA_IMAGE.test(text.trim()))) ||
         (CSS_ATTRIBUTES.test(name) && !cssIsPlain(text))
       ) {
         delete el.properties[name];
-      }
+      } else if (name === 'xLinkHref') xlink = true;
     }
     return undefined;
   });
+  root.properties.xmlns = SVG_NS;
+  if (xlink) root.properties.xmlnsXLink = 'http://www.w3.org/1999/xlink';
   return markup;
 }
 
-const EMPTY_SVG = '<svg xmlns="http://www.w3.org/2000/svg"></svg>';
-
 /**
- * SVG text as it may be stored: only the root `svg` element, rebuilt from the allow-list.
- * `scriptsRemoved` when it held script, a handler, a script URL, foreign markup or CSS that
- * carried markup. Parsing as HTML lets HTML-only tags close the `svg` early; what follows the
- * root is dropped so the stored text stays one well-formed element.
+ * SVG text as it may be stored: only the root `svg` element, rebuilt from the allow-list, with
+ * the SVG namespace set so it displays on its own; null when the text holds no `svg` element.
+ * `scriptsRemoved` when that element held script, a handler, a script URL, foreign markup,
+ * animation or CSS that carried markup. Parsing as HTML lets HTML-only tags close the `svg`
+ * early; what follows the root is dropped so the stored text stays one well-formed element.
  */
-export function sanitizeSvg(svg: string): { text: string; scriptsRemoved: boolean } {
-  const parsed = svgParser.parse(svg);
-  const root = parsed.children.find((n) => isElement(n) && n.tagName === 'svg');
-  if (!root) return { text: EMPTY_SVG, scriptsRemoved: hasScript(parsed, ['foreignObject']) };
+export function sanitizeSvg(svg: string): { text: string; scriptsRemoved: boolean } | null {
+  const root = svgParser
+    .parse(svg)
+    .children.find((n): n is Element => isElement(n) && n.tagName === 'svg');
+  if (!root) return null;
   const tree: Root = { type: 'root', children: [root] };
-  const scriptsRemoved = hasScript(parsed, ['foreignObject']);
-  const markup = dropExternal(tree);
+  const scriptsRemoved = hasScript(tree, SCRIPT_TAGS);
   const clean = svgSanitizer.runSync(tree);
+  const [cleanRoot] = clean.children;
+  if (!cleanRoot || !isElement(cleanRoot)) return null;
+  const markup = finishSvg(cleanRoot);
   return { text: svgSanitizer.stringify(clean), scriptsRemoved: scriptsRemoved || markup };
 }
 
@@ -420,6 +447,7 @@ class Builder {
       const value = textOf(data[type]);
       if (value === null) continue;
       const svg = type === 'image/svg+xml' ? sanitizeSvg(value) : null;
+      if (type === 'image/svg+xml' && !svg) continue;
       const bytes = svg ? new TextEncoder().encode(svg.text) : decodeBase64(value);
       if (!bytes) continue;
       const alt = textOf(data['text/plain']);
@@ -492,10 +520,9 @@ class Builder {
       const type = IMAGE_TYPES.find((t) => textOf(data[t]) !== null);
       const value = type && textOf(data[type]);
       if (!type || !value) continue;
+      const svg = type === 'image/svg+xml' ? sanitizeSvg(value) : null;
       const bytes =
-        type === 'image/svg+xml'
-          ? new TextEncoder().encode(sanitizeSvg(value).text)
-          : decodeBase64(value);
+        type === 'image/svg+xml' ? svg && new TextEncoder().encode(svg.text) : decodeBase64(value);
       if (bytes) assets[name] = this.object(bytes, type);
     }
     return assets;

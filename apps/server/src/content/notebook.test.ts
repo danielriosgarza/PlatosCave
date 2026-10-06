@@ -357,13 +357,14 @@ describe('A09 stored HTML and JavaScript outputs cannot run script', () => {
     });
     const stored = new TextDecoder().decode(svgRendered.objects[0]?.bytes);
     expect(stored).toContain('<circle id="keep"');
-    expect(stored).not.toMatch(/<script|<foreignObject|<animate|<image|<a[ >]/i);
+    expect(stored).not.toMatch(/<script|<foreignObject|<animate|<a[ >]/i);
     expect(stored).not.toMatch(/\son[a-z]+=|javascript:|evil\.example|@import|url\(/i);
   });
 
   const NS = 'xmlns="http://www.w3.org/2000/svg"';
   const storedSvg = (svg: string) => {
     const out = sanitizeSvg(svg);
+    if (!out) throw new Error('no svg root');
     // The stored text read back as SVG holds no script, foreign content or handler.
     expect(out.text).not.toMatch(
       /<script|<foreignObject|\son[a-z]+=|<img|<style[^>]*>[^<]*<(?!\/style>)/i,
@@ -412,9 +413,89 @@ describe('A09 stored HTML and JavaScript outputs cannot run script', () => {
   test('A09 HTML-only tags inside an SVG do not leave content after the root element', () => {
     const out = storedSvg(`<svg ${NS}><p>x</p><circle r="1"/></svg>`);
     expect(out.text.match(/<svg/g)).toHaveLength(1);
-    expect(sanitizeSvg('<div>no svg</div>').text).toBe(
-      '<svg xmlns="http://www.w3.org/2000/svg"></svg>',
+    expect(sanitizeSvg('<div>no svg</div>')).toBeNull();
+  });
+
+  test('A09 a stripped element cannot split a token so that an external url( is rebuilt', () => {
+    for (const split of ['u<set>x</set>rl', 'u<script>x</script>rl', 'u<metadata>x</metadata>rl']) {
+      const out = storedSvg(
+        `<svg ${NS}><style>rect{fill:${split}(https://evil.example/p)}</style><rect width="1"/></svg>`,
+      );
+      expect(out.text).not.toMatch(/evil\.example|url\(/);
+      expect(out.text).toContain('<rect');
+    }
+    const nested = storedSvg(`<svg ${NS}><style>rect{fill:red}<circle r="1"/></style></svg>`);
+    expect(nested.text).not.toContain('<style');
+  });
+
+  test('A09 stroke, text and paint attributes survive; the root carries its namespaces', () => {
+    const out = storedSvg(
+      '<svg width="4"><path stroke-dasharray="2 2" stroke-linecap="round" stroke-linejoin="round" d="M0 0"/>' +
+        '<text xml:space="preserve" paint-order="stroke" color="red">a  b</text>' +
+        '<use xlink:href="#a"/></svg>',
     );
+    for (const kept of [
+      'stroke-dasharray="2 2"',
+      'stroke-linecap="round"',
+      'stroke-linejoin="round"',
+      'xml:space="preserve"',
+      'paint-order="stroke"',
+      'xmlns="http://www.w3.org/2000/svg"',
+      'xmlns:xlink="http://www.w3.org/1999/xlink"',
+    ]) {
+      expect(out.text).toContain(kept);
+    }
+    expect(out.scriptsRemoved).toBe(false);
+  });
+
+  test('A09 an embedded raster stays only as a PNG, JPEG, GIF or WebP data URI', () => {
+    const out = storedSvg(
+      `<svg ${NS} xmlns:xlink="http://www.w3.org/1999/xlink">` +
+        `<image width="1" height="1" xlink:href="data:image/png;base64,${PNG}"/>` +
+        '<image href="https://evil.example/x.png"/>' +
+        '<image href="data:image/svg+xml;base64,PHN2Zz48L3N2Zz4="/></svg>',
+    );
+    expect(out.text.match(/<image/g)).toHaveLength(3);
+    expect(out.text).toContain(`xlink:href="data:image/png;base64,${PNG}"`);
+    expect(out.text).not.toMatch(/evil\.example|svg\+xml/);
+  });
+
+  test('A09 animation that could set a script URL is removed and reported', () => {
+    const out = storedSvg(
+      `<svg ${NS}><animate attributeName="href" to="javascript:alert(1)"/><rect/></svg>`,
+    );
+    expect(out.scriptsRemoved).toBe(true);
+    expect(out.text).not.toMatch(/animate|javascript/i);
+  });
+
+  test('A09 namespaces other than the root are dropped, as are values that would break the XML', () => {
+    const out = storedSvg(
+      `<svg ${NS}><g xmlns="http://www.w3.org/1999/xhtml" id="a<b"><rect id="ok"/></g><text>x]]>y</text></svg>`,
+    );
+    expect(out.text).not.toMatch(/xhtml|a<b|\]\]>/);
+    expect(out.text).toContain('id="ok"');
+  });
+
+  test('A09 a stylesheet with an ampersand or a word like expression is kept', () => {
+    const out = storedSvg(
+      `<svg ${NS}><style>.expression-label{fill:red}</style><text font-family="A&amp;B">x</text></svg>`,
+    );
+    expect(out.text).toContain('.expression-label{fill:red}');
+    expect(out.text).toContain('font-family="A&#x26;B"');
+  });
+
+  test('A09 an SVG output without an svg element falls back to its text/plain', () => {
+    const rendered = render([
+      code('s', 'plot()', [
+        {
+          output_type: 'display_data',
+          metadata: {},
+          data: { 'image/svg+xml': '<div>not svg</div>', 'text/plain': 'Figure 1' },
+        },
+      ]),
+    ]);
+    expect(outputsOf(rendered)[0]).toMatchObject({ type: 'text', text: 'Figure 1' });
+    expect(rendered.objects).toHaveLength(0);
   });
 
   test('A09 a clean SVG output is kept and not flagged', () => {
