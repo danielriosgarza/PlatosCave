@@ -1,5 +1,13 @@
 import { type ChildProcess, execFileSync, spawn } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  readlinkSync,
+  rmSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { expect } from '@playwright/test';
@@ -13,7 +21,8 @@ import { expect } from '@playwright/test';
 
 const root = resolve(import.meta.dirname, '../../..');
 export const server = 'http://127.0.0.1:3100';
-export const fixtureDir = process.env.CONNECTOR_FIXTURE_DIR ?? join(root, '.local', 'connector-fixtures');
+export const fixtureDir =
+  process.env.CONNECTOR_FIXTURE_DIR ?? join(root, '.local', 'connector-fixtures');
 
 /** The interpreter of the `local` target: the runner's Python with jupyter-server installed. */
 export const localPython = process.env.CONNECTOR_E2E_PYTHON ?? 'python3';
@@ -26,7 +35,10 @@ export function connectorBinary(): string {
   if (built && existsSync(built)) return built;
   const dir = join(root, '.local', 'connector-e2e');
   mkdirSync(dir, { recursive: true });
-  const out = join(dir, process.platform === 'win32' ? 'parallax-connector.exe' : 'parallax-connector');
+  const out = join(
+    dir,
+    process.platform === 'win32' ? 'parallax-connector.exe' : 'parallax-connector',
+  );
   execFileSync('go', ['build', '-o', out, './cmd/parallax-connector'], {
     cwd: join(root, 'connector'),
     stdio: 'inherit',
@@ -128,7 +140,8 @@ function family(pid: number): number[] {
   }
   const found = [pid];
   for (let i = 0; i < found.length; i++) {
-    for (const [child, parent] of parents) if (parent === found[i] && !found.includes(child)) found.push(child);
+    for (const [child, parent] of parents)
+      if (parent === found[i] && !found.includes(child)) found.push(child);
   }
   return found;
 }
@@ -219,7 +232,9 @@ export function rotateHostKey(): void {
     execFileSync('sh', ['-c', custom], { stdio: 'inherit' });
     return;
   }
-  execFileSync('docker', [...compose, 'exec', '-T', 'sshd-jupyter', 'rotate-host-key'], { stdio: 'inherit' });
+  execFileSync('docker', [...compose, 'exec', '-T', 'sshd-jupyter', 'rotate-host-key'], {
+    stdio: 'inherit',
+  });
 }
 
 /** The connector's own known_hosts text, empty before the first trust. */

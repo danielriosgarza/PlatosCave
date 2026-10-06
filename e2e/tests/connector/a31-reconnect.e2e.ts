@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test';
 import { Connector } from './connector';
-import { liveLocalNotebook, typeInCell } from './ui';
+import { endSessions, liveLocalNotebook, typeInCell } from './ui';
 
 test.beforeAll(async ({ playwright, baseURL }) => {
   const setup = await playwright.request.newContext({ baseURL });
@@ -19,20 +19,29 @@ test('A31 offline then online runs the cell once', async ({ page, context }) => 
     // The chart cell was stored with execution count 2, so a count of 1 can only come from this run.
     await typeInCell(page, /^Code of cell 3 \[2\]/, "import time; time.sleep(8); print('slept')");
     await notebook.getByRole('button', { name: /^Run cell 3/ }).click();
-    await expect(notebook.getByRole('status').or(notebook.getByText(/Running/)).first()).toBeVisible();
+    await expect(
+      notebook
+        .getByRole('status')
+        .or(notebook.getByText(/Running/))
+        .first(),
+    ).toBeVisible();
 
     // The browser loses its connection, comes back, and the connector's link drops and returns.
     await context.setOffline(true);
     await page.waitForTimeout(2_000);
     await context.setOffline(false);
-    const sessions = (await (await page.request.get(`/api/classes/${classId}/notebook-sessions`)).json()) as {
+    const sessions = (await (
+      await page.request.get(`/api/classes/${classId}/notebook-sessions`)
+    ).json()) as {
       id: string;
       connectorId: string;
       state: string;
     }[];
     const session = sessions.find((s) => s.state === 'ready');
     expect(session, 'an open session').toBeTruthy();
-    const dropped = await page.request.post(`/api/test/connectors/${session?.connectorId}/drop-link`);
+    const dropped = await page.request.post(
+      `/api/test/connectors/${session?.connectorId}/drop-link`,
+    );
     expect(dropped.ok()).toBe(true);
 
     // The output arrives once, and the kernel's counter says the cell ran once.
@@ -43,6 +52,7 @@ test('A31 offline then online runs the cell once', async ({ page, context }) => 
     ).json()) as { executions: { state: string }[] };
     expect(executions.executions).toHaveLength(1);
   } finally {
+    await endSessions(page).catch(() => undefined);
     await connector.dispose();
   }
 });

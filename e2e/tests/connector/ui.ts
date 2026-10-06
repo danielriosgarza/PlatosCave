@@ -71,12 +71,18 @@ export async function connectLocal(page: Page, name: string, workspace: string):
 }
 
 /** The whole local path: pair (test route), connect, test, Connect, and wait until the notebook is live. */
-export async function liveLocalNotebook(page: Page, connector: Connector, name: string): Promise<Run> {
+export async function liveLocalNotebook(
+  page: Page,
+  connector: Connector,
+  name: string,
+): Promise<Run> {
   await openConnect(page);
   await pairAndApprove(page, connector, name);
   const run = await connect(page, connector, name);
   await connectLocal(page, name, mkdtempSync(join(tmpdir(), 'connector-workspace-')));
-  await expect(page.getByRole('status').filter({ hasText: 'Ready' })).toBeVisible({ timeout: 90_000 });
+  await expect(page.getByRole('status').filter({ hasText: 'Ready' })).toBeVisible({
+    timeout: 90_000,
+  });
   await page.getByRole('button', { name: 'Close' }).click();
   await expect(page.getByRole('article', { name: 'Live notebook' })).toBeVisible();
   return run;
@@ -142,5 +148,26 @@ export function stage(page: Page, name: string) {
 /** Connect, and wait until the kernel is idle. */
 export async function connectAndWaitReady(page: Page): Promise<void> {
   await page.getByRole('button', { name: 'Connect', exact: true }).click();
-  await expect(page.getByRole('status').filter({ hasText: 'Ready' })).toBeVisible({ timeout: 120_000 });
+  await expect(page.getByRole('status').filter({ hasText: 'Ready' })).toBeVisible({
+    timeout: 120_000,
+  });
+}
+
+const OPEN = ['starting', 'ready', 'disconnected', 'unconfirmed', 'stopping'];
+
+/**
+ * Ends every open session of the signed-in person in the lab class, so the next test meets an
+ * empty Connect panel: Stop while the connector is still connected, Forget for what cannot stop.
+ */
+export async function endSessions(page: Page): Promise<void> {
+  const base = `/api/classes/${lab.class}/notebook-sessions`;
+  const list = async () =>
+    ((await (await page.request.get(base)).json()) as { id: string; state: string }[]).filter((s) =>
+      OPEN.includes(s.state),
+    );
+  for (const s of await list())
+    await page.request.post(`${base}/${s.id}/close`, { data: { stop: true } });
+  const deadline = Date.now() + 30_000;
+  while ((await list()).length > 0 && Date.now() < deadline) await page.waitForTimeout(500);
+  for (const s of await list()) await page.request.post(`${base}/${s.id}/forget`);
 }

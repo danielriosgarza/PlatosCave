@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { Connector, expectLoopbackOnly } from './connector';
-import { connect, connectLocal, openConnect, pairAndApprove } from './ui';
+import { connect, connectLocal, endSessions, openConnect, pairAndApprove } from './ui';
 
 test.beforeAll(async ({ playwright, baseURL }) => {
   const setup = await playwright.request.newContext({ baseURL });
@@ -22,7 +22,9 @@ test('A27 a student pairs a local connector and runs a cell', async ({ page }) =
 
     await connectLocal(page, name, mkdtempSync(join(tmpdir(), 'a27-workspace-')));
     // Ready is the kernel's word: the notebook goes live only once the kernel is idle.
-    await expect(page.getByRole('status').filter({ hasText: 'Ready' })).toBeVisible({ timeout: 90_000 });
+    await expect(page.getByRole('status').filter({ hasText: 'Ready' })).toBeVisible({
+      timeout: 90_000,
+    });
 
     await page.getByRole('button', { name: 'Close' }).click();
     const notebook = page.getByRole('article', { name: 'Live notebook' });
@@ -41,6 +43,7 @@ test('A27 a student pairs a local connector and runs a cell', async ({ page }) =
     expect(pid).toBeDefined();
     expectLoopbackOnly(pid as number);
   } finally {
+    await endSessions(page).catch(() => undefined);
     await connector.dispose();
   }
 });
