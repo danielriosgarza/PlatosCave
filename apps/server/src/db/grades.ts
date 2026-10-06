@@ -49,6 +49,8 @@ type Preview = z.input<typeof contracts.releasePreview>;
 type Release = z.input<typeof contracts.gradeRelease>;
 type TestGrades = z.input<(typeof contracts.readTestGrades)['response']>;
 type MyResults = z.input<(typeof contracts.readMyResults)['response']>;
+type ResultDetail = z.input<(typeof contracts.readMyResultDetail)['response']>;
+type ResultQuestion = z.input<typeof contracts.resultQuestion>;
 type GradeRow = typeof grades.$inferSelect;
 type OverrideRow = typeof gradeOverrides.$inferSelect;
 type AttemptRow = typeof testAttempts.$inferSelect;
@@ -697,9 +699,147 @@ export async function myResults(
           attemptId: a.id,
           number: a.number,
           status: a.state === 'in_progress' ? 'in_progress' : grade ? 'released' : 'pending',
+          state: a.state,
           grade: grade ? releasedViewOf(grade) : null,
         };
       }),
     },
+  };
+}
+
+type StoredCheck = {
+  name: string;
+  status: string;
+  message?: string;
+  expected?: unknown;
+  actual?: unknown;
+};
+
+/** The checks recorded by a grading result, hidden ones included; only the server reads this. */
+async function storedChecks(
+  ex: Ex,
+  scope: ClassScope,
+  attemptId: string,
+  resultId: string,
+): Promise<StoredCheck[]> {
+  const [row] = await ex
+    .select({ outcome: executionResults.outcome })
+    .from(executionResults)
+    .where(
+      and(
+        forClass(scope, executionResults),
+        eq(executionResults.attemptId, attemptId),
+        eq(executionResults.id, resultId),
+      ),
+    );
+  return (
+    (row?.outcome as { result?: { checks?: StoredCheck[] } } | undefined)?.result?.checks ?? []
+  );
+}
+
+/**
+ * Student: one of their released attempts in detail (§11): the questions, their own answers,
+ * and, only as the attempt's release policy permits, the answer keys and the hidden checks'
+ * details. An attempt without a released grade is not found, so a draft, a grading in progress
+ * or another student's attempt reveals nothing.
+ */
+export async function myResultDetail(
+  db: Db,
+  scope: ClassScope,
+  attemptId: string,
+): Promise<ResultDetail | undefined> {
+  const [attempt] = await db
+    .select()
+    .from(testAttempts)
+    .where(
+      and(
+        forClass(scope, testAttempts),
+        eq(testAttempts.userId, scope.user.id),
+        eq(testAttempts.id, attemptId),
+        eq(testAttempts.isPreview, false),
+      ),
+    );
+  if (!attempt) return undefined;
+  const { released } = await gradesByAttempt(
+    db,
+    scope,
+    and(eq(grades.attemptId, attempt.id), eq(grades.state, 'released')),
+  );
+  const grade = released.get(attempt.id);
+  if (!grade) return undefined;
+  const test = await pinnedTest(db, attempt);
+  const answers = await answersOf(db, scope, attempt.id);
+  const { solutions, hiddenTestDetails } = attempt.settings.release;
+  const solutionsShown = solutions === 'with_results';
+  const questions: ResultQuestion[] = [];
+  for (const q of test.questions) {
+    const answer = answers.get(q.id) ?? null;
+    const base = {
+      questionId: q.id,
+      kind: q.kind,
+      prompt: q.prompt,
+      possible: q.points,
+      rubric: q.rubric,
+      answer,
+    };
+    switch (q.kind) {
+      case 'choice':
+        questions.push({
+          ...base,
+          options: q.options,
+          solution: solutionsShown ? { correct: q.correct } : null,
+          code: null,
+        });
+        break;
+      case 'numeric':
+        questions.push({
+          ...base,
+          ...(q.unit !== undefined && { unit: q.unit }),
+          solution: solutionsShown ? { value: q.answer, tolerance: q.tolerance } : null,
+          code: null,
+        });
+        break;
+      case 'explanation':
+        questions.push({ ...base, solution: null, code: null });
+        break;
+      case 'code': {
+        const resultId = grade.questions.find((s) => s.questionId === q.id)?.automated?.resultId;
+        const stored = resultId ? await storedChecks(db, scope, attempt.id, resultId) : [];
+        const visibility = new Map(q.checks.map((c) => [c.name, c.visibility]));
+        const checks = stored.map((c) => ({
+          ...c,
+          visibility: visibility.get(c.name) ?? 'hidden',
+        }));
+        const files = (answer as { files?: { path: string; content: string }[] } | null)?.files;
+        questions.push({
+          ...base,
+          solution: null,
+          code: {
+            files: (files ?? []).map((f) => ({ path: f.path, content: f.content })),
+            checks: checks
+              .filter((c) => c.visibility === 'public' || hiddenTestDetails)
+              .map((c) => ({
+                name: c.name,
+                status: c.status,
+                visibility: c.visibility,
+                ...(c.message !== undefined && { message: c.message }),
+                ...(c.expected !== undefined && { expected: c.expected }),
+                ...(c.actual !== undefined && { actual: c.actual }),
+              })),
+            checkTotals: {
+              passed: checks.filter((c) => c.status === 'passed').length,
+              total: checks.length,
+            },
+          },
+        });
+      }
+    }
+  }
+  return {
+    attemptId: attempt.id,
+    gradeId: grade.id,
+    solutionsShown,
+    hiddenTestDetailsShown: hiddenTestDetails,
+    questions,
   };
 }

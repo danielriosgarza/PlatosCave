@@ -10,10 +10,13 @@ import { AttemptWorkspace } from './AttemptWorkspace';
 import {
   type AttemptView,
   fetchAttempt,
+  type ResultAttempt,
   startAttempt,
   type TestOverview,
+  useMyResults,
   useTestOverview,
 } from './api';
+import { ReportedGrade, ResultsView, resultLine } from './Results';
 import { formatInZone, TermsPanel } from './TermsPanel';
 import styles from './Test.module.css';
 
@@ -136,6 +139,8 @@ function TestEntry({
   onAll?: () => void;
 }) {
   const overview = useTestOverview(classId, resource.resourceId);
+  const results = useMyResults(classId, resource.resourceId);
+  const [viewing, setViewing] = useState<ResultAttempt | null>(null);
   const [open, setOpen] = useState<AttemptView | null>(null);
   const [starting, setStarting] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
@@ -150,6 +155,17 @@ function TestEntry({
           setOpen(null);
           void overview.refetch();
         }}
+      />
+    );
+  }
+  if (viewing) {
+    return (
+      <ResultsView
+        key={viewing.attemptId}
+        classId={classId}
+        title={resource.title}
+        attempt={viewing}
+        onBack={() => setViewing(null)}
       />
     );
   }
@@ -241,26 +257,39 @@ function TestEntry({
       ) : (
         <p>{reason ? (INELIGIBLE[reason] ?? 'You cannot start an attempt now.') : ''}</p>
       )}
+      {results.data ? <ReportedGrade results={results.data} /> : null}
       {data.attempts.length > 0 ? (
         <ul className={styles.attempts} aria-label="Your attempts">
-          {data.attempts.map((a) => (
-            <li key={a.id}>
-              <span>
-                <strong>Attempt {a.number}</strong>
-                <br />
-                <span className={`${styles.small} ${styles.muted}`}>
-                  {STATE_LABEL[a.state] ?? a.state}
-                  {a.receipt?.autoSubmitted ? ' · submitted by the server at the deadline' : ''}
+          {data.attempts.map((a) => {
+            const result = results.data?.attempts.find((r) => r.attemptId === a.id);
+            return (
+              <li key={a.id}>
+                <span>
+                  <strong>Attempt {a.number}</strong>
+                  <br />
+                  <span className={`${styles.small} ${styles.muted}`}>
+                    {result ? resultLine(result) : (STATE_LABEL[a.state] ?? a.state)}
+                    {a.receipt?.autoSubmitted ? ' · submitted by the server at the deadline' : ''}
+                  </span>
                 </span>
-              </span>
-              {a.receipt ? (
-                <span className={`${styles.small} ${styles.muted}`}>
-                  Receipt {a.receipt.submissionId.slice(0, 8)} ·{' '}
-                  {formatInZone(a.receipt.submittedAt, data.terms.timeZone)}
-                </span>
-              ) : null}
-            </li>
-          ))}
+                {a.receipt ? (
+                  <span className={`${styles.small} ${styles.muted}`}>
+                    Receipt {a.receipt.submissionId.slice(0, 8)} ·{' '}
+                    {formatInZone(a.receipt.submittedAt, data.terms.timeZone)}
+                  </span>
+                ) : null}
+                {result?.status === 'released' ? (
+                  <button
+                    type="button"
+                    className={buttons.outline}
+                    onClick={() => setViewing(result)}
+                  >
+                    View feedback for attempt {a.number}
+                  </button>
+                ) : null}
+              </li>
+            );
+          })}
         </ul>
       ) : null}
     </div>
