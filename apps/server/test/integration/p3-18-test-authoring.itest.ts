@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm';
-import { afterAll, beforeAll, describe, expect, test } from 'vitest';
+import { afterAll, beforeAll, describe, expect, test, vi } from 'vitest';
 import { createResource } from '../../src/db/content/drafts';
+import * as preview from '../../src/db/preview';
 import { classes } from '../../src/db/schema';
 import { asCourseScope, ids } from '../fixtures/world';
 import { call, type ExecWorld, execWorld, quiz, rowOf } from './execution';
@@ -231,6 +232,26 @@ describe('P3-18 instructor preview runs', () => {
       expect(fresh.status).toBe(409);
     } finally {
       await w.testDb.db.update(classes).set({ archivedAt: null }).where(eq(classes.id, ids.classB));
+    }
+  });
+
+  test('a class archived after it was picked answers its own declared 409', async () => {
+    const picked = preview.previewRunClass;
+    let archived = '';
+    const spy = vi.spyOn(preview, 'previewRunClass').mockImplementation(async (db, scope) => {
+      const home = await picked(db, scope);
+      archived = home?.classId ?? '';
+      // The class is archived between the pick and the run being queued.
+      await db.update(classes).set({ archivedAt: w.clock.now }).where(eq(classes.id, archived));
+      return home;
+    });
+    try {
+      const res = await call(w, 'marcus', 'POST', url(), { set: 'public' });
+      expect(res.status).toBe(409);
+      expect(res.body).toEqual({ error: 'class_archived' });
+    } finally {
+      spy.mockRestore();
+      await w.testDb.db.update(classes).set({ archivedAt: null }).where(eq(classes.id, archived));
     }
   });
 });

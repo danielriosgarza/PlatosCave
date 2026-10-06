@@ -189,13 +189,16 @@ export function nextCriterionId(rubric: { id: string }[]): string {
 /**
  * The checks of a question after the file at `from` is renamed to `to`, or removed when `to` is
  * undefined: a check keeps naming the file it was set on. A path cleared while it is retyped
- * keeps its main-file checks too, since they then name the empty path.
+ * keeps its main-file checks too, since they then name the empty path. When another file has the
+ * same path the checks cannot be told apart, so they stay where they are.
  */
 export function checksAfterFileChange(
   checks: DraftCheck[],
   from: string,
   to: string | undefined,
+  files: { path: string }[],
 ): DraftCheck[] {
+  if (files.filter((f) => f.path === from).length > 1) return checks;
   return checks.map((c) => {
     const listed = c.files.split('\n');
     const files =
@@ -205,6 +208,21 @@ export function checksAfterFileChange(
     const file = c.file === from ? (to ?? '') : c.file;
     return file === c.file && files === c.files ? c : { ...c, file, files };
   });
+}
+
+/**
+ * The correct ids of a question after the option at `index` gets the id `to`: the mark follows the
+ * option it was set on, unless another option shares the old id and the mark cannot be told apart.
+ */
+export function correctAfterRename(
+  options: { id: string }[],
+  correct: string[],
+  index: number,
+  to: string,
+): string[] {
+  const from = options[index]?.id;
+  if (from === undefined || options.filter((o) => o.id === from).length > 1) return correct;
+  return correct.map((c) => (c === from ? to : c));
 }
 
 /** The next free question id: `q1`, `q2`, …. */
@@ -348,7 +366,6 @@ function checkContent(c: DraftCheck, at: string) {
     ...(files.length > 0 && { files }),
     points: number(c.points) ?? 1,
     ...(c.timeoutSeconds.trim() && { timeoutSeconds: number(c.timeoutSeconds) }),
-    ...(c.stdin && { stdin: c.stdin }),
   };
   const tolerance = {
     ...(c.abs.trim() && { abs: number(c.abs) }),
@@ -362,6 +379,8 @@ function checkContent(c: DraftCheck, at: string) {
     const args = argLines(c.args);
     return {
       ...base,
+      // Standard input is a stdio field: one typed before the kind changed is not sent.
+      ...(c.stdin && { stdin: c.stdin }),
       ...(args.length > 0 && { args }),
       expected: {
         stdout: c.expectedStdout,

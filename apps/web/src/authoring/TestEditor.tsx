@@ -1,6 +1,6 @@
 import { type draftResource, getResource, updateResource } from '@parallax/contracts/routes/drafts';
 import { useQuery } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import type { z } from 'zod';
 import { call } from '../api/client';
 import buttons from '../components/Buttons.module.css';
@@ -15,6 +15,7 @@ import { SaveStatus } from './SaveStatus';
 import { Area, Check, moved, replaceAt, Select, Text } from './TestFields';
 import {
   blankQuestion,
+  correctAfterRename,
   type DraftCriterion,
   type DraftQuestion,
   type DraftSettings,
@@ -503,6 +504,8 @@ function ChoiceFields({
   q: DraftQuestion;
   onChange: (patch: Partial<DraftQuestion>) => void;
 }) {
+  // One group per question editor: a shared name unchecks radios of another open test.
+  const groupName = useId();
   const setOption = (i: number, patch: Partial<DraftQuestion['options'][number]>) =>
     onChange({
       options: replaceAt(q.options, i, {
@@ -529,8 +532,7 @@ function ChoiceFields({
             onChange={(v) =>
               onChange({
                 options: replaceAt(q.options, i, { ...o, id: v }),
-                // The correct mark follows the option it was set on.
-                correct: q.correct.map((c) => (c === o.id ? v : c)),
+                correct: correctAfterRename(q.options, q.correct, i, v),
               })
             }
           />
@@ -541,7 +543,7 @@ function ChoiceFields({
           />
           <Check
             type={q.multiple ? 'checkbox' : 'radio'}
-            name={`correct-${n}`}
+            name={groupName}
             label={`Option ${i + 1} is correct`}
             checked={q.correct.includes(o.id)}
             onChange={(on) =>

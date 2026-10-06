@@ -62,14 +62,16 @@ function scriptOnlyHidden(q: CodeQuestion): TestIssue[] {
   return [
     {
       code: 'script_only_hidden_checks',
-      message: `Question “${q.id}”: every hidden check is a script check. A script check’s verdict is decided inside the student’s own process, so the question has no hidden check a student cannot influence. Add a call or stdio hidden check.`,
+      message: `Question “${q.id}”: every hidden check is a script check. Add a call or stdio hidden check.`,
     },
   ];
 }
 
 const rubricIssue = (q: TestQuestion): TestIssue[] => {
-  const total = q.rubric.reduce((sum, c) => sum + c.points, 0);
-  return total > q.points
+  // Points are decimals, so the sum is compared in hundredths, not as floats.
+  const hundredths = (n: number) => Math.round(n * 100);
+  const total = q.rubric.reduce((sum, c) => sum + hundredths(c.points), 0) / 100;
+  return total > hundredths(q.points) / 100
     ? [
         {
           code: 'invalid_test',

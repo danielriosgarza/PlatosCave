@@ -5,6 +5,7 @@ import {
   blankQuestion,
   blankTest,
   checksAfterFileChange,
+  correctAfterRename,
   problemsOf,
   toContent,
   toDraft,
@@ -153,12 +154,60 @@ describe('checksAfterFileChange', () => {
     { ...blankCheck('a.py'), name: 'one', files: 'data.csv\nb.py' },
     { ...blankCheck('b.py'), name: 'two' },
   ];
+  const files = [{ path: 'a.py' }, { path: 'b.py' }, { path: 'data.csv' }];
   it('follows a renamed file and drops a removed one', () => {
-    expect(checksAfterFileChange(checks, 'b.py', 'c.py').map((c) => [c.file, c.files])).toEqual([
+    expect(
+      checksAfterFileChange(checks, 'b.py', 'c.py', files).map((c) => [c.file, c.files]),
+    ).toEqual([
       ['a.py', 'data.csv\nc.py'],
       ['c.py', ''],
     ]);
-    expect(checksAfterFileChange(checks, 'data.csv', undefined)[0]?.files).toBe('b.py');
-    expect(checksAfterFileChange(checks, 'a.py', undefined)[0]?.file).toBe('');
+    expect(checksAfterFileChange(checks, 'data.csv', undefined, files)[0]?.files).toBe('b.py');
+    expect(checksAfterFileChange(checks, 'a.py', undefined, files)[0]?.file).toBe('');
+  });
+  it('leaves the checks alone when two files share the old path', () => {
+    const empty = [
+      { ...blankCheck(''), name: 'one' },
+      { ...blankCheck('b.py'), name: 'two' },
+    ];
+    const twins = [{ path: '' }, { path: '' }, { path: 'b.py' }];
+    expect(checksAfterFileChange(empty, '', 'x.py', twins)).toBe(empty);
+  });
+});
+
+describe('correctAfterRename', () => {
+  it('moves the mark with a uniquely named option', () => {
+    const options = [{ id: 'a' }, { id: 'b' }];
+    expect(correctAfterRename(options, ['b'], 1, 'c')).toEqual(['c']);
+  });
+  it('does not move the mark from another option that shares the old id', () => {
+    // Options a (correct) and b; b is retyped as a, then option 2 is retyped from a to c.
+    const duplicated = [{ id: 'a' }, { id: 'a' }];
+    expect(correctAfterRename(duplicated, ['a'], 1, 'c')).toEqual(['a']);
+  });
+});
+
+describe('stdin of a check', () => {
+  it('is sent for a stdio check only', () => {
+    const question = blankQuestion('code', 'q1');
+    const stdin = 'typed before the kind changed\n';
+    const sent = (kind: 'stdio' | 'call' | 'script') => {
+      const built = toContent({
+        ...blankTest(),
+        questions: [
+          {
+            ...question,
+            checks: [{ ...blankCheck('solution.py'), kind, stdin, fn: 'f', expectedValue: '1' }],
+          },
+        ],
+      });
+      if (!('content' in built)) throw new Error(built.problem);
+      const check = (built.content as { questions: { checks: Record<string, unknown>[] }[] })
+        .questions[0]?.checks[0];
+      return check?.stdin;
+    };
+    expect(sent('stdio')).toBe(stdin);
+    expect(sent('call')).toBeUndefined();
+    expect(sent('script')).toBeUndefined();
   });
 });

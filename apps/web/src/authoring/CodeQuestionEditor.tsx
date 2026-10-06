@@ -99,7 +99,7 @@ export function CodeQuestionEditor({ question: q, courseId, onChange }: Props) {
                 onClick={() =>
                   onChange({
                     files: q.files.filter((_, j) => j !== i),
-                    checks: checksAfterFileChange(q.checks, f.path, undefined),
+                    checks: checksAfterFileChange(q.checks, f.path, undefined, q.files),
                   })
                 }
               >
@@ -113,7 +113,7 @@ export function CodeQuestionEditor({ question: q, courseId, onChange }: Props) {
                 onChange({
                   files: replaceAt(q.files, i, { ...f, path: v }),
                   // The checks that named the file follow it.
-                  checks: checksAfterFileChange(q.checks, f.path, v),
+                  checks: checksAfterFileChange(q.checks, f.path, v, q.files),
                 })
               }
             />
