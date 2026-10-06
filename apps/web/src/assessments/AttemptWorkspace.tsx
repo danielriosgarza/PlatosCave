@@ -210,7 +210,7 @@ export function AttemptWorkspace({
         .map((q) => ({ questionId: q.id, value: entries[q.id]?.value ?? null }));
       setUnsentCount(unsent.length);
       // The copy outlives this page (IndexedDB, bound to the attempt) until the server has it.
-      if (unsent.length > 0 && userId) {
+      if (unsent.length > 0 && userId && !view.localCopyAt) {
         await saveAttemptCopy({
           key: attemptCopyKey(userId, classId, view.id),
           userId,
@@ -225,7 +225,11 @@ export function AttemptWorkspace({
       if (unsent.length === 0 || view.localCopyAt) return;
       setLocal('sending');
       try {
-        await sendLocalCopy(classId, view.id, unsent);
+        const ack = await sendLocalCopy(classId, view.id, unsent);
+        // The acknowledgement goes into the cached attempt, where every reader finds it.
+        queryClient.setQueryData(key, (cached: AttemptView | undefined) =>
+          cached ? { ...cached, localCopyAt: ack.localCopyAt } : cached,
+        );
         setLocal('kept');
         clearUnsent(view.id);
         if (userId) void removeAttemptCopy(userId, classId, view.id);
@@ -235,7 +239,7 @@ export function AttemptWorkspace({
         setLocal('failed');
       }
     },
-    [classId, entries, refresh, userId],
+    [classId, entries, refresh, queryClient, key, userId],
   );
 
   /** Sends the copy this browser kept (or the page's unsent answers) after an instructor asked (A15). */

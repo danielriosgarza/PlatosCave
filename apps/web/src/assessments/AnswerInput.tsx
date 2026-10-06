@@ -71,12 +71,30 @@ function ChoiceInput({
   );
 }
 
-/** Accepts what a person types for a number; null when the field is empty, NaN when it is not one. */
-export function parseNumeric(text: string): number | null {
-  const t = text.trim().replace(',', '.');
-  if (t === '') return null;
-  return /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(t) ? Number(t) : Number.NaN;
+/**
+ * What a person typed for a number. `value` is null for an empty field, NaN when it is not a
+ * number. `ambiguous` is set only for text that would be a number under either reading of its
+ * comma ("1,000", "1,000.5", "1,2,3"): the saved number would depend on a guess, so none is read.
+ */
+export function readNumeric(text: string): { value: number | null; ambiguous: boolean } {
+  const t = text.trim();
+  if (t === '') return { value: null, ambiguous: false };
+  const comma = t.includes(',');
+  const ambiguous =
+    comma &&
+    /^[+-]?[\d.,]+([eE][+-]?\d+)?$/.test(t) &&
+    !/(^|[^\d]),|,([^\d]|$)/.test(t) &&
+    (t.includes('.') || t.indexOf(',') !== t.lastIndexOf(',') || /,\d{3}(?!\d)/.test(t));
+  if (ambiguous) return { value: Number.NaN, ambiguous };
+  const n = t.replace(',', '.');
+  return {
+    value: /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(n) ? Number(n) : Number.NaN,
+    ambiguous,
+  };
 }
+
+/** Accepts what a person types for a number; null when the field is empty, NaN when it is not one. */
+export const parseNumeric = (text: string): number | null => readNumeric(text).value;
 
 function NumericInput({
   question,
@@ -85,9 +103,23 @@ function NumericInput({
 }: Common & { question: Extract<Question, { kind: 'numeric' }> }) {
   // The text is kept as typed: "1." and "-" are steps towards a number, not mistakes.
   const [text, setText] = useState(typeof value === 'number' ? String(value) : '');
-  const parsed = parseNumeric(text);
+  const { value: parsed, ambiguous } = readNumeric(text);
   const invalid = Number.isNaN(parsed);
   const id = `num-${question.id}`;
+  // A value adopted from the server after a reconnect replaces the text; typing never gets here,
+  // because the value then equals what the text parses to. Text that is not a number yet ("-",
+  // "1.5e", an ambiguous "1,000") is the student's work in progress and stays.
+  useEffect(() => {
+    const incoming = typeof value === 'number' ? value : null;
+    setText((current) => {
+      const read = parseNumeric(current);
+      return Number.isNaN(read) || read === incoming
+        ? current
+        : incoming === null
+          ? ''
+          : String(incoming);
+    });
+  }, [value]);
   return (
     <div className={styles.field}>
       <label htmlFor={id}>Your answer{question.unit ? ` (${question.unit})` : ''}</label>
@@ -102,14 +134,19 @@ function NumericInput({
           aria-describedby={invalid ? `${id}-error` : undefined}
           onChange={(e) => {
             setText(e.target.value);
-            const next = parseNumeric(e.target.value);
-            if (!Number.isNaN(next)) onChange(next);
+            const next = readNumeric(e.target.value);
+            // An ambiguous text clears the saved answer, so no guessed prefix such as "1" for
+            // "1,000" stays saved (or is submitted) while the error is showing.
+            if (next.ambiguous) onChange(null);
+            else if (!Number.isNaN(next.value)) onChange(next.value);
           }}
         />
       </div>
       {invalid ? (
         <p className={styles.error} id={`${id}-error`}>
-          Enter a number. This text is not saved yet.
+          {ambiguous
+            ? 'A comma can mean thousands or a decimal point. Write 1000 or 1.5 without separators. Your saved answer is cleared until you do.'
+            : 'Enter a number. This text is not saved yet.'}
         </p>
       ) : null}
     </div>

@@ -1,3 +1,4 @@
+import { reviewTestAttempts } from '@parallax/contracts/routes/tests';
 import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import buttons from '../components/Buttons.module.css';
@@ -76,7 +77,9 @@ function RecoveryRow({ classId, attempt }: { classId: string; attempt: Reviewed 
       await askForRecovery(classId, attempt.id, reason.trim());
       setAsking(false);
       setReason('');
-      await queryClient.invalidateQueries({ queryKey: ['GET'] });
+      await queryClient.invalidateQueries({
+        queryKey: [reviewTestAttempts.method, reviewTestAttempts.path],
+      });
     } catch {
       setProblem('The request was not recorded. Try again.');
     } finally {

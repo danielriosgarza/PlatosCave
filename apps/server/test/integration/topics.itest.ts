@@ -6,7 +6,7 @@ import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { buildApp } from '../../src/app';
 import type { ClassScope } from '../../src/auth/scope';
-import { loadConfig } from '../../src/config';
+import { DEV_RUNNER_RUNTIMES, loadConfig } from '../../src/config';
 import { findReleaseTopic, loadClassTopics } from '../../src/db/classTopics';
 import { adoptRelease } from '../../src/db/content/adoption';
 import { publishRelease } from '../../src/db/content/releases';
@@ -313,7 +313,7 @@ describe('topic locks gate downloads', () => {
     const scheduled = await addTopic(3, 'Bayesian methods', []);
     await addPdf(scheduled.id, 'Week 2', 'bayes pdf', nextWeek);
 
-    const published = await publishRelease(db, elena);
+    const published = await publishRelease(db, elena, { runtimes: DEV_RUNNER_RUNTIMES });
     if (!published.ok) throw new Error(JSON.stringify(published.report));
     const adopted = await adoptRelease(db, asClassScope(ids.classA, ids.statistics, ids.priya), {
       releaseId: published.release.id,

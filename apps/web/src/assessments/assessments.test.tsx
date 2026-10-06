@@ -3,7 +3,7 @@ import 'fake-indexeddb/auto';
 import { onlineManager } from '@tanstack/react-query';
 import { act, cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import {
   CLASS_A,
   instructorIn,
@@ -99,6 +99,8 @@ interface Options {
   runResult?: (n: number) => unknown;
   /** The caller teaches the class: the instructor routes of the recovery request are served. */
   instructor?: boolean;
+  /** Every attempt read fails once the server has stored a local copy. */
+  failReadsAfterLocalCopy?: boolean;
 }
 
 /** An in-memory stand-in for the P3-15 and P3-16 routes: it keeps answers, receipts and runs. */
@@ -344,6 +346,7 @@ function testApi(options: Options = {}) {
       if (server.failLocalCopy) return { status: 503, body: {} };
       log.localCopies.push(body);
       server.localCopyAt = new Date().toISOString();
+      if (options.failReadsAfterLocalCopy) server.failReads = 1000;
       return { status: 200, body: { localCopyAt: server.localCopyAt } };
     }
     if (/\/runs\/[^/?]+$/.test(url) && method === 'GET') {
@@ -385,6 +388,19 @@ function testApi(options: Options = {}) {
     },
   };
 }
+
+const goOffline = () => {
+  Object.defineProperty(window.navigator, 'onLine', { configurable: true, value: false });
+  act(() => {
+    window.dispatchEvent(new Event('offline'));
+  });
+};
+const goOnline = () => {
+  Object.defineProperty(window.navigator, 'onLine', { configurable: true, value: true });
+  act(() => {
+    window.dispatchEvent(new Event('online'));
+  });
+};
 
 const open = () => renderApp(`/classes/${CLASS_A}/topics/${T_SAMPLING}/tests`);
 
@@ -858,10 +874,7 @@ describe('test UI: submission', () => {
     testApi();
     open();
     await reviewable(user);
-    Object.defineProperty(window.navigator, 'onLine', { configurable: true, value: false });
-    act(() => {
-      window.dispatchEvent(new Event('offline'));
-    });
+    goOffline();
     expect(screen.getByRole('button', { name: 'Submit test' })).toBeDisabled();
     expect(screen.getByText(/Submitting is unavailable while you are offline/)).toBeVisible();
   });
@@ -878,10 +891,7 @@ describe('test UI: expiry', () => {
     expect(await screen.findByText(/^Saved \d/)).toBeVisible();
     // The connection drops; the explanation is typed but never reaches the server.
     api.server.offline = true;
-    Object.defineProperty(window.navigator, 'onLine', { configurable: true, value: false });
-    act(() => {
-      window.dispatchEvent(new Event('offline'));
-    });
+    goOffline();
     await user.click(screen.getByRole('button', { name: 'Question 3 Unanswered' }));
     await user.type(
       screen.getByRole('textbox', { name: 'Your explanation' }),
@@ -899,10 +909,7 @@ describe('test UI: expiry', () => {
       unanswered: ['q2', 'q3', 'q4'],
     };
     api.server.offline = false;
-    Object.defineProperty(window.navigator, 'onLine', { configurable: true, value: true });
-    act(() => {
-      window.dispatchEvent(new Event('online'));
-    });
+    goOnline();
     expect(await screen.findByRole('heading', { name: /Time ran out/ })).toBeVisible();
     expect(screen.getByText(/It received 1 answer/)).toBeVisible();
     expect(screen.getByText('Question 2, Question 3, Question 4')).toBeVisible();
@@ -958,6 +965,8 @@ describe('test UI: expiry', () => {
     expect(await screen.findByText(/Your instructor asked for your unsent work/)).toBeVisible();
     await user.click(screen.getByRole('button', { name: 'Open the receipt of attempt 1' }));
     expect(await screen.findByText(/It is not part of the submission/)).toBeVisible();
+    // The reopened page tried the copy again and the server still refused it.
+    expect(await screen.findByText(/could not be sent yet/)).toBeVisible();
     api.server.failLocalCopy = false;
     await user.click(screen.getByRole('button', { name: 'Send unsent work' }));
     await waitFor(() => expect(api.log.localCopies).toHaveLength(1));
@@ -1029,18 +1038,12 @@ describe('test UI: expiry', () => {
     open();
     await begin(user);
     api.server.offline = true;
-    Object.defineProperty(window.navigator, 'onLine', { configurable: true, value: false });
-    act(() => {
-      window.dispatchEvent(new Event('offline'));
-    });
+    goOffline();
     await user.click(screen.getByRole('button', { name: 'Question 3 Unanswered' }));
     await user.type(screen.getByRole('textbox', { name: 'Your explanation' }), 'Offline words');
     expect(await screen.findByText(/Not saved/)).toBeVisible();
     api.server.offline = false;
-    Object.defineProperty(window.navigator, 'onLine', { configurable: true, value: true });
-    act(() => {
-      window.dispatchEvent(new Event('online'));
-    });
+    goOnline();
     await waitFor(() => expect(api.answers.get('q3')?.value).toBe('Offline words'));
     // The server's state was read before the unsent answer was sent.
     expect(api.log.order.indexOf('read')).toBeGreaterThanOrEqual(0);
@@ -1148,5 +1151,144 @@ describe('test UI: keyboard and screen reader', () => {
     await user.click(screen.getByRole('button', { name: 'Question 4 Unanswered' }));
     const editor = await enableScreenReaderMode(user);
     expect(editor).toHaveAccessibleName('solution.py, your implementation');
+  });
+});
+
+describe('test UI: follow-ups to the first release', () => {
+  it('A14 a numeric answer with an ambiguous comma is refused, never reinterpreted', async () => {
+    const user = userEvent.setup();
+    const api = testApi();
+    open();
+    await begin(user);
+    await user.click(screen.getByRole('button', { name: 'Question 2 Unanswered' }));
+    const field = screen.getByRole('textbox', { name: /Your answer/ });
+    // Typed key by key, the way people enter a number: "1,0" and "1,00" read as 1 on the way.
+    for (const text of ['1,000', '1,000.5', '1,2,3', '12,345']) {
+      await user.clear(field);
+      await user.type(field, text);
+      expect(screen.getByText(/A comma can mean thousands or a decimal point/)).toBeVisible();
+      expect(screen.getByText(/Your saved answer is cleared/)).toBeVisible();
+      expect(field).toHaveAttribute('aria-invalid', 'true');
+    }
+    await new Promise((r) => setTimeout(r, 1200));
+    // The error says what is stored: nothing. No guessed prefix is left as the answer.
+    expect(api.answers.get('q2')?.value ?? null).toBeNull();
+    expect(api.log.puts.filter((p) => p.id === 'q2' && p.body.value !== null)).toEqual([]);
+    // An unambiguous decimal comma is still read as a decimal point.
+    await user.clear(field);
+    await user.type(field, '1,5');
+    expect(screen.queryByText(/A comma can mean/)).toBeNull();
+    await waitFor(() => expect(api.answers.get('q2')?.value).toBe(1.5));
+  });
+
+  it('A14 text that is not a number gets the plain error, even with a comma in it', async () => {
+    const user = userEvent.setup();
+    testApi();
+    open();
+    await begin(user);
+    await user.click(screen.getByRole('button', { name: 'Question 2 Unanswered' }));
+    const field = screen.getByRole('textbox', { name: /Your answer/ });
+    for (const text of ['abc,def.', '1.5,', 'x,y,z']) {
+      await user.clear(field);
+      await user.type(field, text);
+      expect(screen.getByText(/Enter a number/)).toBeVisible();
+      expect(screen.queryByText(/A comma can mean/)).toBeNull();
+    }
+  });
+
+  it('A15 text still being typed is not replaced by a value adopted after a reconnect', async () => {
+    const user = userEvent.setup();
+    const api = testApi({ deadlineAt: '2099-01-01T00:00:00Z' });
+    open();
+    await begin(user);
+    await user.click(screen.getByRole('button', { name: 'Question 2 Unanswered' }));
+    const field = screen.getByRole('textbox', { name: /Your answer/ });
+    await user.type(field, '3');
+    expect(await screen.findByText(/^Saved \d/)).toBeVisible();
+    await user.type(field, 'e');
+    api.answers.set('q2', { value: 7, flagged: false, seq: 50, savedAt: new Date().toISOString() });
+    goOffline();
+    goOnline();
+    await waitFor(() => expect(api.log.reads).toBeGreaterThan(0));
+    await new Promise((r) => setTimeout(r, 300));
+    expect(field).toHaveValue('3e');
+  });
+
+  it('A15 a newer numeric value adopted after a reconnect reaches the field', async () => {
+    const user = userEvent.setup();
+    const api = testApi({ deadlineAt: '2099-01-01T00:00:00Z' });
+    open();
+    await begin(user);
+    await user.click(screen.getByRole('button', { name: 'Question 2 Unanswered' }));
+    const field = screen.getByRole('textbox', { name: /Your answer/ });
+    await user.type(field, '3');
+    expect(await screen.findByText(/^Saved \d/)).toBeVisible();
+    // Another device saved a newer value while this one was away.
+    api.answers.set('q2', { value: 7, flagged: false, seq: 50, savedAt: new Date().toISOString() });
+    goOffline();
+    goOnline();
+    await waitFor(() => expect(field).toHaveValue('7'));
+    expect(api.log.puts.filter((p) => p.id === 'q2').every((p) => p.body.value === 3)).toBe(true);
+  });
+
+  it('A15 a code answer adopted after a reconnect is not reported as a student edit', async () => {
+    // jsdom has no layout; CodeMirror measures text ranges. Restored when the test ends.
+    const rect = { x: 0, y: 0, top: 0, left: 0, right: 0, bottom: 0, width: 0, height: 0 };
+    const original = {
+      getClientRects: Range.prototype.getClientRects,
+      getBoundingClientRect: Range.prototype.getBoundingClientRect,
+    };
+    Range.prototype.getClientRects = () => [] as unknown as DOMRectList;
+    Range.prototype.getBoundingClientRect = () => ({ ...rect, toJSON: () => rect });
+    onTestFinished(() => {
+      Object.assign(Range.prototype, original);
+    });
+    const user = userEvent.setup();
+    const api = testApi({ deadlineAt: '2099-01-01T00:00:00Z' });
+    open();
+    await begin(user);
+    await user.click(screen.getByRole('button', { name: 'Question 4 Unanswered' }));
+    const adopted = 'def standard_error(values):\n    return 42\n';
+    api.answers.set('q4', {
+      value: { files: [{ path: 'solution.py', content: adopted }] },
+      flagged: false,
+      seq: 50,
+      savedAt: new Date().toISOString(),
+    });
+    goOffline();
+    goOnline();
+    await waitFor(() =>
+      expect(document.querySelector('.cm-content')?.textContent).toContain('return 42'),
+    );
+    // Past the autosave delay: an adopted value must not be marked dirty and sent again.
+    await new Promise((r) => setTimeout(r, 1500));
+    expect(screen.queryByText('Unsaved changes')).toBeNull();
+    expect(api.log.puts.filter((p) => p.id === 'q4')).toEqual([]);
+  }, 15_000);
+
+  it('A15 the receipt says the local copy is kept once the server acknowledged it, even if the next read fails', async () => {
+    const user = userEvent.setup();
+    const api = testApi({ deadlineAt: '2099-01-01T00:00:00Z', failReadsAfterLocalCopy: true });
+    open();
+    await begin(user);
+    goOffline();
+    api.server.offline = true;
+    await user.click(screen.getByRole('button', { name: 'Question 3 Unanswered' }));
+    await user.type(screen.getByRole('textbox', { name: 'Your explanation' }), 'Offline words');
+    expect(await screen.findByText(/Not saved/)).toBeVisible();
+    api.server.receipt = {
+      submissionId: uuid(0xb6),
+      attemptId: ATTEMPT,
+      submittedAt: '2026-10-05T09:30:00Z',
+      autoSubmitted: true,
+      late: false,
+      answers: [],
+      unanswered: ['q1', 'q2', 'q3', 'q4'],
+    };
+    api.server.offline = false;
+    goOnline();
+    await waitFor(() => expect(api.log.localCopies).toHaveLength(1));
+    expect(await screen.findByText(/were kept for your instructor/)).toBeVisible();
+    expect(screen.queryByText(/in this browser only/)).toBeNull();
   });
 });

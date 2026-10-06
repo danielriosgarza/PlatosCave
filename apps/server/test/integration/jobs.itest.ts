@@ -8,6 +8,7 @@ import {
   NoRecentAuthError,
   resolveActorScope,
 } from '../../src/auth/scope';
+import { DEV_RUNNER_RUNTIMES } from '../../src/config';
 import type { Db } from '../../src/db/client';
 import { validateDrafts } from '../../src/db/content/releases';
 import { createBoss } from '../../src/db/jobs/boss';
@@ -613,7 +614,7 @@ describe('derived status of resource revisions', () => {
       .where(eq(resources.id, deck.id));
 
     const unconverted = async () =>
-      (await validateDrafts(db, elena)).errors.filter(
+      (await validateDrafts(db, elena, { runtimes: DEV_RUNNER_RUNTIMES })).errors.filter(
         (e) => e.code === 'unconverted_deck' && e.resourceId === deck.id,
       );
     const status = (state: 'running' | 'ready') => ({

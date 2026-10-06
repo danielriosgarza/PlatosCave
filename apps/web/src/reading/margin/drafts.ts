@@ -226,12 +226,37 @@ export async function removeAttemptCopy(
 ): Promise<void> {
   const key = attemptCopyKey(userId, classId, attemptId);
   copies.delete(key);
-  await run('readwrite', (store) => store.delete(key));
+  const db = await database();
+  if (!db) return;
+  await new Promise<void>((resolve) => {
+    try {
+      const tx = db.transaction(STORE, 'readwrite');
+      tx.objectStore(STORE).delete(key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
+      tx.onabort = () => resolve();
+    } catch {
+      resolve();
+    }
+  });
 }
 
+/** Resolves once the browser's store has committed the delete (or could not take it). */
 export async function removeDraft(key: string): Promise<void> {
   memory.delete(key);
-  await run('readwrite', (store) => store.delete(key));
+  const db = await database();
+  if (!db) return;
+  await new Promise<void>((resolve) => {
+    try {
+      const tx = db.transaction(STORE, 'readwrite');
+      tx.objectStore(STORE).delete(key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
+      tx.onabort = () => resolve();
+    } catch {
+      resolve();
+    }
+  });
 }
 
 /** Drafts of one person's work on one resource of one class, newest edit last. */
