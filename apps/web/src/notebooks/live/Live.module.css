@@ -95,3 +95,7 @@
   font: var(--pc-text-label);
   margin-top: 8px;
 }
+.panels {
+  display: grid;
+  gap: 8px;
+}

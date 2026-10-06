@@ -6,7 +6,7 @@ import { createBoss, EXEC_SCHEMA } from './db/jobs/boss';
 import { workExecution } from './execution/handlers';
 import { ensureExecQueues } from './execution/queues';
 import type { JobLogger } from './jobs/logger';
-import { workMaintenance } from './jobs/maintenance';
+import { retentionPolicy, workMaintenance } from './jobs/maintenance';
 import { loadJobs } from './jobs/registry';
 import { ensureQueues, workScopedJob } from './jobs/scoped';
 import { createStorage } from './storage/create';
@@ -172,7 +172,7 @@ if (mode === 'api' || mode === 'relay') {
     for (const job of jobs) {
       await workScopedJob(boss, database.db, job, log, {}, { storage, boss, exec });
     }
-    const maintenance = await workMaintenance(boss, database.db, log);
+    const maintenance = await workMaintenance(boss, database.db, log, retentionPolicy(config));
     const execution = await workExecution(bossExec, database.db, log);
     log.info(
       { jobs: [...jobs.map((j) => j.name), ...maintenance, ...execution] },

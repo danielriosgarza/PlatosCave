@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { classArchived, conflictBody, defineRoute, invalidBody } from '../define';
 import { exampleIds } from '../examples';
 import { testAttemptStates } from '../test';
+import { isWellFormed } from '../wellFormed';
 
 /**
  * Grades of test attempts (§11, §12). Every route is class-scoped. A grade is an append-only
@@ -22,9 +23,8 @@ const resourceParams = z.object({ classId: z.uuid(), resourceId: z.uuid() });
 const questionId = z.string().min(1).max(40);
 const points = z.number().min(0).max(100_000);
 /** Text Postgres's jsonb refuses (a lone surrogate) is refused here with 400, not a 500. */
-const wellFormed = (s: string) => !/[\uD800-\uDFFF]/u.test(s);
 const text = (max: number) =>
-  z.string().trim().min(1).max(max).refine(wellFormed, { message: 'contains a lone surrogate' });
+  z.string().trim().min(1).max(max).refine(isWellFormed, { message: 'contains a lone surrogate' });
 const reason = text(500);
 
 export const gradeStates = ['draft', 'released'] as const;
@@ -246,6 +246,7 @@ export const previewGradeRelease = defineRoute({
   method: 'POST',
   path: '/api/classes/:classId/grade-releases/preview',
   scope: { kind: 'class', role: 'instructor' },
+  allowWhenArchived: true,
   summary: 'Preview the students and grades a release would make visible',
   params: z.object({ classId: z.uuid() }),
   body: z.object({ attemptIds: z.array(z.uuid()).min(1).max(500) }),

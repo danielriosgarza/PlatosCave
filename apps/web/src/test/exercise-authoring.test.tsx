@@ -100,7 +100,13 @@ function open(stored: unknown = content) {
       });
     }
     if (path === `${base}/overview`) {
-      return json({ id: COURSE, title: 'Statistical thinking', latestRelease: null, classes: [] });
+      return json({
+        id: COURSE,
+        title: 'Statistical thinking',
+        archived: false,
+        latestRelease: null,
+        classes: [],
+      });
     }
     if (path === `${base}/processing`) return json({ resources: [] });
     if (path === `${base}/releases/validation`) return json({ errors: [], warnings: [] });

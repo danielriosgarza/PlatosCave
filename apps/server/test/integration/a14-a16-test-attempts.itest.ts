@@ -422,8 +422,17 @@ describe('A15 deadline submission', () => {
       status: 409,
       body: { error: 'attempt_closed', receipt },
     });
-    const kept = await call('bea', 'POST', `${attemptUrl(ids.classB, beaAttempt)}/local-copy`, {
-      answers: [{ questionId: 'why', value: unsent.value }],
+    // A lone surrogate cannot be stored in jsonb: it is kept as U+FFFD, never a 500, and every
+    // entry of the copy is kept.
+    const localCopyUrl = `${attemptUrl(ids.classB, beaAttempt)}/local-copy`;
+    const kept = await call('bea', 'POST', localCopyUrl, {
+      answers: [
+        {
+          questionId: 'mean',
+          value: { files: [{ path: 'solution.py', content: 'x = "\ud800"' }] },
+        },
+        { questionId: 'why', value: unsent.value },
+      ],
     });
     expect(kept).toEqual({ status: 200, body: { localCopyAt: minutes(31).toISOString() } });
     const after = await call('bea', 'GET', attemptUrl(ids.classB, beaAttempt));
@@ -439,7 +448,13 @@ describe('A15 deadline submission', () => {
     expect(review.body).toMatchObject({
       state: 'submitted',
       receipt: { autoSubmitted: true },
-      localCopy: [{ questionId: 'why', value: unsent.value }],
+      localCopy: [
+        {
+          questionId: 'mean',
+          value: { files: [{ path: 'solution.py', content: 'x = "\ufffd"' }] },
+        },
+        { questionId: 'why', value: unsent.value },
+      ],
       localCopyAt: minutes(31).toISOString(),
     });
     expect(review.body.answers).toHaveLength(2);
@@ -740,6 +755,39 @@ describe('A21 submissions per class', () => {
       expect((await call('bea', 'POST', `${testUrl(ids.classB)}/test-attempts`)).body).toEqual({
         error: 'class_archived',
       });
+    } finally {
+      await testDb.db.update(classes).set({ archivedAt: null }).where(eq(classes.id, ids.classB));
+    }
+  });
+
+  test('an archived class still resumes an attempt in progress and repeats a submit’s receipt', async () => {
+    clock = minutes(300);
+    const granted = await call('marcus', 'POST', `${testUrl(ids.classB)}/overrides`, {
+      studentId: ids.bea,
+      extraAttempts: 2,
+      extraMinutes: 0,
+      closesAt: null,
+      reason: 'Archived-class resume check',
+    });
+    expect(granted.status).toBe(201);
+    const first = await call('bea', 'POST', `${testUrl(ids.classB)}/test-attempts`);
+    expect(first.status).toBe(200);
+    const sent = await submit('bea', ids.classB, first.body.id, 'archived-key');
+    expect(sent.status).toBe(200);
+    const open = await call('bea', 'POST', `${testUrl(ids.classB)}/test-attempts`);
+    expect(open.status).toBe(200);
+    expect(open.body.id).not.toBe(first.body.id);
+
+    await testDb.db.update(classes).set({ archivedAt: clock }).where(eq(classes.id, ids.classB));
+    try {
+      const resumed = await call('bea', 'POST', `${testUrl(ids.classB)}/test-attempts`);
+      expect(resumed.status).toBe(200);
+      expect(resumed.body.id).toBe(open.body.id);
+      const again = await submit('bea', ids.classB, first.body.id, 'archived-key');
+      expect(again).toEqual(sent);
+      // A new answer is still refused: the class is read-only.
+      const refused = await save('bea', ids.classB, open.body.id, 'se', { value: 0.5, seq: 1 });
+      expect(refused).toMatchObject({ status: 409, body: { error: 'class_archived' } });
     } finally {
       await testDb.db.update(classes).set({ archivedAt: null }).where(eq(classes.id, ids.classB));
     }

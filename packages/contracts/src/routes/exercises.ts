@@ -63,6 +63,7 @@ export const openExercise = defineRoute({
   method: 'POST',
   path: '/api/classes/:classId/resources/:resourceId/exercise-attempt',
   scope: { kind: 'class', role: 'any' },
+  allowWhenArchived: true,
   summary: 'Resume your current practice attempt on an exercise, or start one',
   params: resourceParams,
   response: attemptView,
