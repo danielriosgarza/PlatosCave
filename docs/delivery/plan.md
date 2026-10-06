@@ -583,6 +583,12 @@ Tracks: **connector** (P3-01 → server P3-02 → P3-02a → P3-06 → P3-06a �
 - Scope: terms panel in the prompt column, question navigation with Answered/Unanswered/Flagged, answer types, CodeMirror editor (line numbers, indentation, screen-reader mode toggle, downloadable draft), Run sample tests with output states (compile error, runtime error, expected/actual, timeout, resource exhaustion) and stale label, Review submission list, Submit with idempotency key and receipt after acknowledgement, expiry handling (server state fetch on reconnect, received-answers receipt, local copy preserved), `pc-test` CSS ported.
 - Spec: §11, §14. Scenarios: A12, A14, A15 (e2e), A20 (test part). Depends on: P3-15, P3-16. Model: sonnet. Security: no. Size: M.
 
+### P3-17b · Test UI follow-ups
+- Scope: from the round 3 review of P3-17. (1) `parseNumeric` rejects a comma that could be a thousands separator or a decimal point (both `,` and `.`, several commas, or a comma followed by exactly three digits) and the field says so; nothing is silently reinterpreted. (2) `NumericInput` takes a value adopted from the server after a reconnect; `CodeEditor` marks that transaction `Transaction.remote` and does not report it as an edit, so it is neither dirty nor saved again. (3) The receipt words the local copy from the `localCopyAt` that `sendLocalCopy` returned, so a failed re-read does not say the copy is in this browser only.
+- Tests: component tests in `apps/web/src/assessments/assessments.test.tsx` (`A14 a numeric answer with an ambiguous comma…`, `A15 a newer numeric value adopted…`, `A15 a code answer adopted…`, `A15 the receipt says the local copy is kept…`).
+- Spec: §11, §14. Scenarios: A14, A15. Depends on: P3-17. Model: sonnet. Security: no. Size: S.
+- Touches: `apps/web/src/assessments/AnswerInput.tsx`, `CodeEditor.tsx`, `AttemptWorkspace.tsx`, `Receipt.tsx`.
+
 ### P3-18 · Test authoring
 - Scope: editor for questions (quiz, numeric, explanation, code with language/version, starter files, allowed packages, I/O contract, limits within server bounds, sample and hidden checks), rubric, attempts/timing/release settings, preview runs of sample and hidden checks in the instructor preview context, publication validation per design §8.1 (rejections including a file path that is a directory prefix of another; a warning, not a rejection, when a question's hidden checks are `script`-only, with the test `publication warns on script-only hidden checks`).
 - Spec: §11, §12. Scenarios: none. Depends on: P3-15, P3-16, P1-14. Model: sonnet. Security: yes. Size: M.

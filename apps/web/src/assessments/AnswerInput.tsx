@@ -71,8 +71,22 @@ function ChoiceInput({
   );
 }
 
-/** Accepts what a person types for a number; null when the field is empty, NaN when it is not one. */
+/**
+ * Whether a comma could be a thousands separator or a decimal point ("1,000", "1,000.5", "1,2,3"),
+ * so the saved number would depend on a guess.
+ */
+export function isAmbiguousNumeric(text: string): boolean {
+  const t = text.trim();
+  if (!t.includes(',')) return false;
+  return t.includes('.') || t.indexOf(',') !== t.lastIndexOf(',') || /,\d{3}(?!\d)/.test(t);
+}
+
+/**
+ * Accepts what a person types for a number; null when the field is empty, NaN when it is not one
+ * or when a comma is ambiguous (see `isAmbiguousNumeric`): nothing is silently reinterpreted.
+ */
 export function parseNumeric(text: string): number | null {
+  if (isAmbiguousNumeric(text)) return Number.NaN;
   const t = text.trim().replace(',', '.');
   if (t === '') return null;
   return /^[+-]?(\d+\.?\d*|\.\d+)([eE][+-]?\d+)?$/.test(t) ? Number(t) : Number.NaN;
@@ -88,6 +102,14 @@ function NumericInput({
   const parsed = parseNumeric(text);
   const invalid = Number.isNaN(parsed);
   const id = `num-${question.id}`;
+  // A value adopted from the server after a reconnect replaces the text; typing never gets here,
+  // because the value then equals what the text parses to.
+  useEffect(() => {
+    const incoming = typeof value === 'number' ? value : null;
+    setText((current) =>
+      parseNumeric(current) === incoming ? current : incoming === null ? '' : String(incoming),
+    );
+  }, [value]);
   return (
     <div className={styles.field}>
       <label htmlFor={id}>Your answer{question.unit ? ` (${question.unit})` : ''}</label>
@@ -109,7 +131,9 @@ function NumericInput({
       </div>
       {invalid ? (
         <p className={styles.error} id={`${id}-error`}>
-          Enter a number. This text is not saved yet.
+          {isAmbiguousNumeric(text)
+            ? 'A comma can mean thousands or a decimal point. Write 1000 or 1.5 without separators. This text is not saved yet.'
+            : 'Enter a number. This text is not saved yet.'}
         </p>
       ) : null}
     </div>

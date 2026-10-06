@@ -95,6 +95,8 @@ interface Options {
   /** The n-th status read of a run: a response, or undefined for the default. */
   pollRun?: (n: number) => { status: number; body: unknown } | undefined;
   runResult?: (n: number) => unknown;
+  /** Every attempt read fails once the server has stored a local copy. */
+  failReadsAfterLocalCopy?: boolean;
 }
 
 /** An in-memory stand-in for the P3-15 and P3-16 routes: it keeps answers, receipts and runs. */
@@ -282,6 +284,7 @@ function testApi(options: Options = {}) {
     if (url.endsWith('/local-copy')) {
       log.localCopies.push(body);
       server.localCopyAt = new Date().toISOString();
+      if (options.failReadsAfterLocalCopy) server.failReads = 1000;
       return { status: 200, body: { localCopyAt: server.localCopyAt } };
     }
     if (/\/runs\/[^/?]+$/.test(url) && method === 'GET') {
@@ -940,5 +943,116 @@ describe('test UI: keyboard and screen reader', () => {
     await user.click(screen.getByRole('button', { name: 'Question 4 Unanswered' }));
     const editor = await enableScreenReaderMode(user);
     expect(editor).toHaveAccessibleName('solution.py, your implementation');
+  });
+});
+
+const goOffline = () => {
+  Object.defineProperty(window.navigator, 'onLine', { configurable: true, value: false });
+  act(() => {
+    window.dispatchEvent(new Event('offline'));
+  });
+};
+const goOnline = () => {
+  Object.defineProperty(window.navigator, 'onLine', { configurable: true, value: true });
+  act(() => {
+    window.dispatchEvent(new Event('online'));
+  });
+};
+
+describe('test UI: follow-ups to the first release', () => {
+  it('A14 a numeric answer with an ambiguous comma is refused, never reinterpreted', async () => {
+    const user = userEvent.setup();
+    const api = testApi();
+    open();
+    await begin(user);
+    await user.click(screen.getByRole('button', { name: 'Question 2 Unanswered' }));
+    const field = screen.getByRole('textbox', { name: /Your answer/ });
+    for (const text of ['1,000', '1,000.5', '1,2,3', '12,345']) {
+      await user.clear(field);
+      // Pasted, so no shorter prefix such as "12,3" is saved on the way.
+      await user.click(field);
+      await user.paste(text);
+      expect(screen.getByText(/A comma can mean thousands or a decimal point/)).toBeVisible();
+      expect(field).toHaveAttribute('aria-invalid', 'true');
+    }
+    await new Promise((r) => setTimeout(r, 1000));
+    // Clearing the field is saved as an empty answer; no number was.
+    expect(api.log.puts.filter((p) => p.id === 'q2' && p.body.value !== null)).toEqual([]);
+    // An unambiguous decimal comma is still read as a decimal point.
+    await user.clear(field);
+    await user.type(field, '1,5');
+    expect(screen.queryByText(/A comma can mean/)).toBeNull();
+    await waitFor(() => expect(api.answers.get('q2')?.value).toBe(1.5));
+  });
+
+  it('A15 a newer numeric value adopted after a reconnect reaches the field', async () => {
+    const user = userEvent.setup();
+    const api = testApi({ deadlineAt: '2099-01-01T00:00:00Z' });
+    open();
+    await begin(user);
+    await user.click(screen.getByRole('button', { name: 'Question 2 Unanswered' }));
+    const field = screen.getByRole('textbox', { name: /Your answer/ });
+    await user.type(field, '3');
+    expect(await screen.findByText(/^Saved \d/)).toBeVisible();
+    // Another device saved a newer value while this one was away.
+    api.answers.set('q2', { value: 7, flagged: false, seq: 50, savedAt: new Date().toISOString() });
+    goOffline();
+    goOnline();
+    await waitFor(() => expect(field).toHaveValue('7'));
+    expect(api.log.puts.filter((p) => p.id === 'q2').every((p) => p.body.value === 3)).toBe(true);
+  });
+
+  it('A15 a code answer adopted after a reconnect is not reported as a student edit', async () => {
+    // jsdom has no layout; CodeMirror measures text ranges.
+    const rect = { x: 0, y: 0, top: 0, left: 0, right: 0, bottom: 0, width: 0, height: 0 };
+    Range.prototype.getClientRects = () => [] as unknown as DOMRectList;
+    Range.prototype.getBoundingClientRect = () => ({ ...rect, toJSON: () => rect });
+    const user = userEvent.setup();
+    const api = testApi({ deadlineAt: '2099-01-01T00:00:00Z' });
+    open();
+    await begin(user);
+    await user.click(screen.getByRole('button', { name: 'Question 4 Unanswered' }));
+    const adopted = 'def standard_error(values):\n    return 42\n';
+    api.answers.set('q4', {
+      value: { files: [{ path: 'solution.py', content: adopted }] },
+      flagged: false,
+      seq: 50,
+      savedAt: new Date().toISOString(),
+    });
+    goOffline();
+    goOnline();
+    await waitFor(() =>
+      expect(document.querySelector('.cm-content')?.textContent).toContain('return 42'),
+    );
+    // Past the autosave delay: an adopted value must not be marked dirty and sent again.
+    await new Promise((r) => setTimeout(r, 1500));
+    expect(screen.queryByText('Unsaved changes')).toBeNull();
+    expect(api.log.puts.filter((p) => p.id === 'q4')).toEqual([]);
+  }, 15_000);
+
+  it('A15 the receipt says the local copy is kept once the server acknowledged it, even if the next read fails', async () => {
+    const user = userEvent.setup();
+    const api = testApi({ deadlineAt: '2099-01-01T00:00:00Z', failReadsAfterLocalCopy: true });
+    open();
+    await begin(user);
+    goOffline();
+    api.server.offline = true;
+    await user.click(screen.getByRole('button', { name: 'Question 3 Unanswered' }));
+    await user.type(screen.getByRole('textbox', { name: 'Your explanation' }), 'Offline words');
+    expect(await screen.findByText(/Not saved/)).toBeVisible();
+    api.server.receipt = {
+      submissionId: uuid(0xb6),
+      attemptId: ATTEMPT,
+      submittedAt: '2026-10-05T09:30:00Z',
+      autoSubmitted: true,
+      late: false,
+      answers: [],
+      unanswered: ['q1', 'q2', 'q3', 'q4'],
+    };
+    api.server.offline = false;
+    goOnline();
+    await waitFor(() => expect(api.log.localCopies).toHaveLength(1));
+    expect(await screen.findByText(/were kept for your instructor/)).toBeVisible();
+    expect(screen.queryByText(/in this browser only/)).toBeNull();
   });
 });

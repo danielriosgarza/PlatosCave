@@ -18,6 +18,7 @@ export function ReceiptView({
   attempt,
   unsentCount,
   local,
+  keptAt,
   onRetryLocal,
   onDownload,
 }: {
@@ -25,6 +26,8 @@ export function ReceiptView({
   /** Answers the browser still held that the server never acknowledged. */
   unsentCount: number;
   local: Local;
+  /** When the server acknowledged the local copy in this session; set before the attempt is read again. */
+  keptAt: string | null;
   onRetryLocal: () => void;
   onDownload: () => void;
 }) {
@@ -39,6 +42,7 @@ export function ReceiptView({
       </div>
     );
   }
+  const copyAt = attempt.localCopyAt ?? keptAt;
   const answered = receipt.answers.length;
   return (
     <div className={styles.receipt}>
@@ -89,7 +93,7 @@ export function ReceiptView({
             : receipt.unanswered.map((id) => questionName(attempt.questions, id)).join(', ')}
         </dd>
       </dl>
-      {unsentCount > 0 || attempt.localCopyAt ? (
+      {unsentCount > 0 || copyAt ? (
         <div className={styles.notice}>
           <p>
             <strong>Unsent changes are not part of this submission.</strong>{' '}
@@ -102,9 +106,9 @@ export function ReceiptView({
               ? 'Keeping your unsent changes for your instructor…'
               : local === 'failed'
                 ? 'Your unsent changes could not be sent yet. They are still in this browser.'
-                : attempt.localCopyAt
+                : copyAt
                   ? `Your unsent changes were kept for your instructor at ${formatInZone(
-                      attempt.localCopyAt,
+                      copyAt,
                       zone,
                     )}. They are not submitted; your instructor can restore them on request.`
                   : 'Your unsent changes are in this browser only.'}

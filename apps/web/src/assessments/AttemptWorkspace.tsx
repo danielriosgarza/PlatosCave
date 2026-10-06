@@ -141,6 +141,8 @@ export function AttemptWorkspace({
   const [submit, setSubmit] = useState<SubmitState>({ kind: 'idle' });
   const [local, setLocal] = useState<'none' | 'sending' | 'kept' | 'failed'>('none');
   const [unsentCount, setUnsentCount] = useState(0);
+  // When the server acknowledged the local copy, so the receipt does not depend on a second read.
+  const [keptAt, setKeptAt] = useState<string | null>(null);
   const online = useOnline();
   const submitting = useRef(false);
   const refreshing = useRef(false);
@@ -176,7 +178,8 @@ export function AttemptWorkspace({
       if (unsent.length === 0 || view.localCopyAt) return;
       setLocal('sending');
       try {
-        await sendLocalCopy(classId, view.id, unsent);
+        const ack = await sendLocalCopy(classId, view.id, unsent);
+        setKeptAt(ack.localCopyAt);
         setLocal('kept');
         clearUnsent(view.id);
         void refresh();
@@ -332,6 +335,7 @@ export function AttemptWorkspace({
           attempt={attempt}
           unsentCount={unsentCount}
           local={local}
+          keptAt={keptAt}
           onRetryLocal={() => void keepLocal(attempt)}
           onDownload={() => saveFile('unsent-answers.txt', unsentText(attempt, entries))}
         />
