@@ -166,6 +166,13 @@ const Env = z
           .filter(Boolean),
       )
       .pipe(z.array(z.email())),
+    /**
+     * Retention policy (§13), applied by the daily retention job. Each rule is off while unset,
+     * so nothing is removed until the operator decides: days a deactivated account waits before
+     * its identity is anonymised, and days an audit event is kept.
+     */
+    RETENTION_DEACTIVATED_GRACE_DAYS: z.coerce.number().int().min(0).optional(),
+    RETENTION_AUDIT_DAYS: z.coerce.number().int().min(1).optional(),
     /** HMAC key for content tokens. Required in production and off loopback. */
     CONTENT_TOKEN_SECRET: z.string().min(32).optional(),
     STORAGE_DRIVER: z.enum(['fs', 's3']).default('fs'),

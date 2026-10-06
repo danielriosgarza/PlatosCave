@@ -328,6 +328,8 @@ describe('A02 A26 preview principal on user-scope contracts', () => {
           'POST /api/me/connectors/:connectorId/approve',
           'POST /api/me/connectors/:connectorId/revoke',
           'PATCH /api/me/connectors/:connectorId',
+          'POST /api/me/deactivate',
+          'POST /api/me/delete',
           'GET /api/me/connections',
           'POST /api/me/connections',
           'GET /api/me/connections/:connectionId',

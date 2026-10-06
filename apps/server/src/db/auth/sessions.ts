@@ -3,7 +3,7 @@ import type { SignInResult } from '../../auth/identity-provider';
 import { hashToken, newToken } from '../../auth/tokens';
 import type { Db, Executor } from '../client';
 import { authSessions, users } from '../schema';
-import { userForVerifiedEmail } from './accounts';
+import { isDeactivated, userForVerifiedEmail } from './accounts';
 
 export const SESSION_TTL_MS = 14 * 24 * 60 * 60_000;
 
@@ -56,6 +56,8 @@ export function signInWithProof(
     const result = await consume(tx);
     if (!result.ok) return { destination: result.destination };
     const userId = await userForVerifiedEmail(tx, result.email);
+    // A deactivated account answers like a link that did not work: it says nothing about the account.
+    if (await isDeactivated(tx, userId)) return { destination: result.destination };
     // Rotation: whatever session this browser held before is ended, never upgraded in place.
     if (previous) await revokeSession(tx, previous, now);
     await alsoEnd?.(tx);
@@ -109,6 +111,8 @@ export async function findPrincipal(db: Db, token: string, now: Date): Promise<P
         eq(authSessions.tokenHash, hashToken(token)),
         isNull(authSessions.revokedAt),
         gt(authSessions.expiresAt, now),
+        // A deactivated account has no live session even if one was missed (§13).
+        isNull(users.deactivatedAt),
       ),
     );
   return row ?? null;
