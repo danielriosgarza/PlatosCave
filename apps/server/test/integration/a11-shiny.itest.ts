@@ -6,7 +6,7 @@ import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { buildApp } from '../../src/app';
-import { loadConfig } from '../../src/config';
+import { DEV_RUNNER_RUNTIMES, loadConfig } from '../../src/config';
 import { adoptRelease } from '../../src/db/content/adoption';
 import { publishRelease } from '../../src/db/content/releases';
 import { resourceRevisions, resources } from '../../src/db/schema';
@@ -104,7 +104,9 @@ beforeAll(async () => {
       .where(eq(resources.id, id));
     revisions[key] = revisionId;
   }
-  const published = await publishRelease(testDb.db, asCourseScope(ids.statistics, ids.elena));
+  const published = await publishRelease(testDb.db, asCourseScope(ids.statistics, ids.elena), {
+    runtimes: DEV_RUNNER_RUNTIMES,
+  });
   if (!published.ok) throw new Error(JSON.stringify(published.report));
   const adopted = await adoptRelease(
     testDb.db,

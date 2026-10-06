@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
+import { DEV_RUNNER_RUNTIMES } from '../../src/config';
 import { adoptRelease } from '../../src/db/content/adoption';
 import { publishRelease } from '../../src/db/content/releases';
 import type { Storage } from '../../src/storage/storage';
@@ -96,7 +97,7 @@ describe('workspace files authored with a notebook', () => {
     const revisionId = created.body.headRevisionId as string;
 
     const course = asCourseScope(ids.statistics, ids.elena);
-    const published = await publishRelease(testDb.db, course);
+    const published = await publishRelease(testDb.db, course, { runtimes: DEV_RUNNER_RUNTIMES });
     if (!published.ok) throw new Error(JSON.stringify(published.report));
     const adopted = await adoptRelease(
       testDb.db,

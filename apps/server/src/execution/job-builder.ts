@@ -57,6 +57,10 @@ export const editablePaths = (question: CodeQuestion) =>
   new Set(question.files.filter((f) => f.editable && !f.hidden).map((f) => f.path));
 
 export type Built = { ok: true; job: RunnerJobType } | { ok: false; message: string };
+/** `detail` names the broken rule for authors (publication, preview); students see `message`. */
+export type BuiltDetailed =
+  | { ok: true; job: RunnerJobType }
+  | { ok: false; message: string; detail: string };
 
 /**
  * Overlays the snapshot on the question's files, keeps the checks the set allows without their
@@ -71,11 +75,25 @@ export function buildRunnerJob(
   runtime: RunnerRuntime,
   replayImage?: string,
 ): Built {
+  const built = buildRunnerJobDetailed(question, snapshot, set, jobId, runtime, replayImage);
+  return built.ok ? built : { ok: false, message: built.message };
+}
+
+/** `buildRunnerJob` that also says which rule a refused job broke. */
+export function buildRunnerJobDetailed(
+  question: CodeQuestion,
+  snapshot: Snapshot,
+  set: CheckSet,
+  jobId: string,
+  runtime: RunnerRuntime,
+  replayImage?: string,
+): BuiltDetailed {
   const editable = editablePaths(question);
   const sent = new Map<string, string>();
   for (const file of snapshot.files) {
     if (!editable.has(file.path) || sent.has(file.path)) {
-      return { ok: false, message: 'Only this question’s editable files can be run' };
+      const message = 'Only this question’s editable files can be run';
+      return { ok: false, message, detail: message };
     }
     sent.set(file.path, file.content);
   }
@@ -109,7 +127,14 @@ export function buildRunnerJob(
   };
   const parsed = RunnerJob.safeParse(candidate);
   if (!parsed.success) {
-    return { ok: false, message: 'This question cannot be run: its definition is not valid' };
+    return {
+      ok: false,
+      message: 'This question cannot be run: its definition is not valid',
+      detail: parsed.error.issues
+        .slice(0, 3)
+        .map((i) => `${i.path.join('.')}: ${i.message}`)
+        .join('; '),
+    };
   }
   const verdict = validateJob(parsed.data);
   if (!verdict.ok) {
@@ -119,6 +144,7 @@ export function buildRunnerJob(
         verdict.rule === 4
           ? 'The code is too large to run'
           : 'This question cannot be run: its definition is not valid',
+      detail: verdict.message,
     };
   }
   return { ok: true, job: parsed.data };

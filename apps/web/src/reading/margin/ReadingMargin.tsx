@@ -201,7 +201,7 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
         save: (id, revision, body, final) => actions.saveNote(id, revision, body, final),
         persist: (d) => {
           if (!scoped || !userId) return;
-          if (!d) return void removeDraft(scoped);
+          if (!d) return removeDraft(scoped);
           void saveDraft(noteDraft(scoped, userId, init.anchor, d));
         },
         acknowledged: (annotation) => actions.acknowledged(annotation),
