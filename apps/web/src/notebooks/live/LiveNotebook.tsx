@@ -39,6 +39,8 @@ interface Props {
   trail: ReactNode;
   /** Opens the Connect panel: to reconnect, choose another target or start a new session. */
   onOpenConnect: () => void;
+  /** The server's session list no longer has this session; `session` is the last state read. */
+  unlisted?: boolean;
 }
 
 const INTERRUPT_STALL_MS = 5000;
@@ -110,15 +112,18 @@ export function LiveNotebook({
   lead,
   trail,
   onOpenConnect,
+  unlisted = false,
 }: Props) {
   const root = useRef<HTMLElement | null>(null);
   const [left, setLeft] = useState(false);
-  const channel = useChannel(classId, session.id, !left);
+  const detached = left || unlisted;
+  const channel = useChannel(classId, session.id, !detached);
   const { state } = channel;
   const actions = useSessionActions(classId);
   const [ask, setAsk] = useState<SessionAction | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [busyAction, setBusyAction] = useState(false);
+  const [startingKernel, setStartingKernel] = useState(false);
   const [runAll, setRunAll] = useState<RunAll | null>(null);
   const [runAllNote, setRunAllNote] = useState<string | null>(null);
   const [interruptedAt, setInterruptedAt] = useState<number | null>(null);
@@ -138,16 +143,16 @@ export function LiveNotebook({
     });
   const confirmRef = useRef<HTMLDivElement>(null);
 
-  const channelOpen = channel.status === 'open' && !channel.offline;
+  const channelOpen = !detached && channel.status === 'open' && !channel.offline;
   const sessionState = channelOpen && state.session ? state.session.state : session.state;
   const cause = (channelOpen && state.session ? state.session.cause : null) ?? session.cause;
-  const sessionReady = sessionState === 'ready' && session.state === 'ready';
+  const sessionReady = sessionState === 'ready' && session.state === 'ready' && !unlisted;
   const kernel = state.kernel;
   const kernelState = kernel?.state;
   const connected = sessionReady && channelOpen && !left;
   // The socket dropped and is being retried while the session was last known ready.
   const reattaching =
-    !left &&
+    !detached &&
     session.state === 'ready' &&
     (state.session?.state ?? 'ready') === 'ready' &&
     (channel.status === 'closed' || channel.status === 'connecting' || channel.offline);
@@ -213,7 +218,10 @@ export function LiveNotebook({
       }
       return;
     }
-    if (execution.state === 'ok') {
+    if (execution.state === 'ok' && execution.outputsIncomplete) {
+      // Its output carried over a relay restart and is labelled Incomplete: not a clean finish.
+      stop(`Run all stopped at cell ${nameOf(runAll.cellId)}: its output is incomplete.`);
+    } else if (execution.state === 'ok') {
       const [next, ...rest] = runAll.queue;
       if (next === undefined) {
         setRunAll(null);
@@ -315,11 +323,15 @@ export function LiveNotebook({
     const name =
       session.kernelName ?? session.runtime.kernelName ?? session.runtime.kernelspecs?.[0]?.name;
     if (!name) return;
+    if (startingKernel) return;
+    setStartingKernel(true);
     setActionError(null);
     try {
       await startKernel(classId, session.id, name);
     } catch (e) {
       fail(e, 'The kernel could not be started.');
+    } finally {
+      setStartingKernel(false);
     }
   };
 
@@ -358,6 +370,21 @@ export function LiveNotebook({
           <button type="button" className={buttons.outline} onClick={() => setLeft(false)}>
             Reconnect to this session
           </button>
+          <button type="button" className={buttons.outline} onClick={onOpenConnect}>
+            Connect a computer
+          </button>
+        </div>
+      </div>,
+    );
+  } else if (unlisted) {
+    banner.push(
+      <div key="unlisted" className={live.banner} role="alert">
+        <p>
+          <strong>Parallax no longer has news of this session.</strong> It was last read as{' '}
+          {session.state}, and Parallax does not know whether it still runs. Your edits are kept,
+          and cells cannot run.
+        </p>
+        <div className={live.row}>
           <button type="button" className={buttons.outline} onClick={onOpenConnect}>
             Connect a computer
           </button>
@@ -420,7 +447,7 @@ export function LiveNotebook({
       </div>,
     );
   }
-  if (kernelMissing && !left) {
+  if (kernelMissing && !detached) {
     banner.push(
       <div key="kernel" className={live.banner} role="status">
         <p>
@@ -428,7 +455,12 @@ export function LiveNotebook({
             ? `${causeText('kernel_lost')} A new kernel starts empty.`
             : 'No kernel is running in this session yet.'}
         </p>
-        <button type="button" className={buttons.outline} onClick={() => void newKernel()}>
+        <button
+          type="button"
+          className={buttons.outline}
+          disabled={startingKernel}
+          onClick={() => void newKernel()}
+        >
           {kernelLost ? 'Start a new kernel' : 'Start the kernel'}
         </button>
       </div>,
@@ -519,7 +551,7 @@ export function LiveNotebook({
     );
   }
 
-  const sessionActive = !left && session.state === 'ready' && sessionReady && channelOpen;
+  const sessionActive = !detached && session.state === 'ready' && sessionReady && channelOpen;
 
   return (
     <>
@@ -661,7 +693,7 @@ export function LiveNotebook({
           );
         })}
       </article>
-      {sessionReady && !left ? (
+      {sessionReady && !detached ? (
         <SessionPanels
           classId={classId}
           sessionId={session.id}

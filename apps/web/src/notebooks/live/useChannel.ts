@@ -52,6 +52,9 @@ export function useChannel(classId: string, sessionId: string, enabled: boolean)
   const [status, setStatus] = useState<ChannelStatus>('connecting');
   const [offline, setOffline] = useState(!online());
   const socket = useRef<WebSocket | null>(null);
+  // The session whose channel the relay closed for good. It stays final until the session
+  // changes: coming back online must not reopen it (§10.5).
+  const endedFor = useRef<string | null>(null);
   // What `hello` resumes from and which executes to resend, read at the moment of connecting.
   const live = useRef<LiveState>(state);
   live.current = state;
@@ -69,7 +72,12 @@ export function useChannel(classId: string, sessionId: string, enabled: boolean)
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: `offline` only wakes a reconnect
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled) {
+      endedFor.current = null;
+      return;
+    }
+    const key = `${classId}/${sessionId}`;
+    if (endedFor.current === key) return;
     let stopped = false;
     let attempt = 0;
     let timer: number | undefined;
@@ -132,6 +140,7 @@ export function useChannel(classId: string, sessionId: string, enabled: boolean)
         if (socket.current === ws) socket.current = null;
         if (stopped || current !== ws) return;
         if (FINAL_CLOSES.has(event.code)) {
+          endedFor.current = key;
           setStatus('ended');
           return;
         }
