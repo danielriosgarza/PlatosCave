@@ -131,6 +131,7 @@ function listen() {
 
 function forget(userId: string) {
   signedOut.add(userId);
+  for (const [key, copy] of copies) if (copy.userId === userId) copies.delete(key);
   for (const [key, draft] of memory) if (draft.userId === userId) memory.delete(key);
 }
 
@@ -148,16 +149,22 @@ export async function saveDraft(draft: Draft): Promise<boolean> {
   listen();
   if (signedOut.has(draft.userId)) return false;
   memory.set(draft.key, draft);
+  return put(draft);
+}
+
+async function put(record: { key: string; userId: string }): Promise<boolean> {
+  listen();
+  if (signedOut.has(record.userId)) return false;
   const db = await database();
   if (!db) return false;
   const outcome = await new Promise<'stored' | 'refused' | 'failed'>((resolve) => {
     try {
       const tx = db.transaction(STORE, 'readwrite');
       const store = tx.objectStore(STORE);
-      const marker = store.get(signedOutKey(draft.userId));
+      const marker = store.get(signedOutKey(record.userId));
       marker.onsuccess = () => {
         if (marker.result) resolve('refused');
-        else store.put(draft);
+        else store.put(record);
       };
       tx.oncomplete = () => resolve('stored');
       tx.onerror = () => resolve('failed');
@@ -166,13 +173,90 @@ export async function saveDraft(draft: Draft): Promise<boolean> {
       resolve('failed');
     }
   });
-  if (outcome === 'refused') forget(draft.userId);
+  if (outcome === 'refused') forget(record.userId);
   return outcome === 'stored';
 }
 
+/**
+ * Unsent test answers of a closed attempt, kept on this device for an instructor recovery
+ * request (§11). Bound to the person, class and attempt; the server accepts a copy only for the
+ * caller's own attempt, so a copy found under another key is never offered.
+ */
+export interface AttemptCopy {
+  key: string;
+  userId: string;
+  kind: 'attempt-copy';
+  classId: string;
+  attemptId: string;
+  answers: { questionId: string; value: unknown }[];
+  updatedAt: number;
+}
+
+export const attemptCopyKey = (userId: string, classId: string, attemptId: string) =>
+  `attempt-copy|${userId}|${classId}|${attemptId}`;
+
+const copies = new Map<string, AttemptCopy>();
+
+/** Resolves true once the browser's store holds the copy (false: this tab only, or signed out). */
+export async function saveAttemptCopy(copy: AttemptCopy): Promise<boolean> {
+  listen();
+  if (signedOut.has(copy.userId)) return false;
+  copies.set(copy.key, copy);
+  return put(copy);
+}
+
+export async function readAttemptCopy(
+  userId: string,
+  classId: string,
+  attemptId: string,
+): Promise<AttemptCopy | null> {
+  const key = attemptCopyKey(userId, classId, attemptId);
+  const stored = (await run('readonly', (store) => store.get(key))) as
+    | AttemptCopy
+    | null
+    | undefined;
+  const found = stored ?? copies.get(key) ?? null;
+  return found && found.userId === userId && found.attemptId === attemptId ? found : null;
+}
+
+export async function removeAttemptCopy(
+  userId: string,
+  classId: string,
+  attemptId: string,
+): Promise<void> {
+  const key = attemptCopyKey(userId, classId, attemptId);
+  copies.delete(key);
+  const db = await database();
+  if (!db) return;
+  await new Promise<void>((resolve) => {
+    try {
+      const tx = db.transaction(STORE, 'readwrite');
+      tx.objectStore(STORE).delete(key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
+      tx.onabort = () => resolve();
+    } catch {
+      resolve();
+    }
+  });
+}
+
+/** Resolves once the browser's store has committed the delete (or could not take it). */
 export async function removeDraft(key: string): Promise<void> {
   memory.delete(key);
-  await run('readwrite', (store) => store.delete(key));
+  const db = await database();
+  if (!db) return;
+  await new Promise<void>((resolve) => {
+    try {
+      const tx = db.transaction(STORE, 'readwrite');
+      tx.objectStore(STORE).delete(key);
+      tx.oncomplete = () => resolve();
+      tx.onerror = () => resolve();
+      tx.onabort = () => resolve();
+    } catch {
+      resolve();
+    }
+  });
 }
 
 /** Drafts of one person's work on one resource of one class, newest edit last. */
@@ -195,6 +279,15 @@ export async function listDrafts(
 export async function clearDrafts(userId: string | null): Promise<void> {
   listen();
   memory.clear();
+  copies.clear();
+  // Unsent test answers kept by the Test page are the account's too (§8).
+  try {
+    for (const k of Object.keys(window.localStorage)) {
+      if (k.startsWith('pc-test-unsent:')) window.localStorage.removeItem(k);
+    }
+  } catch {
+    // blocked storage holds nothing to clear
+  }
   if (userId) signedOut.add(userId);
   const db = await database();
   if (db) {

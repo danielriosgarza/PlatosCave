@@ -2,6 +2,7 @@ import {
   overrideGrade,
   previewGradeRelease,
   readAttemptGrade,
+  readMyResultDetail,
   readMyResults,
   readTestGrades,
   regradeAttempt,
@@ -76,4 +77,8 @@ export default function gradeRoutes(app: FastifyInstance, deps: RouteDeps): void
   registerRoute(app, readMyResults, async ({ scope, params }) =>
     settle(await grades.myResults(db(), scope, params.resourceId, now())),
   );
+
+  registerRoute(app, readMyResultDetail, async ({ scope, params }) => {
+    return (await grades.myResultDetail(db(), scope, params.attemptId)) ?? notFound();
+  });
 }

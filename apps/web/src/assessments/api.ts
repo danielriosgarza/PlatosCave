@@ -1,12 +1,17 @@
+import { readMyResultDetail, readMyResults } from '@parallax/contracts/routes/grades';
 import { cancelRun, latestRun, readRun, requestRun } from '@parallax/contracts/routes/runs';
 import {
   keepLocalCopy,
   readTest,
   readTestAttempt,
+  requestRecovery,
+  reviewTestAttempt,
+  reviewTestAttempts,
   saveTestAnswer,
   startTestAttempt,
   submitTestAttempt,
 } from '@parallax/contracts/routes/tests';
+import { useQuery } from '@tanstack/react-query';
 import type { z } from 'zod';
 import { ApiError, call, useApi } from '../api/client';
 
@@ -79,3 +84,27 @@ export function closedReceipt(error: unknown): { closed: true; receipt: Receipt 
   }
   return null;
 }
+
+export const useReviewedAttempts = (classId: string, resourceId: string) =>
+  useApi(reviewTestAttempts, { params: { classId, resourceId } });
+
+export const useReviewedAttempt = (classId: string, attemptId: string, enabled: boolean) =>
+  useQuery({
+    queryKey: ['review-attempt', classId, attemptId],
+    queryFn: () => call(reviewTestAttempt, { params: { classId, attemptId } }),
+    enabled,
+  });
+
+export const askForRecovery = (classId: string, attemptId: string, reason: string) =>
+  call(requestRecovery, { params: { classId, attemptId }, body: { reason } });
+
+export type MyResults = z.output<typeof readMyResults.response>;
+export type ResultAttempt = MyResults['attempts'][number];
+export type ResultDetail = z.output<typeof readMyResultDetail.response>;
+export type ResultQuestion = ResultDetail['questions'][number];
+
+export const useMyResults = (classId: string, resourceId: string) =>
+  useApi(readMyResults, { params: { classId, resourceId } });
+
+export const useResultDetail = (classId: string, attemptId: string) =>
+  useApi(readMyResultDetail, { params: { classId, attemptId } });
