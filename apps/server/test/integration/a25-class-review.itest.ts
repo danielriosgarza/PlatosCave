@@ -112,6 +112,7 @@ describe('A25 class review', () => {
     expect(res.body.assignment.assignmentId).toBe(w.quizId);
     expect(res.body.selected).toEqual({
       studentId: ids.sam,
+      studentName: 'Sam Okafor',
       attemptId: attempt.sam,
       number: 1,
       assignmentId: w.quizId,
@@ -268,5 +269,28 @@ describe('A25 a change saved after release, and what a student shared', () => {
       (await call(w, 'marcus', 'GET', `/api/classes/${ids.classA}/students/${ids.sam}/discussions`))
         .status,
     ).toBe(404);
+  });
+
+  test('A25 a removed student’s open attempt and shared questions stay reachable', async () => {
+    const removed = await w.app.inject({
+      method: 'DELETE',
+      url: `/api/classes/${ids.classB}/members/${ids.sam}`,
+      headers: { host: '127.0.0.1:3100', cookie: w.world.cookie.elena },
+    });
+    expect(removed.statusCode).toBe(200);
+    // Not in the table any more, but the open attempt still resolves, with the name.
+    const res = await review(`?assignmentId=${w.quizId}&attemptId=${attempt.sam}`);
+    expect(names(res.body.roster)).not.toContain('Sam Okafor');
+    expect(res.body.selected).toMatchObject({
+      studentId: ids.sam,
+      studentName: 'Sam Okafor',
+      attemptId: attempt.sam,
+    });
+    const shared = await call(w, 'marcus', 'GET', threadsUrl(ids.sam));
+    expect(shared.status).toBe(200);
+    expect(shared.body.discussions).toHaveLength(1);
+    // A co-instructor's attempt id (never a student's) resolves to nothing.
+    const none = await review(`?assignmentId=${w.quizId}&attemptId=${attempt.previewB}`);
+    expect(none.body.selected).toBeNull();
   });
 });

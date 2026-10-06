@@ -13,6 +13,7 @@ import { BulkRelease } from './BulkRelease';
 import styles from './ClassReview.module.css';
 import {
   exercisesText,
+  gradeSignature,
   parseReviewSearch,
   type ClassReview as Review,
   type ReviewSearch,
@@ -97,7 +98,20 @@ function Body({
   cohort: string;
 }) {
   const hasAssignment = data.assignment !== null;
-  const [chosen, setChosen] = useState<ReadonlySet<string>>(new Set());
+  // Ticks belong to the view they were made in (assignment, filters, page) and to the grade the
+  // row showed then: a later override or regrade is not already ticked.
+  const view = [
+    search.assignment,
+    search.topic,
+    search.student,
+    search.needsReview,
+    data.page,
+  ].join('|');
+  const [ticked, setTicked] = useState<{ view: string; grades: ReadonlyMap<string, string> }>({
+    view,
+    grades: new Map(),
+  });
+  const ticks = ticked.view === view ? ticked.grades : new Map<string, string>();
   const grades = useTestGrades(classId, data.assignment?.assignmentId);
   // Removed students are not in the table, but their submissions stay reviewable (§4).
   const removed = (grades.data?.students ?? [])
@@ -105,13 +119,14 @@ function Body({
     .map((s) => ({ ...s, attempts: s.attempts.filter((a) => a.state !== 'in_progress') }))
     .filter((s) => s.attempts.length > 0);
   const toRelease = data.rows.filter(
-    (r) => releasable(r) && r.attempt && chosen.has(r.attempt.attemptId),
+    (r) => releasable(r) && r.attempt && ticks.get(r.attempt.attemptId) === gradeSignature(r),
   );
-  const toggle = (attemptId: string) =>
-    setChosen((was) => {
-      const next = new Set(was);
-      if (!next.delete(attemptId)) next.add(attemptId);
-      return next;
+  const toggle = (row: Review['rows'][number]) =>
+    setTicked(() => {
+      const next = new Map(ticks);
+      const id = row.attempt?.attemptId;
+      if (id && !next.delete(id)) next.set(id, gradeSignature(row));
+      return { view, grades: next };
     });
   const assignments = search.topic
     ? data.assignments.filter((a) => a.topicId === search.topic)
@@ -243,8 +258,8 @@ function Body({
                           <input
                             type="checkbox"
                             aria-label={`Select ${row.name} for release`}
-                            checked={chosen.has(row.attempt.attemptId)}
-                            onChange={() => row.attempt && toggle(row.attempt.attemptId)}
+                            checked={ticks.get(row.attempt.attemptId) === gradeSignature(row)}
+                            onChange={() => toggle(row)}
                           />
                         ) : null}
                       </td>
@@ -363,7 +378,7 @@ function Selection({
     search.attempt &&
     data.selected?.attemptId === search.attempt &&
     data.selected.studentId === search.selected
-      ? data.roster.find((r) => r.id === search.selected)
+      ? { id: data.selected.studentId, name: data.selected.studentName }
       : undefined;
   const unlisted = gone ?? held;
   const student = listed ?? (unlisted && { ...unlisted, attempt: null });

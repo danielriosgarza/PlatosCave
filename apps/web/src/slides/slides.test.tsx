@@ -295,6 +295,16 @@ describe('slide viewer', () => {
     });
   });
 
+  it('opens at the slide the address names, not at the saved one, and only for the deck it names', async () => {
+    const doc = pdfDocument();
+    openPdf.mockResolvedValue(doc);
+    api(makeWorld([deck(REV_A, 'Sampling lecture', 7), deck(REV_B, 'Sampling recap', 2)], REV_A));
+    renderApp(`${SLIDES}?resource=${REV_A}&page=5`);
+    await viewer();
+    expect(position()).toHaveTextContent('5 / 12');
+    await waitFor(() => expect(doc.rendered.at(-1)?.n).toBe(5));
+  });
+
   it('sends no more slide saves once the class is archived, and still opens at the saved slide', async () => {
     const user = userEvent.setup();
     openPdf.mockResolvedValue(pdfDocument());

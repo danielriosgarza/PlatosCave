@@ -5,8 +5,8 @@ import type { ClassScope } from '../auth/scope';
 import { listThreadsBy } from './annotations/annotations';
 import type { Db } from './client';
 import { readClassRelease } from './content/releases';
+import { removedAsStudent } from './removedStudents';
 import {
-  auditEvents,
   classMemberships,
   exerciseAttempts,
   grades,
@@ -204,9 +204,21 @@ export async function loadClassReview(
   // A page past the end (a stale link, or Needs review shrinking the list) shows the last page.
   const page = Math.min(filters.page, Math.max(1, Math.ceil(filtered.length / filters.pageSize)));
   const start = (page - 1) * filters.pageSize;
-  const selectedAttempt = filters.attemptId
-    ? attempts.find((a) => a.id === filters.attemptId)
+  // The open attempt may be a removed student's: their work stays reviewable (§4).
+  let selectedAttempt = filters.attemptId
+    ? allAttempts.find((a) => a.id === filters.attemptId)
     : undefined;
+  let selectedName = roster.find((r) => r.id === selectedAttempt?.userId)?.name;
+  if (selectedAttempt && selectedName === undefined) {
+    const [person] = (await isStudentOrRemovedStudent(db, scope, selectedAttempt.userId))
+      ? await db
+          .select({ name: users.name })
+          .from(users)
+          .where(eq(users.id, selectedAttempt.userId))
+      : [];
+    if (person) selectedName = person.name;
+    else selectedAttempt = undefined;
+  }
   return {
     topics,
     assignments,
@@ -225,6 +237,7 @@ export async function loadClassReview(
     selected: selectedAttempt
       ? {
           studentId: selectedAttempt.userId,
+          studentName: selectedName ?? '',
           attemptId: selectedAttempt.id,
           number: selectedAttempt.number,
           assignmentId: selectedAttempt.resourceId,
@@ -274,9 +287,8 @@ export async function loadStudentDiscussions(
 }
 
 /**
- * A real student of the class, or one removed from it (the latest removal recorded the role
- * `student`, as `studentOrRemovedStudent` reads it). Instructors, preview principals and
- * strangers are none of these, so their ids are no student's work to review.
+ * A real student of the class, or one removed from it (`removedAsStudent`). Instructors, preview
+ * principals and strangers are none of these, so their ids are no student's work to review.
  */
 async function isStudentOrRemovedStudent(db: Db, scope: ClassScope, userId: string) {
   const [member] = await db
@@ -284,18 +296,9 @@ async function isStudentOrRemovedStudent(db: Db, scope: ClassScope, userId: stri
     .from(classMemberships)
     .where(and(forClass(scope, classMemberships), eq(classMemberships.userId, userId)));
   if (member) return member.role === 'student' && !member.isPreview;
-  const [removal] = await db
-    .select({ role: sql<string | null>`${auditEvents.before} ->> 'role'` })
-    .from(auditEvents)
-    .where(
-      and(
-        eq(auditEvents.action, 'membership.remove'),
-        eq(auditEvents.scopeKind, 'class'),
-        eq(auditEvents.scopeId, scope.classId),
-        eq(auditEvents.targetId, userId),
-      ),
-    )
-    .orderBy(desc(auditEvents.createdAt))
-    .limit(1);
-  return removal?.role === 'student';
+  const [removed] = await db
+    .select({ yes: removedAsStudent(sql`${scope.classId}::uuid`, sql`${userId}::uuid`) })
+    .from(users)
+    .where(eq(users.id, userId));
+  return removed?.yes === true;
 }

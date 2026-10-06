@@ -301,11 +301,7 @@ export async function listThreadsBy(db: Db, scope: ClassScope, authorId: string,
   return loadThreads(
     db,
     scope,
-    and(
-      visibleTo(scope, threads),
-      eq(threads.authorId, authorId),
-      eq(threads.isPreview, false),
-    ) as SQL,
+    and(visibleTo(scope, threads), eq(threads.authorId, authorId)) as SQL,
     now,
   );
 }

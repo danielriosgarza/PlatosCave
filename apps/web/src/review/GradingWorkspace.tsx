@@ -239,7 +239,13 @@ function Workspace({
     feedback.push(...form.extras);
     for (const l of form.lines) {
       const line = Number(l.line);
-      if (!l.text.trim()) continue;
+      if (!l.text.trim()) {
+        return {
+          manual,
+          feedback,
+          problem: `The comment on ${l.path} line ${l.line} has no text. Write it or remove it.`,
+        };
+      }
       if (!Number.isInteger(line) || line < 1) {
         return { manual, feedback, problem: 'A line comment needs a line number of 1 or more.' };
       }
@@ -415,6 +421,7 @@ function Workspace({
             classId={classId}
             grade={grade}
             attemptId={attempt.id}
+            blocked={dirty}
             onGrade={(next) => {
               adopt(next);
               void refresh();
@@ -529,6 +536,7 @@ function CodeFile({
   questionId: string;
 }) {
   const [line, setLine] = useState('');
+  const [problem, setProblem] = useState<string | null>(null);
   const rows = file.content.split('\n');
   return (
     <div>
@@ -580,6 +588,12 @@ function CodeFile({
           className={buttons.textButton}
           disabled={!line}
           onClick={() => {
+            const n = Number(line);
+            if (!Number.isInteger(n) || n < 1 || n > rows.length) {
+              setProblem(`${file.path} has lines 1 to ${rows.length}.`);
+              return;
+            }
+            setProblem(null);
             onLines([...lines, { key: nextKey(), questionId, path: file.path, line, text: '' }]);
             setLine('');
           }}
@@ -587,6 +601,11 @@ function CodeFile({
           Add line comment
         </button>
       </div>
+      {problem ? (
+        <span className={`${page.small} ${styles.error}`} role="alert">
+          {problem}
+        </span>
+      ) : null}
     </div>
   );
 }
@@ -846,11 +865,18 @@ function ReleaseControl({
               <li key={s.attemptId}>{SKIPPED[s.reason]}</li>
             ))}
           </ul>
+          {blocked ? (
+            <p className={page.small} role="alert">
+              You changed the grade after this preview. Save the draft, then preview again.
+            </p>
+          ) : null}
           <div className={page.row}>
             <button
               type="button"
               className={buttons.primary}
-              disabled={state.kind === 'sending' || state.preview.recipients.length === 0}
+              disabled={
+                state.kind === 'sending' || state.preview.recipients.length === 0 || blocked
+              }
               onClick={() => void confirm(state.preview)}
             >
               {state.kind === 'sending'
@@ -887,12 +913,15 @@ function ChangeGrade({
   classId,
   grade,
   attemptId,
+  blocked,
   onGrade,
   onConflict,
 }: {
   classId: string;
   grade: AttemptGrade;
   attemptId: string;
+  /** Unsaved edits would be replaced by the new grade: save them first. */
+  blocked: boolean;
   onGrade: (grade: AttemptGrade) => void;
   onConflict: (error: unknown) => string | null;
 }) {
@@ -901,10 +930,13 @@ function ChangeGrade({
   const [value, setValue] = useState('');
   const [reason, setReason] = useState('');
   const [message, setMessage] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   if (!current) return null;
   const submit = async (event: FormEvent) => {
     event.preventDefault();
+    if (busy) return;
     setMessage(null);
+    setBusy(true);
     try {
       const next =
         mode === 'override'
@@ -920,18 +952,35 @@ function ChangeGrade({
       onGrade(next);
     } catch (error) {
       setMessage(onConflict(error) ?? 'The change was not saved. Check the points and the reason.');
+    } finally {
+      setBusy(false);
     }
   };
   return (
     <div className={styles.stack}>
       <div className={page.row}>
-        <button type="button" className={buttons.textButton} onClick={() => setMode('override')}>
+        <button
+          type="button"
+          className={buttons.textButton}
+          disabled={blocked}
+          onClick={() => setMode('override')}
+        >
           Override grade
         </button>
-        <button type="button" className={buttons.textButton} onClick={() => setMode('regrade')}>
+        <button
+          type="button"
+          className={buttons.textButton}
+          disabled={blocked}
+          onClick={() => setMode('regrade')}
+        >
           Regrade from latest results
         </button>
       </div>
+      {blocked ? (
+        <span className={`${page.small} ${page.muted}`}>
+          Save the draft first: an override or regrade replaces unsaved edits.
+        </span>
+      ) : null}
       {mode ? (
         <form
           onSubmit={(e) => void submit(e)}
@@ -965,7 +1014,7 @@ function ChangeGrade({
             The original result is kept in the history below.
           </p>
           <div className={page.row}>
-            <button type="submit" className={buttons.outline}>
+            <button type="submit" className={buttons.outline} disabled={busy || blocked}>
               {mode === 'override' ? 'Save override as draft' : 'Save regrade as draft'}
             </button>
             <button type="button" className={buttons.textButton} onClick={() => setMode(null)}>

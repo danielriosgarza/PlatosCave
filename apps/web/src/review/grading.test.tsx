@@ -22,6 +22,7 @@ const A_PRIYA = id(901);
 const A_SAM = id(902);
 const A_OLD = id(903);
 const REVISION = id(950);
+const NEWER_REVISION = id(951);
 const NOW = '2026-10-02T10:00:00.000Z';
 
 const SUMMARY = (attemptId: string, number = 1) => ({
@@ -544,7 +545,13 @@ describe('grading workspace', () => {
     serve({
       reviewData: {
         ...data,
-        selected: { studentId: PRIYA, attemptId: A_PRIYA, number: 2, assignmentId: QUIZ },
+        selected: {
+          studentId: PRIYA,
+          studentName: 'Priya Nair',
+          attemptId: A_PRIYA,
+          number: 2,
+          assignmentId: QUIZ,
+        },
       },
     });
     renderApp(`/classes/${CLASS_A}/review?assignment=${QUIZ}&selected=${PRIYA}&attempt=${A_PRIYA}`);
@@ -645,7 +652,20 @@ describe('grading workspace', () => {
                     audience: 'instructor',
                     status: 'open',
                     author: { id: SAM, name: 'Sam Okafor' },
-                    placement: null,
+                    placement: {
+                      resourceRevisionId: NEWER_REVISION,
+                      status: 'mapped',
+                      anchor: {
+                        kind: 'text',
+                        blockId: 'abcdefabcdef',
+                        start: 9,
+                        end: 15,
+                        quote: 'sample',
+                        prefix: 'Every ',
+                        suffix: ' tells a slightly',
+                      },
+                      confidence: 0.9,
+                    },
                     createdAt: NOW,
                     posts: [
                       {
@@ -679,12 +699,12 @@ describe('grading workspace', () => {
     const link = screen.getByRole('link', {
       name: /Open source passage · Sampling and uncertainty/,
     });
-    // The link carries the passage, not just the resource: the block and offset of the anchor.
+    // The address names the revision the class studies now and the place the mapping found.
     const href = new URL(link.getAttribute('href') ?? '', 'http://app.test');
     expect(href.pathname).toBe(`/classes/${CLASS_A}/topics/${TOPIC}/reading`);
-    expect(href.searchParams.get('resource')).toBe(READING);
-    expect(href.searchParams.get('block')).toBe('b:0123456789ab');
-    expect(href.searchParams.get('offset')).toBe('6');
+    expect(href.searchParams.get('resource')).toBe(NEWER_REVISION);
+    expect(href.searchParams.get('block')).toBe('b:abcdefabcdef');
+    expect(href.searchParams.get('offset')).toBe('9');
     expect(screen.getByText('“sample”')).toBeVisible();
   });
 
@@ -714,18 +734,158 @@ describe('grading workspace', () => {
     expect(calls.filter((c) => c.method === 'POST')).toHaveLength(1);
   });
 
-  it('A17 an override replaces unsaved edits with the new grade instead of showing them as saved', async () => {
+  it('A17 an override or regrade waits for unsaved edits to be saved, and cannot be sent twice', async () => {
     const user = userEvent.setup({ delay: null });
-    serve({ history: [gradeRow(1)] });
+    const calls = serve({ history: [gradeRow(1)] });
     renderApp(`/classes/${CLASS_A}/review?assignment=${QUIZ}&selected=${PRIYA}&attempt=${A_PRIYA}`);
     await screen.findByRole('region', { name: 'Grading workspace' });
     await user.type(screen.getByLabelText('Feedback to Priya Nair'), 'unsent words');
+    // Unsaved edits would be replaced by the new grade: save them first.
+    expect(screen.getByRole('button', { name: 'Override grade' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Regrade from latest results' })).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: 'Save draft grade' }));
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Override grade' })).toBeEnabled(),
+    );
     await user.click(screen.getByRole('button', { name: 'Override grade' }));
     const form = screen.getByRole('form', { name: 'Override grade' });
     await user.type(within(form).getByLabelText(/Points of 5/), '4');
     await user.type(within(form).getByLabelText('Reason'), 'Because');
-    await user.click(within(form).getByRole('button', { name: 'Save override as draft' }));
-    await waitFor(() => expect(screen.getByLabelText('Feedback to Priya Nair')).toHaveValue(''));
+    const submit = within(form).getByRole('button', { name: 'Save override as draft' });
+    await user.dblClick(submit);
+    await waitFor(() => expect(screen.queryByRole('form', { name: 'Override grade' })).toBeNull());
+    expect(calls.filter((c) => c.path.endsWith('/grade/override'))).toHaveLength(1);
+  });
+
+  it('A17 changing marks after opening the release preview stops Confirm from releasing the older draft', async () => {
+    const user = userEvent.setup({ delay: null });
+    const draft = gradeRow(1);
+    const calls = serve({
+      history: [draft],
+      extra: (path) =>
+        path === '/grade-releases/preview'
+          ? {
+              status: 200,
+              body: {
+                recipients: [
+                  {
+                    student: { id: PRIYA, name: 'Priya Nair' },
+                    attemptId: A_PRIYA,
+                    attemptNumber: 1,
+                    resourceId: QUIZ,
+                    gradeId: draft.id,
+                    gradeNumber: 1,
+                    points: 5,
+                    possible: 5,
+                  },
+                ],
+                skipped: [],
+              },
+            }
+          : undefined,
+    });
+    renderApp(`/classes/${CLASS_A}/review?assignment=${QUIZ}&selected=${PRIYA}&attempt=${A_PRIYA}`);
+    await screen.findByRole('region', { name: 'Grading workspace' });
+    await user.click(await screen.findByRole('button', { name: 'Release feedback' }));
+    const panel = await screen.findByRole('region', { name: 'Release preview' });
+    await user.type(screen.getByLabelText('Feedback to Priya Nair'), 'late edit');
+    const confirm = within(panel).getByRole('button', { name: 'Confirm release to 1 student' });
+    expect(confirm).toBeDisabled();
+    await user.click(confirm);
+    expect(calls.some((c) => c.method === 'POST' && c.path === '/grade-releases')).toBe(false);
+  });
+
+  it('A17 a line comment must name a line of the file, and an empty comment is flagged, not dropped', async () => {
+    const user = userEvent.setup({ delay: null });
+    const calls = serve({
+      history: [gradeRow(1)],
+      extra: (path) =>
+        path === `/test-attempts/${A_PRIYA}/review`
+          ? {
+              status: 200,
+              body: {
+                ...reviewedAttempt(A_PRIYA, { id: PRIYA, name: 'Priya Nair' }),
+                test: {
+                  schema: 'test.v1',
+                  questions: [
+                    {
+                      id: 'mean',
+                      kind: 'code',
+                      prompt: 'Write mean(xs).',
+                      points: 5,
+                      rubric: [],
+                    },
+                  ],
+                },
+                answers: [
+                  {
+                    questionId: 'mean',
+                    seq: 1,
+                    savedAt: NOW,
+                    flagged: false,
+                    value: { files: [{ path: 'solution.py', content: 'a\nb\nc' }] },
+                  },
+                ],
+              },
+            }
+          : undefined,
+    });
+    renderApp(`/classes/${CLASS_A}/review?assignment=${QUIZ}&selected=${PRIYA}&attempt=${A_PRIYA}`);
+    await screen.findByRole('region', { name: 'Grading workspace' });
+    await user.type(screen.getByLabelText('Line to comment on'), '99');
+    await user.click(screen.getByRole('button', { name: 'Add line comment' }));
+    expect(await screen.findByText('solution.py has lines 1 to 3.')).toBeVisible();
+    await user.clear(screen.getByLabelText('Line to comment on'));
+    await user.type(screen.getByLabelText('Line to comment on'), '2');
+    await user.click(screen.getByRole('button', { name: 'Add line comment' }));
+    await user.click(screen.getByRole('button', { name: 'Save draft grade' }));
+    expect(await screen.findByText(/The comment on solution\.py line 2 has no text/)).toBeVisible();
+    expect(calls.some((c) => c.method === 'POST' && c.path.endsWith('/grade'))).toBe(false);
+  });
+
+  it('A25 a removed student’s open attempt in the address shows their workspace without any other request', async () => {
+    const data = review();
+    serve({
+      reviewData: {
+        ...data,
+        selected: {
+          studentId: OLD,
+          studentName: 'Olga Vance',
+          attemptId: A_OLD,
+          number: 1,
+          assignmentId: QUIZ,
+        },
+      },
+    });
+    renderApp(`/classes/${CLASS_A}/review?selected=${OLD}&attempt=${A_OLD}`);
+    const selection = await screen.findByRole('region', { name: 'Selected student' });
+    expect(selection).toHaveTextContent('Olga Vance');
+    expect(selection).toHaveTextContent('Attempt 1');
+    expect(await screen.findByRole('region', { name: 'Grading workspace' })).toBeVisible();
+  });
+
+  it('A25 a tick on a student is dropped when the grade under it changes, and when the page changes', async () => {
+    const user = userEvent.setup({ delay: null });
+    let released = false;
+    serve({
+      extra: (path) => {
+        if (path !== '/review') return undefined;
+        const rows = [
+          row(PRIYA, 'Priya Nair', A_PRIYA, {
+            score: { points: released ? 4 : 5, possible: 5, state: 'draft' as const },
+          }),
+        ];
+        return { status: 200, body: review(rows) };
+      },
+    });
+    renderApp(`/classes/${CLASS_A}/review?assignment=${QUIZ}`);
+    await screen.findByRole('table');
+    await user.click(screen.getByRole('checkbox', { name: 'Select Priya Nair for release' }));
+    expect(screen.getByRole('button', { name: 'Preview release (1)' })).toBeVisible();
+    released = true;
+    await user.selectOptions(screen.getByLabelText('Status'), 'needs');
+    await user.selectOptions(screen.getByLabelText('Status'), 'all');
+    expect(await screen.findByRole('button', { name: 'Preview release (0)' })).toBeVisible();
   });
 
   it('A25 opening another attempt starts a new workspace, so a release preview never carries over', async () => {

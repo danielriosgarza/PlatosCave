@@ -87,9 +87,16 @@ export const classReview = z.object({
   rows: z.array(reviewRow),
   /** The assignment filter, as the class has it; null without one. */
   assignment: z.object({ assignmentId: z.uuid(), title: z.string() }).nullable(),
-  /** The open attempt and its student, when both exist in this class; null otherwise. */
+  /** The open attempt and its student, current or removed; null otherwise. */
   selected: z
-    .object({ studentId: z.uuid(), attemptId: z.uuid(), number: z.int(), assignmentId: z.uuid() })
+    .object({
+      studentId: z.uuid(),
+      /** The student's name, so a removed student's open attempt can be headed too. */
+      studentName: z.string(),
+      attemptId: z.uuid(),
+      number: z.int(),
+      assignmentId: z.uuid(),
+    })
     .nullable(),
 });
 

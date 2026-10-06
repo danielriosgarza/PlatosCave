@@ -120,3 +120,7 @@ export const submittedText = (row: ReviewRow) =>
         timeZoneName: 'short',
       }).format(new Date(row.lastSubmission.at))
     : '—';
+
+/** What the row's attempt shows of its grade: a change after ticking it makes the tick stale. */
+export const gradeSignature = (row: ReviewRow) =>
+  `${row.attempt?.state}:${row.attempt?.score?.state}:${row.attempt?.score?.points}:${row.attempt?.unreleasedChange}`;

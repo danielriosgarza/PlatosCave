@@ -76,9 +76,14 @@ export const downloadLink = (classId: string, submissionId: string, fileId?: str
 /** A grade changed: the workspace, the class table and every list of grades read it again. */
 export function useRefreshGrades(classId: string) {
   const client = useQueryClient();
+  // Only this class's grade reads: not discussions, submissions or other classes' queries.
+  const gradeKinds = ['test', 'grade', 'attempt', 'runs'];
   return () =>
     Promise.all([
-      client.invalidateQueries({ queryKey: ['grading'] }),
+      client.invalidateQueries({
+        predicate: ({ queryKey: [root, kind, id] }) =>
+          root === 'grading' && id === classId && gradeKinds.includes(String(kind)),
+      }),
       client.invalidateQueries({ queryKey: ['GET', getClassReview.path, classId] }),
     ]);
 }

@@ -55,9 +55,12 @@ export function StudentWork({
   go: (next: ReviewSearch) => void;
 }) {
   const tab = search.tab ?? 'results';
-  const assignments = search.assignment
-    ? data.assignments.filter((a) => a.assignmentId === search.assignment)
-    : data.assignments;
+  // The same scope as the table: the topic filter narrows tests as it does notebooks.
+  const assignments = data.assignments.filter(
+    (a) =>
+      (!search.topic || a.topicId === search.topic) &&
+      (!search.assignment || a.assignmentId === search.assignment),
+  );
   const open = (attempt: string) => go({ ...search, tab: 'results', attempt });
   return (
     <div className={styles.tabs}>
@@ -320,20 +323,22 @@ function Snapshot({ classId, submission: s }: { classId: string; submission: Sub
 }
 
 /**
- * Where the thread's passage is in the reading or deck the class studies: the placement the
- * mapping found, else the anchor it was written on. A text anchor opens at its block, a PDF page
- * or slide at its page (pages are counted from zero in anchors and from one in the viewers).
+ * Where the thread's passage is in what the class studies. The address names a revision, so the
+ * link uses the revision the placement maps onto (else the one the thread was written on), and
+ * the place the mapping found. A mark with no confident placement opens the revision without a
+ * place rather than the original anchor's block. A text anchor opens at its block, a PDF page or
+ * slide at its page (counted from zero in anchors, from one in the viewers).
  */
 function passageSearch(thread: Discussions[number]['thread']) {
-  const place = thread.placement?.anchor ?? thread.anchor;
-  const resource = thread.resourceId;
-  if (place.kind === 'text') {
-    return searchFor(resource, { blockId: place.blockId, offset: place.start });
+  const revision = thread.placement?.resourceRevisionId ?? thread.resourceRevisionId;
+  const place = thread.placement ? thread.placement.anchor : thread.anchor;
+  if (place?.kind === 'text') {
+    return searchFor(revision, { blockId: place.blockId, offset: place.start });
   }
-  if (place.kind === 'pdf' || place.kind === 'slide') {
-    return searchFor(resource, { page: place.page + 1, offset: 0 });
+  if (place?.kind === 'pdf' || place?.kind === 'slide') {
+    return searchFor(revision, { page: place.page + 1, offset: 0 });
   }
-  return searchFor(resource, null);
+  return searchFor(revision, null);
 }
 
 const quoteOf = (thread: Discussions[number]['thread']) => {
