@@ -145,6 +145,12 @@ export function LiveNotebook({
   const kernel = state.kernel;
   const kernelState = kernel?.state;
   const connected = sessionReady && channelOpen && !left;
+  // The socket dropped and is being retried while the session was last known ready.
+  const reattaching =
+    !left &&
+    session.state === 'ready' &&
+    (state.session?.state ?? 'ready') === 'ready' &&
+    (channel.status === 'closed' || channel.status === 'connecting' || channel.offline);
   const onEditRef = useRef(onEdit);
   onEditRef.current = onEdit;
   const stableEdit = useCallback((id: string, value: string) => onEditRef.current(id, value), []);
@@ -174,7 +180,9 @@ export function LiveNotebook({
   };
 
   // Run all: one cell at a time in notebook order, stopping at the first that does not finish
-  // cleanly. Each is a new execute with its own ref; none is ever resent by this logic.
+  // cleanly. Each is a new execute with its own ref; none is ever resent by this logic. While the
+  // channel is being reattached nothing is sent, and the cell it waits on keeps running on the
+  // kernel: the resume tells how it ended (§10.6), and Run all goes on from there.
   // biome-ignore lint/correctness/useExhaustiveDependencies: advances on each message and on connection changes only
   useEffect(() => {
     if (!runAll) return;
@@ -183,6 +191,7 @@ export function LiveNotebook({
       setRunAllNote(note);
     };
     if (!connected) {
+      if (reattaching) return;
       stop('Run all stopped because the connection was lost.');
       return;
     }
@@ -222,7 +231,7 @@ export function LiveNotebook({
         }.`,
       );
     }
-  }, [state, canRun, connected, kernelState, runAll]);
+  }, [state, canRun, connected, reattaching, kernelState, runAll]);
 
   const startRunAll = () => {
     const ids = notebook.cells
