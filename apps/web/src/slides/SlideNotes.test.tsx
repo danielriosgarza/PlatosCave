@@ -3,7 +3,13 @@ import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Annotation, MarginList, Thread } from '../reading/margin/data';
-import { allowDrafts, clearDrafts, draftKey, saveDraft } from '../reading/margin/drafts';
+import {
+  allowDrafts,
+  clearDrafts,
+  draftKey,
+  listDrafts,
+  saveDraft,
+} from '../reading/margin/drafts';
 import type { PdfDocument } from '../reading/pdfjs';
 import {
   CLASS_A,
@@ -18,6 +24,18 @@ import {
 
 const openPdf = vi.hoisted(() => vi.fn());
 vi.mock('../reading/pdfjs', () => ({ openPdf }));
+
+const deletes = vi.hoisted(() => ({ hold: null as Promise<void> | null }));
+vi.mock('../reading/margin/drafts', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../reading/margin/drafts')>();
+  return {
+    ...real,
+    removeDraft: async (key: string) => {
+      await deletes.hold;
+      return real.removeDraft(key);
+    },
+  };
+});
 
 const RES = '00000000-0000-4000-8000-000000000401';
 const REV = '00000000-0000-4000-8000-000000000601';
@@ -288,6 +306,39 @@ describe('slide notes', () => {
     await user.click(screen.getByRole('button', { name: 'Next' }));
     expect(within(margin).queryByText('Is slide 2 on the test?')).toBeNull();
     expect(within(margin).getByText('No questions or comments on this slide yet.')).toBeVisible();
+  });
+
+  it('A05 a reload before a posted question\u2019s device copy is gone does not bring it back as unsent', async () => {
+    const user = userEvent.setup();
+    const w = world();
+    api(w);
+    // The device's delete of the posted question's draft stays uncommitted until the test lets it go.
+    let release: () => void = () => {};
+    deletes.hold = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const { margin } = await openNotes(user);
+    await user.click(screen.getByRole('button', { name: /^Discussion/ }));
+    await user.type(screen.getByLabelText('Comment or question'), 'Is slide 1 on the test?');
+    await user.click(screen.getByRole('button', { name: 'Post' }));
+    expect(await within(margin).findByText('You → Instructor')).toBeVisible();
+    // The reload: the margin comes back with whatever the device still holds.
+    cleanup();
+    renderApp(SLIDES);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    // The posted question is still being cleared from the device, so the margin waits and does not
+    // offer it again.
+    const notes = screen.queryByRole('button', { name: 'Notes' });
+    if (notes) await user.click(notes);
+    const discussion = screen.queryByRole('button', { name: /^Discussion/ });
+    if (discussion) await user.click(discussion);
+    expect(screen.queryByDisplayValue('Is slide 1 on the test?')).toBeNull();
+    release(); // the device commits at last
+    if (!notes) await user.click(await screen.findByRole('button', { name: 'Notes' }));
+    if (!discussion) await user.click(await screen.findByRole('button', { name: /^Discussion/ }));
+    expect(screen.getByLabelText('Comment or question')).toHaveValue('');
+    expect(w.calls.filter((c) => c.method === 'POST')).toHaveLength(1);
+    await waitFor(async () => expect(await listDrafts(SAM_ID, CLASS_A, RES)).toEqual([]));
   });
 
   it('A24 notes the new deck revision could not place stay listed as needing reattachment', async () => {
