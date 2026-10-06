@@ -926,7 +926,7 @@ class Harness:
 
     @staticmethod
     def call_spec(check, outcome_path):
-        """The first line of the driver's stdin: never `expected` or `compare` (design section 4.5)."""
+        """What the driver is told (stdin line for Python, call.json for R): never `expected` or `compare` (design section 4.5)."""
         return {
             "file": posixpath.normpath(check["file"]),
             "function": check["function"],

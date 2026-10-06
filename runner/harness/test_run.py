@@ -1446,6 +1446,55 @@ class RRuntime(HarnessCase):
         outcome = self.go(r_job(files, [script("Loop", "loop.R", timeoutSeconds=1), script("Ok", "ok.R")]))
         self.assertEqual([c["status"] for c in outcome.result["checks"]], ["timeout", "passed"])
 
+    def test_a_function_the_student_did_not_define_is_not_found_in_base_r(self):
+        # `factorial` and `rev` exist in base R; an empty solution must not pass for them.
+        job = r_job(
+            {"solution.R": "other <- function() 1\n"},
+            [r_call("Factorial", "factorial", {"value": 120}, args=[5]), r_call("Rev", "rev", {"value": [2, 1]}, args=[[1, 2]])],
+        )
+        outcome = self.go(job)
+        self.assertEqual([c["status"] for c in outcome.result["checks"]], ["error", "error"])
+        self.assertIn("was not found", outcome.check()["message"])
+
+    def test_student_code_cannot_replace_the_drivers_helpers(self):
+        files = {
+            "solution.R": "source('helpers.R')\nanswer <- function() list(a = 1)\n",
+            "helpers.R": (
+                "to_json <- function(x) 'null'\nclean_text <- function(s) 'x'\n"
+                "json_string <- function(s) 'x'\nmain <- function() stop('hijacked')\n"
+                "paste <- function(...) 'x'\n"
+            ),
+        }
+        entry = self.go(r_job(files, [r_call("Answer", "answer", {"value": {"a": 1}})])).check()
+        self.assertEqual(entry["status"], "passed", entry)
+
+    def test_doubles_round_trip_in_exact_checks(self):
+        files = {"solution.R": "third <- function() 1 / 3\nnoise <- function() 0.1 + 0.2\n"}
+        outcome = self.go(
+            r_job(
+                files,
+                [
+                    r_call("Third", "third", {"value": 0.3333333333333333}),
+                    r_call("Noise is not 0.3", "noise", {"value": 0.3}),
+                    r_call("Noise numeric", "noise", {"value": 0.3}, "numeric"),
+                ],
+            )
+        )
+        self.assertEqual([c["status"] for c in outcome.result["checks"]], ["passed", "failed", "passed"])
+
+    def test_null_in_an_array_argument_is_a_missing_value_and_quit_is_an_exception(self):
+        files = {"solution.R": "total <- function(v) sum(v, na.rm = TRUE)\nstop_now <- function() quit(status = 2)\n"}
+        outcome = self.go(
+            r_job(
+                files,
+                [
+                    r_call("Total", "total", {"value": 4}, args=[[1, None, 3]]),
+                    r_call("Quit", "stop_now", {"raises": {"type": "SystemExit"}}),
+                ],
+            )
+        )
+        self.assertEqual([c["status"] for c in outcome.result["checks"]], ["passed", "passed"], outcome.result["checks"])
+
     def test_hidden_files_stay_off_disk_for_public_checks(self):
         files = {"main.R": "stopifnot(!file.exists('secret.R'))\n", "secret.R": ("x <- 1\n", True)}
         outcome = self.go(r_job(files, [script("Public", "main.R")]))

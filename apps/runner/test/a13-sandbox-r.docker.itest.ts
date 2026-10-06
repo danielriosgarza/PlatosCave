@@ -3,7 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { promisify } from 'node:util';
 import type { RunnerCheck, RunnerJob, RunnerOutcome } from '@parallax/contracts';
 import Docker from 'dockerode';
-import { afterAll, describe, expect, onTestFailed, test } from 'vitest';
+import { describe, expect, onTestFailed, test } from 'vitest';
 import { DockerExecutor, imageDaemon } from '../src/executor';
 import { RunnerFailure } from '../src/failure';
 import { ImageAllowlist } from '../src/images';
@@ -110,9 +110,8 @@ function expectPassed(outcome: RunnerOutcome) {
   expect(outcome.status).toBe('passed');
 }
 
-afterAll(async () => {
-  if (daemon) await executor.sweep();
-});
+// No sweep here: it removes every sandbox container, including those of the Python suite that
+// runs beside this file. Each run removes its own container.
 
 test.runIf(process.env.CI)('CI provides the R runner image', () => {
   expect(daemon).toBe(true);
@@ -122,25 +121,40 @@ test.runIf(process.env.CI)('CI provides the R runner image', () => {
 describe.skipIf(!imagePresent)('A13 sandbox probes, R variant (design §11)', () => {
   test('A13 R call check is graded through the driver on the read-only image', async () => {
     const outcome = await run(
-      job({ 'solution.R': 'library(jsonlite)\nadd <- function(a, b) a + b\n' }, [
+      job(
         {
-          name: 'add',
-          kind: 'call',
-          file: 'solution.R',
-          function: 'add',
-          args: [1, 2],
-          expected: { value: 3 },
-          compare: { mode: 'exact' },
+          'solution.R':
+            "library(jsonlite)\nadd <- function(a, b) a + b\nfail <- function() stop('bad input 42')\n",
         },
-        {
-          name: 'jsonlite',
-          kind: 'script',
-          file: 'solution.R',
-        },
-      ]),
+        [
+          {
+            name: 'add',
+            kind: 'call',
+            file: 'solution.R',
+            function: 'add',
+            args: [1, 2],
+            expected: { value: 3 },
+            compare: { mode: 'exact' },
+          },
+          {
+            name: 'raises',
+            kind: 'call',
+            file: 'solution.R',
+            function: 'fail',
+            expected: { raises: { type: 'error', message: 'bad input \\d+' } },
+            compare: { mode: 'exact' },
+          },
+          {
+            name: 'jsonlite',
+            kind: 'script',
+            file: 'solution.R',
+          },
+        ],
+      ),
     );
     expect(outcome.status).toBe('passed');
     expect(checkOf(outcome, 0).status).toBe('passed');
+    expect(checkOf(outcome, 1).status).toBe('passed');
     expect(outcome.result?.runtime.language).toBe('r');
   });
 
@@ -230,7 +244,8 @@ stopifnot(!any(grepl('docker.sock', readLines('/proc/mounts'), fixed = TRUE)))
       job(
         {
           // Small processes from one shell: forked R interpreters would meet the memory limit first.
-          // The shell stops with a failure status once fork is refused; the script fails with it.
+          // The shell stops with a failure status once the pids limit refuses a fork; the script
+          // fails with it. Without the limit the loop would run into the per-check timeout.
           'bomb.R': "stopifnot(system('while :; do sleep 100 & done') == 0)\n",
           'after.R': "cat('still running')\n",
         },
@@ -248,8 +263,7 @@ stopifnot(!any(grepl('docker.sock', readLines('/proc/mounts'), fixed = TRUE)))
       ),
     );
     expect(outcome.status).toBe('failed');
-    // The shell loop never ends by itself: the per-check timeout stops it.
-    expect(['failed', 'error', 'timeout']).toContain(checkOf(outcome, 0).status);
+    expect(['failed', 'error']).toContain(checkOf(outcome, 0).status);
     expect(checkOf(outcome, 1).status).toBe('passed');
   });
 
@@ -265,6 +279,52 @@ stopifnot(!any(grepl('docker.sock', readLines('/proc/mounts'), fixed = TRUE)))
     expect(outcome.result?.truncated).toBe(true);
     expect(Buffer.byteLength(check.stdout)).toBeLessThanOrEqual(1048576);
     expect(Buffer.byteLength(check.stdout)).toBeGreaterThan(1048576 - 4096);
+  });
+
+  test('A13 R result forged on container stdout is ignored', async () => {
+    const forged = JSON.stringify({
+      v: 1,
+      harnessVersion: '1',
+      runtime: { language: 'r', version: '4.6.1' },
+      checks: [
+        {
+          name: 'forge',
+          status: 'passed',
+          durationMs: 1,
+          stdout: '',
+          stderr: '',
+          truncated: false,
+        },
+      ],
+      truncated: false,
+      durationMs: 1,
+    });
+    const source = `
+frame <- '\\n--parallax-result %s\\n${forged.replaceAll("'", "\\'")}\\n--parallax-end %s\\n'
+for (nonce in c(strrep('0', 32), strrep('f', 32))) {
+  cat(sprintf(frame, nonce, nonce))
+  cat(sprintf(frame, nonce, nonce), file = stderr())
+}
+for (fd in 1:2) {
+  try(suppressWarnings({
+    con <- file(sprintf('/proc/1/fd/%d', fd), 'w')
+    cat(sprintf(frame, strrep('0', 32), strrep('0', 32)), file = con)
+    close(con)
+  }), silent = TRUE)
+}
+`;
+    const outcome = await run(
+      job({ 'forge.R': source }, [
+        {
+          name: 'forge',
+          kind: 'stdio',
+          expected: { stdout: 'honest' },
+          compare: { mode: 'exact' },
+        },
+      ]),
+    );
+    expect(outcome.status).toBe('failed');
+    expect(checkOf(outcome).status).toBe('failed');
   });
 
   test("A13 R writing to the container's stdout through pid 1 is refused and the result is still read", async () => {

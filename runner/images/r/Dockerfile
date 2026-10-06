@@ -1,12 +1,14 @@
 # R runner image (docs/design/runner.md section 6). Build context is runner/:
 #   scripts/runner-image.sh build r
 # Base: rocker/r-ver:4.6.1, the multi-architecture index digest read from the registry on 2026-10-06.
-# Its CRAN repository is a frozen snapshot, so `jsonlite` below is the version of that date.
+# jsonlite comes from a dated Posit Package Manager snapshot, so a rebuild installs the same version
+# whatever the base image's default repository points at.
 FROM rocker/r-ver:4.6.1@sha256:4e6e6696ff54a86625c7f80046478e67014a2184e942b85eeff43db7b992d93e
 
 ARG REVISION=unknown
 ARG CONTENT_HASH=unknown
 ARG HARNESS_VERSION=unknown
+ARG CRAN_SNAPSHOT=2026-10-01
 
 ENV PARALLAX_IMAGE=1 \
     DEBIAN_FRONTEND=noninteractive
@@ -16,7 +18,8 @@ ENV PARALLAX_IMAGE=1 \
 RUN apt-get update \
  && apt-get install -y --no-install-recommends python3 \
  && rm -rf /var/lib/apt/lists/* \
- && Rscript -e 'install.packages("jsonlite")' \
+ && codename="$(. /etc/os-release && echo "$VERSION_CODENAME")" \
+ && Rscript -e "install.packages('jsonlite', repos = c(CRAN = 'https://p3m.dev/cran/__linux__/${codename}/${CRAN_SNAPSHOT}'))" \
  && Rscript --vanilla -e 'library(jsonlite); cat(as.character(packageVersion("jsonlite")), "\n")' \
  && groupadd --gid 10001 runner \
  && useradd --uid 10001 --gid 10001 --home-dir /tmp --no-create-home --shell /usr/sbin/nologin runner \
