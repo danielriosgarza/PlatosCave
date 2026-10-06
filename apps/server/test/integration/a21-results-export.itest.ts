@@ -1,6 +1,6 @@
-import { eq } from 'drizzle-orm';
+import { and, eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
-import { auditEvents, users } from '../../src/db/schema';
+import { auditEvents, classMemberships, resources, testAttempts, users } from '../../src/db/schema';
 import { ids } from '../fixtures/world';
 import { attemptUrl, call, type ExecWorld, execWorld, startAttempt } from './execution';
 
@@ -24,6 +24,7 @@ async function download(url: string) {
 /** Rows as arrays; the fixtures hold no commas or line breaks except where a test says so. */
 const parse = (csv: string) =>
   csv
+    .replace(/^\uFEFF/, '')
     .trimEnd()
     .split('\r\n')
     .map((line) => line.split(','));
@@ -73,6 +74,8 @@ describe('A21 results export', () => {
     expect(file.res.statusCode).toBe(200);
     expect(file.res.headers['content-type']).toBe('text/csv; charset=utf-8');
     expect(file.res.headers['content-disposition']).toContain('attachment');
+    // A BOM lets Excel read non-ASCII names as UTF-8.
+    expect(file.text.startsWith('\uFEFF')).toBe(true);
 
     const [header, ...rows] = parse(file.text);
     expect(header).toEqual([
@@ -83,11 +86,13 @@ describe('A21 results export', () => {
       'attempt',
       'attempt_state',
       'grade_state',
+      'grade_complete',
       'points',
       'possible',
       'started_at',
       'submitted_at',
       'graded_at',
+      'released_points',
       'released_at',
     ]);
     expect(rows).toHaveLength(2);
@@ -99,10 +104,13 @@ describe('A21 results export', () => {
     expect(file.text).not.toContain('Autumn 2026 A');
     const sam = rows.find((r) => r[3] === 'Sam Okafor');
     expect(sam?.slice(4, 7)).toEqual(['1', 'grading', 'draft']);
-    expect(sam?.[10]).not.toBe('');
+    // Its grading runs have no result yet, so the draft is partial.
+    expect(sam?.[7]).toBe('no');
+    expect(sam?.[11]).not.toBe('');
+    expect(sam?.slice(13, 15)).toEqual(['', '']);
     const bea = rows.find((r) => r[3] === "'=1+1");
     expect(bea?.slice(4, 7)).toEqual(['1', 'in_progress', 'none']);
-    expect(bea?.slice(7, 9)).toEqual(['', '']);
+    expect(bea?.slice(7, 10)).toEqual(['', '', '']);
   });
 
   test('A21 each class exports its own file, and the audit trail names who exported which class', async () => {
@@ -140,6 +148,48 @@ describe('A21 results export', () => {
       const res = await call(w, who, 'POST', exportUrl(classId));
       expect(res.status, `${who} → ${classId}`).toBe(status);
     }
+  });
+
+  test('A21 removed students are exported, preview attempts and overdue state are handled as review does', async () => {
+    const before = await call(w, 'marcus', 'POST', exportUrl(ids.classB));
+    expect(before.body.rows).toBe(2);
+    // A preview principal's attempt is never exported.
+    await startAttempt(w, 'previewB', ids.classB);
+    // Priya's attempt passes its deadline without anyone opening Class review.
+    attempt.priya = await startAttempt(w, 'priya', ids.classB);
+    await w.testDb.db
+      .update(testAttempts)
+      .set({ deadlineAt: new Date(w.clock.now.getTime() - 1000) })
+      .where(eq(testAttempts.id, attempt.priya as string));
+    // Bea leaves the class; her attempt stays.
+    await w.testDb.db
+      .delete(classMemberships)
+      .where(and(eq(classMemberships.classId, ids.classB), eq(classMemberships.userId, ids.bea)));
+    await w.testDb.db.insert(auditEvents).values({
+      actorId: ids.marcus,
+      action: 'membership.remove',
+      scopeKind: 'class',
+      scopeId: ids.classB,
+      targetType: 'membership',
+      targetId: ids.bea,
+      before: { role: 'student' },
+    });
+    // The course draft is renamed without a release.
+    await w.testDb.db
+      .update(resources)
+      .set({ title: 'Spread check v2' })
+      .where(eq(resources.id, w.quizId));
+
+    const made = await call(w, 'marcus', 'POST', exportUrl(ids.classB));
+    expect(made.body.rows).toBe(3);
+    const file = await download(made.body.url);
+    const [, ...rows] = parse(file.text);
+    expect(rows.map((r) => r[3]).sort()).toEqual(["'=1+1", 'Priya Nair', 'Sam Okafor']);
+    expect(file.text).not.toContain('v2');
+    expect(new Set(rows.map((r) => r[2]))).toEqual(new Set(['Spread check']));
+    const priya = rows.find((r) => r[3] === 'Priya Nair');
+    expect(priya?.[5]).not.toBe('in_progress');
+    expect(priya?.[11]).not.toBe('');
   });
 
   test('A21 the download link works only on the content origin and expires', async () => {
