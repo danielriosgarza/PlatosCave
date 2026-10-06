@@ -123,10 +123,15 @@ export const testAttempts = pgTable(
      */
     localCopy: jsonb().$type<Record<string, unknown>>(),
     localCopyAt: timestamp({ withTimezone: true }),
+    /** The attempt an instructor chose to report under the `instructor_selected` rule. */
+    reportSelected: boolean().notNull().default(false),
   },
   (t) => [
     unique().on(t.id, t.classId),
     unique().on(t.classId, t.userId, t.resourceId, t.number),
+    uniqueIndex('test_attempts_report_selected')
+      .on(t.classId, t.userId, t.resourceId)
+      .where(sql`${t.reportSelected}`),
     uniqueIndex('test_attempts_open')
       .on(t.classId, t.userId, t.resourceId)
       .where(sql`${t.state} = 'in_progress'`),

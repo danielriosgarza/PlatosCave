@@ -73,8 +73,9 @@ export const listNotebookSessions = defineRoute({
  * Connect (§2, step 4): opens a session for a notebook revision of the class's release on one of
  * the caller's saved connections, `202 { sessionId, state: 'starting' }`. 404 for a connection
  * or revision the caller cannot use; 409 `connector_offline`; 409 `session_exists` with the open
- * session's id; 409 `wrong_class` for a connection made from another class's template; 400 for a
- * target the connector's scope no longer covers; 429 beyond 6 a minute.
+ * session's id; 409 `wrong_class` for a connection made from another class's template and 409
+ * `template_archived` for one made from an archived template; 400 for a target the connector's
+ * scope no longer covers; 429 beyond 6 a minute.
  */
 export const openNotebookSession = defineRoute({
   method: 'POST',
@@ -88,14 +89,17 @@ export const openNotebookSession = defineRoute({
     revisionId: z.uuid(),
     /** Defaults to the connection's runtime; Connect may choose another kernel or attach port. */
     runtime: LinkRuntime.optional(),
-    /** Defaults to 30 minutes idle and 5 minutes of grace (§9). */
+    /**
+     * Defaults to the lease of the connection's class template, else 30 minutes idle and 5
+     * minutes of grace (§9).
+     */
     lease: LinkLease.optional(),
   }),
   response: z.object({ sessionId: z.uuid(), state: SessionState }),
   errors: {
     400: targetRefused,
     409: z.union([
-      z.object({ error: z.enum(['connector_offline', 'wrong_class']) }),
+      z.object({ error: z.enum(['connector_offline', 'wrong_class', 'template_archived']) }),
       z.object({ error: z.literal('session_exists'), sessionId: z.uuid() }),
       classArchived,
     ]),

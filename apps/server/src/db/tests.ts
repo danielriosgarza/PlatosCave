@@ -81,7 +81,7 @@ async function testOf(ex: Ex, revisionId: string): Promise<TestV1 | undefined> {
   return parsed.success ? parsed.data : undefined;
 }
 
-async function pinnedTest(ex: Ex, attempt: AttemptRow): Promise<TestV1> {
+export async function pinnedTest(ex: Ex, attempt: AttemptRow): Promise<TestV1> {
   const test = await testOf(ex, attempt.resourceRevisionId);
   if (!test) throw new Error(`attempt ${attempt.id} references an invalid test`);
   return test;
@@ -90,7 +90,7 @@ async function pinnedTest(ex: Ex, attempt: AttemptRow): Promise<TestV1> {
 const invalidTest = invalid('This test cannot be opened: its definition is not valid');
 
 /** The class's assignment row for a test, if its settings were ever saved or an attempt made. */
-async function assignmentOf(ex: Ex, scope: ClassScope, resourceId: string) {
+export async function assignmentOf(ex: Ex, scope: ClassScope, resourceId: string) {
   const [row] = await ex
     .select()
     .from(assignments)
@@ -134,7 +134,7 @@ async function overrideOf(
     : null;
 }
 
-const settingsOf = (test: TestV1, patch: AssignmentSettingsPatch | undefined) =>
+export const settingsOf = (test: TestV1, patch: AssignmentSettingsPatch | undefined) =>
   mergeSettings(test.settings, patch);
 
 async function termsOfAttempt(ex: Ex, scope: ClassScope, attempt: AttemptRow, test: TestV1) {
@@ -163,7 +163,7 @@ function receiptOf(row: SubmissionRow, test: TestV1): Receipt {
   };
 }
 
-async function submissionOf(ex: Ex, scope: ClassScope, attemptId: string) {
+export async function submissionOf(ex: Ex, scope: ClassScope, attemptId: string) {
   const [row] = await ex
     .select()
     .from(testSubmissions)
@@ -313,7 +313,7 @@ const ownAttemptsOf = (ex: Ex, scope: ClassScope, resourceId: string) =>
     .orderBy(desc(testAttempts.number));
 
 /** A test of the class's release the caller may study now, and its valid definition. */
-async function studyableTest(ex: Ex, scope: ClassScope, resourceId: string, now: Date) {
+export async function studyableTest(ex: Ex, scope: ClassScope, resourceId: string, now: Date) {
   const resource = await studyableResource(ex, scope, resourceId, now);
   if (resource?.type !== 'test') return notFound;
   const test = await testOf(ex, resource.revisionId);
@@ -785,7 +785,7 @@ export async function grantOverride(
  * Real students' attempts of the class, removed students included; preview rows never. Needs
  * `classMemberships` left-joined on class and user (`studentOrRemovedStudent`).
  */
-const reviewable = (scope: ClassScope) =>
+export const reviewable = (scope: ClassScope) =>
   and(
     forClass(scope, testAttempts),
     excludePreview(testAttempts),
@@ -827,6 +827,54 @@ async function reviewedOf(db: Db, scope: ClassScope, where: ReturnType<typeof an
     });
   }
   return reviewed;
+}
+
+/**
+ * An attempt of a real student of the class (removed students included), locked and settled,
+ * for grading (P4-01); undefined for a preview or instructor attempt or another class's.
+ */
+export async function lockReviewable(tx: Tx, scope: ClassScope, attemptId: string, now: Date) {
+  const attempt = await lockAttempt(tx, scope, attemptId, now, false);
+  if (!attempt) return undefined;
+  const [found] = await tx
+    .select({ name: users.name, role: classMemberships.role })
+    .from(testAttempts)
+    .innerJoin(users, eq(users.id, testAttempts.userId))
+    .leftJoin(
+      classMemberships,
+      and(
+        eq(classMemberships.classId, testAttempts.classId),
+        eq(classMemberships.userId, testAttempts.userId),
+      ),
+    )
+    .where(and(reviewable(scope), eq(testAttempts.id, attemptId)));
+  return found && { attempt, student: { id: attempt.userId, name: found.name } };
+}
+
+/** Real students' attempts of a test, settled first, without their summaries (P4-01). */
+export async function reviewableAttempts(db: Db, scope: ClassScope, resourceId: string, now: Date) {
+  const ofTest = eq(testAttempts.resourceId, resourceId);
+  await settleDue(db, scope, and(forClass(scope, testAttempts), ofTest), now);
+  const rows = await db
+    .select({ attempt: testAttempts, name: users.name, role: classMemberships.role })
+    .from(testAttempts)
+    .innerJoin(users, eq(users.id, testAttempts.userId))
+    .leftJoin(
+      classMemberships,
+      and(
+        eq(classMemberships.classId, testAttempts.classId),
+        eq(classMemberships.userId, testAttempts.userId),
+      ),
+    )
+    .where(and(reviewable(scope), ofTest))
+    .orderBy(asc(users.name), asc(testAttempts.userId), desc(testAttempts.number));
+  return rows.map((r) => ({ attempt: r.attempt, name: r.name, removed: r.role === null }));
+}
+
+/** The caller's own attempts of a test, settled first, newest first (P4-01). */
+export async function ownAttempts(db: Db, scope: ClassScope, resourceId: string, now: Date) {
+  await settleOwn(db, scope, resourceId, now);
+  return ownAttemptsOf(db, scope, resourceId);
 }
 
 /** Instructor: every real student's attempts of a test in this class. */

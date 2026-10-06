@@ -338,6 +338,9 @@ func TestA27_LocalRunsCellThroughProxy(t *testing.T) {
 	if ready.Environment == nil || ready.Environment.OS != "linux" {
 		t.Errorf("environment %+v", ready.Environment)
 	}
+	if ready.ContentRoot == nil || *ready.ContentRoot != "" {
+		t.Errorf("an owned session's content root is reported empty, got %v", ready.ContentRoot)
+	}
 
 	head, body := e.mustCall(sessionA, "session", "GET", "/api/status", nil)
 	if head.Status != 200 || !strings.Contains(string(body), "started") {
@@ -523,6 +526,21 @@ func TestRefusedRequestsNeverReachJupyter(t *testing.T) {
 	}
 	// Unknown sessions and stream ids of other sessions.
 	e.refused(sessionB, "session", "GET", "/api/status", nil, protocol.CodeUnknownSession)
+}
+
+// P3-09b: an attached session reports its content root with ready, so the relay can place the
+// workspace inside the server's root_dir; the encoded message carries it.
+func TestAttachedReadyReportsContentRoot(t *testing.T) {
+	ws, port, _ := attachFixture(t)
+	e := newEnv(t, nil, protocol.Limits{})
+	ready := e.openLocal(sessionA, reqA, ws, protocol.Runtime{Mode: "attach", Port: port})
+	if ready.Owned || ready.ContentRoot == nil || *ready.ContentRoot != "parallax" {
+		t.Fatalf("ready = %+v", ready)
+	}
+	raw, err := protocol.Encode(ready)
+	if err != nil || !strings.Contains(string(raw), `"contentRoot":"parallax"`) {
+		t.Errorf("encoded ready %s (%v)", raw, err)
+	}
 }
 
 func TestKernelIdsConfinedToSessionOverTheLink(t *testing.T) {

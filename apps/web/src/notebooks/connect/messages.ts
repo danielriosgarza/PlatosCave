@@ -147,6 +147,10 @@ export const CATALOGUE_CAUSE_COPY: Record<string, string> = {
 const SERVER_CODE_COPY: Record<string, string> = {
   connector_offline:
     'That computer is not connected to Parallax. Start the connector there and try again.',
+  template_mismatch:
+    'A connection to a class computer keeps the host and working directory its instructor set. Make a new connection from the class computer instead.',
+  workspace_needs_user:
+    'On a computer with an account per student, the working directory must contain {user}.',
 };
 
 export const codeText = (code: string | undefined): string =>

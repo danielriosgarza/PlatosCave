@@ -87,6 +87,12 @@
       "pattern": "^[^\\x00-\\x1f\\x7f]+$",
       "description": "A path on the machine the message names. Absolute, free of dot-dot segments and POSIX or drive-rooted: semantic rules."
     },
+    "contentRoot": {
+      "type": "string",
+      "maxLength": 1024,
+      "pattern": "^([^./\\\\\\x00-\\x1f\\x7f][^/\\\\\\x00-\\x1f\\x7f]*(/[^./\\\\\\x00-\\x1f\\x7f][^/\\\\\\x00-\\x1f\\x7f]*)*)?$",
+      "description": "The workspace relative to the Jupyter server's root_dir, `/`-separated; empty when the workspace is the root. No empty, dot or hidden segment, backslash or control character (docs/design/connector.md section 7)."
+    },
     "cidr": {
       "type": "string",
       "maxLength": 49,
@@ -1143,6 +1149,9 @@
         },
         "environment": {
           "$ref": "#/$defs/environment"
+        },
+        "contentRoot": {
+          "$ref": "#/$defs/contentRoot"
         },
         "leaseExpiresAt": {
           "$ref": "#/$defs/timestamp"

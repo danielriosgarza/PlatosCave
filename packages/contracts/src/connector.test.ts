@@ -128,6 +128,7 @@ describe('connector protocol v1 link examples', () => {
     'both-error-code-shape.json': 'code',
     'c2s-auth-short-signature.json': 'sig',
     'c2s-hello-unknown-os.json': 'os',
+    'c2s-session_state-content-root-dotdot.json': 'contentRoot',
     'c2s-session_state-unknown-state.json': 'state',
     'c2s-test_result-detail-too-long.json': 'detail',
     'c2s-test_result-host_identity-ok-without-hops.json': 'data',
