@@ -23,6 +23,10 @@ export const users = pgTable(
     email: text(),
     name: text().notNull(),
     ownerUserId: uuid().references((): AnyPgColumn => users.id, { onDelete: 'cascade' }),
+    /** Set when the person deactivates the account: no sign-in, no live sessions (§13). */
+    deactivatedAt: timestamp({ withTimezone: true }),
+    /** Set when the identity was replaced by a pseudonym; the rows it owned stay (plan §8 #23). */
+    anonymisedAt: timestamp({ withTimezone: true }),
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [

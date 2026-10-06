@@ -115,6 +115,7 @@ async function lockInvite(tx: Tx, kind: 'enrolment' | 'instructor', codeHash: st
       classId: classes.id,
       className: classes.name,
       archivedAt: classes.archivedAt,
+      courseArchivedAt: courses.archivedAt,
       courseId: courses.id,
       courseTitle: courses.title,
     })
@@ -132,7 +133,8 @@ function unusable(invite: Invite | undefined, now: Date): InviteFailure | null {
   if (!invite) return 'invite_not_found';
   if (invite.revokedAt) return 'invite_revoked';
   if (invite.expiresAt && invite.expiresAt <= now) return 'invite_expired';
-  if (invite.archivedAt) return 'class_archived';
+  // Archived means the class or its course: both are read-only (§4).
+  if (invite.archivedAt || invite.courseArchivedAt) return 'class_archived';
   return null;
 }
 

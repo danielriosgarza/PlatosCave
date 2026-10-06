@@ -199,6 +199,7 @@ export const cancelRun = defineRoute({
   method: 'POST',
   path: '/api/classes/:classId/test-attempts/:attemptId/runs/:runId/cancel',
   scope: { kind: 'class', role: 'student' },
+  allowWhenArchived: true,
   summary: 'Cancel your queued sample run',
   params: attemptParams.extend({ runId: z.uuid() }),
   response: studentRun,

@@ -532,8 +532,10 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
       setAsk(next);
       if (userId) {
         const key = draftKey(userId, classId, resourceId, ASK_ID);
-        if (next.body.trim() === '') void removeDraft(key);
-        else void saveDraft({ ...askDraft(next), key, userId, classId, resourceId });
+        // The send stays open until the device copy is really gone: a reading opened again before
+        // that would offer the posted question as unsent and post it twice.
+        if (next.body.trim() === '') await removeDraft(key);
+        else await saveDraft({ ...askDraft(next), key, userId, classId, resourceId });
       }
       return;
     }

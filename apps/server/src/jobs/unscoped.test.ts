@@ -46,6 +46,7 @@ describe('queues outside workScopedJob', () => {
     const boss = {
       createQueue: async () => {},
       schedule: async () => {},
+      unschedule: async () => {},
       work: async (name: string) => void worked.push(name),
     } as unknown as PgBoss;
     const quiet = { info() {}, warn() {}, error() {} } as unknown as JobLogger;

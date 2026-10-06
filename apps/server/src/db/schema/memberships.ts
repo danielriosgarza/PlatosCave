@@ -22,6 +22,8 @@ export const courses = pgTable('courses', {
   createdBy: uuid()
     .notNull()
     .references(() => users.id),
+  /** Archived courses keep read access for their members and refuse writes (§4, §12). */
+  archivedAt: timestamp({ withTimezone: true }),
   createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
 });
 

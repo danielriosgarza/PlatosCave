@@ -150,6 +150,7 @@ export function registerRoute<C extends RouteContract>(
   // Each limiter built by app.rateLimit() has its own store, so counts are per route.
   const limiter = options.rateLimit ? app.rateLimit(options.rateLimit) : undefined;
   const resolve = scopeResolver(app, contract);
+  const archivedAnswer = archivedRefusal(contract);
   app.route({
     method: contract.method,
     url: contract.path,
@@ -172,6 +173,11 @@ export function registerRoute<C extends RouteContract>(
     handler: async (req, reply) => {
       reply.code(status);
       try {
+        // §4: an archived class or course keeps reads and refuses writes, decided here once so a
+        // route added later cannot forget it. The scope says whether it is archived.
+        if (archivedAnswer && (req.parallaxScope as { archived?: boolean }).archived) {
+          throw new RouteFailure(409, archivedAnswer);
+        }
         return await handler({
           params: req.params,
           query: req.query,
@@ -208,6 +214,18 @@ export function registerRoute<C extends RouteContract>(
       }
     },
   });
+}
+
+/**
+ * What a write on a class or course scope answers while the class or course is archived, or
+ * undefined for a route that is not refused: reads, user and public scopes, and the writes that
+ * declare `allowWhenArchived` (restoring, closing a session).
+ */
+function archivedRefusal(contract: RouteContract) {
+  if (contract.method === 'GET' || contract.allowWhenArchived) return undefined;
+  if (contract.scope.kind === 'class') return { error: 'class_archived' } as const;
+  if (contract.scope.kind === 'course') return { error: 'course_archived' } as const;
+  return undefined;
 }
 
 /** The hook that resolves a contract's scope, answering the shared denial before the handler. */

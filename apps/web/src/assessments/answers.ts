@@ -64,3 +64,11 @@ export function navLabel(answered: boolean, flagged: boolean): string {
 /** The file offered when saving a draft: the code, or the written answer as text. */
 export const draftFilename = (question: Question, path?: string) =>
   question.kind === 'code' ? (path ?? 'solution.txt') : `${question.id}.txt`;
+
+/**
+ * Whether an instructor's request for unsent work has been answered: the server holds a copy
+ * the student's browser sent. A copy kept before the request answers it too, since the browser
+ * removes its own once the server has it.
+ */
+export const recoveryAnswered = (requestedAt: string | null, localCopyAt: string | null) =>
+  requestedAt !== null && localCopyAt !== null;

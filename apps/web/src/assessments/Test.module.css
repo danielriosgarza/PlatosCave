@@ -421,3 +421,7 @@
   padding: 6px 0;
   border-top: 1px solid var(--pc-rule);
 }
+
+.block {
+  display: block;
+}

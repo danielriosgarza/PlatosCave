@@ -1,9 +1,11 @@
 import buttons from '../components/Buttons.module.css';
+import { recoveryAnswered } from './answers';
 import type { AttemptView, Question } from './api';
 import { formatInZone } from './TermsPanel';
 import styles from './Test.module.css';
 
 type Local = 'none' | 'sending' | 'kept' | 'failed';
+export type Recovery = 'idle' | 'sending' | 'sent' | 'failed';
 
 const questionName = (questions: Question[], id: string) => {
   const index = questions.findIndex((q) => q.id === id);
@@ -20,6 +22,9 @@ export function ReceiptView({
   local,
   onRetryLocal,
   onDownload,
+  recovery = 'idle',
+  heldLocally = false,
+  onSendRecovery = () => {},
 }: {
   attempt: AttemptView;
   /** Answers the browser still held that the server never acknowledged. */
@@ -27,6 +32,11 @@ export function ReceiptView({
   local: Local;
   onRetryLocal: () => void;
   onDownload: () => void;
+  /** State of sending the browser's kept copy after an instructor asked for it (A15). */
+  recovery?: Recovery;
+  /** This browser still holds a copy of unsent work bound to this attempt. */
+  heldLocally?: boolean;
+  onSendRecovery?: () => void;
 }) {
   const receipt = attempt.receipt;
   const zone = attempt.terms.timeZone;
@@ -40,6 +50,9 @@ export function ReceiptView({
     );
   }
   const answered = receipt.answers.length;
+  const requestedAt = attempt.recoveryRequestedAt;
+  const answeredRequest = recovery === 'sent' || recoveryAnswered(requestedAt, attempt.localCopyAt);
+  const asked = requestedAt !== null && !answeredRequest;
   return (
     <div className={styles.receipt}>
       <h2 tabIndex={-1} id="pc-receipt-heading">
@@ -109,7 +122,7 @@ export function ReceiptView({
                     )}. They are not submitted; your instructor can restore them on request.`
                   : 'Your unsent changes are in this browser only.'}
           </p>
-          {local === 'failed' ? (
+          {local === 'failed' && !asked ? (
             <p className={styles.row}>
               <button type="button" className={buttons.outline} onClick={onRetryLocal}>
                 Retry
@@ -119,6 +132,44 @@ export function ReceiptView({
               </button>
             </p>
           ) : null}
+        </div>
+      ) : null}
+      {requestedAt ? (
+        <div className={styles.notice} role="status">
+          <p>
+            <strong>Your instructor asked for your unsent work</strong> from this attempt on{' '}
+            {formatInZone(requestedAt, zone)}. It is not part of the submission.
+          </p>
+          {answeredRequest ? (
+            <p>
+              Sent to your instructor
+              {attempt.localCopyAt ? ` at ${formatInZone(attempt.localCopyAt, zone)}` : ''}.
+            </p>
+          ) : heldLocally || unsentCount > 0 ? (
+            <p className={styles.row}>
+              <button
+                type="button"
+                className={buttons.primary}
+                onClick={onSendRecovery}
+                disabled={recovery === 'sending'}
+              >
+                {recovery === 'sending' ? 'Sending…' : 'Send unsent work'}
+              </button>
+              <button type="button" className={buttons.outline} onClick={onDownload}>
+                Download what you wrote
+              </button>
+              {recovery === 'failed' ? (
+                <span className={styles.error} role="alert">
+                  Not sent. Your work is still in this browser. Retry when you are online.
+                </span>
+              ) : null}
+            </p>
+          ) : (
+            <p>
+              This browser holds no unsent work for this attempt. If you wrote on another device,
+              open this attempt there.
+            </p>
+          )}
         </div>
       ) : null}
     </div>

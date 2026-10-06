@@ -127,6 +127,8 @@ export const getCourseOverview = defineRoute({
   response: z.object({
     id: z.uuid(),
     title: z.string(),
+    /** Archived: its classes read but do not write, and its draft is read-only (§4, §12). */
+    archived: z.boolean(),
     latestRelease: releaseRef.extend({ createdAt: timestamp }).nullable(),
     classes: z.array(
       z.object({

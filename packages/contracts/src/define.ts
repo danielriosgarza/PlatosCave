@@ -73,6 +73,13 @@ export interface RouteContract<
   body?: B;
   response: R;
   /**
+   * A class or course write that still works once the class or course is archived, because it is
+   * read-like or only closes something down (restore, ending a session, a preview). Every other
+   * non-GET class or course route is refused in registerRoute with 409 `class_archived` /
+   * `course_archived` before its handler runs (§4, ADR-0002).
+   */
+  allowWhenArchived?: true;
+  /**
    * Every error status the handler can answer, with its body. Statuses the contract's scope and
    * parts already imply (see `errorResponses`) need not be repeated; declaring one narrows the
    * documented body and keeps the implied one valid.
@@ -113,6 +120,9 @@ export const errorBody = z.object({
 /** 409 for a write to an archived class: it keeps read access and refuses writes (§4). */
 export const classArchived = z.object({ error: z.literal('class_archived') });
 
+/** 409 for a write to an archived course: it keeps read access and refuses writes (§4, §12). */
+export const courseArchived = z.object({ error: z.literal('course_archived') });
+
 /** 400 for a request the service refused as written, with the sentence to show (`Outcome`). */
 export const invalidBody = z.object({
   error: z.literal('invalid'),
@@ -127,6 +137,8 @@ export const invalidBody = z.object({
  * - 400 when the route takes params, a query or a body (schema validation);
  * - 401 for every non-public scope (no session, or a sign-in too old for the change);
  * - 403 when the scope names a class role, a grant or a course grant (ADR-0002);
+ * - 409 `class_archived` / `course_archived` for every write on a class or course scope that does
+ *   not set `allowWhenArchived`;
  * - 404 for every route (unknown, foreign or missing; one body);
  * - 503 for every route (the database or another dependency is not configured).
  */
@@ -135,10 +147,13 @@ export function errorResponses(contract: RouteContract): Partial<Record<number, 
   const forbids =
     (scope.kind === 'class' && (scope.role !== 'any' || scope.grant !== undefined)) ||
     scope.kind === 'course';
+  const archivable = contract.method !== 'GET' && !contract.allowWhenArchived;
   const implied: Partial<Record<number, z.ZodType>> = {
     ...((contract.params || contract.query || contract.body) && {
       400: errorBody,
     }),
+    ...(archivable && scope.kind === 'class' && { 409: classArchived }),
+    ...(archivable && scope.kind === 'course' && { 409: courseArchived }),
     ...(scope.kind !== 'public' && { 401: errorBody }),
     ...(forbids && { 403: errorBody }),
     404: errorBody,
