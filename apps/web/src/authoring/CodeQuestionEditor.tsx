@@ -9,10 +9,12 @@ import { Area, Check, moved, replaceAt, Select, Text } from './TestFields';
 import {
   blankCheck,
   type CheckKind,
+  checksAfterFileChange,
   type DraftCheck,
   type DraftFile,
   type DraftQuestion,
   limitBounds,
+  lines,
 } from './testForm';
 
 const checkKinds = [
@@ -94,7 +96,12 @@ export function CodeQuestionEditor({ question: q, courseId, onChange }: Props) {
                 type="button"
                 className={buttons.textButton}
                 disabled={q.files.length <= 1}
-                onClick={() => onChange({ files: q.files.filter((_, j) => j !== i) })}
+                onClick={() =>
+                  onChange({
+                    files: q.files.filter((_, j) => j !== i),
+                    checks: checksAfterFileChange(q.checks, f.path, undefined),
+                  })
+                }
               >
                 Remove file {i + 1}
               </button>
@@ -102,7 +109,13 @@ export function CodeQuestionEditor({ question: q, courseId, onChange }: Props) {
             <Text
               label={`File ${i + 1} path`}
               value={f.path}
-              onChange={(v) => setFile(i, { path: v })}
+              onChange={(v) =>
+                onChange({
+                  files: replaceAt(q.files, i, { ...f, path: v }),
+                  // The checks that named the file follow it.
+                  checks: checksAfterFileChange(q.checks, f.path, v),
+                })
+              }
             />
             <Check
               label={`File ${i + 1} is editable by students`}
@@ -202,7 +215,7 @@ export function CodeQuestionEditor({ question: q, courseId, onChange }: Props) {
         <p className={local.hint}>
           Sample checks are shown to students when they run sample tests. Hidden checks run when
           work is graded and in your preview runs below; prefer function-call and program-output
-          checks, because a script check’s verdict is decided inside the student’s own program.
+          checks for hidden checks.
         </p>
         {q.checks.map((c, i) => (
           <CheckEditor
@@ -453,9 +466,3 @@ function CheckEditor({
     </div>
   );
 }
-
-const lines = (text: string) =>
-  text
-    .split('\n')
-    .map((l) => l.trim())
-    .filter(Boolean);

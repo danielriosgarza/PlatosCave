@@ -1,6 +1,14 @@
 import { testV1 } from '@parallax/contracts';
 import { describe, expect, it } from 'vitest';
-import { blankQuestion, blankTest, problemsOf, toContent, toDraft } from './testForm';
+import {
+  blankCheck,
+  blankQuestion,
+  blankTest,
+  checksAfterFileChange,
+  problemsOf,
+  toContent,
+  toDraft,
+} from './testForm';
 
 const stored = testV1.parse({
   questions: [
@@ -122,5 +130,35 @@ describe('test form', () => {
 
     const blank = { ...blankTest(), questions: [blankQuestion('explanation', 'q1')] };
     expect(problemsOf(blank).join('\n')).toMatch(/prompt/);
+  });
+});
+
+describe('rubric criteria', () => {
+  it('rejects two criteria of one question with the same id', () => {
+    const draft = toDraft(stored);
+    const code = draft.questions[2];
+    if (!code) throw new Error('no code question');
+    const rubric = [
+      { id: 'c1', label: 'Reasoning', points: '1' },
+      { id: 'c1', label: 'Clarity', points: '1' },
+    ];
+    expect(problemsOf({ ...draft, questions: [{ ...code, rubric }] }).join('\n')).toMatch(
+      /duplicate criterion id/,
+    );
+  });
+});
+
+describe('checksAfterFileChange', () => {
+  const checks = [
+    { ...blankCheck('a.py'), name: 'one', files: 'data.csv\nb.py' },
+    { ...blankCheck('b.py'), name: 'two' },
+  ];
+  it('follows a renamed file and drops a removed one', () => {
+    expect(checksAfterFileChange(checks, 'b.py', 'c.py').map((c) => [c.file, c.files])).toEqual([
+      ['a.py', 'data.csv\nc.py'],
+      ['c.py', ''],
+    ]);
+    expect(checksAfterFileChange(checks, 'data.csv', undefined)[0]?.files).toBe('b.py');
+    expect(checksAfterFileChange(checks, 'a.py', undefined)[0]?.file).toBe('');
   });
 });

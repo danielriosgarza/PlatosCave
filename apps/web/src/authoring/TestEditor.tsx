@@ -19,6 +19,7 @@ import {
   type DraftQuestion,
   type DraftSettings,
   type DraftTest,
+  nextCriterionId,
   nextOptionId,
   nextQuestionId,
   problemsOf,
@@ -102,6 +103,10 @@ function TestFields({
       });
     },
     onSaved,
+    // While the questions cannot be saved, a request is sent only for a changed title,
+    // visibility or archive state, so typing does not move the revision.
+    unchanged: (v, last) =>
+      v.title === last.title && v.visibility === last.visibility && v.archived === last.archived,
     partial: (v) =>
       problemsOf(v.test).length
         ? 'Title, visibility and archive state saved; question and setting edits are not saved yet'
@@ -633,7 +638,7 @@ function RubricEditor({
           className={buttons.outline}
           disabled={rubric.length >= 20}
           onClick={() =>
-            onChange([...rubric, { id: `c${rubric.length + 1}`, label: '', points: '1' }])
+            onChange([...rubric, { id: nextCriterionId(rubric), label: '', points: '1' }])
           }
         >
           Add criterion

@@ -157,6 +157,16 @@ describe('test publication validation (design §8.1)', () => {
     ).toEqual([expect.stringContaining('closing time must be after the opening time')]);
   });
 
+  test('two rubric criteria of one question with the same id are rejected', () => {
+    const rubric = [
+      { id: 'c2', label: 'Reasoning', points: 1 },
+      { id: 'c2', label: 'Clarity', points: 1 },
+    ];
+    expect(messages(test1({ rubric }))).toEqual([
+      expect.stringContaining('duplicate criterion id'),
+    ]);
+  });
+
   test('content that is not test.v1 is reported as an error, never thrown', () => {
     expect(messages({ questions: [] })[0]).toMatch(/questions/);
     expect(messages('nope')).toHaveLength(1);

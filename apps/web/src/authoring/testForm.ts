@@ -111,7 +111,9 @@ export function toLocalInput(iso: unknown): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '';
   const p = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+  // Seconds are kept when set, so an unrelated save does not move a stored 23:59:59 to 23:59.
+  const s = d.getSeconds() ? `:${p(d.getSeconds())}` : '';
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}${s}`;
 }
 const fromLocalInput = (value: string): string | null => {
   if (!value) return null;
@@ -176,6 +178,33 @@ export function nextOptionId(options: { id: string }[]): string {
     if (!used.has(id)) return id;
   }
   return `o${options.length + 1}`;
+}
+
+/** The next free rubric criterion id: `c1`, `c2`, …. */
+export function nextCriterionId(rubric: { id: string }[]): string {
+  const used = new Set(rubric.map((r) => r.id));
+  for (let n = rubric.length + 1; ; n++) if (!used.has(`c${n}`)) return `c${n}`;
+}
+
+/**
+ * The checks of a question after the file at `from` is renamed to `to`, or removed when `to` is
+ * undefined: a check keeps naming the file it was set on. A path cleared while it is retyped
+ * keeps its main-file checks too, since they then name the empty path.
+ */
+export function checksAfterFileChange(
+  checks: DraftCheck[],
+  from: string,
+  to: string | undefined,
+): DraftCheck[] {
+  return checks.map((c) => {
+    const listed = c.files.split('\n');
+    const files =
+      from !== '' && listed.includes(from)
+        ? listed.flatMap((p) => (p === from ? (to === undefined ? [] : [to]) : [p])).join('\n')
+        : c.files;
+    const file = c.file === from ? (to ?? '') : c.file;
+    return file === c.file && files === c.files ? c : { ...c, file, files };
+  });
 }
 
 /** The next free question id: `q1`, `q2`, …. */
@@ -300,11 +329,14 @@ const number = (text: string): number | undefined => {
   const n = Number(text);
   return Number.isFinite(n) ? n : Number.NaN;
 };
-const lines = (text: string) =>
+/** File paths, one per line; blank lines and surrounding spaces are not paths. */
+export const lines = (text: string) =>
   text
     .split('\n')
     .map((l) => l.trim())
     .filter(Boolean);
+/** Program arguments, one per line, kept exactly as written. */
+const argLines = (text: string) => (text === '' ? [] : text.split('\n'));
 
 function checkContent(c: DraftCheck, at: string) {
   const files = lines(c.files);
@@ -323,11 +355,11 @@ function checkContent(c: DraftCheck, at: string) {
     ...(c.rel.trim() && { rel: number(c.rel) }),
   };
   if (c.kind === 'script') {
-    const args = lines(c.args);
+    const args = argLines(c.args);
     return { ...base, ...(args.length > 0 && { args }) };
   }
   if (c.kind === 'stdio') {
-    const args = lines(c.args);
+    const args = argLines(c.args);
     return {
       ...base,
       ...(args.length > 0 && { args }),

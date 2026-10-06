@@ -70,6 +70,8 @@ export function PreviewRunPanel({
           files: editable.map((f) => ({ path: f.path, content: solution[f.path] ?? f.content })),
         },
       }),
+    // A failed start clears the earlier result, so it is not read as this run's.
+    onMutate: () => setRunId(null),
     onSuccess: (run) => setRunId(run.runId),
   });
   const run = useQuery({

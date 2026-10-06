@@ -258,11 +258,47 @@ describe('test editor', () => {
     expect(
       await screen.findByText('Question 1, check 1: arguments must be valid JSON'),
     ).toBeInTheDocument();
-    await waitFor(() => expect(s.patched).toHaveLength(1), { timeout: 3000 });
-    expect(s.patched[0]).not.toHaveProperty('content');
+    // Nothing the server would store changed, so no request moves the revision.
     expect(
       await screen.findByText(/question and setting edits are not saved yet/),
     ).toBeInTheDocument();
+    expect(s.patched).toHaveLength(0);
+    // A title edit is still saved, without the questions.
+    await userEvent.type(screen.getByLabelText('Test title'), ' 2');
+    await waitFor(() => expect(s.patched).toHaveLength(1), { timeout: 3000 });
+    expect(s.patched[0]).toMatchObject({ title: 'Spread check 2' });
+    expect(s.patched[0]).not.toHaveProperty('content');
+  });
+
+  it('gives a new rubric criterion an unused id', async () => {
+    serve();
+    mount();
+    const add = await screen.findByRole('button', { name: 'Add criterion' });
+    await userEvent.click(add);
+    await userEvent.click(add);
+    await userEvent.click(screen.getByRole('button', { name: 'Remove criterion 1' }));
+    await userEvent.click(add);
+    expect(screen.getByLabelText('Criterion 1 id')).toHaveValue('c2');
+    expect(screen.getByLabelText('Criterion 2 id')).toHaveValue('c3');
+  });
+
+  it('keeps checks pointing at a file when it is renamed', async () => {
+    const s = serve();
+    mount();
+    const path = await screen.findByLabelText('File 1 path');
+    await userEvent.clear(path);
+    await userEvent.type(path, 'main.py');
+    expect(screen.getByLabelText('Check 1 program file')).toHaveValue('main.py');
+    expect(screen.getByLabelText('Check 2 program file')).toHaveValue('main.py');
+    await waitFor(
+      () => {
+        const sent = s.patched.at(-1)?.content as
+          | { questions: { checks: { file: string }[] }[] }
+          | undefined;
+        expect(sent?.questions[0]?.checks.map((c) => c.file)).toEqual(['main.py', 'main.py']);
+      },
+      { timeout: 3000 },
+    );
   });
 
   it('lists what publication says about the saved test, warnings apart from errors', async () => {
