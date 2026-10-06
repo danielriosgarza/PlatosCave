@@ -1,4 +1,4 @@
-import { cleanup, screen, within } from '@testing-library/react';
+import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -43,6 +43,7 @@ const awaiting = (n: number) =>
     state: 'graded' as const,
     submittedAt: '2026-10-02T10:00:00.000Z',
     score: { points: 11, possible: 13, state: 'draft' as const },
+    unreleasedChange: false,
   }) satisfies NonNullable<ClassReview['rows'][number]['attempt']>;
 
 const listed = (rows: ClassReview['rows']): ClassReview['students'] =>
@@ -67,6 +68,7 @@ function review(over: Partial<ClassReview> = {}): ClassReview {
   return {
     topics: [{ topicId: TOPIC, number: 1, title: 'Sampling' }],
     assignments: [{ assignmentId: QUIZ, title: 'Spread check', topicId: TOPIC }],
+    notebooks: [],
     roster,
     students: listed(rows),
     total: 3,
@@ -112,7 +114,9 @@ describe('class review table', () => {
     expect(
       within(table).getByRole('button', { name: 'Bea Lindqvist' }).closest('tr'),
     ).toHaveTextContent('—');
+    // With an assignment chosen the table offers a selection column for releasing feedback.
     expect(screen.getAllByRole('columnheader').map((h) => h.textContent)).toEqual([
+      'Release',
       'Student',
       'Exercises',
       'Test',
@@ -151,6 +155,7 @@ describe('class review table', () => {
         ...awaiting(n),
         state: 'released' as const,
         score: { points: 13, possible: 13, state: 'released' as const },
+        unreleasedChange: false,
       }) satisfies NonNullable<ClassReview['rows'][number]['attempt']>;
     serve((u) => {
       const rows = [
@@ -210,17 +215,19 @@ describe('class review table', () => {
     expect(requests.at(-1)?.searchParams.get('page')).toBe('2');
   });
 
-  it('A25 a filter change keeps the selected student while they stay in the list, without a new request for the selection alone', async () => {
+  it('A25 a filter change keeps the selected student while they stay in the list, and the open attempt is asked for', async () => {
     const user = userEvent.setup();
     const requests = serve(() => review());
     renderApp(`/classes/${CLASS_A}/review?selected=${PRIYA}`);
     await screen.findByRole('region', { name: 'Selected student' });
     await user.click(screen.getByRole('button', { name: 'Sam Okafor' }));
     await screen.findByRole('heading', { name: 'Sam Okafor' });
-    expect(requests).toHaveLength(1);
+    // The open attempt goes to the server so `selected` describes it, not the newest attempt.
+    await waitFor(() => expect(requests).toHaveLength(2));
+    expect(requests.at(-1)?.searchParams.get('attemptId')).toBe(id(902));
     await user.selectOptions(screen.getByLabelText('Assignment'), QUIZ);
     expect(await screen.findByRole('heading', { name: 'Sam Okafor' })).toBeVisible();
-    expect(requests).toHaveLength(2);
+    await waitFor(() => expect(requests).toHaveLength(3));
   });
 
   it('A25 a student of the class is shown nothing of the review', async () => {

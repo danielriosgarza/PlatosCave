@@ -34,12 +34,22 @@ interface Props {
   instructor: boolean;
   /** The deck the address names, if any. */
   resource: string | undefined;
+  /** A slide the address names (counted from one): where the deck opens instead of the saved place. */
+  slide?: number | undefined;
   /** Moves the address to another deck: a new history entry. */
   onResource: (revisionId: string, mode: 'push' | 'replace') => void;
 }
 
 /** The Slides tab (§5, §7): the picked deck in its viewer, opened at the slide studied last. */
-export function SlidesTab({ classId, courseId, topicId, instructor, resource, onResource }: Props) {
+export function SlidesTab({
+  classId,
+  courseId,
+  topicId,
+  instructor,
+  resource,
+  slide,
+  onResource,
+}: Props) {
   const list = useDecks(classId, topicId);
   const session = useSession();
   const canAdd =
@@ -121,7 +131,14 @@ export function SlidesTab({ classId, courseId, topicId, instructor, resource, on
           </Link>
         )}
       </ResourceTools>
-      <DeckView key={chosen.revisionId} classId={classId} topicId={topicId} deck={chosen} />
+      <DeckView
+        key={chosen.revisionId}
+        classId={classId}
+        topicId={topicId}
+        deck={chosen}
+        // The address names a slide of the deck it names, not of another one.
+        addressedPage={resource === chosen.revisionId ? slide : undefined}
+      />
     </>
   );
 }
@@ -130,9 +147,10 @@ interface ViewProps {
   classId: string;
   topicId: string;
   deck: DeckSummary;
+  addressedPage: number | undefined;
 }
 
-function DeckView({ classId, topicId, deck }: ViewProps) {
+function DeckView({ classId, topicId, deck, addressedPage }: ViewProps) {
   const { revisionId } = deck;
   const content = useDeckContent(classId, revisionId);
   const save = useSaveSlide(classId, topicId);
@@ -249,7 +267,8 @@ function DeckView({ classId, topicId, deck }: ViewProps) {
       </div>
     );
   }
-  const initialPage = deck.position && 'page' in deck.position ? deck.position.page : 1;
+  const initialPage =
+    addressedPage ?? (deck.position && 'page' in deck.position ? deck.position.page : 1);
   if (data.web) {
     return (
       <SlideViewer
