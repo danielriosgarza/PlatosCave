@@ -30,6 +30,8 @@ interface Props {
   workingCopy: WorkingCopyView;
   /** Called with the working copy an import created, so the editor can offer it. */
   onWorkingCopy: (copy: WorkingCopyView) => void;
+  /** Called when an Import found the working copy changed since it was read. */
+  onRevisionConflict?: () => void;
   /** Called once the declared files are on the computer (or the person kept the existing ones). */
   onCopyInSettled?: () => void;
 }
@@ -46,6 +48,7 @@ export function FilesPanel({
   sessionId,
   workingCopy,
   onWorkingCopy,
+  onRevisionConflict,
   onCopyInSettled,
 }: Props) {
   const queryClient = useQueryClient();
@@ -129,6 +132,7 @@ export function FilesPanel({
         setDir={setDir}
         workingCopy={workingCopy}
         onWorkingCopy={onWorkingCopy}
+        onRevisionConflict={onRevisionConflict}
         onChanged={() => void refresh()}
       />
     </section>
@@ -258,6 +262,7 @@ function Workspace({
   setDir,
   workingCopy,
   onWorkingCopy,
+  onRevisionConflict,
   onChanged,
 }: {
   classId: string;
@@ -267,6 +272,7 @@ function Workspace({
   setDir: (dir: string) => void;
   workingCopy: WorkingCopyView;
   onWorkingCopy: (copy: WorkingCopyView) => void;
+  onRevisionConflict?: () => void;
   onChanged: () => void;
 }) {
   const queryClient = useQueryClient();
@@ -333,6 +339,7 @@ function Workspace({
     } catch (err) {
       setImporting(null);
       const body = err instanceof ApiError ? (err.body as { error?: string } | null) : null;
+      if (body?.error === 'revision_conflict') onRevisionConflict?.();
       setMessage({
         kind: 'alert',
         text:

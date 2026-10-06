@@ -16,6 +16,8 @@ interface Props {
   getNotebook: () => Record<string, unknown>;
   /** Called with every acknowledged copy: after each acknowledged save. */
   onWorkingCopy: (copy: WorkingCopyView) => void;
+  /** Called with the current copy when a save found another revision already stored. */
+  onStale?: (current: WorkingCopyView) => void;
   /** Absolute workspace and host from the files listing: the destination of Save to computer. */
   workspace: string;
   host: string | null;
@@ -42,6 +44,7 @@ export function SaveControls({
   workingCopy,
   getNotebook,
   onWorkingCopy,
+  onStale,
   workspace,
   host,
   defaultPath = 'notebook.ipynb',
@@ -67,6 +70,7 @@ export function SaveControls({
         err instanceof ApiError ? (err.body as { error?: string; current?: unknown }) : null;
       if (err instanceof ApiError && err.status === 409 && body?.error === 'revision_conflict') {
         setSave({ kind: 'stale', current: body.current as WorkingCopyView });
+        onStale?.(body.current as WorkingCopyView);
       } else if (err instanceof ApiError && err.status === 413) {
         setSave({ kind: 'failed', message: 'The notebook is too large to store.' });
       } else if (err instanceof ApiError && err.status === 400) {
