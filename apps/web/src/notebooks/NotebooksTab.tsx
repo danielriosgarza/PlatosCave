@@ -293,6 +293,7 @@ function NotebookPanel({
           <ConnectPanel
             classId={classId}
             revisionId={revisionId}
+            instructor={instructor}
             onClose={() => {
               setConnectOpen(false);
               target.current?.focus();

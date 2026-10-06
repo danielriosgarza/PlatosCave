@@ -4,7 +4,7 @@
   "sessionId": "7b1d2e3f-4a5b-4c6d-8e7f-9a0b1c2d3e4f",
   "requestId": "c0ffee00-1111-4222-8333-444455556666",
   "state": "ready",
-  "owned": true,
+  "owned": false,
   "phase": "attached",
   "jupyterVersion": "2.21.1",
   "kernelspecs": [
@@ -19,7 +19,7 @@
     "arch": "amd64",
     "runtime": "Python 3.12.8"
   },
-  "contentRoot": "",
+  "contentRoot": "courses/parallax",
   "leaseExpiresAt": "2026-10-03T10:00:00Z",
   "ts": 1790000000
 }

@@ -1,4 +1,10 @@
+import { isDeepStrictEqual } from 'node:util';
 import { type LinkRuntime, validateTarget } from '@parallax/contracts';
+import {
+  accountOf,
+  TemplateTarget,
+  targetFromTemplate,
+} from '@parallax/contracts/routes/computeTemplates';
 import type { ConnectionTarget } from '@parallax/contracts/routes/connections';
 import { and, desc, eq, isNull, notInArray } from 'drizzle-orm';
 import type { ClassScope, UserScope } from '../../auth/scope';
@@ -7,7 +13,6 @@ import { audit } from '../audit';
 import type { Db, Tx } from '../client';
 import {
   classComputeTemplates,
-  classMemberships,
   connectors,
   notebookConnections,
   notebookSessions,
@@ -15,6 +20,7 @@ import {
 } from '../schema';
 import { forUser } from '../scoped';
 import { uniqueViolation } from '../unique';
+import { templateTargetOf, templateUsed, usableTemplate } from './templates';
 
 /**
  * Saved connections (docs/design/connector.md §2, §10.2): a person's own, secret-free target
@@ -48,9 +54,31 @@ export type ConnectionRefusal =
   | {
       ok: false;
       reason: 'target_not_allowed';
-      code: 'invalid_target' | 'network_scope_denied';
+      code: 'invalid_target' | 'network_scope_denied' | 'template_mismatch';
       rules?: number[];
     };
+
+const templateMismatch = {
+  ok: false,
+  reason: 'target_not_allowed',
+  code: 'template_mismatch',
+} as const;
+
+/**
+ * Whether `target` is the one a class template makes for the account it names (design §11): the
+ * template's host, port, jump host and workspace with the person's own account and credential
+ * reference. `expectedEnd` is the person's own and kept.
+ */
+export function fromTemplate(target: ConnectionTarget, templateTarget: unknown): boolean {
+  const template = TemplateTarget.safeParse(templateTarget);
+  const account = accountOf(target);
+  if (!template.success || !account || target.kind !== 'ssh') return false;
+  const expected = {
+    ...targetFromTemplate(template.data, account),
+    ...(target.expectedEnd !== undefined && { expectedEnd: target.expectedEnd }),
+  };
+  return isDeepStrictEqual(target, expected);
+}
 
 const isNameTaken = (err: unknown) => uniqueViolation(err, 'notebook_connections_owner_name_key');
 
@@ -156,8 +184,10 @@ export interface NewConnection {
 
 /**
  * Saves a connection of the caller (§2, step 2). The connector must be the caller's own and
- * active; a template must belong to a class the caller is a member of. The target is checked
- * against rules 1–2 of §4.4 and the connector's reported scope (§8) before it is stored.
+ * active; a template must be an unarchived one of a class the caller is a member of, and the
+ * target the one it makes for the caller's account (§11; audited as `template.used` in that
+ * class). The target is checked against the rules of §4.4 and the connector's reported scope
+ * (§8) before it is stored.
  */
 export async function createConnection(
   db: Db,
@@ -172,9 +202,11 @@ export async function createConnection(
       if (connector.status !== 'active') {
         return { ok: false as const, reason: 'connector_not_active' as const };
       }
-      if (input.templateId && !(await usableTemplate(tx, scope, input.templateId))) {
+      const template = input.templateId ? await usableTemplate(tx, scope, input.templateId) : null;
+      if (input.templateId && !template) {
         return { ok: false as const, reason: 'not_found' as const };
       }
+      if (template && !fromTemplate(input.target, template.target)) return templateMismatch;
       const refused = policy(input.target, input.runtime, connector.networkScope);
       if (refused) return refused;
       const [row] = await tx
@@ -203,29 +235,13 @@ export async function createConnection(
           now,
         ),
       );
+      if (template) await templateUsed(tx, scope, template, row.id, now);
       return { ok: true as const, connection: own(row) };
     });
   } catch (err) {
     if (isNameTaken(err)) return { ok: false, reason: 'name_taken' };
     throw err;
   }
-}
-
-/** An unarchived template of a class the caller belongs to (as a real member, not a preview). */
-async function usableTemplate(tx: Tx, scope: UserScope, templateId: string): Promise<boolean> {
-  const [row] = await tx
-    .select({ id: classComputeTemplates.id })
-    .from(classComputeTemplates)
-    .innerJoin(
-      classMemberships,
-      and(
-        eq(classMemberships.classId, classComputeTemplates.classId),
-        eq(classMemberships.userId, scope.user.id),
-        eq(classMemberships.isPreview, false),
-      ),
-    )
-    .where(and(eq(classComputeTemplates.id, templateId), isNull(classComputeTemplates.archivedAt)));
-  return row !== undefined;
 }
 
 const endpoints = (target: ConnectionTarget) =>
@@ -251,7 +267,8 @@ export interface ConnectionChange {
 
 /**
  * Renames a connection or changes its target or runtime. A new target is checked as on create
- * and keeps only the trusted host keys it still names (§10.3).
+ * and keeps only the trusted host keys it still names (§10.3); one made from a template stays
+ * that template's target for the account it names.
  */
 export async function updateConnection(
   db: Db,
@@ -266,6 +283,11 @@ export async function updateConnection(
       if (!current) return { ok: false as const, reason: 'not_found' as const };
       const target = change.target ?? current.target;
       const runtime = change.runtime ?? current.runtime;
+      if (change.target && current.templateId) {
+        if (!fromTemplate(target, await templateTargetOf(tx, current.templateId))) {
+          return templateMismatch;
+        }
+      }
       if (change.target || change.runtime) {
         const connector = await activeConnector(tx, scope, current.connectorId);
         const scopeOf = connector?.networkScope ?? { cidrs: [], hosts: [] };
@@ -431,6 +453,10 @@ export interface SessionConnection {
   connector: { status: 'pending' | 'active' | 'revoked'; networkScope: NetworkScope };
   /** The class of the template the connection was made from, if any. */
   templateClassId: string | null;
+  /** Whether that template is archived; its connections no longer open sessions. */
+  templateArchived: boolean;
+  /** The lease that template sets for its sessions, if any (§9). */
+  templateLease: { idleTimeoutMin: number; gracePeriodMin: number } | null;
 }
 
 /**
@@ -448,6 +474,8 @@ export async function connectionForSession(
       status: connectors.status,
       networkScope: connectors.networkScope,
       templateClassId: classComputeTemplates.classId,
+      templateArchivedAt: classComputeTemplates.archivedAt,
+      templateLease: classComputeTemplates.lease,
     })
     .from(notebookConnections)
     .innerJoin(
@@ -470,5 +498,7 @@ export async function connectionForSession(
     connection: own(row.connection),
     connector: { status: row.status, networkScope: row.networkScope },
     templateClassId: row.templateClassId,
+    templateArchived: row.templateArchivedAt !== null,
+    templateLease: row.templateLease as SessionConnection['templateLease'],
   };
 }

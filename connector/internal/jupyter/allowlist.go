@@ -258,6 +258,26 @@ func checkContents(method, path string, segs []string, query url.Values, s Scope
 	return Request{Op: op, Path: path, RawQuery: query.Encode()}, nil
 }
 
+// Addressable reports whether the relay can be told root as a session's content root: it is a
+// valid contentRoot (§4.3) and a contents request naming it passes the path rules of §7, so no
+// request below it would be refused for the root's own sake (a `%XX`, `?` or `#` in a name, a
+// `:` on Windows). A root that is not addressable is not reported, and the relay then refuses
+// file transfer for the session (workspace_unknown) instead of failing each request.
+func Addressable(root string) bool {
+	if !protocol.ValidContentRoot(root) {
+		return false
+	}
+	if root == "" {
+		return true
+	}
+	segs := strings.Split(root, "/")
+	for i, seg := range segs {
+		segs[i] = url.PathEscape(seg)
+	}
+	_, err := CheckHTTP(PurposeContents, "GET", "/api/contents/"+strings.Join(segs, "/"), Scope{ContentRoot: root})
+	return err == nil
+}
+
 // CheckWS applies the table of design §7 to a `ws_open`: only a kernel channel of a kernel the
 // session created, with session_id a UUID and no subprotocol.
 func CheckWS(rawPath string, protocols []string, s Scope) (Request, error) {

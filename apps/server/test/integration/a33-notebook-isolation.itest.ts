@@ -37,7 +37,7 @@ beforeAll(async () => {
       classId: ids.classB,
       name: 'Department cluster',
       description: 'One account per student',
-      target: { host: 'login.cluster.example.org', port: 22 },
+      target: { host: 'login.cluster.example.org', port: 22, workspace: '/home/{user}/parallax' },
       runtime: { mode: 'start' },
       isolation: 'account',
       hostOwnerConfirmedBy: ids.marcus,
@@ -206,6 +206,89 @@ describe('A33 notebook session isolation', () => {
     expect(again.received.filter((m) => m.t === 'open_session')).toEqual([]);
     const open = await call(relay, cookie('sam'), 'GET', sessions(ids.classA));
     expect(open.body).toEqual([]);
+  });
+
+  test('A33 two classmates using one template get separate connections and sessions', async () => {
+    const [template] = await testDb.db
+      .insert(classComputeTemplates)
+      .values({
+        classId: ids.classB,
+        name: 'Teaching servers',
+        description: 'One OS account per student',
+        target: { host: 'jupyter.teaching.example.org', port: 22, workspace: '/home/{user}/work' },
+        runtime: { mode: 'start' },
+        isolation: 'account',
+        lease: { idleTimeoutMin: 90, gracePeriodMin: 15 },
+        hostOwnerConfirmedBy: ids.marcus,
+        hostOwnerConfirmedAt: start,
+        createdBy: ids.marcus,
+      })
+      .returning({ id: classComputeTemplates.id });
+    const templateId = template?.id as string;
+    const own = (user: string) => ({
+      kind: 'ssh',
+      host: 'jupyter.teaching.example.org',
+      port: 22,
+      user,
+      auth: { method: 'agent', hint: `${user}@laptop` },
+      workspace: `/home/${user}/work`,
+    });
+
+    const opened: Record<string, { connectionId: string; sessionId: string; target: unknown }> = {};
+    for (const who of ['bea', 'priya'] as const) {
+      const live = await liveConnector(relay, ids[who]);
+      const connectionId = await saveConnection(relay, cookie(who), live.id, {
+        templateId,
+        target: own(who),
+      });
+      const res = await call(relay, cookie(who), 'POST', sessions(ids.classB), {
+        connectionId,
+        revisionId,
+      });
+      expect(res.status, JSON.stringify(res.body)).toBe(202);
+      const request = await live.connector.next('open_session');
+      // Each connector is sent its own person's account and workspace, with the template's lease.
+      expect(request).toMatchObject({
+        sessionId: res.body.sessionId,
+        target: own(who),
+        lease: { idleTimeoutMin: 90, gracePeriodMin: 15 },
+      });
+      opened[who] = { connectionId, sessionId: res.body.sessionId, target: request.target };
+      await settled(relay, live.id);
+    }
+    expect(opened.bea?.connectionId).not.toBe(opened.priya?.connectionId);
+    expect(opened.bea?.sessionId).not.toBe(opened.priya?.sessionId);
+    // Neither sees the other's connection or session.
+    const beaConnections = await call(relay, cookie('bea'), 'GET', '/api/me/connections');
+    expect(beaConnections.body.map((c: { id: string }) => c.id)).not.toContain(
+      opened.priya?.connectionId,
+    );
+    const priyaConnections = await call(relay, cookie('priya'), 'GET', '/api/me/connections');
+    expect(priyaConnections.body.map((c: { id: string }) => c.id)).not.toContain(
+      opened.bea?.connectionId,
+    );
+    const priyaSession = `${sessions(ids.classB)}/${opened.priya?.sessionId}`;
+    expect(await call(relay, cookie('bea'), 'GET', priyaSession)).toMatchObject({ status: 404 });
+    const beaSession = `${sessions(ids.classB)}/${opened.bea?.sessionId}`;
+    expect(await call(relay, cookie('priya'), 'GET', beaSession)).toMatchObject({ status: 404 });
+
+    // Once the instructor archives the template, its connections open no new session.
+    const archived = await call(
+      relay,
+      cookie('marcus'),
+      'DELETE',
+      `/api/classes/${ids.classB}/compute-templates/${templateId}`,
+    );
+    expect(archived.status, JSON.stringify(archived.body)).toBe(200);
+    await testDb.db
+      .update(notebookSessions)
+      .set({ state: 'stopped', cause: 'abandoned', stoppedAt: relay.now() })
+      .where(eq(notebookSessions.id, opened.bea?.sessionId as string));
+    const refused = await call(relay, cookie('bea'), 'POST', sessions(ids.classB), {
+      connectionId: opened.bea?.connectionId,
+      revisionId,
+    });
+    expect(refused).toMatchObject({ status: 409, body: { error: 'template_archived' } });
   });
 
   test("A33 a connection made from a class's template cannot be used in another class", async () => {

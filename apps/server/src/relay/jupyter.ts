@@ -98,6 +98,15 @@ export function contentPath(contentRoot: string, relpath: string): string {
   return parts.map((seg) => encodeURIComponent(seg)).join('/');
 }
 
+/**
+ * A workspace-relative path as Jupyter names it: below the session's content root (§7). The
+ * result still goes through `contentPath`, which checks every segment and the root again.
+ */
+export function inRoot(contentRoot: string, workspacePath: string): string {
+  if (contentRoot === '') return workspacePath;
+  return workspacePath === '' ? contentRoot : `${contentRoot}/${workspacePath}`;
+}
+
 const hasControlOrBackslash = (path: string) =>
   [...path].some((c) => c === '\\' || c.charCodeAt(0) < 0x20 || c.charCodeAt(0) === 0x7f);
 
