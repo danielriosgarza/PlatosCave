@@ -65,7 +65,14 @@ export const classReview = z.object({
   /** Every real student of the class, for the student filter. */
   roster: z.array(z.object({ id: z.uuid(), name: z.string() })),
   /** The filtered students in table order: the list previous/next traverses. */
-  students: z.array(z.object({ id: z.uuid(), name: z.string() })),
+  students: z.array(
+    z.object({
+      id: z.uuid(),
+      name: z.string(),
+      /** With an assignment filter: the student's newest attempt at it, so the header can show it. */
+      attempt: z.object({ attemptId: z.uuid(), number: z.int() }).nullable(),
+    }),
+  ),
   total: z.int(),
   page: z.int(),
   pageSize: z.int(),

@@ -477,11 +477,9 @@ function InstructorCards({
                   {c.archived ? 'Archived · ' : ''}
                   {c.studentCount ?? 0} {c.studentCount === 1 ? 'student' : 'students'}
                 </span>
-                {c.archived ? null : (
-                  <Link to="/classes/$classId/review" params={{ classId: c.classId }}>
-                    Class review
-                  </Link>
-                )}
+                <Link to="/classes/$classId/review" params={{ classId: c.classId }}>
+                  Class review
+                </Link>
               </div>
             </li>
           ))}

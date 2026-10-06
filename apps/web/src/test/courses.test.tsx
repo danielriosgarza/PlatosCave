@@ -99,6 +99,21 @@ describe('course cards', () => {
     expect(screen.queryByRole('button', { name: 'Join a class' })).toBeNull();
   });
 
+  it('A02 an archived instructor card still links to Class review', async () => {
+    const me = makeMe({ classes: [instructorIn(CLASS_A, 'Autumn 2026 A')] });
+    serve(me, {
+      classes: [card({ role: 'instructor', studentCount: 3, archived: true })],
+      courses: [],
+      canCreateCourse: true,
+    });
+    renderApp('/courses?view=instructor');
+    expect(await screen.findByText(/Archived · 3 students/)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: 'Class review' })).toHaveAttribute(
+      'href',
+      `/classes/${CLASS_A}/review`,
+    );
+  });
+
   it('P1-14a course cards open the editor and name the grant as the editor does', async () => {
     const me = makeMe({ classes: [instructorIn(CLASS_A, 'Autumn 2026 A')] });
     const course = (n: number, grant: object) => ({

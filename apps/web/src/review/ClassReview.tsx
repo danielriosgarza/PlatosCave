@@ -91,13 +91,8 @@ function Body({
     ? data.assignments.filter((a) => a.topicId === search.topic)
     : data.assignments;
   const pages = Math.max(1, Math.ceil(data.total / data.pageSize));
-  // Filters keep the selection only while the selected student is still in the filtered list.
-  const change = (patch: ReviewSearch) => {
-    const next: ReviewSearch = { ...search, ...patch, page: undefined };
-    if (next.selected && patch.selected === undefined) {
-      go({ ...next, selected: undefined, attempt: undefined });
-    } else go(next);
-  };
+  // A filter change keeps the selection; `Selection` hides itself while the student is out of the list.
+  const change = (patch: ReviewSearch) => go({ ...search, ...patch, page: undefined });
   const empty = data.total === 0;
   const clear = () =>
     go({ selected: search.selected, attempt: search.attempt, assignment: search.assignment });
@@ -193,7 +188,7 @@ function Body({
                     key={row.studentId}
                     className={search.selected === row.studentId ? styles.selected : undefined}
                   >
-                    <th scope="row" className={styles.name}>
+                    <th scope="row">
                       <button
                         type="button"
                         className={styles.pick}
@@ -224,7 +219,9 @@ function Body({
               <button
                 type="button"
                 disabled={data.page <= 1}
-                onClick={() => go({ ...search, page: data.page - 1 })}
+                onClick={() =>
+                  go({ ...search, page: data.page - 1 > 1 ? data.page - 1 : undefined })
+                }
               >
                 Previous page
               </button>
@@ -262,10 +259,17 @@ function Selection({
   const index = data.students.findIndex((s) => s.id === search.selected);
   const student = data.students[index];
   if (!search.selected || !student) return null;
-  const row = data.rows.find((r) => r.studentId === student.id);
   const to = (i: number) => {
     const next = data.students[i];
-    if (next) go({ ...search, selected: next.id, attempt: undefined, page: undefined });
+    if (!next) return;
+    // The table moves to the page holding the new student, so the selected row stays on screen.
+    const target = Math.floor(i / data.pageSize) + 1;
+    go({
+      ...search,
+      selected: next.id,
+      attempt: next.attempt?.attemptId,
+      page: target > 1 ? target : undefined,
+    });
   };
   return (
     <section className={styles.selection} aria-label="Selected student">
@@ -286,11 +290,7 @@ function Selection({
       </div>
       <p className={`${page.small} ${page.muted}`}>
         {data.assignment ? `Test · ${data.assignment.title}` : 'All assignments'}
-        {data.selected && data.selected.studentId === student.id
-          ? ` · Attempt ${data.selected.number}`
-          : row?.attempt
-            ? ` · Attempt ${row.attempt.number}`
-            : ''}
+        {student.attempt ? ` · Attempt ${student.attempt.number}` : ''}
         {` · Student ${index + 1} of ${data.students.length}`}
       </p>
     </section>

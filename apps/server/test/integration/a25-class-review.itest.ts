@@ -118,6 +118,30 @@ describe('A25 class review', () => {
     });
   });
 
+  test('A25 each listed student carries their attempt at the selected assignment, whatever page the table shows', async () => {
+    const res = await review(`?assignmentId=${w.quizId}&pageSize=1&page=3`);
+    expect(res.body.students.map((x: { attempt: unknown }) => x.attempt)).toEqual([
+      null,
+      { attemptId: attempt.priya, number: 1 },
+      { attemptId: attempt.sam, number: 1 },
+    ]);
+    expect(names(res.body.rows)).toEqual(['Sam Okafor']);
+  });
+
+  test('A25 a page past the end shows the last page', async () => {
+    const res = await review('?needsReview=true&pageSize=1&page=9');
+    expect(res.body).toMatchObject({ page: 2, total: 2 });
+    expect(names(res.body.rows)).toEqual(['Sam Okafor']);
+  });
+
+  test('A25 an assignment outside the topic filter is no assignment, and exercises count every topic without one', async () => {
+    const other = await review(`?assignmentId=${w.quizId}&topicId=${ids.estimation}`);
+    expect(other.body.assignment).toBeNull();
+    const all = await review(`?assignmentId=${w.quizId}`);
+    expect(all.body.assignment).toMatchObject({ assignmentId: w.quizId });
+    expect(all.body.topics.length).toBeGreaterThan(1);
+  });
+
   test('A25 releasing the final result in Needs review empties the filter and retains every released grade', async () => {
     await release('priya');
     const afterFirst = await review('?needsReview=true');

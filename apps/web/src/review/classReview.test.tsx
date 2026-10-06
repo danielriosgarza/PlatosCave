@@ -45,6 +45,13 @@ const awaiting = (n: number) =>
     score: { points: 11, possible: 13, state: 'draft' as const },
   }) satisfies NonNullable<ClassReview['rows'][number]['attempt']>;
 
+const listed = (rows: ClassReview['rows']): ClassReview['students'] =>
+  rows.map((r) => ({
+    id: r.studentId,
+    name: r.name,
+    attempt: r.attempt && { attemptId: r.attempt.attemptId, number: r.attempt.number },
+  }));
+
 const roster = [
   { id: BEA, name: 'Bea Lindqvist' },
   { id: PRIYA, name: 'Priya Nair' },
@@ -61,7 +68,7 @@ function review(over: Partial<ClassReview> = {}): ClassReview {
     topics: [{ topicId: TOPIC, number: 1, title: 'Sampling' }],
     assignments: [{ assignmentId: QUIZ, title: 'Spread check', topicId: TOPIC }],
     roster,
-    students: roster,
+    students: listed(rows),
     total: 3,
     page: 1,
     pageSize: 25,
@@ -91,7 +98,7 @@ const needsOnly = (u: URL): ClassReview => {
   const all = review();
   if (u.searchParams.get('needsReview') !== 'true') return all;
   const rows = all.rows.filter((r) => r.needsReview);
-  return { ...all, rows, students: rows.map((r) => ({ id: r.studentId, name: r.name })), total: 2 };
+  return { ...all, rows, students: listed(rows), total: 2 };
 };
 
 describe('class review table', () => {
@@ -154,7 +161,7 @@ describe('class review table', () => {
         ? review({ rows: [], students: [], total: 0 })
         : review({
             rows,
-            students: rows.map((r) => ({ id: r.studentId, name: r.name })),
+            students: listed(rows),
             total: 2,
           });
     });
@@ -182,6 +189,38 @@ describe('class review table', () => {
     expect(screen.getByRole('button', { name: 'Sam Okafor' })).toBeVisible();
     // The selected student stays reachable from the other page through the whole list.
     expect(screen.getByRole('button', { name: 'Previous student' })).toBeEnabled();
+  });
+
+  it('A25 Next student across a page boundary moves to that page and keeps the attempt visible', async () => {
+    const user = userEvent.setup();
+    const all = review();
+    const requests = serve((u) => {
+      const page = Number(u.searchParams.get('page') ?? 1);
+      return { ...all, page, pageSize: 2, rows: all.rows.slice((page - 1) * 2, page * 2) };
+    });
+    renderApp(`/classes/${CLASS_A}/review?assignment=${QUIZ}&selected=${PRIYA}`);
+    const selection = await screen.findByRole('region', { name: 'Selected student' });
+    expect(selection).toHaveTextContent('Attempt 1');
+    await user.click(within(selection).getByRole('button', { name: 'Next student' }));
+    expect(await screen.findByRole('heading', { name: 'Sam Okafor' })).toBeVisible();
+    const after = screen.getByRole('region', { name: 'Selected student' });
+    expect(after).toHaveTextContent('Test · Spread check · Attempt 1 · Student 3 of 3');
+    // Sam's row is on screen: the table followed him to page 2.
+    expect(await screen.findByRole('button', { name: 'Sam Okafor', current: true })).toBeVisible();
+    expect(requests.at(-1)?.searchParams.get('page')).toBe('2');
+  });
+
+  it('A25 a filter change keeps the selected student while they stay in the list, without a new request for the selection alone', async () => {
+    const user = userEvent.setup();
+    const requests = serve(() => review());
+    renderApp(`/classes/${CLASS_A}/review?selected=${PRIYA}`);
+    await screen.findByRole('region', { name: 'Selected student' });
+    await user.click(screen.getByRole('button', { name: 'Sam Okafor' }));
+    await screen.findByRole('heading', { name: 'Sam Okafor' });
+    expect(requests).toHaveLength(1);
+    await user.selectOptions(screen.getByLabelText('Assignment'), QUIZ);
+    expect(await screen.findByRole('heading', { name: 'Sam Okafor' })).toBeVisible();
+    expect(requests).toHaveLength(2);
   });
 
   it('A25 a student of the class is shown nothing of the review', async () => {

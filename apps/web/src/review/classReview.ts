@@ -35,7 +35,17 @@ export function parseReviewSearch(search: Record<string, unknown>): ReviewSearch
 
 export const useClassReview = (classId: string, search: ReviewSearch) =>
   useQuery({
-    queryKey: ['GET', getClassReview.path, classId, search],
+    queryKey: [
+      'GET',
+      getClassReview.path,
+      classId,
+      // Only what the server reads: picking a student is client state and refetches nothing.
+      search.topic,
+      search.assignment,
+      search.student,
+      search.needsReview,
+      search.page,
+    ],
     queryFn: () =>
       call(getClassReview, {
         params: { classId },
@@ -43,7 +53,6 @@ export const useClassReview = (classId: string, search: ReviewSearch) =>
           topicId: search.topic,
           assignmentId: search.assignment,
           studentId: search.student,
-          attemptId: search.attempt,
           needsReview: search.needsReview ? true : undefined,
           page: search.page,
         },
