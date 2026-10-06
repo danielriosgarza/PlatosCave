@@ -344,7 +344,11 @@ function Workspace({
         kind: 'alert',
         text:
           body?.error === 'revision_conflict'
-            ? 'Your working copy changed since you opened it. Nothing was imported; reload the copy and try again.'
+            ? `Your working copy changed since you opened it. Nothing was imported; ${
+                onRevisionConflict
+                  ? 'it has been reloaded, so try again'
+                  : 'reload the copy and try again'
+              }.`
             : refusalText(err, `${entry.name} was not imported.`),
       });
     } finally {

@@ -140,12 +140,21 @@ function Host({ over }: { over: Partial<NotebookSession> }): ReactNode {
   );
 }
 
-function mount(declared: unknown[], over: Partial<NotebookSession> = {}) {
+function mount(
+  declared: unknown[],
+  over: Partial<NotebookSession> = {},
+  opts: { copy?: unknown; listing?: 'fail' } = {},
+) {
   const fetchMock = stubApi((url, init) => {
     if (init?.method === 'POST') return { status: 200, body: { transfers: [copyInTransfer] } };
-    if (url.includes('/notebook-working-copies/')) return { status: 200, body: stored };
+    if (url.includes('/notebook-working-copies/'))
+      return { status: 200, body: opts.copy ?? stored };
     if (url.includes('/transfers')) return { status: 200, body: { transfers: [] } };
-    if (url.includes('/files')) return { status: 200, body: listing(declared) };
+    if (url.includes('/files')) {
+      return opts.listing === 'fail'
+        ? { status: 409, body: { error: 'workspace_unknown' } }
+        : { status: 200, body: listing(declared) };
+    }
     return { status: 404, body: {} };
   });
   render(
@@ -200,7 +209,7 @@ describe('files, save and submit in the live notebook', () => {
       name: `Copy 1 file to ${WORKSPACE}`,
     });
     expect(runButton()).toBeDisabled();
-    expect(screen.getByText(/declares 1 file that is not on the computer yet/)).toBeInTheDocument();
+    expect(screen.getByText(/declares 1 file\./)).toBeInTheDocument();
     await userEvent.setup().click(copyIn);
     await waitFor(() => expect(runButton()).toBeEnabled());
     expect(screen.queryByText(/declares 1 file/)).not.toBeInTheDocument();
@@ -241,5 +250,37 @@ describe('files, save and submit in the live notebook', () => {
         notebook: { cells: [{ id: 'c1', source: 'y = 2' }] },
       });
     });
+  });
+
+  it('A34 a save equals what the editor shows when the stored copy differs from the course code', async () => {
+    const differing = {
+      ...stored,
+      notebook: {
+        ...stored.notebook,
+        cells: [{ id: 'c1', cell_type: 'code', source: 'x = 99', metadata: {}, outputs: [] }],
+      },
+    };
+    const fetchMock = mount([], {}, { copy: differing });
+    attach();
+    await screen.findByRole('heading', { name: 'Save' });
+    await waitFor(() =>
+      expect(document.querySelector('[data-cell-id="c1"] .cm-content')).toHaveTextContent('x = 99'),
+    );
+    expect(screen.queryByText(/changes that are not saved yet/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Save to Parallax' }));
+    await waitFor(() => {
+      const put = fetchMock.mock.calls.find(([, init]) => init?.method === 'PUT');
+      expect(JSON.parse(String(put?.[1]?.body))).toMatchObject({
+        notebook: { cells: [{ id: 'c1', source: 'x = 99' }] },
+      });
+    });
+  });
+
+  it('A34 Save to Parallax is offered when the workspace cannot be read', async () => {
+    mount([], {}, { listing: 'fail' });
+    attach();
+    expect(await screen.findByRole('button', { name: 'Save to Parallax' })).toBeEnabled();
+    expect(screen.getByText(/saving to the computer is unavailable/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Save to computer' })).not.toBeInTheDocument();
   });
 });

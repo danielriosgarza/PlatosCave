@@ -1,6 +1,6 @@
 import { createTransfer, type TransferView } from '@parallax/contracts/routes/transfers';
 import { saveWorkingCopy, type WorkingCopyView } from '@parallax/contracts/routes/workingCopies';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { ApiError, call } from '../../api/client';
 import buttons from '../../components/Buttons.module.css';
 import { type Choice, type Conflict, ConflictDialog } from './ConflictDialog';
@@ -19,7 +19,7 @@ interface Props {
   /** Called with the current copy when a save found another revision already stored. */
   onStale?: (current: WorkingCopyView) => void;
   /** Absolute workspace and host from the files listing: the destination of Save to computer. */
-  workspace: string;
+  workspace?: string;
   host: string | null;
   /** Where Save to computer writes by default (relative to the workspace). */
   defaultPath?: string;
@@ -82,6 +82,7 @@ export function SaveControls({
   }
 
   async function saveToComputer(choice?: Choice) {
+    if (workspace === undefined) return;
     if (!/\.ipynb$/i.test(path) || path.split('/').some((s) => s === '' || s.startsWith('.'))) {
       setPathProblem('Use a relative file name ending in .ipynb, without hidden or empty parts');
       return;
@@ -117,7 +118,11 @@ export function SaveControls({
     }
   }
 
-  const unsaved = JSON.stringify(getNotebook()) !== JSON.stringify(workingCopy.notebook);
+  // The panel re-renders with every message of a running notebook; compare only when an input moved.
+  const unsaved = useMemo(
+    () => JSON.stringify(getNotebook()) !== JSON.stringify(workingCopy.notebook),
+    [getNotebook, workingCopy.notebook],
+  );
 
   return (
     <section className={styles.panel} aria-labelledby="save-heading">
@@ -187,48 +192,59 @@ export function SaveControls({
         ) : null}
       </div>
 
-      <div className={styles.row}>
-        <h4>Save to computer</h4>
-        <p>
-          Writes revision {workingCopy.currentRevision} (the last one saved to Parallax) as an{' '}
-          <code>.ipynb</code> file in <code>{workspace}</code> on {where(host)}.
-        </p>
-        <label className={styles.label} htmlFor="save-path">
-          File name in the workspace
-        </label>
-        <input
-          id="save-path"
-          className={styles.input}
-          value={path}
-          onChange={(e) => setPath(e.target.value)}
-          aria-invalid={pathProblem ? true : undefined}
-        />
-        {pathProblem ? <p role="alert">{pathProblem}</p> : null}
-        <button
-          type="button"
-          className={buttons.tool}
-          disabled={busy}
-          onClick={() => void saveToComputer()}
-        >
-          {busy ? 'Writing' : 'Save to computer'}
-        </button>
-        {result && 'transfer' in result ? (
-          result.transfer.state === 'done' ? (
-            <p role="status">
-              {result.transfer.outcome === 'kept_theirs' || result.transfer.outcome === 'unchanged'
-                ? outcomeText(result.transfer, host)
-                : `Saved to ${where(host)}: ${result.transfer.path} in ${workspace}`}
-            </p>
-          ) : (
-            <p role="alert">Not saved to computer. {outcomeText(result.transfer, host)}.</p>
-          )
-        ) : null}
-        {result && 'error' in result ? (
-          <p role="alert">Not saved to computer. {result.error}</p>
-        ) : null}
-      </div>
+      {workspace === undefined ? (
+        <div className={styles.row}>
+          <h4>Save to computer</h4>
+          <p role="status">
+            The workspace on the computer could not be read, so saving to the computer is
+            unavailable. Saving to Parallax is not affected.
+          </p>
+        </div>
+      ) : (
+        <div className={styles.row}>
+          <h4>Save to computer</h4>
+          <p>
+            Writes revision {workingCopy.currentRevision} (the last one saved to Parallax) as an{' '}
+            <code>.ipynb</code> file in <code>{workspace}</code> on {where(host)}.
+          </p>
+          <label className={styles.label} htmlFor="save-path">
+            File name in the workspace
+          </label>
+          <input
+            id="save-path"
+            className={styles.input}
+            value={path}
+            onChange={(e) => setPath(e.target.value)}
+            aria-invalid={pathProblem ? true : undefined}
+          />
+          {pathProblem ? <p role="alert">{pathProblem}</p> : null}
+          <button
+            type="button"
+            className={buttons.tool}
+            disabled={busy}
+            onClick={() => void saveToComputer()}
+          >
+            {busy ? 'Writing' : 'Save to computer'}
+          </button>
+          {result && 'transfer' in result ? (
+            result.transfer.state === 'done' ? (
+              <p role="status">
+                {result.transfer.outcome === 'kept_theirs' ||
+                result.transfer.outcome === 'unchanged'
+                  ? outcomeText(result.transfer, host)
+                  : `Saved to ${where(host)}: ${result.transfer.path} in ${workspace}`}
+              </p>
+            ) : (
+              <p role="alert">Not saved to computer. {outcomeText(result.transfer, host)}.</p>
+            )
+          ) : null}
+          {result && 'error' in result ? (
+            <p role="alert">Not saved to computer. {result.error}</p>
+          ) : null}
+        </div>
+      )}
 
-      {conflict ? (
+      {conflict && workspace !== undefined ? (
         <ConflictDialog
           conflicts={conflict}
           host={host}

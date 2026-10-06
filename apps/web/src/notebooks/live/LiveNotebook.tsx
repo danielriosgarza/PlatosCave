@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import buttons from '../../components/Buttons.module.css';
 import readingStyles from '../../reading/Reading.module.css';
 import { ResourceTools } from '../../workspace/ResourceTools';
@@ -145,6 +145,9 @@ export function LiveNotebook({
   const kernel = state.kernel;
   const kernelState = kernel?.state;
   const connected = sessionReady && channelOpen && !left;
+  const onEditRef = useRef(onEdit);
+  onEditRef.current = onEdit;
+  const stableEdit = useCallback((id: string, value: string) => onEditRef.current(id, value), []);
   const gate = useCopyInGate(classId, session.id, sessionReady && !left);
   const canRun =
     connected && kernelState !== undefined && RUNNABLE.has(kernelState) && !gate.pending;
@@ -311,6 +314,17 @@ export function LiveNotebook({
     }
   };
 
+  const kernelNameShown = kernel?.name ?? session.kernelName ?? undefined;
+  const environment = useMemo(
+    () => ({
+      os: session.environment?.os,
+      arch: session.environment?.arch,
+      interpreter: session.environment?.runtime,
+      kernel: kernelNameShown,
+    }),
+    [session.environment, kernelNameShown],
+  );
+
   const label = modeLabel({
     connectionName,
     language: languageOf(kernel?.name ?? session.kernelName, notebook.language),
@@ -387,10 +401,9 @@ export function LiveNotebook({
     banner.push(
       <div key="copyin" className={live.banner} role="status">
         <p>
-          This notebook declares {gate.declared} {gate.declared === 1 ? 'file' : 'files'} that{' '}
-          {gate.declared === 1 ? 'is' : 'are'} not on the computer yet. Cells cannot run until you
-          copy {gate.declared === 1 ? 'it' : 'them'} in from Files below, or choose to run without{' '}
-          {gate.declared === 1 ? 'it' : 'them'}.
+          This notebook declares {gate.declared} {gate.declared === 1 ? 'file' : 'files'}. Cells
+          cannot run until you copy {gate.declared === 1 ? 'it' : 'them'} in from Files below, or
+          choose to run without {gate.declared === 1 ? 'it' : 'them'}.
         </p>
         <button type="button" className={buttons.outline} onClick={gate.settle}>
           Run without the files
@@ -646,13 +659,9 @@ export function LiveNotebook({
           revisionId={session.resourceRevisionId}
           notebook={notebook}
           sources={sources}
-          onEdit={onEdit}
-          environment={{
-            os: session.environment?.os,
-            arch: session.environment?.arch,
-            interpreter: session.environment?.runtime,
-            kernel: kernel?.name ?? session.kernelName ?? undefined,
-          }}
+          onEdit={stableEdit}
+          environment={environment}
+          listing={gate.listing}
           onCopyInSettled={gate.settle}
         />
       ) : null}
