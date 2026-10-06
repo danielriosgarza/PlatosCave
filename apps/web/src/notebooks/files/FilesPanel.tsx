@@ -30,6 +30,11 @@ interface Props {
   workingCopy: WorkingCopyView;
   /** Called with the working copy an import created, so the editor can offer it. */
   onWorkingCopy: (copy: WorkingCopyView) => void;
+  /**
+   * Called with the newer copy when an import found one. A host whose `onWorkingCopy` replaces
+   * the editor's draft passes this so a conflict keeps the draft; the default is `onWorkingCopy`.
+   */
+  onStale?: (current: WorkingCopyView) => void;
   /** Called once the declared files are on the computer (or the person kept the existing ones). */
   onCopyInSettled?: () => void;
 }
@@ -46,6 +51,7 @@ export function FilesPanel({
   sessionId,
   workingCopy,
   onWorkingCopy,
+  onStale,
   onCopyInSettled,
 }: Props) {
   const queryClient = useQueryClient();
@@ -129,6 +135,7 @@ export function FilesPanel({
         setDir={setDir}
         workingCopy={workingCopy}
         onWorkingCopy={onWorkingCopy}
+        onStale={onStale ?? onWorkingCopy}
         onChanged={() => void refresh()}
       />
     </section>
@@ -258,6 +265,7 @@ function Workspace({
   setDir,
   workingCopy,
   onWorkingCopy,
+  onStale,
   onChanged,
 }: {
   classId: string;
@@ -267,6 +275,7 @@ function Workspace({
   setDir: (dir: string) => void;
   workingCopy: WorkingCopyView;
   onWorkingCopy: (copy: WorkingCopyView) => void;
+  onStale: (current: WorkingCopyView) => void;
   onChanged: () => void;
 }) {
   const queryClient = useQueryClient();
@@ -332,14 +341,18 @@ function Workspace({
       onChanged();
     } catch (err) {
       setImporting(null);
-      const body = err instanceof ApiError ? (err.body as { error?: string } | null) : null;
-      setMessage({
-        kind: 'alert',
-        text:
-          body?.error === 'revision_conflict'
-            ? 'Your working copy changed since you opened it. Nothing was imported; reload the copy and try again.'
-            : refusalText(err, `${entry.name} was not imported.`),
-      });
+      const body =
+        err instanceof ApiError ? (err.body as { error?: string; current?: unknown } | null) : null;
+      if (err instanceof ApiError && err.status === 409 && body?.error === 'revision_conflict') {
+        const current = body.current as WorkingCopyView;
+        onStale(current);
+        setMessage({
+          kind: 'alert',
+          text: `Your working copy changed since you opened it and is now at revision ${current.currentRevision}. Nothing was imported; import again to add ${entry.name} as revision ${current.currentRevision + 1}.`,
+        });
+      } else {
+        setMessage({ kind: 'alert', text: refusalText(err, `${entry.name} was not imported.`) });
+      }
     } finally {
       setBusy(false);
     }

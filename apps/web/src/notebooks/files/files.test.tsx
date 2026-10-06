@@ -524,6 +524,72 @@ describe('files panel', () => {
   });
 });
 
+describe('revision conflicts', () => {
+  const listing = {
+    workspace: WORKSPACE,
+    host: 'hpc.example.edu',
+    dir: '',
+    entries: [
+      { path: 'edited.ipynb', name: 'edited.ipynb', type: 'notebook', size: 900, modified: NOW },
+    ],
+    declared: [],
+  };
+
+  it('A34 an Import conflict passes the newer copy on and a retry sends its revision', async () => {
+    const newer = copy({ currentRevision: 5, revision: { ...revision, revision: 5 } });
+    const onWorkingCopy = vi.fn();
+    let conflict = true;
+    const fetchMock = stubApi((url, init) =>
+      init?.method === 'POST'
+        ? conflict
+          ? { status: 409, body: { error: 'revision_conflict', current: newer } }
+          : { status: 200, body: { transfers: [], workingCopy: copy({ currentRevision: 6 }) } }
+        : url.includes('/files')
+          ? { status: 200, body: listing }
+          : { status: 404 },
+    );
+    const panel = (workingCopy: unknown) =>
+      wrap(
+        <FilesPanel
+          classId={CLASS_A}
+          sessionId={SESSION}
+          workingCopy={workingCopy as never}
+          onWorkingCopy={onWorkingCopy}
+        />,
+      );
+    const view = render(panel(copy()));
+    const user = userEvent.setup();
+    await user.click(await screen.findByRole('button', { name: 'Import edited.ipynb' }));
+    await user.click(screen.getByRole('button', { name: 'Import as revision 3' }));
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent(/now at revision 5/);
+    expect(alert).not.toHaveTextContent(/reload/i);
+    expect(onWorkingCopy).toHaveBeenCalledWith(newer);
+    // The parent hands the newer copy back; the retry is based on it.
+    conflict = false;
+    view.rerender(panel(newer));
+    await user.click(await screen.findByRole('button', { name: 'Import edited.ipynb' }));
+    await user.click(screen.getByRole('button', { name: 'Import as revision 6' }));
+    await waitFor(() => expect(posts(fetchMock)).toHaveLength(2));
+    expect(json(posts(fetchMock)[0]?.[1]).baseRevision).toBe(2);
+    expect(json(posts(fetchMock)[1]?.[1]).baseRevision).toBe(5);
+  });
+
+  it('A34 a Save to Parallax conflict passes the newer copy on and keeps the draft', async () => {
+    const newer = copy({ currentRevision: 5 });
+    const draft = { ...notebook, cells: [{ cell_type: 'code', source: 'mine' }] };
+    const getNotebook = vi.fn(() => draft);
+    stubApi(() => ({ status: 409, body: { error: 'revision_conflict', current: newer } }));
+    const { onWorkingCopy } = renderSave(getNotebook);
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Save to Parallax' }));
+    await screen.findByRole('alert');
+    expect(onWorkingCopy).toHaveBeenCalledWith(newer);
+    expect(onWorkingCopy).toHaveBeenCalledOnce();
+    // The draft is read, never replaced.
+    expect(getNotebook.mock.results.every((r) => r.value === draft)).toBe(true);
+  });
+});
+
 describe('submit panel', () => {
   it('A34 only selected acknowledged files are listed for submission', async () => {
     const fetchMock = stubApi((url, init) => {
