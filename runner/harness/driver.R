@@ -64,6 +64,7 @@ local({
   }
 
   object_text <- function(keys, items) {
+    if (length(keys) == 0L) return("{}")
     keys <- clean_text(keys)
     if (anyNA(keys) || any(keys == "") || anyDuplicated(keys)) not_json()
     paste0("{", paste0(vapply(keys, json_string, ""), ":", items, collapse = ","), "}")
@@ -96,7 +97,11 @@ local({
   # JSON from the harness to R values: arrays of scalars of one kind become atomic vectors,
   # objects named lists, everything else lists.
   from_json <- function(x) {
-    if (!is.list(x)) return(x)
+    if (!is.list(x)) {
+      # JSON integers are doubles, as a number typed in R is: n * n must not overflow.
+      if (is.integer(x)) storage.mode(x) <- "double"
+      return(x)
+    }
     items <- lapply(x, from_json)
     if (!is.null(names(x)) || length(items) == 0L) return(items)
     missing <- vapply(items, is.null, NA)
@@ -127,13 +132,20 @@ local({
   outcome_text <- function(spec) {
     state <- tryCatch({
       env <- new.env(parent = globalenv())
-      # quit() and q() end the call like an exception (Python's SystemExit), not the driver.
-      env$quit <- env$q <- function(save = "default", status = 0, runLast = TRUE) {
+      # quit() and q() end the call like an exception (Python's SystemExit), not the driver. The
+      # override sits in the global environment, so student helpers sourced there reach it too.
+      exit_call <- function(save = "default", status = 0, runLast = TRUE) {
         stop(structure(class = c("SystemExit", "quit_called", "condition"),
                        list(message = paste("quit called with status", status), call = NULL)))
       }
+      assign("quit", exit_call, envir = globalenv())
+      assign("q", exit_call, envir = globalenv())
       source(spec$file, local = env, encoding = "UTF-8")
-      fn <- get(spec$`function`, envir = env, mode = "function", inherits = FALSE)
+      # The student file's own definitions: its environment first, then what it sourced into the
+      # global environment (empty in a fresh Rscript, so base R is never searched).
+      name <- spec$`function`
+      holder <- if (exists(name, envir = env, mode = "function", inherits = FALSE)) env else globalenv()
+      fn <- get(name, envir = holder, mode = "function", inherits = FALSE)
       args <- lapply(spec$args, from_json)
       kwargs <- lapply(spec$kwargs, from_json)
       list(value = do.call(fn, c(args, kwargs)))

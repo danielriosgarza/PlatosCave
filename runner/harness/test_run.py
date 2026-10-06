@@ -1433,7 +1433,7 @@ class RRuntime(HarnessCase):
                 "stopifnot(helper() == 'helped')\n"
                 "stopifnot(Sys.getenv('PARALLAX_JOB') == '1')\n"
                 "stopifnot(Sys.getenv('R_LIBS_USER') == '/tmp/none')\n"
-                "stopifnot(startsWith(Sys.getenv('HOME'), '/tmp') || nzchar(Sys.getenv('HOME')))\n"
+                "stopifnot(grepl('/c[0-9]+$', Sys.getenv('HOME')))\n"
                 "stopifnot(requireNamespace('jsonlite', quietly = TRUE))\n"
             ),
             "helper.R": "helper <- function() 'helped'\n",
@@ -1481,6 +1481,55 @@ class RRuntime(HarnessCase):
             )
         )
         self.assertEqual([c["status"] for c in outcome.result["checks"]], ["passed", "failed", "passed"])
+
+    def test_empty_named_values_are_empty_objects(self):
+        files = {
+            "solution.R": (
+                "none_list <- function() list(a = 1, b = 2)[c(FALSE, FALSE)]\n"
+                "none_vec <- function() c(a = 1)[0]\n"
+                "same <- function(x) x\n"
+            )
+        }
+        outcome = self.go(
+            r_job(
+                files,
+                [
+                    r_call("Empty named list", "none_list", {"value": {}}),
+                    r_call("Empty named vector", "none_vec", {"value": {}}),
+                    r_call("Empty object argument", "same", {"value": {}}, args=[{}]),
+                ],
+            )
+        )
+        self.assertEqual([c["status"] for c in outcome.result["checks"]], ["passed"] * 3, outcome.result["checks"])
+
+    def test_integer_arguments_are_doubles(self):
+        files = {"solution.R": "square <- function(n) n * n\nkind <- function(n) is.double(n)\n"}
+        outcome = self.go(
+            r_job(
+                files,
+                [
+                    r_call("Square", "square", {"value": 10000000000}, args=[100000]),
+                    r_call("Double", "kind", {"value": True}, args=[5]),
+                ],
+            )
+        )
+        self.assertEqual([c["status"] for c in outcome.result["checks"]], ["passed", "passed"], outcome.result["checks"])
+
+    def test_a_function_sourced_into_the_global_environment_is_found_and_quit_there_is_caught(self):
+        files = {
+            "solution.R": "source('helper.R')\n",
+            "helper.R": "answer <- function() 42\nleave <- function() quit(status = 0)\n",
+        }
+        outcome = self.go(
+            r_job(
+                files,
+                [
+                    r_call("Answer", "answer", {"value": 42}),
+                    r_call("Quit in a helper", "leave", {"raises": {"type": "SystemExit"}}),
+                ],
+            )
+        )
+        self.assertEqual([c["status"] for c in outcome.result["checks"]], ["passed", "passed"], outcome.result["checks"])
 
     def test_null_in_an_array_argument_is_a_missing_value_and_quit_is_an_exception(self):
         files = {"solution.R": "total <- function(v) sum(v, na.rm = TRUE)\nstop_now <- function() quit(status = 2)\n"}
