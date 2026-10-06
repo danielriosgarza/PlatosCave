@@ -19,6 +19,7 @@ import {
   type DraftQuestion,
   type DraftSettings,
   type DraftTest,
+  nextOptionId,
   nextQuestionId,
   problemsOf,
   type QuestionKind,
@@ -182,7 +183,7 @@ function TestFields({
 
       {test.questions.map((q, i) => (
         <QuestionEditor
-          key={q.id || `new-${i}`}
+          key={q.uid}
           index={i}
           count={test.questions.length}
           question={q}
@@ -520,7 +521,13 @@ function ChoiceFields({
           <Text
             label={`Option ${i + 1} id`}
             value={o.id}
-            onChange={(v) => setOption(i, { id: v })}
+            onChange={(v) =>
+              onChange({
+                options: replaceAt(q.options, i, { ...o, id: v }),
+                // The correct mark follows the option it was set on.
+                correct: q.correct.map((c) => (c === o.id ? v : c)),
+              })
+            }
           />
           <Text
             label={`Option ${i + 1} label`}
@@ -566,10 +573,7 @@ function ChoiceFields({
           disabled={q.options.length >= 12}
           onClick={() =>
             onChange({
-              options: [
-                ...q.options,
-                { id: String.fromCharCode(97 + q.options.length), label: '' },
-              ],
+              options: [...q.options, { id: nextOptionId(q.options), label: '' }],
             })
           }
         >

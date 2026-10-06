@@ -158,6 +158,8 @@ interface Server {
   patched: Record<string, unknown>[];
   posted: { url: string; body: Record<string, unknown> }[];
   previewStatus: number;
+  readStatus: number;
+  reads: number;
   current: ReturnType<typeof resource>;
 }
 
@@ -167,6 +169,8 @@ function serve(over: Partial<Server> = {}): Server {
     patched: [],
     posted: [],
     previewStatus: 202,
+    readStatus: 200,
+    reads: 0,
     current: resource(),
     ...over,
   };
@@ -195,7 +199,12 @@ function serve(over: Partial<Server> = {}): Server {
         ? { status: 202, body: run({ state: 'queued', result: null, finishedAt: null }) }
         : { status: s.previewStatus, body: { error: 'no_class', message: 'no class' } };
     }
-    if (url === `${base}/preview-runs/${RUN}`) return { status: 200, body: run() };
+    if (url === `${base}/preview-runs/${RUN}`) {
+      s.reads += 1;
+      return s.readStatus === 200
+        ? { status: 200, body: run() }
+        : { status: s.readStatus, body: { error: 'internal' } };
+    }
     return { status: 404, body: {} };
   });
   return s;
@@ -301,6 +310,64 @@ describe('test editor', () => {
     const sent = s.patched.at(-1)?.content as { questions: { id: string; correct?: string[] }[] };
     expect(sent.questions.map((q) => q.id)).toEqual(['mean', 'q2']);
     expect(sent.questions[1]?.correct).toEqual(['b']);
+  });
+
+  it('keeps the question being edited while its id changes', async () => {
+    serve();
+    mount();
+    const id = await screen.findByLabelText('Question 1 id');
+    await userEvent.type(id, '2');
+    await userEvent.type(id, 'x');
+    expect(id).toHaveValue('mean2x');
+    expect(id).toHaveFocus();
+    expect(screen.getByLabelText('Question 1 id')).toBe(id);
+  });
+
+  it('gives a new option an unused id and keeps the correct mark through a rename', async () => {
+    const s = serve();
+    mount();
+    await screen.findByLabelText('Question 1 prompt and input/output contract');
+    await userEvent.selectOptions(screen.getByLabelText('Question type'), 'choice');
+    await userEvent.click(screen.getByRole('button', { name: 'Add question' }));
+    await userEvent.type(await screen.findByLabelText('Question 2 prompt'), 'Which varies least?');
+    const add = screen.getByRole('button', { name: 'Add option' });
+    await userEvent.click(add);
+    expect(screen.getByLabelText('Option 3 id')).toHaveValue('c');
+    await userEvent.click(screen.getByRole('button', { name: 'Remove option 2' }));
+    await userEvent.click(add);
+    expect(screen.getByLabelText('Option 3 id')).toHaveValue('b');
+    for (const [i, label] of [
+      [1, 'n = 10'],
+      [2, 'n = 100'],
+      [3, 'n = 1000'],
+    ] as const) {
+      await userEvent.type(screen.getByLabelText(`Option ${i} label`), label);
+    }
+    await userEvent.click(screen.getByLabelText('Option 1 is correct'));
+    const optionId = screen.getByLabelText('Option 1 id');
+    await userEvent.clear(optionId);
+    await userEvent.type(optionId, 'small');
+    expect(screen.getByLabelText('Option 1 is correct')).toBeChecked();
+    await waitFor(
+      () => {
+        const sent = s.patched.at(-1)?.content as
+          | { questions: { options?: { id: string }[]; correct?: string[] }[] }
+          | undefined;
+        expect(sent?.questions[1]?.options?.map((o) => o.id)).toEqual(['small', 'c', 'b']);
+        expect(sent?.questions[1]?.correct).toEqual(['small']);
+      },
+      { timeout: 3000 },
+    );
+  });
+
+  it('stops polling a preview run whose result cannot be read', async () => {
+    const s = serve({ readStatus: 500 });
+    mount();
+    await userEvent.click(await screen.findByRole('button', { name: 'Run sample checks' }));
+    await waitFor(() => expect(s.reads).toBeGreaterThan(0));
+    const reads = s.reads;
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    expect(s.reads).toBe(reads);
   });
 
   it('runs all checks of the saved question and shows hidden checks as hidden', async () => {

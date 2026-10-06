@@ -13,7 +13,7 @@ import type { RouteDeps } from '../../app';
 import { type ClassScope, resolveActorScope } from '../../auth/scope';
 import { previewTarget } from '../../db/execution/previewTarget';
 import * as runs from '../../db/execution/runs';
-import { previewRunClass } from '../../db/preview';
+import { previewPrincipals, previewRunClass } from '../../db/preview';
 import { notFound, registerRoute, settle } from '../register';
 
 export default function runRoutes(app: FastifyInstance, deps: RouteDeps): void {
@@ -108,7 +108,7 @@ export default function runRoutes(app: FastifyInstance, deps: RouteDeps): void {
 
   registerRoute(app, requestPreviewRun, async ({ scope, params, body, fail }) => {
     const target = settle(await previewTarget(db(), scope, params.resourceId, params.questionId));
-    const home = await previewRunClass(db(), scope, { create: true });
+    const home = await previewRunClass(db(), scope);
     if (!home) {
       return fail(409, {
         error: 'no_class',
@@ -135,9 +135,14 @@ export default function runRoutes(app: FastifyInstance, deps: RouteDeps): void {
   });
 
   registerRoute(app, readPreviewRun, async ({ scope, params }) => {
-    const home = await previewRunClass(db(), scope, { create: false });
-    const classScope = home && (await previewScope(home.previewUserId, home.classId));
-    if (!classScope) return notFound();
-    return (await runs.readPreviewRun(db(), exec, classScope, params.runId, now())) ?? notFound();
+    // The run is found through whichever of the caller's preview principals owns it, so it stays
+    // readable if the class new preview runs start in changes while it is in flight.
+    for (const home of await previewPrincipals(db(), scope)) {
+      const classScope = await previewScope(home.previewUserId, home.classId);
+      if (!classScope) continue;
+      const run = await runs.readPreviewRun(db(), exec, classScope, params.runId, now());
+      if (run) return run;
+    }
+    return notFound();
   });
 }

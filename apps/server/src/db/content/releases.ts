@@ -13,7 +13,7 @@ import {
   type DraftPreviewScope,
   isDraftPreview,
 } from '../../auth/scope';
-import { DEV_RUNNER_RUNTIMES, type RunnerRuntime } from '../../config';
+import type { RunnerRuntime } from '../../config';
 import { openToStudent } from '../../content/availability';
 import { testPublicationIssues } from '../../execution/publication';
 import { audit } from '../audit';
@@ -100,18 +100,19 @@ type Drafts = Awaited<ReturnType<typeof loadDrafts>>;
 
 export interface ValidateOptions {
   approvedShinyOrigins?: readonly string[];
-  runtimes?: readonly RunnerRuntime[];
+  /** The runtimes a code question may select: the configured `RUNNER_RUNTIMES`. */
+  runtimes: readonly RunnerRuntime[];
 }
 
 /**
  * Publication checks (§12, ADR-0003): broken references, missing alternatives and unconverted
  * decks, exercise definitions, tests (grading rules and execution configuration, P3-18), and
  * Shiny apps whose origin the host has not approved (students would see only the preview label
- * and the external route, §10.7). `runtimes` are the runtimes a code question may select.
+ * and the external route, §10.7).
  */
 export function validate(
   drafts: Drafts,
-  { approvedShinyOrigins = [], runtimes = DEV_RUNNER_RUNTIMES }: ValidateOptions = {},
+  { approvedShinyOrigins = [], runtimes }: ValidateOptions,
 ): ValidationReport {
   const errors: Issue[] = [];
   const warnings: Issue[] = [];
@@ -245,7 +246,7 @@ export function validate(
 export function validateDrafts(
   db: Db,
   scope: CourseScope,
-  opts: ValidateOptions = {},
+  opts: ValidateOptions,
 ): Promise<ValidationReport> {
   return db.transaction(async (tx) => validate(await loadDrafts(tx, scope), opts));
 }
@@ -265,7 +266,7 @@ export type PublishResult =
 export function publishRelease(
   db: Db,
   scope: CourseScope,
-  opts: { id?: string } & ValidateOptions = {},
+  opts: { id?: string } & ValidateOptions,
 ): Promise<PublishResult> {
   return db.transaction(async (tx) => {
     await tx

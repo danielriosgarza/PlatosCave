@@ -76,7 +76,11 @@ export function PreviewRunPanel({
     queryKey: [...authoringKey(courseId), 'preview-run', runId],
     queryFn: () => call(readPreviewRun, { params: { courseId, runId: runId ?? '' } }),
     enabled: runId !== null,
-    refetchInterval: (query) => (query.state.data && isSettled(query.state.data) ? false : 1500),
+    // A settled run or a failed read ends polling; the panel then shows what it has.
+    refetchInterval: (query) =>
+      query.state.status === 'error' || (query.state.data && isSettled(query.state.data))
+        ? false
+        : 1500,
   });
   const shown = run.data;
   const outcome = shown?.result ? RunnerOutcome.safeParse(shown.result.outcome) : undefined;

@@ -1,5 +1,7 @@
+import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { createResource } from '../../src/db/content/drafts';
+import { classes } from '../../src/db/schema';
 import { asCourseScope, ids } from '../fixtures/world';
 import { call, type ExecWorld, execWorld, quiz, rowOf } from './execution';
 
@@ -212,5 +214,23 @@ describe('P3-18 instructor preview runs', () => {
       { set: 'full' },
     );
     expect(reading.status).toBe(404);
+  });
+
+  test('a preview run stays readable after its class is archived', async () => {
+    // Archiving the class leaves Marcus no live class to start a preview run in, but the run
+    // he started there is still his to read.
+    await w.testDb.db
+      .update(classes)
+      .set({ archivedAt: w.clock.now })
+      .where(eq(classes.id, ids.classB));
+    try {
+      const read = await call(w, 'marcus', 'GET', `${course}/preview-runs/${runId}`);
+      expect(read.status).toBe(200);
+      expect(read.body.runId).toBe(runId);
+      const fresh = await call(w, 'marcus', 'POST', url(), { set: 'public' });
+      expect(fresh.status).toBe(409);
+    } finally {
+      await w.testDb.db.update(classes).set({ archivedAt: null }).where(eq(classes.id, ids.classB));
+    }
   });
 });

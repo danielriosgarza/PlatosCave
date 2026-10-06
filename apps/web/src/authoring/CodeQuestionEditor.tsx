@@ -200,9 +200,9 @@ export function CodeQuestionEditor({ question: q, courseId, onChange }: Props) {
       <fieldset className={local.choices}>
         <legend>Checks</legend>
         <p className={local.hint}>
-          Sample checks are shown to students when they run sample tests. Hidden checks run only
-          when work is graded; prefer “call” and “output” checks, because a script check’s verdict
-          is decided inside the student’s own program.
+          Sample checks are shown to students when they run sample tests. Hidden checks run when
+          work is graded and in your preview runs below; prefer function-call and program-output
+          checks, because a script check’s verdict is decided inside the student’s own program.
         </p>
         {q.checks.map((c, i) => (
           <CheckEditor

@@ -96,7 +96,7 @@ describe('test publication validation (design §8.1)', () => {
 
   test('duplicate check names and a missing public check are rejected', () => {
     expect(messages(test1({ checks: [sample, { ...hiddenCall, name: 'sample' }] }))).toEqual([
-      expect.stringContaining('check name sample is used twice'),
+      expect.stringContaining('duplicate check name sample'),
     ]);
     expect(messages(test1({ checks: [hiddenCall] }))).toEqual([
       expect.stringContaining('needs at least one public (sample) check'),
@@ -105,10 +105,10 @@ describe('test publication validation (design §8.1)', () => {
 
   test('a check naming a file that is not in files, or a public check naming a hidden file', () => {
     expect(messages(test1({ checks: [{ ...sample, file: 'missing.py' }] }))).toEqual([
-      expect.stringContaining('names missing.py, which is not one of the files'),
+      expect.stringContaining('check sample names missing.py, which is not in files'),
     ]);
     expect(messages(test1({ checks: [{ ...sample, files: ['tests/check.py'] }] }))).toEqual([
-      expect.stringContaining('public check sample names the hidden file tests/check.py'),
+      expect.stringContaining('public check sample names hidden file tests/check.py'),
     ]);
   });
 

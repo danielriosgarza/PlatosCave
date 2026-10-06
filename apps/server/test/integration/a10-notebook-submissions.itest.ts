@@ -7,7 +7,7 @@ import { and, eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { buildApp } from '../../src/app';
-import { loadConfig } from '../../src/config';
+import { DEV_RUNNER_RUNTIMES, loadConfig } from '../../src/config';
 import { adoptRelease } from '../../src/db/content/adoption';
 import { createResource } from '../../src/db/content/drafts';
 import { publishRelease } from '../../src/db/content/releases';
@@ -92,7 +92,7 @@ beforeAll(async () => {
   notebookId = created.value.id;
   if (!created.value.headRevisionId) throw new Error('the notebook has no head revision');
   notebookRevisionId = created.value.headRevisionId;
-  const published = await publishRelease(testDb.db, course);
+  const published = await publishRelease(testDb.db, course, { runtimes: DEV_RUNNER_RUNTIMES });
   if (!published.ok) throw new Error(JSON.stringify(published.report));
   for (const [classId, instructor] of [
     [ids.classA, ids.priya],

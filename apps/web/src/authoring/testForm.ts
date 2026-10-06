@@ -57,6 +57,8 @@ export interface DraftCheck {
   rel: string;
 }
 export interface DraftQuestion {
+  /** Client-only identity for React keys; never saved, so editing `id` does not remount. */
+  uid: string;
   kind: QuestionKind;
   id: string;
   prompt: string;
@@ -140,7 +142,10 @@ export const blankCheck = (file = ''): DraftCheck => ({
   rel: '',
 });
 
+let uids = 0;
+
 export const blankQuestion = (kind: QuestionKind, id: string): DraftQuestion => ({
+  uid: `question-${++uids}`,
   kind,
   id,
   prompt: '',
@@ -162,6 +167,16 @@ export const blankQuestion = (kind: QuestionKind, id: string): DraftQuestion => 
   limits: { wallSeconds: '', memoryMiB: '', outputBytes: '' },
   checks: [{ ...blankCheck('solution.py'), name: 'sample' }],
 });
+
+/** The first letter from `a` that no option uses yet (a question has at most 12 options). */
+export function nextOptionId(options: { id: string }[]): string {
+  const used = new Set(options.map((o) => o.id));
+  for (let n = 0; n < 26; n++) {
+    const id = String.fromCharCode(97 + n);
+    if (!used.has(id)) return id;
+  }
+  return `o${options.length + 1}`;
+}
 
 /** The next free question id: `q1`, `q2`, …. */
 export function nextQuestionId(questions: { id: string }[]): string {

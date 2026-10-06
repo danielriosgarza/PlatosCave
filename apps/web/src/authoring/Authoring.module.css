@@ -147,7 +147,7 @@
   padding-top: 4px;
 }
 .mono {
-  font-family: var(--pc-mono, ui-monospace, monospace);
+  font-family: var(--pc-font-mono);
   font-size: 13px;
   line-height: 1.5;
   white-space: pre;

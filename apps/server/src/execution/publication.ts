@@ -20,12 +20,6 @@ export interface TestIssues {
 
 type Runtimes = readonly RunnerRuntime[];
 
-const normalise = (path: string) =>
-  path
-    .split('/')
-    .filter((s) => s !== '' && s !== '.')
-    .join('/');
-
 function codeIssues(q: CodeQuestion, runtimes: Runtimes): TestIssue[] {
   const at = `Question “${q.id}”`;
   const problems: string[] = [];
@@ -38,51 +32,23 @@ function codeIssues(q: CodeQuestion, runtimes: Runtimes): TestIssue[] {
       }
     }
   }
-
-  const byPath = new Map(q.files.map((f) => [normalise(f.path), f]));
+  // Rules a runner job cannot express: what students may edit and see, and a sample to run.
   for (const f of q.files) {
     if (f.editable && f.hidden) {
       problems.push(`${at}: ${f.path} is both editable and hidden, so students could not see it`);
     }
   }
-  for (const path of byPath.keys()) {
-    const parts = path.split('/');
-    for (let depth = 1; depth < parts.length; depth++) {
-      const prefix = parts.slice(0, depth).join('/');
-      if (byPath.has(prefix)) {
-        problems.push(`${at}: the file path ${prefix} is a directory prefix of ${path}`);
-      }
-    }
-  }
+  const hasPublic = q.checks.some((c) => c.visibility === 'public');
+  if (!hasPublic) problems.push(`${at}: needs at least one public (sample) check`);
 
-  const names = new Set<string>();
-  for (const check of q.checks) {
-    if (names.has(check.name)) problems.push(`${at}: the check name ${check.name} is used twice`);
-    names.add(check.name);
-    for (const path of [check.file, ...(check.files ?? [])]) {
-      const file = byPath.get(normalise(path));
-      if (!file) {
-        problems.push(
-          `${at}: the check ${check.name} names ${path}, which is not one of the files`,
-        );
-      } else if (check.visibility === 'public' && file.hidden) {
-        problems.push(`${at}: the public check ${check.name} names the hidden file ${path}`);
-      }
-    }
-  }
-  if (!q.checks.some((c) => c.visibility === 'public')) {
-    problems.push(`${at}: needs at least one public (sample) check`);
-  }
-
-  // Whatever the rules above did not name: the job students and graders would be sent must be
-  // valid in both sets, so a broken hidden check is found here and not at the first submission.
-  if (problems.length === 0 && runtime) {
-    for (const set of ['public', 'full'] as const) {
+  // Everything else (unique check names, files a check names, directory prefixes, sizes) is
+  // `validateJob`'s, which the job students and graders would be sent must pass in both sets;
+  // the full set holds every check and file, so it is built first.
+  if (runtime) {
+    for (const set of hasPublic ? (['full', 'public'] as const) : (['full'] as const)) {
       const built = buildRunnerJobDetailed(q, { files: [] }, set, randomUUID(), runtime);
       if (!built.ok) {
-        problems.push(
-          `${at}: the ${set === 'full' ? 'hidden and sample checks' : 'sample checks'} do not form a valid job (${built.detail})`,
-        );
+        problems.push(`${at}: the checks do not form a valid job: ${built.detail}`);
         break;
       }
     }
