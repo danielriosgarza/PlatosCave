@@ -422,13 +422,9 @@ describe('A15 deadline submission', () => {
       status: 409,
       body: { error: 'attempt_closed', receipt },
     });
-    // An entry holding a lone surrogate cannot be stored: it is dropped, never a 500, and the
-    // other entries are kept. A copy of nothing but such entries is refused with 400.
+    // A lone surrogate cannot be stored in jsonb: it is kept as U+FFFD, never a 500, and every
+    // entry of the copy is kept.
     const localCopyUrl = `${attemptUrl(ids.classB, beaAttempt)}/local-copy`;
-    const onlyLone = await call('bea', 'POST', localCopyUrl, {
-      answers: [{ questionId: 'why', value: 'half \ud800' }],
-    });
-    expect(onlyLone.status).toBe(400);
     const kept = await call('bea', 'POST', localCopyUrl, {
       answers: [
         {
@@ -452,7 +448,13 @@ describe('A15 deadline submission', () => {
     expect(review.body).toMatchObject({
       state: 'submitted',
       receipt: { autoSubmitted: true },
-      localCopy: [{ questionId: 'why', value: unsent.value }],
+      localCopy: [
+        {
+          questionId: 'mean',
+          value: { files: [{ path: 'solution.py', content: 'x = "\ufffd"' }] },
+        },
+        { questionId: 'why', value: unsent.value },
+      ],
       localCopyAt: minutes(31).toISOString(),
     });
     expect(review.body.answers).toHaveLength(2);
