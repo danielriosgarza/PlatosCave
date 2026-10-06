@@ -11,7 +11,7 @@ import type { FastifyInstance } from 'fastify';
 import type { RouteDeps } from '../../app';
 import type { UserScope } from '../../auth/scope';
 import * as lifecycle from '../../db/lifecycle';
-import { revokeUserConnectors } from '../../relay/links';
+import { closeRevokedLinks } from '../../relay/links';
 import { registerRoute } from '../register';
 
 export default function lifecycleRoutes(app: FastifyInstance, deps: RouteDeps): void {
@@ -59,8 +59,8 @@ export default function lifecycleRoutes(app: FastifyInstance, deps: RouteDeps): 
     const at = now();
     const result = await lifecycle.closeAccount(db(), scope, mode, at);
     if (!result.ok) return fail(409, { error: 'owns_courses' });
-    // The person's connectors die with the account and their live links close (§10.6).
-    for (const id of result.userIds) await revokeUserConnectors(db(), links, id, at);
+    // Their connectors were revoked with the account (§10.6); live links close now.
+    closeRevokedLinks(links, result.revokedConnectorIds);
     return { deactivatedAt: result.deactivatedAt.toISOString() };
   }
 

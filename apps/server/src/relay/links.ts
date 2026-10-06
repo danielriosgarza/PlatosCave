@@ -913,6 +913,11 @@ export async function revokeUserConnectors(
   now: Date,
 ): Promise<string[]> {
   const ids = await revokeUserConnectorRows(db, userId, now);
-  for (const id of ids) links.get(id)?.close(reasonCode('revoked'), 'revoked');
+  closeRevokedLinks(links, ids);
   return ids;
+}
+
+/** Closes the live links of connectors already revoked in the database, with 4403 `revoked`. */
+export function closeRevokedLinks(links: LinkRegistry, ids: string[]): void {
+  for (const id of ids) links.get(id)?.close(reasonCode('revoked'), 'revoked');
 }

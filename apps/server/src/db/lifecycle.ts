@@ -1,10 +1,12 @@
 import { strokesToSvg } from '@parallax/contracts';
 import type * as contracts from '@parallax/contracts/routes/lifecycle';
-import { and, asc, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, lt, notInArray, sql } from 'drizzle-orm';
+import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 import type { z } from 'zod';
 import type { ClassManagerScope, ClassScope, CourseScope, UserScope } from '../auth/scope';
 import { audit } from './audit';
 import type { Db, Tx } from './client';
+import { revokeUserConnectorsIn } from './connectors/registry';
 import {
   annotations,
   auditEvents,
@@ -14,6 +16,10 @@ import {
   connectorPairings,
   courseMemberships,
   courses,
+  notebookSessions,
+  notebookSubmissions,
+  notebookWorkingCopies,
+  notebookWorkingCopyRevisions,
   posts,
   resources,
   signinTokens,
@@ -189,6 +195,7 @@ export function exportOwnAnnotations(db: Db, scope: ClassScope, now: Date): Prom
         threadId: posts.threadId,
         body: posts.body,
         deletedAt: posts.deletedAt,
+        moderatedAt: posts.moderatedAt,
         createdAt: posts.createdAt,
         audience: threads.audience,
         resourceTitle: resources.title,
@@ -241,7 +248,8 @@ export function exportOwnAnnotations(db: Db, scope: ClassScope, now: Date): Prom
         threadId: p.threadId,
         audience: p.audience === 'class' ? ('class' as const) : ('instructor' as const),
         resourceTitle: p.resourceTitle,
-        body: p.deletedAt ? null : p.body,
+        // Hidden the way the thread view hides it, from its author too.
+        body: p.deletedAt || p.moderatedAt ? null : p.body,
         createdAt: p.createdAt.toISOString(),
       })),
     };
@@ -270,8 +278,12 @@ export async function anonymiseIdentity(tx: Tx, userId: string, now: Date): Prom
     .where(eq(users.ownerUserId, userId));
   const everyone = [userId, ...previews.map((p) => p.id)];
   await tx.delete(annotations).where(inArray(annotations.authorId, everyone));
+  await deleteUnsubmittedWorkingCopies(tx, everyone);
   if (row.email) {
+    const pseudonym = anonymisedEmail(userId);
     await tx.delete(signinTokens).where(eq(signinTokens.email, row.email));
+    // Unused invitations are deleted; a used one is a record of who joined, so it keeps its row
+    // under the pseudonym, and so do the audit events that quoted the address.
     await tx
       .delete(classInvites)
       .where(
@@ -281,26 +293,80 @@ export async function anonymiseIdentity(tx: Tx, userId: string, now: Date): Prom
           eq(classInvites.useCount, 0),
         ),
       );
+    await tx
+      .update(classInvites)
+      .set({ email: pseudonym })
+      .where(eq(classInvites.email, row.email));
+    const replaced = (column: AnyPgColumn) =>
+      sql`jsonb_set(${column}, '{email}', to_jsonb(${pseudonym}::text))`;
+    await tx
+      .update(auditEvents)
+      .set({ before: replaced(auditEvents.before) })
+      .where(sql`${auditEvents.before} ->> 'email' = ${row.email}`);
+    await tx
+      .update(auditEvents)
+      .set({ after: replaced(auditEvents.after) })
+      .where(sql`${auditEvents.after} ->> 'email' = ${row.email}`);
   }
   await tx
     .update(users)
-    .set({
-      name: ANONYMISED_NAME,
-      anonymisedAt: now,
-      ...(row.kind === 'user' && { email: anonymisedEmail(userId) }),
-    })
+    .set({ name: ANONYMISED_NAME, anonymisedAt: now })
     .where(inArray(users.id, everyone));
+  // A preview principal has no address; only the person's own row takes the pseudonymous one.
+  if (row.kind === 'user') {
+    await tx
+      .update(users)
+      .set({ email: anonymisedEmail(userId) })
+      .where(eq(users.id, userId));
+  }
+}
+
+/**
+ * Deletes working copies of notebooks that no submission froze, with their revisions (the rows;
+ * stored objects are not removed here). A copy a submission froze stays, and keeps only the
+ * revisions submissions reference. A copy a session still points at stays too.
+ */
+async function deleteUnsubmittedWorkingCopies(tx: Tx, userIds: string[]): Promise<void> {
+  const copies = await tx
+    .select({ id: notebookWorkingCopies.id })
+    .from(notebookWorkingCopies)
+    .where(inArray(notebookWorkingCopies.userId, userIds));
+  for (const { id } of copies) {
+    const frozen = await tx
+      .select({ revision: notebookSubmissions.workingCopyRevision })
+      .from(notebookSubmissions)
+      .where(eq(notebookSubmissions.workingCopyId, id));
+    if (frozen.length === 0) {
+      const used = await tx
+        .select({ id: notebookSessions.id })
+        .from(notebookSessions)
+        .where(eq(notebookSessions.workingCopyId, id))
+        .limit(1);
+      if (used.length > 0) continue;
+      await tx.delete(notebookWorkingCopies).where(eq(notebookWorkingCopies.id, id));
+      continue;
+    }
+    const keep = frozen.flatMap((f) => (f.revision === null ? [] : [f.revision]));
+    await tx
+      .delete(notebookWorkingCopyRevisions)
+      .where(
+        and(
+          eq(notebookWorkingCopyRevisions.workingCopyId, id),
+          keep.length > 0 ? notInArray(notebookWorkingCopyRevisions.revision, keep) : sql`true`,
+        ),
+      );
+  }
 }
 
 export type CloseOutcome =
-  | { ok: true; deactivatedAt: Date; userIds: string[] }
+  | { ok: true; deactivatedAt: Date; revokedConnectorIds: string[] }
   | { ok: false; reason: 'owns_courses' };
 
 /**
- * Closes the caller's own account (§13): refused while they own a live course; otherwise the
+ * Closes the caller's own account (§13): refused while they are the only active owner of a course; otherwise the
  * account and its preview principal are deactivated, every session ends, and with `delete` the
- * identity is anonymised in the same transaction. The caller then revokes the person's connectors
- * (`revokeUserConnectors`), which closes their live links.
+ * identity is anonymised, and their connectors are revoked, in the same transaction. The caller
+ * then closes the live links of the revoked connectors.
  */
 export function closeAccount(
   db: Db,
@@ -311,19 +377,21 @@ export function closeAccount(
   const userId = scope.user.id;
   return db.transaction(async (tx) => {
     await tx.select({ id: users.id }).from(users).where(eq(users.id, userId)).for('update');
-    const owned = await tx
+    // A course whose only active owner leaves could never be managed or restored (§3).
+    const soleOwned = await tx
       .select({ courseId: courseMemberships.courseId })
       .from(courseMemberships)
-      .innerJoin(courses, eq(courses.id, courseMemberships.courseId))
       .where(
         and(
           eq(courseMemberships.userId, userId),
           eq(courseMemberships.owner, true),
-          isNull(courses.archivedAt),
+          sql`not exists (select 1 from course_memberships o join users u on u.id = o.user_id
+            where o.course_id = ${courseMemberships.courseId} and o.owner and o.user_id <> ${userId}
+              and u.deactivated_at is null)`,
         ),
       )
       .limit(1);
-    if (owned.length > 0) return { ok: false, reason: 'owns_courses' };
+    if (soleOwned.length > 0) return { ok: false, reason: 'owns_courses' };
     const previews = await tx
       .select({ id: users.id })
       .from(users)
@@ -349,7 +417,11 @@ export function closeAccount(
       after: { deactivated: true, anonymised: mode === 'delete' },
     });
     if (mode === 'delete') await anonymiseIdentity(tx, userId, now);
-    return { ok: true, deactivatedAt: now, userIds };
+    // In the same transaction, so a failure cannot leave connectors live on a closed account.
+    const revokedConnectorIds: string[] = [];
+    for (const id of userIds)
+      revokedConnectorIds.push(...(await revokeUserConnectorsIn(tx, id, now)));
+    return { ok: true, deactivatedAt: now, revokedConnectorIds };
   });
 }
 

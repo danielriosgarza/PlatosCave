@@ -143,8 +143,8 @@ export const exportAnnotations = defineRoute({
 });
 
 /**
- * The people whose accounts cannot be closed yet: whoever owns a live (not archived) course
- * must archive it first, because a course without an owner could not be managed (§3).
+ * The people whose accounts cannot be closed yet: the only active owner of a course, archived or
+ * not, because a course without an owner could be neither managed nor restored (§3).
  */
 const ownsCourses = z.object({ error: z.literal('owns_courses') });
 
@@ -155,7 +155,7 @@ const accountResult = z.object({ deactivatedAt: timestamp });
  * Deactivates the caller's account (§13): every session ends, their connectors are revoked (§10.6),
  * sign-in links no longer work for the address, and a retention grace period starts after which
  * the identity is anonymised. Needs a recent sign-in (401 `recent_auth_required`); a preview
- * principal gets 403. 409 `owns_courses` while they own a live course. Audited as
+ * principal gets 403. 409 `owns_courses` while they are the only active owner of a course. Audited as
  * `account.deactivate`.
  */
 export const deactivateAccount = defineRoute({

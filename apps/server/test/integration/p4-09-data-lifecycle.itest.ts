@@ -12,14 +12,30 @@ import {
   auditEvents,
   authSessions,
   classes,
+  classInvites,
   classMemberships,
   connectors,
+  courseMemberships,
   courses,
+  notebookWorkingCopies,
+  notebookWorkingCopyRevisions,
   posts,
   users,
 } from '../../src/db/schema';
-import { RETENTION, type RetentionPolicy, workMaintenance } from '../../src/jobs/maintenance';
-import { buildWorld, cookieFor, ids, type PersonName, type World } from '../fixtures/world';
+import {
+  RETENTION,
+  type RetentionPolicy,
+  retentionPolicy,
+  workMaintenance,
+} from '../../src/jobs/maintenance';
+import {
+  buildWorld,
+  cookieFor,
+  ids,
+  issueLiveInvites,
+  type PersonName,
+  type World,
+} from '../fixtures/world';
 import { createTestDatabase, type TestDatabase } from './db';
 
 /**
@@ -125,6 +141,34 @@ describe('archive and restore of a class', () => {
     });
   });
 
+  test('an archived class still lets a manager end access, and its results export still reads', async () => {
+    const invites = await issueLiveInvites(testDb.db, start);
+    await testDb.db.insert(classMemberships).values({
+      classId: ids.classA,
+      userId: ids.olivia,
+      role: 'student',
+    });
+    await testDb.db.update(classes).set({ archivedAt: start }).where(eq(classes.id, ids.classA));
+    try {
+      const [open] = await testDb.db
+        .select()
+        .from(classInvites)
+        .where(and(eq(classInvites.classId, ids.classA), eq(classInvites.kind, 'enrolment')));
+      const revoked = await call('noor', 'DELETE', `${classUrl(ids.classA)}/invites/${open?.id}`);
+      expect(revoked.status).toBe(200);
+      const removed = await call('noor', 'DELETE', `${classUrl(ids.classA)}/members/${ids.olivia}`);
+      expect(removed.status).toBe(200);
+      // The class refuses a new member by code, but never revokes access to what it holds.
+      expect(
+        (await call('olivia', 'POST', '/api/join', { code: invites.enrolmentCode })).status,
+      ).toBe(409);
+      const csv = await call('priya', 'POST', `${classUrl(ids.classA)}/exports/results`);
+      expect(csv.status).toBe(201);
+    } finally {
+      await testDb.db.update(classes).set({ archivedAt: null }).where(eq(classes.id, ids.classA));
+    }
+  });
+
   test('registerRoute refuses every class write of an archived class unless the route opts out', async () => {
     await testDb.db.update(classes).set({ archivedAt: start }).where(eq(classes.id, ids.classA));
     try {
@@ -172,8 +216,24 @@ describe('archive and restore of a course', () => {
     expect((await call('olivia', 'POST', `/api/courses/${ids.statistics}/archive`)).status).toBe(
       404,
     );
+    const live = await issueLiveInvites(testDb.db, start, 'late@example.test');
     const archived = await call('elena', 'POST', `/api/courses/${ids.statistics}/archive`);
     expect(archived).toEqual({ status: 200, body: { id: ids.statistics, archived: true } });
+    // Nobody joins a read-only class by code or invitation, whichever of the two is archived.
+    const joined = await call('olivia', 'POST', '/api/join', { code: live.enrolmentCode });
+    expect(joined).toMatchObject({ status: 409, body: { error: 'class_archived' } });
+    expect(
+      (await call('olivia', 'POST', '/api/invitations/accept', { token: live.instructorToken }))
+        .status,
+    ).not.toBe(200);
+    expect(
+      (
+        await testDb.db
+          .select()
+          .from(classMemberships)
+          .where(eq(classMemberships.userId, ids.olivia))
+      ).length,
+    ).toBe(0);
     expect(await events('course.archive', ids.statistics)).toHaveLength(1);
 
     // Its classes read but do not write, and a class cannot be reopened under an archived course.
@@ -199,6 +259,7 @@ describe('archive and restore of a course', () => {
     });
     const overview = await call('elena', 'GET', `/api/courses/${ids.statistics}/overview`);
     expect(overview.body).toMatchObject({ archived: true });
+    expect(overview.body.classes.every((c: { archived: boolean }) => c.archived)).toBe(true);
     const cards = await call('sam', 'GET', '/api/courses');
     expect(cards.body.classes[0]).toMatchObject({ classId: ids.classA, archived: true });
 
@@ -320,6 +381,20 @@ describe('annotation export', () => {
     const [event] = await events('export.annotations', ids.bea);
     expect(event).toMatchObject({ actorId: ids.bea, scopeId: ids.classB });
     expect(event?.after).toEqual({ annotations: 2, posts: 1 });
+
+    // A post an instructor removed from view stays hidden from its author in the export too.
+    const postId = question.body.posts[0].id;
+    const hidden = await call(
+      'marcus',
+      'POST',
+      `${classUrl(ids.classB)}/posts/${postId}/moderate`,
+      {
+        reason: 'Off topic',
+      },
+    );
+    expect(hidden.status).toBe(200);
+    const after = await call('bea', 'GET', `${classUrl(ids.classB)}/export/annotations`);
+    expect(after.body.posts).toEqual([expect.objectContaining({ id: postId, body: null })]);
   });
 
   test('a person outside the class gets 404, and an archived class still exports', async () => {
@@ -430,18 +505,28 @@ describe('account deactivation and deletion', () => {
     expect(kept.length).toBeGreaterThan(0);
   });
 
-  test('a course owner must archive the course first', async () => {
+  test('the only active owner of a course, archived or not, cannot close the account', async () => {
     expect(await call('olivia', 'POST', '/api/me/deactivate', { confirm: true })).toEqual({
       status: 409,
       body: { error: 'owns_courses' },
     });
     expect((await userRow(ids.olivia))?.deactivatedAt).toBeNull();
+    // Archiving does not lift it: nobody could restore the course afterwards.
     const archived = await call('olivia', 'POST', `/api/courses/${ids.linearModels}/archive`);
     expect(archived.status).toBe(200);
-    const [course] = await testDb.db.select().from(courses).where(eq(courses.id, ids.linearModels));
-    expect(course?.archivedAt).not.toBeNull();
+    expect(await call('olivia', 'POST', '/api/me/delete', { confirm: true })).toEqual({
+      status: 409,
+      body: { error: 'owns_courses' },
+    });
+    // A second active owner can restore it, so the first may leave.
+    await testDb.db
+      .insert(courseMemberships)
+      .values({ courseId: ids.linearModels, userId: ids.ines, owner: true });
     const res = await call('olivia', 'POST', '/api/me/delete', { confirm: true });
     expect(res.status).toBe(200);
+    expect((await call('ines', 'POST', `/api/courses/${ids.linearModels}/restore`)).status).toBe(
+      200,
+    );
   });
 
   test('deletion anonymises the identity, deletes private notes and keeps records under the pseudonym', async () => {
@@ -462,6 +547,23 @@ describe('account deactivation and deletion', () => {
       .from(annotations)
       .where(eq(annotations.authorId, ids.sam));
     expect(before.length).toBeGreaterThan(0);
+    const [copy] = await testDb.db
+      .insert(notebookWorkingCopies)
+      .values({
+        classId: ids.classA,
+        userId: ids.sam,
+        sourceRevisionId: ids.samplingReadingV1,
+      })
+      .returning({ id: notebookWorkingCopies.id });
+    await testDb.db.insert(notebookWorkingCopyRevisions).values({
+      workingCopyId: copy?.id ?? '',
+      revision: 1,
+      classId: ids.classA,
+      objectKey: 'classes/x/working-copies/y',
+      sha256: 'a'.repeat(64),
+      size: 10,
+      source: 'server',
+    });
 
     const res = await call('sam', 'POST', '/api/me/delete', { confirm: true });
     expect(res.status).toBe(200);
@@ -477,6 +579,13 @@ describe('account deactivation and deletion', () => {
     // Private annotations are gone; shared posts, memberships and audit rows remain.
     expect(
       await testDb.db.select().from(annotations).where(eq(annotations.authorId, ids.sam)),
+    ).toEqual([]);
+    // Unsubmitted working copies of notebooks go with them.
+    expect(
+      await testDb.db
+        .select()
+        .from(notebookWorkingCopies)
+        .where(eq(notebookWorkingCopies.userId, ids.sam)),
     ).toEqual([]);
     expect(
       (await testDb.db.select().from(posts).where(eq(posts.authorId, ids.sam))).length,
@@ -504,6 +613,31 @@ describe('account deactivation and deletion', () => {
     // Class discussion now shows the pseudonym, never the old name.
     const thread = await call('noor', 'GET', `${readingUrl(ids.classA)}/threads`);
     expect(JSON.stringify(thread.body)).not.toContain('Sam');
+  });
+});
+
+describe('deleting an invited instructor', () => {
+  test('the address leaves invitations and audit rows, which keep their place under the pseudonym', async () => {
+    const address = 'marcus@example.test';
+    const mentions = async () =>
+      (await testDb.db.select().from(auditEvents)).filter((e) =>
+        JSON.stringify([e.before, e.after]).includes(address),
+      );
+    expect((await mentions()).length).toBeGreaterThan(0);
+    const del = await call('marcus', 'POST', '/api/me/delete', { confirm: true });
+    expect(del).toMatchObject({
+      status: 200,
+    });
+    expect(await mentions()).toEqual([]);
+    const pseudonym = `deleted-${ids.marcus}@anonymised.invalid`;
+    const invites = await testDb.db.select().from(classInvites);
+    expect(invites.some((i) => i.email === address)).toBe(false);
+    expect(invites.some((i) => i.email === pseudonym)).toBe(true);
+    const events = await testDb.db
+      .select()
+      .from(auditEvents)
+      .where(eq(auditEvents.action, 'invite.create'));
+    expect(JSON.stringify(events)).toContain(pseudonym);
   });
 });
 
@@ -580,6 +714,12 @@ describe('retention job', () => {
       return queues;
     };
     expect(await run()).not.toContain(RETENTION);
-    expect(await run(policy({}))).toContain(RETENTION);
+    expect(await run(policy({ auditEventDays: 365 }))).toContain(RETENTION);
+    // With every period unset the configuration yields no policy, so no queue is scheduled.
+    expect(retentionPolicy({})).toBeUndefined();
+    expect(retentionPolicy({ RETENTION_AUDIT_DAYS: 90 })).toEqual({
+      deactivatedGraceDays: null,
+      auditEventDays: 90,
+    });
   });
 });

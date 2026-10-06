@@ -44,7 +44,7 @@ export async function courseOverview(db: Db, scope: CourseScope) {
       return {
         id: c.id,
         name: c.name,
-        archived: c.archivedAt !== null,
+        archived: c.archivedAt !== null || course.archivedAt !== null,
         release: release ? { id: release.id, version: release.version } : null,
       };
     }),

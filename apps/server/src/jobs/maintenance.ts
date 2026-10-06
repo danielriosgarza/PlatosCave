@@ -37,10 +37,16 @@ export interface RetentionPolicy {
 export const retentionPolicy = (config: {
   RETENTION_DEACTIVATED_GRACE_DAYS?: number | undefined;
   RETENTION_AUDIT_DAYS?: number | undefined;
-}): RetentionPolicy => ({
-  deactivatedGraceDays: config.RETENTION_DEACTIVATED_GRACE_DAYS ?? null,
-  auditEventDays: config.RETENTION_AUDIT_DAYS ?? null,
-});
+}): RetentionPolicy | undefined => {
+  const policy = {
+    deactivatedGraceDays: config.RETENTION_DEACTIVATED_GRACE_DAYS ?? null,
+    auditEventDays: config.RETENTION_AUDIT_DAYS ?? null,
+  };
+  // With every period unset there is nothing to run, so the queue is not even scheduled.
+  return policy.deactivatedGraceDays === null && policy.auditEventDays === null
+    ? undefined
+    : policy;
+};
 
 const maintenance: { name: string; cron: string; run: (db: Db, now: Date) => Promise<object> }[] = [
   {
