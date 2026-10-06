@@ -210,11 +210,11 @@ function NotebookPanel({
   useEffect(() => {
     if (open) setLastLive(open);
   }, [open]);
-  // A session that was live here and is no longer in the list was given up on.
-  const liveSession: NotebookSession | undefined =
-    open ??
-    sessions.data?.find((s) => s.id === lastLive?.id) ??
-    (lastLive ? { ...lastLive, state: 'stopped', cause: 'abandoned' } : undefined);
+  // A session that was live here and has dropped out of the list (the server returns the newest
+  // 50): show the last state that was read, and say Parallax has no news of it.
+  const listed = open ?? sessions.data?.find((s) => s.id === lastLive?.id);
+  const liveSession: NotebookSession | undefined = listed ?? lastLive;
+  const unlisted = !listed && lastLive !== undefined;
 
   const targetButton = (label: string) => (
     <button
@@ -307,6 +307,7 @@ function NotebookPanel({
           key={liveSession.id}
           classId={classId}
           session={liveSession}
+          unlisted={unlisted}
           connectionName={connections.data?.find((c) => c.id === liveSession.connectionId)?.name}
           notebook={ready}
           outlineOpen={outlineOpen}

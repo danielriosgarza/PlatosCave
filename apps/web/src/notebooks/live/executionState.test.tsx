@@ -1,7 +1,7 @@
 import type { ChannelServerMessage } from '@parallax/contracts';
 import { describe, expect, it } from 'vitest';
 import { initialLiveState, type LiveState, liveReducer } from './executionState';
-import { groupOutputs, shownOutput, stripAnsi } from './liveOutput';
+import { groupOutputs, MAX_LIVE_TEXT_CHARS, shownOutput, stripAnsi } from './liveOutput';
 
 const EPOCH = '00000000-0000-4000-8000-0000000f0001';
 const K = '00000000-0000-4000-8000-0000000f0002';
@@ -73,7 +73,10 @@ describe('execution state', () => {
   it('A31 a replayed output event is applied once', () => {
     let s = apply(initialLiveState, ready(), execution('running'), output(1, 'a'), output(2, 'b'));
     s = apply(s, output(2, 'b'), output(1, 'a'), output(3, 'c'));
-    expect(s.executions[E1]?.outputs.map((o) => o.eventSeq)).toEqual([1, 2, 3]);
+    // Consecutive chunks of one stream join, so "applied once" shows in the text and the position.
+    expect(s.executions[E1]?.outputs.map((o) => (o.output as { text: string }).text)).toEqual([
+      'abc',
+    ]);
     expect(s.eventSeq).toBe(3);
   });
 
@@ -89,6 +92,22 @@ describe('execution state', () => {
     let s = apply(initialLiveState, ready(), execution('running'));
     s = apply(s, ready('00000000-0000-4000-8000-0000000f0009', 0), execution('running'));
     expect(s.executions[E1]?.outputsIncomplete).toBe(true);
+  });
+
+  it('A31 consecutive stream chunks join and text past the display cap is not kept', () => {
+    let s = apply(initialLiveState, ready(), execution('running'), output(1, 'a'), output(2, 'b'));
+    expect(s.executions[E1]?.outputs).toHaveLength(1);
+    expect(s.executions[E1]?.outputs[0]?.output).toMatchObject({ text: 'ab' });
+    s = apply(s, output(3, 'x'.repeat(MAX_LIVE_TEXT_CHARS)));
+    const kept = s.executions[E1];
+    expect(kept?.textChars).toBe(MAX_LIVE_TEXT_CHARS);
+    expect(kept?.truncated).toBe(true);
+    const before = kept?.outputs;
+    s = apply(s, output(4, 'more'), output(5, 'more'));
+    expect(s.executions[E1]?.outputs).toBe(before);
+    expect(s.eventSeq).toBe(5);
+    expect(groupOutputs(s.executions[E1]?.outputs ?? []).truncated).toBe(false);
+    expect(s.executions[E1]?.truncated).toBe(true);
   });
 
   it('the same epoch keeps the position', () => {
