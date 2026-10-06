@@ -230,7 +230,8 @@ stopifnot(!any(grepl('docker.sock', readLines('/proc/mounts'), fixed = TRUE)))
       job(
         {
           // Small processes from one shell: forked R interpreters would meet the memory limit first.
-          'bomb.R': "system('while :; do sleep 100 & done')\n",
+          // The shell stops with a failure status once fork is refused; the script fails with it.
+          'bomb.R': "stopifnot(system('while :; do sleep 100 & done') == 0)\n",
           'after.R': "cat('still running')\n",
         },
         [

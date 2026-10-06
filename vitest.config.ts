@@ -42,6 +42,8 @@ export default defineConfig({
           name: 'runner',
           environment: 'node',
           include: ['apps/runner/test/**/*.docker.itest.ts'],
+          // The suites share one Docker daemon and each sweeps every sandbox container at the end.
+          fileParallelism: false,
           testTimeout: 120000,
           hookTimeout: 60000,
         },
