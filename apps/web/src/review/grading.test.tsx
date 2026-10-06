@@ -5,6 +5,9 @@ import { CLASS_A, instructorIn, makeMe, renderApp, signedIn, stubApi } from '../
 import type { ClassReview } from './classReview';
 import type { AttemptGrade, GradeRow } from './grading';
 
+// Each test renders the whole app and drives a form; a shared runner can need more than 5 s.
+vi.setConfig({ testTimeout: 15_000 });
+
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
@@ -323,7 +326,7 @@ function serve(options: {
 
 describe('grading workspace', () => {
   it('A17 Save draft grade stores a draft the student cannot see, and Release feedback follows only a saved grade', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const calls = serve({});
     renderApp(`/classes/${CLASS_A}/review?assignment=${QUIZ}&selected=${PRIYA}&attempt=${A_PRIYA}`);
     const workspace = await screen.findByRole('region', { name: 'Grading workspace' });
@@ -354,7 +357,7 @@ describe('grading workspace', () => {
   });
 
   it('A17 Release feedback names the recipient and attempt first and releases exactly the previewed grade', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const draft = gradeRow(1);
     const preview = {
       recipients: [
@@ -414,7 +417,7 @@ describe('grading workspace', () => {
   });
 
   it('A17 an override asks for a reason, and the history keeps the grade it replaced', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const calls = serve({ history: [gradeRow(1)] });
     renderApp(`/classes/${CLASS_A}/review?assignment=${QUIZ}&selected=${PRIYA}&attempt=${A_PRIYA}`);
     await screen.findByRole('region', { name: 'Grading workspace' });
@@ -466,7 +469,7 @@ describe('grading workspace', () => {
   });
 
   it('A25 bulk release previews the exact students and results, and names who is skipped', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const preview = {
       recipients: [
         {
@@ -524,7 +527,7 @@ describe('grading workspace', () => {
   });
 
   it('A25 a removed student’s submitted attempt stays reachable although the table does not list them', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     serve({ withRemoved: true });
     renderApp(`/classes/${CLASS_A}/review?assignment=${QUIZ}`);
     const table = await screen.findByRole('table');
@@ -552,7 +555,7 @@ describe('grading workspace', () => {
   });
 
   it('A35 the Submissions tab shows a snapshot from a personal computer and contacts no computer to open it', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const calls = serve({
       extra: (path) => {
         if (path === `/resources/${NOTEBOOK}/notebook-submissions`) {
@@ -619,7 +622,7 @@ describe('grading workspace', () => {
   });
 
   it('A25 Comments & questions lists what the student shared and links to the source passage', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     serve({
       extra: (path) => {
         if (path === `/students/${SAM}/discussions`) {
@@ -688,7 +691,7 @@ describe('grading workspace', () => {
   });
 
   it('A17 a grade changed by someone else replaces the form, and the next Save cannot overwrite it', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const theirs = gradeRow(2, {
       feedback: [{ target: { kind: 'attempt' }, text: 'Their feedback' }],
     });
@@ -714,7 +717,7 @@ describe('grading workspace', () => {
   });
 
   it('A17 an override replaces unsaved edits with the new grade instead of showing them as saved', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     serve({ history: [gradeRow(1)] });
     renderApp(`/classes/${CLASS_A}/review?assignment=${QUIZ}&selected=${PRIYA}&attempt=${A_PRIYA}`);
     await screen.findByRole('region', { name: 'Grading workspace' });
@@ -728,7 +731,7 @@ describe('grading workspace', () => {
   });
 
   it('A25 opening another attempt starts a new workspace, so a release preview never carries over', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     const draft = gradeRow(1);
     serve({
       history: [draft],
@@ -778,7 +781,7 @@ describe('grading workspace', () => {
   });
 
   it('A25 the bulk release preview is dropped when the assignment changes', async () => {
-    const user = userEvent.setup();
+    const user = userEvent.setup({ delay: null });
     serve({
       extra: (path, _method, _body, url) => {
         if (path === '/grade-releases/preview') {
