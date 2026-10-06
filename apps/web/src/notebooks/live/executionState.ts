@@ -279,13 +279,5 @@ export function latestByCell(state: LiveState): Record<string, LiveExecution> {
   return latest;
 }
 
-/** Whether an execution is still outstanding in the kernel's queue or running. */
-export function isOutstanding(state: LiveState): boolean {
-  return state.order.some((id) => {
-    const e = state.executions[id];
-    return e !== undefined && (e.state === 'sent' || e.state === 'running');
-  });
-}
-
 export const kernelIsBusy = (kernel: KernelState | undefined) =>
   kernel === 'busy' || kernel === 'waiting_for_input';

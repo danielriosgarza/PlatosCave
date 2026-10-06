@@ -2,6 +2,7 @@ import { EditorView } from '@codemirror/view';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import axe from 'axe-core';
+import { type ReactNode, useState } from 'react';
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createQueryClient } from '../../session/revocation';
 import { CLASS_A, stubApi } from '../../test/render';
@@ -88,7 +89,41 @@ const notebook: Notebook = {
 
 const posts: { url: string; body: unknown }[] = [];
 
-function mount(over: Partial<NotebookSession> = {}) {
+/** Holds the edits as the notebook's panel does, so they outlive a session. */
+function Host({
+  over,
+  nb,
+  onOpenConnect,
+  showOutputs = true,
+}: {
+  over: Partial<NotebookSession>;
+  nb: Notebook;
+  onOpenConnect: () => void;
+  showOutputs?: boolean;
+}): ReactNode {
+  const [sources, setSources] = useState<Record<string, string>>({});
+  return (
+    <LiveNotebook
+      classId={CLASS_A}
+      session={session(over)}
+      connectionName="Lab workstation"
+      notebook={nb}
+      outlineOpen={false}
+      showCode
+      showOutputs={showOutputs}
+      sources={sources}
+      onEdit={(id, value) => setSources((all) => ({ ...all, [id]: value }))}
+      lead={(label) => <span data-testid="mode">{label}</span>}
+      trail={null}
+      onOpenConnect={onOpenConnect}
+    />
+  );
+}
+
+function mount(
+  over: Partial<NotebookSession> = {},
+  opts: { nb?: Notebook; showOutputs?: boolean } = {},
+) {
   posts.length = 0;
   stubApi((url, init) => {
     if (init?.method === 'POST') {
@@ -100,14 +135,10 @@ function mount(over: Partial<NotebookSession> = {}) {
   const onOpenConnect = vi.fn();
   const view = render(
     <QueryClientProvider client={createQueryClient()}>
-      <LiveNotebook
-        classId={CLASS_A}
-        session={session(over)}
-        connectionName="Lab workstation"
-        notebook={notebook}
-        outlineOpen={false}
-        lead={(label) => <span data-testid="mode">{label}</span>}
-        trail={null}
+      <Host
+        over={over}
+        nb={opts.nb ?? notebook}
+        showOutputs={opts.showOutputs}
         onOpenConnect={onOpenConnect}
       />
     </QueryClientProvider>,
@@ -116,8 +147,12 @@ function mount(over: Partial<NotebookSession> = {}) {
 }
 
 /** Mounts, opens the socket and answers `hello` with a ready kernel. */
-function attach(over: Partial<NotebookSession> = {}, readyOver: Record<string, unknown> = {}) {
-  const m = mount(over);
+function attach(
+  over: Partial<NotebookSession> = {},
+  readyOver: Record<string, unknown> = {},
+  opts: { nb?: Notebook; showOutputs?: boolean } = {},
+) {
+  const m = mount(over, opts);
   const socket = last();
   socket.open();
   socket.receive(ready(readyOver));
@@ -547,7 +582,7 @@ describe('live notebook', () => {
       output: { output_type: 'display_data', metadata: {}, data },
     });
 
-  it('A09 live HTML output stays in the sandbox: it is never put on the app origin', () => {
+  it('A09 live HTML output never reaches the app origin: it is withheld until the content-origin frame', () => {
     const { socket } = attach();
     answerOk(socket, 'c1');
     richOutput(socket, 1, {
@@ -592,6 +627,94 @@ describe('live notebook', () => {
     const content = cellSection('c3').querySelector('.cm-content') as HTMLElement;
     fireEvent.keyDown(content, { key: 'Enter', shiftKey: true });
     expect(socket.frames('execute')).toHaveLength(before);
+  });
+
+  it('Run all says the kernel stopped, not that the connection was lost, when the kernel dies', () => {
+    const { socket } = attach();
+    fireEvent.click(screen.getByRole('button', { name: 'Run all' }));
+    socket.receive({ t: 'kernel_state', state: 'dead', generation: 0 });
+    expect(screen.getByText('Run all stopped: the kernel stopped.')).toBeInTheDocument();
+    expect(screen.queryByText(/connection was lost/)).not.toBeInTheDocument();
+  });
+
+  it('the editor is named after the cell as it is now, not as it was first drawn', () => {
+    const { socket } = attach();
+    fireEvent.click(runOf('c1'));
+    const [sent] = socket.frames('execute');
+    const editor = () => cellSection('c1').querySelector('.cm-content') as HTMLElement;
+    expect(editor()).toHaveAttribute('aria-label', 'Code of cell 2 [ ]');
+    socket.receive({
+      t: 'execution',
+      executionId: exec(1),
+      ref: sent?.ref,
+      cellId: 'c1',
+      seq: 1,
+      state: 'ok',
+      executionCount: 7,
+      outputsIncomplete: false,
+      generation: 0,
+    });
+    expect(editor()).toHaveAttribute('aria-label', 'Code of cell 2 [7]');
+  });
+
+  it('outputs the author collapsed stay collapsed in live mode until the person shows them', () => {
+    const hidden: Notebook = {
+      ...notebook,
+      cells: [
+        {
+          ...(code('c1', 'x = 1') as Extract<Notebook['cells'][number], { type: 'code' }>),
+          outputsHidden: true,
+          outputs: [
+            { type: 'text', executionCount: 1, stream: null, text: 'stored!', truncated: false },
+          ],
+        },
+      ],
+    };
+    attach({}, {}, { nb: hidden });
+    expect(cellSection('c1')).not.toHaveTextContent('stored!');
+    fireEvent.click(within(cellSection('c1')).getByRole('button', { name: /Show output of cell/ }));
+    expect(cellSection('c1')).toHaveTextContent('stored!');
+  });
+
+  it('Hide outputs hides live output too', () => {
+    const { socket } = attach({}, {}, { showOutputs: false });
+    fireEvent.click(runOf('c1'));
+    const [sent] = socket.frames('execute');
+    socket.receive({
+      t: 'execution',
+      executionId: exec(1),
+      ref: sent?.ref,
+      cellId: 'c1',
+      seq: 1,
+      state: 'ok',
+      outputsIncomplete: false,
+      generation: 0,
+    });
+    socket.receive({
+      t: 'output',
+      executionId: exec(1),
+      eventSeq: 1,
+      generation: 0,
+      kind: 'output',
+      output: { output_type: 'stream', name: 'stdout', text: 'secret-ish\n' },
+    });
+    expect(cellSection('c1')).not.toHaveTextContent('secret-ish');
+    expect(
+      within(cellSection('c1')).getByRole('button', { name: /Show output/ }),
+    ).toBeInTheDocument();
+  });
+
+  it('A31 a relay that cannot serve the session ends the retries', () => {
+    vi.useFakeTimers();
+    mount();
+    const first = last();
+    first.open();
+    first.drop(1011);
+    act(() => {
+      vi.advanceTimersByTime(60_000);
+    });
+    expect(FakeSocket.all).toHaveLength(1);
+    expect(screen.getByRole('alert')).toHaveTextContent('Parallax closed the connection');
   });
 
   it('A31 a socket replaced while closing does not clear the live one', () => {

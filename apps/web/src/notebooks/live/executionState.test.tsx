@@ -168,6 +168,38 @@ describe('live output', () => {
     expect(shown).toEqual({ kind: 'withheld', mimeTypes: ['text/html'], text: 'hi' });
   });
 
+  it('error tracebacks and withheld plain text count against the same cap', () => {
+    const big = 'y'.repeat(40_000);
+    const { shown, truncated } = groupOutputs([
+      {
+        eventSeq: 1,
+        generation: 0,
+        output: { output_type: 'error', ename: 'E', evalue: 'v', traceback: [big] },
+      },
+      {
+        eventSeq: 2,
+        generation: 0,
+        output: {
+          output_type: 'display_data',
+          metadata: {},
+          data: { 'text/html': '<b/>', 'text/plain': big },
+        },
+      },
+    ]);
+    expect(truncated).toBe(true);
+    const total = shown.reduce(
+      (n, o) =>
+        n +
+        (o.kind === 'error'
+          ? o.traceback.length
+          : o.kind === 'withheld'
+            ? (o.text?.length ?? 0)
+            : 0),
+      0,
+    );
+    expect(total).toBe(50_000);
+  });
+
   it('streams of one kind join and the text is capped', () => {
     const items = [
       {

@@ -7,7 +7,7 @@ import {
   indentUnit,
   syntaxHighlighting,
 } from '@codemirror/language';
-import { EditorState } from '@codemirror/state';
+import { Compartment, EditorState } from '@codemirror/state';
 import { drawSelection, EditorView, keymap } from '@codemirror/view';
 import { useEffect, useRef } from 'react';
 import styles from './Live.module.css';
@@ -29,6 +29,7 @@ export function CellEditor({ label, value, onChange, onRun }: Props) {
   const view = useRef<EditorView | null>(null);
   const change = useRef(onChange);
   const run = useRef(onRun);
+  const name = useRef(new Compartment());
   change.current = onChange;
   run.current = onRun;
 
@@ -74,11 +75,13 @@ export function CellEditor({ label, value, onChange, onRun }: Props) {
             ...defaultKeymap,
             ...historyKeymap,
           ]),
-          EditorView.contentAttributes.of({
-            'aria-label': label,
-            'aria-multiline': 'true',
-            spellcheck: 'false',
-          }),
+          name.current.of(
+            EditorView.contentAttributes.of({
+              'aria-label': label,
+              'aria-multiline': 'true',
+              spellcheck: 'false',
+            }),
+          ),
           EditorView.updateListener.of((update) => {
             if (update.docChanged) change.current(update.state.doc.toString());
           }),
@@ -91,6 +94,19 @@ export function CellEditor({ label, value, onChange, onRun }: Props) {
       view.current = null;
     };
   }, []);
+
+  // The name follows the cell: its execution count changes when it runs.
+  useEffect(() => {
+    view.current?.dispatch({
+      effects: name.current.reconfigure(
+        EditorView.contentAttributes.of({
+          'aria-label': label,
+          'aria-multiline': 'true',
+          spellcheck: 'false',
+        }),
+      ),
+    });
+  }, [label]);
 
   useEffect(() => {
     const current = view.current;

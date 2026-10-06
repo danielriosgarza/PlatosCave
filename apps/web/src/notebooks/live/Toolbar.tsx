@@ -21,8 +21,8 @@ interface Props {
 
 /**
  * The live notebook's controls (design §2, §5.6): Run all stops on an error, Interrupt, and a
- * session menu whose Restart kernel and Stop session each ask first. Disconnect leaves the
- * kernel alone and says so; Stop is offered only for a session Parallax's connector started.
+ * session menu whose Restart kernel, Disconnect and Stop session each ask first. Disconnect
+ * leaves the kernel alone and says so; Stop is offered only for a session Parallax's connector started.
  */
 export function LiveToolbar({
   canRun,

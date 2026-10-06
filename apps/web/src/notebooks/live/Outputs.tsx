@@ -9,7 +9,7 @@ interface Props {
   execution: LiveExecution;
   /** The kernel's current generation: output of an older one belongs to the previous kernel. */
   kernelGeneration: number | undefined;
-  /** Why a new run is not possible now, or null. */
+  /** Whether a cell can be run now (Run again is offered only then). */
   canRun: boolean;
   onRunAgain: () => void;
   onInputReply: (value: string) => boolean;
@@ -27,7 +27,8 @@ const STATUS: Record<LiveExecution['state'], string> = {
 
 /**
  * The outputs of one execution, streamed as they arrive (docs/design/connector.md §10.6). Text
- * grows in place; HTML is shown only in a frame with every sandbox restriction. A disconnect is
+ * grows in place; rich output (HTML, SVG, images) is withheld until it can be served from the
+ * content origin (P3-08a), and the cell says so. A disconnect is
  * never described as completion: an execution with no confirmed reply is `Unconfirmed` or
  * `Incomplete`, and the person chooses whether to run the cell again; nothing runs it for them.
  */

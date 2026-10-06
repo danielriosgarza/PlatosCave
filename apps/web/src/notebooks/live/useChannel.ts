@@ -37,7 +37,13 @@ export const channelUrl = (classId: string, sessionId: string): string => {
   return `${scheme}//${window.location.host}/api/classes/${classId}/notebook-sessions/${sessionId}/channels`;
 };
 
-const FINAL_CLOSES = new Set<number>([CHANNEL_CLOSE.scope_lost, CHANNEL_CLOSE.session_closed]);
+/** Closes that retrying cannot fix: access gone, session ended, protocol error, relay unavailable (1011). */
+const FINAL_CLOSES = new Set<number>([
+  CHANNEL_CLOSE.scope_lost,
+  CHANNEL_CLOSE.session_closed,
+  CHANNEL_CLOSE.protocol_error,
+  1011,
+]);
 
 const online = () => typeof navigator === 'undefined' || navigator.onLine !== false;
 

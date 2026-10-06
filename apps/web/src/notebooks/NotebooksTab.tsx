@@ -9,7 +9,12 @@ import { SourceDownload } from '../reading/SourceDownload';
 import { useSession } from '../session/useSession';
 import { ResourceTools } from '../workspace/ResourceTools';
 import { ColabSubmission } from './ColabSubmission';
-import { isOpenState, useConnections, useWatchedSessions } from './connect/api';
+import {
+  isOpenState,
+  type NotebookSession,
+  useConnections,
+  useWatchedSessions,
+} from './connect/api';
 import { ConnectPanel } from './connect/ConnectPanel';
 import { LiveNotebook } from './live';
 import styles from './Notebook.module.css';
@@ -195,15 +200,21 @@ function NotebookPanel({
   // on this page stays on it after it ends, so the edits and the cause stay in view.
   const sessions = useWatchedSessions(classId);
   const connections = useConnections();
-  const [liveId, setLiveId] = useState<string>();
+  const [lastLive, setLastLive] = useState<NotebookSession>();
+  // The person's edits belong to the notebook, not to a session: a new session, Forget or a
+  // return to the saved view keeps them.
+  const [sources, setSources] = useState<Record<string, string>>({});
   const open = sessions.data?.find(
     (s) => s.resourceRevisionId === revisionId && isOpenState(s.state) && s.state !== 'starting',
   );
   useEffect(() => {
-    if (open) setLiveId(open.id);
+    if (open) setLastLive(open);
   }, [open]);
-  const liveSession =
-    open ?? sessions.data?.find((s) => s.id === liveId && s.resourceRevisionId === revisionId);
+  // A session that was live here and is no longer in the list was given up on.
+  const liveSession: NotebookSession | undefined =
+    open ??
+    sessions.data?.find((s) => s.id === lastLive?.id) ??
+    (lastLive ? { ...lastLive, state: 'stopped', cause: 'abandoned' } : undefined);
 
   const targetButton = (label: string) => (
     <button
@@ -237,27 +248,25 @@ function NotebookPanel({
     />
   ) : null;
 
+  const viewButtons = ready ? (
+    <>
+      <button type="button" className={buttons.tool} onClick={() => setShowCode(!showCode)}>
+        {showCode ? 'Hide code' : 'Show code'}
+      </button>
+      <button type="button" className={buttons.tool} onClick={() => setShowOutputs(!showOutputs)}>
+        {showOutputs ? 'Hide outputs' : 'Show outputs'}
+      </button>
+    </>
+  ) : null;
+
   const tools = (
     // In the toolbar whatever the notebook's state, so another notebook stays reachable.
     <ResourceTools>
       {picker}
       {/* The mode: no computer is connected, so these are the outputs the file was saved with. */}
       {targetButton('Saved outputs')}
-      {ready ? (
-        <>
-          {outlineButton}
-          <button type="button" className={buttons.tool} onClick={() => setShowCode(!showCode)}>
-            {showCode ? 'Hide code' : 'Show code'}
-          </button>
-          <button
-            type="button"
-            className={buttons.tool}
-            onClick={() => setShowOutputs(!showOutputs)}
-          >
-            {showOutputs ? 'Hide outputs' : 'Show outputs'}
-          </button>
-        </>
-      ) : null}
+      {outlineButton}
+      {viewButtons}
       {sourceDownload}
       {add}
     </ResourceTools>
@@ -301,6 +310,10 @@ function NotebookPanel({
           connectionName={connections.data?.find((c) => c.id === liveSession.connectionId)?.name}
           notebook={ready}
           outlineOpen={outlineOpen}
+          showCode={showCode}
+          showOutputs={showOutputs}
+          sources={sources}
+          onEdit={(cellId, value) => setSources((all) => ({ ...all, [cellId]: value }))}
           lead={(label) => (
             <>
               {picker}
@@ -310,6 +323,7 @@ function NotebookPanel({
           trail={
             <>
               {outlineButton}
+              {viewButtons}
               {sourceDownload}
               {add}
             </>

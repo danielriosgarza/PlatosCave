@@ -28,6 +28,11 @@ interface Props {
   connectionName: string | undefined;
   notebook: Notebook;
   outlineOpen: boolean;
+  showCode: boolean;
+  showOutputs: boolean;
+  /** The person's edits by cell id; they outlive the session (kept by the notebook's panel). */
+  sources: Record<string, string>;
+  onEdit: (cellId: string, value: string) => void;
   /** The toolbar's leading tools; the target button gets the live mode label. */
   lead: (label: string) => ReactNode;
   trail: ReactNode;
@@ -97,6 +102,10 @@ export function LiveNotebook({
   connectionName,
   notebook,
   outlineOpen,
+  showCode,
+  showOutputs,
+  sources,
+  onEdit,
   lead,
   trail,
   onOpenConnect,
@@ -106,7 +115,6 @@ export function LiveNotebook({
   const channel = useChannel(classId, session.id, !left);
   const { state } = channel;
   const actions = useSessionActions(classId);
-  const [sources, setSources] = useState<Record<string, string>>({});
   const [ask, setAsk] = useState<SessionAction | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [busyAction, setBusyAction] = useState(false);
@@ -114,7 +122,19 @@ export function LiveNotebook({
   const [runAllNote, setRunAllNote] = useState<string | null>(null);
   const [interruptedAt, setInterruptedAt] = useState<number | null>(null);
   const [stalled, setStalled] = useState(false);
-  const [revealed, setRevealed] = useState<Record<string, boolean>>({});
+  // Cells opened one by one; a change of the toolbar's Show/Hide resets them.
+  const [opened, setOpened] = useState<{
+    code: boolean;
+    outputs: boolean;
+    cells: Record<string, { code?: boolean; output?: boolean }>;
+  }>({ code: showCode, outputs: showOutputs, cells: {} });
+  const revealed = opened.code === showCode && opened.outputs === showOutputs ? opened.cells : {};
+  const reveal = (id: string, part: 'code' | 'output') =>
+    setOpened({
+      code: showCode,
+      outputs: showOutputs,
+      cells: { ...revealed, [id]: { ...revealed[id], [part]: true } },
+    });
   const confirmRef = useRef<HTMLDivElement>(null);
 
   const channelOpen = channel.status === 'open' && !channel.offline;
@@ -156,8 +176,18 @@ export function LiveNotebook({
       setRunAll(null);
       setRunAllNote(note);
     };
-    if (!canRun) {
+    if (!connected) {
       stop('Run all stopped because the connection was lost.');
+      return;
+    }
+    if (!canRun) {
+      stop(
+        kernelState === 'dead'
+          ? 'Run all stopped: the kernel stopped.'
+          : kernelState === 'restarting'
+            ? 'Run all stopped: the kernel was restarted.'
+            : 'Run all stopped: the kernel is not ready.',
+      );
       return;
     }
     if (runAll.ref === null) return;
@@ -186,7 +216,7 @@ export function LiveNotebook({
         }.`,
       );
     }
-  }, [state, canRun, runAll]);
+  }, [state, canRun, connected, kernelState, runAll]);
 
   const startRunAll = () => {
     const ids = notebook.cells
@@ -498,7 +528,8 @@ export function LiveNotebook({
           const marker = `[${count ?? ' '}]`;
           // Cells that have not run share a marker, so their names carry their position.
           const name = `${index + 1} ${marker}`;
-          const hidden = cell.sourceHidden && !revealed[cell.id];
+          const codeHidden = (!showCode || cell.sourceHidden) && !revealed[cell.id]?.code;
+          const outputHidden = (!showOutputs || cell.outputsHidden) && !revealed[cell.id]?.output;
           return (
             <section
               key={cell.id}
@@ -509,12 +540,12 @@ export function LiveNotebook({
               <div className={styles.cell}>
                 <span className={styles.num}>{marker}</span>
                 <div className={live.cellEditor}>
-                  {hidden ? (
+                  {codeHidden ? (
                     <button
                       type="button"
                       className={buttons.textButton}
                       aria-label={`Show code of cell ${name}`}
-                      onClick={() => setRevealed({ ...revealed, [cell.id]: true })}
+                      onClick={() => reveal(cell.id, 'code')}
                     >
                       Show code
                     </button>
@@ -522,7 +553,7 @@ export function LiveNotebook({
                     <CellEditor
                       label={`Code of cell ${name}`}
                       value={sources[cell.id] ?? cell.source}
-                      onChange={(value) => setSources((s) => ({ ...s, [cell.id]: value }))}
+                      onChange={(value) => onEdit(cell.id, value)}
                       onRun={() => canRun && runAll === null && runCell(cell.id)}
                     />
                   )}
@@ -544,7 +575,21 @@ export function LiveNotebook({
                   </div>
                 </div>
               </div>
-              {execution ? (
+              {outputHidden && (execution || cell.outputs.length > 0) ? (
+                <div className={styles.cell}>
+                  <span className={styles.num}>Out</span>
+                  <div>
+                    <button
+                      type="button"
+                      className={buttons.textButton}
+                      aria-label={`Show output of cell ${name}`}
+                      onClick={() => reveal(cell.id, 'output')}
+                    >
+                      Show output
+                    </button>
+                  </div>
+                </div>
+              ) : execution ? (
                 <div className={styles.cell}>
                   <span className={styles.num}>Out</span>
                   <LiveOutputs

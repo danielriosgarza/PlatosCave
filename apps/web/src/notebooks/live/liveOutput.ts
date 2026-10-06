@@ -64,18 +64,21 @@ export function groupOutputs(
   items: { eventSeq: number; generation: number; output: LiveOutput }[],
 ): { shown: GroupedOutput[]; truncated: boolean } {
   const shown: GroupedOutput[] = [];
+  // One budget for every text the execution shows: streams, tracebacks and plain alternatives.
   let chars = 0;
   let truncated = false;
+  const take = (text: string) => {
+    const room = Math.max(MAX_LIVE_TEXT_CHARS - chars, 0);
+    if (text.length > room) truncated = true;
+    const kept = text.slice(0, room);
+    chars += kept.length;
+    return kept;
+  };
   for (const [index, item] of items.entries()) {
     const next = shownOutput(item.output);
+    const base = { key: index, generation: item.generation };
     if (next.kind === 'text') {
-      const room = MAX_LIVE_TEXT_CHARS - chars;
-      let text = next.text;
-      if (text.length > room) {
-        text = text.slice(0, Math.max(room, 0));
-        truncated = true;
-      }
-      chars += text.length;
+      const text = take(next.text);
       const last = shown[shown.length - 1];
       if (
         last?.kind === 'text' &&
@@ -84,10 +87,12 @@ export function groupOutputs(
       ) {
         last.text += text;
       } else if (text.length > 0) {
-        shown.push({ ...next, text, key: index, generation: item.generation });
+        shown.push({ ...next, text, ...base });
       }
+    } else if (next.kind === 'error') {
+      shown.push({ ...next, traceback: take(next.traceback), ...base });
     } else {
-      shown.push({ ...next, key: index, generation: item.generation });
+      shown.push({ ...next, text: next.text === null ? null : take(next.text), ...base });
     }
   }
   return { shown, truncated };
