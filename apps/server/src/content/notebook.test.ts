@@ -487,6 +487,40 @@ describe('A09 stored HTML and JavaScript outputs cannot run script', () => {
     ).toBe(true);
   });
 
+  test('A09 script brought by an element inside foreignObject still counts as removed', () => {
+    for (const inner of [
+      '<iframe srcdoc="&lt;script&gt;alert(1)&lt;/script&gt;"></iframe>',
+      '<object data="javascript:alert(1)"></object>',
+      '<meta http-equiv="refresh" content="0;url=javascript:alert(1)">',
+      '<template><img src="x" onerror="alert(1)"></template>',
+    ]) {
+      const out = storedSvg(`<svg ${NS}><foreignObject>${inner}</foreignObject><rect/></svg>`);
+      expect(out.scriptsRemoved).toBe(true);
+      expect(out.text).not.toMatch(/foreignObject|iframe|<object|<meta|template|alert/);
+    }
+  });
+
+  test('A09 style content that only mentions on-attributes or javascript: is not flagged', () => {
+    for (const body of [
+      '<style>b{}<desc>onclick= here</desc></style>',
+      '<style>a[one=1]{fill:red}</style>',
+      '<style>b::after{content:"javascript:"}</style>',
+    ]) {
+      expect(storedSvg(`<svg ${NS}>${body}<rect/></svg>`).scriptsRemoved).toBe(false);
+    }
+  });
+
+  test('A09 attributes on a kept style element get the same checks as any other element', () => {
+    const out = storedSvg(
+      `<svg ${NS}><style media="&lt;x" xmlns="http://www.w3.org/1999/xhtml" style="fill:url(http://e.example/x)">b&#123;&#125;</style><rect/></svg>`,
+    );
+    expect(out.text).toContain('<style>');
+    expect(out.text).not.toMatch(/media="<|xhtml|e\.example/);
+    expect(storedSvg(`<svg ${NS}><style media="print">b{}</style></svg>`).text).toContain(
+      '<style media="print">',
+    );
+  });
+
   test('A09 a style element keeps its media attribute so a print stylesheet stays print-only', () => {
     const out = storedSvg(`<svg ${NS}><style media="print">rect{fill:red}</style><rect/></svg>`);
     expect(out.text).toContain('<style media="print">');

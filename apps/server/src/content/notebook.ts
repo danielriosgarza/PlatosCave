@@ -133,36 +133,49 @@ export const outputSchema: SanitizeSchema = {
 };
 const outputSanitizer = unified().use(rehypeSanitize, outputSchema).use(rehypeStringify).freeze();
 
-// biome-ignore lint/suspicious/noControlCharactersInRegex: browsers ignore them in schemes
-const BLANKS = /[\u0000-\u0020]/g;
-const ANIMATION_TAGS = new Set(['animate', 'animateMotion', 'animateTransform', 'set']);
+/** What URL parsing drops from the start of a value, and browsers ignore inside a scheme. */
+const BLANK = '[\\u0000-\\u0020]';
+const BLANKS = new RegExp(BLANK, 'g');
+const attrText = (value: unknown) => (Array.isArray(value) ? value.join(' ') : String(value));
 
-/** True when the markup held something that would run script were it not removed. */
-function hasScript(tree: Root): boolean {
+const ANIMATION_TAGS = new Set(['animate', 'animateMotion', 'animateTransform', 'set']);
+/** Where an animation can put a script URL. SMIL cannot set event-handler attributes. */
+const ANIMATED_VALUES = new Set(['to', 'from', 'by', 'values']);
+/** Elements that load or run a document of their own, in or out of `foreignObject`. */
+const SCRIPT_CAPABLE = new Set([
+  'iframe',
+  'object',
+  'embed',
+  'meta',
+  'template',
+  'frame',
+  'applet',
+]);
+const URL_ATTRIBUTES = new Set(['href', 'xLinkHref', 'src', 'action', 'formAction']);
+
+/**
+ * True when the markup held something that would run script were it not removed: a script
+ * element, an event handler, a script URL, or (with `capable`) an element that brings a document
+ * of its own. Elements are removed whole, so what they held counts without looking inside
+ * (`template` content, which `visit` does not enter, and `srcdoc`).
+ */
+function hasScript(tree: Root, capable = false): boolean {
   let found = false;
   visit(tree, 'element', (el) => {
-    if (el.tagName === 'script') found = true;
+    if (el.tagName === 'script' || (capable && SCRIPT_CAPABLE.has(el.tagName))) found = true;
     for (const [name, value] of Object.entries(el.properties)) {
       if (/^on[a-z]/i.test(name)) found = true;
-      // An animation can set `href` to a script URL: `to`, `from`, `by` or `values`.
       if (
         ANIMATION_TAGS.has(el.tagName) &&
-        ['to', 'from', 'by', 'values'].includes(name) &&
-        /javascript:/i.test(
-          (Array.isArray(value) ? value.join(' ') : String(value)).replace(BLANKS, ''),
-        )
+        ANIMATED_VALUES.has(name) &&
+        /javascript:/i.test(attrText(value).replace(BLANKS, ''))
       ) {
         found = true;
       }
       if (
-        (name === 'href' ||
-          name === 'xLinkHref' ||
-          name === 'src' ||
-          name === 'action' ||
-          name === 'formAction') &&
+        URL_ATTRIBUTES.has(name) &&
         typeof value === 'string' &&
-        // biome-ignore lint/suspicious/noControlCharactersInRegex: browsers ignore them in schemes
-        /^javascript:/i.test(value.replace(/[\u0000- ]/g, ''))
+        /^javascript:/i.test(value.replace(BLANKS, ''))
       ) {
         found = true;
       }
@@ -239,13 +252,12 @@ const CSS_ATTRIBUTES = /^(style|fill|stroke|filter|mask|clipPath|marker(Start|Mi
 /** Rasters an SVG may carry in itself; `data:image/svg+xml` is not one of them. */
 const DATA_IMAGE = /^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/=\s]*$/i;
 const SVG_NS = 'http://www.w3.org/2000/svg';
-/** What a reference may start with once URL parsing has dropped leading control characters and spaces. */
-// biome-ignore lint/suspicious/noControlCharactersInRegex: URL parsing strips exactly these
-const LEADING_BLANK = /^[\u0000-\u0020]+/;
-// biome-ignore lint/suspicious/noControlCharactersInRegex: URL parsing strips exactly these
-const LOCAL_REFERENCE = /^[\u0000-\u0020]*#/;
-/** Markup or script written as text inside a dropped `<style>`. */
-const STYLE_SCRIPT = /<\s*(script|foreignObject)|\bon[a-z]+\s*=|javascript:/i;
+const LEADING_BLANK = new RegExp(`^${BLANK}+`);
+/** A reference into the document, as URL parsing reads it: `#` after any leading blanks. */
+const LOCAL_REFERENCE = new RegExp(`^${BLANK}*#`);
+/** Script written as markup in the text of a dropped `<style>` (an escaped or CDATA payload). */
+const STYLE_SCRIPT =
+  /<\s*(script|foreignObject|iframe|object|embed|meta|template)|<[^>]*\son[a-z]+\s*=/i;
 
 /**
  * Runs on the sanitised tree, so a stripped element cannot sit inside a token the check reads.
@@ -265,13 +277,17 @@ function finishSvg(root: Element): boolean {
     const el = node;
     if (el.tagName === 'style' && parent && index !== undefined) {
       const css = hastToString(el);
-      if (el.children.every((c) => c.type === 'text') && cssIsPlain(css, true)) return undefined;
-      markup ||= STYLE_SCRIPT.test(css);
-      parent.children.splice(index, 1);
-      return ['skip', index];
+      if (!(el.children.every((c) => c.type === 'text') && cssIsPlain(css, true))) {
+        // Elements inside were seen before sanitising; only text can still carry escaped markup.
+        markup ||= STYLE_SCRIPT.test(
+          el.children.map((c) => (c.type === 'text' ? c.value : '')).join(''),
+        );
+        parent.children.splice(index, 1);
+        return ['skip', index];
+      }
     }
     for (const [name, value] of Object.entries(el.properties)) {
-      const text = Array.isArray(value) ? value.join(' ') : String(value);
+      const text = attrText(value);
       const reference = name === 'href' || name === 'xLinkHref';
       if (
         text.includes('<') ||
@@ -296,8 +312,9 @@ function finishSvg(root: Element): boolean {
  * SVG text as it may be stored: only the root `svg` element, rebuilt from the allow-list, with
  * the SVG namespace set so it displays on its own; null when the text holds no `svg` element.
  * `scriptsRemoved` when that element held a script element, a handler, a script URL (also set by
- * an animation) or script written as text in a `<style>`; `foreignObject` and animation that
- * hold none of these are removed without the flag. Parsing as HTML lets HTML-only tags close the `svg`
+ * an animation), an element that brings a document of its own (`iframe`, `object`, ...) or script
+ * written as markup text in a `<style>`; `foreignObject` and animation without these are removed
+ * without the flag. It is a list of what the sanitiser removes, kept next to the allow-list. Parsing as HTML lets HTML-only tags close the `svg`
  * early; what follows the root is dropped so the stored text stays one well-formed element.
  */
 export function sanitizeSvg(svg: string): { text: string; scriptsRemoved: boolean } | null {
@@ -306,7 +323,7 @@ export function sanitizeSvg(svg: string): { text: string; scriptsRemoved: boolea
     .children.find((n): n is Element => isElement(n) && n.tagName === 'svg');
   if (!root) return null;
   const tree: Root = { type: 'root', children: [root] };
-  const scriptsRemoved = hasScript(tree);
+  const scriptsRemoved = hasScript(tree, true);
   const clean = svgSanitizer.runSync(tree);
   const [cleanRoot] = clean.children;
   if (!cleanRoot || !isElement(cleanRoot)) return null;
