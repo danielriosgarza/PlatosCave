@@ -33,6 +33,10 @@ export const me = defineRoute({
         publisher: z.boolean(),
       }),
     ),
+    /** The operator's default notebook lease, which the Connect panel pre-fills (§10). */
+    defaultLease: z
+      .object({ idleTimeoutMin: z.number().int(), gracePeriodMin: z.number().int() })
+      .optional(),
   }),
   examples: {},
 });

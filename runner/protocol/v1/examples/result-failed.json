@@ -1,6 +1,6 @@
 {
   "v": 1,
-  "harnessVersion": "1",
+  "harnessVersion": "2",
   "runtime": { "language": "python", "version": "3.12.8" },
   "checks": [
     {

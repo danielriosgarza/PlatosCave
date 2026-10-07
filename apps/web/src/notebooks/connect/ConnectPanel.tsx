@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import buttons from '../../components/Buttons.module.css';
 import { Loading } from '../../components/Loading';
+import { useSession } from '../../session/useSession';
 import {
   type Confirmation,
   type Connection,
@@ -87,6 +88,7 @@ function kernelRefusalText(error: unknown, fallback: string): string {
 export function ConnectPanel({ classId, revisionId, instructor = false, onClose }: Props) {
   const heading = useRef<HTMLHeadingElement>(null);
   const connectors = useConnectors();
+  const signedIn = useSession();
   const connections = useConnections();
   const templates = useComputeTemplates(classId);
   const sessions = useSessions(classId);
@@ -504,6 +506,9 @@ export function ConnectPanel({ classId, revisionId, instructor = false, onClose 
                 connection={connection}
                 connector={(connectors.data ?? []).find((c) => c.id === connection.connectorId)}
                 template={classComputers.find((t) => t.id === connection.templateId)}
+                defaultLease={
+                  signedIn.status === 'signed-in' ? signedIn.me.defaultLease : undefined
+                }
                 test={testDone}
                 busy={busy}
                 onConnect={(c) => void connect(c)}

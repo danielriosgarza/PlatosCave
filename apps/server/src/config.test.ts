@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, test } from 'vitest';
 import { DEV_CONTENT_TOKEN_SECRET, DEV_SESSION_SECRET, loadConfig } from './config';
 
@@ -190,6 +191,13 @@ test('A02 INSTRUCTOR_EMAILS is a trimmed, lower-cased email list, empty by defau
   expect(() => loadConfig({ INSTRUCTOR_EMAILS: 'ada@example.test, not an email' })).toThrow();
 });
 
+test('the development runtimes carry the harness version of runner/harness/run.py', () => {
+  const run = readFileSync(new URL('../../../runner/harness/run.py', import.meta.url), 'utf8');
+  const version = /^HARNESS_VERSION = "([0-9]+)"$/m.exec(run)?.[1];
+  expect(version).toBeDefined();
+  expect(loadConfig({}).RUNNER_RUNTIMES.map((r) => r.harnessVersion)).toEqual([version, version]);
+});
+
 test('RUNNER_RUNTIMES lists the approved runtimes; production pins each by digest', () => {
   expect(loadConfig({}).RUNNER_RUNTIMES.map((r) => [r.id, r.image, r.digest])).toEqual([
     ['python-3.12', 'parallax-runner-python:dev', null],
@@ -200,7 +208,7 @@ test('RUNNER_RUNTIMES lists the approved runtimes; production pins each by diges
     language: 'python',
     image: 'registry.example.org/parallax-runner-python',
     digest: `sha256:${'a'.repeat(64)}`,
-    harnessVersion: '1',
+    harnessVersion: '2',
     packages: ['numpy'],
   };
   expect(loadConfig({ RUNNER_RUNTIMES: JSON.stringify([runtime]) }).RUNNER_RUNTIMES).toEqual([
