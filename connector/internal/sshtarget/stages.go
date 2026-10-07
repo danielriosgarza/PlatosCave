@@ -47,6 +47,14 @@ type Target struct {
 	Deadlines map[string]time.Duration
 	// PromptDeadline overrides ssh_auth's deadline once a terminal prompt starts, for tests.
 	PromptDeadline time.Duration
+
+	// Pinned makes KnownHosts the only record of trust, never written: a host it holds no key
+	// for is host_key_untrusted_managed, and the server's records and confirmations are ignored
+	// (a managed connector, design §12).
+	Pinned bool
+	// ManagedKey reads the key a `managed_key` reference names, and its certificate (nil when
+	// there is none). Nil refuses `managed_key`; set, it is the only reference served.
+	ManagedKey func(keyID string) (key, cert []byte, err error)
 }
 
 // Conn is an authenticated SSH connection to the target, through the jump host when there is
@@ -209,8 +217,13 @@ func (c *checker) connect(ctx context.Context) *Conn {
 	}
 	hops := route(req.Target)
 	for _, h := range hops {
-		if h.auth.Method == protocol.AuthManagedKey {
+		managed := h.auth.Method == protocol.AuthManagedKey
+		if managed && c.t.ManagedKey == nil {
 			c.finishReach(nil, &target.Failure{Code: protocol.CodeUnsupportedTarget, Detail: "a managed key is used only by a managed connector"})
+			return nil
+		}
+		if !managed && c.t.ManagedKey != nil {
+			c.finishReach(nil, &target.Failure{Code: protocol.CodeUnsupportedTarget, Detail: "a managed connector uses only the keys of its own key store"})
 			return nil
 		}
 	}
@@ -257,7 +270,7 @@ func (c *checker) hop(ctx context.Context, h hop, via *ssh.Client, last bool) *s
 		c.finishReached()
 	}
 
-	check, err := newHostCheck(c.t.KnownHosts, h, c.req, c.t.Log)
+	check, err := newHostCheck(c.t.KnownHosts, h, c.req, c.t.Log, c.t.Pinned)
 	if err != nil {
 		nc.Close()
 		c.finishReached()

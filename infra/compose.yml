@@ -44,4 +44,50 @@ services:
       interval: 2s
       timeout: 3s
       retries: 30
-volumes: { pgdata: {}, garage: {}, sshd-host-keys: {}, sshd-rotating-keys: {}, jump-host-keys: {} }
+  # A managed connector (docs/design/connector.md §12, spec §10.6): `run --managed`, configured
+  # only from the environment. Its own network, with no route to Postgres or the object store;
+  # no database credentials or application secrets; a read-only root, no capabilities, a non-root
+  # user; no published port (it dials the relay). Egress filtering to the scope it enforces belongs
+  # to the host's firewall (P4-12). Put the operator's files in .local/managed-connector, owned by
+  # uid 65532: identity.key (mode 0600), known_hosts, targets.json and keys/ (each key 0600);
+  # register it with `pnpm --filter @parallax/server connectors:register-managed` and set
+  # PARALLAX_SERVER and PARALLAX_CONNECTOR_ID.
+  connector-managed:
+    profiles: [managed]
+    build:
+      context: ../connector
+      dockerfile_inline: |
+        FROM golang:1.24.7-bookworm AS build
+        WORKDIR /src
+        COPY go.mod go.sum ./
+        RUN go mod download
+        COPY . .
+        RUN CGO_ENABLED=0 go build -trimpath -o /out/parallax-connector ./cmd/parallax-connector && mkdir -p /out/state
+        FROM gcr.io/distroless/static-debian12:nonroot
+        COPY --from=build /out/parallax-connector /parallax-connector
+        COPY --from=build --chown=65532:65532 /out/state /state
+        USER 65532:65532
+        ENTRYPOINT ["/parallax-connector", "run", "--managed"]
+    user: "65532:65532"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+    environment:
+      PARALLAX_SERVER: ${PARALLAX_SERVER:-}
+      PARALLAX_CONNECTOR_ID: ${PARALLAX_CONNECTOR_ID:-}
+      PARALLAX_ALLOW_NET: ${PARALLAX_ALLOW_NET:-}
+      PARALLAX_ALLOW_HOSTS: ${PARALLAX_ALLOW_HOSTS:-}
+      PARALLAX_ALLOW_PORTS: ${PARALLAX_ALLOW_PORTS:-22}
+      PARALLAX_CONNECTOR_HOME: /state
+      PARALLAX_IDENTITY_KEY_FILE: /run/parallax/identity.key
+      PARALLAX_KNOWN_HOSTS_FILE: /run/parallax/known_hosts
+      PARALLAX_TARGETS_FILE: /run/parallax/targets.json
+      PARALLAX_KEYS_DIR: /run/parallax/keys
+    volumes:
+      - ../.local/managed-connector:/run/parallax:ro
+      - managed-connector-state:/state
+    networks: [managed]
+networks: { managed: {} }
+volumes:
+  { pgdata: {}, garage: {}, sshd-host-keys: {}, sshd-rotating-keys: {}, jump-host-keys: {}, managed-connector-state: {} }

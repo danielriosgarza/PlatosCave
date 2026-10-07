@@ -288,9 +288,12 @@ func (m *Manager) stateMsg(s *Session, requestID string) *protocol.SessionState 
 
 // describe is the session log line's "where": target, workspace and what will run.
 func describe(req *protocol.OpenSession) string {
-	where := "this computer"
-	if req.Target.Kind == protocol.TargetSSH {
-		where = fmt.Sprintf("%s@%s:%d", req.Target.User, req.Target.Host, req.Target.Port)
+	where := "this computer in " + req.Target.Workspace
+	switch req.Target.Kind {
+	case protocol.TargetSSH:
+		where = fmt.Sprintf("%s@%s:%d in %s", req.Target.User, req.Target.Host, req.Target.Port, req.Target.Workspace)
+	case protocol.TargetManaged:
+		where = fmt.Sprintf("managed target %s for subject %s", req.Target.TargetID, req.Target.Subject)
 	}
 	what := "start Jupyter"
 	if req.Runtime.Mode == protocol.RuntimeAttach {
@@ -299,7 +302,7 @@ func describe(req *protocol.OpenSession) string {
 	if req.Runtime.KernelName != "" {
 		what += ", kernel " + req.Runtime.KernelName
 	}
-	return fmt.Sprintf("on %s in %s: %s", where, req.Target.Workspace, what)
+	return fmt.Sprintf("on %s: %s", where, what)
 }
 
 func (m *Manager) open(l *link.Link, req *protocol.OpenSession) {

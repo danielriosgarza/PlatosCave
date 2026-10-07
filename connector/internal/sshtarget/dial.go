@@ -233,10 +233,17 @@ func (c *checker) dialHop(ctx context.Context, h hop, via *ssh.Client) (net.Conn
 	} else {
 		// The onward hop is dialled by the jump host: the connector classifies it only when it is
 		// an address literal (design §8, step 4).
-		if a, err := netip.ParseAddr(h.host); err == nil {
-			if ok, why := c.t.Dialer.Scope.Allows(a); !ok {
-				return nil, "", &target.Failure{Code: protocol.CodeNetworkScopeDenied, Detail: fmt.Sprintf("%s %s", a, why)}
+		scope := c.t.Dialer.Scope
+		if !scope.AllowsPort(h.port) {
+			return nil, "", &target.Failure{Code: protocol.CodeNetworkScopeDenied, Detail: fmt.Sprintf("port %d is not in %s", h.port, netscope.EnvAllowPorts)}
+		}
+		if ok, why := scope.AllowsOnward(h.host); !ok {
+			if a, err := netip.ParseAddr(h.host); err == nil {
+				why = a.String() + " " + why
 			}
+			return nil, "", &target.Failure{Code: protocol.CodeNetworkScopeDenied, Detail: why}
+		}
+		if a, err := netip.ParseAddr(h.host); err == nil {
 			address = a.Unmap().String()
 		}
 		nc, err := via.DialContext(ctx, "tcp", dest)
