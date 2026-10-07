@@ -52,6 +52,7 @@ function review(
     topics: [{ topicId: TOPIC, number: 1, title: 'Sampling' }],
     assignments: [{ assignmentId: QUIZ, title: 'Spread check', topicId: TOPIC }],
     notebooks: [{ notebookId: NOTEBOOK, title: 'Sampling lab', topicId: TOPIC }],
+    exercises: [],
     roster: [
       { id: PRIYA, name: 'Priya Nair' },
       { id: SAM, name: 'Sam Okafor' },
@@ -624,6 +625,99 @@ describe('grading workspace', () => {
     expect(calls.filter((c) => /connector|connection|session/.test(c.path))).toEqual([]);
     // Nothing offers to connect to the student's computer.
     expect(screen.queryByRole('button', { name: /connect/i })).toBeNull();
+  });
+
+  it('A08 the Exercises tab shows hints, solution use and answers distinctly, for this student only', async () => {
+    const EXERCISE = id(405);
+    const step = (over: Record<string, unknown>) => ({
+      id: 'predict',
+      title: 'Predict',
+      kind: 'single_choice',
+      status: 'completed',
+      help: 'independent',
+      checks: [],
+      hintsShown: 0,
+      solutionShown: false,
+      finalResponse: 'narrower',
+      ...over,
+    });
+    const attempt = (n: number, student: { id: string; name: string }, over = {}) => ({
+      id: id(7000 + n),
+      student,
+      removed: false,
+      number: n,
+      resourceRevisionId: REVISION,
+      seed: 4242,
+      startedAt: NOW,
+      completion: null,
+      completedAt: null,
+      restarted: false,
+      steps: [],
+      ...over,
+    });
+    const priya = { id: PRIYA, name: 'Priya Nair' };
+    const base = review();
+    serve({
+      reviewData: {
+        ...base,
+        exercises: [{ exerciseId: EXERCISE, title: 'Sampling drill', topicId: TOPIC }],
+      },
+      extra: (path) =>
+        path === `/resources/${EXERCISE}/exercise-attempts`
+          ? {
+              status: 200,
+              body: {
+                attempts: [
+                  attempt(1, priya, {
+                    completion: 'with_hints',
+                    completedAt: NOW,
+                    restarted: true,
+                    steps: [
+                      step({
+                        help: 'with_hints',
+                        hintsShown: 2,
+                        checks: [
+                          { response: 'halves', correct: false, at: NOW },
+                          { response: 'narrower', correct: true, at: NOW },
+                        ],
+                      }),
+                      step({
+                        id: 'peek',
+                        title: 'Peek',
+                        help: 'solution_shown',
+                        solutionShown: true,
+                        finalResponse: 'n = 100',
+                      }),
+                    ],
+                  }),
+                  attempt(2, priya),
+                  attempt(3, { id: SAM, name: 'Sam Okafor' }, { seed: 999 }),
+                ],
+              },
+            }
+          : undefined,
+    });
+    renderApp(`/classes/${CLASS_A}/review?assignment=${QUIZ}&selected=${PRIYA}&tab=exercises`);
+    const region = await screen.findByRole('region', { name: 'Exercise · Sampling drill' });
+    expect(await within(region).findByText('Attempt 1')).toBeVisible();
+    expect(region).toHaveTextContent('Completed with hints');
+    expect(region).toHaveTextContent('started again afterwards');
+    expect(region).toHaveTextContent(`seed 4242 · exercise version ${REVISION}`);
+    const predict = within(region).getByRole('list', { name: 'Attempt 1 Predict evidence' });
+    expect(predict).toHaveTextContent('Final answer: narrower');
+    expect(predict).toHaveTextContent('Checks made: 2');
+    expect(predict).toHaveTextContent('Hints shown: 2');
+    expect(predict).toHaveTextContent('Solution shown: No');
+    expect(predict).toHaveTextContent('halves (incorrect) → narrower (correct)');
+    const peek = within(region).getByRole('list', { name: 'Attempt 1 Peek evidence' });
+    expect(peek).toHaveTextContent('Hints shown: 0');
+    expect(peek).toHaveTextContent('Solution shown: Yes');
+    expect(region).toHaveTextContent('Completed with the solution shown');
+    // The second attempt is listed on its own, and another student's attempt is not shown.
+    expect(within(region).getByText('Attempt 2')).toBeVisible();
+    expect(region).toHaveTextContent('Not completed');
+    expect(within(region).queryByText('Attempt 3')).toBeNull();
+    expect(region).not.toHaveTextContent('seed 999');
   });
 
   it('A25 Comments & questions lists what the student shared and links to the source passage', async () => {

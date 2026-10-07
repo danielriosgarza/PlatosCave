@@ -1,3 +1,4 @@
+import { reviewExercise } from '@parallax/contracts/routes/exercises';
 import {
   type attemptGrade,
   type FeedbackItem,
@@ -60,6 +61,14 @@ export const useDiscussions = (classId: string, studentId: string) =>
   useQuery({
     queryKey: ['grading', 'discussions', classId, studentId],
     queryFn: () => call(getStudentDiscussions, { params: { classId, studentId } }),
+  });
+
+export type ExerciseAttempts = z.output<typeof reviewExercise.response>['attempts'];
+
+export const useExerciseAttempts = (classId: string, exerciseId: string) =>
+  useQuery({
+    queryKey: ['grading', 'exercise', classId, exerciseId],
+    queryFn: () => call(reviewExercise, { params: { classId, resourceId: exerciseId } }),
   });
 
 export const useStudentSubmissions = (classId: string, notebookId: string) =>

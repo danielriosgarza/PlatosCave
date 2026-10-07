@@ -63,6 +63,9 @@ export async function loadClassReview(
   const notebooks = resources
     .filter((r) => r.tab === 'notebooks' && inTopic(r))
     .map((r) => ({ notebookId: r.resourceId, title: r.title, topicId: r.topicId }));
+  const exercises = resources
+    .filter((r) => r.tab === 'exercises' && inTopic(r))
+    .map((r) => ({ exerciseId: r.resourceId, title: r.title, topicId: r.topicId }));
   const exerciseIds = new Set(
     resources.filter((r) => r.tab === 'exercises' && inTopic(r)).map((r) => r.resourceId),
   );
@@ -223,6 +226,7 @@ export async function loadClassReview(
     topics,
     assignments,
     notebooks,
+    exercises,
     roster,
     students: filtered.map((r) => ({
       id: r.studentId,
