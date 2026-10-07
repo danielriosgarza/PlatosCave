@@ -340,10 +340,17 @@ describe('files, save and submit in the live notebook', () => {
         cells: [{ id: 'c1', cell_type: 'code', source: 'z = 5', metadata: {}, outputs: [] }],
       },
     };
+    let puts = 0;
     const fetchMock = stubApi((url, init) => {
       if (init?.method === 'POST')
         return { status: 409, body: { error: 'revision_conflict', current: newer } };
-      if (init?.method === 'PUT') return { status: 200, body: { ...newer, currentRevision: 6 } };
+      if (init?.method === 'PUT') {
+        puts += 1;
+        return {
+          status: 200,
+          body: puts === 1 ? { ...stored, currentRevision: 4 } : { ...newer, currentRevision: 6 },
+        };
+      }
       if (url.includes('/notebook-working-copies/')) return { status: 200, body: stored };
       if (url.includes('/transfers')) return { status: 200, body: { transfers: [] } };
       if (url.includes('/files'))
@@ -368,23 +375,28 @@ describe('files, save and submit in the live notebook', () => {
     const editor = document.querySelector('[data-cell-id="c1"] .cm-content') as HTMLElement;
     const cm = EditorView.findFromDOM(editor.closest('.cm-editor') as HTMLElement) as EditorView;
     act(() => cm.dispatch({ changes: { from: 0, to: cm.state.doc.length, insert: 'y = 2' } }));
+    // A save before the import: the plain buttons must still not write past the newer copy.
+    fireEvent.click(screen.getByRole('button', { name: 'Save to Parallax' }));
+    await screen.findByText(/Saved to Parallax as revision 4/);
+    edit('c1', 'y = 3');
     fireEvent.click(await screen.findByRole('button', { name: 'Import e.ipynb' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Import as revision 3' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Import as revision 5' }));
     expect(await screen.findByText(/now at revision 5/)).toBeInTheDocument();
     // The edited code stays in the editor; the newer copy's code is not shown.
-    expect(document.querySelector('[data-cell-id="c1"] .cm-content')).toHaveTextContent('y = 2');
+    expect(document.querySelector('[data-cell-id="c1"] .cm-content')).toHaveTextContent('y = 3');
     expect(document.querySelector('[data-cell-id="c1"] .cm-content')).not.toHaveTextContent(
       'z = 5',
     );
     // The newer copy is not overwritten by a plain Save: the person chooses to place the draft.
     expect(screen.queryByRole('button', { name: 'Save to Parallax' })).not.toBeInTheDocument();
-    expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'PUT')).toBe(false);
+    expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
+    expect(puts).toBe(1);
     fireEvent.click(screen.getByRole('button', { name: 'Save my draft as revision 6' }));
     await waitFor(() => {
-      const put = fetchMock.mock.calls.find(([, init]) => init?.method === 'PUT');
+      const put = fetchMock.mock.calls.filter(([, init]) => init?.method === 'PUT')[1];
       expect(JSON.parse(String(put?.[1]?.body))).toMatchObject({
         baseRevision: 5,
-        notebook: { cells: [{ id: 'c1', source: 'y = 2' }] },
+        notebook: { cells: [{ id: 'c1', source: 'y = 3' }] },
       });
     });
   });
@@ -502,7 +514,9 @@ describe('pairing the editor cells with the stored copy', () => {
     attach();
     await screen.findByRole('heading', { name: 'Save' });
     edit('m', 'z = 9');
-    await screen.findByText(/are not saved: another cell of the stored copy has its id \(m\)/);
+    await screen.findByText(
+      /Edits to a cell are not saved: the stored copy holds another kind of cell under its id/,
+    );
     fireEvent.click(screen.getByRole('button', { name: 'Save to Parallax' }));
     await waitFor(() => {
       const put = fetchMock.mock.calls.find(([, init]) => init?.method === 'PUT');
@@ -510,6 +524,60 @@ describe('pairing the editor cells with the stored copy', () => {
         (c: { id: string }) => c.id,
       );
       expect(ids).toEqual(['c1', 'm']);
+    });
+  });
+
+  it('A34 a live cell whose id a markdown cell holds never takes an unrelated stored code cell', async () => {
+    const book: Notebook = { ...notebook, cells: [codeCell('m', 'z'), codeCell('c1', 'x = 1')] };
+    const copy = {
+      ...stored,
+      notebook: {
+        ...stored.notebook,
+        cells: [
+          { id: 'm', cell_type: 'markdown', source: 'notes', metadata: {} },
+          storedCell('x', 'x_code'),
+          storedCell('c1', 'x = 1'),
+        ],
+      },
+    };
+    const fetchMock = mount([], {}, { copy, book });
+    attach();
+    await screen.findByRole('heading', { name: 'Save' });
+    expect(document.querySelector('[data-cell-id="m"] .cm-content')).toHaveTextContent('z');
+    edit('m', 'z = 9');
+    fireEvent.click(screen.getByRole('button', { name: 'Save to Parallax' }));
+    await waitFor(() => {
+      const put = fetchMock.mock.calls.find(([, init]) => init?.method === 'PUT');
+      const cells = JSON.parse(String(put?.[1]?.body)).notebook.cells;
+      expect(cells.map((c: { id: string; source: string }) => [c.id, c.source])).toEqual([
+        ['m', 'notes'],
+        ['x', 'x_code'],
+        ['c1', 'x = 1'],
+      ]);
+    });
+  });
+
+  it('A34 a cell appended to a notebook older than nbformat 4.5 carries no id', async () => {
+    const book: Notebook = { ...notebook, cells: [codeCell('c1', 'x = 1'), codeCell('c2', 'z')] };
+    const copy = {
+      ...stored,
+      notebook: {
+        ...stored.notebook,
+        nbformat_minor: 4,
+        cells: [{ cell_type: 'code', source: 'x = 1', metadata: {}, outputs: [] }],
+      },
+    };
+    const fetchMock = mount([], {}, { copy, book });
+    attach();
+    await screen.findByRole('heading', { name: 'Save' });
+    edit('c2', 'z = 3');
+    fireEvent.click(screen.getByRole('button', { name: 'Save to Parallax' }));
+    await waitFor(() => {
+      const put = fetchMock.mock.calls.find(([, init]) => init?.method === 'PUT');
+      const cells = JSON.parse(String(put?.[1]?.body)).notebook.cells;
+      expect(cells).toHaveLength(2);
+      expect(cells[1]).toMatchObject({ source: 'z = 3' });
+      expect(cells[1]).not.toHaveProperty('id');
     });
   });
 });

@@ -1,7 +1,7 @@
 import { listSessionFiles } from '@parallax/contracts/routes/transfers';
 import { getWorkingCopy, type WorkingCopyView } from '@parallax/contracts/routes/workingCopies';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { memo, useCallback, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { call } from '../../api/client';
 import buttons from '../../components/Buttons.module.css';
 import { FilesPanel, SaveControls, SubmitPanel } from '../files';
@@ -45,43 +45,48 @@ const codeCells = (notebook: Json): Json[] =>
     (cell) => cell.cell_type === 'code',
   );
 
-/**
- * Each live code cell with the stored cell it shows, one to one: by nbformat id first, then by
- * position among the code cells for a live cell whose position holds a stored cell no other live
- * cell claimed. Live cells left over have no stored cell.
- */
-function pairsOf(
-  stored: Json,
-  live: Notebook,
-): {
+interface Pairing {
   paired: { id: string; text: string; cell: Json }[];
   unpaired: { id: string; text: string }[];
-} {
+  /** Ids of every stored cell, of any type. */
+  storedIds: Set<string>;
+}
+
+/**
+ * Each live code cell with the stored cell it shows, one to one: by nbformat id first, then by
+ * position among the code cells for a live cell whose id no stored cell holds, at a position whose
+ * stored cell no other live cell claimed. Live cells left over have no stored cell.
+ */
+function pairsOf(stored: Json, live: Notebook): Pairing {
   const theirs = codeCells(stored);
+  const storedIds = new Set(
+    (Array.isArray(stored.cells) ? (stored.cells as Json[]) : []).flatMap((c) =>
+      typeof c.id === 'string' ? [c.id] : [],
+    ),
+  );
+  const byId = new Map<string, Json>();
+  for (const c of theirs) if (typeof c.id === 'string' && !byId.has(c.id)) byId.set(c.id, c);
   const liveCode = live.cells.flatMap((c) =>
     c.type === 'code' ? [{ id: c.id, text: c.source }] : [],
   );
-  const claimed = new Map<string, Json>();
   const taken = new Set<Json>();
   for (const { id } of liveCode) {
-    const match = theirs.find((c) => c.id === id && !taken.has(c));
-    if (match) {
-      claimed.set(id, match);
-      taken.add(match);
-    }
+    const match = byId.get(id);
+    if (match) taken.add(match);
   }
-  const paired: { id: string; text: string; cell: Json }[] = [];
-  const unpaired: { id: string; text: string }[] = [];
+  const paired: Pairing['paired'] = [];
+  const unpaired: Pairing['unpaired'] = [];
   liveCode.forEach(({ id, text }, index) => {
     const byPosition = theirs[index];
     const match =
-      claimed.get(id) ?? (byPosition && !taken.has(byPosition) ? byPosition : undefined);
+      byId.get(id) ??
+      (!storedIds.has(id) && byPosition && !taken.has(byPosition) ? byPosition : undefined);
     if (match) {
       taken.add(match);
       paired.push({ id, text, cell: match });
     } else unpaired.push({ id, text });
   });
-  return { paired, unpaired };
+  return { paired, unpaired, storedIds };
 }
 
 /** The stored code by live cell id. */
@@ -92,26 +97,21 @@ export function sourcesFor(stored: Json, live: Notebook): Record<string, string>
 }
 
 /** Edited live code cells with no stored cell to hold them, split by whether they can be appended. */
-function unstored(base: Json, live: Notebook, sources: Record<string, string>) {
-  const stored = new Set(
-    (Array.isArray(base.cells) ? (base.cells as Json[]) : []).flatMap((c) =>
-      typeof c.id === 'string' ? [c.id] : [],
-    ),
-  );
-  const edited = pairsOf(base, live).unpaired.filter(
+function unstored({ unpaired, storedIds }: Pairing, sources: Record<string, string>) {
+  const edited = unpaired.filter(
     ({ id, text }) => sources[id] !== undefined && sources[id] !== text,
   );
   return {
     /** Appended to the saved notebook under their own id. */
-    append: edited.filter(({ id }) => !stored.has(id)),
+    append: edited.filter(({ id }) => !storedIds.has(id)),
     /** The id belongs to another stored cell (a markdown cell, say): saving it would repeat the id. */
-    leftOut: edited.filter(({ id }) => stored.has(id)).map(({ id }) => id),
+    leftOut: edited.filter(({ id }) => storedIds.has(id)).map(({ id }) => id),
   };
 }
 
 /** Live code cells whose edits cannot be part of the stored copy: the id is taken there. */
 export const leftOutCells = (base: Json, live: Notebook, sources: Record<string, string>) =>
-  unstored(base, live, sources).leftOut;
+  unstored(pairsOf(base, live), sources).leftOut;
 
 /**
  * The stored copy with the code the editor shows for every live code cell written into it. A live
@@ -120,14 +120,16 @@ export const leftOutCells = (base: Json, live: Notebook, sources: Record<string,
  * `leftOutCells`), since a repeated cell id makes the notebook invalid.
  */
 export function notebookWith(base: Json, live: Notebook, sources: Record<string, string>): Json {
-  const { paired } = pairsOf(base, live);
+  const pairing = pairsOf(base, live);
   const shown = new Map<Json, string>(
-    paired.map(({ id, text, cell }) => [cell, sources[id] ?? text]),
+    pairing.paired.map(({ id, text, cell }) => [cell, sources[id] ?? text]),
   );
   const cells = Array.isArray(base.cells) ? (base.cells as Json[]) : [];
-  const added = unstored(base, live, sources).append.map(
+  // Cell ids exist from nbformat 4.5; an older notebook takes cells without them.
+  const withIds = typeof base.nbformat_minor === 'number' ? base.nbformat_minor >= 5 : true;
+  const added = unstored(pairing, sources).append.map(
     ({ id }): Json => ({
-      id,
+      ...(withIds && { id }),
       cell_type: 'code',
       source: sources[id] ?? '',
       metadata: {},
@@ -184,7 +186,7 @@ function Panels({
 }: Props) {
   const queryClient = useQueryClient();
   // The revision a conflicting import moved the base to, under a draft the person has not placed.
-  const [movedTo, setMovedTo] = useState<number | null>(null);
+  const [moved, setMoved] = useState<{ revision: number } | null>(null);
   const key = ['working-copy', classId, revisionId];
   const stored = useQuery({
     queryKey: key,
@@ -214,6 +216,11 @@ function Panels({
   }, [copy?.id]);
   const getNotebook = useCallback(
     () => notebookWith(copy?.notebook ?? {}, notebook, sources),
+    [copy?.notebook, notebook, sources],
+  );
+
+  const leftOut = useMemo(
+    () => leftOutCells(copy?.notebook ?? {}, notebook, sources),
     [copy?.notebook, notebook, sources],
   );
 
@@ -248,7 +255,7 @@ function Panels({
         onWorkingCopy={imported}
         onStale={(current) => {
           keep(current);
-          setMovedTo(current.currentRevision);
+          setMoved({ revision: current.currentRevision });
         }}
         onCopyInSettled={onCopyInSettled}
       />
@@ -257,8 +264,8 @@ function Panels({
         sessionId={sessionId}
         workingCopy={copy}
         getNotebook={getNotebook}
-        leftOut={leftOutCells(copy.notebook, notebook, sources)}
-        baseMovedTo={movedTo}
+        leftOut={leftOut}
+        baseMoved={moved}
         onWorkingCopy={keep}
         workspace={workspace}
         workspacePending={workspacePending}
