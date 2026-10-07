@@ -108,9 +108,31 @@ local({
     paste0("[", paste(items, collapse = ","), "]")
   }
 
+  # deparse is quadratic in the length of an escape-heavy string (1.2 M characters of
+  # \n, \t, quotes and non-ASCII take ~19 s, 6 M exceed the check's time limit), and the
+  # harness shows at most 2048 characters of a repr anyway. Character vectors in the value are
+  # cut to REPR_ITEMS elements of REPR_CHARS characters before deparse, with an ellipsis
+  # where something was cut; anything within the bounds is deparsed unchanged.
+  REPR_CHARS <- 1024L
+  REPR_ITEMS <- 1024L
+
+  bound_for_repr <- function(x) {
+    if (is.character(x)) {
+      if (length(x) > REPR_ITEMS) x <- x[seq_len(REPR_ITEMS)]
+      long <- !is.na(x) & nchar(x, type = "bytes") > REPR_CHARS
+      if (any(long)) {
+        x[long] <- paste0(substr(clean_text(x[long]), 1L, REPR_CHARS), "\u2026")
+      }
+    } else if (is.list(x) && !is.object(x)) {
+      if (length(x) > REPR_ITEMS) x <- x[seq_len(REPR_ITEMS)]
+      x[] <- lapply(x, bound_for_repr)
+    }
+    x
+  }
+
   repr_text <- function(x) {
     tryCatch(
-      clean_text(paste(trimws(deparse(x, width.cutoff = 500L)), collapse = " ")),
+      clean_text(paste(trimws(deparse(bound_for_repr(x), width.cutoff = 500L)), collapse = " ")),
       error = function(e) "<unrepresentable>"
     )
   }
