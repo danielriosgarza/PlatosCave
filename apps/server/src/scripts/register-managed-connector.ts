@@ -15,7 +15,9 @@ import { registerManagedConnector, withDatabase } from '../db/connectors/managed
 export const USAGE =
   'Usage: connectors:register-managed --name NAME --public-key KEY\n' +
   '  KEY: the Ed25519 public key of PARALLAX_IDENTITY_KEY_FILE, as unpadded base64url\n' +
-  '       or as the PEM of `openssl pkey -in identity.key -pubout`. Needs DATABASE_URL.';
+  '       or as the PEM of `openssl pkey -in identity.key -pubout`. Needs DATABASE_URL.\n' +
+  '  Both `--public-key KEY` and `--public-key=KEY` are accepted; a base64url key can start\n' +
+  '  with "-", which is fine in either form.';
 
 export class UsageError extends Error {}
 
@@ -46,12 +48,32 @@ export function parsePublicKey(text: string): Buffer {
   );
 }
 
+/**
+ * `parseArgs` refuses `--public-key -abc…` as ambiguous (the value looks like an option), and an
+ * unpadded base64url key starts with "-" about 1 time in 64. Joining the value to its option as
+ * `--public-key=VALUE` is unambiguous, so the space form is rewritten to it.
+ */
+function joinPublicKeyValue(argv: string[]): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i] as string;
+    const next = argv[i + 1];
+    if (arg === '--public-key' && next !== undefined) {
+      out.push(`--public-key=${next}`);
+      i++;
+    } else {
+      out.push(arg);
+    }
+  }
+  return out;
+}
+
 /** The command line, checked. */
 export function parseCommandLine(argv: string[]): { name: string; publicKey: Buffer } {
   let values: { name?: string; 'public-key'?: string };
   try {
     ({ values } = parseArgs({
-      args: argv,
+      args: joinPublicKeyValue(argv),
       options: { name: { type: 'string' }, 'public-key': { type: 'string' } },
       strict: true,
       allowPositionals: false,
