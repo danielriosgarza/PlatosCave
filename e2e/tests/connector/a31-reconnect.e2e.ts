@@ -34,6 +34,8 @@ test('A31 offline then online runs the cell once', async ({ page, context }) => 
     }[];
     const session = sessions.find((s) => s.state === 'ready');
     expect(session, 'an open session').toBeTruthy();
+    // Still executing: the drop below lands inside the 8-second run, not after it.
+    await expect(cell.getByText('Running', { exact: true })).toBeVisible();
     const dropped = await page.request.post(
       `/api/test/connectors/${session?.connectorId}/drop-link`,
     );

@@ -45,6 +45,11 @@ export function BulkRelease({
 }) {
   const [state, setState] = useState<State>({ kind: 'idle' });
   const refresh = useRefreshGrades(classId);
+  // A tick the table dropped (its grade changed) is no longer part of what a release sends.
+  const current = (preview: ReleasePreview): ReleasePreview => ({
+    ...preview,
+    recipients: preview.recipients.filter((r) => attemptIds.includes(r.attemptId)),
+  });
   const open = async () => {
     setState({ kind: 'loading' });
     try {
@@ -53,7 +58,8 @@ export function BulkRelease({
       setState({ kind: 'error', message: 'The release preview could not be loaded.' });
     }
   };
-  const confirm = async (preview: ReleasePreview) => {
+  const confirm = async (shown: ReleasePreview) => {
+    const preview = current(shown);
     setState({ kind: 'sending', preview });
     try {
       const done = await release(
@@ -73,11 +79,14 @@ export function BulkRelease({
           preview: body.preview,
           note: 'Grades changed while you were reviewing, so nothing was released. This is what a release would do now.',
         });
+        // The table rows and Needs review read the same grades the preview just disagreed with.
+        void refresh();
       } else {
         setState({ kind: 'error', message: 'Nothing was released. Try again.' });
       }
     }
   };
+  const view = state.kind === 'preview' || state.kind === 'sending' ? current(state.preview) : null;
   return (
     <div className={styles.bulk}>
       <div className={page.row}>
@@ -95,27 +104,27 @@ export function BulkRelease({
           </span>
         ) : null}
       </div>
-      {state.kind === 'preview' || state.kind === 'sending' ? (
+      {view && (state.kind === 'preview' || state.kind === 'sending') ? (
         <section className={styles.preview} aria-label="Release preview">
           {state.kind === 'preview' && state.note ? <p>{state.note}</p> : null}
           <strong>
-            {state.preview.recipients.length === 0
+            {view.recipients.length === 0
               ? 'Nothing to release'
-              : `Release ${testTitle} to ${state.preview.recipients.length} ${state.preview.recipients.length === 1 ? 'student' : 'students'}`}
+              : `Release ${testTitle} to ${view.recipients.length} ${view.recipients.length === 1 ? 'student' : 'students'}`}
           </strong>
           <ul aria-label="Recipients">
-            {state.preview.recipients.map((r) => (
+            {view.recipients.map((r) => (
               <li key={r.gradeId}>
                 {r.student.name} · Attempt {r.attemptNumber} · {points(r.points)} /{' '}
                 {points(r.possible)}
               </li>
             ))}
           </ul>
-          {state.preview.skipped.length > 0 ? (
+          {view.skipped.length > 0 ? (
             <>
               <p className={page.small}>Not released:</p>
               <ul aria-label="Skipped">
-                {state.preview.skipped.map((s) => (
+                {view.skipped.map((s) => (
                   <li key={s.attemptId}>
                     {names[s.attemptId] ?? 'An attempt'}: {SKIPPED[s.reason]}
                   </li>
@@ -127,12 +136,12 @@ export function BulkRelease({
             <button
               type="button"
               className={buttons.primary}
-              disabled={state.kind === 'sending' || state.preview.recipients.length === 0}
-              onClick={() => void confirm(state.preview)}
+              disabled={state.kind === 'sending' || view.recipients.length === 0}
+              onClick={() => void confirm(view)}
             >
               {state.kind === 'sending'
                 ? 'Releasing…'
-                : `Confirm release to ${state.preview.recipients.length} ${state.preview.recipients.length === 1 ? 'student' : 'students'}`}
+                : `Confirm release to ${view.recipients.length} ${view.recipients.length === 1 ? 'student' : 'students'}`}
             </button>
             <button
               type="button"

@@ -123,4 +123,4 @@ export const submittedText = (row: ReviewRow) =>
 
 /** What the row's attempt shows of its grade: a change after ticking it makes the tick stale. */
 export const gradeSignature = (row: ReviewRow) =>
-  `${row.attempt?.state}:${row.attempt?.score?.state}:${row.attempt?.score?.points}:${row.attempt?.unreleasedChange}`;
+  `${row.attempt?.state}:${row.attempt?.newestGradeId}:${row.attempt?.score?.state}:${row.attempt?.score?.points}:${row.attempt?.unreleasedChange}`;

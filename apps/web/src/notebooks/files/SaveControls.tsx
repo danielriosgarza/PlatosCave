@@ -1,6 +1,6 @@
 import { createTransfer, type TransferView } from '@parallax/contracts/routes/transfers';
 import { saveWorkingCopy, type WorkingCopyView } from '@parallax/contracts/routes/workingCopies';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ApiError, call } from '../../api/client';
 import buttons from '../../components/Buttons.module.css';
 import { type Choice, type Conflict, ConflictDialog } from './ConflictDialog';
@@ -14,6 +14,10 @@ interface Props {
   workingCopy: WorkingCopyView;
   /** The notebook as it is in the editor now, with edits not yet saved. */
   getNotebook: () => Record<string, unknown>;
+  /** Live cells whose edits are not part of the stored copy and are not saved. */
+  leftOut?: string[];
+  /** Set when an import found a newer copy under the draft: the draft replaces nothing until the person chooses. */
+  baseMoved?: { revision: number } | null;
   /** Called with every copy Parallax holds: after each acknowledged save, and with the newer copy when a save found one. */
   onWorkingCopy: (copy: WorkingCopyView) => void;
   /** Absolute workspace and host from the files listing: the destination of Save to computer. */
@@ -43,6 +47,8 @@ export function SaveControls({
   sessionId,
   workingCopy,
   getNotebook,
+  leftOut = [],
+  baseMoved = null,
   onWorkingCopy,
   workspace,
   workspacePending = false,
@@ -125,6 +131,12 @@ export function SaveControls({
     [getNotebook, storedJson],
   );
 
+  // A newer copy found by an import puts the save in the same state as a stale save.
+  useEffect(() => {
+    if (baseMoved) setSave({ kind: 'stale' });
+  }, [baseMoved]);
+  const stale = save.kind === 'stale';
+
   return (
     <section className={styles.panel} aria-labelledby="save-heading">
       <h3 id="save-heading">Save</h3>
@@ -137,14 +149,24 @@ export function SaveControls({
           {unsaved ? ' The editor has changes that are not saved yet.' : ''} Kernel memory is never
           saved.
         </p>
-        <button
-          type="button"
-          className={buttons.tool}
-          disabled={save.kind === 'saving'}
-          onClick={() => void saveToParallax(workingCopy.currentRevision)}
-        >
-          {save.kind === 'saving' ? 'Saving' : 'Save to Parallax'}
-        </button>
+        {leftOut.length > 0 ? (
+          <p role="status">
+            Edits to {leftOut.length === 1 ? 'a cell' : `${leftOut.length} cells`} are not saved:
+            the stored copy holds another kind of cell under{' '}
+            {leftOut.length === 1 ? 'its' : 'their'} id. Copy the code from the editor before you
+            leave this page.
+          </p>
+        ) : null}
+        {stale ? null : (
+          <button
+            type="button"
+            className={buttons.tool}
+            disabled={save.kind === 'saving'}
+            onClick={() => void saveToParallax(workingCopy.currentRevision)}
+          >
+            {save.kind === 'saving' ? 'Saving' : 'Save to Parallax'}
+          </button>
+        )}
         {save.kind === 'saved' ? (
           <p role="status">
             Saved to Parallax as revision {save.revision} · {when(save.savedAt)}
@@ -169,11 +191,11 @@ export function SaveControls({
             </button>
           </div>
         ) : null}
-        {save.kind === 'stale' ? (
+        {stale ? (
           <div role="alert">
             <p>
-              Not saved to Parallax. Your working copy is at revision {workingCopy.currentRevision}{' '}
-              from another save; your draft is still in this page and nothing was overwritten.
+              Parallax now holds revision {workingCopy.currentRevision} from another save or import;
+              your draft is still in this page and nothing was overwritten.
             </p>
             <button
               type="button"

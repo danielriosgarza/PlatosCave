@@ -7,6 +7,10 @@ import { dirname, join, resolve } from 'node:path';
  * Playwright worker, so a retry after a failed test starts a new worker that remembers nothing.
  * The counts are therefore kept in a file shared by every worker of one run (named after the run's
  * process, which a restarted worker keeps as its parent).
+ *
+ * Limitation: a second local run against a server kept by reuseExistingServer starts from zero
+ * while the server still remembers the first run's starts and pairings. Restart the server (or wait
+ * an hour) between local runs; CI starts a fresh server every time.
  */
 
 export type Person = 'reader' | 'instructor';

@@ -1,4 +1,4 @@
-import { cleanup, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CLASS_A, instructorIn, makeMe, renderApp, signedIn, stubApi } from '../test/render';
@@ -32,6 +32,7 @@ const SUMMARY = (attemptId: string, number = 1) => ({
   submittedAt: NOW,
   score: { points: 5, possible: 5, state: 'draft' as const },
   unreleasedChange: false,
+  newestGradeId: id(1001),
 });
 
 const row = (studentId: string, name: string, attemptId: string, over = {}) => ({
@@ -828,6 +829,133 @@ describe('grading workspace', () => {
     expect(calls.filter((c) => c.method === 'POST')).toHaveLength(1);
   });
 
+  it('A17 a grade that changes under unsaved edits keeps the edits, says so, and loads only on request', async () => {
+    const user = userEvent.setup({ delay: null });
+    const first = gradeRow(1);
+    const theirs = gradeRow(2, {
+      source: 'override',
+      points: 4,
+      feedback: [{ target: { kind: 'attempt' }, text: 'Their feedback' }],
+    });
+    let history = [first];
+    const calls = serve({
+      history,
+      extra: (path, method) => {
+        if (method === 'GET' && path === `/test-attempts/${A_PRIYA}/grade`) {
+          return { status: 200, body: attemptGrade(history) };
+        }
+        if (method === 'POST' && path.endsWith('/grade')) {
+          return {
+            status: 409,
+            body: { error: 'revision_conflict', current: attemptGrade(history) },
+          };
+        }
+        return undefined;
+      },
+    });
+    const { queryClient } = renderApp(
+      `/classes/${CLASS_A}/review?assignment=${QUIZ}&selected=${PRIYA}&attempt=${A_PRIYA}`,
+    );
+    await screen.findByRole('region', { name: 'Grading workspace' });
+    await user.type(screen.getByLabelText('Feedback to Priya Nair'), 'my unsaved words');
+    history = [theirs, first];
+    // Another instructor's save, a bulk release or a focus refetch all end in this read.
+    await act(() => queryClient.invalidateQueries({ queryKey: ['grading', 'grade'] }));
+    const notice = await screen.findByRole('alert');
+    expect(notice).toHaveTextContent('The grade changed while you were editing');
+    expect(notice).toHaveTextContent('grade 2 · Override, 4 / 5');
+    expect(screen.getByLabelText('Feedback to Priya Nair')).toHaveValue('my unsaved words');
+    // Saving still sends the grade the edits were made on, so the server refuses it.
+    await user.click(screen.getByRole('button', { name: 'Save draft grade' }));
+    expect(await screen.findByText(/your edits were not saved/)).toBeVisible();
+    expect(calls.find((c) => c.method === 'POST' && c.path.endsWith('/grade'))?.body).toMatchObject(
+      {
+        expectedGradeId: first.id,
+      },
+    );
+    expect(screen.getByLabelText('Feedback to Priya Nair')).toHaveValue('Their feedback');
+  });
+
+  it('A17 typing after this workspace saved, before the refetch lands, shows no grade-changed notice', async () => {
+    const user = userEvent.setup({ delay: null });
+    const first = gradeRow(1);
+    serve({
+      history: [first],
+      // The refetch has not landed: the read still answers with the grade before the save.
+      extra: (path, method) =>
+        method === 'GET' && path === `/test-attempts/${A_PRIYA}/grade`
+          ? { status: 200, body: attemptGrade([first]) }
+          : undefined,
+    });
+    renderApp(`/classes/${CLASS_A}/review?assignment=${QUIZ}&selected=${PRIYA}&attempt=${A_PRIYA}`);
+    await screen.findByRole('region', { name: 'Grading workspace' });
+    await user.type(screen.getByLabelText('Feedback to Priya Nair'), 'first words');
+    await user.click(screen.getByRole('button', { name: 'Save draft grade' }));
+    expect(await screen.findByText(/Draft saved\./)).toBeVisible();
+    await user.type(screen.getByLabelText('Feedback to Priya Nair'), ' and more');
+    expect(screen.queryByText(/The grade changed while you were editing/)).toBeNull();
+  });
+
+  it('A17 a release that lands under unsaved edits is announced without saying the save will be refused', async () => {
+    const user = userEvent.setup({ delay: null });
+    const first = gradeRow(1);
+    const calls = serve({
+      history: [first],
+      extra: (path, method) =>
+        method === 'GET' && path === `/test-attempts/${A_PRIYA}/grade`
+          ? { status: 200, body: attemptGrade([first]) }
+          : undefined,
+    });
+    const { queryClient } = renderApp(
+      `/classes/${CLASS_A}/review?assignment=${QUIZ}&selected=${PRIYA}&attempt=${A_PRIYA}`,
+    );
+    await screen.findByRole('region', { name: 'Grading workspace' });
+    await user.type(screen.getByLabelText('Feedback to Priya Nair'), 'my unsaved words');
+    // A bulk release updates the same grade row in place: same id, now released.
+    first.state = 'released';
+    first.releasedAt = NOW;
+    first.releaseId = id(7000);
+    await act(() => queryClient.invalidateQueries({ queryKey: ['grading', 'grade'] }));
+    const notice = await screen.findByRole('alert');
+    expect(notice).toHaveTextContent('grade 1 · Released');
+    expect(notice).not.toHaveTextContent('refused');
+    expect(screen.getByLabelText('Feedback to Priya Nair')).toHaveValue('my unsaved words');
+    await user.click(screen.getByRole('button', { name: 'Save draft grade' }));
+    expect(await screen.findByText(/Draft saved\./)).toBeVisible();
+    expect(calls.find((c) => c.method === 'POST' && c.path.endsWith('/grade'))?.body).toMatchObject(
+      {
+        expectedGradeId: first.id,
+      },
+    );
+  });
+
+  it('A17 Load latest grade replaces unsaved edits with the grade that changed under them', async () => {
+    const user = userEvent.setup({ delay: null });
+    const first = gradeRow(1);
+    const theirs = gradeRow(2, {
+      feedback: [{ target: { kind: 'attempt' }, text: 'Their feedback' }],
+    });
+    let history = [first];
+    serve({
+      history,
+      extra: (path, method) =>
+        method === 'GET' && path === `/test-attempts/${A_PRIYA}/grade`
+          ? { status: 200, body: attemptGrade(history) }
+          : undefined,
+    });
+    const { queryClient } = renderApp(
+      `/classes/${CLASS_A}/review?assignment=${QUIZ}&selected=${PRIYA}&attempt=${A_PRIYA}`,
+    );
+    await screen.findByRole('region', { name: 'Grading workspace' });
+    await user.type(screen.getByLabelText('Feedback to Priya Nair'), 'my unsaved words');
+    history = [theirs, first];
+    // Another instructor's save, a bulk release or a focus refetch all end in this read.
+    await act(() => queryClient.invalidateQueries({ queryKey: ['grading', 'grade'] }));
+    await user.click(await screen.findByRole('button', { name: 'Load latest grade' }));
+    expect(screen.getByLabelText('Feedback to Priya Nair')).toHaveValue('Their feedback');
+    expect(screen.queryByText(/The grade changed while you were editing/)).toBeNull();
+  });
+
   it('A17 an override or regrade waits for unsaved edits to be saved, and cannot be sent twice', async () => {
     const user = userEvent.setup({ delay: null });
     const calls = serve({ history: [gradeRow(1)] });
@@ -980,6 +1108,129 @@ describe('grading workspace', () => {
     await user.selectOptions(screen.getByLabelText('Status'), 'needs');
     await user.selectOptions(screen.getByLabelText('Status'), 'all');
     expect(await screen.findByRole('button', { name: 'Preview release (0)' })).toBeVisible();
+  });
+
+  it('A25 a tick is dropped when a second unreleased change is saved over the same released grade', async () => {
+    const user = userEvent.setup({ delay: null });
+    let newest = id(1002);
+    serve({
+      extra: (path) => {
+        if (path !== '/review') return undefined;
+        const rows = [
+          row(PRIYA, 'Priya Nair', A_PRIYA, {
+            state: 'released',
+            score: { points: 5, possible: 5, state: 'released' as const },
+            unreleasedChange: true,
+            newestGradeId: newest,
+          }),
+        ];
+        return { status: 200, body: review(rows) };
+      },
+    });
+    renderApp(`/classes/${CLASS_A}/review?assignment=${QUIZ}`);
+    await screen.findByRole('table');
+    await user.click(screen.getByRole('checkbox', { name: 'Select Priya Nair for release' }));
+    expect(screen.getByRole('button', { name: 'Preview release (1)' })).toBeVisible();
+    // A second override lands over the same released grade: score and flag are unchanged.
+    newest = id(1003);
+    await user.selectOptions(screen.getByLabelText('Status'), 'needs');
+    await user.selectOptions(screen.getByLabelText('Status'), 'all');
+    expect(await screen.findByRole('button', { name: 'Preview release (0)' })).toBeVisible();
+  });
+
+  it('A25 a bulk release that finds the grades changed refreshes the table as well as the preview', async () => {
+    const user = userEvent.setup({ delay: null });
+    const preview = {
+      recipients: [
+        {
+          student: { id: PRIYA, name: 'Priya Nair' },
+          attemptId: A_PRIYA,
+          attemptNumber: 1,
+          resourceId: QUIZ,
+          gradeId: id(1001),
+          gradeNumber: 1,
+          points: 5,
+          possible: 5,
+        },
+      ],
+      skipped: [],
+    };
+    const calls = serve({
+      extra: (path, method) => {
+        if (path === '/grade-releases/preview') return { status: 200, body: preview };
+        if (path === '/grade-releases' && method === 'POST') {
+          return { status: 409, body: { error: 'release_changed', preview } };
+        }
+        return undefined;
+      },
+    });
+    renderApp(`/classes/${CLASS_A}/review?assignment=${QUIZ}`);
+    await screen.findByRole('table');
+    await user.click(screen.getByRole('checkbox', { name: 'Select Priya Nair for release' }));
+    await user.click(screen.getByRole('button', { name: 'Preview release (1)' }));
+    const panel = await screen.findByRole('region', { name: 'Release preview' });
+    const before = calls.filter((c) => c.path === '/review').length;
+    await user.click(within(panel).getByRole('button', { name: 'Confirm release to 1 student' }));
+    expect(await screen.findByText(/Grades changed while you were reviewing/)).toBeVisible();
+    await waitFor(() =>
+      expect(calls.filter((c) => c.path === '/review').length).toBeGreaterThan(before),
+    );
+  });
+
+  it('A25 a preview confirms only the students still ticked after a refresh drops a stale tick', async () => {
+    const user = userEvent.setup({ delay: null });
+    let priyaGrade = id(1001);
+    const recipient = (who: string, name: string, attemptId: string, gradeId: string) => ({
+      student: { id: who, name },
+      attemptId,
+      attemptNumber: 1,
+      resourceId: QUIZ,
+      gradeId,
+      gradeNumber: 1,
+      points: 5,
+      possible: 5,
+    });
+    const preview = {
+      recipients: [
+        recipient(PRIYA, 'Priya Nair', A_PRIYA, id(1001)),
+        recipient(SAM, 'Sam Okafor', A_SAM, id(1002)),
+      ],
+      skipped: [],
+    };
+    const calls = serve({
+      extra: (path, method) => {
+        if (path === '/review') {
+          const rows = [
+            row(PRIYA, 'Priya Nair', A_PRIYA, { newestGradeId: priyaGrade }),
+            row(SAM, 'Sam Okafor', A_SAM, { newestGradeId: id(1002) }),
+          ];
+          return { status: 200, body: review(rows) };
+        }
+        if (path === '/grade-releases/preview') return { status: 200, body: preview };
+        if (path === '/grade-releases' && method === 'POST') {
+          return {
+            status: 201,
+            body: { id: id(7001), releasedBy: id(1), releasedAt: NOW, recipients: [] },
+          };
+        }
+        return undefined;
+      },
+    });
+    const { queryClient } = renderApp(`/classes/${CLASS_A}/review?assignment=${QUIZ}`);
+    await screen.findByRole('table');
+    await user.click(screen.getByRole('checkbox', { name: 'Select Priya Nair for release' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Select Sam Okafor for release' }));
+    await user.click(screen.getByRole('button', { name: 'Preview release (2)' }));
+    await screen.findByRole('region', { name: 'Release preview' });
+    // Priya's grade is saved again: the table drops her tick, and the preview follows it.
+    priyaGrade = id(1003);
+    await act(() =>
+      queryClient.invalidateQueries({ predicate: ({ queryKey }) => queryKey[0] === 'GET' }),
+    );
+    await user.click(await screen.findByRole('button', { name: 'Confirm release to 1 student' }));
+    expect(calls.find((c) => c.method === 'POST' && c.path === '/grade-releases')?.body).toEqual({
+      grades: [{ attemptId: A_SAM, gradeId: id(1002) }],
+    });
   });
 
   it('A25 opening another attempt starts a new workspace, so a release preview never carries over', async () => {
