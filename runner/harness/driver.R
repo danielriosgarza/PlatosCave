@@ -109,23 +109,30 @@ local({
   }
 
   # deparse is quadratic in the length of an escape-heavy string (1.2 M characters of
-  # \n, \t, quotes and non-ASCII take ~19 s, 6 M exceed the check's time limit), and the
-  # harness shows at most 2048 characters of a repr anyway. Character vectors in the value are
-  # cut to REPR_ITEMS elements of REPR_CHARS characters before deparse, with an ellipsis
-  # where something was cut; anything within the bounds is deparsed unchanged.
-  REPR_CHARS <- 1024L
-  REPR_ITEMS <- 1024L
+  # \n, \t, quotes and non-ASCII take ~19 s, 6 M exceed the check's time limit), while 64 Ki
+  # characters take milliseconds. The harness compares this text with expected.value in `repr`
+  # mode (design section 4.4), so nothing shorter than REPR_CHARS characters may change: a
+  # character string longer than that is cut to REPR_CHARS characters plus an ellipsis, in
+  # plain (unclassed) character vectors and plain lists only; a value with nothing to cut is
+  # returned as it is, attributes and classes included, and a value whose string sits in a
+  # classed container, a name or an attribute is deparsed whole.
+  REPR_CHARS <- 65536L
 
   bound_for_repr <- function(x) {
-    if (is.character(x)) {
-      if (length(x) > REPR_ITEMS) x <- x[seq_len(REPR_ITEMS)]
-      long <- !is.na(x) & nchar(x, type = "bytes") > REPR_CHARS
-      if (any(long)) {
-        x[long] <- paste0(substr(clean_text(x[long]), 1L, REPR_CHARS), "\u2026")
+    if (is.character(x) && !is.object(x)) {
+      # Bytes are never fewer than characters, so only strings over the limit in bytes need
+      # the character count (which needs valid UTF-8).
+      big <- which(!is.na(x) & nchar(x, type = "bytes") > REPR_CHARS)
+      if (length(big)) {
+        text <- clean_text(x[big])
+        cut <- nchar(text, type = "chars") > REPR_CHARS
+        if (any(cut)) {
+          x[big[cut]] <- paste0(substr(text[cut], 1L, REPR_CHARS), "\u2026")
+        }
       }
-    } else if (is.list(x) && !is.object(x)) {
-      if (length(x) > REPR_ITEMS) x <- x[seq_len(REPR_ITEMS)]
-      x[] <- lapply(x, bound_for_repr)
+    } else if (is.vector(x, "list") && !is.object(x) && length(x)) {
+      bounded <- lapply(x, bound_for_repr)
+      if (!all(mapply(identical, bounded, x))) x[] <- bounded
     }
     x
   }

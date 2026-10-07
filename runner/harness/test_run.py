@@ -1371,6 +1371,9 @@ class RRuntime(HarnessCase):
         "lens <- function(x) list(is.list(x), length(x))\n"
         "bigvec <- function() rep(c('a\"b', 'caf\\u00e9', NA), length.out = 100000)\n"
         "huge_escapes <- function() strrep('\u00e9\\n\\t\\001\"\\\\', 300000)\n"
+        "utf8_within <- function() strrep('\u00e9', 40000)\n"
+        "ascii_at <- function() strrep('a', 65536)\n"
+        "ascii_over <- function() strrep('a', 65537)\n"
         "stop_warning <- function() stop(simpleWarning('w'))\n"
         "stop_message <- function() stop(simpleMessage('m'))\n"
         "nested_signal <- function() withCallingHandlers(stop('boom'), error = function(e) signalCondition(structure(class = c('note', 'condition'), list(message = 'fyi', call = NULL))))\n"
@@ -1576,14 +1579,23 @@ class RRuntime(HarnessCase):
 
     def test_a_huge_escape_heavy_string_does_not_stall_the_repr(self):
         # 1.8 M characters of escapes (about 4.8 MB of JSON, under the 8 MiB outcome cap): deparse
-        # alone took ~40 s; the repr is bounded.
-        entry = self.outcome_for(
-            r_call("Huge", "huge_escapes", {"value": "x"}, "repr", timeoutSeconds=10),
-            r_call("Huge exact", "huge_escapes", {"value": "x"}, timeoutSeconds=10),
+        # alone took ~40 s, over the 10 s timeout; the bounded repr is a quick, ordinary failure.
+        outcome = self.outcome_for(r_call("Huge", "huge_escapes", {"value": "x"}, "repr", timeoutSeconds=10))
+        check = outcome.check()
+        self.assertEqual(check["status"], "failed", check)
+        self.assertTrue(check["actual"].startswith('"\u00e9\\n\\t'), check["actual"][:40])
+
+    def test_repr_keeps_a_string_within_the_bound_and_cuts_one_over_it(self):
+        # 40 000 characters are 80 000 bytes: over the limit in bytes, within it in characters.
+        outcome = self.outcome_for(
+            r_call("Within, non-ASCII", "utf8_within", {"value": '"' + "\u00e9" * 40000 + '"'}, "repr"),
+            r_call("At the bound", "ascii_at", {"value": '"' + "a" * 65536 + '"'}, "repr"),
+            r_call("One over the bound", "ascii_over", {"value": '"' + "a" * 65536 + '\u2026"'}, "repr"),
+            r_call("One over, uncut expected", "ascii_over", {"value": '"' + "a" * 65537 + '"'}, "repr"),
         )
-        for check in entry.result["checks"]:
-            self.assertEqual(check["status"], "failed", check)
-            self.assertLessEqual(len(check["actual"]), 2048)
+        self.assertEqual(
+            [c["status"] for c in outcome.result["checks"]], ["passed"] * 3 + ["failed"], outcome.result["checks"]
+        )
 
     def test_stop_with_a_warning_or_message_condition_is_an_exception(self):
         outcome = self.outcome_for(
