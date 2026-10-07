@@ -6,9 +6,12 @@ const root = join(import.meta.dirname, '..');
 const SKIP_DIRS = new Set(['node_modules', 'dist', '.git', '.local', 'coverage']);
 const ID = /\bA(0[1-9]|[12][0-9]|3[0-6])\b/g;
 const GO_TEST = /^func Test(A(?:0[1-9]|[12][0-9]|3[0-6]))(?![0-9A-Za-z])/gm;
-const CALL_HEAD =
-  /\b(?:test|it|describe)((?:\.[A-Za-z]+(?:\([^()]*\))?)*)\s*\(\s*(['"`])((?:\\.|(?!\2)[^\\])*)\2/g;
-const DOCKER_SKIP = /docker|imagePresent|S3_ENDPOINT/i;
+const HEAD = /(?<![.\w$])(?:test|it|describe)(?![\w$])/g;
+// Modifiers whose own arguments come before the title's call: test.each(table)('title', fn).
+const CURRIED = new Set(['each', 'for', 'skipIf', 'runIf']);
+const SKIPPED = new Set(['skip', 'todo', 'fixme']);
+// The documented Docker/S3/CI gates of ADR-0006: those blocks run in CI, where they are mandatory.
+const DOCKER_GATE = /docker|imagePresent|S3_ENDPOINT|\bCI\b/i;
 
 function walk(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
@@ -21,51 +24,82 @@ function walk(dir: string, out: string[] = []): string[] {
 }
 
 const isTestFile = (path: string): boolean =>
-  (path !== 'scripts/check-scenarios.test.ts' && /\.(test|itest|e2e)\.tsx?$/.test(path)) ||
-  /^connector\/.*_test\.go$/.test(path);
+  /\.(test|itest|e2e)\.tsx?$/.test(path) || /^connector\/.*_test\.go$/.test(path);
 
-/** Blanks comments with spaces (offsets and newlines preserved) so IDs in them never count. */
-export function stripComments(src: string): string {
-  let out = '';
+const REGEX_PREFIX = /[(,=:[!&|?{};+\-*%<>~^]$/;
+
+/**
+ * Same-length copy of `src` with comments, regex literals and string contents blanked
+ * (quotes kept, newlines preserved), so scanning it never sees IDs, parentheses or test calls
+ * that are not code. Single- and double-quoted strings end at a newline.
+ */
+export function maskSource(src: string): string {
+  const out: string[] = [];
+  const blank = (from: number, to: number): void => {
+    for (let k = from; k < to; k++) out.push(src[k] === '\n' ? '\n' : ' ');
+  };
+  let last = '';
   let i = 0;
   while (i < src.length) {
     const c = src[i] as string;
     const next = src[i + 1];
     if (c === '/' && next === '/') {
-      while (i < src.length && src[i] !== '\n') (out += ' '), i++;
+      let j = i;
+      while (j < src.length && src[j] !== '\n') j++;
+      blank(i, j);
+      i = j;
     } else if (c === '/' && next === '*') {
       const stop = src.indexOf('*/', i + 2);
-      const endAt = stop < 0 ? src.length : stop + 2;
-      out += src.slice(i, endAt).replace(/[^\n]/g, ' ');
-      i = endAt;
+      const j = stop < 0 ? src.length : stop + 2;
+      blank(i, j);
+      i = j;
+    } else if (c === '/' && (last === '' || REGEX_PREFIX.test(last))) {
+      let j = i + 1;
+      let inClass = false;
+      while (j < src.length && src[j] !== '\n' && (inClass || src[j] !== '/')) {
+        if (src[j] === '\\') j++;
+        else if (src[j] === '[') inClass = true;
+        else if (src[j] === ']') inClass = false;
+        j++;
+      }
+      blank(i, j + 1);
+      i = j + 1;
+      last = '/';
     } else if (c === "'" || c === '"' || c === '`') {
       let j = i + 1;
-      while (j < src.length && src[j] !== c) j += src[j] === '\\' ? 2 : 1;
-      out += src.slice(i, j + 1);
-      i = j + 1;
+      while (j < src.length && src[j] !== c && (c === '`' || src[j] !== '\n')) {
+        j += src[j] === '\\' ? 2 : 1;
+      }
+      const closed = src[j] === c;
+      out.push(c);
+      blank(i + 1, Math.min(j, src.length));
+      if (closed) out.push(c);
+      i = closed ? j + 1 : j;
+      last = c;
     } else {
-      out += c;
+      out.push(c);
+      if (!/\s/.test(c)) last = c;
       i++;
     }
   }
-  return out;
+  return out.join('');
 }
 
-/** Index just past the `)` closing the call whose `(` is at or after `from`. */
-function callEnd(src: string, from: number): number {
-  const open = src.indexOf('(', from);
-  if (open < 0) return src.length;
+/** Index just past the `)` closing the group whose `(` is at `open` (masked source). */
+function groupEnd(masked: string, open: number): number {
   let depth = 0;
-  for (let i = open; i < src.length; i++) {
-    const c = src[i] as string;
-    if (c === "'" || c === '"' || c === '`') {
-      i++;
-      while (i < src.length && src[i] !== c) i += src[i] === '\\' ? 2 : 1;
-    } else if (c === '(') depth++;
-    else if (c === ')' && --depth === 0) return i + 1;
+  for (let i = open; i < masked.length; i++) {
+    if (masked[i] === '(') depth++;
+    else if (masked[i] === ')' && --depth === 0) return i + 1;
   }
-  return src.length;
+  return masked.length;
 }
+
+const skipSpace = (masked: string, from: number): number => {
+  let i = from;
+  while (i < masked.length && /\s/.test(masked[i] as string)) i++;
+  return i;
+};
 
 const addId = (found: Map<string, Set<string>>, id: string, file: string): void => {
   if (!found.has(id)) found.set(id, new Set());
@@ -74,28 +108,53 @@ const addId = (found: Map<string, Set<string>>, id: string, file: string): void 
 
 /** Scenario IDs in the titles of non-skipped TS tests (`test`, `it`, `describe`). */
 export function idsInTsTitles(source: string, file = ''): string[] {
-  let src = stripComments(source);
+  const masked = maskSource(source);
   const ids: string[] = [];
-  CALL_HEAD.lastIndex = 0;
-  for (let m = CALL_HEAD.exec(src); m; m = CALL_HEAD.exec(src)) {
-    const mods = m[1] ?? '';
-    const skipped =
-      /\.(skip|todo|fixme)\b/.test(mods) ||
-      (/\.(skipIf|runIf)\b/.test(mods) && !(DOCKER_SKIP.test(mods) || file.includes('.docker.')));
+  let skipUntil = 0;
+  for (const head of masked.matchAll(HEAD)) {
+    if (head.index < skipUntil) continue;
+    let pos = head.index + head[0].length;
+    let skipped = false;
+    let call = -1;
+    for (;;) {
+      pos = skipSpace(masked, pos);
+      if (masked[pos] === '.') {
+        const name = /^\.\s*([A-Za-z]+)/.exec(masked.slice(pos, pos + 40));
+        if (!name) break;
+        const modifier = name[1] as string;
+        pos += name[0].length;
+        const open = skipSpace(masked, pos);
+        if (CURRIED.has(modifier) && masked[open] === '(') {
+          const end = groupEnd(masked, open);
+          if (modifier === 'skipIf' || modifier === 'runIf') {
+            skipped ||= !(DOCKER_GATE.test(source.slice(open, end)) || file.includes('.docker.'));
+          }
+          pos = end;
+        } else if (SKIPPED.has(modifier)) skipped = true;
+      } else {
+        if (masked[pos] === '(') call = pos;
+        break;
+      }
+    }
+    if (call < 0) continue;
+    const end = groupEnd(masked, call);
     if (skipped) {
-      const end = callEnd(src, m.index + m[0].length - (m[3] ?? '').length - 2);
-      src = src.slice(0, m.index) + src.slice(m.index, end).replace(/[^\n]/g, ' ') + src.slice(end);
-      CALL_HEAD.lastIndex = m.index;
+      skipUntil = end;
       continue;
     }
-    for (const id of (m[3] ?? '').matchAll(ID)) ids.push(id[0]);
+    const quote = masked[skipSpace(masked, call + 1)];
+    if (quote !== "'" && quote !== '"' && quote !== '`') continue;
+    const start = skipSpace(masked, call + 1);
+    const close = masked.indexOf(quote, start + 1);
+    if (close < 0) continue;
+    for (const id of source.slice(start + 1, close).matchAll(ID)) ids.push(id[0]);
   }
   return ids;
 }
 
 /** Scenario IDs in Go test function names (`func TestA28_Name`). */
 export function idsInGoTests(source: string): string[] {
-  return [...stripComments(source).matchAll(GO_TEST)].map((m) => m[1] as string);
+  return [...maskSource(source).matchAll(GO_TEST)].map((m) => m[1] as string);
 }
 
 /** Maps each scenario ID found in a test title to the files carrying it. */
@@ -121,7 +180,9 @@ export function readDone(dir: string): Map<string, string[]> {
     for (const line of readFileSync(join(dir, name), 'utf8').split('\n')) {
       const id = line.trim();
       if (!id) continue;
-      done.set(id, [...(done.get(id) ?? []), name]);
+      const files = done.get(id);
+      if (files) files.push(name);
+      else done.set(id, [name]);
     }
   }
   return done;

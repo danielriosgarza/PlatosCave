@@ -25,21 +25,57 @@ describe('scenario scanner', () => {
     expect(idsInTsTitles(src)).toEqual([]);
   });
 
-  it('AUD8 ignores skipped, todo and unrelated skipIf blocks including their children', () => {
+  it('AUD8 ignores method calls named test and test calls inside strings', () => {
     const src = `
-      test.skip('A10 skipped', () => {});
-      test.todo('A11 todo');
-      describe.skip('A12 group', () => { it('A13 inside', () => {}); });
-      describe.skipIf(process.platform === 'win32')('A14 platform', () => {});
+      expect(/A01/.test('A01 x')).toBe(true);
+      const fixture = "it('A02 quoted', () => {})";
+      obj.it('A03 method', () => {});`;
+    expect(idsInTsTitles(src)).toEqual([]);
+  });
+
+  it('AUD8 ignores a skipped block together with its children', () => {
+    const src =
+      "describe.skip('A12 group', () => { it('A13 inside', () => {}); });\nit('A14 kept', () => {});";
+    expect(idsInTsTitles(src)).toEqual(['A14']);
+  });
+
+  it('AUD8 a title-only todo does not swallow the next test', () => {
+    const src = "test.todo('A11 todo');\nit('A15 kept', () => {});\nit('A16 kept', () => {});";
+    expect(idsInTsTitles(src)).toEqual(['A15', 'A16']);
+    expect(idsInTsTitles("it.skip('A11 off');\nit('A15 kept', () => {});")).toEqual(['A15']);
+  });
+
+  it('AUD8 ignores unrelated skipIf blocks but not other tests after them', () => {
+    const src = `
+      describe.skipIf(process.platform === 'win32')('A14 platform', () => { it('A17 child', () => {}); });
       it('A15 kept', () => {});`;
     expect(idsInTsTitles(src)).toEqual(['A15']);
+  });
+
+  it('AUD8 handles nested parentheses in modifier arguments', () => {
+    const src = `
+      it.each([{ a: f(1) }])('A15 each', () => {});
+      test.each(Object.keys(cases))('A05 keys', () => {});
+      describe.skipIf(!(await imagePresent()))('A13 docker', () => {});
+      describe.skipIf(!(await other()))('A14 other', () => { it('A18 child', () => {}); });`;
+    expect(idsInTsTitles(src)).toEqual(['A15', 'A05', 'A13']);
+  });
+
+  it('AUD8 regex literals and apostrophes do not confuse strings and comments', () => {
+    const src = `
+      expect(s).toMatch(/['"]/);
+      const u = 'http://h';
+      const t = <p>Don't</p>;
+      it('A02 z', () => {});`;
+    expect(idsInTsTitles(src)).toEqual(['A02']);
   });
 
   it('AUD8 keeps the documented Docker and S3 skips', () => {
     const src = `
       describe.skipIf(!imagePresent)('A13 sandbox', () => {});
+      test.runIf(env.CI)('A22 CI gate', () => {});
       describe.skipIf(!env.S3_ENDPOINT)('A22 s3', () => {});`;
-    expect(idsInTsTitles(src)).toEqual(['A13', 'A22']);
+    expect(idsInTsTitles(src)).toEqual(['A13', 'A22', 'A22']);
     expect(idsInTsTitles(`describe.skipIf(!ok)('A20 x', () => {});`, 'a.docker.itest.ts')).toEqual([
       'A20',
     ]);
