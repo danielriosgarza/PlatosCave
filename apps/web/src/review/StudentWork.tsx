@@ -294,8 +294,7 @@ function Snapshot({ classId, submission: s }: { classId: string; submission: Sub
       ) : null}
       {s.workingCopyRevision !== undefined ? (
         <p className={page.small}>
-          Frozen from the saved working copy, revision {s.workingCopyRevision}. Kernel memory is not
-          part of a snapshot.
+          Frozen from the saved working copy, revision {s.workingCopyRevision}.
         </p>
       ) : null}
       {s.files && s.files.length > 0 ? (
