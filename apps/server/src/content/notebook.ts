@@ -133,6 +133,8 @@ export const outputSchema: SanitizeSchema = {
 };
 const outputSanitizer = unified().use(rehypeSanitize, outputSchema).use(rehypeStringify).freeze();
 
+// biome-ignore lint/suspicious/noControlCharactersInRegex: browsers ignore them in schemes
+const BLANKS = /[\u0000-\u0020]/g;
 const ANIMATION_TAGS = new Set(['animate', 'animateMotion', 'animateTransform', 'set']);
 
 /** True when the markup held something that would run script were it not removed. */
@@ -146,9 +148,8 @@ function hasScript(tree: Root): boolean {
       if (
         ANIMATION_TAGS.has(el.tagName) &&
         ['to', 'from', 'by', 'values'].includes(name) &&
-        // biome-ignore lint/suspicious/noControlCharactersInRegex: browsers ignore them in schemes
         /javascript:/i.test(
-          (Array.isArray(value) ? value.join(' ') : String(value)).replace(/[\u0000-\u0020]/g, ''),
+          (Array.isArray(value) ? value.join(' ') : String(value)).replace(BLANKS, ''),
         )
       ) {
         found = true;
@@ -241,6 +242,7 @@ const SVG_NS = 'http://www.w3.org/2000/svg';
 /** What a reference may start with once URL parsing has dropped leading control characters and spaces. */
 // biome-ignore lint/suspicious/noControlCharactersInRegex: URL parsing strips exactly these
 const LEADING_BLANK = /^[\u0000-\u0020]+/;
+// biome-ignore lint/suspicious/noControlCharactersInRegex: URL parsing strips exactly these
 const LOCAL_REFERENCE = /^[\u0000-\u0020]*#/;
 /** Markup or script written as text inside a dropped `<style>`. */
 const STYLE_SCRIPT = /<\s*(script|foreignObject)|\bon[a-z]+\s*=|javascript:/i;
