@@ -53,7 +53,13 @@ let seed = 0;
 export async function startRelay(
   testDb: TestDatabase,
   start: Date,
-  options: { minVersion?: string; testRoutes?: boolean; storage?: Storage } = {},
+  options: {
+    minVersion?: string;
+    testRoutes?: boolean;
+    storage?: Storage;
+    /** Further environment for the server's configuration. */
+    env?: Record<string, string>;
+  } = {},
 ): Promise<Relay> {
   let clock = start;
   const now = () => clock;
@@ -64,6 +70,7 @@ export async function startRelay(
     // `/content/:token` (ADR-0002).
     CONTENT_HOST: 'content.invalid',
     ...(options.testRoutes && { TEST_ROUTES: '1' }),
+    ...options.env,
   });
   const origin = normaliseOrigin(config.APP_ORIGIN);
   const timers = new ManualTimers();

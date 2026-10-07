@@ -16,14 +16,17 @@ export function readSessionToken(req: FastifyRequest): string | undefined {
 }
 
 /** HttpOnly, SameSite=Lax, signed; Secure whenever the app is served over https. */
-export function sessionCookieOptions(appOrigin: string): CookieSerializeOptions {
+export function sessionCookieOptions(
+  appOrigin: string,
+  ttlMs: number = SESSION_TTL_MS,
+): CookieSerializeOptions {
   return {
     httpOnly: true,
     sameSite: 'lax',
     path: '/',
     secure: appOrigin.startsWith('https:'),
     signed: true,
-    maxAge: SESSION_TTL_MS / 1000,
+    maxAge: ttlMs / 1000,
   };
 }
 

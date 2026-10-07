@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { classArchived, defineRoute, invalidBody } from '../define';
+import { classArchived, defineRoute, errorBody, invalidBody } from '../define';
 import { exampleIds } from '../examples';
 import { RUNNER_MAX_FILES, RunnerPath } from '../runner';
 import { isWellFormed } from '../wellFormed';
@@ -137,11 +137,19 @@ export type InstructorRun = z.input<typeof instructorRun>;
 /** Students get `studentRun`, instructors `instructorRun`; the strict student shape is first. */
 const anyRun = z.union([studentRun, instructorRun]);
 
-const tooManyRuns = z.object({
-  error: z.literal('too_many_runs'),
-  active: z.int(),
-  message: z.string(),
-});
+/**
+ * 429 for a run request: the per-student cap on queued or running sample runs (`too_many_runs`,
+ * listed first so its fields are kept) or the per-session request limit (`errorBody`, set by
+ * `RUN_RATE_LIMIT`; docs/operations.md).
+ */
+const tooManyRuns = z.union([
+  z.object({
+    error: z.literal('too_many_runs'),
+    active: z.int(),
+    message: z.string(),
+  }),
+  errorBody,
+]);
 
 /**
  * Run sample tests (§2 steps 2–4): `202` with the new run, or `200` with an identical run of this
@@ -235,6 +243,7 @@ export const requestReplay = defineRoute({
       z.object({ error: z.enum(['attempt_open', 'no_grading_run', 'no_result']) }),
       classArchived,
     ]),
+    429: errorBody,
   },
   examples: {
     params: { classId: exampleClass, attemptId: exampleAttempt, questionId: 'q1' },
@@ -277,6 +286,7 @@ export const requestPreviewRun = defineRoute({
   errors: {
     400: invalidBody,
     409: z.union([z.object({ error: z.literal('no_class'), message: z.string() }), classArchived]),
+    429: errorBody,
   },
   examples: {
     params: { courseId: exampleClass, resourceId: exampleRun, questionId: 'q1' },

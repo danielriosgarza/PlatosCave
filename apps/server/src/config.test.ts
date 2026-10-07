@@ -225,3 +225,41 @@ test('RUNNER_RUNTIMES lists the approved runtimes; production pins each by diges
     loadConfig({ ...production, RUNNER_RUNTIMES: JSON.stringify([{ ...runtime, digest: null }]) }),
   ).toThrow(/digest/);
 });
+
+describe('config: session, lease and run-limit defaults', () => {
+  test('defaults are the values the product spec and the connector design state', () => {
+    expect(loadConfig({})).toMatchObject({
+      SESSION_TTL_DAYS: 14,
+      LEASE_IDLE_MINUTES: 30,
+      LEASE_GRACE_MINUTES: 5,
+      RUN_RATE_LIMIT: 30,
+    });
+  });
+
+  test('they can be set, within the bounds the connector enforces', () => {
+    expect(
+      loadConfig({
+        SESSION_TTL_DAYS: '7',
+        LEASE_IDLE_MINUTES: '60',
+        LEASE_GRACE_MINUTES: '10',
+        RUN_RATE_LIMIT: '5',
+      }),
+    ).toMatchObject({
+      SESSION_TTL_DAYS: 7,
+      LEASE_IDLE_MINUTES: 60,
+      LEASE_GRACE_MINUTES: 10,
+      RUN_RATE_LIMIT: 5,
+    });
+    for (const bad of [
+      { SESSION_TTL_DAYS: '0' },
+      { SESSION_TTL_DAYS: '91' },
+      { LEASE_IDLE_MINUTES: '4' },
+      { LEASE_IDLE_MINUTES: '241' },
+      { LEASE_GRACE_MINUTES: '0' },
+      { LEASE_GRACE_MINUTES: '61' },
+      { RUN_RATE_LIMIT: '0' },
+    ]) {
+      expect(() => loadConfig(bad), JSON.stringify(bad)).toThrow();
+    }
+  });
+});

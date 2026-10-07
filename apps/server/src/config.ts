@@ -94,6 +94,22 @@ const Env = z
     /** Sign-in link uses (`/api/auth/verify`) allowed per client IP per 15 minutes. */
     AUTH_VERIFY_RATE_LIMIT: z.coerce.number().int().positive().default(240),
     /**
+     * Code-run requests (sample runs, replays, instructor previews) allowed per session per
+     * minute. Counted per session, not per address, so a class behind one campus NAT, or the load
+     * test's single client, does not share a budget. A student's runs are also capped at two
+     * queued or running (spec §11), whatever this is.
+     */
+    RUN_RATE_LIMIT: z.coerce.number().int().positive().default(30),
+    /** Days a sign-in lasts before the person signs in again (spec §17: session limits). */
+    SESSION_TTL_DAYS: z.coerce.number().int().min(1).max(90).default(14),
+    /**
+     * Default lease of a notebook session when neither the person nor the class template sets
+     * one (connector design §9): minutes without activity before an open notebook stops, and
+     * minutes a closed tab keeps its kernel. Bounds are the connector's: 5-240 and 1-60.
+     */
+    LEASE_IDLE_MINUTES: z.coerce.number().int().min(5).max(240).default(30),
+    LEASE_GRACE_MINUTES: z.coerce.number().int().min(1).max(60).default(5),
+    /**
      * Fastify `trustProxy`: which proxies' `X-Forwarded-*` headers to believe, so `req.ip` (the
      * rate-limit key) and `req.host` name the client and the requested host, not the proxy.
      * Prefer a comma-separated list of your proxies' addresses / CIDR ranges: `req.ip` is then

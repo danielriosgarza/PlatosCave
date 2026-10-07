@@ -13,6 +13,7 @@ import {
   validatorCompiler,
 } from 'fastify-type-provider-zod';
 import type { PgBoss } from 'pg-boss';
+import type { DestinationStream } from 'pino';
 import { BackgroundTasks } from './background';
 import type { Config } from './config';
 import { MAX_TOKEN_LENGTH } from './content/tokens';
@@ -22,6 +23,7 @@ import { handleError } from './http/errors';
 import { redactUrl } from './http/redact';
 import { NOT_FOUND } from './http/register';
 import { isApiPath, registerStatic } from './http/static';
+import { loggerOptions } from './logging';
 import { createMailer, type Mailer } from './mail/mailer';
 import { loadModules } from './modules';
 import { emptyLinkRegistry, type LinkRegistry, LiveLinkRegistry } from './relay/links';
@@ -35,6 +37,8 @@ export interface Deps {
   now?: () => Date;
   /** Deadline for the health probe's database query; defaults to PROBE_TIMEOUT_MS. */
   probeTimeoutMs?: number;
+  /** Where the logger writes, for tests that read the log; defaults to stdout. */
+  logStream?: DestinationStream;
   /** Mail transport; defaults to the one MAIL_TRANSPORT selects. */
   mailer?: Mailer;
   /** Object store; defaults to the one STORAGE_DRIVER selects. */
@@ -106,8 +110,10 @@ export async function buildApp(config: Config, deps: Deps = {}): Promise<Fastify
     routerOptions: { maxParamLength: MAX_TOKEN_LENGTH },
     trustProxy: config.TRUST_PROXY,
     logger: {
-      level: config.LOG_LEVEL,
+      ...loggerOptions(config),
+      ...(deps.logStream && { stream: deps.logStream }),
       serializers: {
+        ...loggerOptions(config).serializers,
         req: (req: FastifyRequest) => ({
           method: req.method,
           url: logUrl(req),

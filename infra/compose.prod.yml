@@ -1,0 +1,230 @@
+# A production-like deployment on one Docker host (spec §17; docs/operations.md is the runbook):
+# api, relay, worker, runner, Postgres and Garage on separate networks. TLS and the public
+# routing are the reverse proxy's job and are not part of this file. Every secret and address has
+# no default (`${NAME:?…}`), so `docker compose config` fails until the environment is complete;
+# run it as
+#
+#   docker compose --env-file prod.env -f infra/compose.prod.yml up -d --build
+#
+# Networks, from the least to the most trusted:
+#   managed    the optional managed connector only; it reaches the relay through the public URL
+#              and the compute targets its operator pins, never Postgres or Garage
+#   runner-db  Postgres and the runner only (internal: no route out); the runner holds the
+#              Docker socket, so a sandbox escape reaches this network and nothing else
+#   egress     api, relay and worker, for sign-in mail and the published ports; nothing here holds
+#              the database
+#   backend    Postgres, Garage, api, relay, worker (internal: no route out)
+#
+# Sandbox containers start with no network at all (docs/design/runner.md §7.3), whatever these
+# networks are. For a real deployment give the runner its own host (design §10.1); this file keeps
+# it separate in its network and in what it can read, not in its machine.
+
+x-server: &server
+  image: parallax-server:${PARALLAX_VERSION:-local}
+  build: { context: .., dockerfile: infra/docker/server.Dockerfile }
+  restart: unless-stopped
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  # Longer than the worker's 8 s drain and the relay's 8 s background wait (main.ts, app.ts).
+  stop_grace_period: 10s
+  logging: { driver: json-file, options: { max-size: 20m, max-file: "5" } }
+
+# One configuration for api, relay, worker and the migration (main.ts reads the same variables).
+x-server-env: &server-env
+  NODE_ENV: production
+  DATABASE_URL: postgres://parallax:${POSTGRES_PASSWORD:?}@postgres:5432/parallax
+  LOG_LEVEL: ${LOG_LEVEL:-info}
+  APP_ORIGIN: ${APP_ORIGIN:?https://parallax.example.org}
+  APP_HOST: ${APP_HOST:?parallax.example.org}
+  CONTENT_ORIGIN: ${CONTENT_ORIGIN:?https://content.parallax.example.org}
+  CONTENT_HOST: ${CONTENT_HOST:?content.parallax.example.org}
+  SESSION_SECRET: ${SESSION_SECRET:?32 or more random characters}
+  CONTENT_TOKEN_SECRET: ${CONTENT_TOKEN_SECRET:?32 or more random characters}
+  TRUST_PROXY: ${TRUST_PROXY:?the reverse proxy's address or CIDR range}
+  STORAGE_DRIVER: s3
+  S3_ENDPOINT: http://garage:3900
+  S3_REGION: garage
+  S3_BUCKET: ${S3_BUCKET:-parallax}
+  S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:?}
+  S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:?}
+  MAIL_TRANSPORT: smtp
+  SMTP_URL: ${SMTP_URL:?smtp://user:password@mail.example.org:587}
+  MAIL_FROM: ${MAIL_FROM:?Parallax <login@example.org>}
+  INSTRUCTOR_EMAILS: ${INSTRUCTOR_EMAILS:-}
+  SHINY_ORIGINS: ${SHINY_ORIGINS:-}
+  RETENTION_DEACTIVATED_GRACE_DAYS: ${RETENTION_DEACTIVATED_GRACE_DAYS:-}
+  RETENTION_AUDIT_DAYS: ${RETENTION_AUDIT_DAYS:-}
+  RUNNER_RUNTIMES: ${RUNNER_RUNTIMES:?JSON array of runtimes, each pinned by digest}
+  # Limits and defaults (docs/operations.md §Configuration); the values here are the defaults.
+  AUTH_LINK_RATE_LIMIT: ${AUTH_LINK_RATE_LIMIT:-120}
+  AUTH_VERIFY_RATE_LIMIT: ${AUTH_VERIFY_RATE_LIMIT:-240}
+  RUN_RATE_LIMIT: ${RUN_RATE_LIMIT:-30}
+  SESSION_TTL_DAYS: ${SESSION_TTL_DAYS:-14}
+  LEASE_IDLE_MINUTES: ${LEASE_IDLE_MINUTES:-30}
+  LEASE_GRACE_MINUTES: ${LEASE_GRACE_MINUTES:-5}
+
+# The app answers by Host (ADR-0002), so the probe names the app host; ready is 503 until the
+# database, the job queue and the object store answer.
+x-ready: &ready
+  test:
+    - CMD
+    - node
+    - -e
+    - >-
+      require('http').get({host:'127.0.0.1',port:3000,path:'/api/ready',headers:{host:process.env.APP_HOST}},
+      (r)=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))
+  interval: 15s
+  timeout: 10s
+  retries: 4
+  start_period: 40s
+
+services:
+  postgres:
+    image: postgres:16.15
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: parallax
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
+      POSTGRES_DB: parallax
+    volumes: [pgdata:/var/lib/postgresql/data]
+    networks: [backend, runner-db]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U parallax"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    logging: { driver: json-file, options: { max-size: 20m, max-file: "5" } }
+
+  # Prepare it once with docs/operations.md §First start. The configuration is yours: it carries
+  # the cluster's rpc_secret, so the development file in infra/garage is not used here.
+  garage:
+    image: dxflrs/garage:v2.4.1
+    restart: unless-stopped
+    volumes:
+      - ${GARAGE_CONFIG:?path to your garage.toml}:/etc/garage.toml:ro
+      - garage-meta:/var/lib/garage/meta
+      - garage-data:/var/lib/garage/data
+    networks: [backend]
+    healthcheck:
+      test: ["CMD", "/garage", "status"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    logging: { driver: json-file, options: { max-size: 20m, max-file: "5" } }
+
+  # Applies the schema, then exits; api, relay and worker wait for it.
+  migrate:
+    <<: *server
+    restart: "no"
+    command: ["pnpm", "--filter", "@parallax/server", "db:migrate"]
+    environment: *server-env
+    depends_on:
+      postgres: { condition: service_healthy }
+    networks: [backend]
+
+  api:
+    <<: *server
+    command: ["pnpm", "--filter", "@parallax/server", "exec", "tsx", "src/main.ts", "api"]
+    environment: { <<: *server-env, HOST: 0.0.0.0, PORT: "3000" }
+    ports: ["127.0.0.1:${API_PORT:-3000}:3000"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      garage: { condition: service_healthy }
+    networks: [backend, egress]
+    healthcheck: *ready
+
+  # Exactly one: connector links live in this process's memory (main.ts). The proxy sends the
+  # connector link and the notebook-session routes here (docs/operations.md §Routing).
+  relay:
+    <<: *server
+    command: ["pnpm", "--filter", "@parallax/server", "exec", "tsx", "src/main.ts", "relay"]
+    environment: { <<: *server-env, HOST: 0.0.0.0, PORT: "3000" }
+    ports: ["127.0.0.1:${RELAY_PORT:-3001}:3000"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      garage: { condition: service_healthy }
+    networks: [backend, egress]
+    healthcheck: *ready
+
+  worker:
+    <<: *server
+    command: ["pnpm", "--filter", "@parallax/server", "exec", "tsx", "src/main.ts", "worker"]
+    environment: *server-env
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      garage: { condition: service_healthy }
+    networks: [backend, egress]
+
+  # Runs sandbox containers through the host's Docker daemon (docs/design/runner.md §10.1): the
+  # socket is root-equivalent on this host. It reads Postgres as `parallax_runner` (schema
+  # pgboss_exec only) and holds no application secret.
+  runner:
+    image: parallax-runner:${PARALLAX_VERSION:-local}
+    build: { context: .., dockerfile: infra/docker/runner.Dockerfile }
+    restart: unless-stopped
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    group_add: ["${DOCKER_GID:?the group id of /var/run/docker.sock on the host}"]
+    environment:
+      RUNNER_DATABASE_URL: postgres://parallax_runner:${RUNNER_DB_PASSWORD:?}@postgres:5432/parallax
+      RUNNER_IMAGES: ${RUNNER_IMAGES:?JSON object of runtime ids and image references pinned by digest}
+      RUNNER_SLOTS: ${RUNNER_SLOTS:-4}
+      RUNNER_PULL: never
+      RUNNER_DOCKER_RUNTIME: ${RUNNER_DOCKER_RUNTIME:-runsc}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    volumes: ["/var/run/docker.sock:/var/run/docker.sock"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    networks: [runner-db]
+    logging: { driver: json-file, options: { max-size: 20m, max-file: "5" } }
+
+  # Optional: a managed connector (docs/design/connector.md §12, spec §10.6), as in compose.yml.
+  # Start it with `--profile managed` after docs/operations.md §Managed connector.
+  connector-managed:
+    profiles: [managed]
+    build:
+      context: ../connector
+      dockerfile_inline: |
+        FROM golang:1.24.7-bookworm AS build
+        WORKDIR /src
+        COPY go.mod go.sum ./
+        RUN go mod download
+        COPY . .
+        RUN CGO_ENABLED=0 go build -trimpath -o /out/parallax-connector ./cmd/parallax-connector && mkdir -p /out/state
+        FROM gcr.io/distroless/static-debian12:nonroot
+        COPY --from=build /out/parallax-connector /parallax-connector
+        COPY --from=build --chown=65532:65532 /out/state /state
+        USER 65532:65532
+        ENTRYPOINT ["/parallax-connector", "run", "--managed"]
+    user: "65532:65532"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    restart: unless-stopped
+    environment:
+      PARALLAX_SERVER: ${APP_ORIGIN:?}
+      PARALLAX_CONNECTOR_ID: ${PARALLAX_CONNECTOR_ID:?from connectors:register-managed}
+      PARALLAX_ALLOW_NET: ${PARALLAX_ALLOW_NET:-}
+      PARALLAX_ALLOW_HOSTS: ${PARALLAX_ALLOW_HOSTS:-}
+      PARALLAX_ALLOW_PORTS: ${PARALLAX_ALLOW_PORTS:-22}
+      PARALLAX_CONNECTOR_HOME: /state
+      PARALLAX_IDENTITY_KEY_FILE: /run/parallax/identity.key
+      PARALLAX_KNOWN_HOSTS_FILE: /run/parallax/known_hosts
+      PARALLAX_TARGETS_FILE: /run/parallax/targets.json
+      PARALLAX_KEYS_DIR: /run/parallax/keys
+    volumes:
+      - ${MANAGED_CONNECTOR_DIR:?the managed connector directory}:/run/parallax:ro
+      - managed-connector-state:/state
+    networks: [managed]
+
+networks:
+  backend: { internal: true }
+  runner-db: { internal: true }
+  egress: {}
+  managed: {}
+
+volumes:
+  pgdata: {}
+  garage-meta: {}
+  garage-data: {}
+  managed-connector-state: {}
