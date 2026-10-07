@@ -18,7 +18,7 @@ import {
 import { ConnectPanel } from './connect/ConnectPanel';
 import { LiveNotebook } from './live';
 import styles from './Notebook.module.css';
-import { NotebookView } from './NotebookView';
+import { NotebookView, RenewOutputLinks } from './NotebookView';
 import { type NotebookSummary, useNotebookContent, useNotebooks, useShiny } from './notebooks';
 import { ShinyEmbed } from './ShinyEmbed';
 
@@ -341,12 +341,14 @@ function NotebookPanel({
   } else {
     body = (
       <div className={styles.stage}>
-        <NotebookView
-          notebook={ready}
-          showCode={showCode}
-          showOutputs={showOutputs}
-          outlineOpen={outlineOpen}
-        />
+        <RenewOutputLinks.Provider value={() => void content.refetch()}>
+          <NotebookView
+            notebook={ready}
+            showCode={showCode}
+            showOutputs={showOutputs}
+            outlineOpen={outlineOpen}
+          />
+        </RenewOutputLinks.Provider>
         <ColabSubmission
           classId={classId}
           resourceId={notebook.resourceId}

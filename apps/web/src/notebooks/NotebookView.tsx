@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { createContext, useContext, useMemo, useRef, useState } from 'react';
 import buttons from '../components/Buttons.module.css';
 import readingStyles from '../reading/Reading.module.css';
 import { sanitizeReading } from '../reading/sanitize';
@@ -12,6 +12,12 @@ interface Props {
   showOutputs: boolean;
   outlineOpen: boolean;
 }
+
+/**
+ * Fetches the notebook again, which mints new output links. Provided by the page that owns the
+ * notebook query; a stored image whose link no longer loads offers it as Try again.
+ */
+export const RenewOutputLinks = createContext<(() => void) | null>(null);
 
 type Shown = Record<string, { code?: boolean; output?: boolean }>;
 
@@ -212,7 +218,7 @@ export function Output({ output, cellCount }: { output: CellOutput; cellCount: n
       return (
         <div className={styles.output}>
           {output.url ? (
-            <img className={styles.image} src={output.url} alt={output.alt} />
+            <StoredImage url={output.url} alt={output.alt} />
           ) : (
             <p>{output.alt} (image unavailable)</p>
           )}
@@ -257,12 +263,12 @@ export function Output({ output, cellCount }: { output: CellOutput; cellCount: n
               <iframe
                 className={styles.frame}
                 // Every sandbox restriction: no script, no same origin, no forms, popups or
-                // navigation of this page. The content origin's own CSP says the same.
+                // navigation of this page. The content origin's own CSP says the same. Not lazy:
+                // a frame created late would be loaded from a link that may have lapsed.
                 sandbox=""
                 src={output.url}
                 title={`Output of cell ${count(cellCount)}`}
                 referrerPolicy="no-referrer"
-                loading="lazy"
               />
             </div>
           ) : (
@@ -288,6 +294,26 @@ export function Output({ output, cellCount }: { output: CellOutput; cellCount: n
         </div>
       );
   }
+}
+
+function StoredImage({ url, alt }: { url: string; alt: string }) {
+  const renew = useContext(RenewOutputLinks);
+  // The link that failed to load; only a newly minted link is tried again.
+  const [brokenUrl, setBrokenUrl] = useState<string | null>(null);
+  if (url === brokenUrl) {
+    return (
+      <p role="status">
+        This image could not be loaded.{' '}
+        {renew ? (
+          <button type="button" className={buttons.textButton} onClick={renew}>
+            Try again
+          </button>
+        ) : null}
+        <span className={styles.provenance}> {alt}</span>
+      </p>
+    );
+  }
+  return <img className={styles.image} src={url} alt={alt} onError={() => setBrokenUrl(url)} />;
 }
 
 function TableRow({ row }: { row: Extract<CellOutput, { type: 'table' }>['body'][number] }) {

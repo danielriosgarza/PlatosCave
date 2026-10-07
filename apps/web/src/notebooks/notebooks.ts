@@ -13,7 +13,11 @@ export type CellOutput = Extract<NotebookCell, { type: 'code' }>['outputs'][numb
 export const useNotebooks = (classId: string, topicId: string) =>
   useApi(listNotebooks, { params: { classId, topicId } });
 
-/** Output links last five minutes (§13); a notebook is fetched afresh, never from a stale link. */
+/**
+ * Output links last five minutes (§13). The notebook is fetched again before they lapse, while the
+ * page is open and when the window is focused or the network returns, so a cell revealed later
+ * shows its output from a live link.
+ */
 const CONTENT_TTL_MS = 4 * 60_000;
 const PENDING_POLL_MS = 3000;
 
@@ -25,13 +29,12 @@ export const useNotebookContent = (classId: string, revisionId: string) => {
     queryFn: () => call(getNotebook, args),
     gcTime: CONTENT_TTL_MS,
     staleTime: CONTENT_TTL_MS,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-    refetchInterval: (query) =>
-      query.state.data?.status === 'pending' &&
-      !(query.state.error instanceof ApiError && query.state.error.status === 404)
-        ? PENDING_POLL_MS
-        : false,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
+    refetchInterval: (query) => {
+      if (query.state.error instanceof ApiError && query.state.error.status === 404) return false;
+      return query.state.data?.status === 'pending' ? PENDING_POLL_MS : CONTENT_TTL_MS;
+    },
   });
 };
 
