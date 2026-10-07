@@ -376,7 +376,7 @@ Tracks: **slides** (P2-01 → P2-02 → P2-03, P2-09), **annotations** (P2-04 �
 - Spec: §5, §7. Scenarios: A04, A24 (arrow presses; notes binding completed in P2-09). Depends on: P2-01, P1-13. Model: sonnet. Security: no. Size: M.
 
 ### P2-03 · Web slides
-- Scope: `slides_web` resource: Markdown deck separated by `---`, rendered through the reading pipeline into per-slide HTML with block ids, same viewer controls, authoring textarea in the topic editor.
+- Scope: `slides_web` resource: Markdown deck separated by `---`, rendered through the reading pipeline into per-slide HTML with block ids, same viewer controls, authoring textarea in the topic editor. As built: inline text only, with no file upload and therefore no images; an image in a deck is reported as a warning and shows nothing.
 - Spec: §7. Scenarios: none. Depends on: P2-02. Model: sonnet. Security: yes. Size: S.
 
 ### P2-04 · Annotation and discussion schema, API, visibility
@@ -416,7 +416,7 @@ Tracks: **slides** (P2-01 → P2-02 → P2-03, P2-09), **annotations** (P2-04 �
 - Spec: §9, §12. Scenarios: none. Depends on: P2-10, P1-14. Model: sonnet. Security: no. Size: M.
 
 ### P2-13 · Notebook rendering and sandboxed outputs
-- Scope: nbformat import validation (zod for nbformat 4.5), continuous renderer (Markdown/KaTeX cells, code with execution counts, text/image/table outputs inline, HTML/JS outputs rendered only inside a sandboxed iframe on the content origin with CSP and no scripts unless explicitly allowed per course), "Stored output · <kernel>" labels vs live state, collapse source/output, outline, Focus, source download.
+- Scope: nbformat import validation (zod for nbformat 4.5), continuous renderer (Markdown/KaTeX cells, code with execution counts, text/image/table outputs inline, HTML/JS outputs rendered only inside a sandboxed iframe on the content origin with CSP and no scripts unless explicitly allowed per course; as built there is no per-course allowance and stored outputs never run script, spec §10.7), "Stored output · <kernel>" labels vs live state, collapse source/output, outline, Focus, source download.
 - Spec: §10.1, §10.7. Scenarios: A09. Depends on: P1-06, P1-12. Model: opus. Security: yes. Size: M.
 
 ### P2-14 · Colab route and notebook upload submissions
@@ -432,7 +432,7 @@ Tracks: **slides** (P2-01 → P2-02 → P2-03, P2-09), **annotations** (P2-04 �
 - Spec: §10.7, §12. Scenarios: none. Depends on: P2-15. Model: sonnet. Security: yes. Size: S.
 
 ### P2-16 · Reviewed marks and course progress
-- Scope: table `topic_reviews`, mark ungraded material reviewed, completion rule evaluation (reviewed + graded requirements), reviewed counts on cards and syllabus footer, Resume location from positions. As built: `topic_reviews` holds one row per student, class and resource (unmarking deletes it); `GET`/`PUT /api/classes/:classId/topics/:topicId/reviews[/:resourceId]` are student-only. The default rule asks for every ungraded resource the student can open now to be reviewed and every graded one (test, exercise with credit) submitted (decision 15); `submitted:` is met by a notebook submission or a completed exercise attempt, and `test` submissions arrive with P3-15. The review sheet is 404 for a locked or scheduled topic. A topic with nothing to ask, or an unknown requirement, is never complete. Resume from positions was already built in P1-11.
+- Scope: table `topic_reviews`, mark ungraded material reviewed, completion rule evaluation (reviewed + graded requirements), reviewed counts on cards and syllabus footer, Resume location from positions. As built: `topic_reviews` holds one row per student, class and resource (unmarking deletes it); `GET`/`PUT /api/classes/:classId/topics/:topicId/reviews[/:resourceId]` are student-only. The default rule asks for every ungraded resource the student can open now to be reviewed and every graded one (test, exercise with credit) submitted (decision 15); `submitted:` is met by a notebook submission or a completed exercise attempt, and a `test` is submitted once one of its attempts was (by the student or at its deadline), which `submittedTests` in `topicReviews.ts` counts. The review sheet is 404 for a locked or scheduled topic. A topic with nothing to ask, or an unknown requirement, is never complete. Resume from positions was already built in P1-11.
 - Spec: §4. Scenarios: none. Depends on: P1-10, P1-11, P2-14 (migration chain). Model: sonnet. Security: no. Size: S.
 
 ## 4. Phase 3 — connected notebooks; isolated execution and submission
@@ -723,7 +723,7 @@ None of these blocks Phases 1–4, which run entirely locally and in GitHub Acti
 | 2 | What a student sees after choosing the instructor entrance | `/courses?view=teach` shows an access explanation and their enrolled classes; no privilege change (P1-09) |
 | 3 | How "Preview as student" identity is realised | Shadow user (`kind = preview`) per instructor × class with an `is_preview` student membership (ADR-0002) |
 | 4 | Slide rendering: server rasterisation vs client rendering | Client-side pdf.js with HTTP range requests; server extracts page count and text only (P2-01). Raster-only decks require a text alternative at publication; a deck is raster-only when fewer than half of its pages carry text (`derived.rasterOnly`, P2-01) |
-| 5 | Format of "instructor-authored web slides" | Markdown deck separated by `---`, rendered through the reading pipeline (P2-03) |
+| 5 | Format of "instructor-authored web slides" | Markdown deck separated by `---`, rendered through the reading pipeline (P2-03); inline text only, no images (an image is a warning and shows nothing) |
 | 6 | Exercise definition format | Versioned JSON (`exercise.v1`) validated by zod, edited through a form; no DSL (P2-10) |
 | 7 | Hidden-check storage | Inside the test resource revision; student contracts use response schemas without those fields, asserted structurally (P3-16) |
 | 8 | Runner isolation in production vs CI | Same Docker policy everywhere; gVisor runtime enabled by config on the dedicated production host (ADR-0004) |
@@ -733,7 +733,7 @@ None of these blocks Phases 1–4, which run entirely locally and in GitHub Acti
 | 12 | Timed-attempt expiry while the student is offline | pg-boss job at the deadline submits the latest acknowledged draft as `auto_submitted`; local unsent work stays in IndexedDB for the recovery request (P3-15, P4-06) |
 | 13 | Idempotent submission key | Client-generated UUID per Submit action, unique per attempt (P3-15) |
 | 14 | Object storage in dev/CI | `fs` adapter default; MinIO unavailable on Docker Hub, Garage used for the S3 adapter test (ADR-0001) |
-| 15 | Topic completion rule shape | JSON `{ requires: ['reviewed:*', 'submitted:<resourceId>'] }`; default (no rule) = `['reviewed:*', 'submitted:*']`: every ungraded resource reviewed and every graded resource (a `test`, or an exercise assigned for credit) submitted. As built in P2-16 a submission is a notebook submission or a completed exercise attempt; a test submission arrives with P3-15, so until then a topic with a test needs an author rule that omits it to complete. A topic is never complete while a prerequisite is incomplete. |
+| 15 | Topic completion rule shape | JSON `{ requires: ['reviewed:*', 'submitted:<resourceId>'] }`; default (no rule) = `['reviewed:*', 'submitted:*']`: every ungraded resource reviewed and every graded resource (a `test`, or an exercise assigned for credit) submitted. As built a submission is a notebook submission, a completed exercise attempt, or a submitted test attempt (by the student or at its deadline); tests are counted in the default rule. A topic is never complete while a prerequisite is incomplete. |
 | 16 | Cross-class visibility of discussions in one course | Never; discussions are class-scoped rows (A21) |
 | 17 | Naming collision "session" | `auth_sessions` vs `notebook_sessions` |
 | 18 | TypeScript 7 (native) is the npm `latest` | Use 5.9.3 for tooling and agent familiarity; revisit in 2027 |

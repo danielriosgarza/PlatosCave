@@ -10,13 +10,12 @@ import {
   setOwner,
   setPublisher,
 } from '@parallax/contracts/routes/members';
-import type { FastifyInstance, FastifyRequest } from 'fastify';
+import type { FastifyInstance } from 'fastify';
 import type { RouteDeps } from '../../app';
-import { readSessionToken } from '../../auth/sessions';
-import { hashToken } from '../../auth/tokens';
 import * as identity from '../../db/identity';
 import * as invites from '../../db/invites';
 import * as members from '../../db/members';
+import { perSession } from '../rate-limit';
 import { notFound, registerRoute } from '../register';
 
 /** HTTP status for each reason an invitation cannot be used (§4: the cause is shown). */
@@ -106,19 +105,8 @@ export default function memberRoutes(app: FastifyInstance, deps: RouteDeps): voi
   });
 
   // Brute-forcing codes is limited per session, not per address: a whole lecture hall may join
-  // from one network address at once. Sessions come only from rate-limited sign-in links; a
-  // cookie that does not verify shares its address's bucket. The key is the token's hash, as
-  // stored in auth_sessions, so the limiter's store never holds a live session secret.
-  const joinLimit = {
-    rateLimit: {
-      max: 20,
-      timeWindow: '15 minutes',
-      keyGenerator: (req: FastifyRequest) => {
-        const token = readSessionToken(req);
-        return token ? hashToken(token) : req.ip;
-      },
-    },
-  };
+  // from one network address at once.
+  const joinLimit = perSession(20, '15 minutes');
 
   registerRoute(
     app,

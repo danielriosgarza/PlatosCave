@@ -32,6 +32,12 @@ export interface Storage {
   get(key: string, range?: ByteRange): Promise<{ body: Readable; size: number }>;
   head(key: string): Promise<{ size: number } | null>;
   delete(key: string): Promise<void>;
+  /**
+   * Resolves when the store itself is usable (the bucket exists and answers, the root can be
+   * written), which `head` of a missing key cannot say: a HEAD reports a missing bucket and a
+   * missing key alike. Readiness uses it; absent, it falls back to `head`.
+   */
+  ping?(): Promise<void>;
   /** Releases connections the adapter holds; buildApp calls it on close. */
   destroy?(): void;
 }

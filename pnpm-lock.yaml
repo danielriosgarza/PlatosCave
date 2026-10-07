@@ -181,6 +181,9 @@ importers:
       pino-pretty:
         specifier: 13.1.3
         version: 13.1.3
+      yaml:
+        specifier: 2.9.1
+        version: 2.9.1
 
   apps/web:
     dependencies:

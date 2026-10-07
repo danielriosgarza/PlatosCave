@@ -104,6 +104,8 @@ export class SessionRelay {
       timers: LinkTimers;
       now: () => Date;
       log: FastifyBaseLogger;
+      /** The lease when neither the request nor the class template names one; defaults to DEFAULT_LEASE. */
+      defaultLease?: { idleTimeoutMin: number; gracePeriodMin: number };
     },
   ) {}
 
@@ -267,7 +269,7 @@ export class SessionRelay {
       return { ok: false, reason: 'connector_offline' };
     }
     const runtime = input.runtime ?? connection.runtime;
-    const lease = input.lease ?? found.templateLease ?? DEFAULT_LEASE;
+    const lease = input.lease ?? found.templateLease ?? this.options.defaultLease ?? DEFAULT_LEASE;
     const target = connection.target;
     const hostKeys = connection.trustedHostKeys.map(({ host, port, sha256 }) => ({
       host,

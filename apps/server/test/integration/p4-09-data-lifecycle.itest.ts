@@ -6,7 +6,7 @@ import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { buildApp } from '../../src/app';
 import { resolveActorScope } from '../../src/auth/scope';
 import { loadConfig } from '../../src/config';
-import { createSession, signInWithProof } from '../../src/db/auth/sessions';
+import { createSession, SESSION_TTL_MS, signInWithProof } from '../../src/db/auth/sessions';
 import { createCourse, createUser } from '../../src/db/identity';
 import { applyRetention } from '../../src/db/lifecycle';
 import {
@@ -495,6 +495,7 @@ describe('account deactivation and deletion', () => {
     const signedIn = await signInWithProof(testDb.db, {
       consume: async () => ({ ok: true, email: 'priya@example.test', destination: '/' }),
       now: clock,
+      ttlMs: SESSION_TTL_MS,
     });
     expect(signedIn.token).toBeUndefined();
     const live = await testDb.db
@@ -708,6 +709,7 @@ describe('account deactivation and deletion', () => {
     const again = await signInWithProof(testDb.db, {
       consume: async () => ({ ok: true, email: 'sam@example.test', destination: '/' }),
       now: clock,
+      ttlMs: SESSION_TTL_MS,
     });
     expect(again.token).toBeDefined();
     const fresh = await testDb.db.select().from(users).where(eq(users.email, 'sam@example.test'));

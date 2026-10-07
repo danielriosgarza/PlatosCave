@@ -46,7 +46,8 @@ async function landingOf(
 export default function previewRoutes(app: FastifyInstance, deps: RouteDeps): void {
   const { config } = deps;
   const origin = config.APP_ORIGIN;
-  const sessionCookie = sessionCookieOptions(origin);
+  const sessionTtlMs = config.SESSION_TTL_MS;
+  const sessionCookie = sessionCookieOptions(origin, sessionTtlMs);
   const db = deps.requireDb;
 
   registerRoute(app, startPreview, async ({ scope, body, req, reply }) => {
@@ -63,6 +64,7 @@ export default function previewRoutes(app: FastifyInstance, deps: RouteDeps): vo
       reply,
       { token: own, courseId: scope.courseId, topicId: body.topicId },
       origin,
+      sessionTtlMs,
     );
     reply.setCookie(SESSION_COOKIE, started.token, {
       ...sessionCookie,
