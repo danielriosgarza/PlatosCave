@@ -110,38 +110,46 @@ local({
 
   # deparse is quadratic in the length of an escape-heavy string (1.2 M characters of
   # \n, \t, quotes and non-ASCII take ~19 s, 6 M exceed the check's time limit), while 64 Ki
-  # characters take milliseconds. The harness compares this text with expected.value in `repr`
-  # mode (design section 4.4), so nothing shorter than REPR_CHARS characters may change: a
-  # character string longer than that is cut to REPR_CHARS characters plus an ellipsis, in
-  # plain (unclassed) character vectors and plain lists only; a value with nothing to cut is
-  # returned as it is, attributes and classes included, and a value whose string sits in a
-  # classed container, a name or an attribute is deparsed whole.
+  # characters take milliseconds. The repr text is compared with expected.value in `repr` mode
+  # and with the expected value of a non-JSON result in the other modes (design section 4.4),
+  # and it is shown in messages, so nothing within the bound may change: a character string
+  # longer than REPR_CHARS characters is cut to its first REPR_CHARS characters plus an
+  # ellipsis, in plain (unclassed) character vectors and plain lists only. A value with
+  # nothing to cut is deparsed as it is, attributes and classes included; a string in a
+  # classed container, a name or an attribute is deparsed whole; and if bounding fails (a
+  # list nested too deeply for the recursion, a string with a "bytes" encoding) the value is
+  # deparsed whole, as it was before the bound existed.
   REPR_CHARS <- 65536L
+
+  # TRUE if a plain character vector anywhere in the plain list x has a string over the
+  # limit in bytes (a cheap upper bound of its characters). rapply walks in C and calls back
+  # only for character leaves, so a list of numbers costs almost nothing.
+  has_long_string <- function(x) {
+    any(rapply(x, function(s) any(nchar(s, type = "bytes") > REPR_CHARS, na.rm = TRUE),
+               classes = "character", deflt = FALSE, how = "unlist"))
+  }
 
   bound_for_repr <- function(x) {
     if (is.character(x) && !is.object(x)) {
-      # Bytes are never fewer than characters, so only strings over the limit in bytes need
-      # the character count (which needs valid UTF-8).
       big <- which(!is.na(x) & nchar(x, type = "bytes") > REPR_CHARS)
       if (length(big)) {
-        text <- clean_text(x[big])
+        text <- clean_text(enc2utf8(x[big]))
         cut <- nchar(text, type = "chars") > REPR_CHARS
         if (any(cut)) {
           x[big[cut]] <- paste0(substr(text[cut], 1L, REPR_CHARS), "\u2026")
         }
       }
-    } else if (is.vector(x, "list") && !is.object(x) && length(x)) {
-      bounded <- lapply(x, bound_for_repr)
-      if (!all(mapply(identical, bounded, x))) x[] <- bounded
+    } else if (is.vector(x, "list") && !is.object(x) && length(x) && has_long_string(x)) {
+      x[] <- lapply(x, bound_for_repr)
     }
     x
   }
 
   repr_text <- function(x) {
-    tryCatch(
-      clean_text(paste(trimws(deparse(bound_for_repr(x), width.cutoff = 500L)), collapse = " ")),
-      error = function(e) "<unrepresentable>"
-    )
+    tryCatch({
+      bounded <- tryCatch(bound_for_repr(x), error = function(e) x)
+      clean_text(paste(trimws(deparse(bounded, width.cutoff = 500L)), collapse = " "))
+    }, error = function(e) "<unrepresentable>")
   }
 
   # JSON from the harness to R values: arrays of scalars of one kind become atomic vectors

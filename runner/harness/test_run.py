@@ -1371,6 +1371,7 @@ class RRuntime(HarnessCase):
         "lens <- function(x) list(is.list(x), length(x))\n"
         "bigvec <- function() rep(c('a\"b', 'caf\\u00e9', NA), length.out = 100000)\n"
         "huge_escapes <- function() strrep('\u00e9\\n\\t\\001\"\\\\', 300000)\n"
+        "nested <- function(n) { d <- list(); for (i in seq_len(n)) d <- list(d); d }\n"
         "utf8_within <- function() strrep('\u00e9', 40000)\n"
         "ascii_at <- function() strrep('a', 65536)\n"
         "ascii_over <- function() strrep('a', 65537)\n"
@@ -1596,6 +1597,13 @@ class RRuntime(HarnessCase):
         self.assertEqual(
             [c["status"] for c in outcome.result["checks"]], ["passed"] * 3 + ["failed"], outcome.result["checks"]
         )
+
+    def test_repr_of_a_deeply_nested_list_falls_back_to_the_whole_deparse(self):
+        # 1000 levels deparse fine; the bounding recursion must not turn them into <unrepresentable>.
+        outcome = self.outcome_for(r_call("Nested", "nested", {"value": "x"}, "repr", args=[1000]))
+        check = outcome.check()
+        self.assertEqual(check["status"], "failed", check)
+        self.assertTrue(check["actual"].startswith("list(list(list("), check["actual"][:40])
 
     def test_stop_with_a_warning_or_message_condition_is_an_exception(self):
         outcome = self.outcome_for(
