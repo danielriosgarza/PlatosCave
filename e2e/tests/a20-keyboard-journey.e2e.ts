@@ -1,7 +1,14 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, type Locator, type Page, test } from '@playwright/test';
 import { joinLabClassAs } from './lab-classmate';
-import { releaseToClassA, signedIn, type WorldIds, worldIds } from './released';
+import {
+  exerciseDefinition,
+  releaseToClassA,
+  signedIn,
+  testDefinition,
+  type WorldIds,
+  worldIds,
+} from './released';
 
 test.use({ colorScheme: 'light' });
 
@@ -37,58 +44,6 @@ async function chooseTab(page: Page, name: string) {
   await expect(strip.getByRole('tab', { name })).toHaveAttribute('aria-selected', 'true');
   await expect(strip.getByRole('tab', { name })).toBeFocused();
 }
-
-const definition = {
-  schema: 'test.v1',
-  settings: { attempts: 3, timeZone: 'Europe/Madrid' },
-  questions: [
-    {
-      id: 'spread',
-      kind: 'choice',
-      prompt: 'Which sample mean varies least?',
-      points: 2,
-      options: [
-        { id: 'n10', label: 'n = 10' },
-        { id: 'n100', label: 'n = 100' },
-      ],
-      correct: ['n100'],
-    },
-    {
-      id: 'why',
-      kind: 'explanation',
-      prompt: 'Why does the larger sample vary less?',
-      points: 3,
-      rubric: [{ id: 'averaging', label: 'Names averaging out of noise', points: 3 }],
-    },
-    {
-      id: 'mean',
-      kind: 'code',
-      prompt: 'Write mean(xs).',
-      points: 4,
-      runtime: 'python-3.12',
-      files: [
-        {
-          path: 'solution.py',
-          content: 'def mean(xs):\n    pass\n',
-          editable: true,
-          hidden: false,
-        },
-      ],
-      checks: [
-        {
-          name: 'sample',
-          kind: 'call',
-          visibility: 'public',
-          file: 'solution.py',
-          function: 'mean',
-          args: [[1, 2, 3]],
-          expected: { value: 2 },
-          compare: { mode: 'numeric' },
-        },
-      ],
-    },
-  ],
-};
 
 test('A20 a keyboard-only reader goes from the course list to a saved reading note', async ({
   page,
@@ -136,7 +91,9 @@ test('A20 a keyboard-only student answers a test with code and finds the release
   baseURL,
 }) => {
   const title = `Keyboard test ${Date.now()}-${test.info().workerIndex}`;
-  const resourceId = await releaseToClassA(playwright, baseURL, ids, 'test', title, definition);
+  const [resourceId] = await releaseToClassA(playwright, baseURL, ids, [
+    { type: 'test', title, content: testDefinition },
+  ]);
   const priya = await signedIn(playwright, baseURL, 'priya@example.test');
 
   expect(
@@ -192,15 +149,15 @@ test('A20 a keyboard-only student answers a test with code and finds the release
   expect(held).toContain('Noise averages out.');
   expect(held).toContain('return sum(xs) / len(xs)');
   const gradeUrl = `/api/classes/${ids.classA}/test-attempts/${attemptId}/grade`;
-  const drafted = await (
-    await priya.post(gradeUrl, {
-      data: {
-        expectedGradeId: null,
-        manual: [{ questionId: 'why', criteria: [{ id: 'averaging', points: 3 }] }],
-        feedback: [{ target: { kind: 'attempt' }, text: 'Well argued.' }],
-      },
-    })
-  ).json();
+  const draftResponse = await priya.post(gradeUrl, {
+    data: {
+      expectedGradeId: null,
+      manual: [{ questionId: 'why', criteria: [{ id: 'averaging', points: 3 }] }],
+      feedback: [{ target: { kind: 'attempt' }, text: 'Well argued.' }],
+    },
+  });
+  expect(draftResponse.ok()).toBe(true);
+  const drafted = await draftResponse.json();
   const overridden = await priya.post(`${gradeUrl}/override`, {
     data: { expectedGradeId: drafted.history[0].id, points: 9, reason: 'No runner attached' },
   });
@@ -223,34 +180,11 @@ test('A20 a keyboard-only student answers a test with code and finds the release
   await priya.dispose();
 });
 
-const exercise = {
-  schema: 'exercise.v1',
-  steps: [
-    {
-      id: 'predict',
-      kind: 'single_choice',
-      title: 'Predict',
-      prompt: 'What happens to the standard error when n goes from 25 to 100?',
-      options: [
-        { id: 'half', label: 'It halves' },
-        { id: 'same', label: 'It stays the same' },
-      ],
-      correct: 'half',
-      feedback: { correct: 'Yes, the standard error halves.', incorrect: 'Not quite.' },
-    },
-    {
-      id: 'explain',
-      kind: 'text',
-      title: 'Explain',
-      prompt: 'Which distribution narrowed, and which did not?',
-      feedback: { saved: 'Saved. Your practice is complete.' },
-    },
-  ],
-};
-
 test('A20 a keyboard-only student completes an exercise', async ({ page, playwright, baseURL }) => {
   const title = `Keyboard exercise ${Date.now()}-${test.info().workerIndex}`;
-  await releaseToClassA(playwright, baseURL, ids, 'exercise', title, exercise);
+  await releaseToClassA(playwright, baseURL, ids, [
+    { type: 'exercise', title, content: exerciseDefinition },
+  ]);
 
   expect(
     (await page.request.post('/api/test/signin-as', { data: { email: 'sam@example.test' } })).ok(),
@@ -290,15 +224,22 @@ test('A20 a sheet keeps focus inside, closes on Escape and gives focus back to i
   await activate(page, opener);
   const sheet = page.getByRole('dialog', { name: 'Join a class' });
   await expect(sheet).toBeVisible();
-  await expect(sheet.locator(':focus')).toHaveCount(1);
+  // Focus moves into the sheet: the code field has it, so typing reaches the field.
+  const field = sheet.getByRole('textbox');
+  await expect(field).toBeFocused();
+  await page.keyboard.type('ABCD-EFGH');
+  await expect(field).toHaveValue('ABCD-EFGH');
+  // Real Tab presses never leave the sheet for the page behind it.
+  for (let presses = 0; presses < 8; presses++) {
+    await page.keyboard.press('Tab');
+    await expect(sheet.locator(':focus')).toHaveCount(1);
+  }
   // Tab from the last control wraps to the first, Shift+Tab from the first to the last, and the
   // page behind never takes focus.
   const controls = sheet.locator(
     'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled])',
   );
-  // The sheet has the code field and its buttons; wrapping needs at least two controls.
-  // Join is disabled until a code is typed; with one the sheet has several controls to wrap among.
-  await page.keyboard.type('ABCD-EFGH');
+  // With a code typed, Join is enabled too: the field and the buttons give several controls.
   expect(await controls.count()).toBeGreaterThan(1);
   const first = controls.first();
   const last = controls.last();

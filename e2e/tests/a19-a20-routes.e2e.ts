@@ -1,6 +1,13 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, type Locator, type Page, test } from '@playwright/test';
-import { releaseToClassA, signedIn, type WorldIds, worldIds } from './released';
+import {
+  exerciseDefinition,
+  releaseToClassA,
+  signedIn,
+  testDefinition,
+  type WorldIds,
+  worldIds,
+} from './released';
 
 test.use({ colorScheme: 'light' });
 
@@ -8,82 +15,8 @@ const id = (n: number) => `00000000-0000-4000-8000-${n.toString().padStart(12, '
 const lab = { course: id(111), class: id(211), topic: id(311), nativeRevision: id(511) };
 const topic = `/classes/${lab.class}/topics/${lab.topic}`;
 
-const exercise = {
-  schema: 'exercise.v1',
-  steps: [
-    {
-      id: 'predict',
-      kind: 'single_choice',
-      title: 'Predict',
-      prompt: 'What happens to the standard error when n goes from 25 to 100?',
-      options: [
-        { id: 'half', label: 'It halves' },
-        { id: 'same', label: 'It stays the same' },
-      ],
-      correct: 'half',
-      feedback: { correct: 'Yes, the standard error halves.', incorrect: 'Not quite.' },
-    },
-    {
-      id: 'explain',
-      kind: 'text',
-      title: 'Explain',
-      prompt: 'Which distribution narrowed, and which did not?',
-      feedback: { saved: 'Saved. Your practice is complete.' },
-    },
-  ],
-};
-
-const testDefinition = {
-  schema: 'test.v1',
-  settings: { attempts: 3, timeZone: 'Europe/Madrid' },
-  questions: [
-    {
-      id: 'spread',
-      kind: 'choice',
-      prompt: 'Which sample mean varies least?',
-      points: 2,
-      options: [
-        { id: 'n10', label: 'n = 10' },
-        { id: 'n100', label: 'n = 100' },
-      ],
-      correct: ['n100'],
-    },
-    {
-      id: 'why',
-      kind: 'explanation',
-      prompt: 'Why does the larger sample vary less?',
-      points: 3,
-      rubric: [{ id: 'averaging', label: 'Names averaging out of noise', points: 3 }],
-    },
-    {
-      id: 'mean',
-      kind: 'code',
-      prompt: 'Write mean(xs).',
-      points: 4,
-      runtime: 'python-3.12',
-      files: [
-        {
-          path: 'solution.py',
-          content: 'def mean(xs):\n    pass\n',
-          editable: true,
-          hidden: false,
-        },
-      ],
-      checks: [
-        {
-          name: 'sample',
-          kind: 'call',
-          visibility: 'public',
-          file: 'solution.py',
-          function: 'mean',
-          args: [[1, 2, 3]],
-          expected: { value: 2 },
-          compare: { mode: 'numeric' },
-        },
-      ],
-    },
-  ],
-};
+/** One unbroken line, as typed into a text box: it must wrap in the review, not scroll sideways. */
+const LONG_EXPLANATION = `Noise averages out.${' The larger sample averages more independent draws,'.repeat(6).replaceAll(' ', '_')}`;
 
 interface Fixtures {
   ids: WorldIds;
@@ -99,16 +32,12 @@ test.beforeAll(async ({ playwright, baseURL }) => {
   const exerciseTitle = `Routes exercise ${stamp}`;
   const testTitle = `Routes test ${stamp}`;
   const submittedTitle = `Routes submitted ${stamp}`;
-  await releaseToClassA(playwright, baseURL, ids, 'exercise', exerciseTitle, exercise);
-  await releaseToClassA(playwright, baseURL, ids, 'test', testTitle, testDefinition);
-  const submittedId = await releaseToClassA(
-    playwright,
-    baseURL,
-    ids,
-    'test',
-    submittedTitle,
-    testDefinition,
-  );
+  const [, , submittedId] = await releaseToClassA(playwright, baseURL, ids, [
+    { type: 'exercise', title: exerciseTitle, content: exerciseDefinition },
+    { type: 'test', title: testTitle, content: testDefinition },
+    { type: 'test', title: submittedTitle, content: testDefinition },
+  ]);
+  if (!submittedId) throw new Error('the submitted test was not created');
   // Sam submits a test, so the class review has a submission to show.
   const sam = await signedIn(playwright, baseURL, 'sam@example.test');
   const url = `/api/classes/${ids.classA}/resources/${submittedId}/test-attempts`;
@@ -118,7 +47,7 @@ test.beforeAll(async ({ playwright, baseURL }) => {
   const attempt = `/api/classes/${ids.classA}/test-attempts/${attemptId}`;
   for (const [question, value] of [
     ['spread', ['n100']],
-    ['why', 'Noise averages out.'],
+    ['why', LONG_EXPLANATION],
     [
       'mean',
       {
@@ -239,7 +168,12 @@ const routes: Route[] = [
     path: (f) => f.reviewUrl,
     load: async (page) => {
       await shown(page.getByRole('region', { name: 'Grading workspace' }));
-      await shown(page.getByText('Noise averages out.'));
+      const answer = page.getByText(/^Noise averages out\./);
+      await shown(answer);
+      // A written answer is prose: it wraps, so its box never scrolls sideways (code may).
+      expect(await answer.first().evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(
+        true,
+      );
     },
   },
   {
@@ -286,6 +220,7 @@ const widePageCulprits = (page: Page) =>
     const scrolls = (box: Element) => /(auto|scroll)/.test(getComputedStyle(box).overflowX);
     const isAllowedScroller = (box: Element) =>
       scrolls(box) &&
+      box.scrollWidth > box.clientWidth &&
       (box.matches('pre, [role="tablist"]') || box.querySelector(':scope > table') !== null);
     const inAllowedScroller = (el: Element) => {
       for (let box: Element | null = el; box; box = box.parentElement) {
@@ -329,6 +264,15 @@ async function zoomText(page: Page): Promise<{ before: number; after: number }> 
 }
 
 for (const route of routes) {
+  test.describe(`${route.name} in the dark palette`, () => {
+    test.use({ colorScheme: 'dark' });
+
+    test(`A19 axe finds no violations on ${route.name} in the dark palette`, async ({ page }) => {
+      await open(page, route);
+      expect(await analyse(page)).toEqual([]);
+    });
+  });
+
   test(`A19 axe finds no violations on ${route.name}`, async ({ page }) => {
     await open(page, route);
     expect(await analyse(page)).toEqual([]);
