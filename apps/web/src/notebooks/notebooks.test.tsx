@@ -1,4 +1,4 @@
-import { cleanup, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -206,6 +206,135 @@ describe('Notebooks tab', () => {
     expect(panel.querySelector('script')).toBeNull();
     expect(panel.querySelector('[onerror]')).toBeNull();
     expect((window as { __pwned?: number }).__pwned).toBeUndefined();
+  });
+
+  describe('output links', () => {
+    /** A notebook whose output links are minted anew on every fetch, one collapsed cell among them. */
+    function apiMintingLinks() {
+      let fetches = 0;
+      const base = notebook.cells.filter((c) => c.id === 'intro');
+      return stubApi((url) => {
+        if (url === '/api/me')
+          return { status: 200, body: makeMe({ classes: [studentIn(CLASS_A, 'Class A')] }) };
+        if (url === `/api/classes/${CLASS_A}/topics`) return { status: 200, body: makeTopics() };
+        if (url === NOTEBOOKS.replace('/classes', '/api/classes')) {
+          return {
+            status: 200,
+            body: {
+              notebooks: [
+                { resourceId: RES, revisionId: REV, title: 'Repeated samples', type: 'notebook' },
+              ],
+            },
+          };
+        }
+        if (url === `/api/classes/${CLASS_A}/resources/${REV}/notebook`) {
+          fetches += 1;
+          return {
+            status: 200,
+            body: {
+              revisionId: REV,
+              title: 'Repeated samples',
+              status: 'ready',
+              error: null,
+              sourceKey: SOURCE_KEY,
+              notebook: {
+                ...notebook,
+                outline: [],
+                cells: [
+                  ...base,
+                  {
+                    id: 'hidden',
+                    type: 'code',
+                    source: 'chart',
+                    executionCount: 5,
+                    sourceHidden: false,
+                    outputsHidden: true,
+                    outputs: [
+                      {
+                        type: 'html',
+                        executionCount: null,
+                        url: `http://localhost:3100/content/frame-${fetches}`,
+                        height: 200,
+                        scriptsRemoved: false,
+                      },
+                      {
+                        type: 'image',
+                        executionCount: null,
+                        url: `http://localhost:3100/content/image-${fetches}`,
+                        alt: 'Histogram of means',
+                      },
+                    ],
+                  },
+                ],
+              },
+            },
+          };
+        }
+        return { status: 404, body: {} };
+      });
+    }
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it('A09 an output revealed after the first links lapsed is shown from a renewed link', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      apiMintingLinks();
+      renderApp(NOTEBOOKS);
+      const panel = await content();
+      const show = await within(panel).findByRole('button', { name: 'Show output of cell [5]' });
+      // Six minutes pass with the page open: past the five-minute life of the first links.
+      await vi.advanceTimersByTimeAsync(6 * 60_000);
+      show.click();
+      const frame = await within(panel).findByTitle('Output of cell [5]');
+      expect(frame.getAttribute('src')).not.toBe('http://localhost:3100/content/frame-1');
+      expect(frame).toHaveAttribute('loading', 'lazy');
+      expect(within(panel).getByRole('img', { name: 'Histogram of means' })).not.toHaveAttribute(
+        'src',
+        'http://localhost:3100/content/image-1',
+      );
+    });
+
+    it('A09 an output that has loaded keeps its link when the notebook is renewed', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      const fetchMock = apiMintingLinks();
+      renderApp(NOTEBOOKS);
+      const panel = await content();
+      await user.click(
+        await within(panel).findByRole('button', { name: 'Show output of cell [5]' }),
+      );
+      const image = await within(panel).findByRole('img', { name: 'Histogram of means' });
+      const frame = await within(panel).findByTitle('Output of cell [5]');
+      fireEvent.load(image);
+      fireEvent.load(frame);
+      const asked = () =>
+        fetchMock.mock.calls.filter(([u]) => String(u).endsWith(`/${REV}/notebook`)).length;
+      const before = asked();
+      await vi.advanceTimersByTimeAsync(5 * 60_000);
+      await waitFor(() => expect(asked()).toBeGreaterThan(before));
+      expect(image.getAttribute('src')).toBe('http://localhost:3100/content/image-1');
+      expect(frame.getAttribute('src')).toBe('http://localhost:3100/content/frame-1');
+    });
+
+    it('A09 an image that no longer loads says so, and Try again shows it from a new link', async () => {
+      const user = userEvent.setup();
+      apiMintingLinks();
+      renderApp(NOTEBOOKS);
+      const panel = await content();
+      await user.click(
+        await within(panel).findByRole('button', { name: 'Show output of cell [5]' }),
+      );
+      const image = await within(panel).findByRole('img', { name: 'Histogram of means' });
+      const first = image.getAttribute('src');
+      fireEvent.error(image);
+      expect(within(panel).getByText(/This image could not be loaded\./)).toBeInTheDocument();
+      expect(within(panel).queryByRole('img', { name: 'Histogram of means' })).toBeNull();
+      await user.click(within(panel).getByRole('button', { name: 'Try again' }));
+      const renewed = await within(panel).findByRole('img', { name: 'Histogram of means' });
+      expect(renewed.getAttribute('src')).not.toBe(first);
+    });
   });
 
   it('collapses code and outputs independently, honours collapsed cells, and offers outline and download', async () => {

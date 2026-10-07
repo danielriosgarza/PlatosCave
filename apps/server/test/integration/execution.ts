@@ -120,6 +120,8 @@ export interface ExecWorld {
 }
 
 export interface ExecWorldOptions {
+  /** Overrides RUN_RATE_LIMIT, the per-session cap on run requests a minute. */
+  runRateLimit?: number;
   /** The API's object store (default: the one the config selects). */
   storage?: Storage;
   /** Files stored in the course and named by the quiz revision's `objectKeys`; needs `storage`. */
@@ -127,7 +129,7 @@ export interface ExecWorldOptions {
 }
 
 export async function execWorld(options: ExecWorldOptions = {}): Promise<ExecWorld> {
-  const { storage, quizObjects = [] } = options;
+  const { storage, quizObjects = [], runRateLimit } = options;
   if (quizObjects.length > 0 && !storage) throw new Error('quizObjects need a storage');
   const testDb = await createTestDatabase();
   const world = await buildWorld(testDb.db, start);
@@ -175,7 +177,7 @@ export async function execWorld(options: ExecWorldOptions = {}): Promise<ExecWor
   const runner = new FakeRunner(testDb.url);
   await runner.start();
   const clock = { now: start };
-  const app = await buildApp(config, {
+  const app = await buildApp(runRateLimit ? { ...config, RUN_RATE_LIMIT: runRateLimit } : config, {
     db: testDb.db,
     now: () => clock.now,
     bossExec: boss,

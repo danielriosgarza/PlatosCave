@@ -192,6 +192,7 @@ const reviewedAttempt = (
   recoveryRequestedAt: null,
   student,
   removed,
+  timeZone: 'UTC',
   graderVersion: 'grader-1',
   terms,
   test: testContent,

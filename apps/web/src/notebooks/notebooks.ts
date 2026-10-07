@@ -13,9 +13,21 @@ export type CellOutput = Extract<NotebookCell, { type: 'code' }>['outputs'][numb
 export const useNotebooks = (classId: string, topicId: string) =>
   useApi(listNotebooks, { params: { classId, topicId } });
 
-/** Output links last five minutes (§13); a notebook is fetched afresh, never from a stale link. */
+/**
+ * Output links last five minutes (§13). The notebook is fetched again before they lapse, while the
+ * page is open and when the window is focused or the network returns, so a cell revealed later
+ * shows its output from a live link.
+ */
 const CONTENT_TTL_MS = 4 * 60_000;
 const PENDING_POLL_MS = 3000;
+
+/** Whether any output carries a content link that will lapse. */
+const hasOutputLinks = (notebook: Notebook) =>
+  notebook.cells.some(
+    (cell) =>
+      cell.type === 'code' &&
+      cell.outputs.some((o) => (o.type === 'image' || o.type === 'html') && o.url),
+  );
 
 /** One notebook and its import state; while the import runs the query asks again every few seconds. */
 export const useNotebookContent = (classId: string, revisionId: string) => {
@@ -25,13 +37,14 @@ export const useNotebookContent = (classId: string, revisionId: string) => {
     queryFn: () => call(getNotebook, args),
     gcTime: CONTENT_TTL_MS,
     staleTime: CONTENT_TTL_MS,
-    refetchOnWindowFocus: false,
-    refetchOnReconnect: false,
-    refetchInterval: (query) =>
-      query.state.data?.status === 'pending' &&
-      !(query.state.error instanceof ApiError && query.state.error.status === 404)
-        ? PENDING_POLL_MS
-        : false,
+    refetchOnWindowFocus: true,
+    refetchOnReconnect: true,
+    refetchInterval: (query) => {
+      if (query.state.error instanceof ApiError && query.state.error.status === 404) return false;
+      const data = query.state.data;
+      if (data?.status === 'pending') return PENDING_POLL_MS;
+      return data?.notebook && hasOutputLinks(data.notebook) ? CONTENT_TTL_MS : false;
+    },
   });
 };
 
