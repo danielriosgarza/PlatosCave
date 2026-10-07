@@ -122,6 +122,88 @@ func TestA34_AfterRawString(t *testing.T)
     expect(idsInGoTests(src)).toEqual(['A28', 'A30', 'A34']);
   });
 
+  it('AUD8b gates are matched on the condition AST, not on words in it', () => {
+    const src = `
+      test.skipIf(!fast || process.env.CI)('A05 mixed condition', () => {});
+      test.skipIf(!env.CI && other)('A06 and-condition', () => {});
+      test.runIf(env.CI || fast)('A07 or-condition', () => {});
+      test.skipIf(!imagePresent)('A13 image', () => {});
+      test.skipIf(!(await dockerAvailable()))('A14 docker', () => {});
+      test.skipIf(!process.env.S3_ENDPOINT)('A22 s3', () => {});
+      test.runIf(process.env.CI)('A09 ci', () => {});`;
+    expect(idsInTsTitles(src)).toEqual(['A13', 'A14', 'A22', 'A09']);
+  });
+
+  it('AUD8b a /* inside a Go string does not blank the tests after it', () => {
+    const src = `
+var dir = "/tmp/*"
+var raw = \`/* not a comment\`
+func TestA28_AfterString(t *testing.T) {}
+func TestA30_AfterRune(t *testing.T) { _ = '"' }
+func TestA31_AfterEscape(t *testing.T) { _ = "q\\"/*" }
+// closes later */
+/* real comment
+func TestA33_Commented(t *testing.T) {}
+*/
+func TestA34_AfterComment(t *testing.T) {}
+`;
+    expect(idsInGoTests(src)).toEqual(['A28', 'A30', 'A31', 'A34']);
+  });
+
+  it('AUD8b an unconditional test.skip or test.fixme in a group skips its titles', () => {
+    const src = `
+      test.describe('A05 whole group', () => {
+        test.skip();
+        test('A06 inside', async () => {});
+      });
+      test.describe('A07 fixme group', () => {
+        test.fixme(true, 'broken');
+        test('A08 inside', async () => {});
+      });
+      test.describe('A09 conditional stays', () => {
+        test.skip(browserName === 'webkit', 'no webkit');
+        test('A10 inside', async () => {});
+      });
+      test.describe('A11 one test', () => {
+        test('A12 skipped alone', async () => { test.skip(); });
+        test('A13 kept', async () => {});
+      });`;
+    expect(idsInTsTitles(src)).toEqual(['A09', 'A10', 'A11', 'A13']);
+    expect(idsInTsTitles("test.skip();\ntest('A01 file skipped', () => {});")).toEqual([]);
+  });
+
+  it('AUD8b chained and imported test.extend fixtures count', () => {
+    const files: Record<string, string> = {
+      'e2e/fixtures.ts': `
+        import { test as base } from '@playwright/test';
+        export const authed = base.extend({}).extend({});
+        export { authed as signedIn };`,
+      'e2e/reexport.ts': "export { authed as viaReexport } from './fixtures.js';",
+      'e2e/tests/a01.e2e.ts': `
+        import { authed, signedIn as second } from '../fixtures.js';
+        import { viaReexport } from '../reexport.js';
+        import { other } from '../elsewhere.js';
+        const local = test.extend({}).extend({});
+        authed('A01 imported', async () => {});
+        second('A02 renamed', async () => {});
+        viaReexport('A03 re-exported', async () => {});
+        local('A04 chained', async () => {});
+        other('A05 unknown module', async () => {});`,
+    };
+    const found = findTests(Object.keys(files), (f) => files[f] ?? '');
+    expect([...found.keys()].sort()).toEqual(['A01', 'A02', 'A03', 'A04']);
+  });
+
+  it('AUD8b reads the literal parts of titles joined with +', () => {
+    const src = `
+      it('A05 ' + name, () => {});
+      it(prefix + ' A06 ' + name, () => {});
+      it(('A07' + ' x'), () => {});
+      it('A0' + n, () => {});
+      it(prefix + name, () => {});`;
+    expect(idsInTsTitles(src)).toEqual(['A05', 'A06', 'A07']);
+  });
+
   it('AUD8 maps IDs to files across TS and Go', () => {
     const files: Record<string, string> = {
       'a/x.test.ts': "it('A01 one', () => {});",
