@@ -150,8 +150,17 @@ function mount(
     return { status: 404, body: {} };
   });
   const onOpenConnect = vi.fn();
+  // The workspace listing has answered: Run is held back only while it is unknown.
+  const client = createQueryClient();
+  client.setQueryData(['files', CLASS_A, session({ ...over }).id, ''], {
+    workspace: '/home/sam/parallax',
+    host: null,
+    dir: '',
+    entries: [],
+    declared: [],
+  });
   const view = render(
-    <QueryClientProvider client={createQueryClient()}>
+    <QueryClientProvider client={client}>
       <RenewOutputLinks.Provider value={renewLinks}>
         <Host
           over={over}
