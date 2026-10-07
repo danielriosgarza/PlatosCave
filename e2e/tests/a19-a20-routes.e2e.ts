@@ -76,8 +76,25 @@ const analyse = async (page: Page) => {
   return (await new AxeBuilder({ page }).exclude('iframe[sandbox]').analyze()).violations;
 };
 
-const pageScrollsSideways = (page: Page) =>
-  page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
+/** Elements that push the page wider than the window (empty when the page fits). */
+const widePageCulprits = (page: Page) =>
+  page.evaluate(() => {
+    const width = document.documentElement.clientWidth;
+    if (document.documentElement.scrollWidth <= width) return [];
+    return [...document.querySelectorAll('body *')]
+      .filter((el) => el.getBoundingClientRect().right > width + 1)
+      .filter((el) => {
+        // A box inside its own horizontal scroller (code, table, tab strip) does not widen the page.
+        for (let up = el.parentElement; up; up = up.parentElement) {
+          if (/(auto|scroll)/.test(getComputedStyle(up).overflowX)) return false;
+        }
+        return true;
+      })
+      .map(
+        (el) =>
+          `${el.tagName.toLowerCase()}.${String(el.className)} → ${Math.round(el.getBoundingClientRect().right)} px`,
+      );
+  });
 
 for (const route of routes) {
   test(`A19 axe finds no violations on ${route.name}`, async ({ page }) => {
@@ -92,10 +109,10 @@ for (const route of routes) {
       page,
     }) => {
       await open(page, route);
-      expect(await pageScrollsSideways(page)).toBe(false);
+      expect(await widePageCulprits(page)).toEqual([]);
       await page.addStyleTag({ content: 'html { font-size: 200% !important; }' });
       await expect(page.getByRole('main')).toBeVisible();
-      expect(await pageScrollsSideways(page)).toBe(false);
+      expect(await widePageCulprits(page)).toEqual([]);
       expect(await analyse(page)).toEqual([]);
     });
   });
