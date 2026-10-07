@@ -470,6 +470,36 @@ describe('A09 stored HTML and JavaScript outputs cannot run script', () => {
     expect(out.text).not.toMatch(/animate|javascript/i);
   });
 
+  test('A09 foreignObject, animation and style content without script do not claim scripts were removed', () => {
+    for (const body of [
+      '<switch><foreignObject><div>Label</div></foreignObject><text>Label</text></switch>',
+      '<circle r="1"><animate attributeName="r" to="3"/></circle>',
+      '<style>b{}<desc/></style><rect/>',
+    ]) {
+      const out = storedSvg(`<svg ${NS}>${body}</svg>`);
+      expect(out.scriptsRemoved).toBe(false);
+      expect(out.text).not.toMatch(/foreignObject|<animate/);
+    }
+    // A script inside foreign content still counts.
+    expect(
+      storedSvg(`<svg ${NS}><foreignObject><img src="x" onerror="alert(1)"/></foreignObject></svg>`)
+        .scriptsRemoved,
+    ).toBe(true);
+  });
+
+  test('A09 a style element keeps its media attribute so a print stylesheet stays print-only', () => {
+    const out = storedSvg(`<svg ${NS}><style media="print">rect{fill:red}</style><rect/></svg>`);
+    expect(out.text).toContain('<style media="print">');
+  });
+
+  test('A09 a reference with leading Unicode whitespace is not treated as in-document', () => {
+    for (const lead of ['\u00a0', '\u2003', '\ufeff']) {
+      const out = storedSvg(`<svg ${NS}><use href="${lead}#a"/><use href="  #b"/></svg>`);
+      expect(out.text).not.toContain(`href="${lead}#a"`);
+      expect(out.text).toContain('href="  #b"');
+    }
+  });
+
   test('A09 namespaces other than the root are dropped, as are values that would break the XML', () => {
     const out = storedSvg(
       `<svg ${NS}><g xmlns="http://www.w3.org/1999/xhtml" id="a<b"><rect id="ok"/></g><text>x]]>y</text></svg>`,
