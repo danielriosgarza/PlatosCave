@@ -42,6 +42,8 @@ export default defineConfig({
           name: 'runner',
           environment: 'node',
           include: ['apps/runner/test/**/*.docker.itest.ts'],
+          // Each file's afterAll sweeps every `parallax.runner` container, so files must not overlap.
+          fileParallelism: false,
           testTimeout: 120000,
           hookTimeout: 60000,
         },
