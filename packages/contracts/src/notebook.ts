@@ -205,7 +205,7 @@ const htmlFields = {
   type: z.literal('html'),
   /** Estimated frame height in CSS pixels. */
   height: z.int().min(1),
-  /** The stored output held scripts or event handlers; they were removed and never run. */
+  /** The stored output held a script, an event handler or a script URL; it was removed and never run. */
   scriptsRemoved: z.boolean(),
 };
 
@@ -219,7 +219,7 @@ const storedOutput = z.discriminatedUnion('type', [
     key: z.string(),
     contentType: z.string(),
     alt: z.string(),
-    /** An SVG held script or event handlers; they were removed (§13). Absent otherwise. */
+    /** The SVG held a script, an event handler or a script URL; it was removed and never run (§13). Absent otherwise. */
     scriptsRemoved: z.boolean().optional(),
   }),
   tableOutput,

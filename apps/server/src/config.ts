@@ -47,7 +47,7 @@ export const DEV_RUNNER_RUNTIMES: RunnerRuntime[] = [
     language: 'python',
     image: 'parallax-runner-python:dev',
     digest: null,
-    harnessVersion: '1',
+    harnessVersion: '2',
     packages: ['numpy', 'pandas', 'scipy'],
   },
   {
@@ -55,7 +55,7 @@ export const DEV_RUNNER_RUNTIMES: RunnerRuntime[] = [
     language: 'r',
     image: 'parallax-runner-r:dev',
     digest: null,
-    harnessVersion: '1',
+    harnessVersion: '2',
     packages: ['jsonlite'],
   },
 ];
@@ -95,6 +95,22 @@ const Env = z
     AUTH_VERIFY_RATE_LIMIT: z.coerce.number().int().positive().default(240),
     /** Notebook uploads (`notebook-submissions`) one person may make per 15 minutes (§13). */
     SUBMISSION_RATE_LIMIT: z.coerce.number().int().positive().default(30),
+    /**
+     * Code-run requests (sample runs, replays, instructor previews) allowed per session per
+     * minute. Counted per session, not per address, so a class behind one campus NAT, or the load
+     * test's single client, does not share a budget. A student's runs are also capped at two
+     * queued or running (spec §11), whatever this is.
+     */
+    RUN_RATE_LIMIT: z.coerce.number().int().positive().default(30),
+    /** Days a sign-in lasts before the person signs in again (spec §17: session limits). */
+    SESSION_TTL_DAYS: z.coerce.number().int().min(1).max(90).default(14),
+    /**
+     * Default lease of a notebook session when neither the person nor the class template sets
+     * one (connector design §9): minutes without activity before an open notebook stops, and
+     * minutes a closed tab keeps its kernel. Bounds are the connector's: 5-240 and 1-60.
+     */
+    LEASE_IDLE_MINUTES: z.coerce.number().int().min(5).max(240).default(30),
+    LEASE_GRACE_MINUTES: z.coerce.number().int().min(1).max(60).default(5),
     /**
      * Fastify `trustProxy`: which proxies' `X-Forwarded-*` headers to believe, so `req.ip` (the
      * rate-limit key) and `req.host` name the client and the requested host, not the proxy.
@@ -311,6 +327,8 @@ const Env = z
     ...env,
     SESSION_SECRET: env.SESSION_SECRET ?? DEV_SESSION_SECRET,
     TRUST_PROXY: env.TRUST_PROXY ?? false,
+    /** SESSION_TTL_DAYS in milliseconds: the one lifetime every session and its cookies get. */
+    SESSION_TTL_MS: env.SESSION_TTL_DAYS * 24 * 60 * 60_000,
     MAIL_FROM: env.MAIL_FROM ?? 'Parallax <no-reply@parallax.invalid>',
     // The Vite dev server proxies /api, so links open the web app's origin in development.
     APP_ORIGIN: env.APP_ORIGIN ?? 'http://localhost:5173',

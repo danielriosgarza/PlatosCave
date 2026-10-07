@@ -44,12 +44,15 @@ export function signInWithProof(
     previous,
     alsoEnd,
     now,
+    ttlMs,
   }: {
     consume: (tx: Executor) => Promise<SignInResult>;
     previous?: string;
     /** Ends further sessions the browser holds (a preview's kept one), in the same transaction. */
     alsoEnd?: (tx: Executor) => Promise<void>;
     now: Date;
+    /** How long the new session lasts (SESSION_TTL_DAYS). */
+    ttlMs: number;
   },
 ): Promise<{ token?: string; destination: string | null }> {
   return db.transaction(async (tx) => {
@@ -61,7 +64,11 @@ export function signInWithProof(
     // Rotation: whatever session this browser held before is ended, never upgraded in place.
     if (previous) await revokeSession(tx, previous, now);
     await alsoEnd?.(tx);
-    const { token } = await createSession(tx, userId, { now, authTime: now });
+    const { token } = await createSession(tx, userId, {
+      now,
+      authTime: now,
+      ttlMs,
+    });
     return { token, destination: result.destination };
   });
 }
