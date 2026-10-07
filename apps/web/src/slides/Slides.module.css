@@ -249,7 +249,11 @@
   }
 }
 
-/* An empty live region stays mounted but takes no space in the tools row (gap: 8px). */
-.status:empty {
-  margin-left: -8px;
+/* The zoom live region stays mounted and announced, but is out of the layout while empty. */
+.zoomStatus:empty {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
 }

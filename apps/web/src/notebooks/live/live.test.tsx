@@ -571,7 +571,7 @@ describe('live notebook', () => {
     expect(posts).toHaveLength(0);
   });
 
-  it('A04 Escape on a kernel confirmation cancels it and marks the key handled, so Focus stays on', () => {
+  it('A04 Escape on a kernel confirmation cancels it and marks the key handled', () => {
     vi.useFakeTimers();
     attach({}, { kernel: { id: KERNEL, name: 'python3', state: 'busy', generation: 0 } });
     fireEvent.click(screen.getByRole('button', { name: 'Interrupt' }));

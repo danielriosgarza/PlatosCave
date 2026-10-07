@@ -352,6 +352,9 @@ describe('slide viewer', () => {
     await waitFor(() => expect(doc.rendered).toHaveLength(1));
     const fit = doc.rendered[0]?.width ?? 0;
     expect(screen.getByRole('button', { name: 'Fit' })).toBeDisabled();
+    // The zoom live region is mounted before it has anything to say.
+    const tools = screen.getByRole('toolbar', { name: 'Resource tools' });
+    expect(within(tools).getByRole('status')).toBeEmptyDOMElement();
     await user.click(screen.getByRole('button', { name: 'Zoom in' }));
     await waitFor(() => expect(doc.rendered.at(-1)?.width).toBe(Math.floor(550 * (16 / 9) * 1.5)));
     expect(screen.getByText('Zoom 150%')).toHaveAttribute('role', 'status');
@@ -359,6 +362,7 @@ describe('slide viewer', () => {
     await waitFor(() => expect(doc.rendered.at(-1)?.width).toBe(fit));
     expect(screen.getByRole('button', { name: 'Fit' })).toBeDisabled();
     expect(screen.queryByText(/^Zoom \d+%$/)).toBeNull();
+    expect(within(tools).getByRole('status')).toBeEmptyDOMElement();
   });
 
   it('A04 Focus and Escape keep the slide: the viewer is not rebuilt', async () => {

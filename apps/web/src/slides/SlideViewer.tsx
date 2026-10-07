@@ -239,7 +239,7 @@ export function SlideViewer({
       >
         Fit
       </button>
-      <span className={`${styles.label} ${styles.status}`} role="status">
+      <span className={`${styles.label} ${styles.zoomStatus}`} role="status">
         {zoom > 0 ? `Zoom ${Math.round(level * 100)}%` : ''}
       </span>
       {notes && (
