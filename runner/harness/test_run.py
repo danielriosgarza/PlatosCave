@@ -1370,6 +1370,9 @@ class RRuntime(HarnessCase):
         "ident <- function(x) x\n"
         "lens <- function(x) list(is.list(x), length(x))\n"
         "bigvec <- function() rep(c('a\"b', 'caf\\u00e9', NA), length.out = 100000)\n"
+        "stop_warning <- function() stop(simpleWarning('w'))\n"
+        "stop_message <- function() stop(simpleMessage('m'))\n"
+        "nested_signal <- function() withCallingHandlers(stop('boom'), error = function(e) signalCondition(structure(class = c('note', 'condition'), list(message = 'fyi', call = NULL))))\n"
         "custom <- function() stop(structure(class = c('myFailure', 'condition'), list(message = 'custom failure', call = NULL)))\n"
         "signals <- function() { signalCondition(structure(class = c('note', 'condition'), list(message = 'fyi', call = NULL))); 7 }\n"
     )
@@ -1562,10 +1565,32 @@ class RRuntime(HarnessCase):
         self.assertEqual(outcome.check(1)["message"], "myFailure: custom failure")
         self.assertEqual(outcome.check(1)["errorKind"], "exception")
 
-    def test_a_large_character_vector_is_serialised_quickly(self):
-        job = r_job({"solution.R": self.SOURCE}, [r_call("Big", "bigvec", {"value": "x"}, "repr", timeoutSeconds=5)])
-        entry = self.go(job).check()
-        self.assertEqual(entry["status"], "failed", entry)
+    def test_a_large_character_vector_is_serialised_quickly_and_exactly(self):
+        # 100 000 elements, non-ASCII and NA among them; a per-element serialiser took ~10 s.
+        pattern = ['a"b', "caf\u00e9", None]
+        expected = [pattern[i % 3] for i in range(100000)]
+        entry = self.outcome_for(r_call("Big", "bigvec", {"value": expected}, timeoutSeconds=5)).check()
+        self.assertEqual(entry["status"], "passed", {k: entry[k] for k in entry if k not in ("expected", "actual")})
+
+    def test_stop_with_a_warning_or_message_condition_is_an_exception(self):
+        outcome = self.outcome_for(
+            r_call("Warning", "stop_warning", {"raises": {"type": "simpleWarning", "message": "w"}}),
+            r_call("Message", "stop_message", {"raises": {"type": "simpleMessage"}}),
+            r_call("Handler signal during error", "nested_signal", {"raises": {"type": "simpleError", "message": "boom"}}),
+        )
+        self.assertEqual([c["status"] for c in outcome.result["checks"]], ["passed"] * 3, outcome.result["checks"])
+
+    def test_a_non_error_condition_at_the_top_of_the_solution_file_is_an_exception(self):
+        job = r_job(
+            {"solution.R": "stop(structure(class = c('myFailure', 'condition'), list(message = 'top', call = NULL)))\n"},
+            [r_call("Top level", "f", {"raises": {"type": "myFailure", "message": "top"}})],
+        )
+        self.assertEqual(self.go(job).check()["status"], "passed")
+
+    def test_q_defined_by_a_sourced_helper_is_found(self):
+        files = {"solution.R": "source('helper.R')\n", "helper.R": "q <- function() 'helper q'\n"}
+        entry = self.go(r_job(files, [r_call("Q", "q", {"value": "helper q"})])).check()
+        self.assertEqual(entry["status"], "passed", entry)
 
     def test_character_vectors_keep_quotes_unicode_and_missing_values(self):
         files = {"solution.R": "v <- function() c('a\"b', 'caf\\u00e9', NA, 'back\\\\slash')\nk <- function() c('x\"y' = 1, z = 2)\n"}
