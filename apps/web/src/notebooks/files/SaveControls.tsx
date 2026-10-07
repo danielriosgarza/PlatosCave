@@ -31,10 +31,11 @@ interface Props {
 
 type SaveState =
   | { kind: 'idle' }
-  | { kind: 'saving' }
+  | { kind: 'saving'; fromStale: boolean }
   | { kind: 'saved'; revision: number; savedAt: string }
   | { kind: 'failed'; message: string }
-  | { kind: 'stale' };
+  /** A newer copy than the draft's base exists; `revision` is the revision that moved the base. */
+  | { kind: 'stale'; revision: number; viaImport: boolean };
 
 /**
  * The two kinds of save, kept apart (§10.5): **Saved to Parallax** is the working copy stored by
@@ -62,8 +63,8 @@ export function SaveControls({
   const [conflict, setConflict] = useState<Conflict[] | null>(null);
   const [busy, setBusy] = useState(false);
 
-  async function saveToParallax(base: number) {
-    setSave({ kind: 'saving' });
+  async function saveToParallax(base: number, fromStale = false) {
+    setSave({ kind: 'saving', fromStale });
     try {
       const copy = await call(saveWorkingCopy, {
         params: { classId, workingCopyId: workingCopy.id },
@@ -75,8 +76,9 @@ export function SaveControls({
       const body =
         err instanceof ApiError ? (err.body as { error?: string; current?: unknown }) : null;
       if (err instanceof ApiError && err.status === 409 && body?.error === 'revision_conflict') {
-        setSave({ kind: 'stale' });
-        onWorkingCopy(body.current as WorkingCopyView);
+        const current = body.current as WorkingCopyView;
+        setSave({ kind: 'stale', revision: current.currentRevision, viaImport: false });
+        onWorkingCopy(current);
       } else if (err instanceof ApiError && err.status === 413) {
         setSave({ kind: 'failed', message: 'The notebook is too large to store.' });
       } else if (err instanceof ApiError && err.status === 400) {
@@ -133,9 +135,16 @@ export function SaveControls({
 
   // A newer copy found by an import puts the save in the same state as a stale save.
   useEffect(() => {
-    if (baseMoved) setSave({ kind: 'stale' });
+    if (baseMoved) setSave({ kind: 'stale', revision: baseMoved.revision, viaImport: true });
   }, [baseMoved]);
-  const stale = save.kind === 'stale';
+  // After an import the alert speaks of a draft, so it needs one: an editor equal to the newer copy
+  // has nothing to place. A later import or save moves the revision on, which ends the state. The alert stays
+  // (disabled, "Saving") while the chosen save runs, so the clicked control keeps its place.
+  const stale =
+    (save.kind === 'saving' && save.fromStale) ||
+    (save.kind === 'stale' &&
+      save.revision === workingCopy.currentRevision &&
+      (unsaved || !save.viaImport));
 
   return (
     <section className={styles.panel} aria-labelledby="save-heading">
@@ -200,9 +209,12 @@ export function SaveControls({
             <button
               type="button"
               className={buttons.tool}
-              onClick={() => void saveToParallax(workingCopy.currentRevision)}
+              disabled={save.kind === 'saving'}
+              onClick={() => void saveToParallax(workingCopy.currentRevision, true)}
             >
-              Save my draft as revision {workingCopy.currentRevision + 1}
+              {save.kind === 'saving'
+                ? 'Saving'
+                : `Save my draft as revision ${workingCopy.currentRevision + 1}`}
             </button>{' '}
             <button
               type="button"
