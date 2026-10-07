@@ -47,8 +47,11 @@ export const reviewAttempt = z.object({
    * stays released: the student still sees the released grade and the instructor has work left.
    */
   unreleasedChange: z.boolean(),
-  /** The newest grade of the attempt, released or not; changes with every saved draft. */
-  gradeId: z.uuid().nullable(),
+  /**
+   * The newest grade of the attempt, released or not; changes with every saved draft. When
+   * `unreleasedChange` is true it is the draft above the released grade that `score` describes.
+   */
+  newestGradeId: z.uuid().nullable(),
 });
 
 export const reviewRow = z.object({

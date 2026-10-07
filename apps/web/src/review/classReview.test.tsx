@@ -44,7 +44,7 @@ const awaiting = (n: number) =>
     submittedAt: '2026-10-02T10:00:00.000Z',
     score: { points: 11, possible: 13, state: 'draft' as const },
     unreleasedChange: false,
-    gradeId: id(1000 + n),
+    newestGradeId: id(1000 + n),
   }) satisfies NonNullable<ClassReview['rows'][number]['attempt']>;
 
 const listed = (rows: ClassReview['rows']): ClassReview['students'] =>
