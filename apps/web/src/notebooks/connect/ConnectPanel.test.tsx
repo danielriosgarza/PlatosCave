@@ -72,7 +72,7 @@ function serve(w: World) {
     const method = init?.method ?? 'GET';
     if (method === 'POST')
       w.posts.push({ url, body: init?.body ? JSON.parse(String(init.body)) : undefined });
-    if (url === '/api/me' && w.me) return { status: 200, body: w.me };
+    if (url === '/api/me') return { status: 200, body: w.me ?? makeMe() };
     if (url === '/api/me/connectors') return { status: 200, body: w.connectors };
     if (url === '/api/me/connections' && method === 'GET')
       return { status: 200, body: w.connections };
