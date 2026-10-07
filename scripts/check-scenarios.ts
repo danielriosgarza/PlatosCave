@@ -1,17 +1,36 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import ts from 'typescript';
 
 const root = join(import.meta.dirname, '..');
 const SKIP_DIRS = new Set(['node_modules', 'dist', '.git', '.local', 'coverage']);
 const ID = /\bA(0[1-9]|[12][0-9]|3[0-6])\b/g;
 const GO_TEST = /^func Test(A(?:0[1-9]|[12][0-9]|3[0-6]))(?![0-9A-Za-z])/gm;
-const HEAD = /(?<![.\w$])(?:test|it|describe)(?![\w$])/g;
+const TEST_FNS = new Set(['test', 'it', 'describe']);
+// Modifiers that still name a test or group; others (`step`, `use`, `beforeEach`, …) are not titles.
+const MODIFIERS = new Set([
+  'only',
+  'concurrent',
+  'sequential',
+  'fails',
+  'skip',
+  'todo',
+  'fixme',
+  'each',
+  'for',
+  'skipIf',
+  'runIf',
+  'describe',
+  'serial',
+  'parallel',
+]);
 // Modifiers whose own arguments come before the title's call: test.each(table)('title', fn).
 const CURRIED = new Set(['each', 'for', 'skipIf', 'runIf']);
 const SKIPPED = new Set(['skip', 'todo', 'fixme']);
-// The documented Docker/S3/CI gates of ADR-0006: those blocks run in CI, where they are mandatory.
-const DOCKER_GATE = /docker|imagePresent|S3_ENDPOINT|\bCI\b/i;
+// The documented gates of ADR-0006 that keep a block running in CI, where they are mandatory:
+// `skipIf(!imagePresent)`, `skipIf(!env.S3_ENDPOINT)`, `runIf(env.CI)`, and `*.docker.*` files.
+const GATE = /docker|imagePresent|S3_ENDPOINT|\bCI\b/;
 
 function walk(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
@@ -26,135 +45,114 @@ function walk(dir: string, out: string[] = []): string[] {
 const isTestFile = (path: string): boolean =>
   /\.(test|itest|e2e)\.tsx?$/.test(path) || /^connector\/.*_test\.go$/.test(path);
 
-const REGEX_PREFIX = /[(,=:[!&|?{};+\-*%<>~^]$/;
-
-/**
- * Same-length copy of `src` with comments, regex literals and string contents blanked
- * (quotes kept, newlines preserved), so scanning it never sees IDs, parentheses or test calls
- * that are not code. Single- and double-quoted strings end at a newline.
- */
-export function maskSource(src: string): string {
-  const out: string[] = [];
-  const blank = (from: number, to: number): void => {
-    for (let k = from; k < to; k++) out.push(src[k] === '\n' ? '\n' : ' ');
-  };
-  let last = '';
-  let i = 0;
-  while (i < src.length) {
-    const c = src[i] as string;
-    const next = src[i + 1];
-    if (c === '/' && next === '/') {
-      let j = i;
-      while (j < src.length && src[j] !== '\n') j++;
-      blank(i, j);
-      i = j;
-    } else if (c === '/' && next === '*') {
-      const stop = src.indexOf('*/', i + 2);
-      const j = stop < 0 ? src.length : stop + 2;
-      blank(i, j);
-      i = j;
-    } else if (c === '/' && (last === '' || REGEX_PREFIX.test(last))) {
-      let j = i + 1;
-      let inClass = false;
-      while (j < src.length && src[j] !== '\n' && (inClass || src[j] !== '/')) {
-        if (src[j] === '\\') j++;
-        else if (src[j] === '[') inClass = true;
-        else if (src[j] === ']') inClass = false;
-        j++;
-      }
-      blank(i, j + 1);
-      i = j + 1;
-      last = '/';
-    } else if (c === "'" || c === '"' || c === '`') {
-      let j = i + 1;
-      while (j < src.length && src[j] !== c && (c === '`' || src[j] !== '\n')) {
-        j += src[j] === '\\' ? 2 : 1;
-      }
-      const closed = src[j] === c;
-      out.push(c);
-      blank(i + 1, Math.min(j, src.length));
-      if (closed) out.push(c);
-      i = closed ? j + 1 : j;
-      last = c;
-    } else {
-      out.push(c);
-      if (!/\s/.test(c)) last = c;
-      i++;
-    }
-  }
-  return out.join('');
-}
-
-/** Index just past the `)` closing the group whose `(` is at `open` (masked source). */
-function groupEnd(masked: string, open: number): number {
-  let depth = 0;
-  for (let i = open; i < masked.length; i++) {
-    if (masked[i] === '(') depth++;
-    else if (masked[i] === ')' && --depth === 0) return i + 1;
-  }
-  return masked.length;
-}
-
-const skipSpace = (masked: string, from: number): number => {
-  let i = from;
-  while (i < masked.length && /\s/.test(masked[i] as string)) i++;
-  return i;
-};
-
 const addId = (found: Map<string, Set<string>>, id: string, file: string): void => {
   if (!found.has(id)) found.set(id, new Set());
   found.get(id)?.add(file);
 };
 
-/** Scenario IDs in the titles of non-skipped TS tests (`test`, `it`, `describe`). */
-export function idsInTsTitles(source: string, file = ''): string[] {
-  const masked = maskSource(source);
+interface Modifier {
+  name: string;
+  args: string;
+}
+
+/**
+ * Reads `test`, `it`, `describe` (or a `test.extend` alias) with a chain of modifiers, including
+ * curried ones: `test.each(table)`, `describe.skipIf(cond)`, ``test.each`…` ``. Null for anything else.
+ */
+function parseCallee(node: ts.Expression, names: Set<string>): Modifier[] | null {
+  if (ts.isIdentifier(node)) return names.has(node.text) ? [] : null;
+  if (ts.isPropertyAccessExpression(node)) {
+    const base = parseCallee(node.expression, names);
+    return base && MODIFIERS.has(node.name.text)
+      ? [...base, { name: node.name.text, args: '' }]
+      : null;
+  }
+  const curried = ts.isCallExpression(node)
+    ? node.expression
+    : ts.isTaggedTemplateExpression(node)
+      ? node.tag
+      : null;
+  if (!curried) return null;
+  const base = parseCallee(curried, names);
+  const last = base?.at(-1);
+  if (!base || !last || !CURRIED.has(last.name)) return null;
+  const args = ts.isCallExpression(node) ? node.arguments.map((a) => a.getText()).join(',') : '';
+  return [...base.slice(0, -1), { name: last.name, args }];
+}
+
+function isSkipped(mods: Modifier[], file: string): boolean {
+  const dockerFile = file.includes('.docker.');
+  return mods.some(({ name, args }) => {
+    if (SKIPPED.has(name)) return true;
+    if (name === 'skipIf')
+      return !(dockerFile || (args.trimStart().startsWith('!') && GATE.test(args)));
+    if (name === 'runIf')
+      return !(dockerFile || (!args.trimStart().startsWith('!') && GATE.test(args)));
+    return false;
+  });
+}
+
+/** The literal text of a title: strings, plain templates, and the fixed parts of `${…}` templates. */
+function titleText(node: ts.Expression): string | null {
+  if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) return node.text;
+  if (ts.isTemplateExpression(node)) {
+    return node.head.text + node.templateSpans.map((span) => ` ${span.literal.text}`).join('');
+  }
+  return null;
+}
+
+/**
+ * Scenario IDs in the titles of non-skipped TS tests (`test`, `it`, `describe`). Titles built at
+ * runtime (`test(row.name, …)`) are invisible: put the ID in a literal part of the title.
+ */
+export function idsInTsTitles(source: string, file = 'fixture.test.tsx'): string[] {
+  const kind = /\.tsx$/.test(file) ? ts.ScriptKind.TSX : ts.ScriptKind.TS;
+  const sf = ts.createSourceFile(file, source, ts.ScriptTarget.Latest, true, kind);
+  // `const myTest = test.extend(…)` makes `myTest` a test function too.
+  const names = new Set(TEST_FNS);
+  const collect = (node: ts.Node): void => {
+    if (
+      ts.isVariableDeclaration(node) &&
+      ts.isIdentifier(node.name) &&
+      node.initializer &&
+      ts.isCallExpression(node.initializer) &&
+      ts.isPropertyAccessExpression(node.initializer.expression) &&
+      node.initializer.expression.name.text === 'extend' &&
+      ts.isIdentifier(node.initializer.expression.expression) &&
+      names.has(node.initializer.expression.expression.text)
+    ) {
+      names.add(node.name.text);
+    }
+    ts.forEachChild(node, collect);
+  };
+  collect(sf);
+
   const ids: string[] = [];
-  let skipUntil = 0;
-  for (const head of masked.matchAll(HEAD)) {
-    if (head.index < skipUntil) continue;
-    let pos = head.index + head[0].length;
-    let skipped = false;
-    let call = -1;
-    for (;;) {
-      pos = skipSpace(masked, pos);
-      if (masked[pos] === '.') {
-        const name = /^\.\s*([A-Za-z]+)/.exec(masked.slice(pos, pos + 40));
-        if (!name) break;
-        const modifier = name[1] as string;
-        pos += name[0].length;
-        const open = skipSpace(masked, pos);
-        if (CURRIED.has(modifier) && masked[open] === '(') {
-          const end = groupEnd(masked, open);
-          if (modifier === 'skipIf' || modifier === 'runIf') {
-            skipped ||= !(DOCKER_GATE.test(source.slice(open, end)) || file.includes('.docker.'));
-          }
-          pos = end;
-        } else if (SKIPPED.has(modifier)) skipped = true;
-      } else {
-        if (masked[pos] === '(') call = pos;
-        break;
+  const visit = (node: ts.Node): void => {
+    if (ts.isCallExpression(node)) {
+      const mods = parseCallee(node.expression, names);
+      const last = mods?.at(-1);
+      const curriedCallee =
+        ts.isCallExpression(node.expression) || ts.isTaggedTemplateExpression(node.expression);
+      // `describe.skipIf(cond)` and `test.each(table)` are the first half of a curried call, not titles.
+      if (mods && (curriedCallee || !(last && CURRIED.has(last.name)))) {
+        if (isSkipped(mods, file)) return;
+        const title = node.arguments[0];
+        const text = title && titleText(title);
+        if (text) for (const id of text.matchAll(ID)) ids.push(id[0]);
       }
     }
-    if (call < 0) continue;
-    const end = groupEnd(masked, call);
-    if (skipped) {
-      skipUntil = end;
-      continue;
-    }
-    const quote = masked[skipSpace(masked, call + 1)];
-    if (quote !== "'" && quote !== '"' && quote !== '`') continue;
-    const start = skipSpace(masked, call + 1);
-    const close = masked.indexOf(quote, start + 1);
-    if (close < 0) continue;
-    for (const id of source.slice(start + 1, close).matchAll(ID)) ids.push(id[0]);
-  }
+    ts.forEachChild(node, visit);
+  };
+  visit(sf);
   return ids;
 }
 
 /** Scenario IDs in Go test function names (`func TestA28_Name`). */
 export function idsInGoTests(source: string): string[] {
-  return [...maskSource(source).matchAll(GO_TEST)].map((m) => m[1] as string);
+  return [
+    ...source.replace(/\/\*[\s\S]*?\*\//g, (c) => c.replace(/[^\n]/g, ' ')).matchAll(GO_TEST),
+  ].map((m) => m[1] as string);
 }
 
 /** Maps each scenario ID found in a test title to the files carrying it. */

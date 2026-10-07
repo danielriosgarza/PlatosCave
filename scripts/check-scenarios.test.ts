@@ -61,21 +61,46 @@ describe('scenario scanner', () => {
     expect(idsInTsTitles(src)).toEqual(['A15', 'A05', 'A13']);
   });
 
-  it('AUD8 regex literals and apostrophes do not confuse strings and comments', () => {
+  it('AUD8 a skipped block with JSX is skipped alone', () => {
+    const src = "it.skip('x', () => { render(<p>a</p>); });\nit('A01 kept', () => {});";
+    expect(idsInTsTitles(src)).toEqual(['A01']);
+  });
+
+  it('AUD8 regex literals, apostrophes and templates do not hide later tests', () => {
     const src = `
       expect(s).toMatch(/['"]/);
       const u = 'http://h';
+      function f(s) { return /\`/.test(s) }
       const t = <p>Don't</p>;
       it('A02 z', () => {});`;
     expect(idsInTsTitles(src)).toEqual(['A02']);
   });
 
-  it('AUD8 keeps the documented Docker and S3 skips', () => {
+  it('AUD8 tagged-template tables and test.extend fixtures count, test.step does not', () => {
+    const src = `
+      const myTest = test.extend({});
+      test.each\`
+        a | b
+      \`('A03 tagged $a', () => {});
+      myTest('A06 fixture', () => {});
+      it('A07 outer', async () => { await test.step('A08 step', () => {}); });`;
+    expect(idsInTsTitles(src)).toEqual(['A03', 'A06', 'A07']);
+  });
+
+  it('AUD8 reads the fixed text of templates with substitutions', () => {
+    const src = 'test(`A04 cards at $' + '{width} px use $' + '{cards} column(s)`, () => {});';
+    expect(idsInTsTitles(src)).toEqual(['A04']);
+  });
+
+  it('AUD8 keeps the documented Docker, S3 and CI gates only', () => {
     const src = `
       describe.skipIf(!imagePresent)('A13 sandbox', () => {});
       test.runIf(env.CI)('A22 CI gate', () => {});
-      describe.skipIf(!env.S3_ENDPOINT)('A22 s3', () => {});`;
-    expect(idsInTsTitles(src)).toEqual(['A13', 'A22', 'A22']);
+      describe.skipIf(!env.S3_ENDPOINT)('A22 s3', () => {});
+      test.skipIf(process.env.CI)('A04 never in CI', () => {});
+      test.skipIf(!env.CI)('A09 only in CI', () => {});
+      test.runIf(!env.CI)('A10 only outside CI', () => {});`;
+    expect(idsInTsTitles(src)).toEqual(['A13', 'A22', 'A22', 'A09']);
     expect(idsInTsTitles(`describe.skipIf(!ok)('A20 x', () => {});`, 'a.docker.itest.ts')).toEqual([
       'A20',
     ]);
@@ -89,8 +114,12 @@ func TestA30_ChangedKey(t *testing.T) {}
 func TestA290_NotAnID(t *testing.T) {}
 func TestHelperA31(t *testing.T) {}
 func helperA32() {}
+/* func TestA33_InBlock(t *testing.T) {}
+*/
+var p = \`C:\\\`
+func TestA34_AfterRawString(t *testing.T) 
 `;
-    expect(idsInGoTests(src)).toEqual(['A28', 'A30']);
+    expect(idsInGoTests(src)).toEqual(['A28', 'A30', 'A34']);
   });
 
   it('AUD8 maps IDs to files across TS and Go', () => {
