@@ -47,6 +47,10 @@ const hostileHtml =
   '<div id="chart">Sample means<script>fetch("/api/me",{credentials:"include"}).then(r=>r.text()).then(t=>parent.postMessage(t,"*"))</script>' +
   '<img src="x" onerror="alert(document.cookie)"></div>';
 
+const hostileSvg =
+  '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10" onload="alert(1)">' +
+  '<script>alert(1)</script><circle id="dot" cx="5" cy="5" r="2"/></svg>';
+
 const notebookFile = JSON.stringify({
   nbformat: 4,
   nbformat_minor: 5,
@@ -94,6 +98,7 @@ const notebookFile = JSON.stringify({
           metadata: {},
           data: { 'application/javascript': 'alert(1)' },
         },
+        { output_type: 'display_data', metadata: {}, data: { 'image/svg+xml': hostileSvg } },
       ],
     },
   ],
@@ -225,9 +230,10 @@ describe('notebook import', () => {
       await new Promise((r) => setTimeout(r, 250));
     }
     expect(derived.status).toMatchObject({ state: 'ready' });
-    // Two output objects: the HTML document and the image.
+    // Three output objects: the HTML document, the PNG and the SVG.
     expect(Object.values(derived.objects as object).sort()).toEqual([
       'image/png',
+      'image/svg+xml',
       'text/html; charset=utf-8',
     ]);
 
@@ -275,6 +281,7 @@ describe('A09 rendered notebook', () => {
       'html',
       'image',
       'unsupported',
+      'image',
     ]);
   });
 
@@ -292,7 +299,7 @@ describe('A09 rendered notebook', () => {
 
   test('A09 the HTML output is served sandboxed, script-free and without cookies on the content origin', async () => {
     const { body } = await notebookOf('sam');
-    const [frame, image] = body.notebook.cells[2].outputs;
+    const [frame, image, , svg] = body.notebook.cells[2].outputs;
     const res = await content(frame.url);
     expect(res.statusCode).toBe(200);
     expect(res.headers['content-type']).toBe('text/html; charset=utf-8');
@@ -310,6 +317,13 @@ describe('A09 rendered notebook', () => {
     expect(png.statusCode).toBe(200);
     expect(png.headers['content-type']).toBe('image/png');
     expect(png.headers['x-content-type-options']).toBe('nosniff');
+    // A stored SVG holds no script even when fetched on its own.
+    expect(svg).toMatchObject({ type: 'image', scriptsRemoved: true });
+    const svgRes = await content(svg.url);
+    expect(svgRes.statusCode).toBe(200);
+    expect(svgRes.headers['content-type']).toBe('image/svg+xml');
+    expect(svgRes.body).toContain('<circle id="dot"');
+    expect(svgRes.body).not.toMatch(/<script|onload|alert\(/i);
   });
 
   test('A09 another class, a non-member and the source download follow class scope', async () => {

@@ -8,6 +8,8 @@ const CI = Boolean(process.env.CI);
 export default defineConfig({
   testDir: 'tests',
   testMatch: /\.e2e\.ts$/,
+  // The connector flows need the fixtures and a Go toolchain: CI's connector-e2e workflow sets this.
+  testIgnore: process.env.CONNECTOR_E2E ? [] : ['**/connector/**'],
   timeout: 30_000,
   retries: CI ? 1 : 0,
   workers: CI ? 2 : undefined,

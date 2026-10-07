@@ -216,6 +216,9 @@ export function Output({ output, cellCount }: { output: CellOutput; cellCount: n
           ) : (
             <p>{output.alt} (image unavailable)</p>
           )}
+          {output.scriptsRemoved ? (
+            <div className={styles.provenance}>Scripts in this output were removed and not run</div>
+          ) : null}
         </div>
       );
     case 'table':
