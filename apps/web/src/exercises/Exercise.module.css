@@ -10,6 +10,8 @@
   border-bottom: 1px solid var(--pc-rule);
 }
 .toolbar h2 {
+  min-width: 0;
+  overflow-wrap: anywhere;
   font: var(--pc-text-subsection);
   letter-spacing: var(--pc-tracking-subsection);
 }
@@ -277,8 +279,9 @@
 }
 .visuallyHidden {
   position: absolute;
-  width: 1px;
-  height: 1px;
+  /* Not overridable: a component rule such as `.fieldset legend { width: 100% }` must not widen the page. */
+  width: 1px !important;
+  height: 1px !important;
   margin: -1px;
   padding: 0;
   overflow: hidden;
