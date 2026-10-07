@@ -1370,7 +1370,7 @@ class RRuntime(HarnessCase):
         "ident <- function(x) x\n"
         "lens <- function(x) list(is.list(x), length(x))\n"
         "bigvec <- function() rep(c('a\"b', 'caf\\u00e9', NA), length.out = 100000)\n"
-        "huge_escapes <- function() strrep('\u00e9\\n\\t\\001\"\\\\', 1000000)\n"
+        "huge_escapes <- function() strrep('\u00e9\\n\\t\\001\"\\\\', 300000)\n"
         "stop_warning <- function() stop(simpleWarning('w'))\n"
         "stop_message <- function() stop(simpleMessage('m'))\n"
         "nested_signal <- function() withCallingHandlers(stop('boom'), error = function(e) signalCondition(structure(class = c('note', 'condition'), list(message = 'fyi', call = NULL))))\n"
@@ -1575,7 +1575,8 @@ class RRuntime(HarnessCase):
         self.assertEqual(entry["status"], "passed", {k: entry[k] for k in entry if k not in ("expected", "actual")})
 
     def test_a_huge_escape_heavy_string_does_not_stall_the_repr(self):
-        # 6 M characters of escapes: deparse alone took over a minute; the repr is bounded.
+        # 1.8 M characters of escapes (about 4.8 MB of JSON, under the 8 MiB outcome cap): deparse
+        # alone took ~40 s; the repr is bounded.
         entry = self.outcome_for(
             r_call("Huge", "huge_escapes", {"value": "x"}, "repr", timeoutSeconds=10),
             r_call("Huge exact", "huge_escapes", {"value": "x"}, timeoutSeconds=10),
