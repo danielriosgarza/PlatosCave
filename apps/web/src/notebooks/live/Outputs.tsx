@@ -4,8 +4,11 @@ import styles from '../Notebook.module.css';
 import type { LiveExecution } from './executionState';
 import live from './Live.module.css';
 import { groupOutputs } from './liveOutput';
+import { RichOutput } from './RichOutput';
 
 interface Props {
+  classId: string;
+  sessionId: string;
   execution: LiveExecution;
   /** The kernel's current generation: output of an older one belongs to the previous kernel. */
   kernelGeneration: number | undefined;
@@ -27,12 +30,14 @@ const STATUS: Record<LiveExecution['state'], string> = {
 
 /**
  * The outputs of one execution, streamed as they arrive (docs/design/connector.md §10.6). Text
- * grows in place; rich output (HTML, SVG, images) is withheld until it can be served from the
- * content origin (P3-08a), and the cell says so. A disconnect is
- * never described as completion: an execution with no confirmed reply is `Unconfirmed` or
+ * grows in place; rich output (HTML, SVG, images, tables, Markdown) is rendered by the server
+ * and shown as stored output is, from the content origin (`RichOutput`). A disconnect is never
+ * described as completion: an execution with no confirmed reply is `Unconfirmed` or
  * `Incomplete`, and the person chooses whether to run the cell again; nothing runs it for them.
  */
 export function LiveOutputs({
+  classId,
+  sessionId,
   execution,
   kernelGeneration,
   canRun,
@@ -78,7 +83,19 @@ export function LiveOutputs({
             kernelGeneration !== undefined && item.generation < kernelGeneration ? live.old : ''
           }`}
         >
-          <Shown item={item} />
+          {item.kind === 'rich' ? (
+            <RichOutput
+              classId={classId}
+              sessionId={sessionId}
+              executionId={execution.executionId}
+              eventSeq={item.eventSeq}
+              data={item.data}
+              executionCount={item.executionCount}
+              text={item.text}
+            />
+          ) : (
+            <Shown item={item} />
+          )}
         </div>
       ))}
       {truncated || execution.truncated ? (
@@ -119,17 +136,8 @@ function Shown({ item }: { item: ReturnType<typeof groupOutputs>['shown'][number
           {item.traceback ? <pre className={styles.text}>{item.traceback}</pre> : null}
         </div>
       );
-    case 'withheld':
-      return (
-        <>
-          {item.text !== null ? <pre className={styles.text}>{item.text}</pre> : null}
-          <div className={styles.provenance}>
-            {item.mimeTypes.length > 0
-              ? `Rich output (${item.mimeTypes.join(', ')}) is not shown in a live notebook yet`
-              : 'Rich output is not shown in a live notebook yet'}
-          </div>
-        </>
-      );
+    case 'rich':
+      return null;
   }
 }
 

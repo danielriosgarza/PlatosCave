@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { LinkEnvironment, LinkKernelspec, LinkLease, LinkRuntime } from '../connector';
 import { classArchived, defineRoute, errorBody } from '../define';
 import { exampleIds } from '../examples';
+import { notebookOutput } from '../notebook';
 import { ExecutionState, KernelView } from '../notebookChannel';
 import { targetRefused } from './connections';
 
@@ -268,6 +269,43 @@ export const listSessionExecutions = defineRoute({
   query: z.object({ afterSeq: z.coerce.number().int().min(0).default(0) }),
   response: z.object({ executions: z.array(ExecutionView) }),
   examples: { params: exampleSession, query: { afterSeq: 0 } },
+});
+
+/** The largest live output body the server renders (a bundle as the channel delivered it). */
+export const MAX_LIVE_OUTPUT_BYTES = 8 * 1024 * 1024;
+
+/**
+ * One rich live output of the caller's own session, shown as stored output is (design §14,
+ * spec §10.4): the browser sends the `data` bundle of a `display_data` or `execute_result` it
+ * received on the session's channel, and the server sanitises it with the stored-output rules,
+ * writes any HTML frame document or image to the session's area of class storage and answers the
+ * output with links on the content origin, minted for the caller and valid until `expiresAt`
+ * (null when the output has no link). Anyone but the session's owner gets the shared 404.
+ * 413 beyond `MAX_LIVE_OUTPUT_BYTES`; 422 `not_rendered` for an output past the time or memory
+ * bound; 409 `storage_limit` once a session has stored its share of live outputs; 429 beyond
+ * 120 a minute.
+ */
+export const renderLiveOutput = defineRoute({
+  method: 'POST',
+  path: '/api/classes/:classId/notebook-sessions/:sessionId/outputs',
+  scope: { kind: 'class', role: 'any' },
+  summary: 'Show one live output of a notebook session from the content origin',
+  params: sessionParams,
+  body: z.strictObject({
+    data: z.record(z.string(), z.unknown()),
+    executionCount: z.number().int().nullable(),
+  }),
+  response: z.object({ output: notebookOutput, expiresAt: datetime.nullable() }),
+  errors: {
+    409: z.union([z.object({ error: z.literal('storage_limit') }), classArchived]),
+    413: errorBody,
+    422: z.object({ error: z.literal('not_rendered'), message: z.string() }),
+    429: errorBody,
+  },
+  examples: {
+    params: exampleSession,
+    body: { data: { 'text/html': '<b>4</b>', 'text/plain': '4' }, executionCount: 1 },
+  },
 });
 
 /**
