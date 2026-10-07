@@ -131,6 +131,8 @@ function testApi(options: Options = {}) {
     receipt: null as Receipt | null,
     localCopyAt: null as string | null,
     recoveryRequestedAt: null as string | null,
+    removed: false,
+    timeZone: 'UTC',
     offline: false,
     failLocalCopy: false,
     deadlineAt: (options.deadlineAt ?? null) as string | null,
@@ -317,7 +319,8 @@ function testApi(options: Options = {}) {
                 ...r
               }) => r)(attemptView()),
               student: { id: uuid(0xd1), name: 'Bea' },
-              removed: false,
+              removed: server.removed,
+              timeZone: server.timeZone,
               graderVersion: 'g1',
             },
           ],
@@ -336,6 +339,7 @@ function testApi(options: Options = {}) {
           ...attemptView(),
           student: { id: uuid(0xd1), name: 'Bea' },
           removed: false,
+          timeZone: server.timeZone,
           test: { questions },
           answers: [],
           localCopy: log.localCopies[0]?.answers ?? null,
@@ -1016,6 +1020,42 @@ describe('test UI: expiry', () => {
     await user.click(await screen.findByRole('button', { name: 'View unsent work' }));
     expect(await screen.findByText('Averages vary less')).toBeVisible();
     expect(screen.getByText(/Not part of the submission/)).toBeVisible();
+  });
+
+  it('A15 the instructor panel shows request times in the test time zone, as the student receipt does', async () => {
+    const api = testApi({ instructor: true });
+    api.server.timeZone = 'America/New_York';
+    api.server.recoveryRequestedAt = '2026-10-05T10:00:00Z';
+    api.server.receipt = {
+      submissionId: uuid(0xb2),
+      attemptId: ATTEMPT,
+      submittedAt: '2026-10-05T09:30:00Z',
+      autoSubmitted: true,
+      late: false,
+      answers: [],
+      unanswered: [],
+    };
+    open();
+    expect(await screen.findByText(/Bea · attempt 1/)).toBeVisible();
+    expect(await screen.findByText(/asked for 05 Oct 2026, 06:00 (EDT|GMT-4),/)).toBeVisible();
+  });
+
+  it('A15 the instructor panel does not offer a request to a student who has left the class', async () => {
+    const api = testApi({ instructor: true });
+    api.server.removed = true;
+    api.server.receipt = {
+      submissionId: uuid(0xb2),
+      attemptId: ATTEMPT,
+      submittedAt: '2026-10-05T09:30:00Z',
+      autoSubmitted: true,
+      late: false,
+      answers: [],
+      unanswered: [],
+    };
+    open();
+    expect(await screen.findByText(/Bea · attempt 1/)).toBeVisible();
+    expect(screen.getByText(/has left the class and cannot answer/)).toBeVisible();
+    expect(screen.queryByRole('button', { name: 'Ask for unsent work' })).toBeNull();
   });
 
   it('A15 at the deadline the page asks the server and shows what the server submitted', async () => {

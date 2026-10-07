@@ -1,12 +1,15 @@
 import 'fake-indexeddb/auto';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   allowDrafts,
+  attemptCopyKey,
   clearDrafts,
   type Draft,
   draftKey,
   listDrafts,
+  readAttemptCopy,
   removeDraft,
+  saveAttemptCopy,
   saveDraft,
   signedOutKey,
 } from './drafts';
@@ -85,5 +88,26 @@ describe('device draft store', () => {
     expect(await saveDraft(draft('kim', 'n1', 'kim note'))).toBe(true);
     await allowDrafts('sam');
     expect(await saveDraft(draft('sam', 'n2', 'back again'))).toBe(true);
+  });
+
+  it('A15 a later copy that did not reach the store is the one an instructor request sends', async () => {
+    const copy = (value: string) => ({
+      key: attemptCopyKey('sam', 'class-a', 'att-1'),
+      userId: 'sam',
+      kind: 'attempt-copy' as const,
+      classId: 'class-a',
+      attemptId: 'att-1',
+      answers: [{ questionId: 'q1', value }],
+      updatedAt: Date.now(),
+    });
+    expect(await saveAttemptCopy(copy('older'))).toBe(true);
+    const refuse = vi.spyOn(IDBDatabase.prototype, 'transaction').mockImplementation(() => {
+      throw new Error('storage refused');
+    });
+    expect(await saveAttemptCopy(copy('newer'))).toBe(false);
+    refuse.mockRestore();
+    expect((await readAttemptCopy('sam', 'class-a', 'att-1'))?.answers).toEqual([
+      { questionId: 'q1', value: 'newer' },
+    ]);
   });
 });

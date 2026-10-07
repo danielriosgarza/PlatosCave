@@ -1,26 +1,16 @@
 import { reviewTestAttempts } from '@parallax/contracts/routes/tests';
 import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
+import type { z } from 'zod';
 import buttons from '../components/Buttons.module.css';
 import { Loading } from '../components/Loading';
 import { RetryNotice } from '../components/RetryNotice';
 import { recoveryAnswered } from './answers';
 import { askForRecovery, useReviewedAttempt, useReviewedAttempts } from './api';
+import { formatInZone } from './TermsPanel';
 import styles from './Test.module.css';
 
-const when = (iso: string) =>
-  new Intl.DateTimeFormat('en-GB', { dateStyle: 'medium', timeStyle: 'short' }).format(
-    new Date(iso),
-  );
-
-interface Reviewed {
-  id: string;
-  number: number;
-  state: string;
-  student: { name: string };
-  localCopyAt: string | null;
-  recoveryRequestedAt: string | null;
-}
+type Reviewed = z.output<typeof reviewTestAttempts.response>['attempts'][number];
 
 /**
  * Closed attempts of one test with the state of their unsent local work (§11, A15): an instructor
@@ -73,6 +63,7 @@ function RecoveryRow({ classId, attempt }: { classId: string; attempt: Reviewed 
   const requested = attempt.recoveryRequestedAt;
   const received = attempt.localCopyAt;
   const answered = recoveryAnswered(requested, received);
+  const when = (iso: string) => formatInZone(iso, attempt.timeZone);
 
   async function ask() {
     if (busy || reason.trim() === '') return;
@@ -108,6 +99,7 @@ function RecoveryRow({ classId, attempt }: { classId: string; attempt: Reviewed 
           ? `Unsent work kept ${when(received)}; not part of the submission`
           : 'No unsent work kept by the server'}
         {requested ? ` · asked for ${when(requested)}${answered ? ', received' : ', waiting'}` : ''}
+        {attempt.removed && !answered ? ' · has left the class and cannot answer' : ''}
       </span>
       <div className={styles.row}>
         {received ? (
@@ -115,7 +107,7 @@ function RecoveryRow({ classId, attempt }: { classId: string; attempt: Reviewed 
             {viewing ? 'Hide unsent work' : 'View unsent work'}
           </button>
         ) : null}
-        {!asking && !answered ? (
+        {!asking && !answered && !attempt.removed ? (
           <button type="button" className={buttons.outline} onClick={() => setAsking(true)}>
             {requested ? 'Ask again' : 'Ask for unsent work'}
           </button>

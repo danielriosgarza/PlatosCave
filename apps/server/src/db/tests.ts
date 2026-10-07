@@ -296,7 +296,13 @@ async function summaryOf(
   } satisfies Summary;
 }
 
-async function viewOf(ex: Ex, scope: ClassScope, attempt: AttemptRow, now: Date) {
+async function viewOf(
+  ex: Ex,
+  scope: ClassScope,
+  attempt: AttemptRow,
+  now: Date,
+  requests?: Map<string, string>,
+) {
   const test = await pinnedTest(ex, attempt);
   const submission =
     attempt.state === 'in_progress' ? undefined : await submissionOf(ex, scope, attempt.id);
@@ -307,7 +313,7 @@ async function viewOf(ex: Ex, scope: ClassScope, attempt: AttemptRow, now: Date)
         savedAt: a.savedAt.toISOString(),
       }));
   return {
-    ...(await summaryOf(ex, scope, attempt, test)),
+    ...(await summaryOf(ex, scope, attempt, test, requests)),
     graderVersion: attempt.graderVersion,
     terms: await termsOfAttempt(ex, scope, attempt, test),
     questions: test.questions.map(questionView),
@@ -623,11 +629,18 @@ export async function requestRecovery(
   attemptId: string,
   reason: string,
   now: Date,
-): Promise<Outcome<{ requestedAt: string }> | { ok: false; reason: 'attempt_open' }> {
+): Promise<
+  | Outcome<{ requestedAt: string }>
+  | { ok: false; reason: 'attempt_open' }
+  | { ok: false; reason: 'student_removed' }
+> {
   return db.transaction(async (tx) => {
     const found = await lockReviewable(tx, scope, attemptId, now);
     if (!found) return notFound;
-    if (found.attempt.state === 'in_progress') return { ok: false, reason: 'attempt_open' };
+    if (found.attempt.state === 'in_progress')
+      return { ok: false, reason: 'attempt_open' as const };
+    // A removed student cannot open the test, so no one could answer the request.
+    if (found.removed) return { ok: false, reason: 'student_removed' as const };
     if (scope.archived) return classArchived;
     await audit(tx, {
       actorId: scope.user.id,
@@ -912,6 +925,7 @@ async function reviewedOf(db: Db, scope: ClassScope, where: ReturnType<typeof an
       ...(await summaryOf(db, scope, attempt, test, requests)),
       student: { id: attempt.userId, name },
       removed: role === null,
+      timeZone: attempt.settings.timeZone,
       graderVersion: attempt.graderVersion,
       row: attempt,
       test,
@@ -939,7 +953,13 @@ export async function lockReviewable(tx: Tx, scope: ClassScope, attemptId: strin
       ),
     )
     .where(and(reviewable(scope), eq(testAttempts.id, attemptId)));
-  return found && { attempt, student: { id: attempt.userId, name: found.name } };
+  return (
+    found && {
+      attempt,
+      student: { id: attempt.userId, name: found.name },
+      removed: found.role === null,
+    }
+  );
 }
 
 /** Real students' attempts of a test, settled first, without their summaries (P4-01). */
@@ -991,7 +1011,10 @@ export async function reviewAttempt(db: Db, scope: ClassScope, attemptId: string
     .select({ content: resourceRevisions.content })
     .from(resourceRevisions)
     .where(eq(resourceRevisions.id, row.resourceRevisionId));
-  const view = await viewOf(db, scope, row, now);
+  // The request time is already in `reviewed`; the audit lookup is not repeated.
+  const requests = new Map<string, string>();
+  if (reviewed.recoveryRequestedAt) requests.set(row.id, reviewed.recoveryRequestedAt);
+  const view = await viewOf(db, scope, row, now, requests);
   const copy = row.localCopy as { answers?: { questionId: string; value: unknown }[] } | null;
   return {
     ...reviewed,
