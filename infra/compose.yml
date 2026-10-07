@@ -16,4 +16,32 @@ services:
     volumes:
       - ./garage/garage.toml:/etc/garage.toml:ro
       - garage:/var/lib/garage
-volumes: { pgdata: {}, garage: {} }
+  # Connector fixtures (docs/design/connector.md §15): run scripts/connector-fixture-keys.sh first.
+  # Published on loopback only; the Jupyter server the connector starts is never published.
+  sshd-jupyter:
+    profiles: [connector]
+    build: { context: .., dockerfile: infra/docker/sshd-jupyter.Dockerfile }
+    ports: ["127.0.0.1:2222:22", "127.0.0.1:2223:2223", "127.0.0.1:2224:2224"]
+    volumes:
+      - ../.local/connector-fixtures:/fixtures:ro
+      - sshd-host-keys:/etc/ssh/keys
+      - sshd-rotating-keys:/etc/ssh/keys-rotating
+    healthcheck:
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/22 && exec 3<>/dev/tcp/127.0.0.1/2223 && exec 3<>/dev/tcp/127.0.0.1/2224'"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  jump:
+    profiles: [connector]
+    build: { context: .., dockerfile: infra/docker/jump.Dockerfile }
+    depends_on: { sshd-jupyter: { condition: service_healthy } }
+    ports: ["127.0.0.1:2225:22"]
+    volumes:
+      - ../.local/connector-fixtures:/fixtures:ro
+      - jump-host-keys:/etc/ssh/keys
+    healthcheck:
+      test: ["CMD-SHELL", "test -s /etc/ssh/keys/ssh_host_ed25519_key && bash -c 'exec 3<>/dev/tcp/127.0.0.1/22'"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+volumes: { pgdata: {}, garage: {}, sshd-host-keys: {}, sshd-rotating-keys: {}, jump-host-keys: {} }
