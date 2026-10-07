@@ -212,6 +212,9 @@ export interface AttemptCopy {
   updatedAt: number;
 }
 
+/** localStorage prefix of a test attempt's unsent answers; sign-out removes every key under it. */
+export const UNSENT_ANSWERS_PREFIX = 'pc-test-unsent:';
+
 export const attemptCopyKey = (userId: string, classId: string, attemptId: string) =>
   `attempt-copy|${userId}|${classId}|${attemptId}`;
 
@@ -235,7 +238,10 @@ export async function readAttemptCopy(
     | AttemptCopy
     | null
     | undefined;
-  const found = stored ?? copies.get(key) ?? null;
+  // The newer of this tab's copy (which may never have reached the store) and the stored one
+  // (which another tab may have written).
+  const mine = copies.get(key);
+  const found = mine && (!stored || mine.updatedAt >= stored.updatedAt) ? mine : (stored ?? null);
   return found && found.userId === userId && found.attemptId === attemptId ? found : null;
 }
 
@@ -306,7 +312,7 @@ export async function clearDrafts(userId: string | null): Promise<void> {
   // Unsent test answers kept by the Test page are the account's too (§8).
   try {
     for (const k of Object.keys(window.localStorage)) {
-      if (k.startsWith('pc-test-unsent:')) window.localStorage.removeItem(k);
+      if (k.startsWith(UNSENT_ANSWERS_PREFIX)) window.localStorage.removeItem(k);
     }
   } catch {
     // blocked storage holds nothing to clear

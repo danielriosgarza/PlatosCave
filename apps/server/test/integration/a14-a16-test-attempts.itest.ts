@@ -14,6 +14,7 @@ import {
   attemptAnswers,
   auditEvents,
   classes,
+  classMemberships,
   testAttempts,
   testSubmissions,
 } from '../../src/db/schema';
@@ -531,6 +532,61 @@ describe('A15 deadline submission', () => {
       localCopy: [{ questionId: 'why', value: 'Larger samples average out noise.' }],
     });
     expect((await submissionsOf(beaAttempt))[0]?.answers).toHaveLength(2);
+  });
+
+  test('A15 the instructor’s attempt list carries the test time zone, and a removed student cannot be asked for unsent work', async () => {
+    const list = `/api/classes/${ids.classB}/resources/${quizId}/test-attempts`;
+    const listed = await call('marcus', 'GET', list);
+    const zones = listed.body.attempts.map((a: { timeZone: string }) => a.timeZone);
+    expect(zones.length).toBeGreaterThan(0);
+    expect(new Set(zones)).toEqual(new Set(['Europe/Amsterdam']));
+
+    const [membership] = await testDb.db
+      .select()
+      .from(classMemberships)
+      .where(and(eq(classMemberships.classId, ids.classB), eq(classMemberships.userId, ids.bea)));
+    if (!membership) throw new Error('bea has no membership in class B');
+    await testDb.db
+      .delete(classMemberships)
+      .where(and(eq(classMemberships.classId, ids.classB), eq(classMemberships.userId, ids.bea)));
+    // A removal is recorded as an audit event, which is what keeps the attempt reviewable.
+    const [removal] = await testDb.db
+      .insert(auditEvents)
+      .values({
+        actorId: ids.marcus,
+        action: 'membership.remove',
+        scopeKind: 'class',
+        scopeId: ids.classB,
+        targetType: 'membership',
+        targetId: ids.bea,
+        before: { role: 'student' },
+      })
+      .returning();
+    try {
+      const before = await testDb.db
+        .select()
+        .from(auditEvents)
+        .where(eq(auditEvents.action, 'test_attempt.recovery_requested'));
+      const refused = await call(
+        'marcus',
+        'POST',
+        `${attemptUrl(ids.classB, beaAttempt)}/recovery-request`,
+        { reason: 'Please send what you have' },
+      );
+      expect(refused).toEqual({ status: 409, body: { error: 'student_removed' } });
+      const after = await testDb.db
+        .select()
+        .from(auditEvents)
+        .where(eq(auditEvents.action, 'test_attempt.recovery_requested'));
+      expect(after).toHaveLength(before.length);
+      const removed = await call('marcus', 'GET', list);
+      expect(
+        removed.body.attempts.filter((a: { removed: boolean }) => a.removed).length,
+      ).toBeGreaterThan(0);
+    } finally {
+      if (removal) await testDb.db.delete(auditEvents).where(eq(auditEvents.id, removal.id));
+      await testDb.db.insert(classMemberships).values(membership);
+    }
   });
 
   test('A15 an attempt past its deadline is submitted on the next read even if the job never ran', async () => {
