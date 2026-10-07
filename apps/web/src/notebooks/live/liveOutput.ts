@@ -2,10 +2,11 @@ import type { LiveOutput } from '@parallax/contracts';
 
 /**
  * What a live output becomes before anything is shown (docs/design/connector.md §10.4, §14; the
- * A09 suite). A kernel's output is untrusted. ADR-0002 keeps notebook HTML, SVG and images on the
- * content origin, and live output has no route there yet (P3-08a), so nothing of the kind is
- * rendered on the app origin: text and errors are shown as text, and a rich output shows its
- * `text/plain` alternative when it has one and is otherwise named, never run.
+ * A09 suite). A kernel's output is untrusted. Text and errors are shown as text. A rich output
+ * (HTML, SVG, images, Markdown, anything beyond plain text) is never rendered from the channel:
+ * the server renders it with the stored-output rules and answers it as stored output, with HTML,
+ * SVG and images as objects on the content origin (`RichOutput`). Its `text/plain` alternative
+ * is kept for when that fails.
  */
 
 /** The most text one execution shows; the rest is dropped and the cell says so. */
@@ -14,8 +15,14 @@ export const MAX_LIVE_TEXT_CHARS = 50_000;
 export type ShownOutput =
   | { kind: 'text'; stream: 'stdout' | 'stderr'; text: string }
   | { kind: 'error'; name: string; value: string; traceback: string }
-  /** A rich output Parallax does not render here; its plain-text alternative, if any, is kept. */
-  | { kind: 'withheld'; mimeTypes: string[]; text: string | null };
+  /** A rich output the server renders; its plain-text alternative, if any, is kept. */
+  | {
+      kind: 'rich';
+      data: Record<string, unknown>;
+      executionCount: number | null;
+      mimeTypes: string[];
+      text: string | null;
+    };
 
 // biome-ignore lint/suspicious/noControlCharactersInRegex: ANSI escapes are control characters
 const ANSI = /\u001b\[[0-9;?]*[ -/]*[@-~]/g;
@@ -49,7 +56,9 @@ export function shownOutput(output: LiveOutput): ShownOutput {
         return { kind: 'text', stream: 'stdout', text: stripAnsi(plain) };
       }
       return {
-        kind: 'withheld',
+        kind: 'rich',
+        data: output.data,
+        executionCount: output.output_type === 'execute_result' ? output.execution_count : null,
         mimeTypes: types.filter((t) => t !== 'text/plain'),
         text: plain === null ? null : stripAnsi(plain),
       };
@@ -57,7 +66,8 @@ export function shownOutput(output: LiveOutput): ShownOutput {
   }
 }
 
-export type GroupedOutput = ShownOutput & { key: number; generation: number };
+/** `eventSeq` is the first output event the item shows: with the execution, its identity. */
+export type GroupedOutput = ShownOutput & { key: number; eventSeq: number; generation: number };
 
 /** Consecutive text of one stream joins into one block, as a terminal would show it. */
 export function groupOutputs(
@@ -76,7 +86,7 @@ export function groupOutputs(
   };
   for (const [index, item] of items.entries()) {
     const next = shownOutput(item.output);
-    const base = { key: index, generation: item.generation };
+    const base = { key: index, eventSeq: item.eventSeq, generation: item.generation };
     if (next.kind === 'text') {
       const text = take(next.text);
       const last = shown[shown.length - 1];

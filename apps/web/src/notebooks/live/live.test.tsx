@@ -1,5 +1,6 @@
 import { EditorView } from '@codemirror/view';
-import { QueryClientProvider } from '@tanstack/react-query';
+import hostile from '@parallax/contracts/fixtures/hostile-live-output.json';
+import { onlineManager, QueryClientProvider } from '@tanstack/react-query';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import axe from 'axe-core';
 import { type ReactNode, useState } from 'react';
@@ -120,12 +121,25 @@ function Host({
   );
 }
 
+type OutputAnswer = (
+  body: { data: Record<string, unknown>; executionCount: number | null },
+  n: number,
+) => { status: number; body?: unknown };
+/** What the stubbed server answers for a live output, and what it was asked. */
+let outputAnswer: OutputAnswer | null = null;
+const outputPosts: { url: string; body: { data: Record<string, unknown> } }[] = [];
+
 function mount(
   over: Partial<NotebookSession> = {},
   opts: { nb?: Notebook; showOutputs?: boolean } = {},
 ) {
   posts.length = 0;
   stubApi((url, init) => {
+    if (init?.method === 'POST' && url.endsWith('/outputs')) {
+      const body = JSON.parse(String(init.body));
+      outputPosts.push({ url, body });
+      return outputAnswer ? outputAnswer(body, outputPosts.length) : { status: 503, body: {} };
+    }
     if (init?.method === 'POST') {
       posts.push({ url, body: init.body ? JSON.parse(String(init.body)) : undefined });
       return { status: 202, body: session({ ...over }) };
@@ -170,6 +184,10 @@ beforeAll(() => {
 });
 
 beforeEach(() => {
+  // A test that goes offline leaves TanStack Query's shared online state behind; queries pause.
+  onlineManager.setOnline(true);
+  outputAnswer = null;
+  outputPosts.length = 0;
   FakeSocket.all = [];
   vi.stubGlobal('WebSocket', FakeSocket);
 });
@@ -582,42 +600,145 @@ describe('live notebook', () => {
       output: { output_type: 'display_data', metadata: {}, data },
     });
 
-  it('A09 live HTML output never reaches the app origin: it is withheld until the content-origin frame', () => {
+  const CONTENT = 'https://content.example/content/';
+  const pwned = () => (window as unknown as { __pwned?: number }).__pwned;
+
+  it('A09 live HTML output is served sandboxed from the content origin', async () => {
+    outputAnswer = () => ({
+      status: 200,
+      body: {
+        output: {
+          type: 'html',
+          executionCount: null,
+          url: `${CONTENT}frame-1`,
+          height: 120,
+          scriptsRemoved: true,
+        },
+        expiresAt: '2026-10-01T09:05:00.000Z',
+      },
+    });
     const { socket } = attach();
     answerOk(socket, 'c1');
-    richOutput(socket, 1, {
-      'text/html':
-        '<table><tr><td>x online = 3</td></tr></table><img src=x onerror="window.__pwned=1"><script>window.__pwned=2</script><iframe src="https://example.com"></iframe>',
-      'text/plain': 'one row',
-    });
+    richOutput(socket, 1, hostile.html);
     const section = cellSection('c1');
-    // No markup of the output reaches the page, no frame is made, and nothing ran.
-    expect(section.querySelector('iframe, script, img, table')).toBeNull();
-    expect(section.innerHTML).not.toContain('onerror');
-    expect((window as unknown as { __pwned?: number }).__pwned).toBeUndefined();
-    // The plain alternative is shown, and the cell says what is not shown, truthfully.
-    expect(section).toHaveTextContent('one row');
-    expect(section).toHaveTextContent(
-      'Rich output (text/html) is not shown in a live notebook yet',
-    );
-    expect(section).not.toHaveTextContent('Scripts in this output were removed');
+    const frame = await waitFor(() => {
+      const found = section.querySelector('iframe');
+      if (!found) throw new Error('no frame yet');
+      return found;
+    });
+    // The output as the channel delivered it went to the server, for this session only.
+    expect(outputPosts).toEqual([
+      {
+        url: expect.stringMatching(
+          new RegExp(`^/api/classes/${CLASS_A}/notebook-sessions/[0-9a-f-]{36}/outputs$`),
+        ),
+        body: { data: hostile.html, executionCount: null },
+      },
+    ]);
+    // A frame on the content origin with every sandbox restriction; nothing of the markup here.
+    expect(frame.getAttribute('src')).toBe(`${CONTENT}frame-1`);
+    expect(frame.getAttribute('sandbox')).toBe('');
+    expect(frame.getAttribute('loading')).toBeNull();
+    expect(section.querySelector('script, img, table, object, embed, form')).toBeNull();
+    expect(section.innerHTML).not.toMatch(/onerror|onclick|javascript:|x online/);
+    expect(section).toHaveTextContent('Scripts in this output were removed and not run');
+    expect(pwned()).toBeUndefined();
   });
 
-  it('A09 live images and SVG are named, not rendered, and an unknown type is never run', () => {
+  it('A09 live images and SVG come from the content origin, and a failed load mints a new link', async () => {
+    outputAnswer = (body, n) => ({
+      status: 200,
+      body: {
+        output: {
+          type: 'image',
+          executionCount: null,
+          url: `${CONTENT}image-${n}`,
+          alt: String(body.data['text/plain'] ?? 'Image output'),
+          ...('image/svg+xml' in body.data && { scriptsRemoved: true }),
+        },
+        expiresAt: '2026-10-01T09:05:00.000Z',
+      },
+    });
     const { socket } = attach();
     answerOk(socket, 'c1');
-    richOutput(socket, 1, { 'image/png': 'iVBORw0KGgo=', 'text/plain': '<Figure size 640x480>' });
-    richOutput(socket, 2, { 'image/svg+xml': '<svg onload="window.__pwned=1"></svg>' });
-    richOutput(socket, 3, { 'application/vnd.jupyter.widget-view+json': { model_id: 'x' } });
-    richOutput(socket, 4, { 'text/plain': '4' });
+    richOutput(socket, 1, { 'image/png': 'iVBORw0KGgo=', 'text/plain': 'A plot' });
+    richOutput(socket, 2, hostile.svg);
     const section = cellSection('c1');
-    expect(section.querySelector('img, svg, iframe, script')).toBeNull();
-    expect(section).toHaveTextContent('<Figure size 640x480>');
-    expect(section).toHaveTextContent('Rich output (image/png) is not shown');
-    expect(section).toHaveTextContent('Rich output (image/svg+xml) is not shown');
-    expect(section).toHaveTextContent('Rich output (application/vnd.jupyter.widget-view+json)');
+    const plot = await screen.findByAltText('A plot');
+    const svg = await screen.findByAltText('<Figure size 640x480>');
+    expect(plot.getAttribute('src')).toMatch(new RegExp(`^${CONTENT}image-`));
+    expect(svg.getAttribute('src')).toMatch(new RegExp(`^${CONTENT}image-`));
+    expect(section.querySelector('svg, script, iframe')).toBeNull();
+    expect(section.innerHTML).not.toMatch(/onload|onclick|__pwned/);
+    expect(section).toHaveTextContent('Scripts in this output were removed and not run');
+
+    // The link no longer loads (it lasts five minutes): the cell says so instead of a blank box,
+    // and trying again shows the image from a new link.
+    fireEvent.error(plot);
+    expect(within(section).getByText(/This image could not be loaded\./)).toBeInTheDocument();
+    expect(within(section).getByText('A plot')).toBeInTheDocument();
+    fireEvent.click(within(section).getByRole('button', { name: 'Try again' }));
+    const renewed = await screen.findByAltText('A plot');
+    expect(renewed.getAttribute('src')).toBe(`${CONTENT}image-3`);
+    expect(outputPosts).toHaveLength(3);
+    expect(pwned()).toBeUndefined();
+  });
+
+  it('A09 live Markdown output passes the browser sanitiser before it is shown', async () => {
+    // Even a server answer that kept markup is sanitised again before insertion.
+    outputAnswer = () => ({
+      status: 200,
+      body: {
+        output: {
+          type: 'markdown',
+          executionCount: null,
+          html: '<p><strong>bold</strong><script>window.__pwned=3</script><img src="x" onerror="window.__pwned=4"><a href="javascript:alert(5)">x</a></p>',
+        },
+        expiresAt: null,
+      },
+    });
+    const { socket } = attach();
+    answerOk(socket, 'c1');
+    richOutput(socket, 1, hostile.markdown);
+    const section = cellSection('c1');
+    expect(await within(section).findByText('bold')).toBeInTheDocument();
+    expect(section.querySelector('script')).toBeNull();
+    expect(section.innerHTML).not.toMatch(/onerror|javascript:/);
+    expect(pwned()).toBeUndefined();
+  });
+
+  it('A09 a live output that cannot be shown says why, keeps its plain text and is never run', async () => {
+    outputAnswer = (body) =>
+      'application/vnd.jupyter.widget-view+json' in body.data
+        ? {
+            status: 200,
+            body: {
+              output: {
+                type: 'unsupported',
+                executionCount: null,
+                mimeTypes: ['application/vnd.jupyter.widget-view+json'],
+              },
+              expiresAt: null,
+            },
+          }
+        : { status: 413, body: { error: 'Payload Too Large' } };
+    const { socket } = attach();
+    answerOk(socket, 'c1');
+    richOutput(socket, 1, { 'text/html': '<b>huge</b>', 'text/plain': 'huge frame' });
+    richOutput(socket, 2, { 'application/vnd.jupyter.widget-view+json': { model_id: 'x' } });
+    richOutput(socket, 3, { 'text/plain': '4' });
+    const section = cellSection('c1');
+    expect(await within(section).findByText(/This output is too large to show\./)).toBeVisible();
+    expect(section).toHaveTextContent('huge frame');
+    expect(
+      await within(section).findByText(
+        'Interactive output not shown (application/vnd.jupyter.widget-view+json)',
+      ),
+    ).toBeInTheDocument();
     expect(section).toHaveTextContent('4');
-    expect((window as unknown as { __pwned?: number }).__pwned).toBeUndefined();
+    // Plain text needs no server: two rich outputs were sent, the `4` was not.
+    expect(outputPosts).toHaveLength(2);
+    expect(section.querySelector('iframe, img, script, b')).toBeNull();
   });
 
   it('keyboard runs and Run again are locked while Run all is going', () => {

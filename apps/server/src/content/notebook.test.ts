@@ -1,9 +1,11 @@
 import { parseNotebook } from '@parallax/contracts';
+import hostileLive from '@parallax/contracts/fixtures/hostile-live-output.json';
 import { describe, expect, test } from 'vitest';
 import {
   buildNotebook,
   MAX_OUTPUT_CHARS,
   plainText,
+  renderLiveOutput,
   renderNotebook,
   sanitizeSvg,
 } from './notebook';
@@ -564,4 +566,73 @@ test('buildNotebook names only objects it was given bytes for', () => {
   const parsed = parseNotebook(notebook([code('c', 'x', [])]));
   if (!parsed.ok) throw new Error(parsed.error);
   expect(buildNotebook(parsed.notebook, prefix).objects).toEqual([]);
+});
+
+describe('A09 live output is rendered by the stored-output rules', () => {
+  const livePrefix = 'classes/00000000-0000-4000-8000-000000000002/live-outputs/s';
+  const stored = (data: Record<string, unknown>) =>
+    buildNotebook(
+      {
+        nbformat: 4,
+        nbformat_minor: 5,
+        metadata: {},
+        cells: [
+          {
+            id: 'c',
+            cell_type: 'code',
+            metadata: {},
+            execution_count: 7,
+            source: '',
+            outputs: [{ output_type: 'execute_result', execution_count: 7, metadata: {}, data }],
+          },
+        ],
+      },
+      livePrefix,
+    );
+
+  for (const name of ['html', 'svg', 'markdown'] as const) {
+    test(`A09 the hostile ${name} fixture gives the same output live as stored`, () => {
+      const data = hostileLive[name] as Record<string, unknown>;
+      const fromFile = stored(data);
+      const live = renderLiveOutput(data, 7, livePrefix);
+      const cell = fromFile.notebook.cells[0];
+      expect(cell?.type === 'code' && cell.outputs).toEqual([live.output]);
+      expect(live.objects).toEqual(fromFile.objects);
+      const text = live.objects.map((o) => new TextDecoder().decode(o.bytes)).join('');
+      const markup = live.output.type === 'markdown' ? live.output.html : text;
+      expect(markup).not.toMatch(
+        /<script|<iframe|<object|<embed|foreignObject|<animate|\son[a-z]+=|javascript:/i,
+      );
+    });
+  }
+
+  test('A09 scriptsRemoved says what the sanitiser removed, live as stored', () => {
+    expect(renderLiveOutput(hostileLive.html, 1, livePrefix).output).toMatchObject({
+      type: 'html',
+      scriptsRemoved: true,
+    });
+    expect(renderLiveOutput(hostileLive.svg, 1, livePrefix).output).toMatchObject({
+      type: 'image',
+      scriptsRemoved: true,
+    });
+    // Benign markup of the same kinds: nothing was removed, and nothing says it was.
+    expect(
+      renderLiveOutput({ 'text/html': '<p style="color:red">plain <b>text</b></p>' }, 1, livePrefix)
+        .output,
+    ).toMatchObject({ type: 'html', scriptsRemoved: false });
+    expect(
+      renderLiveOutput(
+        { 'image/svg+xml': '<svg xmlns="http://www.w3.org/2000/svg"><circle r="4"/></svg>' },
+        1,
+        livePrefix,
+      ).output,
+    ).not.toHaveProperty('scriptsRemoved');
+  });
+
+  test('A09 live objects are keyed under the session prefix as storage names them', () => {
+    const { output, objects } = renderLiveOutput({ 'image/png': PNG }, null, livePrefix);
+    expect(output).toMatchObject({ type: 'image', executionCount: null, contentType: 'image/png' });
+    expect(objects).toHaveLength(1);
+    expect(objects[0]?.key).toMatch(new RegExp(`^${livePrefix}/objects/[0-9a-f]{64}$`));
+  });
 });
