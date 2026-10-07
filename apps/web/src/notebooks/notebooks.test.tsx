@@ -337,6 +337,58 @@ describe('Notebooks tab', () => {
     });
   });
 
+  it('A09 each code cell collapses and shows its source and its output on its own', async () => {
+    const user = userEvent.setup();
+    api();
+    renderApp(NOTEBOOKS);
+    const panel = await content();
+    await within(panel).findByText('means.std(ddof=1)');
+    const code = within(panel).getByRole('button', { name: 'Collapse code of cell [2]' });
+    expect(code).toHaveAttribute('aria-expanded', 'true');
+    expect(code).toHaveTextContent('Collapse source');
+    await user.click(code);
+    expect(within(panel).queryByText('means.std(ddof=1)')).toBeNull();
+    // The output of the same cell, and other cells, are untouched.
+    expect(within(panel).getByText('0.60')).toBeInTheDocument();
+    const show = within(panel).getByRole('button', { name: 'Show code of cell [2]' });
+    expect(show).toHaveAttribute('aria-expanded', 'false');
+    expect(show).toHaveTextContent('Show source');
+    expect(within(panel).getByText('display(HTML(chart))')).toBeInTheDocument();
+
+    const output = within(panel).getByRole('button', { name: 'Collapse output of cell [2]' });
+    expect(output).toHaveAttribute('aria-expanded', 'true');
+    await user.click(output);
+    expect(within(panel).queryByText('0.60')).toBeNull();
+    await user.click(within(panel).getByRole('button', { name: 'Show output of cell [2]' }));
+    expect(within(panel).getByText('0.60')).toBeInTheDocument();
+    await user.click(within(panel).getByRole('button', { name: 'Show code of cell [2]' }));
+    expect(within(panel).getByText('means.std(ddof=1)')).toBeInTheDocument();
+
+    // A cell opened one by one can be collapsed again; the toolbar's change resets the cells.
+    await user.click(within(panel).getByRole('button', { name: 'Show code of cell [4]' }));
+    await user.click(within(panel).getByRole('button', { name: 'Collapse code of cell [4]' }));
+    expect(within(panel).queryByText('answer = 42')).toBeNull();
+    await user.click(within(panel).getByRole('button', { name: 'Collapse code of cell [2]' }));
+    await user.click(screen.getByRole('button', { name: 'Hide outputs' }));
+    expect(within(panel).queryByText('0.60')).toBeNull();
+    expect(within(panel).getByText('means.std(ddof=1)')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Show outputs' }));
+    expect(within(panel).getByText('0.60')).toBeInTheDocument();
+  });
+
+  it('A09 a notice that an output was removed links to the source download', async () => {
+    api();
+    renderApp(NOTEBOOKS);
+    const panel = await content();
+    const unsupported = (await within(panel).findByText(/Interactive output not shown/))
+      .parentElement as HTMLElement;
+    expect(within(unsupported).getByRole('button', { name: 'Download' })).toBeInTheDocument();
+    const removed = within(panel).getByText(/Scripts in this output were removed/)
+      .parentElement as HTMLElement;
+    expect(within(removed).getByRole('button', { name: 'Download' })).toBeInTheDocument();
+    expect(within(panel).getAllByRole('button', { name: 'Download' })).toHaveLength(2);
+  });
+
   it('collapses code and outputs independently, honours collapsed cells, and offers outline and download', async () => {
     const user = userEvent.setup();
     api();

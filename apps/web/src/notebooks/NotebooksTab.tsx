@@ -18,7 +18,7 @@ import {
 import { ConnectPanel } from './connect/ConnectPanel';
 import { LiveNotebook } from './live';
 import styles from './Notebook.module.css';
-import { NotebookView, RenewOutputLinks } from './NotebookView';
+import { NotebookView, OutputSourceLink, RenewOutputLinks } from './NotebookView';
 import { type NotebookSummary, useNotebookContent, useNotebooks, useShiny } from './notebooks';
 import { ShinyEmbed } from './ShinyEmbed';
 
@@ -378,7 +378,7 @@ function NotebookPanel({
         />
       ) : null}
       <RenewOutputLinks.Provider value={() => void content.refetch()}>
-        {body}
+        <OutputSourceLink.Provider value={sourceDownload}>{body}</OutputSourceLink.Provider>
       </RenewOutputLinks.Provider>
     </>
   );
