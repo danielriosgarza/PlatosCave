@@ -713,8 +713,9 @@ class Harness:
     def oom_kills(self):
         return read_oom_kills()
 
-    def execute(self, name, files, argv, stdin_bytes, cap, budget, outcome_path=None):
-        """Materialise `files`, run `argv` capped at `cap` seconds, clean up. Returns Exec."""
+    def execute(self, name, files, argv, stdin_bytes, cap, budget, outcome_path=None, home_files=()):
+        """Materialise `files` (and `home_files`, given as (path, bytes), into the check's private
+        directory), run `argv` capped at `cap` seconds, clean up. Returns Exec."""
         cwd = os.path.join(self.work_dir, name)
         home = os.path.join(self.tmp_dir, name)
         res = Exec()
@@ -739,6 +740,9 @@ class Harness:
                 stdin_path = os.path.join(home, "stdin")
                 with open(stdin_path, "wb") as handle:
                     handle.write(stdin_bytes)
+                for path, content in home_files:
+                    with open(path, "wb") as handle:
+                        handle.write(content)
             except OSError as error:
                 res.spawn_error = "Could not prepare the check: %s" % (error.strerror or error)
         if res.spawn_error is None:
@@ -922,7 +926,7 @@ class Harness:
 
     @staticmethod
     def call_spec(check, outcome_path):
-        """The first line of the driver's stdin: never `expected` or `compare` (design section 4.5)."""
+        """What the driver is told (stdin line for Python, call.json for R): never `expected` or `compare` (design section 4.5)."""
         return {
             "file": posixpath.normpath(check["file"]),
             "function": check["function"],
@@ -939,15 +943,24 @@ class Harness:
         cap = min(timeout if timeout is not None else remaining, remaining)
         stdin_text = check.get("stdin", "")
         outcome_path = None
+        home_files = ()
         if kind == "call":
             outcome_path = os.path.join(home, "outcome.json")
             spec = self.call_spec(check, outcome_path)
-            stdin_bytes = (json.dumps(spec) + "\n" + stdin_text).encode("utf-8")
-            argv = self.command("call", None, [])
+            if self.language == "r":
+                # R connections buffer, so a spec line read from stdin would swallow part of the
+                # student's input: driver.R takes the spec from a file and stdin stays whole.
+                spec_path = os.path.join(home, "call.json")
+                home_files = ((spec_path, json.dumps(spec).encode("utf-8")),)
+                stdin_bytes = stdin_text.encode("utf-8")
+                argv = self.command("call", None, []) + [spec_path]
+            else:
+                stdin_bytes = (json.dumps(spec) + "\n" + stdin_text).encode("utf-8")
+                argv = self.command("call", None, [])
         else:
             stdin_bytes = stdin_text.encode("utf-8")
             argv = self.command(kind, posixpath.normpath(check["file"]), check.get("args", []))
-        res = self.execute(name, self.visible_files(check), argv, stdin_bytes, cap, budget, outcome_path)
+        res = self.execute(name, self.visible_files(check), argv, stdin_bytes, cap, budget, outcome_path, home_files)
         return self.judge(check, res, self.job["limits"]["memoryMiB"], cap)
 
     # -- verdicts (design sections 3.1 and 3.2) -----------------------------------------

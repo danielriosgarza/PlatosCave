@@ -594,8 +594,9 @@ export async function keepLocalCopy(
     if (scope.archived) return classArchived;
     const ids = new Set((await pinnedTest(tx, attempt)).questions.map((q) => q.id));
     if (!copy.every((a) => ids.has(a.questionId))) return invalid('This test has no such question');
-    // Autosave refuses a lone surrogate, so the browser keeps such an answer unsent and offers it
-    // here. Postgres's jsonb cannot store one; it is stored as U+FFFD, so no entry is lost.
+    // Autosave refuses a lone surrogate or NUL, so the browser keeps such an answer unsent and
+    // offers it here. Postgres's jsonb cannot store either; each is stored as U+FFFD, so no entry
+    // is lost.
     await tx
       .update(testAttempts)
       .set({
@@ -1002,7 +1003,7 @@ export async function reviewAttempt(db: Db, scope: ClassScope, attemptId: string
 }
 
 /** Whether the caller submitted a test in this class (topic completion, P2-16). */
-export async function submittedTests(db: Db, classId: string, userId: string) {
+export async function submittedTests(db: Ex, classId: string, userId: string) {
   const rows = await db
     .selectDistinct({ resourceId: testAttempts.resourceId })
     .from(testAttempts)

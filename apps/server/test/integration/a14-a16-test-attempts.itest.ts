@@ -381,6 +381,18 @@ describe('A15 deadline submission', () => {
       seq: 1,
     });
     expect(loneCode.status).toBe(400);
+    // A NUL is refused the same way (jsonb 22P05), for an explanation and for a code file.
+    expect(
+      (await save('bea', ids.classB, beaAttempt, 'why', { value: 'nul \u0000', seq: 2 })).status,
+    ).toBe(400);
+    expect(
+      (
+        await save('bea', ids.classB, beaAttempt, 'mean', {
+          value: { files: [{ path: 'solution.py', content: 'x = "\u0000"\n' }] },
+          seq: 1,
+        })
+      ).status,
+    ).toBe(400);
 
     // Bea goes offline and keeps typing; the deadline passes and the job runs.
     clock = minutes(31);
@@ -422,7 +434,7 @@ describe('A15 deadline submission', () => {
       status: 409,
       body: { error: 'attempt_closed', receipt },
     });
-    // A lone surrogate cannot be stored in jsonb: it is kept as U+FFFD, never a 500, and every
+    // A lone surrogate or NUL cannot be stored in jsonb: each is kept as U+FFFD, never a 500, and every
     // entry of the copy is kept.
     const localCopyUrl = `${attemptUrl(ids.classB, beaAttempt)}/local-copy`;
     const kept = await call('bea', 'POST', localCopyUrl, {
@@ -431,7 +443,7 @@ describe('A15 deadline submission', () => {
           questionId: 'mean',
           value: { files: [{ path: 'solution.py', content: 'x = "\ud800"' }] },
         },
-        { questionId: 'why', value: unsent.value },
+        { questionId: 'why', value: `${unsent.value}\u0000` },
       ],
     });
     expect(kept).toEqual({ status: 200, body: { localCopyAt: minutes(31).toISOString() } });
@@ -453,7 +465,7 @@ describe('A15 deadline submission', () => {
           questionId: 'mean',
           value: { files: [{ path: 'solution.py', content: 'x = "\ufffd"' }] },
         },
-        { questionId: 'why', value: unsent.value },
+        { questionId: 'why', value: `${unsent.value}\ufffd` },
       ],
       localCopyAt: minutes(31).toISOString(),
     });

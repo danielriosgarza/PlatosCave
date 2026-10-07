@@ -40,7 +40,7 @@ const RunnerRuntime = z.strictObject({
 });
 export type RunnerRuntime = z.infer<typeof RunnerRuntime>;
 
-/** Development and CI: the image `scripts/runner-image.sh build python` tags `:dev`. */
+/** Development and CI: the images `scripts/runner-image.sh build python|r` tag `:dev`. */
 export const DEV_RUNNER_RUNTIMES: RunnerRuntime[] = [
   {
     id: 'python-3.12',
@@ -49,6 +49,14 @@ export const DEV_RUNNER_RUNTIMES: RunnerRuntime[] = [
     digest: null,
     harnessVersion: '1',
     packages: ['numpy', 'pandas', 'scipy'],
+  },
+  {
+    id: 'r-4.6',
+    language: 'r',
+    image: 'parallax-runner-r:dev',
+    digest: null,
+    harnessVersion: '1',
+    packages: ['jsonlite'],
   },
 ];
 
