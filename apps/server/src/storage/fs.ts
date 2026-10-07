@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { createWriteStream } from 'node:fs';
-import { mkdir, open, rename, rm, stat } from 'node:fs/promises';
+import { constants, createWriteStream } from 'node:fs';
+import { access, mkdir, open, rename, rm, stat } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import type { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -70,6 +70,12 @@ export class FsStorage implements Storage {
       if (isMissing(err)) return null;
       throw err;
     }
+  }
+
+  /** The root exists (it is created on first use) and is a directory the process can write. */
+  async ping(): Promise<void> {
+    await mkdir(this.root, { recursive: true });
+    await access(this.root, constants.W_OK);
   }
 
   async delete(key: string): Promise<void> {

@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { mkdtemp, readdir, rm } from 'node:fs/promises';
+import { mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { Readable } from 'node:stream';
@@ -20,6 +20,14 @@ beforeEach(async () => {
 afterEach(() => rm(root, { recursive: true, force: true }));
 
 describe('fs storage', () => {
+  test('ping creates a missing root and refuses a root that is a file', async () => {
+    const fresh = join(root, 'not-yet');
+    await new FsStorage(fresh).ping();
+    expect((await readdir(root)).includes('not-yet')).toBe(true);
+    await writeFile(join(root, 'a-file'), 'x');
+    await expect(new FsStorage(join(root, 'a-file')).ping()).rejects.toThrow();
+  });
+
   test('streams an object in and out under its content-addressed key', async () => {
     async function* chunks() {
       yield Buffer.from('hello ');

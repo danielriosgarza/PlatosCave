@@ -1,7 +1,7 @@
 import type { CookieSerializeOptions } from '@fastify/cookie';
 import type { FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { revokeSession, SESSION_TTL_MS } from '../db/auth/sessions';
+import { revokeSession } from '../db/auth/sessions';
 import type { Executor } from '../db/client';
 import { TOKEN_SHAPE } from './tokens';
 
@@ -31,13 +31,21 @@ export function returnCookieOptions(appOrigin: string): CookieSerializeOptions {
     path: '/api',
     secure: appOrigin.startsWith('https:'),
     signed: true,
-    maxAge: SESSION_TTL_MS / 1000,
   };
 }
 
-export function setPreviewReturn(reply: FastifyReply, value: PreviewReturn, appOrigin: string) {
+/** The kept session lives as long as the sign-in it came from (`sessionTtlMs`: SESSION_TTL_DAYS). */
+export function setPreviewReturn(
+  reply: FastifyReply,
+  value: PreviewReturn,
+  appOrigin: string,
+  sessionTtlMs: number,
+) {
   const encoded = Buffer.from(JSON.stringify(value)).toString('base64url');
-  reply.setCookie(PREVIEW_RETURN_COOKIE, encoded, returnCookieOptions(appOrigin));
+  reply.setCookie(PREVIEW_RETURN_COOKIE, encoded, {
+    ...returnCookieOptions(appOrigin),
+    maxAge: sessionTtlMs / 1000,
+  });
 }
 
 /** The kept instructor session and editor, or undefined when absent or tampered with. */

@@ -107,6 +107,7 @@ const courseGrants: Record<string, Partial<Record<PersonName, Grant[]>>> = {
  */
 const publicAllowlist = new Set([
   'GET /api/health',
+  'GET /api/ready',
   'GET /api/openapi.json',
   'POST /api/auth/link',
   'GET /api/auth/verify',

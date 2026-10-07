@@ -201,6 +201,21 @@ describe('registerRoute rate limits', () => {
     expect(await status('/api/limited/user')).toBe(429);
     await app.close();
   });
+
+  it('routes given one shared limiter draw on one budget', async () => {
+    const app = await buildApp(config);
+    const sharedRateLimit = app.rateLimit({ max: 2, timeWindow: '1 minute' });
+    registerRoute(app, route('/api/shared/a', 'public'), () => ({}), { sharedRateLimit });
+    registerRoute(app, route('/api/shared/b', 'public'), () => ({}), { sharedRateLimit });
+    await app.ready();
+    const status = async (url: string) => (await app.inject({ url })).statusCode;
+
+    expect(await status('/api/shared/a')).toBe(200);
+    expect(await status('/api/shared/b')).toBe(200);
+    expect(await status('/api/shared/a')).toBe(429);
+    expect(await status('/api/shared/b')).toBe(429);
+    await app.close();
+  });
 });
 
 it('API routes get no implicit HEAD route, so a HEAD never runs a handler', async () => {
