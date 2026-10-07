@@ -94,7 +94,9 @@ const submissionKey = z
  * `submissionKey` makes the request idempotent: the same key answers the same receipt and adds no
  * version. 400 names the problem for another file type, an empty file, text that is not valid
  * UTF-8 or a notebook that is not valid nbformat 4 or has more than MAX_SUBMISSION_CELLS cells
- * (§10.7); 413 for a file over the limit; 429 beyond the per-session upload limit; 409
+ * (§10.7); 413 for a file over the limit; 429 beyond the per-person upload limit (every request counts,
+ * refused files and repeats of a `submissionKey` included); 503 while too many files are being
+ * checked, to retry; 409
  * `class_archived` once the class is archived. The notebook is never run.
  */
 export const submitNotebook = defineRoute({

@@ -314,7 +314,7 @@ describe('notebook upload', () => {
     expect(await rowCount()).toBe(2);
   });
 
-  test('A10 uploads beyond the per-session limit are refused with 429 and nothing is stored', async () => {
+  test('A10 uploads beyond the per-person limit are refused with 429 and nothing is stored', async () => {
     // Its own app, so the counts of the tests around it are not shared.
     const limited = await buildApp(loadConfig({ ...env, SUBMISSION_RATE_LIMIT: '3' }), {
       db: testDb.db,

@@ -93,7 +93,7 @@ const Env = z
     AUTH_LINK_RATE_LIMIT: z.coerce.number().int().positive().default(120),
     /** Sign-in link uses (`/api/auth/verify`) allowed per client IP per 15 minutes. */
     AUTH_VERIFY_RATE_LIMIT: z.coerce.number().int().positive().default(240),
-    /** Notebook uploads (`notebook-submissions`) one session may make per 15 minutes (§13). */
+    /** Notebook uploads (`notebook-submissions`) one person may make per 15 minutes (§13). */
     SUBMISSION_RATE_LIMIT: z.coerce.number().int().positive().default(30),
     /**
      * Fastify `trustProxy`: which proxies' `X-Forwarded-*` headers to believe, so `req.ip` (the

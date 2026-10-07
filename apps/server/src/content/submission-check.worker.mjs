@@ -10,11 +10,13 @@ const { MAX_SUBMISSION_CELLS } = await import('@parallax/contracts/routes/notebo
 const { notebookEnvironment } = await import('./submission.ts');
 let reply;
 try {
-  const parsed = parseNotebook(workerData.text, { maxCells: MAX_SUBMISSION_CELLS });
+  const text = new TextDecoder('utf-8', { fatal: true }).decode(workerData.bytes);
+  const parsed = parseNotebook(text, { maxCells: MAX_SUBMISSION_CELLS });
   reply = parsed.ok
     ? { ok: true, value: notebookEnvironment(parsed.notebook) }
     : { ok: false, error: parsed.error };
-} catch {
-  reply = { ok: false };
+} catch (err) {
+  if (err instanceof TypeError) reply = { ok: false, error: 'The text is not valid UTF-8' };
+  else reply = { ok: false };
 }
 parentPort?.postMessage(reply);
