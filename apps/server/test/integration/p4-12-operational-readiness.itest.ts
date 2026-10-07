@@ -216,3 +216,46 @@ describe('notebook lease defaults from LEASE_IDLE_MINUTES and LEASE_GRACE_MINUTE
     expect(request).toMatchObject({ lease: { idleTimeoutMin: 60, gracePeriodMin: 10 } });
   });
 });
+
+describe('SESSION_TTL_DAYS on the preview paths', () => {
+  let testDb: TestDatabase;
+  let world: Awaited<ReturnType<typeof buildWorld>>;
+
+  beforeAll(async () => {
+    testDb = await createTestDatabase();
+    world = await buildWorld(testDb.db, start);
+  });
+  afterAll(async () => {
+    await testDb?.drop();
+  });
+
+  test('starting and leaving a preview keep the configured lifetime on the kept and restored cookies', async () => {
+    const app = await buildApp(
+      loadConfig({ NODE_ENV: 'test', LOG_LEVEL: 'silent', SESSION_TTL_DAYS: '3' }),
+      { db: testDb.db, now: () => start },
+    );
+    const headers = { cookie: world.cookie.marcus };
+    const started = await app.inject({
+      method: 'POST',
+      url: `/api/courses/${ids.statistics}/preview`,
+      headers,
+      payload: { classId: ids.classB, topicId: ids.sampling },
+    });
+    expect(started.statusCode).toBe(200);
+    // The kept instructor session lives as long as a sign-in; the preview session keeps its own 8 h.
+    expect(started.cookies.find((c) => c.name === 'pc_preview_return')?.maxAge).toBe(259_200);
+    expect(started.cookies.find((c) => c.name === 'pc_session')?.maxAge).toBe(8 * 3600);
+
+    const browser = started.cookies
+      .map((c) => `${c.name}=${encodeURIComponent(c.value)}`)
+      .join('; ');
+    const exit = await app.inject({
+      method: 'POST',
+      url: '/api/preview/exit',
+      headers: { cookie: browser },
+    });
+    expect(exit.statusCode).toBe(200);
+    expect(exit.cookies.find((c) => c.name === 'pc_session')?.maxAge).toBe(259_200);
+    await app.close();
+  });
+});

@@ -10,7 +10,8 @@
 #   managed    the optional managed connector only; it reaches the relay through the public URL
 #              and the compute targets its operator pins, never Postgres or Garage
 #   runner-db  Postgres and the runner only (internal: no route out); the runner holds the
-#              Docker socket, so a sandbox escape reaches this network and nothing else
+#              Docker socket, so code that compromises it controls the Docker host, which is why
+#              it belongs on a host of its own (design §10.1)
 #   egress     api, relay and worker, for sign-in mail and the published ports; nothing here holds
 #              the database
 #   backend    Postgres, Garage, api, relay, worker (internal: no route out)
