@@ -27,9 +27,9 @@ import { submittedTests } from './tests';
 export type TopicReviews = z.input<typeof contracts.topicReviews>;
 
 /** The requirement that every ungraded resource of the topic is reviewed. */
-export const ALL_REVIEWED = 'reviewed:*';
+const ALL_REVIEWED = 'reviewed:*';
 /** The requirement that every graded resource of the topic is submitted. */
-export const ALL_SUBMITTED = 'submitted:*';
+const ALL_SUBMITTED = 'submitted:*';
 
 export interface RuleTopic {
   id: string;
@@ -54,7 +54,7 @@ export interface RuleResource {
  * Graded work counts through a submission, never through the student's own mark (§4): tests, and
  * exercises assigned for credit (§9).
  */
-export const isGraded = (r: Pick<RuleResource, 'type' | 'credit'>): boolean =>
+const isGraded = (r: Pick<RuleResource, 'type' | 'credit'>): boolean =>
   r.type === 'test' || (r.type === 'exercise' && r.credit != null);
 
 /** What the caller has done: marks they made and resources they submitted. */
@@ -67,7 +67,7 @@ export interface Evidence {
  * The requirements of a topic: its custom list, else every ungraded resource reviewed and every
  * graded one submitted (plan decision 15).
  */
-export function requirementsOf(topic: RuleTopic): string[] {
+function requirementsOf(topic: RuleTopic): string[] {
   const requires = topic.completionRule?.requires;
   if (topic.completionRule === null) return [ALL_REVIEWED, ALL_SUBMITTED];
   return Array.isArray(requires) ? requires.filter((r): r is string => typeof r === 'string') : [];
@@ -178,7 +178,7 @@ async function evidenceOf(db: Executor, classId: string, userId: string): Promis
 }
 
 /** Topic and resource rows of an adopted release, shaped for the completion rule. */
-export async function releaseRuleRows(db: Executor, releaseId: string, courseId: string) {
+async function releaseRuleRows(db: Executor, releaseId: string, courseId: string) {
   const topicRows = await db
     .select({
       id: releaseTopics.id,

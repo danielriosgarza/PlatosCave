@@ -896,7 +896,7 @@ export function placementView(
 }
 
 /** Stored placements of the given marks on the given revisions, keyed `<markId>:<revisionId>`. */
-export async function loadPlacements(
+async function loadPlacements(
   db: Db,
   scope: ClassScope,
   marks: { annotationIds?: string[]; threadIds?: string[] },

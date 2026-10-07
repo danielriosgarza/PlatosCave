@@ -809,6 +809,23 @@ describe('A21 submissions per class', () => {
     const termsB = await call('bea', 'GET', `${testUrl(ids.classB)}/test`);
     expect(termsB.body.terms.durationMinutes).toBe(30);
     expect(termsB.body.terms.override).toBeNull();
+
+    // A deadline set for class A is returned for class A and never for class B.
+    const termsUrl = `${testUrl(ids.classA)}/assignment`;
+    const current = await call('priya', 'GET', termsUrl);
+    const opensAt = '2026-09-01T08:00:00.000Z';
+    const closesAt = '2026-12-01T17:00:00.000Z';
+    const scheduled = await call('priya', 'PUT', termsUrl, {
+      settings: { opensAt, closesAt },
+      expectedRevision: current.body.revision,
+    });
+    expect(scheduled.status).toBe(200);
+    const termsA = await call('sam', 'GET', `${testUrl(ids.classA)}/test`);
+    expect(termsA.body.terms).toMatchObject({ opensAt, closesAt });
+    const afterB = await call('bea', 'GET', `${testUrl(ids.classB)}/test`);
+    expect(afterB.body.terms.opensAt).toBeNull();
+    expect(afterB.body.terms.closesAt).toBeNull();
+    expect(afterB.body.terms.durationMinutes).toBe(30);
   });
 
   test('an archived class keeps its attempts readable and starts or saves nothing', async () => {

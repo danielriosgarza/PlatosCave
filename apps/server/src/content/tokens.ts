@@ -2,7 +2,7 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 import { assertSafeKey } from '../storage/storage';
 
 /** Content tokens live at most five minutes, so copied links expire (ADR-0002, §13). */
-export const CONTENT_TOKEN_TTL_S = 300;
+const CONTENT_TOKEN_TTL_S = 300;
 
 /** Clock difference tolerated between the instance that mints and the one that verifies. */
 const CLOCK_SKEW_S = 5;
@@ -42,7 +42,7 @@ export const keyInScope = (key: string, scopeId: string): boolean =>
   key.startsWith(`courses/${scopeId}/`) || key.startsWith(`classes/${scopeId}/`);
 
 /** Throws unless the key is safe and lies under the scope's own prefix. */
-export function assertKeyInScope(key: string, scopeId: string): void {
+function assertKeyInScope(key: string, scopeId: string): void {
   assertSafeKey(key);
   if (!keyInScope(key, scopeId)) throw new Error(`storage key ${key} is outside scope ${scopeId}`);
 }
