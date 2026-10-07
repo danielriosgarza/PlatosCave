@@ -1,4 +1,4 @@
-import type { Strokes } from './anchors';
+import type { Strokes } from "./anchors";
 
 /**
  * Drawings are stored in coordinates normalised to their figure or page (§8), so a stroke's
@@ -7,7 +7,13 @@ import type { Strokes } from './anchors';
  */
 export const SKETCH_REFERENCE_WIDTH = 900;
 
-const escapeXml = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+// XML 1.0 forbids C0 controls other than tab, LF and CR, and the non-characters U+FFFE and U+FFFF,
+// even as character references; drop them so the document stays well-formed.
+const XML_ILLEGAL = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]/g;
+const escapeXml = (s: string) =>
+  s
+    .replace(XML_ILLEGAL, "")
+    .replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 const round = (n: number) => Math.round(n * 100) / 100;
 
 /**
@@ -21,31 +27,37 @@ export function strokesToSvg(
 ): string {
   const width = SKETCH_REFERENCE_WIDTH;
   const height = round(width * options.aspect);
-  let defs = '';
-  let body = '';
+  let defs = "";
+  let body = "";
   let erasers = 0;
   for (const stroke of strokes) {
-    const points = stroke.points.map(([x, y]) => `${round(x * width)},${round(y * height)}`);
-    if (stroke.tool === 'pen') {
+    const points = stroke.points.map(
+      ([x, y]) => `${round(x * width)},${round(y * height)}`,
+    );
+    if (stroke.tool === "pen") {
       const [first] = points;
       body +=
         points.length === 1 && first
-          ? `<circle cx="${first.split(',')[0]}" cy="${first.split(',')[1]}" r="${round(stroke.width / 2)}" fill="${stroke.color}"/>`
-          : `<polyline points="${points.join(' ')}" fill="none" stroke="${stroke.color}" stroke-width="${stroke.width}" stroke-linecap="round" stroke-linejoin="round"/>`;
+          ? `<circle cx="${first.split(",")[0]}" cy="${first.split(",")[1]}" r="${round(stroke.width / 2)}" fill="${stroke.color}"/>`
+          : `<polyline points="${points.join(" ")}" fill="none" stroke="${stroke.color}" stroke-width="${stroke.width}" stroke-linecap="round" stroke-linejoin="round"/>`;
       continue;
     }
     const id = `erase-${++erasers}`;
     const cut =
       points.length === 1
-        ? `<circle cx="${(points[0] ?? '0,0').split(',')[0]}" cy="${(points[0] ?? '0,0').split(',')[1]}" r="${round(stroke.width / 2)}" fill="#000"/>`
-        : `<polyline points="${points.join(' ')}" fill="none" stroke="#000" stroke-width="${stroke.width}" stroke-linecap="round" stroke-linejoin="round"/>`;
+        ? `<circle cx="${(points[0] ?? "0,0").split(",")[0]}" cy="${(points[0] ?? "0,0").split(",")[1]}" r="${round(stroke.width / 2)}" fill="#000"/>`
+        : `<polyline points="${points.join(" ")}" fill="none" stroke="#000" stroke-width="${stroke.width}" stroke-linecap="round" stroke-linejoin="round"/>`;
     defs += `<mask id="${id}" maskUnits="userSpaceOnUse" x="0" y="0" width="${width}" height="${height}"><rect width="${width}" height="${height}" fill="#fff"/>${cut}</mask>`;
     body = `<g mask="url(#${id})">${body}</g>`;
   }
-  const title = options.title ? `<title>${escapeXml(options.title)}</title>` : '';
-  const desc = options.description ? `<desc>${escapeXml(options.description)}</desc>` : '';
+  const title = options.title
+    ? `<title>${escapeXml(options.title)}</title>`
+    : "";
+  const desc = options.description
+    ? `<desc>${escapeXml(options.description)}</desc>`
+    : "";
   return (
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${width} ${height}" width="${width}" height="${height}" role="img">` +
-    `${title}${desc}${defs ? `<defs>${defs}</defs>` : ''}${body}</svg>`
+    `${title}${desc}${defs ? `<defs>${defs}</defs>` : ""}${body}</svg>`
   );
 }
