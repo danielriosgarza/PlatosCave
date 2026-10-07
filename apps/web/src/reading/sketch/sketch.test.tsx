@@ -780,6 +780,12 @@ describe('sketch editor reachability', () => {
   });
 });
 
+const sentAnchor = (call: Call | undefined) => {
+  const body = call?.body as { anchor: { rect: unknown; strokes: unknown[] } } | null | undefined;
+  if (!body) throw new Error('no request was sent');
+  return body.anchor;
+};
+
 describe('sketch on a PDF page', () => {
   it('A07 saves a page sketch as a pdf anchor with page-relative strokes, and holds the page while it is open', async () => {
     const w = world('pdf');
@@ -819,6 +825,49 @@ describe('sketch on a PDF page', () => {
     });
     await waitFor(() => expect(screen.getByRole('button', { name: 'Next page' })).toBeEnabled());
     expect(await screen.findByText('Sketch · Page 1')).toBeVisible();
+  });
+
+  it('A06 a saved page sketch keeps its normalised rect and strokes when the page is zoomed and the sketch saved again', async () => {
+    const w = world('pdf');
+    api(w);
+    const user = userEvent.setup();
+    await openPdfPage();
+    await user.click(screen.getByRole('button', { name: 'Sketch on Page 1' }));
+    const panel = await screen.findByRole('region', { name: 'Sketch on Page 1' });
+    await stroke(user, [100, 50], [300, 150]);
+    await user.type(within(panel).getByLabelText('Text description (required)'), 'Zoomed.');
+    await user.click(within(panel).getByRole('button', { name: 'Done' }));
+    await waitFor(() => expect(w.calls).toHaveLength(1));
+    const saved = sentAnchor(w.calls[0]);
+    expect(saved.rect).toEqual({ x: 0.25, y: 0.25, w: 0.5, h: 0.5 });
+    expect(saved.strokes).toHaveLength(1);
+
+    // The reader zooms in: the same page is now twice as wide and tall on screen.
+    vi.spyOn(HTMLCanvasElement.prototype, 'getBoundingClientRect').mockReturnValue({
+      ...SURFACE,
+      width: 800,
+      height: 400,
+      right: 800,
+      bottom: 400,
+    } as DOMRect);
+    await user.click(await screen.findByRole('button', { name: 'Edit sketch on Page 1' }));
+    await screen.findByRole('region', { name: 'Sketch on Page 1' });
+    // One more stroke, inside the first one's bounds, drawn at the new size.
+    await stroke(user, [400, 200], [500, 250]);
+    await strokeCount(2);
+    await user.click(screen.getByRole('button', { name: 'Done' }));
+    await waitFor(() => expect(w.calls).toHaveLength(2));
+    expect(w.calls[1]?.method).toBe('PUT');
+    const resent = sentAnchor(w.calls[1]);
+    expect(resent.rect).toEqual(saved.rect);
+    expect(resent.strokes[0]).toEqual(saved.strokes[0]);
+    expect(resent.strokes[1]).toMatchObject({
+      points: [
+        [0.5, 0.5],
+        [0.625, 0.625],
+      ],
+    });
+    expect(resent.strokes).toHaveLength(2);
   });
 
   it('A07 describes a page in text without drawing', async () => {

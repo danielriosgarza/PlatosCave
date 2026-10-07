@@ -263,7 +263,11 @@ func TestA28_RealSSHAndJump(t *testing.T) {
 				t.Errorf("workspace stage %+v", res.Stages[3])
 			}
 			if route.jump {
-				if hops := res.Stages[1].Data.Hops; len(hops) != 2 || hops[0].Hop != "jump" || hops[1].Hop != "target" {
+				d := res.Stages[1].Data
+				if d == nil {
+					t.Fatalf("host_identity stage has no data: %+v", res.Stages[1])
+				}
+				if hops := d.Hops; len(hops) != 2 || hops[0].Hop != "jump" || hops[1].Hop != "target" {
 					t.Errorf("hops %+v", hops)
 				}
 			}

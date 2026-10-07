@@ -921,6 +921,33 @@ class Limits(HarnessCase):
         self.assertEqual(entry["status"], "failed")
         self.assertTrue(entry["truncated"])
 
+    def test_a_stdio_check_after_one_that_used_the_shared_output_budget_still_passes(self):
+        job = make_job(
+            {"a.py": "print('a' * 3998)\n", "b.py": "print('b' * 1000)\n"},
+            [script("Fill", "a.py"), stdio("B", "b.py", "b" * 1000 + "\n")],
+            output=4096,
+        )
+        outcome = self.go(job)
+        entry = outcome.check(1)
+        self.assertEqual(entry["status"], "passed")
+        self.assertTrue(entry["truncated"])  # the shared capture ran out ...
+        self.assertLess(len(entry["stdout"]), 1001)
+        self.assertEqual(entry["actual"], "b" * 1000 + "\n")  # ... but the comparison used the check's own stdout
+
+    def test_a_stdio_check_whose_program_floods_stderr_still_passes(self):
+        source = "import sys\nprint('c' * 1500)\nsys.stderr.write('e' * (2 * 1024 * 1024))\n"
+        job = make_job({"p.py": source}, [stdio("A", "p.py", "c" * 1500 + "\n")], output=4096)
+        entry = self.go(job).check()
+        self.assertEqual(entry["status"], "passed")
+        self.assertTrue(entry["truncated"])
+        self.assertEqual(entry["actual"], "c" * 1500 + "\n")
+
+    def test_a_stdio_check_whose_own_stdout_exceeds_output_bytes_fails_with_the_output_limit_message(self):
+        job = make_job({"p.py": "print('a' * 6000)\n"}, [stdio("A", "p.py", "a" * 6000 + "\n")], output=4096)
+        entry = self.go(job).check()
+        self.assertEqual(entry["status"], "failed")
+        self.assertEqual(entry["message"], "Output exceeds the output limit of the question")
+
     def test_expected_actual_and_message_are_cut_by_encoded_size(self):
         long_text = "\u00e9" * 3000
         job = make_job(

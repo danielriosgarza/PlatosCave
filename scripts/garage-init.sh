@@ -23,6 +23,8 @@ fi
 g key info "$KEY_ID" >/dev/null 2>&1 || g key import --yes -n parallax-dev "$KEY_ID" "$SECRET" >/dev/null
 g bucket info "$BUCKET" >/dev/null 2>&1 || g bucket create "$BUCKET" >/dev/null
 g bucket allow --read --write --owner "$BUCKET" --key "$KEY_ID" >/dev/null
+# The A22 s3 test creates and deletes its own buckets (a restore needs an empty one).
+g key allow --create-bucket "$KEY_ID" >/dev/null
 
 echo "S3_ENDPOINT=http://127.0.0.1:3900"
 echo "S3_REGION=garage"
