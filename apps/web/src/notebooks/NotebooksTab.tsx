@@ -378,7 +378,11 @@ function NotebookPanel({
         />
       ) : null}
       <RenewOutputLinks.Provider value={() => void content.refetch()}>
-        <OutputSourceLink.Provider value={sourceDownload}>{body}</OutputSourceLink.Provider>
+        <OutputSourceLink.Provider
+          value={data?.sourceKey ? { classId, revisionId, sourceKey: data.sourceKey } : null}
+        >
+          {body}
+        </OutputSourceLink.Provider>
       </RenewOutputLinks.Provider>
     </>
   );

@@ -345,14 +345,14 @@ describe('Notebooks tab', () => {
     await within(panel).findByText('means.std(ddof=1)');
     const code = within(panel).getByRole('button', { name: 'Collapse code of cell [2]' });
     expect(code).toHaveAttribute('aria-expanded', 'true');
-    expect(code).toHaveTextContent('Collapse source');
+    expect(code).toHaveTextContent('Collapse code');
     await user.click(code);
     expect(within(panel).queryByText('means.std(ddof=1)')).toBeNull();
     // The output of the same cell, and other cells, are untouched.
     expect(within(panel).getByText('0.60')).toBeInTheDocument();
     const show = within(panel).getByRole('button', { name: 'Show code of cell [2]' });
     expect(show).toHaveAttribute('aria-expanded', 'false');
-    expect(show).toHaveTextContent('Show source');
+    expect(show).toHaveTextContent('Show code');
     expect(within(panel).getByText('display(HTML(chart))')).toBeInTheDocument();
 
     const output = within(panel).getByRole('button', { name: 'Collapse output of cell [2]' });
@@ -374,6 +374,12 @@ describe('Notebooks tab', () => {
     expect(within(panel).getByText('means.std(ddof=1)')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Show outputs' }));
     expect(within(panel).getByText('0.60')).toBeInTheDocument();
+    // The toolbar's change reset cell [2]'s choice for good: it does not come back.
+    expect(within(panel).getByText('means.std(ddof=1)')).toBeInTheDocument();
+    await user.click(within(panel).getByRole('button', { name: 'Collapse code of cell [2]' }));
+    await user.click(screen.getByRole('button', { name: 'Hide code' }));
+    await user.click(screen.getByRole('button', { name: 'Show code' }));
+    expect(within(panel).getByText('means.std(ddof=1)')).toBeInTheDocument();
   });
 
   it('A09 a notice that an output was removed links to the source download', async () => {
@@ -382,11 +388,17 @@ describe('Notebooks tab', () => {
     const panel = await content();
     const unsupported = (await within(panel).findByText(/Interactive output not shown/))
       .parentElement as HTMLElement;
-    expect(within(unsupported).getByRole('button', { name: 'Download' })).toBeInTheDocument();
+    expect(
+      within(unsupported).getByRole('button', { name: 'Download original notebook' }),
+    ).toBeInTheDocument();
     const removed = within(panel).getByText(/Scripts in this output were removed/)
       .parentElement as HTMLElement;
-    expect(within(removed).getByRole('button', { name: 'Download' })).toBeInTheDocument();
-    expect(within(panel).getAllByRole('button', { name: 'Download' })).toHaveLength(2);
+    expect(
+      within(removed).getByRole('button', { name: 'Download original notebook' }),
+    ).toBeInTheDocument();
+    expect(
+      within(panel).getAllByRole('button', { name: 'Download original notebook' }),
+    ).toHaveLength(2);
   });
 
   it('collapses code and outputs independently, honours collapsed cells, and offers outline and download', async () => {

@@ -1,6 +1,7 @@
 import { createContext, type ReactNode, useContext, useMemo, useRef, useState } from 'react';
 import buttons from '../components/Buttons.module.css';
 import readingStyles from '../reading/Reading.module.css';
+import { SourceDownload } from '../reading/SourceDownload';
 import { sanitizeReading } from '../reading/sanitize';
 import styles from './Notebook.module.css';
 import type { CellOutput, Notebook, NotebookCell } from './notebooks';
@@ -23,7 +24,11 @@ export const RenewOutputLinks = createContext<(() => void) | null>(null);
  * The notebook's source download, shown beside a notice that sanitisation removed or did not show
  * an output (§10.7), so the original stays reachable from the output itself.
  */
-export const OutputSourceLink = createContext<ReactNode>(null);
+export const OutputSourceLink = createContext<{
+  classId: string;
+  revisionId: string;
+  sourceKey: string;
+} | null>(null);
 
 type Shown = Record<string, { code?: boolean; output?: boolean }>;
 
@@ -41,6 +46,10 @@ export function NotebookView({ notebook, showCode, showOutputs, outlineOpen }: P
     outputs: showOutputs,
     cells: {},
   });
+  // Adjusting state while rendering: a toolbar change discards the cells' own choices for good,
+  // so returning the toolbar to an earlier setting does not bring them back.
+  if (shown.code !== showCode || shown.outputs !== showOutputs)
+    setShown({ code: showCode, outputs: showOutputs, cells: {} });
   const cells = shown.code === showCode && shown.outputs === showOutputs ? shown.cells : {};
   const setPart = (id: string, part: 'code' | 'output', open: boolean) =>
     setShown({
@@ -213,7 +222,7 @@ function CellToggle({
         aria-label={`${verb} ${part} of cell ${count(cellCount)}`}
         onClick={() => onToggle(!open)}
       >
-        {verb} {part === 'code' ? 'source' : 'output'}
+        {verb} {part}
       </button>
     </div>
   );
@@ -231,7 +240,16 @@ function RemovedNotice({ children }: { children: ReactNode }) {
 
 function SourceLink() {
   const source = useContext(OutputSourceLink);
-  return source ? <> · Original notebook: {source}</> : null;
+  return source ? (
+    <>
+      {' · '}
+      <SourceDownload
+        {...source}
+        className={buttons.textButton}
+        label="Download original notebook"
+      />
+    </>
+  ) : null;
 }
 
 export function Output({ output, cellCount }: { output: CellOutput; cellCount: number | null }) {
@@ -322,10 +340,9 @@ export function Output({ output, cellCount }: { output: CellOutput; cellCount: n
     case 'unsupported':
       return (
         <div className={styles.output}>
-          <p className={styles.label}>
-            <span>Interactive output not shown ({output.mimeTypes.join(', ')})</span>
-            <SourceLink />
-          </p>
+          <RemovedNotice>
+            Interactive output not shown ({output.mimeTypes.join(', ')})
+          </RemovedNotice>
         </div>
       );
   }

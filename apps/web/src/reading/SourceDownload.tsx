@@ -10,10 +10,12 @@ interface Props {
   /** Storage key of the uploaded source file, from the reading. */
   sourceKey: string;
   className?: string;
+  /** Button text and, with it, the accessible name; defaults to "Download". */
+  label?: string;
 }
 
 /** Downloads a reading's source file through a short-lived attachment link from the class release. */
-export function SourceDownload({ classId, revisionId, sourceKey, className }: Props) {
+export function SourceDownload({ classId, revisionId, sourceKey, className, label }: Props) {
   const [failed, setFailed] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -41,7 +43,7 @@ export function SourceDownload({ classId, revisionId, sourceKey, className }: Pr
         disabled={busy}
         onClick={() => void download()}
       >
-        Download
+        {label ?? 'Download'}
       </button>
       {failed && <span role="status">The file could not be downloaded.</span>}
     </>
