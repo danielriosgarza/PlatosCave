@@ -177,21 +177,53 @@ func TestA34_AfterComment(t *testing.T) {}
       'e2e/fixtures.ts': `
         import { test as base } from '@playwright/test';
         export const authed = base.extend({}).extend({});
+        export const typed = base.extend<{ a: number }>({ a: 1 });
         export { authed as signedIn };`,
       'e2e/reexport.ts': "export { authed as viaReexport } from './fixtures.js';",
       'e2e/tests/a01.e2e.ts': `
         import { authed, signedIn as second } from '../fixtures.js';
         import { viaReexport } from '../reexport.js';
+        import { typed } from '../fixtures.js';
+        import { t3 } from '../playwright-reexport.js';
+        import { authed as starred } from '../star.js';
         import { other } from '../elsewhere.js';
         const local = test.extend({}).extend({});
         authed('A01 imported', async () => {});
         second('A02 renamed', async () => {});
         viaReexport('A03 re-exported', async () => {});
         local('A04 chained', async () => {});
-        other('A05 unknown module', async () => {});`,
+        other('A05 unknown module', async () => {});
+        typed('A06 typed', async () => {});
+        t3('A07 playwright re-export', async () => {});
+        starred('A08 export star', async () => {});`,
+      'e2e/playwright-reexport.ts': "export { test as t3, expect } from '@playwright/test';",
+      'e2e/star.ts': "export * from './fixtures.js';",
     };
     const found = findTests(Object.keys(files), (f) => files[f] ?? '');
-    expect([...found.keys()].sort()).toEqual(['A01', 'A02', 'A03', 'A04']);
+    expect([...found.keys()].sort()).toEqual(['A01', 'A02', 'A03', 'A04', 'A06', 'A07', 'A08']);
+  });
+
+  it('AUD8b a skip in a beforeEach hook skips the group', () => {
+    const src = `
+      test.describe('A05 hooked', () => {
+        test.beforeEach(() => { test.skip(); });
+        test('A06 inside', async () => {});
+      });
+      test.describe('A07 conditional hook', () => {
+        test.beforeEach(({ browserName }) => { test.skip(browserName === 'x'); });
+        test('A08 inside', async () => {});
+      });`;
+    expect(idsInTsTitles(src)).toEqual(['A07', 'A08']);
+  });
+
+  it('AUD8b import cycles between fixture modules still resolve', () => {
+    const files: Record<string, string> = {
+      'e2e/a.ts': "import { b } from './b.js'; export const a = test.extend({}); export { b };",
+      'e2e/b.ts': "import { a } from './a.js'; export const b = test.extend({}); export { a };",
+      'e2e/x.e2e.ts': "import { a, b } from './b.js'; a('A01 a', () => {}); b('A02 b', () => {});",
+    };
+    const found = findTests(Object.keys(files), (f) => files[f] ?? '');
+    expect([...found.keys()].sort()).toEqual(['A01', 'A02']);
   });
 
   it('AUD8b reads the literal parts of titles joined with +', () => {
