@@ -1,6 +1,7 @@
 import { and, desc, eq, inArray } from 'drizzle-orm';
 import type { ClassScope } from '../../auth/scope';
 import type { StoredObject } from '../../storage/storage';
+import { releaseTopicOpens } from '../classTopics';
 import type { Db, Executor } from '../client';
 import { studyableRows } from '../content/releases';
 import {
@@ -48,6 +49,7 @@ export async function studyableNotebook(
   const [row] = await db
     .select({
       resourceId: releaseResources.resourceId,
+      releaseTopicId: releaseResources.releaseTopicId,
       title: releaseResources.title,
       content: resourceRevisions.content,
       objectKeys: resourceRevisions.objectKeys,
@@ -61,7 +63,8 @@ export async function studyableNotebook(
         eq(resourceRevisions.type, 'notebook'),
       ),
     );
-  if (!row) return null;
+  // A notebook in a topic the student may not open yet is unknown to them (§4).
+  if (!row || !(await releaseTopicOpens(db, scope, row.releaseTopicId, now))) return null;
   const named = typeof row.content.sourceKey === 'string' ? row.content.sourceKey : null;
   return {
     revisionId,

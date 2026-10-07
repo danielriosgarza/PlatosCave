@@ -8,6 +8,7 @@ import {
   type SessionState,
 } from '../../relay/session-state';
 import { audit } from '../audit';
+import { releaseTopicOpens } from '../classTopics';
 import type { Db, Executor, Tx } from '../client';
 import type { OwnedConnection } from '../connectors/connections';
 import { studyableRows } from '../content/releases';
@@ -99,7 +100,10 @@ export async function openSession(
   try {
     return await db.transaction(async (tx) => {
       const [revision] = await tx
-        .select({ id: releaseResources.resourceRevisionId })
+        .select({
+          id: releaseResources.resourceRevisionId,
+          releaseTopicId: releaseResources.releaseTopicId,
+        })
         .from(releaseResources)
         .innerJoin(resourceRevisions, eq(resourceRevisions.id, releaseResources.resourceRevisionId))
         .where(
@@ -109,7 +113,9 @@ export async function openSession(
             eq(resourceRevisions.type, 'notebook'),
           ),
         );
-      if (!revision) return { ok: false as const, reason: 'not_found' as const };
+      // A notebook in a topic the student may not open yet is unknown to them (§4).
+      if (!revision || !(await releaseTopicOpens(tx, scope, revision.releaseTopicId, now)))
+        return { ok: false as const, reason: 'not_found' as const };
       const [row] = await tx
         .insert(notebookSessions)
         .values({

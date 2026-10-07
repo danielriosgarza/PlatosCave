@@ -22,6 +22,7 @@ import { layoutOf, mapAnchor } from '../../annotations/mapping';
 import { type ClassScope, isDraftPreview } from '../../auth/scope';
 import { classArchived, invalid, notFound, type Outcome } from '../../outcome';
 import { audit } from '../audit';
+import { openReleaseTopicIds } from '../classTopics';
 import type { Db } from '../client';
 import { registerAffectedBy } from '../content/adoption';
 import { studyableDraft, studyableResource, studyableRows } from '../content/releases';
@@ -43,7 +44,8 @@ import { visiblePost, visibleTo } from './visibility';
  * Annotations and discussions of one class (§8). Every function takes the resolved
  * `ClassScope`; every read filters through `visibility.ts`, and writes to an annotation
  * require its author, so a non-author learns only "not found". Students reach a resource only
- * while `studyableRows` allows it (hidden or not yet released resources are "not found"), and
+ * while `studyableResource` allows it (hidden or not yet released resources, and resources of a
+ * topic that is not open to them, are "not found"), and
  * an archived class refuses every write but keeps its reads (§4).
  */
 
@@ -751,10 +753,16 @@ export async function listNotifications(
   scope: ClassScope,
   now: Date,
 ): Promise<Notification[]> {
+  // A student's resources must also sit in a topic they may open (§4), judged once here as
+  // `studyableResource` judges it per resource; null when every topic opens.
+  const openTopics = await openReleaseTopicIds(db, scope, now);
+  if (openTopics?.size === 0) return [];
   // A draft preview studies draft resources (ADR-0003); real members the adopted release.
   let studyable: SQL;
   if (isDraftPreview(scope)) {
-    const ids = (await studyableDraft(db, scope, now)).map((r) => r.resourceId);
+    const ids = (await studyableDraft(db, scope, now))
+      .filter((r) => !openTopics || openTopics.has(r.releaseTopicId))
+      .map((r) => r.resourceId);
     if (ids.length === 0) return [];
     studyable = inArray(threads.resourceId, ids);
   } else {
@@ -763,7 +771,13 @@ export async function listNotifications(
       db
         .select({ one: sql`1` })
         .from(releaseResources)
-        .where(and(eq(releaseResources.resourceId, threads.resourceId), studyableRows(scope, now))),
+        .where(
+          and(
+            eq(releaseResources.resourceId, threads.resourceId),
+            studyableRows(scope, now),
+            openTopics ? inArray(releaseResources.releaseTopicId, [...openTopics]) : undefined,
+          ),
+        ),
     );
   }
   const rows = await db

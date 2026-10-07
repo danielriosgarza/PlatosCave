@@ -1,8 +1,9 @@
-import { and, asc, eq, inArray, isNull, type SQL } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, type SQL, sql } from 'drizzle-orm';
 import type { ClassManagerScope, CourseContext, CourseScope } from '../auth/scope';
 import { audit } from './audit';
 import type { Db, Tx } from './client';
-import { openInvite, type RevokeReason, revokeInvites } from './invites';
+import { otherActiveOwnerExists } from './courseOwners';
+import { auditRevoked, openInvite, type RevokeReason, revokeInvites } from './invites';
 import {
   authSessions,
   classes,
@@ -168,7 +169,7 @@ async function dropPreviews(tx: Tx, scope: ClassManagerScope, userId: string, no
  * course and an invitation acceptance re-granting draft editing run one after the other. Its
  * owner flag also decides whether the person's invitations outlive their class authority
  * (`revokeIssuedBy`). The grant toggle reads `owner` through it only to share that one code
- * path: nothing writes `owner`, so the lock is not what makes that read safe.
+ * path; `setOwner` is what writes `owner`, and it serialises on the course's owner rows itself.
  */
 async function lockCourseMembership(tx: Tx, scope: CourseContext, userId: string) {
   const [row] = await tx
@@ -186,24 +187,12 @@ async function lockCourseMembership(tx: Tx, scope: CourseContext, userId: string
 /** `current` is the person's course membership, read under `lockCourseMembership`. */
 async function dropEditorIfNotTeaching(
   tx: Tx,
-  scope: ClassManagerScope,
+  scope: CourseContext,
   userId: string,
   current: Awaited<ReturnType<typeof lockCourseMembership>>,
-) {
-  if (!current?.editor || current.owner) return;
-  const [teaching] = await tx
-    .select({ id: classMemberships.id })
-    .from(classMemberships)
-    .innerJoin(classes, eq(classes.id, classMemberships.classId))
-    .where(
-      and(
-        forCourse(scope, classes),
-        eq(classMemberships.userId, userId),
-        eq(classMemberships.role, 'instructor'),
-      ),
-    )
-    .limit(1);
-  if (teaching) return;
+): Promise<boolean | null> {
+  if (!current?.editor || current.owner) return null;
+  if (await teachesCourse(tx, scope, userId)) return null;
   await tx
     .update(courseMemberships)
     .set({ editor: false })
@@ -217,8 +206,9 @@ async function dropEditorIfNotTeaching(
     targetType: 'user',
     targetId: userId,
     before: { editor: true },
-    after: { editor: false, membershipRemoved, via: scope.via },
+    after: { editor: false, membershipRemoved, ...('via' in scope && { via: scope.via }) },
   });
+  return membershipRemoved;
 }
 
 /** A course membership holding no grant carries no meaning; drop it. True when it was dropped. */
@@ -261,6 +251,132 @@ async function revokeIssuedBy(
     openInvite(now),
   ) as SQL;
   await revokeInvites(tx, scope, issued, now, { reason });
+}
+
+/** Whether the person holds an instructor seat in a class of the course. */
+async function teachesCourse(tx: Tx, scope: CourseContext, userId: string): Promise<boolean> {
+  const [teaching] = await tx
+    .select({ id: classMemberships.id })
+    .from(classMemberships)
+    .innerJoin(classes, eq(classes.id, classMemberships.classId))
+    .where(
+      and(
+        forCourse(scope, classes),
+        eq(classMemberships.userId, userId),
+        eq(classMemberships.role, 'instructor'),
+        eq(classMemberships.isPreview, false),
+      ),
+    )
+    .limit(1);
+  return teaching !== undefined;
+}
+
+/**
+ * Grants or withdraws course ownership (§3). Locks are taken in the order `closeAccount` takes
+ * them: the target's account row, then every owner membership of the course in id order. Two
+ * owners withdrawing each other, or one closing their account meanwhile, therefore run one after
+ * the other without deadlocking and the course keeps an active owner (`otherActiveOwnerExists`).
+ * The caller's own ownership is confirmed under those locks, because the role the route resolved
+ * may have been withdrawn while this request waited.
+ */
+export function setOwner(db: Db, scope: CourseScope, userId: string, granted: boolean, now: Date) {
+  return db.transaction(async (tx) => {
+    const [user] = await tx
+      .select({ kind: users.kind, deactivatedAt: users.deactivatedAt })
+      .from(users)
+      .where(eq(users.id, userId))
+      .for('share');
+    const owners = await tx
+      .select({ userId: courseMemberships.userId, deactivatedAt: users.deactivatedAt })
+      .from(courseMemberships)
+      .innerJoin(users, eq(users.id, courseMemberships.userId))
+      .where(and(forCourse(scope, courseMemberships), eq(courseMemberships.owner, true)))
+      .orderBy(asc(courseMemberships.id))
+      .for('update', { of: courseMemberships });
+    if (!owners.some((o) => o.userId === scope.user.id && o.deactivatedAt === null))
+      return { ok: false as const, reason: 'not_owner' as const };
+    if (user?.kind !== 'user') return { ok: false as const, reason: 'not_found' as const };
+    const current = await lockCourseMembership(tx, scope, userId);
+    if (granted) {
+      if (user.deactivatedAt !== null) return { ok: false as const, reason: 'not_found' as const };
+      if (current?.owner) return { ok: true as const };
+      // Owners are instructors (§3): someone who teaches a class of the course or holds draft editing.
+      if (!current?.editor && !(await teachesCourse(tx, scope, userId)))
+        return { ok: false as const, reason: 'not_course_staff' as const };
+    } else {
+      if (!current?.owner) return { ok: true as const };
+      const { rows } = await tx.execute<{ other: boolean }>(
+        sql`select ${otherActiveOwnerExists(scope.courseId, userId)} as other`,
+      );
+      if (!rows[0]?.other) return { ok: false as const, reason: 'last_owner' as const };
+    }
+    let membershipRemoved = false;
+    if (granted) {
+      // Teaching a class already carries draft editing (§3); a new row keeps that.
+      await tx
+        .insert(courseMemberships)
+        .values({ courseId: scope.courseId, userId, owner: true, editor: true })
+        .onConflictDoUpdate({
+          target: [courseMemberships.courseId, courseMemberships.userId],
+          set: { owner: true, editor: true },
+        });
+    } else {
+      await tx
+        .update(courseMemberships)
+        .set({ owner: false })
+        .where(and(forCourse(scope, courseMemberships), eq(courseMemberships.userId, userId)));
+      // Outside the owner's exemption, draft editing lasts only while teaching a class (§3), and
+      // nobody could take it away from a creator who never taught.
+      const editorDropped = await dropEditorIfNotTeaching(tx, scope, userId, {
+        owner: false,
+        editor: current?.editor ?? false,
+        publisher: current?.publisher ?? false,
+      });
+      membershipRemoved = editorDropped ?? (await tryDeleteEmpty(tx, scope, userId));
+    }
+    await audit(tx, {
+      actorId: scope.user.id,
+      action: 'grant.owner',
+      scopeKind: 'course',
+      scopeId: scope.courseId,
+      targetType: 'user',
+      targetId: userId,
+      before: { owner: current?.owner ?? false },
+      after: { owner: granted, membershipRemoved },
+    });
+    if (!granted) await revokeOwnerInvites(tx, scope, userId, now);
+    return { ok: true as const };
+  });
+}
+
+/**
+ * Instructor invitations rest on their issuer's authority (`revokeIssuedBy`), and an owner issues
+ * through the course. Once that is withdrawn, the open instructor invitations the person issued
+ * in classes of the course are revoked, except where they still hold `manage_members`. Each is
+ * audited like the other cascades.
+ */
+async function revokeOwnerInvites(tx: Tx, scope: CourseScope, userId: string, now: Date) {
+  const lapsed = await tx
+    .update(classInvites)
+    .set({ revokedAt: now })
+    .where(
+      and(
+        eq(classInvites.createdBy, userId),
+        eq(classInvites.kind, 'instructor'),
+        openInvite(now),
+        inArray(
+          classInvites.classId,
+          tx.select({ id: classes.id }).from(classes).where(forCourse(scope, classes)),
+        ),
+        sql`not exists (select 1 from ${classMemberships} m
+          where m.class_id = ${classInvites.classId} and m.user_id = ${userId}
+            and m.manage_members and not m.is_preview)`,
+      ),
+    )
+    .returning({ id: classInvites.id, classId: classInvites.classId });
+  await auditRevoked(tx, lapsed, scope.user.id, 'course_owner', now, {
+    reason: 'issuer_lost_ownership',
+  });
 }
 
 /** Publication is a course grant only the owner hands out (§3: "If delegated"). */

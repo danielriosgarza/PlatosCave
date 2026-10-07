@@ -7,6 +7,7 @@ import {
   removeMember,
   revokeInvite,
   setManageMembers,
+  setOwner,
   setPublisher,
 } from '@parallax/contracts/routes/members';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
@@ -82,6 +83,18 @@ export default function memberRoutes(app: FastifyInstance, deps: RouteDeps): voi
     const result = await members.removeMember(db(), scope, params.userId, now());
     if (!result.ok) return notFound();
     return { removed: true as const };
+  });
+
+  registerRoute(app, setOwner, async ({ scope, params, body, fail }) => {
+    scope.requireRecentAuth();
+    const result = await members.setOwner(db(), scope, params.userId, body.granted, now());
+    if (!result.ok) {
+      if (result.reason === 'not_found') return notFound();
+      // The caller stopped being an owner while the request waited: what the scope answers next time.
+      if (result.reason === 'not_owner') return fail(403, { error: 'forbidden' });
+      return fail(409, { error: result.reason });
+    }
+    return { userId: params.userId, owner: body.granted };
   });
 
   registerRoute(app, setPublisher, async ({ scope, params, body, fail }) => {

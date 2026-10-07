@@ -1003,7 +1003,7 @@ export async function reviewAttempt(db: Db, scope: ClassScope, attemptId: string
 }
 
 /** Whether the caller submitted a test in this class (topic completion, P2-16). */
-export async function submittedTests(db: Db, classId: string, userId: string) {
+export async function submittedTests(db: Ex, classId: string, userId: string) {
   const rows = await db
     .selectDistinct({ resourceId: testAttempts.resourceId })
     .from(testAttempts)
