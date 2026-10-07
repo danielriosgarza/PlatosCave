@@ -821,7 +821,7 @@ describe('sketch on a PDF page', () => {
     expect(await screen.findByText('Sketch · Page 1')).toBeVisible();
   });
 
-  it('A06 zooming the page between strokes keeps every stroke and the saved rect in normalised page space', async () => {
+  it('A06 a saved page sketch keeps its normalised rect and strokes when the page is zoomed and the sketch saved again', async () => {
     const w = world('pdf');
     api(w);
     const user = userEvent.setup();
@@ -829,6 +829,13 @@ describe('sketch on a PDF page', () => {
     await user.click(screen.getByRole('button', { name: 'Sketch on Page 1' }));
     const panel = await screen.findByRole('region', { name: 'Sketch on Page 1' });
     await stroke(user, [100, 50], [300, 150]);
+    await user.type(within(panel).getByLabelText('Text description (required)'), 'Zoomed.');
+    await user.click(within(panel).getByRole('button', { name: 'Done' }));
+    await waitFor(() => expect(w.calls).toHaveLength(1));
+    const saved = (w.calls[0]?.body as { anchor: { rect: unknown; strokes: unknown[] } }).anchor;
+    expect(saved.rect).toEqual({ x: 0.25, y: 0.25, w: 0.5, h: 0.5 });
+    expect(saved.strokes).toHaveLength(1);
+
     // The reader zooms in: the same page is now twice as wide and tall on screen.
     vi.spyOn(HTMLCanvasElement.prototype, 'getBoundingClientRect').mockReturnValue({
       ...SURFACE,
@@ -837,27 +844,24 @@ describe('sketch on a PDF page', () => {
       right: 800,
       bottom: 400,
     } as DOMRect);
-    window.dispatchEvent(new Event('resize'));
-    await stroke(user, [200, 100], [600, 300]);
+    await user.click(await screen.findByRole('button', { name: 'Edit sketch on Page 1' }));
+    await screen.findByRole('region', { name: 'Sketch on Page 1' });
+    // One more stroke, inside the first one's bounds, drawn at the new size.
+    await stroke(user, [400, 200], [500, 250]);
     await strokeCount(2);
-    await user.type(within(panel).getByLabelText('Text description (required)'), 'Zoomed.');
-    await user.click(within(panel).getByRole('button', { name: 'Done' }));
-    await waitFor(() => expect(w.calls).toHaveLength(1));
-    const points: [number, number][] = [
-      [0.25, 0.25],
-      [0.75, 0.75],
-    ];
-    const pen = { tool: 'pen', color: '#202124', width: 4, points };
-    expect(w.calls[0]?.body).toEqual({
-      kind: 'sketch',
-      body: 'Zoomed.',
-      anchor: {
-        kind: 'pdf',
-        page: 0,
-        rect: { x: 0.25, y: 0.25, w: 0.5, h: 0.5 },
-        strokes: [pen, pen],
-      },
+    await user.click(screen.getByRole('button', { name: 'Done' }));
+    await waitFor(() => expect(w.calls).toHaveLength(2));
+    expect(w.calls[1]?.method).toBe('PUT');
+    const resent = (w.calls[1]?.body as { anchor: { rect: unknown; strokes: unknown[] } }).anchor;
+    expect(resent.rect).toEqual(saved.rect);
+    expect(resent.strokes[0]).toEqual(saved.strokes[0]);
+    expect(resent.strokes[1]).toMatchObject({
+      points: [
+        [0.5, 0.5],
+        [0.625, 0.625],
+      ],
     });
+    expect(resent.strokes).toHaveLength(2);
   });
 
   it('A07 describes a page in text without drawing', async () => {
