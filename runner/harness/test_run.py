@@ -1588,7 +1588,7 @@ class RRuntime(HarnessCase):
     def test_repr_keeps_a_string_within_the_bound_and_cuts_one_over_it(self):
         # 40 000 characters are 80 000 bytes: over the limit in bytes, within it in characters.
         outcome = self.outcome_for(
-            r_call("Within the bound, non-ASCII", "utf8_within", {"value": '"' + "\u00e9" * 40000 + '"'}, "repr"),
+            r_call("Within the bound and non-ASCII", "utf8_within", {"value": '"' + "\u00e9" * 40000 + '"'}, "repr"),
             r_call("At the bound", "ascii_at", {"value": '"' + "a" * 65536 + '"'}, "repr"),
             r_call("One over the bound", "ascii_over", {"value": '"' + "a" * 65536 + '\u2026"'}, "repr"),
             r_call("One over with an uncut expected", "ascii_over", {"value": '"' + "a" * 65537 + '"'}, "repr"),
