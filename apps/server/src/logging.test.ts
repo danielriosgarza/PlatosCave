@@ -3,7 +3,7 @@ import { DrizzleQueryError } from 'drizzle-orm';
 import { describe, expect, test } from 'vitest';
 import { buildApp } from './app';
 import { loadConfig } from './config';
-import { createLogger, REDACT_PATHS } from './logging';
+import { createLogger, REDACT_PATHS, serialiseError } from './logging';
 
 /** Every sentinel below must never appear in any log line, whatever route or logger produced it. */
 const SECRETS = {
@@ -148,14 +148,52 @@ describe('structured logs', () => {
 
   test('the redaction list covers cookies, authorisation and tokens on requests and responses', () => {
     for (const path of [
-      'req.headers.cookie',
-      'req.headers.authorization',
-      'res.headers["set-cookie"]',
+      'headers',
+      '*.headers',
+      '["set-cookie"]',
+      'authorization',
       'token',
       '*.token',
       'body',
     ]) {
       expect(REDACT_PATHS).toContain(path);
     }
+  });
+
+  test('the error serializer never throws and never changes what it was given', () => {
+    const plain = { code: 'X', query: 'select 1' };
+    for (const value of [
+      'boom',
+      42,
+      null,
+      undefined,
+      new Error('x', { cause: 'text' }),
+      new Error('x', { cause: 42 }),
+      new Error('x', { cause: null }),
+      plain,
+    ]) {
+      expect(() => serialiseError(value), String(value)).not.toThrow();
+    }
+    expect(serialiseError('boom')).toBe('boom');
+    expect(serialiseError(null)).toBeNull();
+    expect(serialiseError(plain)).toBe(plain);
+    expect(plain).toEqual({ code: 'X', query: 'select 1' });
+    // A primitive cause is left out of the line, as pino does.
+    expect((serialiseError(new Error('x', { cause: 'text' })) as { message: string }).message).toBe(
+      'x',
+    );
+  });
+
+  test('a raw pg error keeps its code and loses a message that quotes the input', () => {
+    const pgError = Object.assign(
+      new Error(`invalid input syntax for type uuid: "${SECRETS.answer}"`),
+      {
+        severity: 'ERROR',
+        code: '22P02',
+      },
+    );
+    const out = serialiseError(pgError) as { message: string; stack: string; code: string };
+    expect(out).toMatchObject({ message: 'database query failed (22P02)', code: '22P02' });
+    expect(JSON.stringify(out)).not.toContain(SECRETS.answer);
   });
 });

@@ -14,7 +14,7 @@ const EXPIRED = '/signin?link=expired';
 export default function authRoutes(app: FastifyInstance, deps: RouteDeps): void {
   const { config, mailer, background } = deps;
   const { now } = deps;
-  const sessionTtlMs = config.SESSION_TTL_DAYS * 24 * 60 * 60_000;
+  const sessionTtlMs = config.SESSION_TTL_MS;
   const cookieOptions = sessionCookieOptions(config.APP_ORIGIN, sessionTtlMs);
   const { db } = deps;
   const provider = db

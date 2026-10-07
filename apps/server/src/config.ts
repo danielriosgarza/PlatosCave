@@ -325,6 +325,8 @@ const Env = z
     ...env,
     SESSION_SECRET: env.SESSION_SECRET ?? DEV_SESSION_SECRET,
     TRUST_PROXY: env.TRUST_PROXY ?? false,
+    /** SESSION_TTL_DAYS in milliseconds: the one lifetime every session and its cookies get. */
+    SESSION_TTL_MS: env.SESSION_TTL_DAYS * 24 * 60 * 60_000,
     MAIL_FROM: env.MAIL_FROM ?? 'Parallax <no-reply@parallax.invalid>',
     // The Vite dev server proxies /api, so links open the web app's origin in development.
     APP_ORIGIN: env.APP_ORIGIN ?? 'http://localhost:5173',

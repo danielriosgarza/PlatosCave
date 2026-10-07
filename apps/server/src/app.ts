@@ -30,6 +30,7 @@ import { emptyLinkRegistry, type LinkRegistry, LiveLinkRegistry } from './relay/
 import { normaliseOrigin } from './relay/signing';
 import { createStorage } from './storage/create';
 import type { Storage } from './storage/storage';
+import { VERSION } from './version';
 
 export interface Deps {
   db?: Db;
@@ -218,7 +219,7 @@ export async function buildApp(config: Config, deps: Deps = {}): Promise<Fastify
     }),
   });
   await app.register(swagger, {
-    openapi: { info: { title: 'Parallax API', version: '0.0.0' } },
+    openapi: { info: { title: 'Parallax API', version: VERSION } },
     transform: jsonSchemaTransform,
   });
 

@@ -41,11 +41,10 @@ const PRIVATE_KEYS = [
 const redactPath = (prefix: string, key: string) =>
   /^[A-Za-z_$][\w$]*$/.test(key) ? `${prefix}${prefix ? '.' : ''}${key}` : `${prefix}["${key}"]`;
 
+// `headers` is itself a private key, so `*.headers` removes request and response headers whole.
 export const REDACT_PATHS = PRIVATE_KEYS.flatMap((key) => [
   redactPath('', key),
   redactPath('*', key),
-  redactPath('req.headers', key),
-  redactPath('res.headers', key),
 ]);
 
 /** Fields of a database error that quote row values, SQL and parameters. */
@@ -66,46 +65,60 @@ type ErrorLike = {
   code?: unknown;
   params?: unknown;
   query?: unknown;
+  severity?: unknown;
   cause?: unknown;
 };
 
-/**
- * Whether the error, or one it wraps, was raised by a query: drizzle's `DrizzleQueryError` puts
- * the SQL and the bound values in its message (`Failed query: … params: …`), and pino folds each
- * cause's message and stack into the error's own.
- */
-function wrapsQuery(err: unknown): boolean {
-  for (let e = err as ErrorLike | undefined, depth = 0; e && depth < 8; depth++) {
-    if (e.name === 'DrizzleQueryError' || 'params' in e || 'query' in e) return true;
-    e = e.cause as ErrorLike | undefined;
+const isObject = (value: unknown): value is ErrorLike =>
+  typeof value === 'object' && value !== null;
+
+/** The error and what it wraps, as far as each link is an object (a cause may be a string). */
+function* chain(err: unknown): Generator<ErrorLike> {
+  let e: unknown = err;
+  for (let depth = 0; isObject(e) && depth < 8; depth++) {
+    yield e;
+    e = e.cause;
   }
-  return false;
 }
 
+/**
+ * Whether the error, or one it wraps, came from the database: drizzle's `DrizzleQueryError` puts
+ * the SQL and the bound values in its message (`Failed query: … params: …`), a `pg` error carries
+ * a `severity` and its message can quote the offending input (`invalid input syntax for type
+ * uuid: "…"`), and pino folds each cause's message and stack into the error's own.
+ */
+const fromDatabase = (err: unknown): boolean =>
+  [...chain(err)].some(
+    (e) =>
+      e.name === 'DrizzleQueryError' ||
+      'params' in e ||
+      'query' in e ||
+      typeof e.severity === 'string',
+  );
+
 /** The first error code in the chain (a Postgres SQLSTATE such as `23505`), if any. */
-function codeOf(err: unknown): string | undefined {
-  for (let e = err as ErrorLike | undefined, depth = 0; e && depth < 8; depth++) {
-    if (typeof e.code === 'string') return e.code;
-    e = e.cause as ErrorLike | undefined;
-  }
-  return undefined;
-}
+const codeOf = (err: unknown): string | undefined =>
+  [...chain(err)].find((e) => typeof e.code === 'string')?.code as string | undefined;
 
 /**
  * pino's error serializer minus what a database library copies from private input: the fields
- * above are dropped, and a failed query keeps only its error code, because its message, stack and
- * causes all quote the SQL and the bound values.
+ * above are dropped, and an error from the database keeps only its error code, because its
+ * message, stack and causes all quote the SQL and the bound values. Never throws, and never
+ * changes what the caller passed: a value pino does not turn into a new object (a string, null, a
+ * plain object) is returned as it came.
  */
 export function serialiseError(err: unknown): unknown {
-  const out = pino.stdSerializers.err(err as Error) as Serialised;
-  for (const field of QUOTING_FIELDS) delete out[field];
-  if (wrapsQuery(err)) {
+  const out = pino.stdSerializers.err(err as Error) as unknown;
+  if (!isObject(out) || out === err) return out;
+  const serialised = out as Serialised;
+  for (const field of QUOTING_FIELDS) delete serialised[field];
+  if (fromDatabase(err)) {
     const code = codeOf(err);
-    out.message = `database query failed${code ? ` (${code})` : ''}`;
-    out.stack = `${String(out.type ?? 'Error')}: ${out.message}`;
-    if (code) out.code = code;
+    serialised.message = `database query failed${code ? ` (${code})` : ''}`;
+    serialised.stack = `${String(serialised.type ?? 'Error')}: ${serialised.message}`;
+    if (code) serialised.code = code;
   }
-  return out;
+  return serialised;
 }
 
 /** Options shared by the API's Fastify logger and the worker's pino logger. */

@@ -46,7 +46,7 @@ async function landingOf(
 export default function previewRoutes(app: FastifyInstance, deps: RouteDeps): void {
   const { config } = deps;
   const origin = config.APP_ORIGIN;
-  const sessionTtlMs = config.SESSION_TTL_DAYS * 24 * 60 * 60_000;
+  const sessionTtlMs = config.SESSION_TTL_MS;
   const sessionCookie = sessionCookieOptions(origin, sessionTtlMs);
   const db = deps.requireDb;
 

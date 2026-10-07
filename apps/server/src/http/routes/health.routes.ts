@@ -2,6 +2,7 @@ import { health } from '@parallax/contracts/routes/health';
 import type { FastifyInstance } from 'fastify';
 import type { Deps } from '../../app';
 import { probe } from '../../db/client';
+import { VERSION } from '../../version';
 import { registerRoute } from '../register';
 
 export default function healthRoutes(app: FastifyInstance, deps: Deps): void {
@@ -16,6 +17,6 @@ export default function healthRoutes(app: FastifyInstance, deps: Deps): void {
         db = 'unavailable';
       }
     }
-    return { status: 'ok' as const, version: '0.0.0', db };
+    return { status: 'ok' as const, version: VERSION, db };
   });
 }

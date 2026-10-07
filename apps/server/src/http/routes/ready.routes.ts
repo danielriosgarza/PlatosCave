@@ -2,6 +2,7 @@ import { ready } from '@parallax/contracts/routes/ready';
 import type { FastifyInstance } from 'fastify';
 import type { RouteDeps } from '../../app';
 import { PROBE_TIMEOUT_MS, probe } from '../../db/client';
+import { VERSION } from '../../version';
 import { registerRoute } from '../register';
 
 type Check = { status: 'ok' | 'unavailable' | 'skipped'; required: boolean; latencyMs: number };
@@ -66,7 +67,7 @@ export default function readyRoutes(app: FastifyInstance, deps: RouteDeps): void
     const isReady = Object.values(checks).every((c) => !c.required || c.status === 'ok');
     const body = {
       status: isReady ? ('ready' as const) : ('not_ready' as const),
-      version: '0.0.0',
+      version: VERSION,
       mode: deps.mode === 'relay' ? ('relay' as const) : ('api' as const),
       checks,
     };
