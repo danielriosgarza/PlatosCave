@@ -5,6 +5,7 @@ import {
   CopyObjectCommand,
   DeleteObjectCommand,
   GetObjectCommand,
+  HeadBucketCommand,
   HeadObjectCommand,
   type HeadObjectCommandOutput,
   S3Client,
@@ -160,6 +161,11 @@ export class S3Storage implements Storage {
       if (isMissing(err)) return null;
       throw err;
     }
+  }
+
+  /** HeadBucket answers 404 for a bucket that does not exist, unlike HeadObject of a key. */
+  async ping(): Promise<void> {
+    await this.client.send(new HeadBucketCommand({ Bucket: this.bucket }));
   }
 
   async delete(key: string): Promise<void> {

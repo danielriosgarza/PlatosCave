@@ -105,15 +105,16 @@ export function logUrl(req: Pick<FastifyRequest, 'url'> & { routeOptions?: { url
 }
 
 export async function buildApp(config: Config, deps: Deps = {}): Promise<FastifyInstance> {
+  const logOptions = loggerOptions(config);
   const app = Fastify({
     // Storage keys and content tokens are path parameters longer than the default 100.
     routerOptions: { maxParamLength: MAX_TOKEN_LENGTH },
     trustProxy: config.TRUST_PROXY,
     logger: {
-      ...loggerOptions(config),
+      ...logOptions,
       ...(deps.logStream && { stream: deps.logStream }),
       serializers: {
-        ...loggerOptions(config).serializers,
+        ...logOptions.serializers,
         req: (req: FastifyRequest) => ({
           method: req.method,
           url: logUrl(req),

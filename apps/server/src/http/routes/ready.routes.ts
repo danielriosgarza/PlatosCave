@@ -6,7 +6,7 @@ import { registerRoute } from '../register';
 
 type Check = { status: 'ok' | 'unavailable' | 'skipped'; required: boolean; latencyMs: number };
 
-/** The storage key probed: a safe key no upload ever uses, so the answer is `null`, not data. */
+/** Probed when the store has no `ping`: a safe key no upload uses, so the answer is `null`. */
 const STORAGE_PROBE_KEY = 'readiness/probe';
 
 /** Runs `check` with a deadline and reports only whether it answered, never why it did not. */
@@ -41,20 +41,28 @@ export default function readyRoutes(app: FastifyInstance, deps: RouteDeps): void
   registerRoute(app, ready, async ({ fail }) => {
     const failed = (name: string) => (err: unknown) =>
       app.log.warn({ err, dependency: name }, 'readiness: dependency unavailable');
-    const [database, queue, executionQueue, store] = await Promise.all([
+    const [database, store] = await Promise.all([
       timed(true, timeoutMs, db && (() => probe(db, timeoutMs)), failed('database')),
-      // A queue exists only when pg-boss started against the database (main.ts); a failed start
-      // leaves it out, so its presence is the check, and the database probe covers its link.
-      timed(true, timeoutMs, db && deps.boss && (() => probe(db, timeoutMs)), failed('queue')),
       timed(
-        false,
+        true,
         timeoutMs,
-        db && deps.bossExec && (() => probe(db, timeoutMs)),
-        failed('executionQueue'),
+        () => (storage.ping ? storage.ping() : storage.head(STORAGE_PROBE_KEY)),
+        failed('storage'),
       ),
-      timed(true, timeoutMs, () => storage.head(STORAGE_PROBE_KEY), failed('storage')),
     ]);
-    const checks = { database, queue, executionQueue, storage: store };
+    // pg-boss runs its statements on the application's pool and exists only when it started
+    // against the database (main.ts), so a queue is as ready as the database plus its presence;
+    // one probe answers for all three rather than a pool connection each.
+    const viaDatabase = (present: boolean, required: boolean): Check =>
+      !present || database.status === 'skipped'
+        ? { status: 'skipped', required, latencyMs: 0 }
+        : { ...database, required };
+    const checks = {
+      database,
+      queue: viaDatabase(deps.boss !== undefined, true),
+      executionQueue: viaDatabase(deps.bossExec !== undefined, false),
+      storage: store,
+    };
     const isReady = Object.values(checks).every((c) => !c.required || c.status === 'ok');
     const body = {
       status: isReady ? ('ready' as const) : ('not_ready' as const),

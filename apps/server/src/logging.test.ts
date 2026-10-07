@@ -1,4 +1,5 @@
 import { Writable } from 'node:stream';
+import { DrizzleQueryError } from 'drizzle-orm';
 import { describe, expect, test } from 'vitest';
 import { buildApp } from './app';
 import { loadConfig } from './config';
@@ -78,6 +79,35 @@ describe('structured logs', () => {
     expect(failure.err).toMatchObject({ code: '23505' });
     expect(failure.err.message).toContain('insert failed');
     expect(leaks(lines)).toEqual([]);
+  });
+
+  test('a failed query as drizzle throws it logs its error code and none of its bound values', async () => {
+    const { lines, stream } = capture();
+    const app = await buildApp(config, { logStream: stream });
+    const query = () =>
+      new DrizzleQueryError(
+        'insert into answers (text) values ($1)',
+        [SECRETS.dbParam, SECRETS.answer],
+        Object.assign(new Error(`duplicate key ${SECRETS.dbDetail}`), {
+          code: '23505',
+          detail: SECRETS.dbDetail,
+        }),
+      );
+    app.get('/query', async () => {
+      throw query();
+    });
+    const res = await app.inject({ method: 'GET', url: '/query' });
+    expect(res.statusCode).toBe(500);
+    // The worker's logger gets the same error.
+    const worker = capture();
+    createLogger(config, 'worker', worker.stream).error({ err: query() }, 'job failed');
+    await app.close();
+    for (const written of [lines, worker.lines]) {
+      expect(leaks(written)).toEqual([]);
+      const line = written.map((l) => JSON.parse(l)).find((p) => p.err);
+      expect(line.err).toMatchObject({ code: '23505', message: 'database query failed (23505)' });
+      expect(line.err).not.toHaveProperty('params');
+    }
   });
 
   test('keys that hold private content are removed from any logged object, at two levels', async () => {

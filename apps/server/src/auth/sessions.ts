@@ -1,6 +1,5 @@
 import { type CookieSerializeOptions, sign } from '@fastify/cookie';
 import type { FastifyRequest } from 'fastify';
-import { SESSION_TTL_MS } from '../db/auth/sessions';
 
 export const SESSION_COOKIE = 'pc_session';
 
@@ -16,10 +15,7 @@ export function readSessionToken(req: FastifyRequest): string | undefined {
 }
 
 /** HttpOnly, SameSite=Lax, signed; Secure whenever the app is served over https. */
-export function sessionCookieOptions(
-  appOrigin: string,
-  ttlMs: number = SESSION_TTL_MS,
-): CookieSerializeOptions {
+export function sessionCookieOptions(appOrigin: string, ttlMs: number): CookieSerializeOptions {
   return {
     httpOnly: true,
     sameSite: 'lax',

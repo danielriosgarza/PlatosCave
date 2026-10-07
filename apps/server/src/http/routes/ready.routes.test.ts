@@ -65,6 +65,20 @@ test('ready reports a failing object store as unavailable without echoing its er
   await app.close();
 });
 
+test('ready asks the store itself, so a missing bucket is not ok even though a HEAD of a key is null', async () => {
+  const missingBucket: Storage = {
+    ...storage(async () => null),
+    ping: async () => {
+      throw new Error('NoSuchBucket');
+    },
+  };
+  const app = await buildApp(config, { storage: missingBucket });
+  const res = await app.inject({ method: 'GET', url: '/api/ready' });
+  expect(res.statusCode).toBe(503);
+  expect(res.json().checks.storage).toMatchObject({ status: 'unavailable', required: true });
+  await app.close();
+});
+
 test('ready gives up on a storage call that never answers', async () => {
   const app = await buildApp(config, {
     probeTimeoutMs: 50,

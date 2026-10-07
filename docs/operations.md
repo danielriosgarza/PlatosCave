@@ -20,7 +20,7 @@ For a real deployment give the runner its own host (design §10.1): the socket i
 ## First start
 
 1. **Host.** Docker with Compose v2; for sandboxes, gVisor (`runsc`) registered as a Docker runtime (`RUNNER_DOCKER_RUNTIME`, default `runsc`). Note the group id of `/var/run/docker.sock` (`stat -c %g /var/run/docker.sock`) for `DOCKER_GID`.
-2. **Environment file** `prod.env` (never committed; mode 0600). Required, no defaults: `POSTGRES_PASSWORD`, `RUNNER_DB_PASSWORD`, `APP_ORIGIN`, `APP_HOST`, `CONTENT_ORIGIN`, `CONTENT_HOST` (two host names, ADR-0002), `SESSION_SECRET` and `CONTENT_TOKEN_SECRET` (32 or more random characters each: `openssl rand -base64 48`), `TRUST_PROXY`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `SMTP_URL`, `MAIL_FROM`, `GARAGE_CONFIG`, `DOCKER_GID`, `RUNNER_RUNTIMES`, `RUNNER_IMAGES`. `docker compose config` names the first one still missing. Set `INSTRUCTOR_EMAILS`, `RETENTION_DEACTIVATED_GRACE_DAYS` and `RETENTION_AUDIT_DAYS` before the first class (spec §13: retention is decided before production; each rule is off while unset).
+2. **Environment file** `prod.env` (never committed; mode 0600). Required, no defaults: `POSTGRES_PASSWORD` and `RUNNER_DB_PASSWORD` (both go into connection URLs, so generate them URL-safe: `openssl rand -hex 32`; base64 output contains `/`, `+` and `=`), `APP_ORIGIN`, `APP_HOST`, `CONTENT_ORIGIN`, `CONTENT_HOST` (two host names, ADR-0002), `SESSION_SECRET` and `CONTENT_TOKEN_SECRET` (32 or more random characters each: `openssl rand -base64 48`), `TRUST_PROXY`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `SMTP_URL`, `MAIL_FROM`, `GARAGE_CONFIG`, `DOCKER_GID`, `RUNNER_RUNTIMES`, `RUNNER_IMAGES`. `docker compose config` names the first one still missing. Set `INSTRUCTOR_EMAILS`, `RETENTION_DEACTIVATED_GRACE_DAYS` and `RETENTION_AUDIT_DAYS` before the first class (spec §13: retention is decided before production; each rule is off while unset).
 3. **Garage.** Write your own `garage.toml` (the file in `infra/garage` carries a published development secret) and point `GARAGE_CONFIG` at it. Start `garage`, assign its layout, create the bucket `S3_BUCKET` and an access key with read and write on it, as `scripts/garage-init.sh` does for development; put the key in `prod.env`.
 4. **Runtimes and images.** `RUNNER_RUNTIMES` (server) and `RUNNER_IMAGES` (runner) are two views of one decision and change together. Both list **every** runtime the course may select, today `python-3.12` and `r-4.6`, each pinned by digest: a runtime missing from `RUNNER_IMAGES` makes every run of it end `image_not_allowed`, and production refuses a runtime without a digest. Keep the previous digest in `RUNNER_IMAGES` after an update, so replays still find it (design §10.4). Pull the images on the runner's host first: `RUNNER_PULL` is `never`.
    ```
@@ -56,7 +56,7 @@ The readiness body lists each dependency with `status` (`ok`, `unavailable`, `sk
 | `database` | yes | Postgres does not answer `select 1` within 5 s, or the process has no `DATABASE_URL` |
 | `queue` | yes | pg-boss did not start against the database (`pg-boss error` in the log); jobs cannot be queued |
 | `executionQueue` | no | the runner's queue (`pgboss_exec`) did not start: code runs answer 503, everything else works |
-| `storage` | yes | the object store does not answer a `head` within 5 s |
+| `storage` | yes | the object store is unusable within 5 s: the bucket does not exist or answers an error (S3 `HeadBucket`), or the storage directory cannot be written |
 
 The worker and the runner serve no HTTP. The worker logs `worker started` with its job names, and exits non-zero when it cannot start; the runner's health is the queue: see §Incidents. Watch, per design §10.4, the depth of `execution.run` and the age of its oldest `created` job.
 
@@ -73,7 +73,7 @@ Rules for new log calls: log ids, counts and codes, never a request, a result or
 | Sign-in link requests | 120 / 15 min (and 5 unused links per address, then one a minute) | client address | `AUTH_LINK_RATE_LIMIT` |
 | Sign-in link use | 240 / 15 min | client address | `AUTH_VERIFY_RATE_LIMIT` |
 | Joining a class, accepting an invitation | 20 / 15 min | session | fixed |
-| **Code-run requests** (sample runs, replays, instructor previews) | 30 / min, each route | **session** | `RUN_RATE_LIMIT` |
+| **Code-run requests** (sample runs, replays, instructor previews, all three together) | 30 / min | **session** | `RUN_RATE_LIMIT` |
 | Queued or running sample runs per student | 2, across classes | student | fixed (spec §11) |
 | Connector pairing: codes created, failed pairings, polls | 5 / hour per person; 10 failures in 10 min block an address for 10 min; 1 poll / s | person, address, connector | fixed (connector design §3) |
 | Connector link attempts | 30 / min | address | fixed |
@@ -103,7 +103,7 @@ Spec §17 asks the operator to decide session limits, expected concurrent classe
 
 ## Managed connector
 
-Optional (spec §10.6; connector design §12). Put the operator's files in `MANAGED_CONNECTOR_DIR`, owned by uid 65532: `identity.key` (mode 0600), `known_hosts`, `targets.json`, `keys/` (each key 0600). Register it once: `docker compose … run --rm api pnpm --filter @parallax/server connectors:register-managed --name … --public-key …`, put the printed id in `PARALLAX_CONNECTOR_ID`, and start it with `--profile managed`. Its container has a read-only root, no capabilities and no route to Postgres or Garage. Which hosts it may dial is enforced twice: by its own `PARALLAX_ALLOW_*` allowlist and by the host's firewall, which must allow the `managed` network's egress only to those hosts and ports and to the relay's public address.
+Optional (spec §10.6; connector design §12). Put the operator's files in `MANAGED_CONNECTOR_DIR`, owned by uid 65532: `identity.key` (mode 0600), `known_hosts`, `targets.json`, `keys/` (each key 0600). Register it once: `docker compose … run --rm api node_modules/.bin/tsx src/scripts/register-managed-connector.ts --name … --public-key …`, put the printed id in `PARALLAX_CONNECTOR_ID`, and start it with `--profile managed`. Its container has a read-only root, no capabilities and no route to Postgres or Garage. Which hosts it may dial is enforced twice: by its own `PARALLAX_ALLOW_*` allowlist and by the host's firewall, which must allow the `managed` network's egress only to those hosts and ports and to the relay's public address.
 
 ## Incidents
 

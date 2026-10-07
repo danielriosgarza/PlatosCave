@@ -51,8 +51,8 @@ export function signInWithProof(
     /** Ends further sessions the browser holds (a preview's kept one), in the same transaction. */
     alsoEnd?: (tx: Executor) => Promise<void>;
     now: Date;
-    /** How long the new session lasts; defaults to SESSION_TTL_MS. */
-    ttlMs?: number;
+    /** How long the new session lasts (SESSION_TTL_DAYS). */
+    ttlMs: number;
   },
 ): Promise<{ token?: string; destination: string | null }> {
   return db.transaction(async (tx) => {
@@ -67,7 +67,7 @@ export function signInWithProof(
     const { token } = await createSession(tx, userId, {
       now,
       authTime: now,
-      ...(ttlMs !== undefined && { ttlMs }),
+      ttlMs,
     });
     return { token, destination: result.destination };
   });

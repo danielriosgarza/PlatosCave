@@ -20,8 +20,11 @@ import { notFound, registerRoute, settle } from '../register';
 export default function runRoutes(app: FastifyInstance, deps: RouteDeps): void {
   const db = deps.requireDb;
   const now = deps.now;
-  // Per session, so the cap binds each student and not their network (RUN_RATE_LIMIT).
-  const runLimit = perSession(deps.config.RUN_RATE_LIMIT, '1 minute');
+  // One budget per session across the three routes, so it binds each person and not their
+  // network (RUN_RATE_LIMIT).
+  const runLimit = {
+    sharedRateLimit: app.rateLimit(perSession(deps.config.RUN_RATE_LIMIT, '1 minute').rateLimit),
+  };
   /** The runner's queue and the approved runtimes, or a 503 when no queue is configured. */
   const exec = (): runs.ExecDeps => {
     if (!deps.bossExec) throw app.httpErrors.serviceUnavailable();

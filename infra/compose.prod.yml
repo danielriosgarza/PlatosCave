@@ -25,9 +25,14 @@ x-server: &server
   restart: unless-stopped
   cap_drop: [ALL]
   security_opt: ["no-new-privileges:true"]
+  # Commands run tsx from the package's own node_modules, not through pnpm: as the image's `node`
+  # user, corepack would download pnpm on first use, and these networks have no route out.
+  working_dir: /app/apps/server
   # Longer than the worker's 8 s drain and the relay's 8 s background wait (main.ts, app.ts).
   stop_grace_period: 10s
   logging: { driver: json-file, options: { max-size: 20m, max-file: "5" } }
+
+# Both database passwords go into connection URLs, so they must be URL-safe: `openssl rand -hex 32`.
 
 # One configuration for api, relay, worker and the migration (main.ts reads the same variables).
 x-server-env: &server-env
@@ -116,7 +121,7 @@ services:
   migrate:
     <<: *server
     restart: "no"
-    command: ["pnpm", "--filter", "@parallax/server", "db:migrate"]
+    command: ["node_modules/.bin/tsx", "src/db/migrate.ts"]
     environment: *server-env
     depends_on:
       postgres: { condition: service_healthy }
@@ -124,7 +129,7 @@ services:
 
   api:
     <<: *server
-    command: ["pnpm", "--filter", "@parallax/server", "exec", "tsx", "src/main.ts", "api"]
+    command: ["node_modules/.bin/tsx", "src/main.ts", "api"]
     environment: { <<: *server-env, HOST: 0.0.0.0, PORT: "3000" }
     ports: ["127.0.0.1:${API_PORT:-3000}:3000"]
     depends_on:
@@ -137,7 +142,7 @@ services:
   # connector link and the notebook-session routes here (docs/operations.md §Routing).
   relay:
     <<: *server
-    command: ["pnpm", "--filter", "@parallax/server", "exec", "tsx", "src/main.ts", "relay"]
+    command: ["node_modules/.bin/tsx", "src/main.ts", "relay"]
     environment: { <<: *server-env, HOST: 0.0.0.0, PORT: "3000" }
     ports: ["127.0.0.1:${RELAY_PORT:-3001}:3000"]
     depends_on:
@@ -148,7 +153,7 @@ services:
 
   worker:
     <<: *server
-    command: ["pnpm", "--filter", "@parallax/server", "exec", "tsx", "src/main.ts", "worker"]
+    command: ["node_modules/.bin/tsx", "src/main.ts", "worker"]
     environment: *server-env
     depends_on:
       migrate: { condition: service_completed_successfully }
@@ -164,6 +169,8 @@ services:
     restart: unless-stopped
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
+    working_dir: /app/apps/runner
+    command: ["node_modules/.bin/tsx", "src/main.ts"]
     group_add: ["${DOCKER_GID:?the group id of /var/run/docker.sock on the host}"]
     environment:
       RUNNER_DATABASE_URL: postgres://parallax_runner:${RUNNER_DB_PASSWORD:?}@postgres:5432/parallax

@@ -48,24 +48,63 @@ export const REDACT_PATHS = PRIVATE_KEYS.flatMap((key) => [
   redactPath('res.headers', key),
 ]);
 
-/** Fields of a Postgres error that quote row values, SQL and parameters. */
+/** Fields of a database error that quote row values, SQL and parameters. */
 const QUOTING_FIELDS = [
   'detail',
   'where',
   'hint',
   'internalQuery',
   'parameters',
+  'params',
   'query',
   'values',
 ];
 
 type Serialised = Record<string, unknown>;
+type ErrorLike = {
+  name?: unknown;
+  code?: unknown;
+  params?: unknown;
+  query?: unknown;
+  cause?: unknown;
+};
 
-/** pino's error serializer minus what a database or client library copies from private input. */
+/**
+ * Whether the error, or one it wraps, was raised by a query: drizzle's `DrizzleQueryError` puts
+ * the SQL and the bound values in its message (`Failed query: … params: …`), and pino folds each
+ * cause's message and stack into the error's own.
+ */
+function wrapsQuery(err: unknown): boolean {
+  for (let e = err as ErrorLike | undefined, depth = 0; e && depth < 8; depth++) {
+    if (e.name === 'DrizzleQueryError' || 'params' in e || 'query' in e) return true;
+    e = e.cause as ErrorLike | undefined;
+  }
+  return false;
+}
+
+/** The first error code in the chain (a Postgres SQLSTATE such as `23505`), if any. */
+function codeOf(err: unknown): string | undefined {
+  for (let e = err as ErrorLike | undefined, depth = 0; e && depth < 8; depth++) {
+    if (typeof e.code === 'string') return e.code;
+    e = e.cause as ErrorLike | undefined;
+  }
+  return undefined;
+}
+
+/**
+ * pino's error serializer minus what a database library copies from private input: the fields
+ * above are dropped, and a failed query keeps only its error code, because its message, stack and
+ * causes all quote the SQL and the bound values.
+ */
 export function serialiseError(err: unknown): unknown {
   const out = pino.stdSerializers.err(err as Error) as Serialised;
   for (const field of QUOTING_FIELDS) delete out[field];
-  if (out.cause && typeof out.cause === 'object') out.cause = serialiseError(out.cause);
+  if (wrapsQuery(err)) {
+    const code = codeOf(err);
+    out.message = `database query failed${code ? ` (${code})` : ''}`;
+    out.stack = `${String(out.type ?? 'Error')}: ${out.message}`;
+    if (code) out.code = code;
+  }
   return out;
 }
 
