@@ -122,6 +122,7 @@ function testApi(options: Options = {}) {
     puts: [] as { id: string; body: { value: unknown; flagged: boolean; seq: number } }[],
     submits: [] as { key: string }[],
     recoveryRequests: [] as { reason: string }[],
+    grants: [] as Record<string, unknown>[],
     localCopies: [] as { answers: { questionId: string; value: unknown }[] }[],
     runs: [] as { files: { path: string; content: string }[] }[],
     order: [] as string[],
@@ -371,6 +372,62 @@ function testApi(options: Options = {}) {
       log.order.push('run');
       runCount += 1;
       return { status: 202, body: { ...(options.runResult?.(runCount) as object), reused: false } };
+    }
+    if (url === `${base}/resources/${RESOURCE}/assignment`) {
+      return {
+        status: 200,
+        body: {
+          resourceId: RESOURCE,
+          settings: {},
+          effective: { ...effective, override: undefined, totalPoints: undefined },
+          revision: 1,
+          overrides: log.grants.map((g, i) => ({
+            id: uuid(0xe0 + i),
+            student: { id: g.studentId, name: 'Bea' },
+            extraAttempts: g.extraAttempts,
+            extraMinutes: g.extraMinutes,
+            closesAt: g.closesAt,
+            reason: g.reason,
+            grantedBy: uuid(0xf1),
+            createdAt: '2026-10-05T10:00:00Z',
+          })),
+        },
+      };
+    }
+    if (url === `${base}/resources/${RESOURCE}/overrides` && method === 'POST') {
+      log.grants.push(body);
+      return {
+        status: 201,
+        body: {
+          id: uuid(0xe0),
+          student: { id: body.studentId, name: 'Bea' },
+          extraAttempts: body.extraAttempts,
+          extraMinutes: body.extraMinutes,
+          closesAt: body.closesAt,
+          reason: body.reason,
+          grantedBy: uuid(0xf1),
+          createdAt: '2026-10-05T10:00:00Z',
+        },
+      };
+    }
+    if (url.startsWith(`${base}/review`)) {
+      return {
+        status: 200,
+        body: {
+          topics: [],
+          assignments: [],
+          notebooks: [],
+          exercises: [],
+          roster: [{ id: uuid(0xd1), name: 'Bea' }],
+          students: [],
+          total: 0,
+          page: 1,
+          pageSize: 25,
+          rows: [],
+          assignment: null,
+          selected: null,
+        },
+      };
     }
     return { status: 404, body: {} };
   });
@@ -1026,6 +1083,71 @@ describe('test UI: expiry', () => {
     await user.click(await screen.findByRole('button', { name: 'View unsent work' }));
     expect(await screen.findByText('Averages vary less')).toBeVisible();
     expect(screen.getByText(/Not part of the submission/)).toBeVisible();
+  });
+
+  it('an instructor grants an extension with a reason and reads it back in the audit list', async () => {
+    const user = userEvent.setup();
+    const api = testApi({ instructor: true });
+    open();
+    await screen.findByRole('heading', { name: 'Extensions and extra attempts' });
+    expect(await screen.findByText(/No extension or extra attempt has been granted/)).toBeVisible();
+    const grant = screen.getByRole('button', { name: 'Grant' });
+    expect(grant).toBeDisabled();
+    await user.selectOptions(await screen.findByLabelText('Student'), 'Bea');
+    await user.clear(screen.getByLabelText('Extra attempts'));
+    await user.type(screen.getByLabelText('Extra attempts'), '1');
+    await user.type(screen.getByLabelText(/Grant reason/), 'Medical note');
+    await user.click(grant);
+    await waitFor(() => expect(api.log.grants).toHaveLength(1));
+    expect(api.log.grants[0]).toEqual({
+      studentId: uuid(0xd1),
+      extraAttempts: 1,
+      extraMinutes: 0,
+      closesAt: null,
+      reason: 'Medical note',
+    });
+    expect(await screen.findByText(/Granted to Bea: 1 extra attempt\./)).toBeVisible();
+    const list = await screen.findByRole('list', { name: 'Grants in force' });
+    expect(within(list).getByText(/Reason: Medical note/)).toBeVisible();
+    expect(within(list).getByText(/05 Oct 2026, 12:00/)).toBeVisible();
+  });
+
+  it('granting more to a student who already has a grant starts from that grant and keeps it', async () => {
+    const user = userEvent.setup();
+    const api = testApi({ instructor: true });
+    api.log.grants.push({
+      studentId: uuid(0xd1),
+      extraAttempts: 1,
+      extraMinutes: 0,
+      closesAt: null,
+      reason: 'Medical note',
+    });
+    open();
+    await user.selectOptions(await screen.findByLabelText('Student'), 'Bea');
+    expect(screen.getByLabelText('Extra attempts')).toHaveValue(1);
+    await user.clear(screen.getByLabelText('Extra minutes'));
+    await user.type(screen.getByLabelText('Extra minutes'), '30');
+    await user.type(screen.getByLabelText(/Grant reason/), 'Needs more time');
+    await user.click(screen.getByRole('button', { name: 'Grant' }));
+    await waitFor(() => expect(api.log.grants).toHaveLength(2));
+    expect(api.log.grants[1]).toMatchObject({ extraAttempts: 1, extraMinutes: 30 });
+  });
+
+  it('a student can be reset to the class terms with all zeros and a reason, but not with a value out of range', async () => {
+    const user = userEvent.setup();
+    const api = testApi({ instructor: true });
+    open();
+    await user.selectOptions(await screen.findByLabelText('Student'), 'Bea');
+    await user.type(screen.getByLabelText(/Grant reason/), 'Granted by mistake');
+    expect(screen.getByRole('button', { name: 'Grant' })).toBeEnabled();
+    await user.clear(screen.getByLabelText('Extra attempts'));
+    await user.type(screen.getByLabelText('Extra attempts'), '-1');
+    expect(screen.getByRole('button', { name: 'Grant' })).toBeDisabled();
+    await user.clear(screen.getByLabelText('Extra attempts'));
+    await user.type(screen.getByLabelText('Extra attempts'), '0');
+    await user.click(screen.getByRole('button', { name: 'Grant' }));
+    await waitFor(() => expect(api.log.grants).toHaveLength(1));
+    expect(api.log.grants[0]).toMatchObject({ extraAttempts: 0, extraMinutes: 0, closesAt: null });
   });
 
   it('A15 the instructor panel shows request times in the test time zone, as the student receipt does', async () => {

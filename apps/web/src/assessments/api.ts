@@ -1,7 +1,9 @@
 import { readMyResultDetail, readMyResults } from '@parallax/contracts/routes/grades';
 import { cancelRun, latestRun, readRun, requestRun } from '@parallax/contracts/routes/runs';
 import {
+  grantOverride,
   keepLocalCopy,
+  readAssignment,
   readTest,
   readTestAttempt,
   requestRecovery,
@@ -108,3 +110,12 @@ export const useMyResults = (classId: string, resourceId: string) =>
 
 export const useResultDetail = (classId: string, attemptId: string) =>
   useApi(readMyResultDetail, { params: { classId, attemptId } });
+
+export const useAssignment = (classId: string, resourceId: string) =>
+  useApi(readAssignment, { params: { classId, resourceId } });
+
+export const grantAccommodation = (
+  classId: string,
+  resourceId: string,
+  body: z.input<typeof grantOverride.body>,
+) => call(grantOverride, { params: { classId, resourceId }, body });
