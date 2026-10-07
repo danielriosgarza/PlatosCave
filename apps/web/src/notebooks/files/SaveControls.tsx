@@ -14,6 +14,10 @@ interface Props {
   workingCopy: WorkingCopyView;
   /** The notebook as it is in the editor now, with edits not yet saved. */
   getNotebook: () => Record<string, unknown>;
+  /** Live cells whose edits are not part of the stored copy and are not saved. */
+  leftOut?: string[];
+  /** The revision another save or import moved the base to under the draft: the draft replaces nothing until the person chooses. */
+  baseMovedTo?: number | null;
   /** Called with every copy Parallax holds: after each acknowledged save, and with the newer copy when a save found one. */
   onWorkingCopy: (copy: WorkingCopyView) => void;
   /** Absolute workspace and host from the files listing: the destination of Save to computer. */
@@ -43,6 +47,8 @@ export function SaveControls({
   sessionId,
   workingCopy,
   getNotebook,
+  leftOut = [],
+  baseMovedTo = null,
   onWorkingCopy,
   workspace,
   workspacePending = false,
@@ -125,6 +131,9 @@ export function SaveControls({
     [getNotebook, storedJson],
   );
 
+  const stale =
+    save.kind === 'stale' || (save.kind === 'idle' && baseMovedTo === workingCopy.currentRevision);
+
   return (
     <section className={styles.panel} aria-labelledby="save-heading">
       <h3 id="save-heading">Save</h3>
@@ -137,7 +146,14 @@ export function SaveControls({
           {unsaved ? ' The editor has changes that are not saved yet.' : ''} Kernel memory is never
           saved.
         </p>
-        {save.kind === 'stale' ? null : (
+        {leftOut.length > 0 ? (
+          <p role="status">
+            Edits to {leftOut.length === 1 ? 'a cell' : `${leftOut.length} cells`} are not part of
+            the stored copy and are not saved: another cell of the stored copy has{' '}
+            {leftOut.length === 1 ? 'its' : 'their'} id ({leftOut.join(', ')}).
+          </p>
+        ) : null}
+        {stale ? null : (
           <button
             type="button"
             className={buttons.tool}
@@ -171,7 +187,7 @@ export function SaveControls({
             </button>
           </div>
         ) : null}
-        {save.kind === 'stale' ? (
+        {stale ? (
           <div role="alert">
             <p>
               Not saved to Parallax. Your working copy is at revision {workingCopy.currentRevision}{' '}

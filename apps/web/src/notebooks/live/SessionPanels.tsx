@@ -91,32 +91,50 @@ export function sourcesFor(stored: Json, live: Notebook): Record<string, string>
   return out;
 }
 
+/** Edited live code cells with no stored cell to hold them, split by whether they can be appended. */
+function unstored(base: Json, live: Notebook, sources: Record<string, string>) {
+  const stored = new Set(
+    (Array.isArray(base.cells) ? (base.cells as Json[]) : []).flatMap((c) =>
+      typeof c.id === 'string' ? [c.id] : [],
+    ),
+  );
+  const edited = pairsOf(base, live).unpaired.filter(
+    ({ id, text }) => sources[id] !== undefined && sources[id] !== text,
+  );
+  return {
+    /** Appended to the saved notebook under their own id. */
+    append: edited.filter(({ id }) => !stored.has(id)),
+    /** The id belongs to another stored cell (a markdown cell, say): saving it would repeat the id. */
+    leftOut: edited.filter(({ id }) => stored.has(id)).map(({ id }) => id),
+  };
+}
+
+/** Live code cells whose edits cannot be part of the stored copy: the id is taken there. */
+export const leftOutCells = (base: Json, live: Notebook, sources: Record<string, string>) =>
+  unstored(base, live, sources).leftOut;
+
 /**
  * The stored copy with the code the editor shows for every live code cell written into it. A live
  * cell the stored copy has no cell for is appended when the editor's code for it was edited, so no
- * edit is left out of the save.
+ * edit is left out of the save; one whose id another stored cell holds is left out (see
+ * `leftOutCells`), since a repeated cell id makes the notebook invalid.
  */
 export function notebookWith(base: Json, live: Notebook, sources: Record<string, string>): Json {
-  const { paired, unpaired } = pairsOf(base, live);
+  const { paired } = pairsOf(base, live);
   const shown = new Map<Json, string>(
     paired.map(({ id, text, cell }) => [cell, sources[id] ?? text]),
   );
   const cells = Array.isArray(base.cells) ? (base.cells as Json[]) : [];
-  const added = unpaired.flatMap(({ id, text }) => {
-    const edited = sources[id];
-    return edited === undefined || edited === text
-      ? []
-      : [
-          {
-            id,
-            cell_type: 'code',
-            source: edited,
-            metadata: {},
-            outputs: [],
-            execution_count: null,
-          } as Json,
-        ];
-  });
+  const added = unstored(base, live, sources).append.map(
+    ({ id }): Json => ({
+      id,
+      cell_type: 'code',
+      source: sources[id] ?? '',
+      metadata: {},
+      outputs: [],
+      execution_count: null,
+    }),
+  );
   return {
     ...base,
     cells: [
@@ -165,6 +183,8 @@ function Panels({
   onCopyInSettled,
 }: Props) {
   const queryClient = useQueryClient();
+  // The revision a conflicting import moved the base to, under a draft the person has not placed.
+  const [movedTo, setMovedTo] = useState<number | null>(null);
   const key = ['working-copy', classId, revisionId];
   const stored = useQuery({
     queryKey: key,
@@ -226,7 +246,10 @@ function Panels({
         sessionId={sessionId}
         workingCopy={copy}
         onWorkingCopy={imported}
-        onStale={keep}
+        onStale={(current) => {
+          keep(current);
+          setMovedTo(current.currentRevision);
+        }}
         onCopyInSettled={onCopyInSettled}
       />
       <SaveControls
@@ -234,6 +257,8 @@ function Panels({
         sessionId={sessionId}
         workingCopy={copy}
         getNotebook={getNotebook}
+        leftOut={leftOutCells(copy.notebook, notebook, sources)}
+        baseMovedTo={movedTo}
         onWorkingCopy={keep}
         workspace={workspace}
         workspacePending={workspacePending}

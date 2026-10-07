@@ -330,7 +330,7 @@ describe('files, save and submit in the live notebook', () => {
     });
   });
 
-  it('A34 an Import conflict keeps the edited code and the next save is based on the newer copy', async () => {
+  it('A34 an Import conflict keeps the edited code, offers no plain Save, and the chosen save is based on the newer copy', async () => {
     const newer = {
       ...stored,
       currentRevision: 5,
@@ -370,13 +370,16 @@ describe('files, save and submit in the live notebook', () => {
     act(() => cm.dispatch({ changes: { from: 0, to: cm.state.doc.length, insert: 'y = 2' } }));
     fireEvent.click(await screen.findByRole('button', { name: 'Import e.ipynb' }));
     fireEvent.click(screen.getByRole('button', { name: 'Import as revision 3' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent(/now at revision 5/);
+    expect(await screen.findByText(/now at revision 5/)).toBeInTheDocument();
     // The edited code stays in the editor; the newer copy's code is not shown.
     expect(document.querySelector('[data-cell-id="c1"] .cm-content')).toHaveTextContent('y = 2');
     expect(document.querySelector('[data-cell-id="c1"] .cm-content')).not.toHaveTextContent(
       'z = 5',
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Save to Parallax' }));
+    // The newer copy is not overwritten by a plain Save: the person chooses to place the draft.
+    expect(screen.queryByRole('button', { name: 'Save to Parallax' })).not.toBeInTheDocument();
+    expect(fetchMock.mock.calls.some(([, init]) => init?.method === 'PUT')).toBe(false);
+    fireEvent.click(screen.getByRole('button', { name: 'Save my draft as revision 6' }));
     await waitFor(() => {
       const put = fetchMock.mock.calls.find(([, init]) => init?.method === 'PUT');
       expect(JSON.parse(String(put?.[1]?.body))).toMatchObject({
@@ -477,9 +480,36 @@ describe('pairing the editor cells with the stored copy', () => {
     attach();
     await waitFor(() => expect(release.listing).toBeDefined());
     expect(runButton()).toBeDisabled();
-    expect(screen.getByText(/Reading the files this notebook declares/)).toBeInTheDocument();
+    expect(screen.getByText(/Reading the workspace to find any files/)).toBeInTheDocument();
     await act(async () => release.listing?.());
     await screen.findByText(/declares 1 file\./);
     expect(runButton()).toBeDisabled();
+  });
+
+  it('A34 a stored cell of another type holding a live cell id is never duplicated by a save', async () => {
+    const book: Notebook = { ...notebook, cells: [codeCell('c1', 'x = 1'), codeCell('m', 'z')] };
+    const copy = {
+      ...stored,
+      notebook: {
+        ...stored.notebook,
+        cells: [
+          storedCell('c1', 'x = 1'),
+          { id: 'm', cell_type: 'markdown', source: 'notes', metadata: {} },
+        ],
+      },
+    };
+    const fetchMock = mount([], {}, { copy, book });
+    attach();
+    await screen.findByRole('heading', { name: 'Save' });
+    edit('m', 'z = 9');
+    await screen.findByText(/are not saved: another cell of the stored copy has its id \(m\)/);
+    fireEvent.click(screen.getByRole('button', { name: 'Save to Parallax' }));
+    await waitFor(() => {
+      const put = fetchMock.mock.calls.find(([, init]) => init?.method === 'PUT');
+      const ids = JSON.parse(String(put?.[1]?.body)).notebook.cells.map(
+        (c: { id: string }) => c.id,
+      );
+      expect(ids).toEqual(['c1', 'm']);
+    });
   });
 });
