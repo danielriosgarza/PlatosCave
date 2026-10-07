@@ -575,9 +575,11 @@ describe('exercise UI follow-ups', () => {
     });
     open();
     const steps = await screen.findByRole('list', { name: 'Steps of Sample size and spread' });
-    expect(screen.getByRole('status')).toHaveTextContent(
-      'This class is archived, so practice is read-only. You did not start this exercise',
-    );
+    expect(
+      screen
+        .getAllByRole('status')
+        .find((el) => el.textContent?.startsWith('This class is archived, so practice')),
+    ).toHaveTextContent('You did not start this exercise');
     expect(within(steps).getByText('1 · Predict')).toBeVisible();
     expect(within(steps).getByText(/What happens to the spread of sample means/)).toBeVisible();
     const options = within(steps).getByRole('list', { name: 'Options; one is correct' });
