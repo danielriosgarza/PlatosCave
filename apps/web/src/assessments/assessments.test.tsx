@@ -1112,6 +1112,44 @@ describe('test UI: expiry', () => {
     expect(within(list).getByText(/05 Oct 2026, 12:00/)).toBeVisible();
   });
 
+  it('granting more to a student who already has a grant starts from that grant and keeps it', async () => {
+    const user = userEvent.setup();
+    const api = testApi({ instructor: true });
+    api.log.grants.push({
+      studentId: uuid(0xd1),
+      extraAttempts: 1,
+      extraMinutes: 0,
+      closesAt: null,
+      reason: 'Medical note',
+    });
+    open();
+    await user.selectOptions(await screen.findByLabelText('Student'), 'Bea');
+    expect(screen.getByLabelText('Extra attempts')).toHaveValue(1);
+    await user.clear(screen.getByLabelText('Extra minutes'));
+    await user.type(screen.getByLabelText('Extra minutes'), '30');
+    await user.type(screen.getByLabelText(/Grant reason/), 'Needs more time');
+    await user.click(screen.getByRole('button', { name: 'Grant' }));
+    await waitFor(() => expect(api.log.grants).toHaveLength(2));
+    expect(api.log.grants[1]).toMatchObject({ extraAttempts: 1, extraMinutes: 30 });
+  });
+
+  it('a student can be reset to the class terms with all zeros and a reason, but not with a value out of range', async () => {
+    const user = userEvent.setup();
+    const api = testApi({ instructor: true });
+    open();
+    await user.selectOptions(await screen.findByLabelText('Student'), 'Bea');
+    await user.type(screen.getByLabelText(/Grant reason/), 'Granted by mistake');
+    expect(screen.getByRole('button', { name: 'Grant' })).toBeEnabled();
+    await user.clear(screen.getByLabelText('Extra attempts'));
+    await user.type(screen.getByLabelText('Extra attempts'), '-1');
+    expect(screen.getByRole('button', { name: 'Grant' })).toBeDisabled();
+    await user.clear(screen.getByLabelText('Extra attempts'));
+    await user.type(screen.getByLabelText('Extra attempts'), '0');
+    await user.click(screen.getByRole('button', { name: 'Grant' }));
+    await waitFor(() => expect(api.log.grants).toHaveLength(1));
+    expect(api.log.grants[0]).toMatchObject({ extraAttempts: 0, extraMinutes: 0, closesAt: null });
+  });
+
   it('A15 the instructor panel shows request times in the test time zone, as the student receipt does', async () => {
     const api = testApi({ instructor: true });
     api.server.timeZone = 'America/New_York';

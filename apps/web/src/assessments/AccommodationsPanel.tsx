@@ -2,6 +2,7 @@ import { readAssignment } from '@parallax/contracts/routes/tests';
 import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { ApiError } from '../api/client';
+import { toLocalInput } from '../authoring/testForm';
 import buttons from '../components/Buttons.module.css';
 import { Loading } from '../components/Loading';
 import { RetryNotice } from '../components/RetryNotice';
@@ -21,7 +22,8 @@ function describe(
   if (g.extraAttempts > 0) {
     parts.push(`${g.extraAttempts} extra ${g.extraAttempts === 1 ? 'attempt' : 'attempts'}`);
   }
-  if (g.extraMinutes > 0) parts.push(`${g.extraMinutes} extra minutes`);
+  if (g.extraMinutes > 0)
+    parts.push(`${g.extraMinutes} extra ${g.extraMinutes === 1 ? 'minute' : 'minutes'}`);
   if (g.closesAt) parts.push(`closes ${formatInZone(g.closesAt, zone)}`);
   return parts.length > 0 ? parts.join(' · ') : 'No change to the terms';
 }
@@ -64,13 +66,27 @@ export function AccommodationsPanel({
 
   const extraAttempts = Number(attempts);
   const extraMinutes = Number(minutes);
-  const changes = extraAttempts > 0 || extraMinutes > 0 || closesAt !== '';
+  const closes = closesAt ? new Date(closesAt) : null;
+  // All zero with no closing time is a reset to the class's terms; the server accepts it.
   const valid =
     studentId !== '' &&
     reason.trim() !== '' &&
     Number.isInteger(extraAttempts) &&
+    extraAttempts >= 0 &&
+    extraAttempts <= 20 &&
     Number.isInteger(extraMinutes) &&
-    changes;
+    extraMinutes >= 0 &&
+    extraMinutes <= 7 * 24 * 60 &&
+    (closes === null || !Number.isNaN(closes.getTime()));
+
+  /** Picking a student loads the grant in force, so a new grant edits it rather than replacing it blind. */
+  function pick(id: string) {
+    setStudentId(id);
+    const current = assignment.data?.overrides.find((o) => o.student.id === id);
+    setAttempts(String(current?.extraAttempts ?? 0));
+    setMinutes(String(current?.extraMinutes ?? 0));
+    setClosesAt(toLocalInput(current?.closesAt));
+  }
 
   async function grant() {
     if (busy || !valid) return;
@@ -78,19 +94,14 @@ export function AccommodationsPanel({
     setProblem(null);
     setGranted(null);
     try {
-      const closes = closesAt ? new Date(closesAt) : null;
       const result = await grantAccommodation(classId, resourceId, {
         studentId,
         extraAttempts,
         extraMinutes,
-        closesAt: closes && !Number.isNaN(closes.getTime()) ? closes.toISOString() : null,
+        closesAt: closes ? closes.toISOString() : null,
         reason: reason.trim(),
       });
       setGranted(`Granted to ${result.student.name}: ${describe(result, zone)}.`);
-      setStudentId('');
-      setAttempts('0');
-      setMinutes('0');
-      setClosesAt('');
       setReason('');
       await queryClient.invalidateQueries({
         queryKey: [readAssignment.method, readAssignment.path],
@@ -125,9 +136,15 @@ export function AccommodationsPanel({
         }}
         style={{ maxWidth: 520, display: 'grid', gap: 12 }}
       >
+        {roster.isError ? (
+          <RetryNotice
+            message="The class's students could not be loaded."
+            onRetry={() => void roster.refetch()}
+          />
+        ) : null}
         <label>
           Student
-          <select value={studentId} onChange={(event) => setStudentId(event.target.value)} required>
+          <select value={studentId} onChange={(event) => pick(event.target.value)} required>
             <option value="">Choose a student</option>
             {students.map((s) => (
               <option key={s.id} value={s.id}>
@@ -165,7 +182,7 @@ export function AccommodationsPanel({
           />
         </label>
         <label>
-          Grant reason, shown in the audit history
+          Grant reason, shown with the grant
           <input
             type="text"
             value={reason}
