@@ -248,3 +248,12 @@
     padding: 12px 16px;
   }
 }
+@media (pointer: coarse) {
+  .indexButton {
+    min-height: var(--pc-touch-target, 44px);
+    min-width: var(--pc-touch-target, 44px);
+  }
+  .picker select {
+    min-height: var(--pc-touch-target, 44px);
+  }
+}

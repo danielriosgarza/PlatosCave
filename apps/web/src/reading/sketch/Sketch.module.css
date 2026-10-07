@@ -124,3 +124,9 @@
   margin: 4px 0 8px;
   font: inherit;
 }
+@media (pointer: coarse) {
+  .tools button {
+    min-height: var(--pc-touch-target, 44px);
+    min-width: var(--pc-touch-target, 44px);
+  }
+}
