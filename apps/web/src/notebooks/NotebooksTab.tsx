@@ -18,7 +18,7 @@ import {
 import { ConnectPanel } from './connect/ConnectPanel';
 import { LiveNotebook } from './live';
 import styles from './Notebook.module.css';
-import { NotebookView } from './NotebookView';
+import { NotebookView, RenewOutputLinks } from './NotebookView';
 import { type NotebookSummary, useNotebookContent, useNotebooks, useShiny } from './notebooks';
 import { ShinyEmbed } from './ShinyEmbed';
 
@@ -371,7 +371,15 @@ function NotebookPanel({
           />
         </div>
       ) : null}
-      {body}
+      {ready && content.isRefetchError ? (
+        <RetryNotice
+          message="The outputs could not be refreshed. Outputs not yet shown may not load."
+          onRetry={() => void content.refetch()}
+        />
+      ) : null}
+      <RenewOutputLinks.Provider value={() => void content.refetch()}>
+        {body}
+      </RenewOutputLinks.Provider>
     </>
   );
 }
