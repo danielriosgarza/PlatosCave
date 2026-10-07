@@ -23,7 +23,7 @@ const blocks = (root: HTMLElement) => root.querySelectorAll<HTMLElement>('[data-
  * while the window top is above the reading's content (the first block starts below it): that is
  * the reader at the tab row or the heading, not a place in the reading, so the last place stands.
  */
-export function currentBlock(root: HTMLElement): ReadingPosition | null {
+function currentBlock(root: HTMLElement): ReadingPosition | null {
   const origin = scrollerOf(root).origin;
   const first = blocks(root)[0];
   if (first && first.getBoundingClientRect().top - origin > 1) return null;

@@ -278,3 +278,8 @@
   clip-path: inset(50%);
   white-space: nowrap;
 }
+@media (pointer: coarse) {
+  .picker select {
+    min-height: var(--pc-touch-target, 44px);
+  }
+}
