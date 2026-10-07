@@ -120,14 +120,20 @@ const copyInTransfer = {
   finishedAt: NOW,
 };
 
-function Host({ over }: { over: Partial<NotebookSession> }): ReactNode {
+function Host({
+  over,
+  book = notebook,
+}: {
+  over: Partial<NotebookSession>;
+  book?: Notebook;
+}): ReactNode {
   const [sources, setSources] = useState<Record<string, string>>({});
   return (
     <LiveNotebook
       classId={CLASS_A}
       session={session(over)}
       connectionName="Lab workstation"
-      notebook={notebook}
+      notebook={book}
       outlineOpen={false}
       showCode
       showOutputs
@@ -143,7 +149,8 @@ function Host({ over }: { over: Partial<NotebookSession> }): ReactNode {
 function mount(
   declared: unknown[],
   over: Partial<NotebookSession> = {},
-  opts: { copy?: unknown; listing?: 'fail' } = {},
+  opts: { copy?: unknown; listing?: 'fail' | 'slow'; book?: Notebook } = {},
+  release: { listing?: () => void } = {},
 ) {
   const fetchMock = stubApi((url, init) => {
     if (init?.method === 'POST') return { status: 200, body: { transfers: [copyInTransfer] } };
@@ -157,9 +164,23 @@ function mount(
     }
     return { status: 404, body: {} };
   });
+  if (opts.listing === 'slow') {
+    // The listing answers only when the test releases it.
+    const answer = fetchMock.getMockImplementation() as (
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ) => Promise<Response>;
+    fetchMock.mockImplementation((input, init) =>
+      String(input).includes('/files')
+        ? new Promise((resolve) => {
+            release.listing = () => resolve(answer(input, init));
+          })
+        : answer(input, init),
+    );
+  }
   render(
     <QueryClientProvider client={createQueryClient({ retry: false })}>
-      <Host over={over} />
+      <Host over={over} book={opts.book} />
     </QueryClientProvider>,
   );
   return fetchMock;
@@ -309,7 +330,7 @@ describe('files, save and submit in the live notebook', () => {
     });
   });
 
-  it('A34 an Import conflict keeps the edited code and the next save is based on the newer copy', async () => {
+  it('A34 an Import conflict keeps the edited code, offers no plain Save, and the chosen save is based on the newer copy', async () => {
     const newer = {
       ...stored,
       currentRevision: 5,
@@ -319,10 +340,17 @@ describe('files, save and submit in the live notebook', () => {
         cells: [{ id: 'c1', cell_type: 'code', source: 'z = 5', metadata: {}, outputs: [] }],
       },
     };
+    let puts = 0;
     const fetchMock = stubApi((url, init) => {
       if (init?.method === 'POST')
         return { status: 409, body: { error: 'revision_conflict', current: newer } };
-      if (init?.method === 'PUT') return { status: 200, body: { ...newer, currentRevision: 6 } };
+      if (init?.method === 'PUT') {
+        puts += 1;
+        return {
+          status: 200,
+          body: puts === 1 ? { ...stored, currentRevision: 4 } : { ...newer, currentRevision: 6 },
+        };
+      }
       if (url.includes('/notebook-working-copies/')) return { status: 200, body: stored };
       if (url.includes('/transfers')) return { status: 200, body: { transfers: [] } };
       if (url.includes('/files'))
@@ -347,20 +375,28 @@ describe('files, save and submit in the live notebook', () => {
     const editor = document.querySelector('[data-cell-id="c1"] .cm-content') as HTMLElement;
     const cm = EditorView.findFromDOM(editor.closest('.cm-editor') as HTMLElement) as EditorView;
     act(() => cm.dispatch({ changes: { from: 0, to: cm.state.doc.length, insert: 'y = 2' } }));
+    // A save before the import: the plain buttons must still not write past the newer copy.
+    fireEvent.click(screen.getByRole('button', { name: 'Save to Parallax' }));
+    await screen.findByText(/Saved to Parallax as revision 4/);
+    edit('c1', 'y = 3');
     fireEvent.click(await screen.findByRole('button', { name: 'Import e.ipynb' }));
-    fireEvent.click(screen.getByRole('button', { name: 'Import as revision 3' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent(/now at revision 5/);
+    fireEvent.click(screen.getByRole('button', { name: 'Import as revision 5' }));
+    expect(await screen.findByText(/now at revision 5/)).toBeInTheDocument();
     // The edited code stays in the editor; the newer copy's code is not shown.
-    expect(document.querySelector('[data-cell-id="c1"] .cm-content')).toHaveTextContent('y = 2');
+    expect(document.querySelector('[data-cell-id="c1"] .cm-content')).toHaveTextContent('y = 3');
     expect(document.querySelector('[data-cell-id="c1"] .cm-content')).not.toHaveTextContent(
       'z = 5',
     );
-    fireEvent.click(screen.getByRole('button', { name: 'Save to Parallax' }));
+    // The newer copy is not overwritten by a plain Save: the person chooses to place the draft.
+    expect(screen.queryByRole('button', { name: 'Save to Parallax' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument();
+    expect(puts).toBe(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Save my draft as revision 6' }));
     await waitFor(() => {
-      const put = fetchMock.mock.calls.find(([, init]) => init?.method === 'PUT');
+      const put = fetchMock.mock.calls.filter(([, init]) => init?.method === 'PUT')[1];
       expect(JSON.parse(String(put?.[1]?.body))).toMatchObject({
         baseRevision: 5,
-        notebook: { cells: [{ id: 'c1', source: 'y = 2' }] },
+        notebook: { cells: [{ id: 'c1', source: 'y = 3' }] },
       });
     });
   });
@@ -379,5 +415,169 @@ describe('files, save and submit in the live notebook', () => {
     });
     await act(async () => {});
     expect(reads()).toBe(before);
+  });
+});
+
+const codeCell = (id: string, source: string): Notebook['cells'][number] => ({
+  id,
+  type: 'code',
+  source,
+  executionCount: null,
+  sourceHidden: false,
+  outputsHidden: false,
+  outputs: [],
+});
+const storedCell = (id: string, source: string) => ({
+  id,
+  cell_type: 'code',
+  source,
+  metadata: {},
+  outputs: [],
+});
+const edit = (id: string, text: string) => {
+  const editor = document.querySelector(`[data-cell-id="${id}"] .cm-content`) as HTMLElement;
+  const cm = EditorView.findFromDOM(editor.closest('.cm-editor') as HTMLElement) as EditorView;
+  act(() => cm.dispatch({ changes: { from: 0, to: cm.state.doc.length, insert: text } }));
+};
+
+describe('pairing the editor cells with the stored copy', () => {
+  it('A34 two live cells never share one stored cell: edits to both reach the save', async () => {
+    const book: Notebook = { ...notebook, cells: [codeCell('a', 'a0'), codeCell('b', 'b0')] };
+    const copy = {
+      ...stored,
+      notebook: { ...stored.notebook, cells: [storedCell('b', 'b1'), storedCell('x', 'x1')] },
+    };
+    const fetchMock = mount([], {}, { copy, book });
+    attach();
+    await screen.findByRole('heading', { name: 'Save' });
+    await waitFor(() =>
+      expect(document.querySelector('[data-cell-id="b"] .cm-content')).toHaveTextContent('b1'),
+    );
+    expect(document.querySelector('[data-cell-id="a"] .cm-content')).toHaveTextContent('a0');
+    edit('a', 'a2');
+    edit('b', 'b2');
+    fireEvent.click(screen.getByRole('button', { name: 'Save to Parallax' }));
+    await waitFor(() => {
+      const put = fetchMock.mock.calls.find(([, init]) => init?.method === 'PUT');
+      const cells = JSON.parse(String(put?.[1]?.body)).notebook.cells;
+      expect(cells.map((c: { id: string; source: string }) => [c.id, c.source])).toEqual([
+        ['b', 'b2'],
+        ['x', 'x1'],
+        ['a', 'a2'],
+      ]);
+    });
+  });
+
+  it('A34 an edit to a cell the stored copy lacks is saved and flagged as unsaved', async () => {
+    const book: Notebook = { ...notebook, cells: [codeCell('c1', 'x = 1'), codeCell('c2', 'z')] };
+    const fetchMock = mount([], {}, { book });
+    attach();
+    await screen.findByRole('heading', { name: 'Save' });
+    expect(screen.queryByText(/changes that are not saved yet/)).not.toBeInTheDocument();
+    edit('c2', 'z = 3');
+    await screen.findByText(/changes that are not saved yet/);
+    fireEvent.click(screen.getByRole('button', { name: 'Save to Parallax' }));
+    await waitFor(() => {
+      const put = fetchMock.mock.calls.find(([, init]) => init?.method === 'PUT');
+      expect(JSON.parse(String(put?.[1]?.body)).notebook.cells).toMatchObject([
+        { id: 'c1', source: 'x = 1' },
+        { id: 'c2', source: 'z = 3' },
+      ]);
+    });
+  });
+
+  it('A34 Run is not offered while the declared files are still being read', async () => {
+    const release: { listing?: () => void } = {};
+    mount([declaredFile], {}, { listing: 'slow' }, release);
+    attach();
+    await waitFor(() => expect(release.listing).toBeDefined());
+    expect(runButton()).toBeDisabled();
+    expect(screen.getByText(/Reading the workspace to find any files/)).toBeInTheDocument();
+    await act(async () => release.listing?.());
+    await screen.findByText(/declares 1 file\./);
+    expect(runButton()).toBeDisabled();
+  });
+
+  it('A34 a stored cell of another type holding a live cell id is never duplicated by a save', async () => {
+    const book: Notebook = { ...notebook, cells: [codeCell('c1', 'x = 1'), codeCell('m', 'z')] };
+    const copy = {
+      ...stored,
+      notebook: {
+        ...stored.notebook,
+        cells: [
+          storedCell('c1', 'x = 1'),
+          { id: 'm', cell_type: 'markdown', source: 'notes', metadata: {} },
+        ],
+      },
+    };
+    const fetchMock = mount([], {}, { copy, book });
+    attach();
+    await screen.findByRole('heading', { name: 'Save' });
+    edit('m', 'z = 9');
+    await screen.findByText(
+      /Edits to a cell are not saved: the stored copy holds another kind of cell under its id/,
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Save to Parallax' }));
+    await waitFor(() => {
+      const put = fetchMock.mock.calls.find(([, init]) => init?.method === 'PUT');
+      const ids = JSON.parse(String(put?.[1]?.body)).notebook.cells.map(
+        (c: { id: string }) => c.id,
+      );
+      expect(ids).toEqual(['c1', 'm']);
+    });
+  });
+
+  it('A34 a live cell whose id a markdown cell holds never takes an unrelated stored code cell', async () => {
+    const book: Notebook = { ...notebook, cells: [codeCell('m', 'z'), codeCell('c1', 'x = 1')] };
+    const copy = {
+      ...stored,
+      notebook: {
+        ...stored.notebook,
+        cells: [
+          { id: 'm', cell_type: 'markdown', source: 'notes', metadata: {} },
+          storedCell('x', 'x_code'),
+          storedCell('c1', 'x = 1'),
+        ],
+      },
+    };
+    const fetchMock = mount([], {}, { copy, book });
+    attach();
+    await screen.findByRole('heading', { name: 'Save' });
+    expect(document.querySelector('[data-cell-id="m"] .cm-content')).toHaveTextContent('z');
+    edit('m', 'z = 9');
+    fireEvent.click(screen.getByRole('button', { name: 'Save to Parallax' }));
+    await waitFor(() => {
+      const put = fetchMock.mock.calls.find(([, init]) => init?.method === 'PUT');
+      const cells = JSON.parse(String(put?.[1]?.body)).notebook.cells;
+      expect(cells.map((c: { id: string; source: string }) => [c.id, c.source])).toEqual([
+        ['m', 'notes'],
+        ['x', 'x_code'],
+        ['c1', 'x = 1'],
+      ]);
+    });
+  });
+
+  it('A34 a cell appended to a notebook older than nbformat 4.5 carries no id', async () => {
+    const book: Notebook = { ...notebook, cells: [codeCell('c1', 'x = 1'), codeCell('c2', 'z')] };
+    const copy = {
+      ...stored,
+      notebook: {
+        ...stored.notebook,
+        nbformat_minor: 4,
+        cells: [{ cell_type: 'code', source: 'x = 1', metadata: {}, outputs: [] }],
+      },
+    };
+    const fetchMock = mount([], {}, { copy, book });
+    attach();
+    await screen.findByRole('heading', { name: 'Save' });
+    edit('c2', 'z = 3');
+    fireEvent.click(screen.getByRole('button', { name: 'Save to Parallax' }));
+    await waitFor(() => {
+      const put = fetchMock.mock.calls.find(([, init]) => init?.method === 'PUT');
+      const cells = JSON.parse(String(put?.[1]?.body)).notebook.cells;
+      expect(cells).toHaveLength(2);
+      expect(cells[1]).toMatchObject({ source: 'z = 3' });
+      expect(cells[1]).not.toHaveProperty('id');
+    });
   });
 });
