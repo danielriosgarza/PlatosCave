@@ -1,6 +1,12 @@
 import { parseNotebook } from '@parallax/contracts';
 import { describe, expect, test } from 'vitest';
-import { buildNotebook, MAX_OUTPUT_CHARS, plainText, renderNotebook } from './notebook';
+import {
+  buildNotebook,
+  MAX_OUTPUT_CHARS,
+  plainText,
+  renderNotebook,
+  sanitizeSvg,
+} from './notebook';
 
 const prefix = 'courses/00000000-0000-4000-8000-000000000001';
 const PNG =
@@ -326,6 +332,200 @@ describe('A09 stored HTML and JavaScript outputs cannot run script', () => {
     expect(doc).not.toMatch(/\son[a-z]+=/i);
     expect(doc).not.toMatch(/javascript:/i);
     expect(doc).not.toMatch(/<iframe/i);
+  });
+
+  const hostileSvg =
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10" onload="alert(1)">' +
+    '<script>alert(1)</script><foreignObject><div>x</div></foreignObject>' +
+    '<a href="javascript:alert(2)"><rect width="5" height="5" fill="red" onclick="alert(3)"/></a>' +
+    '<image href="https://evil.example/x.png"/><use href="https://evil.example/s.svg#a"/>' +
+    '<style>@import url(https://evil.example/a.css);rect{fill:blue}</style>' +
+    '<circle r="2" style="fill:url(https://evil.example/p)"/><animate attributeName="href" to="javascript:alert(4)"/>' +
+    '<circle id="keep" cx="5" cy="5" r="2" fill="#00f"/></svg>';
+
+  test('A09 an SVG output is stored without script, handlers, foreign content or external references', () => {
+    const svgRendered = render([
+      code('s', 'plot()', [
+        { output_type: 'display_data', metadata: {}, data: { 'image/svg+xml': hostileSvg } },
+      ]),
+    ]);
+    const [svgOut] = outputsOf(svgRendered);
+    expect(svgOut).toMatchObject({
+      type: 'image',
+      contentType: 'image/svg+xml',
+      scriptsRemoved: true,
+    });
+    const stored = new TextDecoder().decode(svgRendered.objects[0]?.bytes);
+    expect(stored).toContain('<circle id="keep"');
+    expect(stored).not.toMatch(/<script|<foreignObject|<animate|<a[ >]/i);
+    expect(stored).not.toMatch(/\son[a-z]+=|javascript:|evil\.example|@import|url\(/i);
+  });
+
+  const NS = 'xmlns="http://www.w3.org/2000/svg"';
+  const storedSvg = (svg: string) => {
+    const out = sanitizeSvg(svg);
+    if (!out) throw new Error('no svg root');
+    // The stored text read back as SVG holds no script, foreign content or handler.
+    expect(out.text).not.toMatch(
+      /<script|<foreignObject|\son[a-z]+=|<img|<style[^>]*>[^<]*<(?!\/style>)/i,
+    );
+    expect(out.text.startsWith('<svg')).toBe(true);
+    expect(out.text.endsWith('</svg>')).toBe(true);
+    return out;
+  };
+
+  test('A09 entity-escaped or CDATA markup in an SVG style never comes back as an element', () => {
+    for (const payload of [
+      '&lt;script&gt;alert(1)&lt;/script&gt;',
+      '<![CDATA[</style><script>alert(1)</script><style>]]>',
+      '&lt;foreignObject&gt;&lt;img src="x" onerror="alert(1)"/&gt;&lt;/foreignObject&gt;',
+    ]) {
+      const out = storedSvg(`<svg ${NS}><style>${payload}</style><circle r="1"/></svg>`);
+      expect(out.scriptsRemoved).toBe(true);
+      expect(out.text).toContain('<circle');
+    }
+  });
+
+  test('A09 SVG CSS that escapes, imports or fetches is dropped; local url() references stay', () => {
+    const out = storedSvg(
+      `<svg ${NS}><style>@\\69 mport "https://evil.example/a.css";</style>` +
+        '<rect fill="\\75 rl(https://evil.example/p)" width="1"/>' +
+        '<rect style="fill:image-set(\'https://evil.example/q\')" width="2"/>' +
+        `<g clip-path="url('#c')" filter="url(  #f)" fill="url(&quot;#p&quot;)"><path d="M0 0"/></g>` +
+        '<style>rect{stroke:#000}</style></svg>',
+    );
+    expect(out.text).not.toMatch(/evil\.example|@|\\/);
+    expect(out.text).toContain('clip-path="url(&#x27;#c&#x27;)"');
+    expect(out.text).toContain('rect{stroke:#000}');
+  });
+
+  test('A09 a matplotlib-shaped SVG keeps its in-document xlink references and loses its metadata', () => {
+    const out = storedSvg(
+      `<svg ${NS} xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 9 9">` +
+        '<metadata><rdf:RDF>Matplotlib v3, 2026-01-01</rdf:RDF></metadata>' +
+        '<defs><path id="g" d="M0 0"/></defs><use xlink:href="#g" x="1"/>' +
+        '<use xlink:href="https://evil.example/s.svg#g"/></svg>',
+    );
+    expect(out.text).toMatch(/<use [^>]*xlink:href="#g"/);
+    expect(out.text).not.toMatch(/Matplotlib|evil\.example/);
+  });
+
+  test('A09 HTML-only tags inside an SVG do not leave content after the root element', () => {
+    const out = storedSvg(`<svg ${NS}><p>x</p><circle r="1"/></svg>`);
+    expect(out.text.match(/<svg/g)).toHaveLength(1);
+    expect(sanitizeSvg('<div>no svg</div>')).toBeNull();
+  });
+
+  test('A09 a stripped element cannot split a token so that an external url( is rebuilt', () => {
+    for (const split of ['u<set>x</set>rl', 'u<script>x</script>rl', 'u<metadata>x</metadata>rl']) {
+      const out = storedSvg(
+        `<svg ${NS}><style>rect{fill:${split}(https://evil.example/p)}</style><rect width="1"/></svg>`,
+      );
+      expect(out.text).not.toMatch(/evil\.example|url\(/);
+      expect(out.text).toContain('<rect');
+    }
+    const nested = storedSvg(`<svg ${NS}><style>rect{fill:red}<circle r="1"/></style></svg>`);
+    expect(nested.text).not.toContain('<style');
+  });
+
+  test('A09 stroke, text and paint attributes survive; the root carries its namespaces', () => {
+    const out = storedSvg(
+      '<svg width="4"><path stroke-dasharray="2 2" stroke-linecap="round" stroke-linejoin="round" d="M0 0"/>' +
+        '<text xml:space="preserve" paint-order="stroke" color="red">a  b</text>' +
+        '<use xlink:href="#a"/></svg>',
+    );
+    for (const kept of [
+      'stroke-dasharray="2 2"',
+      'stroke-linecap="round"',
+      'stroke-linejoin="round"',
+      'xml:space="preserve"',
+      'paint-order="stroke"',
+      'xmlns="http://www.w3.org/2000/svg"',
+      'xmlns:xlink="http://www.w3.org/1999/xlink"',
+    ]) {
+      expect(out.text).toContain(kept);
+    }
+    expect(out.scriptsRemoved).toBe(false);
+  });
+
+  test('A09 an embedded raster stays only as a PNG, JPEG, GIF or WebP data URI', () => {
+    const out = storedSvg(
+      `<svg ${NS} xmlns:xlink="http://www.w3.org/1999/xlink">` +
+        `<image width="1" height="1" xlink:href="data:image/png;base64,${PNG}"/>` +
+        '<image href="https://evil.example/x.png"/>' +
+        '<image href="data:image/svg+xml;base64,PHN2Zz48L3N2Zz4="/></svg>',
+    );
+    expect(out.text.match(/<image/g)).toHaveLength(3);
+    expect(out.text).toContain(`xlink:href="data:image/png;base64,${PNG}"`);
+    expect(out.text).not.toMatch(/evil\.example|svg\+xml/);
+  });
+
+  test('A09 animation that could set a script URL is removed and reported', () => {
+    const out = storedSvg(
+      `<svg ${NS}><animate attributeName="href" to="javascript:alert(1)"/><rect/></svg>`,
+    );
+    expect(out.scriptsRemoved).toBe(true);
+    expect(out.text).not.toMatch(/animate|javascript/i);
+  });
+
+  test('A09 namespaces other than the root are dropped, as are values that would break the XML', () => {
+    const out = storedSvg(
+      `<svg ${NS}><g xmlns="http://www.w3.org/1999/xhtml" id="a<b"><rect id="ok"/></g><text>x]]>y</text></svg>`,
+    );
+    expect(out.text).not.toMatch(/xhtml|a<b|\]\]>/);
+    expect(out.text).toContain('id="ok"');
+  });
+
+  test('A09 a stylesheet with an ampersand or a word like expression is kept', () => {
+    const out = storedSvg(
+      `<svg ${NS}><style>.expression-label{fill:red}</style><text font-family="A&amp;B">x</text></svg>`,
+    );
+    expect(out.text).toContain('.expression-label{fill:red}');
+    expect(out.text).toContain('font-family="A&#x26;B"');
+  });
+
+  test('A09 an SVG output without an svg element falls back to its text/plain', () => {
+    const rendered = render([
+      code('s', 'plot()', [
+        {
+          output_type: 'display_data',
+          metadata: {},
+          data: { 'image/svg+xml': '<div>not svg</div>', 'text/plain': 'Figure 1' },
+        },
+      ]),
+    ]);
+    expect(outputsOf(rendered)[0]).toMatchObject({ type: 'text', text: 'Figure 1' });
+    expect(rendered.objects).toHaveLength(0);
+  });
+
+  test('A09 a clean SVG output is kept and not flagged', () => {
+    const svg =
+      '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 4 4"><path d="M0 0L4 4" stroke="#000"/></svg>';
+    const clean = render([
+      code('s', 'plot()', [
+        { output_type: 'display_data', metadata: {}, data: { 'image/svg+xml': svg } },
+      ]),
+    ]);
+    const [out] = outputsOf(clean);
+    expect(out).not.toHaveProperty('scriptsRemoved');
+    const stored = new TextDecoder().decode(clean.objects[0]?.bytes);
+    expect(stored).toContain('<path d="M0 0L4 4" stroke="#000">');
+    expect(stored).toContain('viewBox="0 0 4 4"');
+  });
+
+  test('A09 an SVG attachment of a Markdown cell is sanitised like an SVG output', () => {
+    const attached = render([
+      {
+        id: 'm',
+        cell_type: 'markdown',
+        metadata: {},
+        source: '![d](attachment:d.svg)',
+        attachments: { 'd.svg': { 'image/svg+xml': hostileSvg } },
+      },
+    ]);
+    const stored = new TextDecoder().decode(attached.objects[0]?.bytes);
+    expect(attached.objects[0]?.contentType).toBe('image/svg+xml');
+    expect(stored).not.toMatch(/<script|\son[a-z]+=|javascript:|evil\.example/i);
   });
 
   test('A09 Markdown cells cannot carry raw HTML or script into the app origin', () => {

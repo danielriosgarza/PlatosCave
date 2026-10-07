@@ -203,6 +203,8 @@ const storedOutput = z.discriminatedUnion('type', [
     key: z.string(),
     contentType: z.string(),
     alt: z.string(),
+    /** An SVG held script or event handlers; they were removed (§13). Absent otherwise. */
+    scriptsRemoved: z.boolean().optional(),
   }),
   tableOutput,
   /** A whole HTML document on the content origin, shown in a sandboxed frame. */
@@ -262,6 +264,7 @@ export const notebookOutput = z.discriminatedUnion('type', [
     /** Null when no link could be made; the alt text shows instead. */
     url: z.url().nullable(),
     alt: z.string(),
+    scriptsRemoved: z.boolean().optional(),
   }),
   tableOutput,
   z.object({ ...htmlFields, url: z.url().nullable() }),

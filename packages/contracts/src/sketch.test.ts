@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
 import type { Strokes } from './anchors';
 import { strokesToSvg } from './sketch';
@@ -19,7 +20,11 @@ describe('strokesToSvg', () => {
           [1, 1],
         ]),
       ],
-      { aspect: 0.5, title: 'Sketch · Figure 1', description: 'Two curves <meet> at "10".' },
+      {
+        aspect: 0.5,
+        title: 'Sketch · Figure 1',
+        description: 'Two curves <meet> at "10".',
+      },
     );
     expect(svg).toContain('viewBox="0 0 900 450"');
     expect(svg).toContain('points="0,0 450,225 900,450"');
@@ -63,5 +68,30 @@ describe('strokesToSvg', () => {
     expect(strokesToSvg([pen([[0.5, 0.5]], '#315747', 6)], { aspect: 1 })).toContain(
       '<circle cx="450" cy="450" r="3" fill="#315747"/>',
     );
+  });
+});
+
+describe('strokesToSvg well-formedness', () => {
+  it('A07 a description or title with control characters still exports well-formed XML', () => {
+    const controls = '\u0000\u0001\u0008\u000B\u000C\u000E\u001F\uFFFE\uFFFF';
+    const svg = strokesToSvg(
+      [
+        pen([
+          [0, 0],
+          [1, 1],
+        ]),
+      ],
+      {
+        aspect: 0.5,
+        title: `Sketch${controls}`,
+        description: `Line\ttab\nnewline\rreturn ${controls} <end> & "q"`,
+      },
+    );
+    const doc = new DOMParser().parseFromString(svg, 'image/svg+xml');
+    expect(doc.getElementsByTagName('parsererror')).toHaveLength(0);
+    expect(doc.documentElement.localName).toBe('svg');
+    // Tab, line feed and carriage return are legal XML and are kept (a raw CR parses as LF).
+    expect(doc.querySelector('desc')?.textContent).toBe('Line\ttab\nnewline\nreturn  <end> & "q"');
+    expect(doc.querySelector('title')?.textContent).toBe('Sketch');
   });
 });

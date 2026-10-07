@@ -7,6 +7,7 @@ import { RetryNotice } from '../components/RetryNotice';
 import { type TabDef, TabRow } from '../components/TabRow';
 import { searchFor } from '../reading/place';
 import type { ClassReview, ReviewSearch, ReviewTab } from './classReview';
+import { ExerciseReview } from './ExerciseReview';
 import styles from './Grading.module.css';
 import { GradingWorkspace } from './GradingWorkspace';
 import {
@@ -21,6 +22,7 @@ import {
 
 const TABS = [
   { id: 'results', label: 'Results' },
+  { id: 'exercises', label: 'Exercises' },
   { id: 'submissions', label: 'Submissions' },
   { id: 'comments', label: 'Comments & questions' },
 ] as const satisfies readonly TabDef<ReviewTab>[];
@@ -114,6 +116,9 @@ export function StudentWork({
               </p>
             ) : null}
           </>
+        ) : null}
+        {tab === 'exercises' ? (
+          <ExerciseReview classId={classId} exercises={data.exercises} studentId={studentId} />
         ) : null}
         {tab === 'submissions' ? (
           <>

@@ -169,6 +169,28 @@ test('A08 and A23 a student works Predict, Inspect and Explain; help is recorded
   expect(first.steps[0]).toMatchObject({ help: 'with_hints', hintsShown: 1 });
   expect(first.steps[0].checks.map((c: { correct: boolean }) => c.correct)).toEqual([false, true]);
   expect(second).toMatchObject({ number: 2, completion: null });
+
+  // The instructor sees the same facts rendered in the student's work, hints and solution
+  // use as separate labelled lines, and the attempt that was started again.
+  expect(
+    (
+      await page.request.post('/api/test/signin-as', { data: { email: 'priya@example.test' } })
+    ).ok(),
+  ).toBe(true);
+  await page.goto(`/classes/${ids.classA}/review?selected=${first.student.id}&tab=exercises`);
+  const region = page.getByRole('region', { name: `Exercise · ${title}` });
+  await expect(region.getByText('Attempt 1')).toBeVisible();
+  await expect(region).toContainText('Completed with hints');
+  await expect(region).toContainText('started again afterwards');
+  const predict = region.getByRole('list', { name: 'Attempt 1 Predict evidence' });
+  await expect(predict).toContainText('Final answer: half');
+  await expect(predict).toContainText('Checks made: 2');
+  await expect(predict).toContainText('Hints shown: 1');
+  await expect(predict).toContainText('Solution shown: No');
+  await expect(region.getByRole('list', { name: 'Attempt 1 Inspect evidence' })).toContainText(
+    'Hints shown: 0',
+  );
+  await expect(region.getByText('Attempt 2')).toBeVisible();
 });
 
 test('a scheduled exercise shows its release date to students instead of opening', async ({
