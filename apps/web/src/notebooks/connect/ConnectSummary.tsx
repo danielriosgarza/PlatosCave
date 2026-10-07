@@ -9,6 +9,8 @@ interface Props {
   connector: Connector | undefined;
   /** The class computer the connection was made from; its lease is the default (§9). */
   template?: ComputeTemplate | undefined;
+  /** The operator's default lease, used when the class computer sets none. */
+  defaultLease?: { idleTimeoutMin: number; gracePeriodMin: number } | undefined;
   test: ConnectionTest;
   busy: boolean;
   onConnect: (choice: {
@@ -28,15 +30,27 @@ export const leaseSentence = (idle: number, grace: number) =>
  * the connector reaches. A personal connection may reach this person's files with their own
  * privileges.
  */
-export function ConnectSummary({ connection, connector, template, test, busy, onConnect }: Props) {
+export function ConnectSummary({
+  connection,
+  connector,
+  template,
+  defaultLease,
+  test,
+  busy,
+  onConnect,
+}: Props) {
   const specs = test.kernelspecs ?? [];
   const wanted = connection.runtime.kernelName;
   const [kernel, setKernel] = useState(
     specs.find((k) => k.name === wanted)?.name ?? specs[0]?.name ?? '',
   );
   // Kept as typed and checked on Connect, so any value can be typed.
-  const [idleText, setIdleText] = useState(String(template?.lease?.idleTimeoutMin ?? 30));
-  const [graceText, setGraceText] = useState(String(template?.lease?.gracePeriodMin ?? 5));
+  const [idleText, setIdleText] = useState(
+    String(template?.lease?.idleTimeoutMin ?? defaultLease?.idleTimeoutMin ?? 30),
+  );
+  const [graceText, setGraceText] = useState(
+    String(template?.lease?.gracePeriodMin ?? defaultLease?.gracePeriodMin ?? 5),
+  );
   const [problem, setProblem] = useState<string | null>(null);
   const idle = Number(idleText);
   const grace = Number(graceText);
