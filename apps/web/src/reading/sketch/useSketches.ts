@@ -53,7 +53,7 @@ export interface Session {
 }
 
 /** The anchor a drawing is stored on: figure strokes, or a page sketch with its bounding box. */
-export function anchorFor(surface: Surface, strokes: Strokes): Anchor {
+function anchorFor(surface: Surface, strokes: Strokes): Anchor {
   if (surface.kind === 'figure') return { kind: 'figure', figureId: surface.figureId, strokes };
   return strokes.length
     ? { kind: 'pdf', page: surface.page, rect: bounds(strokes), strokes }

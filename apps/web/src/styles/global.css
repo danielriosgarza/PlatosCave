@@ -56,10 +56,13 @@ h3 {
   }
 }
 @media (pointer: coarse) {
+  :root {
+    --pc-touch-target: 44px;
+  }
   button,
   select,
   input:not([type="checkbox"], [type="radio"]) {
-    min-height: 44px;
-    min-width: 44px;
+    min-height: var(--pc-touch-target, 44px);
+    min-width: var(--pc-touch-target, 44px);
   }
 }

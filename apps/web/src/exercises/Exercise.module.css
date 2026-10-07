@@ -328,3 +328,8 @@
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+@media (pointer: coarse) {
+  .range input[type="range"] {
+    min-height: var(--pc-touch-target, 44px);
+  }
+}
