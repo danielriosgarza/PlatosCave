@@ -238,8 +238,10 @@ export async function readAttemptCopy(
     | AttemptCopy
     | null
     | undefined;
-  // The in-memory copy is the newest save, even when it did not reach the store (as `listDrafts`).
-  const found = copies.get(key) ?? stored ?? null;
+  // The newer of this tab's copy (which may never have reached the store) and the stored one
+  // (which another tab may have written).
+  const mine = copies.get(key);
+  const found = mine && (!stored || mine.updatedAt >= stored.updatedAt) ? mine : (stored ?? null);
   return found && found.userId === userId && found.attemptId === attemptId ? found : null;
 }
 

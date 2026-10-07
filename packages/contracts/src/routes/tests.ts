@@ -338,7 +338,7 @@ export const reviewedAttempt = attemptSummary.extend({
   student: z.object({ id: z.uuid(), name: z.string() }),
   /** The student has since been removed from the class; the work stays reviewable. */
   removed: z.boolean(),
-  /** The IANA zone of the terms this attempt was taken under; times are shown in it. */
+  /** The IANA zone of the terms this attempt was taken under; equals `terms.timeZone` where both are present. */
   timeZone: z.string(),
   graderVersion: z.string(),
 });

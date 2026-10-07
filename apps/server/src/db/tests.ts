@@ -639,9 +639,9 @@ export async function requestRecovery(
     if (!found) return notFound;
     if (found.attempt.state === 'in_progress')
       return { ok: false, reason: 'attempt_open' as const };
+    if (scope.archived) return classArchived;
     // A removed student cannot open the test, so no one could answer the request.
     if (found.removed) return { ok: false, reason: 'student_removed' as const };
-    if (scope.archived) return classArchived;
     await audit(tx, {
       actorId: scope.user.id,
       action: RECOVERY_REQUESTED,

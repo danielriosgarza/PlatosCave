@@ -4,6 +4,7 @@ import { onlineManager } from '@tanstack/react-query';
 import { act, cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, onTestFinished, vi } from 'vitest';
+import { UNSENT_ANSWERS_PREFIX } from '../reading/margin/drafts';
 import {
   CLASS_A,
   instructorIn,
@@ -132,6 +133,7 @@ function testApi(options: Options = {}) {
     localCopyAt: null as string | null,
     recoveryRequestedAt: null as string | null,
     removed: false,
+    removeOnRequest: false,
     timeZone: 'UTC',
     offline: false,
     failLocalCopy: false,
@@ -328,6 +330,10 @@ function testApi(options: Options = {}) {
       };
     }
     if (url === `${base}/test-attempts/${ATTEMPT}/recovery-request`) {
+      if (server.removeOnRequest) {
+        server.removed = true;
+        return { status: 409, body: { error: 'student_removed' } };
+      }
       log.recoveryRequests.push(body);
       server.recoveryRequestedAt = '2026-10-05T10:00:00Z';
       return { status: 201, body: { requestedAt: server.recoveryRequestedAt } };
@@ -1058,6 +1064,47 @@ describe('test UI: expiry', () => {
     expect(screen.queryByRole('button', { name: 'Ask for unsent work' })).toBeNull();
   });
 
+  it('A15 a request refused because the student left since the page loaded closes the form and shows the student as removed', async () => {
+    const user = userEvent.setup();
+    const api = testApi({ instructor: true });
+    api.server.removeOnRequest = true;
+    api.server.receipt = {
+      submissionId: uuid(0xb2),
+      attemptId: ATTEMPT,
+      submittedAt: '2026-10-05T09:30:00Z',
+      autoSubmitted: true,
+      late: false,
+      answers: [],
+      unanswered: [],
+    };
+    open();
+    await user.click(await screen.findByRole('button', { name: 'Ask for unsent work' }));
+    await user.type(screen.getByLabelText(/Reason/), 'Please send what you kept');
+    await user.click(screen.getByRole('button', { name: 'Send request' }));
+    expect(await screen.findByText(/has left the class and cannot answer/)).toBeVisible();
+    expect(screen.queryByText(/not recorded/)).toBeNull();
+    expect(screen.queryByLabelText(/Reason/)).toBeNull();
+    expect(screen.queryByRole('button', { name: /Ask (again|for unsent work)/ })).toBeNull();
+  });
+
+  it('A15 a removed student with an open request is not shown as waiting', async () => {
+    const api = testApi({ instructor: true });
+    api.server.removed = true;
+    api.server.recoveryRequestedAt = '2026-10-05T10:00:00Z';
+    api.server.receipt = {
+      submissionId: uuid(0xb2),
+      attemptId: ATTEMPT,
+      submittedAt: '2026-10-05T09:30:00Z',
+      autoSubmitted: true,
+      late: false,
+      answers: [],
+      unanswered: [],
+    };
+    open();
+    expect(await screen.findByText(/asked for .*not answered · has left the class/)).toBeVisible();
+    expect(screen.queryByText(/waiting/)).toBeNull();
+  });
+
   it('A15 at the deadline the page asks the server and shows what the server submitted', async () => {
     const user = userEvent.setup();
     const api = testApi({ deadlineAt: new Date(Date.now() + 400).toISOString() });
@@ -1101,7 +1148,7 @@ describe('test UI: expiry', () => {
     const user = userEvent.setup();
     const api = testApi({ running: true, deadlineAt: '2099-01-01T00:00:00Z' });
     window.localStorage.setItem(
-      `pc-test-unsent:${ATTEMPT}`,
+      `${UNSENT_ANSWERS_PREFIX}${ATTEMPT}`,
       JSON.stringify({ q3: { value: 'words kept in the browser', flagged: false, seq: 2 } }),
     );
     open();

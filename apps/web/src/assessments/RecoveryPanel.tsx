@@ -2,6 +2,7 @@ import { reviewTestAttempts } from '@parallax/contracts/routes/tests';
 import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import type { z } from 'zod';
+import { ApiError } from '../api/client';
 import buttons from '../components/Buttons.module.css';
 import { Loading } from '../components/Loading';
 import { RetryNotice } from '../components/RetryNotice';
@@ -9,6 +10,9 @@ import { recoveryAnswered } from './answers';
 import { askForRecovery, useReviewedAttempt, useReviewedAttempts } from './api';
 import { formatInZone } from './TermsPanel';
 import styles from './Test.module.css';
+
+const isStudentRemoved = (error: ApiError) =>
+  (error.body as { error?: string } | null)?.error === 'student_removed';
 
 type Reviewed = z.output<typeof reviewTestAttempts.response>['attempts'][number];
 
@@ -76,8 +80,17 @@ function RecoveryRow({ classId, attempt }: { classId: string; attempt: Reviewed 
       await queryClient.invalidateQueries({
         queryKey: [reviewTestAttempts.method, reviewTestAttempts.path],
       });
-    } catch {
-      setProblem('The request was not recorded. Try again.');
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 409 && isStudentRemoved(error)) {
+        // The page was loaded before the student left; reload the list so the row says so.
+        setAsking(false);
+        setReason('');
+        await queryClient.invalidateQueries({
+          queryKey: [reviewTestAttempts.method, reviewTestAttempts.path],
+        });
+      } else {
+        setProblem('The request was not recorded. Try again.');
+      }
     } finally {
       setBusy(false);
     }
@@ -98,7 +111,9 @@ function RecoveryRow({ classId, attempt }: { classId: string; attempt: Reviewed 
         {received
           ? `Unsent work kept ${when(received)}; not part of the submission`
           : 'No unsent work kept by the server'}
-        {requested ? ` · asked for ${when(requested)}${answered ? ', received' : ', waiting'}` : ''}
+        {requested
+          ? ` · asked for ${when(requested)}${answered ? ', received' : attempt.removed ? ', not answered' : ', waiting'}`
+          : ''}
         {attempt.removed && !answered ? ' · has left the class and cannot answer' : ''}
       </span>
       <div className={styles.row}>
