@@ -161,6 +161,35 @@ export const setPublisher = defineRoute({
   examples: { params: { courseId: zero, userId: zero }, body: { granted: true } },
 });
 
+/**
+ * Hands the course's ownership on or withdraws it (§3), so an owner can leave a course (account
+ * closure refuses the only active owner, `owns_courses`). Owners are instructors: granting needs
+ * an active person who teaches a class of the course or holds its draft editing, so a delegate who
+ * only publishes cannot be made an owner (409 `not_course_staff`). 404 for an unknown or preview
+ * account, and a deactivated one when granting; 403 for a caller who stopped being an owner while
+ * the request waited. Withdrawing keeps the publishing grant and keeps draft editing only while the
+ * person teaches a class of the course (audited as `grant.editor` when it ends), and revokes the open instructor invitations they issued in classes of the course where they hold no
+ * `manage_members` grant (audited as `invite.revoke`, reason `issuer_lost_ownership`). 409
+ * `last_owner` when no other active owner would remain, whoever is withdrawn, the caller included.
+ * Granting to an owner or withdrawing from a non-owner changes nothing. Works on an archived
+ * course, so an owner can hand it over. Needs a recent sign-in; audited as `grant.owner`.
+ */
+export const setOwner = defineRoute({
+  method: 'PUT',
+  path: '/api/courses/:courseId/members/:userId/owner',
+  scope: { kind: 'course', role: 'owner' },
+  allowWhenArchived: true,
+  summary: 'Grant or withdraw ownership of the course',
+  params: z.object({ courseId: z.uuid(), userId: z.uuid() }),
+  body: z.object({ granted: z.boolean() }),
+  response: z.object({ userId: z.uuid(), owner: z.boolean() }),
+  errors: {
+    403: z.object({ error: z.literal('forbidden') }),
+    409: z.object({ error: z.enum(['not_course_staff', 'last_owner']) }),
+  },
+  examples: { params: { courseId: zero, userId: zero }, body: { granted: true } },
+});
+
 const joined = z.object({
   classId: z.uuid(),
   className: z.string(),

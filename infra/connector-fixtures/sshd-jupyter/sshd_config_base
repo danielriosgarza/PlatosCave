@@ -1,0 +1,9 @@
+Protocol 2
+PermitRootLogin no
+PasswordAuthentication no
+KbdInteractiveAuthentication no
+PubkeyAuthentication yes
+AuthorizedKeysFile .ssh/authorized_keys
+PermitUserEnvironment yes
+AllowUsers student bare locked
+LogLevel INFO
