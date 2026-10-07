@@ -70,6 +70,8 @@ export const classReview = z.object({
   assignments: z.array(z.object({ assignmentId: z.uuid(), title: z.string(), topicId: z.uuid() })),
   /** The class's notebooks in the topic filter, whose submitted snapshots the Submissions tab lists. */
   notebooks: z.array(z.object({ notebookId: z.uuid(), title: z.string(), topicId: z.uuid() })),
+  /** The class's exercises in the topic filter, whose practice attempts the Exercises tab lists. */
+  exercises: z.array(z.object({ exerciseId: z.uuid(), title: z.string(), topicId: z.uuid() })),
   /** Every real student of the class, for the student filter. */
   roster: z.array(z.object({ id: z.uuid(), name: z.string() })),
   /** The filtered students in table order: the list previous/next traverses. */

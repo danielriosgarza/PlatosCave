@@ -20,8 +20,8 @@ export interface ReviewSearch {
   page?: number;
 }
 
-export type ReviewTab = 'results' | 'submissions' | 'comments';
-const TABS: readonly string[] = ['results', 'submissions', 'comments'];
+export type ReviewTab = 'results' | 'exercises' | 'submissions' | 'comments';
+const TABS: readonly string[] = ['results', 'exercises', 'submissions', 'comments'];
 
 const text = (v: unknown) => (typeof v === 'string' && v !== '' ? v : undefined);
 

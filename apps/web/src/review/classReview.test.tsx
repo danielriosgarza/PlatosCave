@@ -69,6 +69,7 @@ function review(over: Partial<ClassReview> = {}): ClassReview {
     topics: [{ topicId: TOPIC, number: 1, title: 'Sampling' }],
     assignments: [{ assignmentId: QUIZ, title: 'Spread check', topicId: TOPIC }],
     notebooks: [],
+    exercises: [],
     roster,
     students: listed(rows),
     total: 3,
