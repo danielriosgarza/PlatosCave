@@ -195,11 +195,15 @@ function Workspace({
   };
   // A grade this workspace did not write (another instructor, a release, a regrade run) replaces
   // the one shown, and the form restarts from it. A release changes the row's state in place.
+  // Unsaved edits are never replaced silently: while there are any, the form stays and the
+  // change is announced with the choice to load it.
   const [seen, setSeen] = useState(signature(initial));
   if (signature(initial) !== seen) {
     setSeen(signature(initial));
-    if (signature(initial) !== signature(grade)) adopt(initial);
+    if (!dirty && signature(initial) !== signature(grade)) adopt(initial);
   }
+  const changedUnder = dirty && signature(initial) !== signature(grade);
+  const newer = initial.history[0];
   const [draft, setDraft] = useState<Draft>({ kind: 'idle' });
   const current: GradeRow | undefined = grade.history[0];
   const base = current?.questions ?? grade.automated;
@@ -319,6 +323,20 @@ function Workspace({
           </div>
         </div>
       </div>
+      {changedUnder ? (
+        <div className={page.row} role="alert">
+          <span className={page.small}>
+            The grade changed while you were editing
+            {newer
+              ? `: grade ${newer.number} · ${newer.state === 'released' ? 'Released' : SOURCE_LABEL[newer.source]}, ${points(newer.points)} / ${points(newer.possible)}`
+              : ''}
+            . Your unsaved edits are still here, and saving them will be refused.
+          </span>
+          <button type="button" className={buttons.textButton} onClick={() => adopt(initial)}>
+            Load latest grade
+          </button>
+        </div>
+      ) : null}
       {released ? (
         <p className={page.small}>
           Released to {grade.student.name}: {points(released.points)} / {points(released.possible)}

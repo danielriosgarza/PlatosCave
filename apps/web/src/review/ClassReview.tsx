@@ -318,9 +318,6 @@ function Body({
       {removed.length > 0 ? (
         <section className={styles.removed} aria-label="Removed students">
           <h2>Removed students</h2>
-          <p className={`${page.small} ${page.muted}`}>
-            Not in the table. Their submitted work stays reviewable.
-          </p>
           <ul className={page.bareList}>
             {removed.map((r) => (
               <li key={r.student.id}>

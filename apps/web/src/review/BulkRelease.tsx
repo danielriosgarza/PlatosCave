@@ -73,6 +73,8 @@ export function BulkRelease({
           preview: body.preview,
           note: 'Grades changed while you were reviewing, so nothing was released. This is what a release would do now.',
         });
+        // The table rows and Needs review read the same grades the preview just disagreed with.
+        void refresh();
       } else {
         setState({ kind: 'error', message: 'Nothing was released. Try again.' });
       }

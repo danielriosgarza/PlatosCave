@@ -190,6 +190,8 @@ describe('A25 a change saved after release, and what a student shared', () => {
       state: 'released',
       score: { points: 13, state: 'released' },
       unreleasedChange: true,
+      // The row names the newest grade, so a second change over the same release is visible.
+      gradeId: saved.body.history[0].id,
     });
 
     tick();
