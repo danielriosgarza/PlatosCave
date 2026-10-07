@@ -9,6 +9,7 @@ import { createQueryClient } from '../../session/revocation';
 import { CLASS_A, stubApi } from '../../test/render';
 import type { NotebookSession } from '../connect/api';
 import { session } from '../connect/fixtures';
+import { RenewOutputLinks } from '../NotebookView';
 import type { Notebook } from '../notebooks';
 import { LiveNotebook, modeLabel } from './LiveNotebook';
 
@@ -89,6 +90,8 @@ const notebook: Notebook = {
 };
 
 const posts: { url: string; body: unknown }[] = [];
+/** What the notebook page provides to renew the stored outputs' links. */
+const renewLinks = vi.fn();
 
 /** Holds the edits as the notebook's panel does, so they outlive a session. */
 function Host({
@@ -158,12 +161,14 @@ function mount(
   });
   const view = render(
     <QueryClientProvider client={client}>
-      <Host
-        over={over}
-        nb={opts.nb ?? notebook}
-        showOutputs={opts.showOutputs}
-        onOpenConnect={onOpenConnect}
-      />
+      <RenewOutputLinks.Provider value={renewLinks}>
+        <Host
+          over={over}
+          nb={opts.nb ?? notebook}
+          showOutputs={opts.showOutputs}
+          onOpenConnect={onOpenConnect}
+        />
+      </RenewOutputLinks.Provider>
     </QueryClientProvider>,
   );
   return { view, onOpenConnect };
@@ -691,6 +696,24 @@ describe('live notebook', () => {
     expect(renewed.getAttribute('src')).toBe(`${CONTENT}image-3`);
     expect(outputPosts).toHaveLength(3);
     expect(pwned()).toBeUndefined();
+  });
+
+  it('A09 a stored image that no longer loads in the live view offers Try again', async () => {
+    renewLinks.mockClear();
+    const cell = code('c1', 'x = 1');
+    if (cell.type !== 'code') throw new Error('a code cell');
+    cell.outputs = [
+      { type: 'image', executionCount: null, url: `${CONTENT}stored-1`, alt: 'Stored plot' },
+    ];
+    const stored: Notebook = { ...notebook, cells: [cell] };
+    attach({}, {}, { nb: stored });
+    const plot = await screen.findByAltText('Stored plot');
+    fireEvent.error(plot);
+    const section = cellSection('c1');
+    expect(within(section).getByText(/This image could not be loaded\./)).toBeInTheDocument();
+    fireEvent.click(within(section).getByRole('button', { name: 'Try again' }));
+    expect(renewLinks).toHaveBeenCalledTimes(1);
+    expect(await screen.findByAltText('Stored plot')).toBeInTheDocument();
   });
 
   it('A09 live Markdown output passes the browser sanitiser before it is shown', async () => {

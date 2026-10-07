@@ -14,7 +14,8 @@ const EXPIRED = '/signin?link=expired';
 export default function authRoutes(app: FastifyInstance, deps: RouteDeps): void {
   const { config, mailer, background } = deps;
   const { now } = deps;
-  const cookieOptions = sessionCookieOptions(config.APP_ORIGIN);
+  const sessionTtlMs = config.SESSION_TTL_MS;
+  const cookieOptions = sessionCookieOptions(config.APP_ORIGIN, sessionTtlMs);
   const { db } = deps;
   const provider = db
     ? new EmailLinkProvider({
@@ -57,6 +58,7 @@ export default function authRoutes(app: FastifyInstance, deps: RouteDeps): void 
         // A kept instructor session (a preview in progress) ends with the sign-in or not at all.
         alsoEnd: (tx) => revokePreviewReturn(tx, req, at),
         now: at,
+        ttlMs: sessionTtlMs,
       });
       if (!signedIn.token) {
         const keep = safeDestination(signedIn.destination);

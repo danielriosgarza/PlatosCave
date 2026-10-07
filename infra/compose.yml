@@ -48,7 +48,7 @@ services:
   # only from the environment. Its own network, with no route to Postgres or the object store;
   # no database credentials or application secrets; a read-only root, no capabilities, a non-root
   # user; no published port (it dials the relay). Egress filtering to the scope it enforces belongs
-  # to the host's firewall (P4-12). Put the operator's files in .local/managed-connector, owned by
+  # to the host's firewall (docs/operations.md, P4-12). Put the operator's files in .local/managed-connector, owned by
   # uid 65532: identity.key (mode 0600), known_hosts, targets.json and keys/ (each key 0600);
   # register it with `pnpm --filter @parallax/server connectors:register-managed` and set
   # PARALLAX_SERVER and PARALLAX_CONNECTOR_ID.

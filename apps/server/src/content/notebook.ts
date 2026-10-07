@@ -29,7 +29,9 @@ import { renderReading } from './reading';
  *   content origin's `sandbox` CSP. Scripts and event handlers are removed from that HTML too.
  * - SVG outputs and attachments are parsed and rebuilt from an SVG allow-list (no script, event
  *   handler, `foreignObject`, animation, or reference leaving the document), so a stored output
- *   holds no script even where it is opened on its own.
+ *   holds no script even where it is opened on its own. This holds for notebooks imported since
+ *   that rule landed (P2-AUD4); SVG objects of earlier imports are not re-derived and stay as
+ *   they were stored until the notebook is imported again.
  */
 
 /** An object the notebook's outputs need, under the key its bytes give it. */
@@ -131,25 +133,49 @@ export const outputSchema: SanitizeSchema = {
 };
 const outputSanitizer = unified().use(rehypeSanitize, outputSchema).use(rehypeStringify).freeze();
 
+/** What URL parsing drops from the start of a value, and browsers ignore inside a scheme. */
+const BLANK = '[\\u0000-\\u0020]';
+const BLANKS = new RegExp(BLANK, 'g');
+const attrText = (value: unknown) => (Array.isArray(value) ? value.join(' ') : String(value));
+
+const ANIMATION_TAGS = new Set(['animate', 'animateMotion', 'animateTransform', 'set']);
+/** Where an animation can put a script URL. SMIL cannot set event-handler attributes. */
+const ANIMATED_VALUES = new Set(['to', 'from', 'by', 'values']);
+/** Elements that load or run a document of their own, in or out of `foreignObject`. */
+const SCRIPT_CAPABLE = new Set([
+  'iframe',
+  'object',
+  'embed',
+  'meta',
+  'template',
+  'frame',
+  'applet',
+]);
+const URL_ATTRIBUTES = new Set(['href', 'xLinkHref', 'src', 'action', 'formAction']);
+
 /**
- * True when the markup held something that would run script were it not removed. `tags` names
- * more elements that count (SVG's `foreignObject`).
+ * True when the markup held something that would run script were it not removed: a script
+ * element, an event handler, a script URL, or (with `capable`) an element that brings a document
+ * of its own. Elements are removed whole, so what they held counts without looking inside
+ * (`template` content, which `visit` does not enter, and `srcdoc`).
  */
-function hasScript(tree: Root, tags: string[] = []): boolean {
+function hasScript(tree: Root, capable = false): boolean {
   let found = false;
   visit(tree, 'element', (el) => {
-    if (el.tagName === 'script' || tags.includes(el.tagName)) found = true;
+    if (el.tagName === 'script' || (capable && SCRIPT_CAPABLE.has(el.tagName))) found = true;
     for (const [name, value] of Object.entries(el.properties)) {
       if (/^on[a-z]/i.test(name)) found = true;
       if (
-        (name === 'href' ||
-          name === 'xLinkHref' ||
-          name === 'src' ||
-          name === 'action' ||
-          name === 'formAction') &&
+        ANIMATION_TAGS.has(el.tagName) &&
+        ANIMATED_VALUES.has(name) &&
+        /javascript:/i.test(attrText(value).replace(BLANKS, ''))
+      ) {
+        found = true;
+      }
+      if (
+        URL_ATTRIBUTES.has(name) &&
         typeof value === 'string' &&
-        // biome-ignore lint/suspicious/noControlCharactersInRegex: browsers ignore them in schemes
-        /^javascript:/i.test(value.replace(/[\u0000- ]/g, ''))
+        /^javascript:/i.test(value.replace(BLANKS, ''))
       ) {
         found = true;
       }
@@ -189,7 +215,7 @@ const SVG_ATTRIBUTES = (
 ).split(' ');
 const svgSchema: SanitizeSchema = {
   tagNames: SVG_TAGS,
-  attributes: { '*': SVG_ATTRIBUTES },
+  attributes: { '*': SVG_ATTRIBUTES, style: ['media'] },
   protocols: {},
   clobber: [],
   strip: [
@@ -222,17 +248,22 @@ function cssIsPlain(css: string, raw = false): boolean {
   return !/url\(|image-set|image\(|expression\s*\(|javascript:/i.test(css.replace(LOCAL_URL, ''));
 }
 
-const CSS_ATTRIBUTES = /^(style|fill|stroke|filter|mask|clipPath|marker(Start|Mid|End)|cursor)$/;
+const CSS_ATTRIBUTES = /^(style|fill|stroke|filter|mask|clipPath|marker(Start|Mid|End))$/;
 /** Rasters an SVG may carry in itself; `data:image/svg+xml` is not one of them. */
 const DATA_IMAGE = /^data:image\/(png|jpeg|gif|webp);base64,[A-Za-z0-9+/=\s]*$/i;
 const SVG_NS = 'http://www.w3.org/2000/svg';
-const SCRIPT_TAGS = ['foreignObject', 'animate', 'animateMotion', 'animateTransform', 'set'];
+const LEADING_BLANK = new RegExp(`^${BLANK}+`);
+/** A reference into the document, as URL parsing reads it: `#` after any leading blanks. */
+const LOCAL_REFERENCE = new RegExp(`^${BLANK}*#`);
+/** Script written as markup in the text of a dropped `<style>` (an escaped or CDATA payload). */
+const STYLE_SCRIPT =
+  /<\s*(script|foreignObject|iframe|object|embed|meta|template)|<[^>]*\son[a-z]+\s*=/i;
 
 /**
  * Runs on the sanitised tree, so a stripped element cannot sit inside a token the check reads.
  * Drops CSS that fetches or holds markup, references that leave the document, and values the
- * serialiser would write as invalid XML; pins the namespaces of the root. True when a `<style>`
- * held markup.
+ * serialiser would write as invalid XML; pins the namespaces of the root. True when a dropped
+ * `<style>` held script as text.
  */
 function finishSvg(root: Element): boolean {
   let markup = false;
@@ -246,21 +277,25 @@ function finishSvg(root: Element): boolean {
     const el = node;
     if (el.tagName === 'style' && parent && index !== undefined) {
       const css = hastToString(el);
-      if (el.children.every((c) => c.type === 'text') && cssIsPlain(css, true)) return undefined;
-      markup ||= css.includes('<') || el.children.some((c) => c.type === 'element');
-      parent.children.splice(index, 1);
-      return ['skip', index];
+      if (!(el.children.every((c) => c.type === 'text') && cssIsPlain(css, true))) {
+        // Elements inside were seen before sanitising; only text can still carry escaped markup.
+        markup ||= STYLE_SCRIPT.test(
+          el.children.map((c) => (c.type === 'text' ? c.value : '')).join(''),
+        );
+        parent.children.splice(index, 1);
+        return ['skip', index];
+      }
     }
     for (const [name, value] of Object.entries(el.properties)) {
-      const text = Array.isArray(value) ? value.join(' ') : String(value);
+      const text = attrText(value);
       const reference = name === 'href' || name === 'xLinkHref';
       if (
         text.includes('<') ||
         (name === 'xmlns' && el !== root) ||
         name === 'xmlnsXLink' ||
         (reference &&
-          !text.trim().startsWith('#') &&
-          !(el.tagName === 'image' && DATA_IMAGE.test(text.trim()))) ||
+          !LOCAL_REFERENCE.test(text) &&
+          !(el.tagName === 'image' && DATA_IMAGE.test(text.replace(LEADING_BLANK, '')))) ||
         (CSS_ATTRIBUTES.test(name) && !cssIsPlain(text))
       ) {
         delete el.properties[name];
@@ -276,8 +311,10 @@ function finishSvg(root: Element): boolean {
 /**
  * SVG text as it may be stored: only the root `svg` element, rebuilt from the allow-list, with
  * the SVG namespace set so it displays on its own; null when the text holds no `svg` element.
- * `scriptsRemoved` when that element held script, a handler, a script URL, foreign markup,
- * animation or CSS that carried markup. Parsing as HTML lets HTML-only tags close the `svg`
+ * `scriptsRemoved` when that element held a script element, a handler, a script URL (also set by
+ * an animation), an element that brings a document of its own (`iframe`, `object`, ...) or script
+ * written as markup text in a `<style>`; `foreignObject` and animation without these are removed
+ * without the flag. It is a list of what the sanitiser removes, kept next to the allow-list. Parsing as HTML lets HTML-only tags close the `svg`
  * early; what follows the root is dropped so the stored text stays one well-formed element.
  */
 export function sanitizeSvg(svg: string): { text: string; scriptsRemoved: boolean } | null {
@@ -286,7 +323,7 @@ export function sanitizeSvg(svg: string): { text: string; scriptsRemoved: boolea
     .children.find((n): n is Element => isElement(n) && n.tagName === 'svg');
   if (!root) return null;
   const tree: Root = { type: 'root', children: [root] };
-  const scriptsRemoved = hasScript(tree, SCRIPT_TAGS);
+  const scriptsRemoved = hasScript(tree, true);
   const clean = svgSanitizer.runSync(tree);
   const [cleanRoot] = clean.children;
   if (!cleanRoot || !isElement(cleanRoot)) return null;
@@ -446,18 +483,16 @@ class Builder {
     for (const type of IMAGE_TYPES) {
       const value = textOf(data[type]);
       if (value === null) continue;
-      const svg = type === 'image/svg+xml' ? sanitizeSvg(value) : null;
-      if (type === 'image/svg+xml' && !svg) continue;
-      const bytes = svg ? new TextEncoder().encode(svg.text) : decodeBase64(value);
-      if (!bytes) continue;
+      const image = imageBytes(type, value);
+      if (!image) continue;
       const alt = textOf(data['text/plain']);
       return {
         type: 'image',
         executionCount,
-        key: this.object(bytes, type),
+        key: this.object(image.bytes, type),
         contentType: type,
         alt: alt && alt.length <= 300 ? plainText(alt).trim() : 'Image output',
-        ...(svg?.scriptsRemoved && { scriptsRemoved: true }),
+        ...(image.scriptsRemoved && { scriptsRemoved: true }),
       };
     }
     for (const type of ['text/markdown', 'text/latex']) {
@@ -520,13 +555,24 @@ class Builder {
       const type = IMAGE_TYPES.find((t) => textOf(data[t]) !== null);
       const value = type && textOf(data[type]);
       if (!type || !value) continue;
-      const svg = type === 'image/svg+xml' ? sanitizeSvg(value) : null;
-      const bytes =
-        type === 'image/svg+xml' ? svg && new TextEncoder().encode(svg.text) : decodeBase64(value);
-      if (bytes) assets[name] = this.object(bytes, type);
+      const image = imageBytes(type, value);
+      if (image) assets[name] = this.object(image.bytes, type);
     }
     return assets;
   }
+}
+
+/** The bytes an image output is stored as: SVG rebuilt from the allow-list, rasters decoded. */
+function imageBytes(
+  type: string,
+  value: string,
+): { bytes: Uint8Array; scriptsRemoved: boolean } | null {
+  if (type !== 'image/svg+xml') {
+    const bytes = decodeBase64(value);
+    return bytes && { bytes, scriptsRemoved: false };
+  }
+  const svg = sanitizeSvg(value);
+  return svg && { bytes: new TextEncoder().encode(svg.text), scriptsRemoved: svg.scriptsRemoved };
 }
 
 const jupyterFlag = (metadata: Record<string, unknown>, name: string): boolean => {
