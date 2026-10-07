@@ -12,7 +12,7 @@ test('A27 a student pairs a local connector and runs a cell', async ({ page }) =
   const connector = new Connector();
   const name = 'A27 laptop';
   try {
-    await openConnect(page);
+    await openConnect(page, 'reader', { studentOnly: true });
     // The real Approve button, not the test route.
     await pairAndApprove(page, connector, name, 'button');
     const run = await connect(page, connector, name);
