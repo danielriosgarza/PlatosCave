@@ -341,14 +341,12 @@ function NotebookPanel({
   } else {
     body = (
       <div className={styles.stage}>
-        <RenewOutputLinks.Provider value={() => void content.refetch()}>
-          <NotebookView
-            notebook={ready}
-            showCode={showCode}
-            showOutputs={showOutputs}
-            outlineOpen={outlineOpen}
-          />
-        </RenewOutputLinks.Provider>
+        <NotebookView
+          notebook={ready}
+          showCode={showCode}
+          showOutputs={showOutputs}
+          outlineOpen={outlineOpen}
+        />
         <ColabSubmission
           classId={classId}
           resourceId={notebook.resourceId}
@@ -373,7 +371,15 @@ function NotebookPanel({
           />
         </div>
       ) : null}
-      {body}
+      {ready && content.isRefetchError ? (
+        <RetryNotice
+          message="The outputs could not be refreshed. Outputs not yet shown may not load."
+          onRetry={() => void content.refetch()}
+        />
+      ) : null}
+      <RenewOutputLinks.Provider value={() => void content.refetch()}>
+        {body}
+      </RenewOutputLinks.Provider>
     </>
   );
 }

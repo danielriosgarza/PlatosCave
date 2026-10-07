@@ -21,6 +21,14 @@ export const useNotebooks = (classId: string, topicId: string) =>
 const CONTENT_TTL_MS = 4 * 60_000;
 const PENDING_POLL_MS = 3000;
 
+/** Whether any output carries a content link that will lapse. */
+const hasOutputLinks = (notebook: Notebook) =>
+  notebook.cells.some(
+    (cell) =>
+      cell.type === 'code' &&
+      cell.outputs.some((o) => (o.type === 'image' || o.type === 'html') && o.url),
+  );
+
 /** One notebook and its import state; while the import runs the query asks again every few seconds. */
 export const useNotebookContent = (classId: string, revisionId: string) => {
   const args = { params: { classId, revisionId } };
@@ -33,7 +41,9 @@ export const useNotebookContent = (classId: string, revisionId: string) => {
     refetchOnReconnect: true,
     refetchInterval: (query) => {
       if (query.state.error instanceof ApiError && query.state.error.status === 404) return false;
-      return query.state.data?.status === 'pending' ? PENDING_POLL_MS : CONTENT_TTL_MS;
+      const data = query.state.data;
+      if (data?.status === 'pending') return PENDING_POLL_MS;
+      return data?.notebook && hasOutputLinks(data.notebook) ? CONTENT_TTL_MS : false;
     },
   });
 };

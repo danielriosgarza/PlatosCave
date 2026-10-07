@@ -213,7 +213,7 @@ describe('Notebooks tab', () => {
     function apiMintingLinks() {
       let fetches = 0;
       const base = notebook.cells.filter((c) => c.id === 'intro');
-      stubApi((url) => {
+      return stubApi((url) => {
         if (url === '/api/me')
           return { status: 200, body: makeMe({ classes: [studentIn(CLASS_A, 'Class A')] }) };
         if (url === `/api/classes/${CLASS_A}/topics`) return { status: 200, body: makeTopics() };
@@ -289,11 +289,33 @@ describe('Notebooks tab', () => {
       show.click();
       const frame = await within(panel).findByTitle('Output of cell [5]');
       expect(frame.getAttribute('src')).not.toBe('http://localhost:3100/content/frame-1');
-      expect(frame).not.toHaveAttribute('loading');
+      expect(frame).toHaveAttribute('loading', 'lazy');
       expect(within(panel).getByRole('img', { name: 'Histogram of means' })).not.toHaveAttribute(
         'src',
         'http://localhost:3100/content/image-1',
       );
+    });
+
+    it('A09 an output that has loaded keeps its link when the notebook is renewed', async () => {
+      vi.useFakeTimers({ shouldAdvanceTime: true });
+      const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+      const fetchMock = apiMintingLinks();
+      renderApp(NOTEBOOKS);
+      const panel = await content();
+      await user.click(
+        await within(panel).findByRole('button', { name: 'Show output of cell [5]' }),
+      );
+      const image = await within(panel).findByRole('img', { name: 'Histogram of means' });
+      const frame = await within(panel).findByTitle('Output of cell [5]');
+      fireEvent.load(image);
+      fireEvent.load(frame);
+      const asked = () =>
+        fetchMock.mock.calls.filter(([u]) => String(u).endsWith(`/${REV}/notebook`)).length;
+      const before = asked();
+      await vi.advanceTimersByTimeAsync(5 * 60_000);
+      await waitFor(() => expect(asked()).toBeGreaterThan(before));
+      expect(image.getAttribute('src')).toBe('http://localhost:3100/content/image-1');
+      expect(frame.getAttribute('src')).toBe('http://localhost:3100/content/frame-1');
     });
 
     it('A09 an image that no longer loads says so, and Try again shows it from a new link', async () => {

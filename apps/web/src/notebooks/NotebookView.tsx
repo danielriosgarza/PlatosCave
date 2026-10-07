@@ -260,16 +260,7 @@ export function Output({ output, cellCount }: { output: CellOutput; cellCount: n
         <div className={styles.output}>
           {output.url ? (
             <div className={styles.frameBox} style={{ height: output.height }}>
-              <iframe
-                className={styles.frame}
-                // Every sandbox restriction: no script, no same origin, no forms, popups or
-                // navigation of this page. The content origin's own CSP says the same. Not lazy:
-                // a frame created late would be loaded from a link that may have lapsed.
-                sandbox=""
-                src={output.url}
-                title={`Output of cell ${count(cellCount)}`}
-                referrerPolicy="no-referrer"
-              />
+              <StoredFrame url={output.url} title={`Output of cell ${count(cellCount)}`} />
             </div>
           ) : (
             <p>This output is unavailable.</p>
@@ -296,16 +287,33 @@ export function Output({ output, cellCount }: { output: CellOutput; cellCount: n
   }
 }
 
+/**
+ * The link an element was first loaded from stays its `src`: a renewed link only serves elements
+ * that have not loaded yet, so renewal never downloads a stored output again.
+ */
+function useLoadedLink(url: string) {
+  const [loaded, setLoaded] = useState<string | null>(null);
+  return { src: loaded ?? url, onLoad: () => setLoaded((was) => was ?? url) };
+}
+
 function StoredImage({ url, alt }: { url: string; alt: string }) {
   const renew = useContext(RenewOutputLinks);
-  // The link that failed to load; only a newly minted link is tried again.
+  const link = useLoadedLink(url);
+  // The link that failed to load; a new link, or Try again, shows the image again.
   const [brokenUrl, setBrokenUrl] = useState<string | null>(null);
-  if (url === brokenUrl) {
+  if (link.src === brokenUrl) {
     return (
       <p role="status">
         This image could not be loaded.{' '}
         {renew ? (
-          <button type="button" className={buttons.textButton} onClick={renew}>
+          <button
+            type="button"
+            className={buttons.textButton}
+            onClick={() => {
+              setBrokenUrl(null);
+              renew();
+            }}
+          >
             Try again
           </button>
         ) : null}
@@ -313,7 +321,35 @@ function StoredImage({ url, alt }: { url: string; alt: string }) {
       </p>
     );
   }
-  return <img className={styles.image} src={url} alt={alt} onError={() => setBrokenUrl(url)} />;
+  return (
+    <img
+      className={styles.image}
+      src={link.src}
+      alt={alt}
+      referrerPolicy="no-referrer"
+      onLoad={link.onLoad}
+      onError={() => setBrokenUrl(link.src)}
+    />
+  );
+}
+
+function StoredFrame({ url, title }: { url: string; title: string }) {
+  const link = useLoadedLink(url);
+  return (
+    <iframe
+      className={styles.frame}
+      // Every sandbox restriction: no script, no same origin, no forms, popups or
+      // navigation of this page. The content origin's own CSP says the same.
+      sandbox=""
+      src={link.src}
+      title={title}
+      referrerPolicy="no-referrer"
+      // Lazy is safe: the notebook is refetched before its links lapse, so a frame created
+      // late is given a link that is at most four minutes old.
+      loading="lazy"
+      onLoad={link.onLoad}
+    />
+  );
 }
 
 function TableRow({ row }: { row: Extract<CellOutput, { type: 'table' }>['body'][number] }) {
