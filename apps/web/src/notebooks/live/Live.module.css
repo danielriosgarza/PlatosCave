@@ -99,3 +99,9 @@
   display: grid;
   gap: 8px;
 }
+
+/* A rich live output rendered as stored output: the live cell already draws the output box. */
+.stored > div {
+  padding: 0;
+  border-bottom: 0;
+}

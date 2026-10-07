@@ -1,4 +1,9 @@
-import type { NotebookOutput, NotebookView, StoredNotebook } from '@parallax/contracts';
+import type {
+  NotebookOutput,
+  NotebookView,
+  StoredNotebook,
+  StoredNotebookOutput,
+} from '@parallax/contracts';
 import { getNotebook, getShiny, listNotebooks } from '@parallax/contracts/routes/notebooks';
 import type { FastifyInstance } from 'fastify';
 import type { RouteDeps } from '../../app';
@@ -6,6 +11,23 @@ import { mintContentUrl } from '../../content/media';
 import { resolveReadingImages } from '../../content/reading';
 import { listTopicNotebooks, loadNotebook, loadShiny } from '../../db/notebooks';
 import { notFound, registerRoute } from '../register';
+
+/** One stored output with the object it names turned into a link; live outputs use it too. */
+export function outputView(
+  out: StoredNotebookOutput,
+  urlFor: (key: string) => string | null,
+): NotebookOutput {
+  if (out.type === 'image') {
+    const { key: _key, contentType: _type, ...rest } = out;
+    return { ...rest, url: urlFor(out.key) };
+  }
+  if (out.type === 'html') {
+    const { key: _key, ...rest } = out;
+    return { ...rest, url: urlFor(out.key) };
+  }
+  if (out.type === 'markdown') return { ...out, html: resolveReadingImages(out.html, urlFor) };
+  return out;
+}
 
 /**
  * The stored notebook with each object it names turned into a short-lived link on the content
@@ -15,24 +37,11 @@ export function notebookView(
   stored: StoredNotebook,
   urlFor: (key: string) => string | null,
 ): NotebookView {
-  const output = (o: StoredNotebook['cells'][number] & { type: 'code' }) =>
-    o.outputs.map((out): NotebookOutput => {
-      if (out.type === 'image') {
-        const { key: _key, contentType: _type, ...rest } = out;
-        return { ...rest, url: urlFor(out.key) };
-      }
-      if (out.type === 'html') {
-        const { key: _key, ...rest } = out;
-        return { ...rest, url: urlFor(out.key) };
-      }
-      if (out.type === 'markdown') return { ...out, html: resolveReadingImages(out.html, urlFor) };
-      return out;
-    });
   return {
     ...stored,
     cells: stored.cells.map((cell) =>
       cell.type === 'code'
-        ? { ...cell, outputs: output(cell) }
+        ? { ...cell, outputs: cell.outputs.map((out) => outputView(out, urlFor)) }
         : cell.type === 'markdown'
           ? { ...cell, html: resolveReadingImages(cell.html, urlFor) }
           : cell,

@@ -86,3 +86,7 @@ export const classWorkingCopyPrefix = (classId: string): string =>
 export const classExportPrefix = (classId: string): string => `classes/${classId}/exports`;
 
 export const classTransferPrefix = (classId: string): string => `classes/${classId}/transfers`;
+
+/** Live notebook outputs of one session, shown from the content origin (design §14). */
+export const classLiveOutputPrefix = (classId: string, sessionId: string): string =>
+  `classes/${classId}/live-outputs/${sessionId}`;

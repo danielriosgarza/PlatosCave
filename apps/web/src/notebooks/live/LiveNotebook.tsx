@@ -665,6 +665,8 @@ export function LiveNotebook({
                 <div className={styles.cell}>
                   <span className={styles.num}>Out</span>
                   <LiveOutputs
+                    classId={classId}
+                    sessionId={session.id}
                     execution={execution}
                     kernelGeneration={kernel?.generation}
                     canRun={canRun && runAll === null}
