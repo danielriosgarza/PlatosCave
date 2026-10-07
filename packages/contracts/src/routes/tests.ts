@@ -241,7 +241,7 @@ export const requestRecovery = defineRoute({
   response: z.object({ requestedAt: timestamp }),
   errors: {
     400: invalidBody,
-    409: z.object({ error: z.enum(['attempt_open', 'class_archived']) }),
+    409: z.object({ error: z.enum(['attempt_open', 'student_removed', 'class_archived']) }),
   },
   examples: {
     params: { classId: exampleClass, attemptId: exampleAttempt },
@@ -338,6 +338,8 @@ export const reviewedAttempt = attemptSummary.extend({
   student: z.object({ id: z.uuid(), name: z.string() }),
   /** The student has since been removed from the class; the work stays reviewable. */
   removed: z.boolean(),
+  /** The IANA zone of the terms this attempt was taken under; equals `terms.timeZone` where both are present. */
+  timeZone: z.string(),
   graderVersion: z.string(),
 });
 

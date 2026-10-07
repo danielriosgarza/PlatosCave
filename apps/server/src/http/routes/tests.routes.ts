@@ -114,8 +114,11 @@ export default function testRoutes(app: FastifyInstance, deps: RouteDeps): void 
 
   registerRoute(app, requestRecovery, async ({ scope, params, body, fail }) => {
     const outcome = await tests.requestRecovery(db(), scope, params.attemptId, body.reason, now());
-    if (!outcome.ok && outcome.reason === 'attempt_open') {
-      return fail(409, { error: 'attempt_open' });
+    if (
+      !outcome.ok &&
+      (outcome.reason === 'attempt_open' || outcome.reason === 'student_removed')
+    ) {
+      return fail(409, { error: outcome.reason });
     }
     return settle(outcome);
   });
