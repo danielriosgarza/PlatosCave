@@ -563,7 +563,7 @@ describe('exercise UI follow-ups', () => {
     expect(slider).toHaveAttribute('max', '100');
   });
 
-  it('A08 a hidden exercise is marked as hidden from students for an instructor', async () => {
+  it('a hidden exercise is marked as hidden from students for an instructor', async () => {
     exerciseApi({ role: 'instructor', visibility: 'hidden', releaseAt: '2099-01-15T09:00:00Z' });
     open();
     expect(await screen.findByText(/Hidden from students/)).toBeVisible();
@@ -600,7 +600,7 @@ describe('exercise UI follow-ups', () => {
     expect(calls.map((c) => c.url.split('/').at(-1))).toEqual(['exercise-attempt', 'exercise']);
   });
 
-  it('A08 an exercise that fails to open shows the server message, or offers Try again', async () => {
+  it('an exercise that fails to open shows the server message, or offers Try again', async () => {
     exerciseApi({ openFails: { status: 400, body: { message: 'This exercise has no steps.' } } });
     open();
     expect(await screen.findByRole('alert')).toHaveTextContent('This exercise has no steps.');

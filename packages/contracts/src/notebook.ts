@@ -106,10 +106,12 @@ export const joinLines = (text: string | string[]): string =>
 
 /**
  * Parses and checks the bytes of an `.ipynb` file: the notebook, or the reason to show the
- * editor (the first problem found, with where it is).
+ * editor (the first problem found, with where it is). `maxCells` refuses a longer notebook before
+ * its cells are checked.
  */
 export function parseNotebook(
   text: string,
+  { maxCells }: { maxCells?: number } = {},
 ): { ok: true; notebook: NbNotebook } | { ok: false; error: string } {
   let json: unknown;
   try {
@@ -121,6 +123,20 @@ export function parseNotebook(
     return {
       ok: false,
       error: 'Only nbformat 4 notebooks can be imported; save it with Jupyter 4 or later',
+    };
+  }
+  // Checked before the schema walks every cell, so a notebook of a million cells costs one parse.
+  if (
+    maxCells !== undefined &&
+    typeof json === 'object' &&
+    json !== null &&
+    'cells' in json &&
+    Array.isArray(json.cells) &&
+    json.cells.length > maxCells
+  ) {
+    return {
+      ok: false,
+      error: `The notebook has ${json.cells.length} cells; at most ${maxCells} are accepted`,
     };
   }
   const parsed = nbformatNotebook.safeParse(json);
