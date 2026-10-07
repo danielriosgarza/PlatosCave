@@ -1175,6 +1175,10 @@ export function notebookRelays(app: FastifyInstance, deps: RouteDeps): NotebookR
     timers,
     now: deps.now,
     log: app.log.child({ component: 'sessions' }),
+    defaultLease: {
+      idleTimeoutMin: deps.config.LEASE_IDLE_MINUTES,
+      gracePeriodMin: deps.config.LEASE_GRACE_MINUTES,
+    },
   });
   const kernels = new KernelRelay({
     db: deps.db,

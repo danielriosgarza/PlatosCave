@@ -37,8 +37,9 @@ export default function testRoutes(app: FastifyInstance, deps: RouteDeps): void 
     const userId = await userForVerifiedEmail(db(), body.email);
     const at = now();
     const authTime = new Date(at.getTime() - body.authenticatedMinutesAgo * 60_000);
-    const { token } = await createSession(db(), userId, { now: at, authTime });
-    reply.setCookie(SESSION_COOKIE, token, sessionCookieOptions(config.APP_ORIGIN));
+    const ttlMs = config.SESSION_TTL_MS;
+    const { token } = await createSession(db(), userId, { now: at, authTime, ttlMs });
+    reply.setCookie(SESSION_COOKIE, token, sessionCookieOptions(config.APP_ORIGIN, ttlMs));
     return { userId };
   });
 

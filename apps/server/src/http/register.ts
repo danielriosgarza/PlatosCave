@@ -126,6 +126,11 @@ export function registerRoute<C extends RouteContract>(
   handler: (args: RouteArgs<C>) => Promise<z.input<C['response']>> | z.input<C['response']>,
   options: {
     rateLimit?: RateLimitOptions;
+    /**
+     * A limiter built once by `app.rateLimit(options)` and passed to several routes, which then
+     * draw on one budget instead of one each. Declares the same 429 requirement as `rateLimit`.
+     */
+    sharedRateLimit?: ReturnType<FastifyInstance['rateLimit']>;
     /** Largest request body in bytes, when a route takes more than Fastify's 1 MiB; needs a 413. */
     bodyLimit?: number;
   } = {},
@@ -136,7 +141,7 @@ export function registerRoute<C extends RouteContract>(
     );
   }
   checkScopeParams(contract);
-  if (options.rateLimit && !contract.errors?.[429]) {
+  if ((options.rateLimit || options.sharedRateLimit) && !contract.errors?.[429]) {
     throw new Error(`${contract.method} ${contract.path} is rate limited but declares no 429`);
   }
   if (options.bodyLimit && !contract.errors?.[413]) {
@@ -148,7 +153,8 @@ export function registerRoute<C extends RouteContract>(
   if (contract.alternativeStatus) successes[contract.alternativeStatus] = contract.response;
   // The limiter runs before the scope resolver, so an over-limit request costs no session lookup.
   // Each limiter built by app.rateLimit() has its own store, so counts are per route.
-  const limiter = options.rateLimit ? app.rateLimit(options.rateLimit) : undefined;
+  const limiter =
+    options.sharedRateLimit ?? (options.rateLimit ? app.rateLimit(options.rateLimit) : undefined);
   const resolve = scopeResolver(app, contract);
   const archivedAnswer = archivedRefusal(contract);
   app.route({

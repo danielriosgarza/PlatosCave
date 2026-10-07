@@ -1,4 +1,5 @@
 import { expect, type Page, test } from '@playwright/test';
+import { joinLabClassAs } from './lab-classmate';
 
 test.use({ colorScheme: 'light' });
 
@@ -140,6 +141,8 @@ test('A05 a student highlights text, writes a private note and posts an instruct
 
 test('A05 the instructor sees only the shared question, answers it and resolves it; the student reopens it', async ({
   page,
+  playwright,
+  baseURL,
 }) => {
   const question = `Why does n − 1 appear? ${Date.now()}`;
   const privateNote = `Private ${Date.now()}`;
@@ -189,4 +192,24 @@ test('A05 the instructor sees only the shared question, answers it and resolves 
   await expect(mine.first().getByText('Resolved')).toBeVisible();
   await mine.first().getByRole('button', { name: 'Reopen' }).click();
   await expect(mine.first().getByText('Open', { exact: true })).toBeVisible();
+
+  // A classmate of the same class sees neither the question nor the private note.
+  const classmate = await page.context().browser()?.newContext({ baseURL });
+  if (!classmate) throw new Error('no browser');
+  const other = await classmate.newPage();
+  await joinLabClassAs(playwright, baseURL, other, `classmate-${Date.now()}@example.test`);
+  const unseen = await other.request.get(
+    `/api/classes/${lab.class}/resources/${resourceId}/annotations`,
+  );
+  expect(unseen.ok()).toBe(true);
+  const unseenBody = JSON.stringify(await unseen.json());
+  expect(unseenBody).not.toContain(question);
+  expect(unseenBody).not.toContain(privateNote);
+  await other.goto(reading);
+  await expect(other.getByText('Paragraph 1.', { exact: false }).first()).toBeVisible();
+  await other.getByRole('button', { name: /^Discussion/ }).click();
+  await expect(other.getByText(question)).toHaveCount(0);
+  await expect(other.getByText(privateNote)).toHaveCount(0);
+  await expect(other.locator('mark[data-marks]')).toHaveCount(0);
+  await classmate.close();
 });
