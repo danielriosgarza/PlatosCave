@@ -115,8 +115,15 @@
 }
 @media (pointer: coarse) {
   .tick {
-    width: var(--pc-touch-target);
-    height: var(--pc-touch-target);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: var(--pc-touch-target, 44px);
+    min-height: var(--pc-touch-target, 44px);
+  }
+  .tick input {
+    width: 24px;
+    height: 24px;
     margin: 0;
   }
 }

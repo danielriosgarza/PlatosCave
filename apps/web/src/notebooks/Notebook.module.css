@@ -274,6 +274,6 @@
 }
 @media (pointer: coarse) {
   .picker select {
-    min-height: var(--pc-touch-target);
+    min-height: var(--pc-touch-target, 44px);
   }
 }

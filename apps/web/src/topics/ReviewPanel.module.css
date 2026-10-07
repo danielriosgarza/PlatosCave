@@ -40,9 +40,9 @@ button.retry {
   cursor: pointer;
 }
 @media (pointer: coarse) {
-  .item {
+  label.item {
     align-items: center;
-    min-height: var(--pc-touch-target);
+    min-height: var(--pc-touch-target, 44px);
   }
   .item input[type="checkbox"] {
     width: 24px;

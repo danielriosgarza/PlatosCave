@@ -255,13 +255,14 @@ function Body({
                     {hasAssignment ? (
                       <td>
                         {releasable(row) && row.attempt ? (
-                          <input
-                            type="checkbox"
-                            className={styles.tick}
-                            aria-label={`Select ${row.name} for release`}
-                            checked={ticks.get(row.attempt.attemptId) === gradeSignature(row)}
-                            onChange={() => toggle(row)}
-                          />
+                          <label className={styles.tick}>
+                            <input
+                              type="checkbox"
+                              aria-label={`Select ${row.name} for release`}
+                              checked={ticks.get(row.attempt.attemptId) === gradeSignature(row)}
+                              onChange={() => toggle(row)}
+                            />
+                          </label>
                         ) : null}
                       </td>
                     ) : null}
