@@ -86,6 +86,7 @@ Commands:
                     pair this computer with your Parallax account
   run [--allow-net CIDR]... [--state-dir DIR] [--confirm-sessions]
                     connect this computer to Parallax and keep it connected
+  run --managed     run as a managed connector, configured only from the environment
   status [--json]   show whether this computer is paired, and with which server
   unpair [--yes]    revoke this computer in Parallax and delete its identity
   doctor [--json]   check what the connector needs on this computer

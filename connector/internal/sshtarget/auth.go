@@ -198,6 +198,18 @@ func (a *hopAuth) signers() ([]ssh.Signer, error) {
 			}
 		}
 		out = append(out, base)
+	case protocol.AuthManagedKey:
+		// A managed connector's own key store; never the agent, never a prompt.
+		kf, err := a.loadManagedKey()
+		if err != nil {
+			return nil, err
+		}
+		if kf.cert != nil {
+			if cs, err := ssh.NewCertSigner(kf.cert, kf); err == nil {
+				out = append(out, cs)
+			}
+		}
+		out = append(out, kf)
 	default:
 		// connect refuses any other reference before dialling.
 		return nil, fmt.Errorf("authentication method %q is not served here", a.ref.Method)
@@ -279,7 +291,40 @@ func (a *hopAuth) loadKey() (*keyFile, error) {
 	if err != nil {
 		return nil, a.record(protocol.CodeKeyFileUnreadable, "the key file %s cannot be read: %v", a.ref.KeyPath, unwrapPathError(err))
 	}
-	kf := &keyFile{a: a, path: a.ref.KeyPath, raw: raw}
+	kf, err := a.parseKey(a.ref.KeyPath, raw, func() []byte {
+		data, _ := os.ReadFile(path + ".pub")
+		return data
+	})
+	if err != nil {
+		return nil, err
+	}
+	if data, err := os.ReadFile(path + "-cert.pub"); err == nil {
+		kf.setCert(data)
+	}
+	return kf, nil
+}
+
+// loadManagedKey reads the key a managed_key reference names from the managed key store.
+func (a *hopAuth) loadManagedKey() (*keyFile, error) {
+	label := "managed key " + a.ref.KeyID
+	raw, cert, err := a.t.ManagedKey(a.ref.KeyID)
+	if err != nil {
+		return nil, a.record(protocol.CodeKeyFileUnreadable, "the %s cannot be used: %v", label, err)
+	}
+	kf, err := a.parseKey(label, raw, func() []byte { return nil })
+	if err != nil {
+		return nil, err
+	}
+	if cert != nil {
+		kf.setCert(cert)
+	}
+	return kf, nil
+}
+
+// parseKey reads a private key whose public half is known before it is unlocked; pub supplies
+// the public key file of an old-format encrypted key.
+func (a *hopAuth) parseKey(label string, raw []byte, pub func() []byte) (*keyFile, error) {
+	kf := &keyFile{a: a, path: label, raw: raw}
 	signer, err := ssh.ParsePrivateKey(raw)
 	var missing *ssh.PassphraseMissingError
 	switch {
@@ -288,7 +333,7 @@ func (a *hopAuth) loadKey() (*keyFile, error) {
 	case errors.As(err, &missing):
 		kf.pub = missing.PublicKey
 		if kf.pub == nil {
-			if data, err := os.ReadFile(path + ".pub"); err == nil {
+			if data := pub(); data != nil {
 				if pub, _, _, _, err := ssh.ParseAuthorizedKey(data); err == nil {
 					kf.pub = pub
 				}
@@ -303,16 +348,18 @@ func (a *hopAuth) loadKey() (*keyFile, error) {
 			kf.pub = s.PublicKey()
 		}
 	default:
-		return nil, a.record(protocol.CodeKeyFileUnreadable, "%s is not a private key the connector can read", a.ref.KeyPath)
-	}
-	if data, err := os.ReadFile(path + "-cert.pub"); err == nil {
-		if pub, _, _, _, err := ssh.ParseAuthorizedKey(data); err == nil {
-			if cert, ok := pub.(*ssh.Certificate); ok && bytes.Equal(cert.Key.Marshal(), kf.pub.Marshal()) {
-				kf.cert = cert
-			}
-		}
+		return nil, a.record(protocol.CodeKeyFileUnreadable, "%s is not a private key the connector can read", label)
 	}
 	return kf, nil
+}
+
+// setCert attaches a certificate for the key, when data is one.
+func (k *keyFile) setCert(data []byte) {
+	if pub, _, _, _, err := ssh.ParseAuthorizedKey(data); err == nil {
+		if cert, ok := pub.(*ssh.Certificate); ok && bytes.Equal(cert.Key.Marshal(), k.pub.Marshal()) {
+			k.cert = cert
+		}
+	}
 }
 
 func (k *keyFile) PublicKey() ssh.PublicKey { return k.pub }
