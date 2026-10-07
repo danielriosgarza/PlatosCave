@@ -191,6 +191,7 @@ export async function loadClassReview(
               ? { points: grade.points, possible: grade.possible, state: grade.state }
               : null,
             unreleasedChange: changed(latest.id),
+            newestGradeId: newest.get(latest.id)?.id ?? null,
           }
         : null,
       needsReview: inScope.some((a) => AWAITING.has(a.state) || changed(a.id)),
