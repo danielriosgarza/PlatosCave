@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Restores a backup written by scripts/backup.sh into an empty database and a new storage root
-# (spec §13, P4-07).
+# or an empty bucket (spec §13, P4-07, P4-07a).
 #
 #   DATABASE_URL=… STORAGE_DIR=… scripts/restore.sh <backup-dir>
+#   DATABASE_URL=… STORAGE_DRIVER=s3 S3_BUCKET=… S3_…=… scripts/restore.sh <backup-dir>
 #
 # Nothing is overwritten: the database in DATABASE_URL must hold no tables, views, sequences,
 # functions, types, extensions or schemas of its own (create it first, for example with
@@ -12,9 +13,13 @@
 # database is restored in one transaction; the staging directory is renamed to STORAGE_DIR last
 # (mode 0755), or, when STORAGE_DIR already exists, its objects are copied into it and its mode
 # is kept.
+# With STORAGE_DRIVER=s3, S3_BUCKET must exist and hold no objects. After the checks above, the
+# objects are uploaded by apps/server/src/scripts/s3-backup.ts (never over an existing key) and
+# read back against storage.manifest; the database is restored after that, and if it fails, the
+# objects this run uploaded are deleted again. A backup of either driver restores into either.
 # Roles are cluster-wide and not in the dump: the restoring role owns the restored objects, and
 # grants to other roles (parallax_runner, scripts/runner-role.sql) need those roles to exist.
-# Only STORAGE_DRIVER=fs is supported; see docs/backup-restore.md.
+# See docs/backup-restore.md.
 # PG_BIN overrides the directory of pg_restore and psql (default: newest /usr/lib/postgresql/*/bin).
 set -euo pipefail
 
@@ -24,9 +29,20 @@ die() { echo "restore: $*" >&2; exit 1; }
 [ -d "$1" ] || die "$1 is not a directory"
 IN="$(cd "$1" && pwd)"
 [ -n "${DATABASE_URL:-}" ] || die "DATABASE_URL is required"
-[ "${STORAGE_DRIVER:-fs}" = fs ] || die "STORAGE_DRIVER=${STORAGE_DRIVER} is not supported; only fs"
-STORAGE="${STORAGE_DIR:-.local/storage}"
-STORAGE="${STORAGE%/}"
+DRIVER="${STORAGE_DRIVER:-fs}"
+case "$DRIVER" in
+  fs)
+    STORAGE="${STORAGE_DIR:-.local/storage}"
+    STORAGE="${STORAGE%/}"
+    ;;
+  s3)
+    [ -n "${S3_BUCKET:-}" ] || die "S3_BUCKET is required"
+    SERVER="$(cd "$(dirname "$0")/../apps/server" && pwd)"
+    [ -x "$SERVER/node_modules/.bin/tsx" ] || die "run pnpm install first (apps/server needs tsx)"
+    s3() { (cd "$SERVER" && node_modules/.bin/tsx src/scripts/s3-backup.ts "$@"); }
+    ;;
+  *) die "STORAGE_DRIVER=$DRIVER is not supported; only fs and s3" ;;
+esac
 
 BIN="${PG_BIN:-$(ls -d /usr/lib/postgresql/*/bin 2>/dev/null | sort -V | tail -1 || true)}"
 if [ -n "$BIN" ]; then PATH="$BIN:$PATH"; fi
@@ -64,7 +80,9 @@ verify_objects() {
 verify_objects "$IN/storage"
 
 # 2. The targets are empty.
-if [ -e "$STORAGE" ]; then
+if [ "$DRIVER" = s3 ]; then
+  s3 check-empty || die "bucket $S3_BUCKET is not an empty bucket"
+elif [ -e "$STORAGE" ]; then
   [ -d "$STORAGE" ] && [ -z "$(ls -A "$STORAGE")" ] || die "storage root $STORAGE is not empty"
   [ -w "$STORAGE" ] && [ -x "$STORAGE" ] || die "storage root $STORAGE is not writable"
 fi
@@ -86,6 +104,29 @@ schemas="$(psql "$DATABASE_URL" -X -v ON_ERROR_STOP=1 -Atc "
      and nspname not like 'pg_toast%' and nspname not like 'pg_temp%'
   ")"
 [ "$own" = 0 ] && [ "$schemas" = 0 ] && [ "$procs" = 0 ] || die "the target database is not empty"
+
+if [ "$DRIVER" = s3 ]; then
+  # 3. Objects into the bucket, read back and checked again.
+  WRITTEN="$(mktemp)"
+  cleanup() {
+    if s3 remove "$WRITTEN"; then
+      rm -f "$WRITTEN"
+    else
+      echo "restore: could not delete the uploaded objects listed in $WRITTEN" >&2
+    fi
+  }
+  trap cleanup EXIT
+  s3 upload "$IN/storage" "$IN/storage.manifest" "$WRITTEN" || die "cannot upload the objects into bucket $S3_BUCKET"
+  s3 verify "$IN/storage.manifest" || die "objects in bucket $S3_BUCKET do not match storage.manifest"
+
+  # 4. The database, all or nothing.
+  pg_restore --exit-on-error --single-transaction --no-owner --dbname="$DATABASE_URL" "$IN/database.dump"
+
+  trap - EXIT
+  rm -f "$WRITTEN"
+  echo "restore: restored $IN ($(wc -l < "$IN/storage.manifest" | tr -d ' ') objects) into bucket $S3_BUCKET"
+  exit 0
+fi
 
 # 3. Objects into a staging directory beside the storage root, checked again.
 parent="$(dirname "$STORAGE")"

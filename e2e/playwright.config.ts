@@ -12,7 +12,8 @@ export default defineConfig({
   testIgnore: process.env.CONNECTOR_E2E ? [] : ['**/connector/**'],
   timeout: 30_000,
   retries: CI ? 1 : 0,
-  workers: CI ? 2 : undefined,
+  // The connector flows share limits.ts counts and endSessions: one worker keeps them from racing.
+  workers: process.env.CONNECTOR_E2E ? 1 : CI ? 2 : undefined,
   reporter: CI ? [['list'], ['html', { open: 'never' }]] : [['list']],
   globalSetup: './global-setup.ts',
   use: {
