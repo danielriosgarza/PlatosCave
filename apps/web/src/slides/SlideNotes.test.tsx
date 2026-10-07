@@ -3,8 +3,15 @@ import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Annotation, MarginList, Thread } from '../reading/margin/data';
-import { allowDrafts, clearDrafts, draftKey, saveDraft } from '../reading/margin/drafts';
+import {
+  allowDrafts,
+  clearDrafts,
+  draftKey,
+  listDrafts,
+  saveDraft,
+} from '../reading/margin/drafts';
 import type { PdfDocument } from '../reading/pdfjs';
+import { holdDraftDeletes } from '../test/draftHold';
 import {
   CLASS_A,
   makeMe,
@@ -122,6 +129,10 @@ function api(w: World) {
       const saved = { ...held, body: String(body?.body), revision: held.revision + 1 };
       w.annotations = w.annotations.map((a) => (a.id === saved.id ? saved : a));
       return { status: 200, body: saved };
+    }
+    if (saving && method === 'DELETE') {
+      w.annotations = w.annotations.filter((a) => a.id !== saving[1]);
+      return { status: 200, body: { id: saving[1] } };
     }
     if (url === `${BASE}/resources/${RES}/threads` && method === 'POST') {
       const anchor = body?.anchor as Thread['anchor'];
@@ -290,6 +301,165 @@ describe('slide notes', () => {
     expect(within(margin).getByText('No questions or comments on this slide yet.')).toBeVisible();
   });
 
+  it('A05 a reload before a posted question\u2019s device copy is gone does not bring it back as unsent', async () => {
+    const user = userEvent.setup();
+    const w = world();
+    api(w);
+    // The device's delete of the posted question's draft stays uncommitted until the test lets it go.
+    const release = holdDraftDeletes();
+    const { margin } = await openNotes(user);
+    await user.click(screen.getByRole('button', { name: /^Discussion/ }));
+    await user.type(screen.getByLabelText('Comment or question'), 'Is slide 1 on the test?');
+    await user.click(screen.getByRole('button', { name: 'Post' }));
+    expect(await within(margin).findByText('You → Instructor')).toBeVisible();
+    // The reload: the margin comes back with whatever the device still holds.
+    cleanup();
+    renderApp(SLIDES);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    // The posted question is still being cleared from the device, so the margin waits and does not
+    // offer it again.
+    const notes = screen.queryByRole('button', { name: 'Notes' });
+    if (notes) await user.click(notes);
+    const discussion = screen.queryByRole('button', { name: /^Discussion/ });
+    if (discussion) await user.click(discussion);
+    expect(screen.queryByDisplayValue('Is slide 1 on the test?')).toBeNull();
+    release(); // the device commits at last
+    if (!notes) await user.click(await screen.findByRole('button', { name: 'Notes' }));
+    if (!discussion) await user.click(await screen.findByRole('button', { name: /^Discussion/ }));
+    expect(screen.getByLabelText('Comment or question')).toHaveValue('');
+    expect(w.calls.filter((c) => c.method === 'POST')).toHaveLength(1);
+    await waitFor(async () => expect(await listDrafts(SAM_ID, CLASS_A, RES)).toEqual([]));
+  });
+
+  it('A03 a remount before a deleted note\u2019s device copy is gone does not bring the note back', async () => {
+    const user = userEvent.setup();
+    const w = world([note(uuid(1), 0, 'Gone soon')]);
+    const mock = api(w);
+    const original = mock.getMockImplementation() as (
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ) => Promise<Response>;
+    // The device's delete is held from the moment the server's delete arrives: the one that follows
+    // the server's answer is the one under test.
+    let release: () => void = () => {};
+    mock.mockImplementation(async (input, init) => {
+      if (init?.method === 'DELETE') {
+        // A save that finished during the delete wrote the device copy again; clearing it is held.
+        await saveDraft(late);
+        release = holdDraftDeletes();
+      }
+      return original(input, init);
+    });
+    const late = {
+      key: draftKey(SAM_ID, CLASS_A, RES, uuid(1)),
+      userId: SAM_ID,
+      classId: CLASS_A,
+      resourceId: RES,
+      kind: 'note' as const,
+      annotationId: uuid(1),
+      expectedRevision: 1,
+      anchor: { kind: 'slide' as const, page: 0 },
+      body: 'Unsent edit',
+      audience: null,
+      updatedAt: Date.now(),
+    };
+    await saveDraft(late);
+    await openNotes(user);
+    await waitFor(async () => expect(await noteField(1)).toHaveValue('Unsent edit'));
+    await user.click(screen.getByRole('button', { name: 'Delete note' }));
+    await waitFor(() => expect(w.annotations).toEqual([]));
+    cleanup();
+    renderApp(SLIDES);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    const notes = screen.queryByRole('button', { name: 'Notes' });
+    if (notes) await user.click(notes);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(screen.queryByDisplayValue('Unsent edit')).toBeNull();
+    release();
+    if (!notes) await user.click(await screen.findByRole('button', { name: 'Notes' }));
+    expect(await noteField(1)).toHaveValue('');
+    await waitFor(async () => expect(await listDrafts(SAM_ID, CLASS_A, RES)).toEqual([]));
+  });
+
+  it('A03 a remount while a note\u2019s server delete is still running does not bring the note back', async () => {
+    const user = userEvent.setup();
+    const w = world([note(uuid(1), 0, 'Gone soon')]);
+    const mock = api(w);
+    const original = mock.getMockImplementation() as (
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ) => Promise<Response>;
+    let finish: () => void = () => {};
+    const serverDelete = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    mock.mockImplementation(async (input, init) => {
+      if (init?.method === 'DELETE') {
+        // The text typed before Delete is on the device (and unsent) while the server answers.
+        await saveDraft({
+          key: draftKey(SAM_ID, CLASS_A, RES, uuid(1)),
+          userId: SAM_ID,
+          classId: CLASS_A,
+          resourceId: RES,
+          kind: 'note',
+          annotationId: uuid(1),
+          expectedRevision: 1,
+          anchor: { kind: 'slide', page: 0 },
+          body: 'Unsent edit',
+          audience: null,
+          updatedAt: Date.now(),
+        });
+        const answer = await original(input, init);
+        await serverDelete;
+        return answer;
+      }
+      return original(input, init);
+    });
+    await openNotes(user);
+    expect(await noteField(1)).toHaveValue('Gone soon');
+    await user.click(screen.getByRole('button', { name: 'Delete note' }));
+    await waitFor(async () => expect(await listDrafts(SAM_ID, CLASS_A, RES)).toHaveLength(1));
+    cleanup();
+    renderApp(SLIDES);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    const notes = screen.queryByRole('button', { name: 'Notes' });
+    if (notes) await user.click(notes);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    // Still deleting: the margin waits and does not offer the text again.
+    expect(screen.queryByDisplayValue('Unsent edit')).toBeNull();
+    finish();
+    if (!notes) await user.click(await screen.findByRole('button', { name: 'Notes' }));
+    expect(await noteField(1)).toHaveValue('');
+    await waitFor(async () => expect(await listDrafts(SAM_ID, CLASS_A, RES)).toEqual([]));
+    expect(w.annotations).toEqual([]);
+    expect(w.calls.filter((c) => c.method === 'PUT' || c.method === 'POST')).toEqual([]);
+  });
+
+  it('A05 a remount before a cleared question box\u2019s device copy is gone does not bring the text back', async () => {
+    const user = userEvent.setup();
+    api(world());
+    const release = holdDraftDeletes();
+    await openNotes(user);
+    await user.click(screen.getByRole('button', { name: /^Discussion/ }));
+    const box = screen.getByLabelText('Comment or question');
+    await user.type(box, 'Is slide 1 on the test?');
+    await waitFor(async () => expect(await listDrafts(SAM_ID, CLASS_A, RES)).toHaveLength(1));
+    await user.clear(box);
+    cleanup();
+    renderApp(SLIDES);
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    const notes = screen.queryByRole('button', { name: 'Notes' });
+    if (notes) await user.click(notes);
+    const discussion = screen.queryByRole('button', { name: /^Discussion/ });
+    if (discussion) await user.click(discussion);
+    expect(screen.queryByDisplayValue('Is slide 1 on the test?')).toBeNull();
+    release();
+    if (!notes) await user.click(await screen.findByRole('button', { name: 'Notes' }));
+    if (!discussion) await user.click(await screen.findByRole('button', { name: /^Discussion/ }));
+    expect(screen.getByLabelText('Comment or question')).toHaveValue('');
+    await waitFor(async () => expect(await listDrafts(SAM_ID, CLASS_A, RES)).toEqual([]));
+  });
+
   it('A24 notes the new deck revision could not place stay listed as needing reattachment', async () => {
     const user = userEvent.setup();
     const lost = note(uuid(50), 4, 'Remember the formula');
@@ -395,6 +565,46 @@ describe('slide notes', () => {
     await waitFor(() => expect(w.threads).toHaveLength(1));
     await waitFor(() => expect(screen.getByText('Why n minus one?')).toBeVisible());
     expect(screen.getByLabelText('Comment or question')).toHaveValue('');
+  });
+
+  it('A05 text typed while a question is posting is all that stays in the box and on the device', async () => {
+    const user = userEvent.setup();
+    const w = world();
+    const mock = api(w);
+    const original = mock.getMockImplementation() as (
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ) => Promise<Response>;
+    let release: () => void = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    mock.mockImplementation(async (input, init) => {
+      if (init?.method === 'POST' && String(input).endsWith('/threads')) await held;
+      return original(input, init);
+    });
+    await openNotes(user);
+    await user.click(screen.getByRole('button', { name: /^Discussion/ }));
+    const box = screen.getByLabelText('Comment or question');
+    await user.type(box, 'Why n minus one?');
+    await user.click(screen.getByRole('button', { name: 'Post' }));
+    await user.type(box, ' And why not n?');
+    release();
+    await waitFor(() => expect(w.threads).toHaveLength(1));
+    await waitFor(() => expect(box).toHaveValue(' And why not n?'));
+    await waitFor(async () => {
+      const drafts = await listDrafts(SAM_ID, CLASS_A, RES);
+      expect(drafts.map((d) => d.body)).toEqual([' And why not n?']);
+    });
+    // After a reload the margin offers only the new text; the posted question is not sent again.
+    cleanup();
+    renderApp(SLIDES);
+    await user.click(await screen.findByRole('button', { name: 'Notes' }));
+    await user.click(await screen.findByRole('button', { name: /^Discussion/ }));
+    await waitFor(() =>
+      expect(screen.getByLabelText('Comment or question')).toHaveValue(' And why not n?'),
+    );
+    expect(w.calls.filter((c) => c.method === 'POST')).toHaveLength(1);
   });
 
   it('A24 an unsent edit of a saved note is restored over the saved text', async () => {

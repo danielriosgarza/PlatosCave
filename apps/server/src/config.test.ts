@@ -193,6 +193,7 @@ test('A02 INSTRUCTOR_EMAILS is a trimmed, lower-cased email list, empty by defau
 test('RUNNER_RUNTIMES lists the approved runtimes; production pins each by digest', () => {
   expect(loadConfig({}).RUNNER_RUNTIMES.map((r) => [r.id, r.image, r.digest])).toEqual([
     ['python-3.12', 'parallax-runner-python:dev', null],
+    ['r-4.6', 'parallax-runner-r:dev', null],
   ]);
   const runtime = {
     id: 'python-3.12',

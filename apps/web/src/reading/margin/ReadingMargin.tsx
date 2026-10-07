@@ -201,7 +201,7 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
         save: (id, revision, body, final) => actions.saveNote(id, revision, body, final),
         persist: (d) => {
           if (!scoped || !userId) return;
-          if (!d) return void removeDraft(scoped);
+          if (!d) return removeDraft(scoped);
           void saveDraft(noteDraft(scoped, userId, init.anchor, d));
         },
         acknowledged: (annotation) => actions.acknowledged(annotation),
@@ -532,8 +532,10 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
       setAsk(next);
       if (userId) {
         const key = draftKey(userId, classId, resourceId, ASK_ID);
-        if (next.body.trim() === '') void removeDraft(key);
-        else void saveDraft({ ...askDraft(next), key, userId, classId, resourceId });
+        // The send stays open until the device copy is really gone: a reading opened again before
+        // that would offer the posted question as unsent and post it twice.
+        if (next.body.trim() === '') await removeDraft(key);
+        else await saveDraft({ ...askDraft(next), key, userId, classId, resourceId });
       }
       return;
     }
@@ -544,7 +546,20 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
     }));
   };
 
+  // The note's device draft stays pending for the whole delete (the editor's discard leaves it), so
+  // a margin that comes back while the server's delete runs does not restore the note as unsent.
   const removeNote = async (entryId: string, controller: NoteController | undefined) => {
+    const sent = userId
+      ? beginSend(draftKey(userId, classId, resourceId, controller?.key ?? entryId))
+      : null;
+    try {
+      await deleteNote(entryId, controller);
+    } finally {
+      sent?.();
+    }
+  };
+
+  const deleteNote = async (entryId: string, controller: NoteController | undefined) => {
     setDeleteProblem(null);
     // A save still running is waited for, so a note it creates is deleted too and cannot return.
     const left = controller ? await controller.discard() : null;

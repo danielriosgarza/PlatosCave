@@ -35,7 +35,10 @@ export interface ClassContext extends ScopeBase {
   readonly courseId: string;
   readonly courseTitle: string;
   readonly releaseId: string | null;
+  /** The class is archived, or its course is: either way it keeps reads and refuses writes (§4). */
   readonly archived: boolean;
+  /** Whether the course is the one archived, so restoring the class alone would not reopen it. */
+  readonly courseArchived: boolean;
 }
 
 export interface ClassScope extends ClassContext {
@@ -62,6 +65,7 @@ export interface CourseScope extends ScopeBase {
   readonly [brand]: 'course';
   readonly courseId: string;
   readonly courseTitle: string;
+  readonly archived: boolean;
   readonly membership: { id: string; owner: boolean; editor: boolean; publisher: boolean };
   readonly grants: { owner: boolean; editor: boolean; publisher: boolean };
 }
@@ -200,7 +204,8 @@ async function resolveClass(
     courseId: row.courseId,
     courseTitle: row.courseTitle,
     releaseId: row.releaseId,
-    archived: row.archivedAt !== null,
+    archived: row.archivedAt !== null || row.courseArchivedAt !== null,
+    courseArchived: row.courseArchivedAt !== null,
   };
   // §3: the course owner manages membership of every class of the course, member or not.
   const owner = row.ownsCourse === true && user.kind === 'user';
@@ -258,6 +263,7 @@ async function resolveCourse(
     ...base,
     courseId,
     courseTitle: row.courseTitle,
+    archived: row.courseArchivedAt !== null,
     membership: { id: row.id, ...grants },
     grants,
   };

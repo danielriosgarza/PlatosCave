@@ -3,6 +3,7 @@ import { purgeSigninTokens } from '../auth/email-provider';
 import type { Db } from '../db/client';
 import { purgePairings } from '../db/connectors/pairing';
 import { expirePendingConnectors } from '../db/connectors/registry';
+import { applyRetention } from '../db/lifecycle';
 import type { JobLogger } from './logger';
 
 export const PURGE_SIGNIN_TOKENS = 'maintenance.purge-signin-tokens';
@@ -23,6 +24,30 @@ export async function purgeConnectorPairings(db: Db, now: Date) {
   return { purged, expired };
 }
 
+export const RETENTION = 'maintenance.retention';
+/** Daily, at 03:29. */
+export const RETENTION_CRON = '29 3 * * *';
+
+/** The explicit retention policy (§13): a null period leaves that rule off. */
+export interface RetentionPolicy {
+  deactivatedGraceDays: number | null;
+  auditEventDays: number | null;
+}
+
+export const retentionPolicy = (config: {
+  RETENTION_DEACTIVATED_GRACE_DAYS?: number | undefined;
+  RETENTION_AUDIT_DAYS?: number | undefined;
+}): RetentionPolicy | undefined => {
+  const policy = {
+    deactivatedGraceDays: config.RETENTION_DEACTIVATED_GRACE_DAYS ?? null,
+    auditEventDays: config.RETENTION_AUDIT_DAYS ?? null,
+  };
+  // With every period unset there is nothing to run, so the queue is not even scheduled.
+  return policy.deactivatedGraceDays === null && policy.auditEventDays === null
+    ? undefined
+    : policy;
+};
+
 const maintenance: { name: string; cron: string; run: (db: Db, now: Date) => Promise<object> }[] = [
   {
     name: PURGE_SIGNIN_TOKENS,
@@ -41,8 +66,30 @@ const maintenance: { name: string; cron: string; run: (db: Db, now: Date) => Pro
  * or course, so they sit outside the scoped-job wrapper (ADR-0002): they take no payload and
  * are only ever started by the schedule below.
  */
-export async function workMaintenance(boss: PgBoss, db: Db, log: JobLogger): Promise<string[]> {
-  for (const { name, cron, run } of maintenance) {
+export async function workMaintenance(
+  boss: PgBoss,
+  db: Db,
+  log: JobLogger,
+  policy?: RetentionPolicy,
+): Promise<string[]> {
+  const all = policy
+    ? [
+        ...maintenance,
+        {
+          name: RETENTION,
+          cron: RETENTION_CRON,
+          run: (d: Db, now: Date) => applyRetention(d, policy, now),
+        },
+      ]
+    : maintenance;
+  if (!policy) {
+    // pg-boss keeps schedules in the database: one left by an earlier policy would keep queuing
+    // jobs that nothing works.
+    await boss.unschedule(RETENTION).catch((err: unknown) => {
+      log.warn({ err, job: RETENTION }, 'maintenance unschedule failed');
+    });
+  }
+  for (const { name, cron, run } of all) {
     await boss.createQueue(name);
     await boss.schedule(name, cron);
     await boss.work(name, async () => {
@@ -58,5 +105,5 @@ export async function workMaintenance(boss: PgBoss, db: Db, log: JobLogger): Pro
     });
     log.info({ job: name, cron }, 'maintenance scheduled');
   }
-  return maintenance.map((m) => m.name);
+  return all.map((m) => m.name);
 }

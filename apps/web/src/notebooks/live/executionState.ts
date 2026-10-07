@@ -4,6 +4,7 @@ import type {
   KernelState,
   LiveOutput,
 } from '@parallax/contracts';
+import { MAX_LIVE_TEXT_CHARS, stripAnsi } from './liveOutput';
 
 /**
  * The browser's view of one live notebook session (docs/design/connector.md §10.5, §10.6): a
@@ -34,6 +35,8 @@ export interface LiveExecution {
   outputsIncomplete: boolean;
   generation: number;
   outputs: OutputItem[];
+  /** Characters of stream text kept in `outputs`; no more is kept past the display cap. */
+  textChars: number;
   /** Earlier output of this execution was dropped from the relay's buffer (§10.6). */
   truncated: boolean;
   prompt: InputPrompt | null;
@@ -177,6 +180,7 @@ function apply(state: LiveState, message: ChannelServerMessage): LiveState {
         outputsIncomplete: message.outputsIncomplete || (existing?.carriedOver ?? false),
         generation: message.generation,
         outputs: existing?.outputs ?? [],
+        textChars: existing?.textChars ?? 0,
         truncated: existing?.truncated ?? false,
         prompt: existing && !FINAL.has(message.state) ? existing.prompt : null,
         carriedOver: existing?.carriedOver ?? false,
@@ -197,15 +201,9 @@ function apply(state: LiveState, message: ChannelServerMessage): LiveState {
       if (!execution) return { ...state, eventSeq: message.eventSeq };
       let next = execution;
       if (message.kind === 'output' && message.output) {
-        next = {
-          ...next,
-          outputs: [
-            ...next.outputs,
-            { eventSeq: message.eventSeq, generation: message.generation, output: message.output },
-          ],
-        };
+        next = appendOutput(next, message.eventSeq, message.generation, message.output);
       } else if (message.kind === 'clear_output') {
-        next = { ...next, outputs: [] };
+        next = { ...next, outputs: [], textChars: 0 };
       } else if (message.kind === 'input_request' && message.input) {
         next = { ...next, prompt: message.input };
       }
@@ -258,6 +256,53 @@ function apply(state: LiveState, message: ChannelServerMessage): LiveState {
       return { ...state, error: { code: message.code, ...detail } };
     }
   }
+}
+
+/**
+ * Adds one output. Consecutive stream text of one stream and kernel generation joins the
+ * previous item, and stream text past the display cap is not kept: the execution is marked
+ * truncated instead, so memory stays bounded however long a cell prints.
+ */
+function appendOutput(
+  execution: LiveExecution,
+  eventSeq: number,
+  generation: number,
+  output: LiveOutput,
+): LiveExecution {
+  if (output.output_type !== 'stream') {
+    return { ...execution, outputs: [...execution.outputs, { eventSeq, generation, output }] };
+  }
+  const room = Math.max(MAX_LIVE_TEXT_CHARS - execution.textChars, 0);
+  const text = stripAnsi(output.text);
+  if (text.length === 0) return execution;
+  if (room === 0) return { ...execution, truncated: true };
+  const kept = text.slice(0, room);
+  const truncated = execution.truncated || kept.length < text.length;
+  const textChars = execution.textChars + kept.length;
+  const last = execution.outputs[execution.outputs.length - 1];
+  if (
+    last?.output.output_type === 'stream' &&
+    last.output.name === output.name &&
+    last.generation === generation
+  ) {
+    const merged: OutputItem = {
+      eventSeq,
+      generation,
+      output: { ...last.output, text: last.output.text + kept },
+    };
+    return {
+      ...execution,
+      outputs: [...execution.outputs.slice(0, -1), merged],
+      textChars,
+      truncated,
+    };
+  }
+  return {
+    ...execution,
+    outputs: [...execution.outputs, { eventSeq, generation, output: { ...output, text: kept } }],
+    textChars,
+    truncated,
+  };
 }
 
 function insertBySeq(state: LiveState, added: LiveExecution): string[] {

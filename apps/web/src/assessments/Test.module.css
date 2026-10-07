@@ -354,3 +354,74 @@
   font: var(--pc-text-section);
   margin: 0 0 12px;
 }
+
+/* Results (§11): ported from .pc-test-grid / .pc-terms; the score line reuses the receipt scale. */
+.score {
+  font: var(--pc-text-title);
+  margin: 4px 0 0;
+}
+.question {
+  border-top: 1px solid var(--pc-rule);
+  padding: 20px 0;
+}
+.question h3 {
+  font: var(--pc-text-section);
+  margin: 0 0 8px;
+}
+.answerBox {
+  border: 1px solid var(--pc-rule);
+  background: var(--pc-sheet);
+  padding: 10px 12px;
+  margin: 8px 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.feedbackNote {
+  margin: 6px 0;
+  padding-left: 10px;
+  border-left: 3px solid var(--pc-ink);
+  font: var(--pc-text-ui);
+}
+.codeLines {
+  list-style: none;
+  margin: 8px 0;
+  padding: 0;
+  border: 1px solid var(--pc-rule);
+  font: var(--pc-text-code);
+  overflow-x: auto;
+}
+.codeLines li {
+  display: grid;
+  grid-template-columns: 3em minmax(0, 1fr);
+}
+.codeLines li > span:first-child {
+  background: var(--pc-soft);
+  color: var(--pc-muted);
+  text-align: right;
+  padding: 0 8px;
+  user-select: none;
+}
+.codeLines pre {
+  margin: 0;
+  padding: 0 10px;
+  white-space: pre;
+}
+.codeLines .feedbackNote {
+  grid-column: 2;
+  font: var(--pc-text-ui);
+  margin: 2px 10px 6px;
+}
+.checks {
+  list-style: none;
+  margin: 8px 0;
+  padding: 0;
+  font: var(--pc-text-ui);
+}
+.checks li {
+  padding: 6px 0;
+  border-top: 1px solid var(--pc-rule);
+}
+
+.block {
+  display: block;
+}

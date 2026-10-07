@@ -717,6 +717,71 @@ describe('live notebook', () => {
     expect(screen.getByRole('alert')).toHaveTextContent('Parallax closed the connection');
   });
 
+  it('A31 a channel the relay closed for good stays closed when the browser goes offline and back', () => {
+    vi.useFakeTimers();
+    const { socket } = attach();
+    socket.drop(1011);
+    expect(screen.getByRole('alert')).toHaveTextContent('Parallax closed the connection');
+    vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
+    act(() => {
+      window.dispatchEvent(new Event('offline'));
+    });
+    vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(true);
+    act(() => {
+      window.dispatchEvent(new Event('online'));
+    });
+    act(() => {
+      vi.advanceTimersByTime(60_000);
+    });
+    expect(FakeSocket.all).toHaveLength(1);
+    expect(screen.getByRole('alert')).toHaveTextContent('Parallax closed the connection');
+    expect(screen.queryByText(/is trying again/)).not.toBeInTheDocument();
+  });
+
+  it('A31 Run all stops at a cell that finished ok with incomplete output', () => {
+    const { socket } = attach();
+    fireEvent.click(screen.getByRole('button', { name: 'Run all' }));
+    const [first] = socket.frames('execute');
+    socket.receive({
+      t: 'execution',
+      executionId: exec(1),
+      ref: first?.ref,
+      cellId: 'c1',
+      seq: 1,
+      state: 'running',
+      outputsIncomplete: false,
+      generation: 0,
+    });
+    // A relay restart: the same execution is reported finished, its output not complete.
+    socket.receive(ready({ epoch: '00000000-0000-4000-8000-0000000f0009' }));
+    socket.receive({
+      t: 'execution',
+      executionId: exec(1),
+      ref: first?.ref,
+      cellId: 'c1',
+      seq: 1,
+      state: 'ok',
+      executionCount: 1,
+      outputsIncomplete: true,
+      generation: 0,
+    });
+    expect(
+      screen.getByText(/Run all stopped at cell 2 \[1\]: its output is incomplete/),
+    ).toBeInTheDocument();
+    expect(socket.frames('execute').map((m) => m.cellId)).toEqual(['c1']);
+    expect(cellSection('c1')).toHaveTextContent('Incomplete');
+  });
+
+  it('A31 Start the kernel is sent once while its request is pending', async () => {
+    attach({}, { kernel: null });
+    const start = screen.getByRole('button', { name: 'Start the kernel' });
+    fireEvent.click(start);
+    fireEvent.click(start);
+    expect(start).toBeDisabled();
+    await waitFor(() => expect(posts.filter((p) => p.url.includes('/kernel'))).toHaveLength(1));
+    await waitFor(() => expect(start).toBeEnabled());
+  });
+
   it('A31 a socket replaced while closing does not clear the live one', () => {
     vi.useFakeTimers();
     const { socket } = attach();
@@ -788,6 +853,85 @@ describe('live notebook', () => {
     }
     expect(socket.frames('execute').map((m) => m.cellId)).toEqual(['c1', 'c2', 'c3']);
     expect(screen.getByRole('button', { name: 'Run all' })).toBeEnabled();
+  });
+
+  it('A31 a resume that delivers a finished execution moves Run all on', () => {
+    vi.useFakeTimers();
+    const { socket } = attach();
+    fireEvent.click(screen.getByRole('button', { name: 'Run all' }));
+    const [first] = socket.frames('execute');
+    socket.receive({
+      t: 'execution',
+      executionId: exec(1),
+      ref: first?.ref,
+      cellId: 'c1',
+      seq: 1,
+      state: 'running',
+      outputsIncomplete: false,
+      generation: 0,
+    });
+    // The socket drops while the first cell runs; nothing more is sent while it is down.
+    socket.drop();
+    expect(screen.queryByText(/Run all stopped/)).not.toBeInTheDocument();
+    act(() => {
+      vi.advanceTimersByTime(600);
+    });
+    const second = last();
+    expect(second).not.toBe(socket);
+    second.open();
+    expect(second.frames('execute')).toHaveLength(0);
+    // The cell finished meanwhile: the resume says so, and Run all goes on to the next one.
+    second.receive(ready());
+    second.receive({
+      t: 'execution',
+      executionId: exec(1),
+      ref: first?.ref,
+      cellId: 'c1',
+      seq: 1,
+      state: 'ok',
+      executionCount: 1,
+      outputsIncomplete: false,
+      generation: 0,
+    });
+    expect(second.frames('execute').map((m) => m.cellId)).toEqual(['c2']);
+    // The first cell was never sent again.
+    expect(socket.frames('execute')).toHaveLength(1);
+    expect(second.frames('execute').filter((m) => m.ref === first?.ref)).toHaveLength(0);
+  });
+
+  it('A31 Run all stops when the channel ends for good', () => {
+    const { socket } = attach();
+    fireEvent.click(screen.getByRole('button', { name: 'Run all' }));
+    socket.drop(4410);
+    expect(
+      screen.getByText('Run all stopped because the connection was lost.'),
+    ).toBeInTheDocument();
+  });
+
+  it('A31 replayed output of a finished execution is shown in its cell', () => {
+    // A fresh page: the relay sends the finished execution, then its buffered output.
+    const { socket } = attach({}, { eventSeq: 2 });
+    socket.receive({
+      t: 'execution',
+      executionId: exec(3),
+      ref: crypto.randomUUID(),
+      cellId: 'c3',
+      seq: 3,
+      state: 'ok',
+      executionCount: 4,
+      outputsIncomplete: false,
+      generation: 0,
+    });
+    socket.receive({
+      t: 'output',
+      executionId: exec(3),
+      eventSeq: 2,
+      generation: 0,
+      kind: 'output',
+      output: { output_type: 'stream', name: 'stdout', text: 'three\n' },
+    });
+    expect(cellSection('c3')).toHaveTextContent('three');
+    expect(cellSection('c3')).not.toHaveTextContent(/Incomplete/);
   });
 
   it('an input prompt belongs to its cell and its answer names that execution', () => {

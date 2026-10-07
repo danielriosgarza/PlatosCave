@@ -20,10 +20,14 @@ export interface DraftCriterion {
   points: string;
 }
 export interface DraftOption {
+  /** Client-only identity; never saved, so editing `id` keeps the correct mark on its option. */
+  uid: string;
   id: string;
   label: string;
 }
 export interface DraftFile {
+  /** Client-only identity; never saved, so editing `path` keeps the checks set on the file. */
+  uid: string;
   path: string;
   content: string;
   encoding?: 'utf8' | 'base64';
@@ -35,6 +39,8 @@ export interface DraftCheck {
   visibility: 'public' | 'hidden';
   kind: CheckKind;
   file: string;
+  /** The `uid` of the file `file` names, so the check follows that file when its path is edited. */
+  fileUid: string;
   /** One path per line. */
   files: string;
   points: string;
@@ -65,6 +71,7 @@ export interface DraftQuestion {
   points: string;
   rubric: DraftCriterion[];
   options: DraftOption[];
+  /** The `uid`s of the correct options. */
   correct: string[];
   multiple: boolean;
   answer: string;
@@ -121,11 +128,27 @@ const fromLocalInput = (value: string): string | null => {
   return Number.isNaN(d.getTime()) ? null : d.toISOString();
 };
 
-export const blankCheck = (file = ''): DraftCheck => ({
+let uids = 0;
+export const newUid = (prefix: string): string => `${prefix}-${++uids}`;
+
+export const blankFile = (path = ''): DraftFile => ({
+  uid: newUid('file'),
+  path,
+  content: '',
+  editable: false,
+  hidden: false,
+});
+
+/** The uid of the first file with `path`, or '' when none has it. */
+export const fileUidOf = (files: { uid: string; path: string }[], path: string): string =>
+  files.find((f) => f.path === path)?.uid ?? '';
+
+export const blankCheck = (file = '', fileUid = ''): DraftCheck => ({
   name: '',
   visibility: 'public',
   kind: 'call',
   file,
+  fileUid,
   files: '',
   points: '1',
   timeoutSeconds: '',
@@ -144,31 +167,32 @@ export const blankCheck = (file = ''): DraftCheck => ({
   rel: '',
 });
 
-let uids = 0;
-
-export const blankQuestion = (kind: QuestionKind, id: string): DraftQuestion => ({
-  uid: `question-${++uids}`,
-  kind,
-  id,
-  prompt: '',
-  points: '1',
-  rubric: [],
-  options: [
-    { id: 'a', label: '' },
-    { id: 'b', label: '' },
-  ],
-  correct: [],
-  multiple: false,
-  answer: '',
-  tolerance: '0',
-  unit: '',
-  maxLength: '5000',
-  runtime: '',
-  files: [{ path: 'solution.py', content: '', editable: true, hidden: false }],
-  allowedPackages: [],
-  limits: { wallSeconds: '', memoryMiB: '', outputBytes: '' },
-  checks: [{ ...blankCheck('solution.py'), name: 'sample' }],
-});
+export const blankQuestion = (kind: QuestionKind, id: string): DraftQuestion => {
+  const file = { ...blankFile('solution.py'), editable: true };
+  return {
+    uid: newUid('question'),
+    kind,
+    id,
+    prompt: '',
+    points: '1',
+    rubric: [],
+    options: [
+      { uid: newUid('option'), id: 'a', label: '' },
+      { uid: newUid('option'), id: 'b', label: '' },
+    ],
+    correct: [],
+    multiple: false,
+    answer: '',
+    tolerance: '0',
+    unit: '',
+    maxLength: '5000',
+    runtime: '',
+    files: [file],
+    allowedPackages: [],
+    limits: { wallSeconds: '', memoryMiB: '', outputBytes: '' },
+    checks: [{ ...blankCheck('solution.py', file.uid), name: 'sample' }],
+  };
+};
 
 /** The first letter from `a` that no option uses yet (a question has at most 12 options). */
 export function nextOptionId(options: { id: string }[]): string {
@@ -187,25 +211,43 @@ export function nextCriterionId(rubric: { id: string }[]): string {
 }
 
 /**
- * The checks of a question after the file at `from` is renamed to `to`, or removed when `to` is
- * undefined: a check keeps naming the file it was set on. A path cleared while it is retyped
- * keeps its main-file checks too, since they then name the empty path.
+ * The checks of a question after `file` is renamed to `to`, or removed when `to` is undefined: a
+ * check keeps naming the file it was set on, found by the file's uid, so a path that is empty or
+ * equal to another file's while it is retyped does not move another file's checks. The extra
+ * files a check lists are paths only, so they follow a rename only when no other file has the
+ * old path.
  */
 export function checksAfterFileChange(
   checks: DraftCheck[],
-  from: string,
+  file: { uid: string; path: string },
   to: string | undefined,
+  files: { path: string }[],
 ): DraftCheck[] {
+  const from = file.path;
+  const unique = files.filter((f) => f.path === from).length === 1;
   return checks.map((c) => {
     const listed = c.files.split('\n');
-    const files =
-      from !== '' && listed.includes(from)
+    const others =
+      unique && from !== '' && listed.includes(from)
         ? listed.flatMap((p) => (p === from ? (to === undefined ? [] : [to]) : [p])).join('\n')
         : c.files;
-    const file = c.file === from ? (to ?? '') : c.file;
-    return file === c.file && files === c.files ? c : { ...c, file, files };
+    const mine = c.fileUid === file.uid;
+    const named = mine ? (to ?? '') : c.file;
+    const fileUid = mine && to === undefined ? '' : c.fileUid;
+    return named === c.file && others === c.files && fileUid === c.fileUid
+      ? c
+      : { ...c, file: named, files: others, fileUid };
   });
 }
+
+/** A check set to another kind: standard input belongs to `stdio` checks, so it is cleared. */
+export const withKind = (c: DraftCheck, kind: CheckKind): DraftCheck => ({
+  ...c,
+  kind,
+  compareMode: kind === 'call' ? 'exact' : 'trimmed',
+  args: kind === 'call' ? '[]' : '',
+  stdin: kind === 'stdio' ? c.stdin : '',
+});
 
 /** The next free question id: `q1`, `q2`, …. */
 export function nextQuestionId(questions: { id: string }[]): string {
@@ -250,6 +292,23 @@ function toDraftQuestion(raw: unknown): DraftQuestion {
   const kind: QuestionKind =
     q.kind === 'choice' || q.kind === 'numeric' || q.kind === 'code' ? q.kind : 'explanation';
   const limits = obj(q.limits);
+  const options = arr(q.options).map((o) => ({
+    uid: newUid('option'),
+    id: str(obj(o).id),
+    label: str(obj(o).label),
+  }));
+  const ids = arr(q.correct).map(str);
+  const files = arr(q.files).map((f) => {
+    const o = obj(f);
+    return {
+      uid: newUid('file'),
+      path: str(o.path),
+      content: str(o.content),
+      ...(o.encoding === 'base64' && { encoding: 'base64' as const }),
+      editable: o.editable === true,
+      hidden: o.hidden === true,
+    };
+  });
   return {
     ...blankQuestion(kind, str(q.id)),
     prompt: str(q.prompt),
@@ -259,31 +318,24 @@ function toDraftQuestion(raw: unknown): DraftQuestion {
       label: str(obj(r).label),
       points: num(obj(r).points),
     })),
-    options: arr(q.options).map((o) => ({ id: str(obj(o).id), label: str(obj(o).label) })),
-    correct: arr(q.correct).map(str),
+    options,
+    correct: options.filter((o) => ids.includes(o.id)).map((o) => o.uid),
     multiple: q.multiple === true,
     answer: num(q.answer),
     tolerance: num(q.tolerance) || '0',
     unit: str(q.unit),
     maxLength: num(q.maxLength) || '5000',
     runtime: str(q.runtime),
-    files: arr(q.files).map((f) => {
-      const o = obj(f);
-      return {
-        path: str(o.path),
-        content: str(o.content),
-        ...(o.encoding === 'base64' && { encoding: 'base64' as const }),
-        editable: o.editable === true,
-        hidden: o.hidden === true,
-      };
-    }),
+    files,
     allowedPackages: arr(q.allowedPackages).map(str),
     limits: {
       wallSeconds: num(limits.wallSeconds),
       memoryMiB: num(limits.memoryMiB),
       outputBytes: num(limits.outputBytes),
     },
-    checks: arr(q.checks).map(toDraftCheck),
+    checks: arr(q.checks)
+      .map(toDraftCheck)
+      .map((c) => ({ ...c, fileUid: fileUidOf(files, c.file) })),
   };
 }
 
@@ -414,9 +466,9 @@ function questionContent(q: DraftQuestion, at: string) {
   if (q.kind === 'choice') {
     return {
       ...common,
-      options: q.options,
+      options: q.options.map((o) => ({ id: o.id, label: o.label })),
       multiple: q.multiple,
-      correct: q.correct.filter((id) => q.options.some((o) => o.id === id)),
+      correct: q.options.filter((o) => q.correct.includes(o.uid)).map((o) => o.id),
     };
   }
   if (q.kind === 'numeric') {
@@ -438,7 +490,7 @@ function questionContent(q: DraftQuestion, at: string) {
   return {
     ...common,
     runtime: q.runtime,
-    files: q.files,
+    files: q.files.map(({ uid: _uid, ...f }) => f),
     allowedPackages: q.allowedPackages,
     ...(Object.keys(limits).length > 0 && { limits }),
     checks: q.checks.map((c, i) => checkContent(c, `${at}, check ${i + 1}:`)),

@@ -4,6 +4,7 @@ import {
   settingsProblems,
   type TestV1,
   testV1,
+  toWellFormedDeep,
 } from '@parallax/contracts';
 import type * as contracts from '@parallax/contracts/routes/tests';
 import { and, asc, desc, eq, inArray, lte, max, ne, sql } from 'drizzle-orm';
@@ -33,6 +34,7 @@ import {
   assignmentOverrides,
   assignments,
   attemptAnswers,
+  auditEvents,
   classMemberships,
   resourceRevisions,
   type SubmittedAnswer,
@@ -248,7 +250,35 @@ async function lockAttempt(tx: Tx, scope: ClassScope, attemptId: string, now: Da
   return row && settle(tx, scope, row, now);
 }
 
-async function summaryOf(ex: Ex, scope: ClassScope, attempt: AttemptRow, test: TestV1) {
+const RECOVERY_REQUESTED = 'test_attempt.recovery_requested';
+
+/** When an instructor last asked for the attempt's unsent local work (an audit event; no table of its own). */
+async function recoveryRequests(ex: Ex, scope: ClassScope, attemptIds: string[]) {
+  const latest = new Map<string, string>();
+  if (attemptIds.length === 0) return latest;
+  const rows = await ex
+    .select({ id: auditEvents.targetId, at: max(auditEvents.createdAt) })
+    .from(auditEvents)
+    .where(
+      and(
+        eq(auditEvents.action, RECOVERY_REQUESTED),
+        eq(auditEvents.scopeKind, 'class'),
+        eq(auditEvents.scopeId, scope.classId),
+        inArray(auditEvents.targetId, attemptIds),
+      ),
+    )
+    .groupBy(auditEvents.targetId);
+  for (const r of rows) if (r.id && r.at) latest.set(r.id, r.at.toISOString());
+  return latest;
+}
+
+async function summaryOf(
+  ex: Ex,
+  scope: ClassScope,
+  attempt: AttemptRow,
+  test: TestV1,
+  requests?: Map<string, string>,
+) {
   const submission =
     attempt.state === 'in_progress' ? undefined : await submissionOf(ex, scope, attempt.id);
   return {
@@ -261,6 +291,8 @@ async function summaryOf(ex: Ex, scope: ClassScope, attempt: AttemptRow, test: T
     submittedAt: iso(attempt.submittedAt),
     receipt: submission ? receiptOf(submission, test) : null,
     localCopyAt: iso(attempt.localCopyAt),
+    recoveryRequestedAt:
+      (requests ?? (await recoveryRequests(ex, scope, [attempt.id]))).get(attempt.id) ?? null,
   } satisfies Summary;
 }
 
@@ -341,7 +373,14 @@ export async function readTest(
   );
   const rows = await ownAttemptsOf(db, scope, resourceId);
   const attempts = [];
-  for (const row of rows) attempts.push(await summaryOf(db, scope, row, await pinnedTest(db, row)));
+  const requests = await recoveryRequests(
+    db,
+    scope,
+    rows.map((r) => r.id),
+  );
+  for (const row of rows) {
+    attempts.push(await summaryOf(db, scope, row, await pinnedTest(db, row), requests));
+  }
   const why = scope.archived ? 'class_archived' : ineligibility(terms, rows, now);
   return {
     ok: true,
@@ -555,16 +594,52 @@ export async function keepLocalCopy(
     if (scope.archived) return classArchived;
     const ids = new Set((await pinnedTest(tx, attempt)).questions.map((q) => q.id));
     if (!copy.every((a) => ids.has(a.questionId))) return invalid('This test has no such question');
+    // Autosave refuses a lone surrogate or NUL, so the browser keeps such an answer unsent and
+    // offers it here. Postgres's jsonb cannot store either; each is stored as U+FFFD, so no entry
+    // is lost.
     await tx
       .update(testAttempts)
       .set({
         localCopy: {
-          answers: copy.map((a) => ({ questionId: a.questionId, value: a.value ?? null })),
+          answers: copy.map((a) => ({
+            questionId: a.questionId,
+            value: toWellFormedDeep(a.value ?? null),
+          })),
         },
         localCopyAt: now,
       })
       .where(and(own(scope), eq(testAttempts.id, attemptId)));
     return { ok: true, value: { localCopyAt: now.toISOString() } };
+  });
+}
+
+/**
+ * Instructor: asks the student for the unsent local work of a closed attempt, with a reason
+ * (§11, A15). Recorded as an audit event; the attempt and its receipt are unchanged.
+ */
+export async function requestRecovery(
+  db: Db,
+  scope: ClassScope,
+  attemptId: string,
+  reason: string,
+  now: Date,
+): Promise<Outcome<{ requestedAt: string }> | { ok: false; reason: 'attempt_open' }> {
+  return db.transaction(async (tx) => {
+    const found = await lockReviewable(tx, scope, attemptId, now);
+    if (!found) return notFound;
+    if (found.attempt.state === 'in_progress') return { ok: false, reason: 'attempt_open' };
+    if (scope.archived) return classArchived;
+    await audit(tx, {
+      actorId: scope.user.id,
+      action: RECOVERY_REQUESTED,
+      scopeKind: 'class',
+      scopeId: scope.classId,
+      targetType: 'test_attempt',
+      targetId: attemptId,
+      after: { reason, studentId: found.student.id },
+      createdAt: now,
+    });
+    return { ok: true, value: { requestedAt: now.toISOString() } };
   });
 }
 
@@ -807,6 +882,10 @@ async function settleDue(db: Db, scope: ClassScope, where: ReturnType<typeof and
   for (const { id } of due) await db.transaction((tx) => lockAttempt(tx, scope, id, now, false));
 }
 
+/** Submits every overdue in-progress attempt of the class, as the review reads do. */
+export const settleClassDue = (db: Db, scope: ClassScope, now: Date) =>
+  settleDue(db, scope, forClass(scope, testAttempts), now);
+
 async function reviewedOf(db: Db, scope: ClassScope, where: ReturnType<typeof and>) {
   const rows = await db
     .select({ attempt: testAttempts, name: users.name, role: classMemberships.role })
@@ -822,10 +901,15 @@ async function reviewedOf(db: Db, scope: ClassScope, where: ReturnType<typeof an
     .where(and(reviewable(scope), where))
     .orderBy(asc(users.name), asc(testAttempts.userId), desc(testAttempts.number));
   const reviewed: (Reviewed & { row: AttemptRow; test: TestV1 })[] = [];
+  const requests = await recoveryRequests(
+    db,
+    scope,
+    rows.map((r) => r.attempt.id),
+  );
   for (const { attempt, name, role } of rows) {
     const test = await pinnedTest(db, attempt);
     reviewed.push({
-      ...(await summaryOf(db, scope, attempt, test)),
+      ...(await summaryOf(db, scope, attempt, test, requests)),
       student: { id: attempt.userId, name },
       removed: role === null,
       graderVersion: attempt.graderVersion,
@@ -919,7 +1003,7 @@ export async function reviewAttempt(db: Db, scope: ClassScope, attemptId: string
 }
 
 /** Whether the caller submitted a test in this class (topic completion, P2-16). */
-export async function submittedTests(db: Db, classId: string, userId: string) {
+export async function submittedTests(db: Ex, classId: string, userId: string) {
   const rows = await db
     .selectDistinct({ resourceId: testAttempts.resourceId })
     .from(testAttempts)

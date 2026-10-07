@@ -2,6 +2,7 @@ import { useState } from 'react';
 import buttons from '../../components/Buttons.module.css';
 import type { Confirmation, ConnectionTest, Stage } from './api';
 import styles from './Connect.module.css';
+import { useCancelOnEscape } from './escape';
 import {
   CATALOGUE_CAUSE_COPY,
   CODE_RECOVERIES,
@@ -238,6 +239,7 @@ function Failure({
   const changed = stage.code === 'host_key_changed';
   const host = hostFor(stage, hosts);
   const { expected, presented } = stage.data ?? {};
+  const replace = useCancelOnEscape(confirming, onCancel);
   return (
     <div className={styles.alert} role="alert">
       <p>
@@ -261,7 +263,8 @@ function Failure({
       <Recoveries code={stage.code} />
       {changed && host && expected && presented ? (
         confirming ? (
-          <div className={styles.notice}>
+          // biome-ignore lint/a11y/noStaticElementInteractions: Escape cancels this confirmation
+          <div className={styles.notice} onKeyDown={replace.onKeyDown}>
             <p>
               {`Replace the trusted key for ${host.host}:${host.port}? Do this only if the host's owner confirmed that its key changed. You must have signed in within the last 15 minutes.`}
             </p>
@@ -288,7 +291,12 @@ function Failure({
           </div>
         ) : (
           <div className={styles.row}>
-            <button type="button" className={buttons.outline} onClick={onAskReplace}>
+            <button
+              ref={replace.trigger}
+              type="button"
+              className={buttons.outline}
+              onClick={onAskReplace}
+            >
               Replace trusted key…
             </button>
           </div>

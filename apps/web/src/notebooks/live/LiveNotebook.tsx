@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import buttons from '../../components/Buttons.module.css';
 import readingStyles from '../../reading/Reading.module.css';
 import { ResourceTools } from '../../workspace/ResourceTools';
@@ -18,6 +18,7 @@ import { CellEditor } from './CellEditor';
 import { kernelIsBusy, type LiveExecution, latestByCell } from './executionState';
 import live from './Live.module.css';
 import { LiveOutputs } from './Outputs';
+import { SessionPanels, useCopyInGate } from './SessionPanels';
 import { LiveToolbar, type SessionAction } from './Toolbar';
 import { useChannel } from './useChannel';
 
@@ -38,6 +39,8 @@ interface Props {
   trail: ReactNode;
   /** Opens the Connect panel: to reconnect, choose another target or start a new session. */
   onOpenConnect: () => void;
+  /** The server's session list no longer has this session; `session` is the last state read. */
+  unlisted?: boolean;
 }
 
 const INTERRUPT_STALL_MS = 5000;
@@ -109,15 +112,18 @@ export function LiveNotebook({
   lead,
   trail,
   onOpenConnect,
+  unlisted = false,
 }: Props) {
   const root = useRef<HTMLElement | null>(null);
   const [left, setLeft] = useState(false);
-  const channel = useChannel(classId, session.id, !left);
+  const detached = left || unlisted;
+  const channel = useChannel(classId, session.id, !detached);
   const { state } = channel;
   const actions = useSessionActions(classId);
   const [ask, setAsk] = useState<SessionAction | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [busyAction, setBusyAction] = useState(false);
+  const [startingKernel, setStartingKernel] = useState(false);
   const [runAll, setRunAll] = useState<RunAll | null>(null);
   const [runAllNote, setRunAllNote] = useState<string | null>(null);
   const [interruptedAt, setInterruptedAt] = useState<number | null>(null);
@@ -137,14 +143,25 @@ export function LiveNotebook({
     });
   const confirmRef = useRef<HTMLDivElement>(null);
 
-  const channelOpen = channel.status === 'open' && !channel.offline;
+  const channelOpen = !detached && channel.status === 'open' && !channel.offline;
   const sessionState = channelOpen && state.session ? state.session.state : session.state;
   const cause = (channelOpen && state.session ? state.session.cause : null) ?? session.cause;
-  const sessionReady = sessionState === 'ready' && session.state === 'ready';
+  const sessionReady = sessionState === 'ready' && session.state === 'ready' && !unlisted;
   const kernel = state.kernel;
   const kernelState = kernel?.state;
   const connected = sessionReady && channelOpen && !left;
-  const canRun = connected && kernelState !== undefined && RUNNABLE.has(kernelState);
+  // The socket dropped and is being retried while the session was last known ready.
+  const reattaching =
+    !detached &&
+    session.state === 'ready' &&
+    (state.session?.state ?? 'ready') === 'ready' &&
+    (channel.status === 'closed' || channel.status === 'connecting' || channel.offline);
+  const onEditRef = useRef(onEdit);
+  onEditRef.current = onEdit;
+  const stableEdit = useCallback((id: string, value: string) => onEditRef.current(id, value), []);
+  const gate = useCopyInGate(classId, session.id, sessionReady && !left);
+  const canRun =
+    connected && kernelState !== undefined && RUNNABLE.has(kernelState) && !gate.pending;
   const busy = connected && kernelIsBusy(kernelState);
   const owned = state.session?.owned ?? session.owned;
   const latest = useMemo(() => latestByCell(state), [state]);
@@ -168,7 +185,9 @@ export function LiveNotebook({
   };
 
   // Run all: one cell at a time in notebook order, stopping at the first that does not finish
-  // cleanly. Each is a new execute with its own ref; none is ever resent by this logic.
+  // cleanly. Each is a new execute with its own ref; none is ever resent by this logic. While the
+  // channel is being reattached nothing is sent, and the cell it waits on keeps running on the
+  // kernel: the resume tells how it ended (§10.6), and Run all goes on from there.
   // biome-ignore lint/correctness/useExhaustiveDependencies: advances on each message and on connection changes only
   useEffect(() => {
     if (!runAll) return;
@@ -177,6 +196,7 @@ export function LiveNotebook({
       setRunAllNote(note);
     };
     if (!connected) {
+      if (reattaching) return;
       stop('Run all stopped because the connection was lost.');
       return;
     }
@@ -198,7 +218,10 @@ export function LiveNotebook({
       }
       return;
     }
-    if (execution.state === 'ok') {
+    if (execution.state === 'ok' && execution.outputsIncomplete) {
+      // Its output carried over a relay restart and is labelled Incomplete: not a clean finish.
+      stop(`Run all stopped at cell ${nameOf(runAll.cellId)}: its output is incomplete.`);
+    } else if (execution.state === 'ok') {
       const [next, ...rest] = runAll.queue;
       if (next === undefined) {
         setRunAll(null);
@@ -216,7 +239,7 @@ export function LiveNotebook({
         }.`,
       );
     }
-  }, [state, canRun, connected, kernelState, runAll]);
+  }, [state, canRun, connected, reattaching, kernelState, runAll]);
 
   const startRunAll = () => {
     const ids = notebook.cells
@@ -300,13 +323,28 @@ export function LiveNotebook({
     const name =
       session.kernelName ?? session.runtime.kernelName ?? session.runtime.kernelspecs?.[0]?.name;
     if (!name) return;
+    if (startingKernel) return;
+    setStartingKernel(true);
     setActionError(null);
     try {
       await startKernel(classId, session.id, name);
     } catch (e) {
       fail(e, 'The kernel could not be started.');
+    } finally {
+      setStartingKernel(false);
     }
   };
+
+  const kernelNameShown = kernel?.name ?? session.kernelName ?? undefined;
+  const environment = useMemo(
+    () => ({
+      os: session.environment?.os,
+      arch: session.environment?.arch,
+      interpreter: session.environment?.runtime,
+      kernel: kernelNameShown,
+    }),
+    [session.environment, kernelNameShown],
+  );
 
   const label = modeLabel({
     connectionName,
@@ -332,6 +370,21 @@ export function LiveNotebook({
           <button type="button" className={buttons.outline} onClick={() => setLeft(false)}>
             Reconnect to this session
           </button>
+          <button type="button" className={buttons.outline} onClick={onOpenConnect}>
+            Connect a computer
+          </button>
+        </div>
+      </div>,
+    );
+  } else if (unlisted) {
+    banner.push(
+      <div key="unlisted" className={live.banner} role="alert">
+        <p>
+          <strong>Parallax no longer has news of this session.</strong> It was last read as{' '}
+          {session.state}, and Parallax does not know whether it still runs. Your edits are kept,
+          and cells cannot run.
+        </p>
+        <div className={live.row}>
           <button type="button" className={buttons.outline} onClick={onOpenConnect}>
             Connect a computer
           </button>
@@ -380,7 +433,21 @@ export function LiveNotebook({
       </div>,
     );
   }
-  if (kernelMissing && !left) {
+  if (gate.pending) {
+    banner.push(
+      <div key="copyin" className={live.banner} role="status">
+        <p>
+          This notebook declares {gate.declared} {gate.declared === 1 ? 'file' : 'files'}. Cells
+          cannot run until you copy {gate.declared === 1 ? 'it' : 'them'} in from Files below, or
+          choose to run without {gate.declared === 1 ? 'it' : 'them'}.
+        </p>
+        <button type="button" className={buttons.outline} onClick={gate.settle}>
+          Run without the files
+        </button>
+      </div>,
+    );
+  }
+  if (kernelMissing && !detached) {
     banner.push(
       <div key="kernel" className={live.banner} role="status">
         <p>
@@ -388,7 +455,12 @@ export function LiveNotebook({
             ? `${causeText('kernel_lost')} A new kernel starts empty.`
             : 'No kernel is running in this session yet.'}
         </p>
-        <button type="button" className={buttons.outline} onClick={() => void newKernel()}>
+        <button
+          type="button"
+          className={buttons.outline}
+          disabled={startingKernel}
+          onClick={() => void newKernel()}
+        >
           {kernelLost ? 'Start a new kernel' : 'Start the kernel'}
         </button>
       </div>,
@@ -479,7 +551,7 @@ export function LiveNotebook({
     );
   }
 
-  const sessionActive = !left && session.state === 'ready' && sessionReady && channelOpen;
+  const sessionActive = !detached && session.state === 'ready' && sessionReady && channelOpen;
 
   return (
     <>
@@ -621,6 +693,21 @@ export function LiveNotebook({
           );
         })}
       </article>
+      {sessionReady && !detached ? (
+        <SessionPanels
+          classId={classId}
+          sessionId={session.id}
+          revisionId={session.resourceRevisionId}
+          notebook={notebook}
+          sources={sources}
+          onEdit={stableEdit}
+          environment={environment}
+          workspace={gate.listing.data?.workspace}
+          host={gate.listing.data?.host ?? null}
+          workspacePending={gate.listing.isPending}
+          onCopyInSettled={gate.settle}
+        />
+      ) : null}
     </>
   );
 }

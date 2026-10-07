@@ -2,6 +2,7 @@ import 'fake-indexeddb/auto';
 import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { holdDraftDeletes } from '../../test/draftHold';
 import {
   CLASS_A,
   makeMe,
@@ -676,6 +677,61 @@ describe('reading margin: notes and autosave', () => {
     expect(screen.queryByText('Gone soon')).toBeNull();
   });
 
+  it('A03 a remount while a note\u2019s server delete is still running does not bring the note back', async () => {
+    const w = world([noteOf(uuid(1), textAnchor(B3, 0, 5, P3), 'Gone soon')]);
+    Element.prototype.scrollIntoView = vi.fn();
+    const mock = api(w);
+    const original = mock.getMockImplementation() as (
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ) => Promise<Response>;
+    let finish: () => void = () => {};
+    const serverDelete = new Promise<void>((resolve) => {
+      finish = resolve;
+    });
+    mock.mockImplementation(async (input, init) => {
+      if (init?.method === 'DELETE') {
+        // The text typed before Delete is on the device (and unsent) while the server answers.
+        await saveDraft({
+          key: draftKey(SAM_ID, CLASS_A, RES, uuid(1)),
+          userId: SAM_ID,
+          classId: CLASS_A,
+          resourceId: RES,
+          kind: 'note',
+          annotationId: uuid(1),
+          expectedRevision: 1,
+          anchor: textAnchor(B3, 0, 5, P3),
+          body: 'Unsent edit',
+          audience: null,
+          updatedAt: Date.now(),
+        });
+        const answer = await original(input, init);
+        await serverDelete;
+        return answer;
+      }
+      return original(input, init);
+    });
+    const user = userEvent.setup();
+    await open();
+    await user.click(await screen.findByRole('button', { name: /^Note 1/ }));
+    await user.type(screen.getByRole('textbox', { name: 'Your note' }), ' more');
+    await user.click(screen.getByRole('button', { name: 'Delete note' }));
+    await waitFor(async () => expect(await listDrafts(SAM_ID, CLASS_A, RES)).toHaveLength(1));
+    await user.click(screen.getByRole('tab', { name: 'Slides' }));
+    await user.click(screen.getByRole('tab', { name: 'Reading' }));
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    // Still deleting: the margin waits and does not offer the text again.
+    expect(screen.queryByDisplayValue('Unsent edit')).toBeNull();
+    finish();
+    await screen.findByRole('button', { name: /^Discussion/ });
+    await waitFor(async () => expect(await listDrafts(SAM_ID, CLASS_A, RES)).toEqual([]));
+    expect(screen.queryByDisplayValue('Unsent edit')).toBeNull();
+    expect(w.annotations).toEqual([]);
+    // Nothing was sent after the delete: the note was not restored and saved again.
+    const after = w.calls.slice(w.calls.findIndex((c) => c.method === 'DELETE') + 1);
+    expect(after.filter((c) => c.method === 'PUT' || c.method === 'POST')).toEqual([]);
+  });
+
   it('A03 restores a note typed but never sent from this device, and sends it', async () => {
     const w = world([noteOf(uuid(1), textAnchor(B3, 0, 5, P3), 'Draft')]);
     api(w);
@@ -958,6 +1014,59 @@ describe('reading margin: layout and sign-out', () => {
     expect(await listDrafts(SAM_ID, CLASS_A, RES)).toEqual([]);
   });
 
+  it('A03 a reload before the device copy is gone does not bring back an acknowledged note as unsent', async () => {
+    const w = world();
+    const mock = api(w);
+    const posts = () =>
+      mock.mock.calls.filter(([, init]) => (init as RequestInit | undefined)?.method === 'POST');
+    // The device's delete of the acknowledged note's copy stays uncommitted: its transaction is
+    // kept open by further requests until the test lets it finish.
+    const realDelete = IDBObjectStore.prototype.delete;
+    let released = false;
+    const held: (() => void)[] = [];
+    vi.spyOn(IDBObjectStore.prototype, 'delete').mockImplementation(function (
+      this: IDBObjectStore,
+      key,
+    ) {
+      if (typeof key !== 'string' || !key.startsWith(`${SAM_ID}|`)) {
+        return realDelete.call(this, key);
+      }
+      const keepOpen = () => {
+        const probe = this.get(key);
+        probe.onsuccess = () => {
+          if (!released) keepOpen();
+          else realDelete.call(this, key);
+        };
+      };
+      keepOpen();
+      return {} as IDBRequest;
+    });
+    held.push(() => {
+      released = true;
+    });
+    const user = userEvent.setup();
+    await open();
+    select(B3, 0, 13);
+    await user.click(within(await toolbar()).getByRole('button', { name: 'Note' }));
+    await user.type(await screen.findByRole('textbox', { name: 'Your note' }), 'one note');
+    await waitFor(() => expect(posts()).toHaveLength(1));
+    // "Saved" is only said once the device copy is really gone, so it cannot be said while held.
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(screen.queryByText('Saved')).not.toBeInTheDocument();
+    // The reload: the margin comes back with whatever the device still holds.
+    await user.click(screen.getByRole('tab', { name: 'Slides' }));
+    await user.click(screen.getByRole('tab', { name: 'Reading' }));
+    await screen.findByRole('button', { name: 'My notes' });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(screen.getAllByText('one note')).toHaveLength(1);
+    expect(posts()).toHaveLength(1);
+    expect(w.annotations).toHaveLength(1);
+    expect(screen.queryByText('Saved')).not.toBeInTheDocument();
+    for (const finish of held) finish(); // the device commits at last; nothing is left pending
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    vi.restoreAllMocks();
+  });
+
   it('A05 a question still being posted when the reading is left does not come back as unsent text', async () => {
     const w = world();
     const mock = api(w);
@@ -989,6 +1098,102 @@ describe('reading margin: layout and sign-out', () => {
     release();
     await waitFor(() => expect(w.threads).toHaveLength(1));
     await waitFor(() => expect(screen.getByText('Why n minus one?')).toBeInTheDocument());
+    expect(screen.getByRole('textbox', { name: 'Comment or question' })).toHaveValue('');
+    expect(await listDrafts(SAM_ID, CLASS_A, RES)).toEqual([]);
+  });
+
+  it('A05 a reload before a posted question\u2019s device copy is gone does not bring it back as unsent', async () => {
+    const w = world();
+    api(w);
+    // The device's delete of the posted question's draft stays uncommitted until the test lets it go.
+    const release = holdDraftDeletes();
+    const user = userEvent.setup();
+    await open();
+    await user.click(screen.getByRole('button', { name: /^Discussion/ }));
+    await user.type(
+      screen.getByRole('textbox', { name: 'Comment or question' }),
+      'Why n minus one?',
+    );
+    await user.click(screen.getByRole('button', { name: 'Post' }));
+    await waitFor(() => expect(w.threads).toHaveLength(1));
+    // The reload: the margin comes back with whatever the device still holds.
+    await user.click(screen.getByRole('tab', { name: 'Slides' }));
+    await user.click(screen.getByRole('tab', { name: 'Reading' }));
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    // The posted question is still being cleared from the device, so the margin waits and does not
+    // offer it again.
+    expect(screen.queryByDisplayValue('Why n minus one?')).toBeNull();
+    release(); // the device commits at last
+    await user.click(await screen.findByRole('button', { name: /^Discussion/ }));
+    expect(screen.getByRole('textbox', { name: 'Comment or question' })).toHaveValue('');
+    expect(w.threads).toHaveLength(1);
+    expect(await listDrafts(SAM_ID, CLASS_A, RES)).toEqual([]);
+  });
+
+  it('A03 a remount before a deleted note\u2019s device copy is gone does not bring the note back', async () => {
+    const w = world([noteOf(uuid(1), textAnchor(B3, 0, 5, P3), 'Gone soon')]);
+    const mock = api(w);
+    const original = mock.getMockImplementation() as (
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ) => Promise<Response>;
+    let release: () => void = () => {};
+    const late = {
+      key: draftKey(SAM_ID, CLASS_A, RES, uuid(1)),
+      userId: SAM_ID,
+      classId: CLASS_A,
+      resourceId: RES,
+      kind: 'note' as const,
+      annotationId: uuid(1),
+      expectedRevision: 1,
+      anchor: textAnchor(B3, 0, 5, P3),
+      body: 'Unsent edit',
+      audience: null,
+      updatedAt: Date.now(),
+    };
+    mock.mockImplementation(async (input, init) => {
+      if (init?.method === 'DELETE') {
+        // A save that finished during the delete wrote the device copy again; clearing it is held.
+        await saveDraft(late);
+        release = holdDraftDeletes();
+      }
+      return original(input, init);
+    });
+    await saveDraft(late);
+    const user = userEvent.setup();
+    await open();
+    await user.click(await screen.findByRole('button', { name: /^Note 1/ }));
+    await user.click(screen.getByRole('button', { name: 'Delete note' }));
+    await waitFor(() => expect(w.annotations).toEqual([]));
+    // The server has deleted it; the device's copy is still being removed when the margin remounts.
+    await user.click(screen.getByRole('tab', { name: 'Slides' }));
+    await user.click(screen.getByRole('tab', { name: 'Reading' }));
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(screen.queryByDisplayValue('Unsent edit')).toBeNull();
+    release();
+    await screen.findByRole('button', { name: 'My notes' });
+    await waitFor(async () => expect(await listDrafts(SAM_ID, CLASS_A, RES)).toEqual([]));
+    expect(screen.queryByDisplayValue('Unsent edit')).toBeNull();
+    expect(screen.queryByRole('button', { name: /^Note 1/ })).toBeNull();
+    expect(w.annotations).toEqual([]);
+  });
+
+  it('A05 a remount before a cleared question box\u2019s device copy is gone does not bring the text back', async () => {
+    api(world());
+    const release = holdDraftDeletes();
+    const user = userEvent.setup();
+    await open();
+    await user.click(screen.getByRole('button', { name: /^Discussion/ }));
+    const box = screen.getByRole('textbox', { name: 'Comment or question' });
+    await user.type(box, 'Why n minus one?');
+    await waitFor(async () => expect(await listDrafts(SAM_ID, CLASS_A, RES)).toHaveLength(1));
+    await user.clear(box);
+    await user.click(screen.getByRole('tab', { name: 'Slides' }));
+    await user.click(screen.getByRole('tab', { name: 'Reading' }));
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(screen.queryByDisplayValue('Why n minus one?')).toBeNull();
+    release();
+    await user.click(await screen.findByRole('button', { name: /^Discussion/ }));
     expect(screen.getByRole('textbox', { name: 'Comment or question' })).toHaveValue('');
     expect(await listDrafts(SAM_ID, CLASS_A, RES)).toEqual([]);
   });

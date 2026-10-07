@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import {
   type AssignmentSettings,
   clampLimits,
+  isWellFormed,
   type TestQuestion,
   type TestQuestionView,
   type TestV1,
@@ -142,11 +143,10 @@ type Parsed = { ok: true; value: unknown } | { ok: false; message: string };
 const refuse = (message: string): Parsed => ({ ok: false, message });
 
 /**
- * Text JSON can carry but Postgres's jsonb cannot store: a lone surrogate (`"\ud800"`). It is
+ * Text JSON can carry but Postgres's jsonb cannot store: a lone surrogate (`"\ud800"`) or a NUL (`"\u0000"`). It is
  * refused with 400 where the answer enters, as the runs contract does, rather than failing the
  * insert with a 500 (runner design §3.1). A paired surrogate, such as an emoji, is one code point.
  */
-const LONE_SURROGATE = /[\uD800-\uDFFF]/u;
 const LONE_SURROGATE_MESSAGE = 'Remove the character that cannot be saved';
 
 /** Checks a saved answer against its question; `null` clears it. */
@@ -168,7 +168,7 @@ export function parseAnswer(q: TestQuestion, value: unknown): Parsed {
         : refuse('Enter a number');
     case 'explanation':
       if (typeof value !== 'string') return refuse('Enter text');
-      if (LONE_SURROGATE.test(value)) return refuse(LONE_SURROGATE_MESSAGE);
+      if (!isWellFormed(value)) return refuse(LONE_SURROGATE_MESSAGE);
       return value.length <= q.maxLength
         ? { ok: true, value }
         : refuse(`Keep the answer within ${q.maxLength} characters`);
@@ -183,7 +183,7 @@ export function parseAnswer(q: TestQuestion, value: unknown): Parsed {
           return refuse('Only this question’s editable files can be saved');
         }
         if (typeof file.content !== 'string') return refuse('A file’s content must be text');
-        if (LONE_SURROGATE.test(file.content)) return refuse(LONE_SURROGATE_MESSAGE);
+        if (!isWellFormed(file.content)) return refuse(LONE_SURROGATE_MESSAGE);
         seen.add(file.path);
         bytes += Buffer.byteLength(file.content, 'utf8');
       }

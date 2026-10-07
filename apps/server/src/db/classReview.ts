@@ -1,0 +1,304 @@
+import type * as contracts from '@parallax/contracts/routes/review';
+import { and, asc, desc, eq, inArray, isNotNull, sql } from 'drizzle-orm';
+import type { z } from 'zod';
+import type { ClassScope } from '../auth/scope';
+import { listThreadsBy } from './annotations/annotations';
+import type { Db } from './client';
+import { readClassRelease } from './content/releases';
+import { removedAsStudent } from './removedStudents';
+import {
+  classMemberships,
+  exerciseAttempts,
+  grades,
+  notebookSubmissions,
+  testAttempts,
+  threads,
+  users,
+} from './schema';
+import { forClass } from './scoped';
+
+/**
+ * The class review table (§12): real students of the class against the tests, exercises and
+ * questions in scope. Preview principals and removed students are not listed. A filter narrows
+ * the students (Needs review, one student) or the scope the columns count (topic, assignment).
+ * Everything is read through the class scope, and the syllabus from the class's adopted release.
+ */
+
+export type ClassReview = z.input<typeof contracts.classReview>;
+export type StudentDiscussions = z.input<typeof contracts.getStudentDiscussions.response>;
+export type ReviewFilters = z.output<typeof contracts.reviewQuery>;
+type Row = ClassReview['rows'][number];
+
+/** Attempt states in which the instructor still has something to do (§11). */
+const AWAITING = new Set(['submitted', 'grading', 'needs_review', 'graded']);
+
+export async function loadClassReview(
+  db: Db,
+  scope: ClassScope,
+  filters: ReviewFilters,
+): Promise<ClassReview> {
+  const { topics: releaseTopics } = await readClassRelease(db, scope);
+  const topics = releaseTopics.map((t, i) => ({
+    topicId: t.topicId,
+    number: i + 1,
+    title: t.title,
+  }));
+  const resources = releaseTopics.flatMap((t) =>
+    t.resources.map((r) => ({
+      resourceId: r.resourceId,
+      tab: r.tab,
+      title: r.title,
+      topicId: t.topicId,
+    })),
+  );
+
+  // An assignment outside the topic filter is no assignment of that view.
+  const inTopic = (r: { topicId: string }) =>
+    filters.topicId === undefined || r.topicId === filters.topicId;
+  const assignments = resources
+    .filter((r) => r.tab === 'tests')
+    .map((r) => ({ assignmentId: r.resourceId, title: r.title, topicId: r.topicId }));
+  const assignment =
+    assignments.find((a) => a.assignmentId === filters.assignmentId && inTopic(a)) ?? null;
+  const notebooks = resources
+    .filter((r) => r.tab === 'notebooks' && inTopic(r))
+    .map((r) => ({ notebookId: r.resourceId, title: r.title, topicId: r.topicId }));
+  const exerciseIds = new Set(
+    resources.filter((r) => r.tab === 'exercises' && inTopic(r)).map((r) => r.resourceId),
+  );
+  const testIds = new Set(
+    assignments
+      .filter((a) => (assignment ? a === assignment : inTopic(a)))
+      .map((a) => a.assignmentId),
+  );
+  const resourceIdsInTopic = new Set(resources.filter(inTopic).map((r) => r.resourceId));
+
+  const roster = await db
+    .select({ id: users.id, name: users.name })
+    .from(classMemberships)
+    .innerJoin(users, eq(users.id, classMemberships.userId))
+    .where(
+      and(
+        forClass(scope, classMemberships),
+        eq(classMemberships.role, 'student'),
+        eq(classMemberships.isPreview, false),
+      ),
+    )
+    .orderBy(asc(users.name), asc(users.id));
+  const studentIds = new Set(roster.map((s) => s.id));
+
+  const [allAttempts, completed, questions, submissions] = await Promise.all([
+    db
+      .select()
+      .from(testAttempts)
+      .where(and(forClass(scope, testAttempts), eq(testAttempts.isPreview, false)))
+      .orderBy(desc(testAttempts.number)),
+    db
+      .select({ userId: exerciseAttempts.userId, resourceId: exerciseAttempts.resourceId })
+      .from(exerciseAttempts)
+      .where(
+        and(
+          forClass(scope, exerciseAttempts),
+          eq(exerciseAttempts.isPreview, false),
+          isNotNull(exerciseAttempts.completedAt),
+        ),
+      ),
+    db
+      .select({ authorId: threads.authorId, resourceId: threads.resourceId })
+      .from(threads)
+      .where(
+        and(forClass(scope, threads), eq(threads.isPreview, false), eq(threads.status, 'open')),
+      ),
+    db
+      .select({ userId: notebookSubmissions.userId, at: notebookSubmissions.createdAt })
+      .from(notebookSubmissions)
+      .where(and(forClass(scope, notebookSubmissions), eq(notebookSubmissions.isPreview, false)))
+      .orderBy(desc(notebookSubmissions.createdAt)),
+  ]);
+  const attempts = allAttempts.filter((a) => studentIds.has(a.userId));
+  const gradeRows = attempts.length
+    ? await db
+        .select()
+        .from(grades)
+        .where(
+          and(
+            forClass(scope, grades),
+            inArray(
+              grades.attemptId,
+              attempts.map((a) => a.id),
+            ),
+          ),
+        )
+        .orderBy(desc(grades.number))
+    : [];
+  const newest = new Map<string, (typeof gradeRows)[number]>();
+  const released = new Map<string, (typeof gradeRows)[number]>();
+  for (const g of gradeRows) {
+    if (!newest.has(g.attemptId)) newest.set(g.attemptId, g);
+    if (g.state === 'released' && !released.has(g.attemptId)) released.set(g.attemptId, g);
+  }
+
+  const attemptsOf = groupBy(attempts, (a) => a.userId);
+  const doneOf = groupBy(
+    completed.filter((c) => exerciseIds.has(c.resourceId)),
+    (c) => c.userId,
+  );
+  const questionsOf = groupBy(
+    questions.filter((q) => resourceIdsInTopic.has(q.resourceId)),
+    (q) => q.authorId,
+  );
+  const lastNotebook = new Map<string, Date>();
+  for (const n of submissions) if (!lastNotebook.has(n.userId)) lastNotebook.set(n.userId, n.at);
+
+  const all: Row[] = roster.map((s) => {
+    const mine = attemptsOf.get(s.id) ?? [];
+    const inScope = mine.filter((a) => testIds.has(a.resourceId));
+    const submitted = inScope.filter((a) => a.state !== 'in_progress');
+    const latest = assignment ? inScope[0] : undefined;
+    // A regrade or override saved after release is a draft above the released grade.
+    const changed = (id: string) => released.has(id) && newest.get(id)?.state === 'draft';
+    const grade = latest && (released.get(latest.id) ?? newest.get(latest.id));
+    const lastTest = mine
+      .map((a) => a.submittedAt)
+      .filter((d): d is Date => d !== null)
+      .sort((a, b) => b.getTime() - a.getTime())[0];
+    const notebook = lastNotebook.get(s.id);
+    const lastKind = lastTest && (!notebook || lastTest >= notebook) ? 'test' : 'notebook';
+    const last = lastKind === 'test' ? lastTest : notebook;
+    return {
+      studentId: s.id,
+      name: s.name,
+      exercises: {
+        completed: new Set((doneOf.get(s.id) ?? []).map((c) => c.resourceId)).size,
+        total: exerciseIds.size,
+      },
+      tests: {
+        submitted: new Set(submitted.map((a) => a.resourceId)).size,
+        released: new Set(submitted.filter((a) => a.state === 'released').map((a) => a.resourceId))
+          .size,
+        total: testIds.size,
+      },
+      attempt: latest
+        ? {
+            attemptId: latest.id,
+            number: latest.number,
+            state: latest.state,
+            submittedAt: latest.submittedAt?.toISOString() ?? null,
+            score: grade
+              ? { points: grade.points, possible: grade.possible, state: grade.state }
+              : null,
+            unreleasedChange: changed(latest.id),
+          }
+        : null,
+      needsReview: inScope.some((a) => AWAITING.has(a.state) || changed(a.id)),
+      openQuestions: (questionsOf.get(s.id) ?? []).length,
+      lastSubmission: last ? { at: last.toISOString(), kind: lastKind } : null,
+    };
+  });
+
+  const filtered = all.filter(
+    (r) =>
+      (filters.studentId === undefined || r.studentId === filters.studentId) &&
+      (!filters.needsReview || r.needsReview),
+  );
+  // A page past the end (a stale link, or Needs review shrinking the list) shows the last page.
+  const page = Math.min(filters.page, Math.max(1, Math.ceil(filtered.length / filters.pageSize)));
+  const start = (page - 1) * filters.pageSize;
+  // The open attempt may be a removed student's: their work stays reviewable (§4).
+  let selectedAttempt = filters.attemptId
+    ? allAttempts.find((a) => a.id === filters.attemptId)
+    : undefined;
+  let selectedName = roster.find((r) => r.id === selectedAttempt?.userId)?.name;
+  if (selectedAttempt && selectedName === undefined) {
+    const [person] = (await isStudentOrRemovedStudent(db, scope, selectedAttempt.userId))
+      ? await db
+          .select({ name: users.name })
+          .from(users)
+          .where(eq(users.id, selectedAttempt.userId))
+      : [];
+    if (person) selectedName = person.name;
+    else selectedAttempt = undefined;
+  }
+  return {
+    topics,
+    assignments,
+    notebooks,
+    roster,
+    students: filtered.map((r) => ({
+      id: r.studentId,
+      name: r.name,
+      attempt: r.attempt && { attemptId: r.attempt.attemptId, number: r.attempt.number },
+    })),
+    total: filtered.length,
+    page,
+    pageSize: filters.pageSize,
+    rows: filtered.slice(start, start + filters.pageSize),
+    assignment: assignment && { assignmentId: assignment.assignmentId, title: assignment.title },
+    selected: selectedAttempt
+      ? {
+          studentId: selectedAttempt.userId,
+          studentName: selectedName ?? '',
+          attemptId: selectedAttempt.id,
+          number: selectedAttempt.number,
+          assignmentId: selectedAttempt.resourceId,
+        }
+      : null,
+  };
+}
+
+function groupBy<T>(items: T[], key: (item: T) => string): Map<string, T[]> {
+  const groups = new Map<string, T[]>();
+  for (const item of items) {
+    const list = groups.get(key(item));
+    if (list) list.push(item);
+    else groups.set(key(item), [item]);
+  }
+  return groups;
+}
+
+/**
+ * What one student shared: questions and comments for instructors or the class, each with the
+ * resource it is about so the instructor can open the passage. Works for a removed student too.
+ */
+export async function loadStudentDiscussions(
+  db: Db,
+  scope: ClassScope,
+  studentId: string,
+  now: Date,
+): Promise<StudentDiscussions | null> {
+  if (!(await isStudentOrRemovedStudent(db, scope, studentId))) return null;
+  const [{ topics }, threadsOf] = await Promise.all([
+    readClassRelease(db, scope),
+    listThreadsBy(db, scope, studentId, now),
+  ]);
+  const where = new Map(
+    topics.flatMap((t) =>
+      t.resources.map(
+        (r) => [r.resourceId, { title: r.title, tab: r.tab, topicId: t.topicId }] as const,
+      ),
+    ),
+  );
+  return {
+    discussions: threadsOf.map((thread) => ({
+      thread,
+      resource: where.get(thread.resourceId) ?? null,
+    })),
+  };
+}
+
+/**
+ * A real student of the class, or one removed from it (`removedAsStudent`). Instructors, preview
+ * principals and strangers are none of these, so their ids are no student's work to review.
+ */
+async function isStudentOrRemovedStudent(db: Db, scope: ClassScope, userId: string) {
+  const [member] = await db
+    .select({ role: classMemberships.role, isPreview: classMemberships.isPreview })
+    .from(classMemberships)
+    .where(and(forClass(scope, classMemberships), eq(classMemberships.userId, userId)));
+  if (member) return member.role === 'student' && !member.isPreview;
+  const [removed] = await db
+    .select({ yes: removedAsStudent(sql`${scope.classId}::uuid`, sql`${userId}::uuid`) })
+    .from(users)
+    .where(eq(users.id, userId));
+  return removed?.yes === true;
+}
