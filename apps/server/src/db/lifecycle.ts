@@ -7,6 +7,7 @@ import type { ClassManagerScope, ClassScope, CourseScope, UserScope } from '../a
 import { audit } from './audit';
 import type { Db, Tx } from './client';
 import { revokeUserConnectorsIn } from './connectors/registry';
+import { otherActiveOwnerExists } from './courseOwners';
 import {
   annotations,
   auditEvents,
@@ -395,9 +396,7 @@ export function closeAccount(
         and(
           eq(courseMemberships.userId, userId),
           eq(courseMemberships.owner, true),
-          sql`not exists (select 1 from course_memberships o join users u on u.id = o.user_id
-            where o.course_id = ${courseMemberships.courseId} and o.owner and o.user_id <> ${userId}
-              and u.deactivated_at is null)`,
+          sql`not ${otherActiveOwnerExists(courseMemberships.courseId, userId)}`,
         ),
       )
       .limit(1);
