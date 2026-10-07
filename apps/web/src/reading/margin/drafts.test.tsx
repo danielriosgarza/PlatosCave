@@ -1,12 +1,15 @@
 import 'fake-indexeddb/auto';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   allowDrafts,
+  attemptCopyKey,
   clearDrafts,
   type Draft,
   draftKey,
   listDrafts,
+  readAttemptCopy,
   removeDraft,
+  saveAttemptCopy,
   saveDraft,
   signedOutKey,
 } from './drafts';
@@ -85,5 +88,52 @@ describe('device draft store', () => {
     expect(await saveDraft(draft('kim', 'n1', 'kim note'))).toBe(true);
     await allowDrafts('sam');
     expect(await saveDraft(draft('sam', 'n2', 'back again'))).toBe(true);
+  });
+
+  it('A15 a later copy that did not reach the store is the one an instructor request sends', async () => {
+    const copy = (value: string) => ({
+      key: attemptCopyKey('sam', 'class-a', 'att-1'),
+      userId: 'sam',
+      kind: 'attempt-copy' as const,
+      classId: 'class-a',
+      attemptId: 'att-1',
+      answers: [{ questionId: 'q1', value }],
+      updatedAt: Date.now(),
+    });
+    expect(await saveAttemptCopy(copy('older'))).toBe(true);
+    const refuse = vi.spyOn(IDBDatabase.prototype, 'transaction').mockImplementation(() => {
+      throw new Error('storage refused');
+    });
+    expect(await saveAttemptCopy(copy('newer'))).toBe(false);
+    refuse.mockRestore();
+    expect((await readAttemptCopy('sam', 'class-a', 'att-1'))?.answers).toEqual([
+      { questionId: 'q1', value: 'newer' },
+    ]);
+  });
+
+  it('A15 a newer copy another tab stored is not replaced by this tab’s older one', async () => {
+    const copy = (value: string, updatedAt: number) => ({
+      key: attemptCopyKey('sam', 'class-a', 'att-2'),
+      userId: 'sam',
+      kind: 'attempt-copy' as const,
+      classId: 'class-a',
+      attemptId: 'att-2',
+      answers: [{ questionId: 'q1', value }],
+      updatedAt,
+    });
+    expect(await saveAttemptCopy(copy('mine', 1))).toBe(true);
+    // Another tab writes a later copy straight to the store.
+    const db = await new Promise<IDBDatabase>((resolve) => {
+      const open = indexedDB.open('parallax-drafts');
+      open.onsuccess = () => resolve(open.result);
+    });
+    await new Promise<void>((resolve) => {
+      const tx = db.transaction('drafts', 'readwrite');
+      tx.objectStore('drafts').put(copy('theirs', 2));
+      tx.oncomplete = () => resolve();
+    });
+    expect((await readAttemptCopy('sam', 'class-a', 'att-2'))?.answers).toEqual([
+      { questionId: 'q1', value: 'theirs' },
+    ]);
   });
 });

@@ -39,7 +39,7 @@ type InputOf<T extends Part> = T extends z.ZodType ? z.input<T> : never;
  * 404 a named missing thing, 409 a state conflict, 410 something used up, 413 a file over the
  * limit, 422 a domain validation report, 429 a rate limit.
  */
-export type ErrorStatus = 400 | 403 | 404 | 409 | 410 | 413 | 422 | 429;
+export type ErrorStatus = 400 | 403 | 404 | 409 | 410 | 413 | 422 | 429 | 503;
 /** Declared error bodies by status; every body is `{ error, … }`. */
 export type Errors = { [S in ErrorStatus]?: z.ZodType };
 

@@ -1,5 +1,7 @@
-export type Tab = 'slides' | 'reading' | 'exercises' | 'notebooks' | 'tests';
-export const TABS: readonly Tab[] = ['slides', 'reading', 'exercises', 'notebooks', 'tests'];
+import { type Tab, tabs } from '@parallax/contracts';
+
+export type { Tab };
+export const TABS: readonly Tab[] = tabs;
 
 export interface AvailabilityResource {
   tab: Tab;

@@ -1,4 +1,3 @@
-import pino from 'pino';
 import { buildApp } from './app';
 import { loadConfig } from './config';
 import { createDb } from './db/client';
@@ -9,6 +8,7 @@ import type { JobLogger } from './jobs/logger';
 import { retentionPolicy, workMaintenance } from './jobs/maintenance';
 import { loadJobs } from './jobs/registry';
 import { ensureQueues, workScopedJob } from './jobs/scoped';
+import { createLogger } from './logging';
 import { createStorage } from './storage/create';
 import type { Storage } from './storage/storage';
 
@@ -139,7 +139,7 @@ if (mode === 'api' || mode === 'relay') {
     await bossExec?.stop({ graceful: true });
   });
 } else {
-  const log = pino({ level: config.LOG_LEVEL, name: 'worker' });
+  const log = createLogger(config, 'worker');
   logPoolError = (err) => log.error({ err }, 'pg pool error');
   if (!database) {
     log.fatal('worker mode needs DATABASE_URL');
