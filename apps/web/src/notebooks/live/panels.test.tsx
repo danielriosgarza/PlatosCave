@@ -120,14 +120,20 @@ const copyInTransfer = {
   finishedAt: NOW,
 };
 
-function Host({ over }: { over: Partial<NotebookSession> }): ReactNode {
+function Host({
+  over,
+  book = notebook,
+}: {
+  over: Partial<NotebookSession>;
+  book?: Notebook;
+}): ReactNode {
   const [sources, setSources] = useState<Record<string, string>>({});
   return (
     <LiveNotebook
       classId={CLASS_A}
       session={session(over)}
       connectionName="Lab workstation"
-      notebook={notebook}
+      notebook={book}
       outlineOpen={false}
       showCode
       showOutputs
@@ -143,7 +149,8 @@ function Host({ over }: { over: Partial<NotebookSession> }): ReactNode {
 function mount(
   declared: unknown[],
   over: Partial<NotebookSession> = {},
-  opts: { copy?: unknown; listing?: 'fail' } = {},
+  opts: { copy?: unknown; listing?: 'fail' | 'slow'; book?: Notebook } = {},
+  release: { listing?: () => void } = {},
 ) {
   const fetchMock = stubApi((url, init) => {
     if (init?.method === 'POST') return { status: 200, body: { transfers: [copyInTransfer] } };
@@ -157,9 +164,23 @@ function mount(
     }
     return { status: 404, body: {} };
   });
+  if (opts.listing === 'slow') {
+    // The listing answers only when the test releases it.
+    const answer = fetchMock.getMockImplementation() as (
+      input: RequestInfo | URL,
+      init?: RequestInit,
+    ) => Promise<Response>;
+    fetchMock.mockImplementation((input, init) =>
+      String(input).includes('/files')
+        ? new Promise((resolve) => {
+            release.listing = () => resolve(answer(input, init));
+          })
+        : answer(input, init),
+    );
+  }
   render(
     <QueryClientProvider client={createQueryClient({ retry: false })}>
-      <Host over={over} />
+      <Host over={over} book={opts.book} />
     </QueryClientProvider>,
   );
   return fetchMock;
@@ -379,5 +400,86 @@ describe('files, save and submit in the live notebook', () => {
     });
     await act(async () => {});
     expect(reads()).toBe(before);
+  });
+});
+
+const codeCell = (id: string, source: string): Notebook['cells'][number] => ({
+  id,
+  type: 'code',
+  source,
+  executionCount: null,
+  sourceHidden: false,
+  outputsHidden: false,
+  outputs: [],
+});
+const storedCell = (id: string, source: string) => ({
+  id,
+  cell_type: 'code',
+  source,
+  metadata: {},
+  outputs: [],
+});
+const edit = (id: string, text: string) => {
+  const editor = document.querySelector(`[data-cell-id="${id}"] .cm-content`) as HTMLElement;
+  const cm = EditorView.findFromDOM(editor.closest('.cm-editor') as HTMLElement) as EditorView;
+  act(() => cm.dispatch({ changes: { from: 0, to: cm.state.doc.length, insert: text } }));
+};
+
+describe('pairing the editor cells with the stored copy', () => {
+  it('A34 two live cells never share one stored cell: edits to both reach the save', async () => {
+    const book: Notebook = { ...notebook, cells: [codeCell('a', 'a0'), codeCell('b', 'b0')] };
+    const copy = {
+      ...stored,
+      notebook: { ...stored.notebook, cells: [storedCell('b', 'b1'), storedCell('x', 'x1')] },
+    };
+    const fetchMock = mount([], {}, { copy, book });
+    attach();
+    await screen.findByRole('heading', { name: 'Save' });
+    await waitFor(() =>
+      expect(document.querySelector('[data-cell-id="b"] .cm-content')).toHaveTextContent('b1'),
+    );
+    expect(document.querySelector('[data-cell-id="a"] .cm-content')).toHaveTextContent('a0');
+    edit('a', 'a2');
+    edit('b', 'b2');
+    fireEvent.click(screen.getByRole('button', { name: 'Save to Parallax' }));
+    await waitFor(() => {
+      const put = fetchMock.mock.calls.find(([, init]) => init?.method === 'PUT');
+      const cells = JSON.parse(String(put?.[1]?.body)).notebook.cells;
+      expect(cells.map((c: { id: string; source: string }) => [c.id, c.source])).toEqual([
+        ['b', 'b2'],
+        ['x', 'x1'],
+        ['a', 'a2'],
+      ]);
+    });
+  });
+
+  it('A34 an edit to a cell the stored copy lacks is saved and flagged as unsaved', async () => {
+    const book: Notebook = { ...notebook, cells: [codeCell('c1', 'x = 1'), codeCell('c2', 'z')] };
+    const fetchMock = mount([], {}, { book });
+    attach();
+    await screen.findByRole('heading', { name: 'Save' });
+    expect(screen.queryByText(/changes that are not saved yet/)).not.toBeInTheDocument();
+    edit('c2', 'z = 3');
+    await screen.findByText(/changes that are not saved yet/);
+    fireEvent.click(screen.getByRole('button', { name: 'Save to Parallax' }));
+    await waitFor(() => {
+      const put = fetchMock.mock.calls.find(([, init]) => init?.method === 'PUT');
+      expect(JSON.parse(String(put?.[1]?.body)).notebook.cells).toMatchObject([
+        { id: 'c1', source: 'x = 1' },
+        { id: 'c2', source: 'z = 3' },
+      ]);
+    });
+  });
+
+  it('A34 Run is not offered while the declared files are still being read', async () => {
+    const release: { listing?: () => void } = {};
+    mount([declaredFile], {}, { listing: 'slow' }, release);
+    attach();
+    await waitFor(() => expect(release.listing).toBeDefined());
+    expect(runButton()).toBeDisabled();
+    expect(screen.getByText(/Reading the files this notebook declares/)).toBeInTheDocument();
+    await act(async () => release.listing?.());
+    await screen.findByText(/declares 1 file\./);
+    expect(runButton()).toBeDisabled();
   });
 });

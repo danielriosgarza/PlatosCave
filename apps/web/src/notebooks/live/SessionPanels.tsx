@@ -30,8 +30,8 @@ export function useCopyInGate(classId: string, sessionId: string, enabled: boole
   const settle = useCallback(() => setSettled(true), []);
   return {
     listing,
-    /** Run is offered only when no declared file is waiting to be copied in or skipped. */
-    pending: enabled && declared > 0 && !settled,
+    /** Run is offered only when the listing has answered and no declared file is waiting to be copied in or skipped. */
+    pending: enabled && !settled && (listing.isPending || declared > 0),
     declared,
     settle,
   };
@@ -45,44 +45,89 @@ const codeCells = (notebook: Json): Json[] =>
     (cell) => cell.cell_type === 'code',
   );
 
-/** Each live code cell with the stored cell it shows: by nbformat id, else by position. */
-function pairsOf(stored: Json, live: Notebook): { id: string; text: string; cell: Json }[] {
+/**
+ * Each live code cell with the stored cell it shows, one to one: by nbformat id first, then by
+ * position among the code cells for a live cell whose position holds a stored cell no other live
+ * cell claimed. Live cells left over have no stored cell.
+ */
+function pairsOf(
+  stored: Json,
+  live: Notebook,
+): {
+  paired: { id: string; text: string; cell: Json }[];
+  unpaired: { id: string; text: string }[];
+} {
   const theirs = codeCells(stored);
-  const byId = new Map(
-    theirs.filter((c) => typeof c.id === 'string').map((c) => [c.id as string, c]),
+  const liveCode = live.cells.flatMap((c) =>
+    c.type === 'code' ? [{ id: c.id, text: c.source }] : [],
   );
-  const out: { id: string; text: string; cell: Json }[] = [];
-  live.cells
-    .filter((c) => c.type === 'code')
-    .forEach((cell, index) => {
-      const match = byId.get(cell.id) ?? theirs[index];
-      if (match)
-        out.push({ id: cell.id, text: cell.type === 'code' ? cell.source : '', cell: match });
-    });
-  return out;
+  const claimed = new Map<string, Json>();
+  const taken = new Set<Json>();
+  for (const { id } of liveCode) {
+    const match = theirs.find((c) => c.id === id && !taken.has(c));
+    if (match) {
+      claimed.set(id, match);
+      taken.add(match);
+    }
+  }
+  const paired: { id: string; text: string; cell: Json }[] = [];
+  const unpaired: { id: string; text: string }[] = [];
+  liveCode.forEach(({ id, text }, index) => {
+    const byPosition = theirs[index];
+    const match =
+      claimed.get(id) ?? (byPosition && !taken.has(byPosition) ? byPosition : undefined);
+    if (match) {
+      taken.add(match);
+      paired.push({ id, text, cell: match });
+    } else unpaired.push({ id, text });
+  });
+  return { paired, unpaired };
 }
 
 /** The stored code by live cell id. */
 export function sourcesFor(stored: Json, live: Notebook): Record<string, string> {
   const out: Record<string, string> = {};
-  for (const { id, cell } of pairsOf(stored, live)) out[id] = sourceText(cell.source);
+  for (const { id, cell } of pairsOf(stored, live).paired) out[id] = sourceText(cell.source);
   return out;
 }
 
-/** The stored copy with the code the editor shows for every live code cell written into it. */
+/**
+ * The stored copy with the code the editor shows for every live code cell written into it. A live
+ * cell the stored copy has no cell for is appended when the editor's code for it was edited, so no
+ * edit is left out of the save.
+ */
 export function notebookWith(base: Json, live: Notebook, sources: Record<string, string>): Json {
+  const { paired, unpaired } = pairsOf(base, live);
   const shown = new Map<Json, string>(
-    pairsOf(base, live).map(({ id, text, cell }) => [cell, sources[id] ?? text]),
+    paired.map(({ id, text, cell }) => [cell, sources[id] ?? text]),
   );
   const cells = Array.isArray(base.cells) ? (base.cells as Json[]) : [];
+  const added = unpaired.flatMap(({ id, text }) => {
+    const edited = sources[id];
+    return edited === undefined || edited === text
+      ? []
+      : [
+          {
+            id,
+            cell_type: 'code',
+            source: edited,
+            metadata: {},
+            outputs: [],
+            execution_count: null,
+          } as Json,
+        ];
+  });
   return {
     ...base,
-    cells: cells.map((cell) => {
-      const text = shown.get(cell);
-      return text === undefined || text === sourceText(cell.source)
-        ? cell
-        : { ...cell, source: text };
-    }),
+    cells: [
+      ...cells.map((cell) => {
+        const text = shown.get(cell);
+        return text === undefined || text === sourceText(cell.source)
+          ? cell
+          : { ...cell, source: text };
+      }),
+      ...added,
+    ],
   };
 }
 

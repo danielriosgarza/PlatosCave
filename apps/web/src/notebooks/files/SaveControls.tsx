@@ -137,14 +137,16 @@ export function SaveControls({
           {unsaved ? ' The editor has changes that are not saved yet.' : ''} Kernel memory is never
           saved.
         </p>
-        <button
-          type="button"
-          className={buttons.tool}
-          disabled={save.kind === 'saving'}
-          onClick={() => void saveToParallax(workingCopy.currentRevision)}
-        >
-          {save.kind === 'saving' ? 'Saving' : 'Save to Parallax'}
-        </button>
+        {save.kind === 'stale' ? null : (
+          <button
+            type="button"
+            className={buttons.tool}
+            disabled={save.kind === 'saving'}
+            onClick={() => void saveToParallax(workingCopy.currentRevision)}
+          >
+            {save.kind === 'saving' ? 'Saving' : 'Save to Parallax'}
+          </button>
+        )}
         {save.kind === 'saved' ? (
           <p role="status">
             Saved to Parallax as revision {save.revision} · {when(save.savedAt)}
