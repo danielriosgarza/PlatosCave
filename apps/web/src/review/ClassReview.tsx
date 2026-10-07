@@ -257,6 +257,7 @@ function Body({
                         {releasable(row) && row.attempt ? (
                           <input
                             type="checkbox"
+                            className={styles.tick}
                             aria-label={`Select ${row.name} for release`}
                             checked={ticks.get(row.attempt.attemptId) === gradeSignature(row)}
                             onChange={() => toggle(row)}

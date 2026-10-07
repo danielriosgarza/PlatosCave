@@ -113,3 +113,10 @@
     gap: 16px;
   }
 }
+@media (pointer: coarse) {
+  .tick {
+    width: var(--pc-touch-target);
+    height: var(--pc-touch-target);
+    margin: 0;
+  }
+}

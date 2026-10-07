@@ -66,3 +66,9 @@
     padding-right: 16px;
   }
 }
+@media (pointer: coarse) {
+  .tools button {
+    min-height: var(--pc-touch-target);
+    min-width: var(--pc-touch-target);
+  }
+}

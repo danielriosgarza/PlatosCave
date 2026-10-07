@@ -39,3 +39,14 @@ button.retry {
   text-underline-offset: 4px;
   cursor: pointer;
 }
+@media (pointer: coarse) {
+  .item {
+    align-items: center;
+    min-height: var(--pc-touch-target);
+  }
+  .item input[type="checkbox"] {
+    width: 24px;
+    height: 24px;
+    margin: 0;
+  }
+}
