@@ -25,8 +25,6 @@ test('A31 offline then online runs the cell once', async ({ page, context }) => 
     await context.setOffline(true);
     await expect(page.getByText('This browser is offline.')).toBeVisible({ timeout: 30_000 });
     await context.setOffline(false);
-    // Still executing: the drop below lands inside the 8-second run, not after it.
-    await expect(cell.getByText('Running', { exact: true })).toBeVisible();
     const sessions = (await (
       await page.request.get(`/api/classes/${classId}/notebook-sessions`)
     ).json()) as {
@@ -36,6 +34,8 @@ test('A31 offline then online runs the cell once', async ({ page, context }) => 
     }[];
     const session = sessions.find((s) => s.state === 'ready');
     expect(session, 'an open session').toBeTruthy();
+    // Still executing: the drop below lands inside the 8-second run, not after it.
+    await expect(cell.getByText('Running', { exact: true })).toBeVisible();
     const dropped = await page.request.post(
       `/api/test/connectors/${session?.connectorId}/drop-link`,
     );

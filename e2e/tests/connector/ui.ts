@@ -24,12 +24,16 @@ export async function takeTestBudget(page: Page): Promise<void> {
 }
 
 /** Signs the lab reader in and opens the lab notebook's Connect panel. */
-export async function openConnect(page: Page, preferred: Person = 'reader'): Promise<void> {
-  // A retried test starts with the server's limits already partly used. The student scenarios
-  // (A27, A28) say "a student", so a student who has run out of codes fails with a clear message
-  // instead of the instructor pairing in their place.
+export async function openConnect(
+  page: Page,
+  preferred: Person = 'reader',
+  options: { studentOnly?: boolean } = {},
+): Promise<void> {
+  // A retried test starts with the server's limits already partly used: the other person may pair.
+  // A27 and A28 say "a student" and pass studentOnly, so for them a student who has run out of
+  // codes fails with a clear message instead of the instructor pairing in their place.
   const person = personWithPairingLeft(preferred);
-  if (preferred === 'reader' && person !== 'reader') {
+  if (options.studentOnly && person !== 'reader') {
     throw new Error(
       'the student (lab reader) has used all five pairing codes this hour; this scenario names a student, so it does not run as the instructor. Wait for the hour to pass or restart the server',
     );
