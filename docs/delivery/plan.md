@@ -639,6 +639,11 @@ Tracks: **connector** (P3-01 → server P3-02 → P3-02a → P3-06 → P3-06a �
 - Scope: `scripts/backup.sh` (pg_dump + storage snapshot manifest) and `scripts/restore.sh`, integration test that backs up the fixture world with a graded attempt, restores into a fresh database and storage root, and verifies attempt, resource revision, code, grader version and released feedback; weekly CI job.
 - Spec: §13. Scenarios: A22. Depends on: P4-01. Model: opus. Security: no. Size: M.
 
+### P4-07a · Backup and restore for the S3 storage driver
+- Scope: `scripts/backup.sh` and `scripts/restore.sh` with `STORAGE_DRIVER=s3`: the bucket's content-addressed objects in the same `parallax-backup/1` layout, restored into an empty bucket with the same checks; A22 against Garage in the `integration` CI job; `docs/backup-restore.md`.
+- Built as: `apps/server/src/scripts/s3-backup.ts` (the server's AWS SDK and `S3_*` variables; `download`, `check-empty`, `upload` refusing existing keys, `verify`, `remove`) called by both scripts; a failed restore deletes the objects it uploaded; `scripts/garage-init.sh` lets the development key create buckets so `a22-backup-restore-s3.itest.ts` uses its own.
+- Spec: §13. Scenarios: A22 (s3 variant). Depends on: P4-07. Model: opus. Security: no. Size: S.
+
 ### P4-08 · Accessibility validation
 - Scope: axe on every route in e2e, keyboard-only journeys (courses → reading annotation → exercise → code test → feedback), screen-reader labels and status announcements audit, 320 px width and 200 % zoom checks with horizontal scroll confined to code/tables/tab strip, focus restoration for sheets, fixes found.
 - Spec: §14. Scenarios: A19, A20. Depends on: P4-04, P4-03. Model: sonnet. Security: no. Size: M.
@@ -676,7 +681,7 @@ Tracks: **connector** (P3-01 → server P3-02 → P3-02a → P3-06 → P3-06a �
 | A01 | P1-01, P1-02, P1-03, P1-06, P1-09, P1-16 | | A19 | P4-08, P1-09 |
 | A02 | P1-01, P1-03, P1-09, P1-10, P1-11 | | A20 | P4-08, P3-17, P4-04 |
 | A03 | P1-12, P2-06, P1-11 | | A21 | P1-01, P1-06, P2-04, P3-15, P4-05 |
-| A04 | P2-02, P1-13 | | A22 | P4-07 |
+| A04 | P2-02, P1-13 | | A22 | P4-07, P4-07a |
 | A05 | P2-04, P2-06, P2-07 | | A23 | P2-10, P2-11 |
 | A06 | P2-05, P1-08 | | A24 | P2-02, P2-09 |
 | A07 | P2-08 | | A25 | P4-02, P4-03 |

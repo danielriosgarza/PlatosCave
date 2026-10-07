@@ -2,18 +2,22 @@
 # Backs up the database and the storage root into a new directory (spec §13, P4-07).
 #
 #   DATABASE_URL=… STORAGE_DIR=… scripts/backup.sh <backup-dir>
+#   DATABASE_URL=… STORAGE_DRIVER=s3 S3_BUCKET=… S3_…=… scripts/backup.sh <backup-dir>
 #
 # <backup-dir> must not exist. It holds:
 #   database.dump     pg_dump custom format of the whole database (every schema)
-#   storage/<key>     every object of the storage root, at its content-addressed key
+#   storage/<key>     every object of the storage root or bucket, at its content-addressed key
 #   storage.manifest  one line per object: <sha256> TAB <size> TAB <key>, sorted by key
 #   backup.info       format, time, pg_dump version, database dump digest, object count
 #
-# The dump is taken first and the storage root copied after it: objects are immutable and
+# The dump is taken first and the storage root (or bucket) copied after it: objects are immutable and
 # written before any row names them, so every key the dump refers to is already in the root.
 # Each copied object is hashed and must match the digest its key names, so a corrupt object
 # fails the backup instead of being preserved. The directory is written as <backup-dir>.partial
-# and renamed when complete. Only STORAGE_DRIVER=fs is supported; see docs/backup-restore.md.
+# and renamed when complete. With STORAGE_DRIVER=s3 the objects are downloaded from S3_BUCKET by
+# apps/server/src/scripts/s3-backup.ts, which reads the server's S3_* variables; the bucket must
+# hold only content-addressed objects (and the adapter's in-flight tmp/ uploads, which are
+# skipped). See docs/backup-restore.md.
 # PG_BIN overrides the directory of pg_dump (default: the newest /usr/lib/postgresql/*/bin).
 set -euo pipefail
 
@@ -22,9 +26,19 @@ die() { echo "backup: $*" >&2; exit 1; }
 [ $# -eq 1 ] || { echo "usage: $0 <backup-dir>" >&2; exit 2; }
 OUT="${1%/}"
 [ -n "${DATABASE_URL:-}" ] || die "DATABASE_URL is required"
-[ "${STORAGE_DRIVER:-fs}" = fs ] || die "STORAGE_DRIVER=${STORAGE_DRIVER} is not supported; only fs"
-STORAGE="${STORAGE_DIR:-.local/storage}"
-[ -d "$STORAGE" ] || die "storage root $STORAGE does not exist"
+DRIVER="${STORAGE_DRIVER:-fs}"
+case "$DRIVER" in
+  fs)
+    STORAGE="${STORAGE_DIR:-.local/storage}"
+    [ -d "$STORAGE" ] || die "storage root $STORAGE does not exist"
+    ;;
+  s3)
+    [ -n "${S3_BUCKET:-}" ] || die "S3_BUCKET is required"
+    SERVER="$(cd "$(dirname "$0")/../apps/server" && pwd)"
+    [ -x "$SERVER/node_modules/.bin/tsx" ] || die "run pnpm install first (apps/server needs tsx)"
+    ;;
+  *) die "STORAGE_DRIVER=$DRIVER is not supported; only fs and s3" ;;
+esac
 [ ! -e "$OUT" ] || die "$OUT already exists"
 
 BIN="${PG_BIN:-$(ls -d /usr/lib/postgresql/*/bin 2>/dev/null | sort -V | tail -1 || true)}"
@@ -41,8 +55,17 @@ trap 'rm -rf "$WORK"' EXIT
 
 pg_dump --format=custom --file="$WORK/database.dump" "$DATABASE_URL"
 
+if [ "$DRIVER" = s3 ]; then
+  # Into the backup directly; the keys are checked below like those of a storage root.
+  dest="$(cd "$WORK/storage" && pwd)"
+  (cd "$SERVER" && node_modules/.bin/tsx src/scripts/s3-backup.ts download "$dest") >/dev/null \
+    || die "cannot download the objects of bucket $S3_BUCKET"
+  STORAGE_ABS="$dest"
+else
+  STORAGE_ABS="$(cd "$STORAGE" && pwd)"
+fi
+
 # Every regular file outside .tmp (the adapter's in-flight uploads) must be an object.
-STORAGE_ABS="$(cd "$STORAGE" && pwd)"
 (cd "$STORAGE_ABS" && find . -path ./.tmp -prune -o \( -type f -printf '%P\n' \) -o \
   \( ! -type d -printf 'not a regular file: %P\n' \) ) | LC_ALL=C sort > "$WORK/keys"
 if grep -q '^not a regular file: ' "$WORK/keys"; then
@@ -53,10 +76,12 @@ if grep -Ev "$KEY_PATTERN" "$WORK/keys" >&2; then
   die "the storage root holds files whose names are not content-addressed keys"
 fi
 
-while IFS= read -r key; do
-  mkdir -p "$WORK/storage/$(dirname "$key")"
-  cp "$STORAGE_ABS/$key" "$WORK/storage/$key"
-done < "$WORK/keys"
+if [ "$DRIVER" = fs ]; then
+  while IFS= read -r key; do
+    mkdir -p "$WORK/storage/$(dirname "$key")"
+    cp "$STORAGE_ABS/$key" "$WORK/storage/$key"
+  done < "$WORK/keys"
+fi
 
 # Hash the copies, which is what the backup holds, and check each against its key.
 : > "$WORK/storage.manifest"
@@ -77,6 +102,7 @@ rm "$WORK/keys"
 
 {
   echo "format=parallax-backup/1"
+  echo "storage_driver=$DRIVER"
   echo "created_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   echo "pg_dump=$(pg_dump --version)"
   echo "database_sha256=$(sha256sum "$WORK/database.dump" | cut -d' ' -f1)"
