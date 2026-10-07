@@ -6,6 +6,11 @@ set -euo pipefail
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 dir="${CONNECTOR_FIXTURE_DIR:-$root/.local/connector-fixtures}"
+if [ -d "$dir" ] && [ ! -O "$dir" ]; then
+  echo "$dir is owned by another user (Docker creates it as root when compose runs before this script)." >&2
+  echo "Remove it (sudo rm -r \"$dir\") and run this script again before docker compose." >&2
+  exit 1
+fi
 mkdir -p "$dir"
 chmod 700 "$dir"
 if [ ! -f "$dir/id_ed25519" ]; then
