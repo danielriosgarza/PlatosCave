@@ -87,6 +87,7 @@ export function SketchTools({
         className={buttons.tool}
         disabled={blocked}
         aria-label={`${api.savedOn(surface) ? 'Edit sketch' : 'Sketch'} on ${label}`}
+        data-return-focus={`${surfaceKey(surface)}:draw`}
         onClick={() => api.begin(surface, 'draw')}
       >
         {api.savedOn(surface) ? 'Edit sketch' : 'Sketch'}
@@ -96,6 +97,7 @@ export function SketchTools({
         className={buttons.tool}
         disabled={blocked}
         aria-label={`Describe ${label} in text`}
+        data-return-focus={`${surfaceKey(surface)}:describe`}
         onClick={() => api.begin(surface, 'describe')}
       >
         Describe in text

@@ -87,10 +87,12 @@ export function ReviewPanel({ classId, topicId }: { classId: string; topicId: st
                 <input
                   type="checkbox"
                   checked={item.reviewed}
-                  disabled={mark.isPending}
-                  onChange={(e) =>
-                    mark.mutate({ resourceId: item.resourceId, reviewed: e.target.checked })
-                  }
+                  // Not `disabled`: that would drop keyboard focus from the box being toggled.
+                  aria-disabled={mark.isPending || undefined}
+                  onChange={(e) => {
+                    if (mark.isPending) return;
+                    mark.mutate({ resourceId: item.resourceId, reviewed: e.target.checked });
+                  }}
                 />
                 <span>
                   {item.title} <span className={styles.tab}>{TAB_NAMES[item.tab]}</span>

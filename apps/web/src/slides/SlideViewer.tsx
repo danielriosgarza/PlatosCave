@@ -57,6 +57,21 @@ type Load =
  * sanitised HTML of the slide, laid out in a 16:9 box. Either keeps its ratio inside a neutral
  * stage; arrow keys move it only while the stage holds focus.
  */
+const PAN = 60;
+const ZOOMED_MAT = { tabIndex: 0, role: 'region', 'aria-label': 'Zoomed slide, arrow keys pan' };
+
+/** Scrolls the zoomed mat one step for an arrow key; false when it cannot move that way. */
+function panMat(mat: HTMLElement, key: string): boolean {
+  const x = key === 'ArrowRight' ? PAN : key === 'ArrowLeft' ? -PAN : 0;
+  const y = key === 'ArrowDown' ? PAN : key === 'ArrowUp' ? -PAN : 0;
+  if (x === 0 && y === 0) return false;
+  const room = x !== 0 ? mat.scrollWidth - mat.clientWidth : mat.scrollHeight - mat.clientHeight;
+  if (room <= 0) return false;
+  mat.scrollLeft += x;
+  mat.scrollTop += y;
+  return true;
+}
+
 export function SlideViewer({
   url,
   slides,
@@ -198,6 +213,12 @@ export function SlideViewer({
       return;
     }
     if (isEditable(event.target)) return;
+    // A zoomed slide pans with the arrows while the mat itself has focus (§7); where it cannot
+    // move that way, the key still changes the slide.
+    if (zoom > 0 && event.target === mat && mat && panMat(mat, event.key)) {
+      event.preventDefault();
+      return;
+    }
     if (event.key === 'ArrowRight') go(page + 1);
     else if (event.key === 'ArrowLeft') go(page - 1);
     else return;
@@ -295,6 +316,8 @@ export function SlideViewer({
               data-slide-stage=""
               className={styles.mat}
               data-zoomed={zoom > 0 || undefined}
+              // A zoomed slide scrolls, so the keyboard must be able to reach and pan it.
+              {...(zoom > 0 ? ZOOMED_MAT : {})}
               data-focus={focusMode || undefined}
             >
               {load.state === 'loading' && (

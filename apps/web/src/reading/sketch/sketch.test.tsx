@@ -464,6 +464,61 @@ describe('sketch on a figure', () => {
     await waitFor(() => expect(screen.queryByText('Sketch · Figure 1')).toBeNull());
   });
 
+  it('A07 focus enters an opened sketch and returns to what opened it, or to the entry that replaced it', async () => {
+    const strokes = [
+      {
+        tool: 'pen' as const,
+        color: '#202124',
+        width: 4,
+        points: [
+          [0.1, 0.1],
+          [0.9, 0.9],
+        ] as [number, number][],
+      },
+    ];
+    const w = world('native', [
+      stored(uuid(1), 'sketch', { kind: 'figure', figureId: FIG1, strokes }, 'A diagonal.'),
+    ]);
+    api(w);
+    const user = userEvent.setup();
+    await openNative();
+    const open = await screen.findByRole('button', { name: 'Open sketch' });
+    await user.click(open);
+    const panel = await screen.findByRole('region', { name: 'Sketch on Figure 1' });
+    expect(panel).toHaveFocus();
+    await user.click(within(panel).getByRole('button', { name: 'Discard' }));
+    expect(screen.getByRole('button', { name: 'Open sketch' })).toHaveFocus();
+
+    // A new sketch: the surface's own button is rebuilt, and focus finds it again.
+    await user.click(screen.getByRole('button', { name: 'Describe Figure 2 in text' }));
+    const describe = await screen.findByRole('region', { name: 'Sketch on Figure 2' });
+    await user.click(within(describe).getByRole('button', { name: 'Discard' }));
+    expect(screen.getByRole('button', { name: 'Describe Figure 2 in text' })).toHaveFocus();
+
+    // Delete sketch removes the focused button; focus goes on to the margin.
+    await user.click(screen.getByRole('button', { name: 'Delete sketch' }));
+    await waitFor(() => expect(w.annotations).toHaveLength(0));
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Add a topic note' })).toHaveFocus(),
+    );
+  });
+
+  it('A07 Done returns focus to the surface button that opened the sketch', async () => {
+    const w = world();
+    api(w);
+    const user = userEvent.setup();
+    await openNative();
+    await user.click(screen.getByRole('button', { name: 'Describe Figure 2 in text' }));
+    const panel = await screen.findByRole('region', { name: 'Sketch on Figure 2' });
+    await user.type(within(panel).getByLabelText('Text description (required)'), 'Tight cluster.');
+    await user.click(within(panel).getByRole('button', { name: 'Save description' }));
+    await waitFor(() => expect(w.calls).toHaveLength(1));
+    await waitFor(() =>
+      expect(screen.queryByRole('region', { name: 'Sketch on Figure 2' })).toBeNull(),
+    );
+    expect(screen.getByRole('button', { name: 'Describe Figure 2 in text' })).toHaveFocus();
+  });
+
   it('A07 a sketch edited elsewhere offers the saved copy or the drawing on this device', async () => {
     const strokes = [
       {

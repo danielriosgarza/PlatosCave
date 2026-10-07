@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ApiError } from '../api/client';
 import buttons from '../components/Buttons.module.css';
 import { Loading } from '../components/Loading';
@@ -202,6 +202,7 @@ function PracticeAttempt({
   const steps = attempt.steps;
   // The step on show. It stays put when its check completes, so the feedback can be read;
   // Continue moves on. A reopened attempt starts at the first step still open.
+  const [announced, setAnnounced] = useState('');
   const [index, setIndex] = useState(() => {
     const open = steps.findIndex((s) => s.status === 'pending');
     return open === -1 ? steps.length : open;
@@ -239,10 +240,14 @@ function PracticeAttempt({
             {notice}
           </p>
         )}
+        <p className={styles.visuallyHidden} role="status">
+          {announced}
+        </p>
         {summary ? (
           <Summary
             attempt={attempt}
             busy={actions.busy}
+            focusHeading={announced !== ''}
             // The new attempt has its own id, which remounts this view at its first step.
             onRestart={() => void actions.restart()}
           />
@@ -252,7 +257,14 @@ function PracticeAttempt({
             step={step}
             isLast={index === last}
             actions={actions}
-            onContinue={() => setIndex(index + 1)}
+            focusHeading={announced !== ''}
+            onContinue={() => {
+              const next = steps[index + 1];
+              setAnnounced(
+                next ? `Step ${index + 2} of ${steps.length}: ${next.title}` : 'Exercise summary',
+              );
+              setIndex(index + 1);
+            }}
           />
         )}
         {actions.error && (
@@ -271,13 +283,21 @@ function StepPanel({
   step,
   isLast,
   actions,
+  focusHeading,
   onContinue,
 }: {
   step: AttemptStep;
   isLast: boolean;
   actions: Actions;
+  /** Reached with Continue: the keyed panel is new, so focus moves to its heading. */
+  focusHeading: boolean;
   onContinue: () => void;
 }) {
+  const heading = useRef<HTMLHeadingElement>(null);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: once, when this step's panel mounts
+  useEffect(() => {
+    if (focusHeading) heading.current?.focus();
+  }, []);
   const [draft, setDraft] = useState<Draft>(() => initialDraft(step));
   const [problem, setProblem] = useState<string | null>(null);
   const [hintsOpen, setHintsOpen] = useState(true);
@@ -313,7 +333,9 @@ function StepPanel({
   return (
     <div>
       <div className={styles.head}>
-        <h3>{step.title}</h3>
+        <h3 ref={heading} tabIndex={-1}>
+          {step.title}
+        </h3>
         <p className={styles.prompt}>{step.prompt}</p>
       </div>
       <StepForm step={step} draft={draft} disabled={completed || actions.busy} onChange={change} />
@@ -435,17 +457,26 @@ function Outcome({ step }: { step: AttemptStep }) {
 function Summary({
   attempt,
   busy,
+  focusHeading,
   onRestart,
 }: {
   attempt: Attempt;
   busy: boolean;
+  focusHeading: boolean;
   onRestart: () => void;
 }) {
   const completion = attempt.completion;
+  const heading = useRef<HTMLHeadingElement>(null);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: once, when the summary mounts
+  useEffect(() => {
+    if (focusHeading) heading.current?.focus();
+  }, []);
   return (
     <div>
       <div className={styles.head}>
-        <h3>Exercise complete.</h3>
+        <h3 ref={heading} tabIndex={-1}>
+          Exercise complete.
+        </h3>
         <p className={styles.muted}>
           {completion ? `Completed ${HELP_LABEL[completion]}. ` : ''}
           Your answers are saved for review;{' '}

@@ -462,6 +462,30 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
 
   // --- the editor of the selected note sits beside its passage (measured after layout) -----------
   const entriesRef = useRef<HTMLDivElement>(null);
+
+  // A removed entry takes the focused button with it: focus goes to the entry that took its place.
+  const afterRemove = useRef<{ index: number; count: number } | null>(null);
+  const entryList = () => [
+    ...(entriesRef.current?.querySelectorAll<HTMLElement>('[data-entry]') ?? []),
+  ];
+  const expectRemoval = (entryId: string) => {
+    const all = entryList();
+    const at = all.findIndex((e) => e.dataset.entryId === entryId);
+    afterRemove.current = { index: Math.max(0, at), count: all.length };
+  };
+  const focusAfterRemoval = () => {
+    const pending = afterRemove.current;
+    if (!pending) return;
+    const all = entryList();
+    if (all.length >= pending.count) return;
+    afterRemove.current = null;
+    const next = all[Math.min(pending.index, all.length - 1)];
+    const target =
+      next?.querySelector<HTMLElement>('button') ??
+      entriesRef.current?.querySelector<HTMLElement>('[data-add-note]');
+    target?.focus();
+  };
+  useEffect(focusAfterRemoval);
   const measure = useCallback(() => {
     wide.current = typeof window.matchMedia === 'function' && window.matchMedia(WIDE).matches;
     const entry = entriesRef.current?.querySelector<HTMLElement>('[data-active="true"]');
@@ -593,6 +617,7 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
           } else void removeDraft(scoped);
         }
       }
+      afterRemove.current = null;
       setDeleteProblem(controller?.key ?? entryId);
       touch();
       return;
@@ -639,6 +664,10 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
       <div>
         {children(setRoot, pdfSketch(sketches, showPage))}
         {toolbar}
+        {/* The toolbar appears after the passage's block, away from the reader's place: say so. */}
+        <div className={styles.srOnly} role="status" aria-live="polite">
+          {toolbar ? 'Highlight, Note, Ask available' : ''}
+        </div>
         <FigureSketches root={root} html={html} api={sketches} />
       </div>
       {open ? (
@@ -704,7 +733,10 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
                     (n.annotation ? editorFor(n.annotation) : n.controller)?.edit(text)
                   }
                   onBlur={() => n.controller?.blur()}
-                  onRemove={() => void removeNote(n.id, n.controller)}
+                  onRemove={() => {
+                    expectRemoval(n.controller?.key ?? n.id);
+                    void removeNote(n.id, n.controller);
+                  }}
                   actions={actions}
                 />
               ))}
@@ -720,11 +752,16 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
                   editable={editable}
                   onEdit={() => openSketch(annotation, surface)}
                   onExport={() => exportSketch(annotation, surface ?? surfaceOf(annotation.anchor))}
-                  onDelete={() => actions.remove(annotation.id)}
+                  onDelete={async () => {
+                    expectRemoval(annotation.id);
+                    const removed = await actions.remove(annotation.id);
+                    if (!removed) afterRemove.current = null;
+                    return removed;
+                  }}
                 />
               ))}
               <p>
-                <button type="button" className={styles.link} onClick={topicNote}>
+                <button type="button" className={styles.link} data-add-note="" onClick={topicNote}>
                   Add a topic note
                 </button>
               </p>
@@ -838,6 +875,8 @@ function NoteEntry({
   return (
     <div
       className={styles.entry}
+      data-entry=""
+      data-entry-id={id}
       data-active={active}
       style={active && alignTop ? { marginTop: alignTop } : undefined}
     >

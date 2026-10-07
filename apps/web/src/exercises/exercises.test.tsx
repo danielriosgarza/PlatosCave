@@ -323,6 +323,19 @@ describe('exercise UI', () => {
     expect(await screen.findByRole('heading', { name: 'Inspect' })).toBeVisible();
   });
 
+  it('A20 Continue moves focus to the new step heading and announces the step', async () => {
+    const user = userEvent.setup();
+    exerciseApi();
+    open();
+    await screen.findByRole('heading', { name: 'Predict' });
+    await user.click(screen.getByRole('radio', { name: 'Narrower' }));
+    await user.click(screen.getByRole('button', { name: 'Check answer' }));
+    await user.click(await screen.findByRole('button', { name: 'Continue' }));
+    const heading = await screen.findByRole('heading', { name: 'Inspect' });
+    expect(heading).toHaveFocus();
+    expect(screen.getByText('Step 2 of 3: Inspect', { selector: '[role="status"]' })).toBeVisible();
+  });
+
   it('A08 checking with nothing chosen asks for an answer and records nothing', async () => {
     const user = userEvent.setup();
     const { calls } = exerciseApi();
