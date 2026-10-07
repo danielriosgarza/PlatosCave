@@ -55,7 +55,9 @@ local({
     tokens
   }
 
-  json_string <- function(s) string_items(s[[1L]])[[1L]]
+  json_string <- function(s) {
+    as.character(jsonlite::toJSON(clean_text(s)[[1L]], auto_unbox = TRUE))
+  }
 
   not_json <- function() stop(structure(class = c(NOT_JSON, "error", "condition"),
                                         list(message = "not json", call = NULL)))
@@ -146,7 +148,7 @@ local({
     message <- tryCatch(conditionMessage(e), error = function(e2) "")
     paste0(
       "{\"ok\":false,\"exception\":{\"type\":", json_string(classes[[1L]]),
-      ",\"bases\":[", paste(vapply(classes[-1L], json_string, ""), collapse = ","),
+      ",\"bases\":[", paste(string_items(classes[-1L], cleaned = TRUE), collapse = ","),
       "],\"message\":", json_string(paste(message, collapse = "\n")), "}}"
     )
   }
@@ -158,11 +160,12 @@ local({
     # unrelated stop() is on the stack, is not an exception.
     stop_fn <- stop
     from_stop <- function(cond) {
-      for (i in seq_len(sys.nframe())) {
-        if (identical(sys.function(i), stop_fn) &&
-            identical(get0("cond", sys.frame(i), inherits = FALSE), cond)) return(TRUE)
-      }
-      FALSE
+      # Only the frame directly below the handler can be stop(): it signals through
+      # .signalCondition from its own frame. Walking the whole stack would cost time
+      # proportional to its depth for every message() in a deeply recursive solution.
+      i <- sys.nframe() - 2L
+      i >= 1L && identical(sys.function(i), stop_fn) &&
+        identical(get0("cond", sys.frame(i), inherits = FALSE), cond)
     }
     # quit() and q() end the call like an exception (Python's SystemExit), not the driver. The
     # override sits in the global environment, so student helpers sourced there reach it too.

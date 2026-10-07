@@ -1373,6 +1373,7 @@ class RRuntime(HarnessCase):
         "stop_warning <- function() stop(simpleWarning('w'))\n"
         "stop_message <- function() stop(simpleMessage('m'))\n"
         "nested_signal <- function() withCallingHandlers(stop('boom'), error = function(e) signalCondition(structure(class = c('note', 'condition'), list(message = 'fyi', call = NULL))))\n"
+        "deep <- function(n) { if (n == 0) return(0); message('d'); deep(n - 1) + 1 }\n"
         "custom <- function() stop(structure(class = c('myFailure', 'condition'), list(message = 'custom failure', call = NULL)))\n"
         "signals <- function() { signalCondition(structure(class = c('note', 'condition'), list(message = 'fyi', call = NULL))); 7 }\n"
     )
@@ -1579,6 +1580,10 @@ class RRuntime(HarnessCase):
             r_call("Handler signal during error", "nested_signal", {"raises": {"type": "simpleError", "message": "boom"}}),
         )
         self.assertEqual([c["status"] for c in outcome.result["checks"]], ["passed"] * 3, outcome.result["checks"])
+
+    def test_messages_in_deep_recursion_cost_no_more_than_without_the_driver(self):
+        entry = self.outcome_for(r_call("Deep", "deep", {"value": 1500}, args=[1500], timeoutSeconds=5)).check()
+        self.assertEqual(entry["status"], "passed", {k: entry[k] for k in entry if k not in ("stderr",)})
 
     def test_a_non_error_condition_at_the_top_of_the_solution_file_is_an_exception(self):
         job = r_job(
