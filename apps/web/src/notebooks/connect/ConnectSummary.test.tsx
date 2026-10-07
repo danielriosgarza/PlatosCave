@@ -6,13 +6,14 @@ import { connector, sshConnection, testView } from './fixtures';
 
 afterEach(cleanup);
 
-function setup() {
+function setup(defaultLease?: { idleTimeoutMin: number; gracePeriodMin: number }) {
   const onConnect = vi.fn();
   render(
     <ConnectSummary
       connection={sshConnection()}
       connector={connector()}
       test={testView({ outcome: 'ready_to_start' })}
+      defaultLease={defaultLease}
       busy={false}
       onConnect={onConnect}
     />,
@@ -21,6 +22,16 @@ function setup() {
 }
 
 describe('ConnectSummary', () => {
+  it("pre-fills the operator's default lease and sends it", async () => {
+    const onConnect = setup({ idleTimeoutMin: 60, gracePeriodMin: 15 });
+    expect(screen.getByLabelText(/Stop after minutes with no activity/)).toHaveValue('60');
+    expect(screen.getByText(/keeps your kernel for 15 minutes/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Connect' }));
+    expect(onConnect).toHaveBeenCalledWith(
+      expect.objectContaining({ idleTimeoutMin: 60, gracePeriodMin: 15 }),
+    );
+  });
+
   it('a lease value of 20 or 120 minutes can be typed after clearing the field', async () => {
     const onConnect = setup();
     const idle = screen.getByLabelText(/Stop after minutes with no activity/);

@@ -1,6 +1,7 @@
-import { createContext, useContext, useMemo, useRef, useState } from 'react';
+import { createContext, type ReactNode, useContext, useMemo, useRef, useState } from 'react';
 import buttons from '../components/Buttons.module.css';
 import readingStyles from '../reading/Reading.module.css';
+import { SourceDownload } from '../reading/SourceDownload';
 import { sanitizeReading } from '../reading/sanitize';
 import styles from './Notebook.module.css';
 import type { CellOutput, Notebook, NotebookCell } from './notebooks';
@@ -19,6 +20,16 @@ interface Props {
  */
 export const RenewOutputLinks = createContext<(() => void) | null>(null);
 
+/**
+ * The notebook's source download, shown beside a notice that sanitisation removed or did not show
+ * an output (§10.7), so the original stays reachable from the output itself.
+ */
+export const OutputSourceLink = createContext<{
+  classId: string;
+  revisionId: string;
+  sourceKey: string;
+} | null>(null);
+
 type Shown = Record<string, { code?: boolean; output?: boolean }>;
 
 /**
@@ -29,18 +40,22 @@ type Shown = Record<string, { code?: boolean; output?: boolean }>;
  */
 export function NotebookView({ notebook, showCode, showOutputs, outlineOpen }: Props) {
   const root = useRef<HTMLElement | null>(null);
-  // Cells opened one by one; a change of the toolbar's Show/Hide resets them.
+  // Cells opened or collapsed one by one; a change of the toolbar's Show/Hide resets them.
   const [shown, setShown] = useState<{ code: boolean; outputs: boolean; cells: Shown }>({
     code: showCode,
     outputs: showOutputs,
     cells: {},
   });
+  // Adjusting state while rendering: a toolbar change discards the cells' own choices for good,
+  // so returning the toolbar to an earlier setting does not bring them back.
+  if (shown.code !== showCode || shown.outputs !== showOutputs)
+    setShown({ code: showCode, outputs: showOutputs, cells: {} });
   const cells = shown.code === showCode && shown.outputs === showOutputs ? shown.cells : {};
-  const reveal = (id: string, part: 'code' | 'output') =>
+  const setPart = (id: string, part: 'code' | 'output', open: boolean) =>
     setShown({
       code: showCode,
       outputs: showOutputs,
-      cells: { ...cells, [id]: { ...cells[id], [part]: true } },
+      cells: { ...cells, [id]: { ...cells[id], [part]: open } },
     });
 
   return (
@@ -57,7 +72,7 @@ export function NotebookView({ notebook, showCode, showOutputs, outlineOpen }: P
           outputShown={
             cells[cell.id]?.output ?? (showOutputs && !(cell.type === 'code' && cell.outputsHidden))
           }
-          onReveal={(part) => reveal(cell.id, part)}
+          onToggle={(part, open) => setPart(cell.id, part, open)}
         />
       ))}
     </article>
@@ -111,13 +126,13 @@ function Cell({
   kernel,
   codeShown,
   outputShown,
-  onReveal,
+  onToggle,
 }: {
   cell: NotebookCell;
   kernel: string | null;
   codeShown: boolean;
   outputShown: boolean;
-  onReveal: (part: 'code' | 'output') => void;
+  onToggle: (part: 'code' | 'output', open: boolean) => void;
 }) {
   if (cell.type === 'markdown') {
     return (
@@ -142,53 +157,99 @@ function Cell({
     >
       <div className={styles.cell}>
         <span className={styles.num}>{count(cell.executionCount)}</span>
-        {codeShown ? (
-          <pre className={styles.code}>
-            <code>{cell.source}</code>
-          </pre>
-        ) : (
-          <div>
-            <button
-              type="button"
-              className={buttons.textButton}
-              aria-label={`Show code of cell ${count(cell.executionCount)}`}
-              onClick={() => onReveal('code')}
-            >
-              Show code
-            </button>
-          </div>
-        )}
+        <div className={styles.cellBody}>
+          <CellToggle
+            part="code"
+            open={codeShown}
+            cellCount={cell.executionCount}
+            onToggle={(open) => onToggle('code', open)}
+          />
+          {codeShown ? (
+            <pre className={styles.code}>
+              <code>{cell.source}</code>
+            </pre>
+          ) : null}
+        </div>
       </div>
       {cell.outputs.length > 0 ? (
         <div className={styles.cell}>
           <span className={styles.num}>Out</span>
-          {outputShown ? (
-            <div className={styles.outputs}>
-              {cell.outputs.map((output, i) => (
-                // Outputs never move within a stored cell: their order is their identity.
-                // biome-ignore lint/suspicious/noArrayIndexKey: see above
-                <Output key={i} output={output} cellCount={cell.executionCount} />
-              ))}
-              <div className={styles.provenance}>
-                Stored output · {kernel ?? 'kernel not recorded'}
+          <div className={styles.cellBody}>
+            <CellToggle
+              part="output"
+              open={outputShown}
+              cellCount={cell.executionCount}
+              onToggle={(open) => onToggle('output', open)}
+            />
+            {outputShown ? (
+              <div className={styles.outputs}>
+                {cell.outputs.map((output, i) => (
+                  // Outputs never move within a stored cell: their order is their identity.
+                  // biome-ignore lint/suspicious/noArrayIndexKey: see above
+                  <Output key={i} output={output} cellCount={cell.executionCount} />
+                ))}
+                <div className={styles.provenance}>
+                  Stored output · {kernel ?? 'kernel not recorded'}
+                </div>
               </div>
-            </div>
-          ) : (
-            <div>
-              <button
-                type="button"
-                className={buttons.textButton}
-                aria-label={`Show output of cell ${count(cell.executionCount)}`}
-                onClick={() => onReveal('output')}
-              >
-                Show output
-              </button>
-            </div>
-          )}
+            ) : null}
+          </div>
         </div>
       ) : null}
     </section>
   );
+}
+
+/** Collapses or shows one part of a code cell, whatever the toolbar last set. */
+function CellToggle({
+  part,
+  open,
+  cellCount,
+  onToggle,
+}: {
+  part: 'code' | 'output';
+  open: boolean;
+  cellCount: number | null;
+  onToggle: (open: boolean) => void;
+}) {
+  const verb = open ? 'Collapse' : 'Show';
+  return (
+    <div>
+      <button
+        type="button"
+        className={buttons.textButton}
+        aria-expanded={open}
+        aria-label={`${verb} ${part} of cell ${count(cellCount)}`}
+        onClick={() => onToggle(!open)}
+      >
+        {verb} {part}
+      </button>
+    </div>
+  );
+}
+
+/** A provenance notice for an output that sanitisation removed or left out, with the source link. */
+function RemovedNotice({ children }: { children: ReactNode }) {
+  return (
+    <div className={styles.provenance}>
+      <span>{children}</span>
+      <SourceLink />
+    </div>
+  );
+}
+
+function SourceLink() {
+  const source = useContext(OutputSourceLink);
+  return source ? (
+    <>
+      {' · '}
+      <SourceDownload
+        {...source}
+        className={buttons.textButton}
+        label="Download original notebook"
+      />
+    </>
+  ) : null;
 }
 
 export function Output({ output, cellCount }: { output: CellOutput; cellCount: number | null }) {
@@ -223,7 +284,7 @@ export function Output({ output, cellCount }: { output: CellOutput; cellCount: n
             <p>{output.alt} (image unavailable)</p>
           )}
           {output.scriptsRemoved ? (
-            <div className={styles.provenance}>Scripts in this output were removed and not run</div>
+            <RemovedNotice>Scripts in this output were removed and not run</RemovedNotice>
           ) : null}
         </div>
       );
@@ -266,7 +327,7 @@ export function Output({ output, cellCount }: { output: CellOutput; cellCount: n
             <p>This output is unavailable.</p>
           )}
           {output.scriptsRemoved ? (
-            <div className={styles.provenance}>Scripts in this output were removed and not run</div>
+            <RemovedNotice>Scripts in this output were removed and not run</RemovedNotice>
           ) : null}
         </div>
       );
@@ -279,9 +340,9 @@ export function Output({ output, cellCount }: { output: CellOutput; cellCount: n
     case 'unsupported':
       return (
         <div className={styles.output}>
-          <p className={styles.label}>
+          <RemovedNotice>
             Interactive output not shown ({output.mimeTypes.join(', ')})
-          </p>
+          </RemovedNotice>
         </div>
       );
   }

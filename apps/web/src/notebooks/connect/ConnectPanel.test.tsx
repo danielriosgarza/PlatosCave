@@ -48,6 +48,8 @@ interface World {
   refuseTest?: { status: number; error: string };
   /** Answers close, forget and kernel start with this refusal. */
   refuse?: { status: number; error: string; code?: string };
+  /** The signed-in person; its `defaultLease` is what the panel pre-fills. */
+  me?: unknown;
   /** A second session, answered under its own id. */
   other?: { session: unknown; kernel: unknown };
 }
@@ -70,6 +72,7 @@ function serve(w: World) {
     const method = init?.method ?? 'GET';
     if (method === 'POST')
       w.posts.push({ url, body: init?.body ? JSON.parse(String(init.body)) : undefined });
+    if (url === '/api/me') return { status: 200, body: w.me ?? makeMe() };
     if (url === '/api/me/connectors') return { status: 200, body: w.connectors };
     if (url === '/api/me/connections' && method === 'GET')
       return { status: 200, body: w.connections };
@@ -246,6 +249,28 @@ describe('ConnectPanel', () => {
         runtime: { mode: 'start', kernelName: 'python3' },
         lease: { idleTimeoutMin: 30, gracePeriodMin: 5 },
       }),
+    );
+  });
+
+  it("the operator's default lease is pre-filled and sent when the class computer sets none", async () => {
+    const w = world({
+      me: makeMe({ defaultLease: { idleTimeoutMin: 45, gracePeriodMin: 10 } }),
+    });
+    serve(w);
+    renderPanel();
+    await fillLocal();
+    w.test = READY_TEST;
+    const connect = await screen.findByRole('button', { name: 'Connect' }, { timeout: 4000 });
+    expect(
+      screen.getByText(
+        /Closing this tab keeps your kernel for 10 minutes\. An open notebook with no activity stops after 45 minutes\./,
+      ),
+    ).toBeInTheDocument();
+    await userEvent.click(connect);
+    await waitFor(() =>
+      expect(
+        w.posts.find((p) => p.url === `/api/classes/${CLASS_A}/notebook-sessions`)?.body,
+      ).toMatchObject({ lease: { idleTimeoutMin: 45, gracePeriodMin: 10 } }),
     );
   });
 
