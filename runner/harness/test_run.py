@@ -1372,6 +1372,7 @@ class RRuntime(HarnessCase):
         "bigvec <- function() rep(c('a\"b', 'caf\\u00e9', NA), length.out = 100000)\n"
         "huge_escapes <- function() strrep('\u00e9\\n\\t\\001\"\\\\', 300000)\n"
         "nested <- function(n) { d <- list(); for (i in seq_len(n)) d <- list(d); d }\n"
+        "bytes_string <- function() { s <- strrep('\u00e9', 40000); Encoding(s) <- 'bytes'; s }\n"
         "utf8_within <- function() strrep('\u00e9', 40000)\n"
         "ascii_at <- function() strrep('a', 65536)\n"
         "ascii_over <- function() strrep('a', 65537)\n"
@@ -1598,12 +1599,18 @@ class RRuntime(HarnessCase):
             [c["status"] for c in outcome.result["checks"]], ["passed"] * 3 + ["failed"], outcome.result["checks"]
         )
 
-    def test_repr_of_a_deeply_nested_list_falls_back_to_the_whole_deparse(self):
-        # 1000 levels deparse fine; the bounding recursion must not turn them into <unrepresentable>.
-        outcome = self.outcome_for(r_call("Nested", "nested", {"value": "x"}, "repr", args=[1000]))
-        check = outcome.check()
-        self.assertEqual(check["status"], "failed", check)
-        self.assertTrue(check["actual"].startswith("list(list(list("), check["actual"][:40])
+    def test_repr_falls_back_to_the_whole_deparse_when_bounding_fails(self):
+        # nchar(type = "chars") errors on a string marked "bytes"; the repr must then be the
+        # plain deparse, not <unrepresentable>. A nested list shows no change in its repr either.
+        outcome = self.outcome_for(
+            r_call("Bytes string", "bytes_string", {"value": "x"}, "repr"),
+            r_call("Nested list", "nested", {"value": "x"}, "repr", args=[500]),
+        )
+        bytes_check, nested_check = outcome.result["checks"]
+        self.assertEqual(bytes_check["status"], "failed", bytes_check)
+        self.assertTrue(bytes_check["actual"].startswith('"\\\\xc3\\\\xa9'), bytes_check["actual"][:40])
+        self.assertEqual(nested_check["status"], "failed", nested_check)
+        self.assertTrue(nested_check["actual"].startswith("list(list(list("), nested_check["actual"][:40])
 
     def test_stop_with_a_warning_or_message_condition_is_an_exception(self):
         outcome = self.outcome_for(
