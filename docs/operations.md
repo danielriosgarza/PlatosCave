@@ -89,7 +89,7 @@ Defaults an operator may change, all in the environment (`apps/server/src/config
 | --- | --- | --- |
 | `SESSION_TTL_DAYS` | 14 (1–90) | how long a sign-in lasts; cookie and stored expiry agree, including the instructor session kept and restored around a draft preview. Shortening it does not end sessions already issued |
 | `LEASE_IDLE_MINUTES` | 30 (5–240) | an open notebook with no activity stops after this long |
-| `LEASE_GRACE_MINUTES` | 5 (1–60) | closing the tab keeps the kernel this long. Both lease values apply when a request names no lease and the class template sets none; the web Connect panel still pre-fills 30 and 5 and sends them (follow-up P4-12a), so for now they reach API clients only |
+| `LEASE_GRACE_MINUTES` | 5 (1–60) | closing the tab keeps the kernel this long. Both lease values apply when a request names no lease and the class template sets none; the web Connect panel pre-fills them |
 | `RUN_RATE_LIMIT` | 30 | code-run requests per session per minute |
 | `AUTH_LINK_RATE_LIMIT`, `AUTH_VERIFY_RATE_LIMIT` | 120, 240 | sign-in limits per address per 15 minutes |
 | `RUNNER_SLOTS` | 4 (1–32) | concurrent sandbox containers (runner) |

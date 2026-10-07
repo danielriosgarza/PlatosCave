@@ -1,6 +1,7 @@
-import { cleanup, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { Dialog } from '../courses/Dialogs';
 import {
   CLASS_A,
   makeMe,
@@ -69,10 +70,8 @@ describe('focus and full screen', () => {
     expect(screen.queryByRole('heading', { name: 'Sampling' })).not.toBeInTheDocument();
     expect(tabs()).not.toBeInTheDocument();
     expect(screen.getByRole('toolbar', { name: 'Resource tools' })).toBeVisible();
-    expect(screen.getByRole('button', { name: 'Exit focus' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
+    expect(screen.getByRole('button', { name: 'Exit focus' })).toHaveAttribute('data-on', 'true');
+    expect(screen.getByRole('button', { name: 'Exit focus' })).not.toHaveAttribute('aria-pressed');
 
     await user.keyboard('{Escape}');
     expect(bar()).toBeInTheDocument();
@@ -98,6 +97,33 @@ describe('focus and full screen', () => {
     expect(screen.getByRole('tabpanel')).toBe(panel);
     await user.keyboard('{Escape}');
     expect(screen.getByRole('tabpanel')).toBe(panel);
+  });
+
+  it('A04 Escape in a dialog opened from Focus closes only the dialog, and F does nothing behind it', async () => {
+    const user = userEvent.setup();
+    await open();
+    await user.click(screen.getByRole('button', { name: 'Focus' }));
+    const onClose = vi.fn();
+    render(
+      <Dialog title="Remove material" onClose={onClose}>
+        <button type="button">Cancel</button>
+      </Dialog>,
+    );
+    await user.keyboard('f');
+    expect(requestFullscreen).not.toHaveBeenCalled();
+    await user.keyboard('{Escape}');
+    expect(onClose).toHaveBeenCalledTimes(1);
+    expect(bar()).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Exit focus' })).toBeInTheDocument();
+  });
+
+  it('A20 the material panel keeps a name and the status regions stay mounted during Focus', async () => {
+    const user = userEvent.setup();
+    await open();
+    await user.click(screen.getByRole('button', { name: 'Focus' }));
+    expect(tabs()).not.toBeInTheDocument();
+    expect(screen.getByRole('tabpanel', { name: 'Reading' })).toBeInTheDocument();
+    expect(screen.getByRole('status')).toBeEmptyDOMElement();
   });
 
   it('A04 F requests full screen, the control becomes Exit full screen, Escape restores the workspace', async () => {
@@ -220,10 +246,7 @@ describe('focus and full screen', () => {
     enterFullscreen(inner);
     leaveFullscreen();
     expect(bar()).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Exit focus' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
+    expect(screen.getByRole('button', { name: 'Exit focus' })).toHaveAttribute('data-on', 'true');
     inner.remove();
   });
 });

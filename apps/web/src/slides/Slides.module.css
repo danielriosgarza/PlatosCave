@@ -251,6 +251,16 @@
     padding: 12px 16px;
   }
 }
+
+/* The zoom live region stays mounted and announced, but is out of the layout while empty. */
+.zoomStatus:empty {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
 @media (pointer: coarse) {
   .indexButton {
     min-height: var(--pc-touch-target, 44px);
