@@ -780,6 +780,12 @@ describe('sketch editor reachability', () => {
   });
 });
 
+const sentAnchor = (call: Call | undefined) => {
+  const body = call?.body as { anchor: { rect: unknown; strokes: unknown[] } } | null | undefined;
+  if (!body) throw new Error('no request was sent');
+  return body.anchor;
+};
+
 describe('sketch on a PDF page', () => {
   it('A07 saves a page sketch as a pdf anchor with page-relative strokes, and holds the page while it is open', async () => {
     const w = world('pdf');
@@ -832,7 +838,7 @@ describe('sketch on a PDF page', () => {
     await user.type(within(panel).getByLabelText('Text description (required)'), 'Zoomed.');
     await user.click(within(panel).getByRole('button', { name: 'Done' }));
     await waitFor(() => expect(w.calls).toHaveLength(1));
-    const saved = (w.calls[0]?.body as { anchor: { rect: unknown; strokes: unknown[] } }).anchor;
+    const saved = sentAnchor(w.calls[0]);
     expect(saved.rect).toEqual({ x: 0.25, y: 0.25, w: 0.5, h: 0.5 });
     expect(saved.strokes).toHaveLength(1);
 
@@ -852,7 +858,7 @@ describe('sketch on a PDF page', () => {
     await user.click(screen.getByRole('button', { name: 'Done' }));
     await waitFor(() => expect(w.calls).toHaveLength(2));
     expect(w.calls[1]?.method).toBe('PUT');
-    const resent = (w.calls[1]?.body as { anchor: { rect: unknown; strokes: unknown[] } }).anchor;
+    const resent = sentAnchor(w.calls[1]);
     expect(resent.rect).toEqual(saved.rect);
     expect(resent.strokes[0]).toEqual(saved.strokes[0]);
     expect(resent.strokes[1]).toMatchObject({
