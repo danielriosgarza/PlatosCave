@@ -10,6 +10,8 @@
   border-bottom: 1px solid var(--pc-rule);
 }
 .toolbar h2 {
+  min-width: 0;
+  overflow-wrap: anywhere;
   font: var(--pc-text-subsection);
   letter-spacing: var(--pc-tracking-subsection);
 }
@@ -285,6 +287,10 @@
   clip-path: inset(50%);
   white-space: nowrap;
   border: 0;
+}
+.fieldset legend.visuallyHidden {
+  /* `.fieldset legend` sets width: 100%; a hidden legend stays one pixel wide so it cannot widen the page. */
+  width: 1px;
 }
 .solutionNote {
   flex-basis: 100%;

@@ -1,23 +1,14 @@
 import AxeBuilder from '@axe-core/playwright';
-import { type APIRequestContext, expect, type Locator, type Page, test } from '@playwright/test';
+import { expect, type Locator, type Page, test } from '@playwright/test';
+import { joinLabClassAs } from './lab-classmate';
+import { releaseToClassA, signedIn, type WorldIds, worldIds } from './released';
 
 test.use({ colorScheme: 'light' });
 
-const id = (n: number) => `00000000-0000-4000-8000-${n.toString().padStart(12, '0')}`;
-const lab = { class: id(211), topic: id(311) };
-
+let ids: WorldIds;
 test.beforeAll(async ({ playwright, baseURL }) => {
-  const setup = await playwright.request.newContext({ baseURL });
-  expect((await setup.post('/api/test/world')).ok()).toBe(true);
+  ids = await worldIds(playwright, baseURL);
 });
-
-type Playwright = { request: { newContext(o: object): Promise<APIRequestContext> } };
-
-async function signedIn(playwright: Playwright, baseURL: string, email: string) {
-  const client = await playwright.request.newContext({ baseURL });
-  expect((await client.post('/api/test/signin-as', { data: { email } })).ok()).toBe(true);
-  return client;
-}
 
 /** Moves focus with Tab alone until `target` has it; fails if the control cannot be reached. */
 async function tabTo(page: Page, target: Locator) {
@@ -104,16 +95,7 @@ test('A20 a keyboard-only reader goes from the course list to a saved reading no
   playwright,
   baseURL,
 }) => {
-  const setup = await playwright.request.newContext({ baseURL });
-  expect((await setup.post('/api/test/world')).ok()).toBe(true);
-  const email = `a20-reader-${Date.now()}@example.test`;
-  const owner = await signedIn(playwright, baseURL ?? '', 'lab-author@example.test');
-  const issued = await owner.post(`/api/classes/${lab.class}/invites`, {
-    data: { kind: 'enrolment' },
-  });
-  const { code } = (await issued.json()) as { code: string };
-  expect((await page.request.post('/api/test/signin-as', { data: { email } })).ok()).toBe(true);
-  expect((await page.request.post('/api/join', { data: { code } })).ok()).toBe(true);
+  await joinLabClassAs(playwright, baseURL, page, `a20-reader-${Date.now()}@example.test`);
 
   await page.goto('/courses?view=student');
   await activate(page, page.getByRole('link', { name: /^Open Reading lab/ }));
@@ -153,28 +135,9 @@ test('A20 a keyboard-only student answers a test with code and finds the release
   playwright,
   baseURL,
 }) => {
-  const base = baseURL ?? '';
   const title = `Keyboard test ${Date.now()}-${test.info().workerIndex}`;
-  const setup = await playwright.request.newContext({ baseURL });
-  const { ids } = await (await setup.post('/api/test/world')).json();
-  const elena = await signedIn(playwright, base, 'elena@example.test');
-  const created = await elena.post(
-    `/api/courses/${ids.statistics}/topics/${ids.sampling}/resources`,
-    { data: { type: 'test', title, content: definition } },
-  );
-  expect(created.ok()).toBe(true);
-  const resourceId = (await created.json()).id as string;
-  const published = await elena.post(`/api/courses/${ids.statistics}/releases`);
-  const { release } = await published.json();
-  const priya = await signedIn(playwright, base, 'priya@example.test');
-  const current = await (await priya.get(`/api/classes/${ids.classA}/release`)).json();
-  expect(
-    (
-      await priya.post(`/api/classes/${ids.classA}/adopt`, {
-        data: { releaseId: release.id, expectedReleaseId: current.release.id },
-      })
-    ).ok(),
-  ).toBe(true);
+  const resourceId = await releaseToClassA(playwright, baseURL, ids, 'test', title, definition);
+  const priya = await signedIn(playwright, baseURL, 'priya@example.test');
 
   expect(
     (await page.request.post('/api/test/signin-as', { data: { email: 'sam@example.test' } })).ok(),
@@ -221,6 +184,13 @@ test('A20 a keyboard-only student answers a test with code and finds the release
     await page.request.get(`/api/classes/${ids.classA}/resources/${resourceId}/test`)
   ).json();
   const attemptId = overview.attempts[0].id as string;
+  // What the keys entered is what the server holds, before anyone grades it.
+  const held = JSON.stringify(
+    await (await page.request.get(`/api/classes/${ids.classA}/test-attempts/${attemptId}`)).json(),
+  );
+  expect(held).toContain('n100');
+  expect(held).toContain('Noise averages out.');
+  expect(held).toContain('return sum(xs) / len(xs)');
   const gradeUrl = `/api/classes/${ids.classA}/test-attempts/${attemptId}/grade`;
   const drafted = await (
     await priya.post(gradeUrl, {
@@ -241,13 +211,16 @@ test('A20 a keyboard-only student answers a test with code and finds the release
   });
   expect(released.ok()).toBe(true);
 
-  await page.goto(`/classes/${ids.classA}/topics/${ids.sampling}/tests`);
+  // Back to the topic's tab strip by keys: leave Tests and return, which reads the new release.
+  await chooseTab(page, 'Slides');
+  await chooseTab(page, 'Tests');
   await expect(listed.or(heading)).toBeVisible();
   if (await listed.isVisible()) await activate(page, listed);
   await activate(page, page.getByRole('button', { name: /^View feedback for attempt 1/ }));
   await expect(page.getByRole('heading', { name: /attempt 1 feedback/ })).toBeFocused();
   await expect(page.getByText('Well argued.')).toBeVisible();
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+  await priya.dispose();
 });
 
 const exercise = {
@@ -276,26 +249,8 @@ const exercise = {
 };
 
 test('A20 a keyboard-only student completes an exercise', async ({ page, playwright, baseURL }) => {
-  const base = baseURL ?? '';
   const title = `Keyboard exercise ${Date.now()}-${test.info().workerIndex}`;
-  const setup = await playwright.request.newContext({ baseURL });
-  const { ids } = await (await setup.post('/api/test/world')).json();
-  const elena = await signedIn(playwright, base, 'elena@example.test');
-  const created = await elena.post(
-    `/api/courses/${ids.statistics}/topics/${ids.sampling}/resources`,
-    { data: { type: 'exercise', title, content: exercise } },
-  );
-  expect(created.ok()).toBe(true);
-  const { release } = await (await elena.post(`/api/courses/${ids.statistics}/releases`)).json();
-  const priya = await signedIn(playwright, base, 'priya@example.test');
-  const current = await (await priya.get(`/api/classes/${ids.classA}/release`)).json();
-  expect(
-    (
-      await priya.post(`/api/classes/${ids.classA}/adopt`, {
-        data: { releaseId: release.id, expectedReleaseId: current.release.id },
-      })
-    ).ok(),
-  ).toBe(true);
+  await releaseToClassA(playwright, baseURL, ids, 'exercise', title, exercise);
 
   expect(
     (await page.request.post('/api/test/signin-as', { data: { email: 'sam@example.test' } })).ok(),
@@ -336,13 +291,22 @@ test('A20 a sheet keeps focus inside, closes on Escape and gives focus back to i
   const sheet = page.getByRole('dialog', { name: 'Join a class' });
   await expect(sheet).toBeVisible();
   await expect(sheet.locator(':focus')).toHaveCount(1);
-  // Tab and Shift+Tab wrap inside the sheet; the page behind never takes focus.
-  for (let presses = 0; presses < 8; presses++) {
-    await page.keyboard.press('Tab');
-    await expect(sheet.locator(':focus')).toHaveCount(1);
-  }
+  // Tab from the last control wraps to the first, Shift+Tab from the first to the last, and the
+  // page behind never takes focus.
+  const controls = sheet.locator(
+    'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled])',
+  );
+  // The sheet has the code field and its buttons; wrapping needs at least two controls.
+  // Join is disabled until a code is typed; with one the sheet has several controls to wrap among.
+  await page.keyboard.type('ABCD-EFGH');
+  expect(await controls.count()).toBeGreaterThan(1);
+  const first = controls.first();
+  const last = controls.last();
+  await first.focus();
   await page.keyboard.press('Shift+Tab');
-  await expect(sheet.locator(':focus')).toHaveCount(1);
+  await expect(last).toBeFocused();
+  await page.keyboard.press('Tab');
+  await expect(first).toBeFocused();
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
   await page.keyboard.press('Escape');
   await expect(sheet).toBeHidden();

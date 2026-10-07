@@ -534,7 +534,12 @@ function Answer({
       </p>
     );
   }
-  if (question.kind === 'explanation') return <pre>{String(answer)}</pre>;
+  if (question.kind === 'explanation')
+    return (
+      // Long lines scroll sideways, so keyboard users must be able to focus the block.
+      // biome-ignore lint/a11y/noNoninteractiveTabindex: a scrollable region needs a tab stop
+      <pre tabIndex={0}>{String(answer)}</pre>
+    );
   const files = (answer as { files?: { path: string; content: string }[] }).files ?? [];
   return (
     <>
@@ -569,7 +574,8 @@ function CodeFile({
   return (
     <div>
       <div className={`${page.small} ${page.muted}`}>{file.path}</div>
-      <pre>
+      {/* biome-ignore lint/a11y/noNoninteractiveTabindex: a scrollable region needs a tab stop */}
+      <pre tabIndex={0}>
         {rows.map((text, i) => (
           // The file is fixed text, so the line number is the identity.
           // biome-ignore lint/suspicious/noArrayIndexKey: lines of a frozen file

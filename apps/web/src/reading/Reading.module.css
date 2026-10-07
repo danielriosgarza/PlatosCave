@@ -24,9 +24,12 @@
 .picker {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
+  max-width: 100%;
 }
 .picker select {
+  min-width: 0;
   border: 1px solid var(--pc-muted);
   background: var(--pc-sheet);
   border-radius: var(--pc-radius-control);

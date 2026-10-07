@@ -254,6 +254,8 @@
   font: var(--pc-text-ui);
 }
 .submissions {
+  /* Positioned so visually hidden cells stay inside the scroller instead of widening the page. */
+  position: relative;
   overflow-x: auto;
 }
 .submissions table {
