@@ -1,0 +1,350 @@
+import AxeBuilder from '@axe-core/playwright';
+import { type APIRequestContext, expect, type Locator, type Page, test } from '@playwright/test';
+
+test.use({ colorScheme: 'light' });
+
+const id = (n: number) => `00000000-0000-4000-8000-${n.toString().padStart(12, '0')}`;
+const lab = { class: id(211), topic: id(311) };
+
+test.beforeAll(async ({ playwright, baseURL }) => {
+  const setup = await playwright.request.newContext({ baseURL });
+  expect((await setup.post('/api/test/world')).ok()).toBe(true);
+});
+
+type Playwright = { request: { newContext(o: object): Promise<APIRequestContext> } };
+
+async function signedIn(playwright: Playwright, baseURL: string, email: string) {
+  const client = await playwright.request.newContext({ baseURL });
+  expect((await client.post('/api/test/signin-as', { data: { email } })).ok()).toBe(true);
+  return client;
+}
+
+/** Moves focus with Tab alone until `target` has it; fails if the control cannot be reached. */
+async function tabTo(page: Page, target: Locator) {
+  await expect(target).toBeVisible();
+  for (let presses = 0; presses < 150; presses++) {
+    if (await target.evaluate((el) => el === document.activeElement)) return;
+    await page.keyboard.press('Tab');
+  }
+  throw new Error(`Tab never reached ${target}`);
+}
+
+/** Reaches the control by Tab and activates it with the key a keyboard user would. */
+async function activate(page: Page, target: Locator, key: 'Enter' | 'Space' = 'Enter') {
+  await tabTo(page, target);
+  await page.keyboard.press(key);
+}
+
+/** Moves among the topic's tabs the way the pattern asks: Tab to the strip, then arrow keys. */
+async function chooseTab(page: Page, name: string) {
+  const strip = page.getByRole('tablist');
+  await tabTo(page, strip.getByRole('tab', { selected: true }));
+  for (let steps = 0; steps < 10; steps++) {
+    if (await strip.getByRole('tab', { name, selected: true }).count()) break;
+    await page.keyboard.press('ArrowRight');
+  }
+  await expect(strip.getByRole('tab', { name })).toHaveAttribute('aria-selected', 'true');
+  await expect(strip.getByRole('tab', { name })).toBeFocused();
+}
+
+const definition = {
+  schema: 'test.v1',
+  settings: { attempts: 3, timeZone: 'Europe/Madrid' },
+  questions: [
+    {
+      id: 'spread',
+      kind: 'choice',
+      prompt: 'Which sample mean varies least?',
+      points: 2,
+      options: [
+        { id: 'n10', label: 'n = 10' },
+        { id: 'n100', label: 'n = 100' },
+      ],
+      correct: ['n100'],
+    },
+    {
+      id: 'why',
+      kind: 'explanation',
+      prompt: 'Why does the larger sample vary less?',
+      points: 3,
+      rubric: [{ id: 'averaging', label: 'Names averaging out of noise', points: 3 }],
+    },
+    {
+      id: 'mean',
+      kind: 'code',
+      prompt: 'Write mean(xs).',
+      points: 4,
+      runtime: 'python-3.12',
+      files: [
+        {
+          path: 'solution.py',
+          content: 'def mean(xs):\n    pass\n',
+          editable: true,
+          hidden: false,
+        },
+      ],
+      checks: [
+        {
+          name: 'sample',
+          kind: 'call',
+          visibility: 'public',
+          file: 'solution.py',
+          function: 'mean',
+          args: [[1, 2, 3]],
+          expected: { value: 2 },
+          compare: { mode: 'numeric' },
+        },
+      ],
+    },
+  ],
+};
+
+test('A20 a keyboard-only reader goes from the course list to a saved reading note', async ({
+  page,
+  playwright,
+  baseURL,
+}) => {
+  const setup = await playwright.request.newContext({ baseURL });
+  expect((await setup.post('/api/test/world')).ok()).toBe(true);
+  const email = `a20-reader-${Date.now()}@example.test`;
+  const owner = await signedIn(playwright, baseURL ?? '', 'lab-author@example.test');
+  const issued = await owner.post(`/api/classes/${lab.class}/invites`, {
+    data: { kind: 'enrolment' },
+  });
+  const { code } = (await issued.json()) as { code: string };
+  expect((await page.request.post('/api/test/signin-as', { data: { email } })).ok()).toBe(true);
+  expect((await page.request.post('/api/join', { data: { code } })).ok()).toBe(true);
+
+  await page.goto('/courses?view=student');
+  await activate(page, page.getByRole('link', { name: /^Open Reading lab/ }));
+  await expect(page.getByRole('link', { name: 'Long readings' })).toBeVisible();
+  await activate(page, page.getByRole('link', { name: 'Long readings' }));
+  const tabs = page.getByRole('tab');
+  await expect(tabs.first()).toBeVisible();
+  await chooseTab(page, 'Reading');
+  await expect(page.getByText('Paragraph 1.', { exact: false }).first()).toBeVisible();
+
+  // A passage selected the way assistive technology does it; everything after is keys only.
+  await page.evaluate(() => {
+    const block = [...document.querySelectorAll('[data-block-id]')].find((b) =>
+      b.textContent?.startsWith('Paragraph 2.'),
+    );
+    const text = block && document.createTreeWalker(block, NodeFilter.SHOW_TEXT).nextNode();
+    if (!text) throw new Error('paragraph not found');
+    const range = document.createRange();
+    range.setStart(text, 0);
+    range.setEnd(text, 11);
+    window.getSelection()?.removeAllRanges();
+    window.getSelection()?.addRange(range);
+  });
+  const tools = page.getByRole('toolbar', { name: 'Selected passage' });
+  await activate(page, tools.getByRole('button', { name: 'Note' }));
+  const editor = page.getByRole('textbox', { name: 'Your note' });
+  await expect(editor).toBeFocused();
+  await page.keyboard.type('Keyboard note');
+  await expect(page.getByRole('status').filter({ hasText: 'Saved' })).toBeVisible({
+    timeout: 10_000,
+  });
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+});
+
+test('A20 a keyboard-only student answers a test with code and finds the released feedback', async ({
+  page,
+  playwright,
+  baseURL,
+}) => {
+  const base = baseURL ?? '';
+  const title = `Keyboard test ${Date.now()}-${test.info().workerIndex}`;
+  const setup = await playwright.request.newContext({ baseURL });
+  const { ids } = await (await setup.post('/api/test/world')).json();
+  const elena = await signedIn(playwright, base, 'elena@example.test');
+  const created = await elena.post(
+    `/api/courses/${ids.statistics}/topics/${ids.sampling}/resources`,
+    { data: { type: 'test', title, content: definition } },
+  );
+  expect(created.ok()).toBe(true);
+  const resourceId = (await created.json()).id as string;
+  const published = await elena.post(`/api/courses/${ids.statistics}/releases`);
+  const { release } = await published.json();
+  const priya = await signedIn(playwright, base, 'priya@example.test');
+  const current = await (await priya.get(`/api/classes/${ids.classA}/release`)).json();
+  expect(
+    (
+      await priya.post(`/api/classes/${ids.classA}/adopt`, {
+        data: { releaseId: release.id, expectedReleaseId: current.release.id },
+      })
+    ).ok(),
+  ).toBe(true);
+
+  expect(
+    (await page.request.post('/api/test/signin-as', { data: { email: 'sam@example.test' } })).ok(),
+  ).toBe(true);
+  await page.goto('/courses?view=student');
+  await activate(page, page.getByRole('link', { name: /^Open Statistical thinking/ }));
+  await activate(page, page.getByRole('link', { name: /Sampling/ }).first());
+  await chooseTab(page, 'Tests');
+  const listed = page
+    .getByRole('listitem')
+    .filter({ hasText: title })
+    .getByRole('button', { name: 'Open' });
+  const heading = page.getByRole('heading', { name: title });
+  await expect(listed.or(heading)).toBeVisible();
+  if (await listed.isVisible()) await activate(page, listed);
+  await activate(page, page.getByRole('button', { name: /^Start attempt/ }));
+  await expect(page.getByRole('heading', { name: 'Question 1' })).toBeVisible();
+
+  // One Tab stop for the group; the arrow key moves to the next option and selects it.
+  await tabTo(page, page.getByRole('radio', { name: 'n = 10', exact: true }));
+  await page.keyboard.press('ArrowDown');
+  await expect(page.getByRole('radio', { name: 'n = 100' })).toBeChecked();
+  await expect(page.getByText(/^Saved \d/)).toBeVisible();
+  await activate(page, page.getByRole('button', { name: /^Question 2/ }));
+  await expect(page.getByRole('heading', { name: 'Question 2' })).toBeVisible();
+  await tabTo(page, page.getByRole('textbox').first());
+  await page.keyboard.type('Noise averages out.');
+  await activate(page, page.getByRole('button', { name: /^Question 3/ }));
+  await expect(page.getByRole('heading', { name: 'Question 3' })).toBeVisible();
+  await activate(page, page.getByRole('button', { name: /Screen-reader mode/ }));
+  const code = page.getByRole('textbox', { name: 'solution.py, your implementation' });
+  await tabTo(page, code);
+  await page.keyboard.press('ControlOrMeta+a');
+  await page.keyboard.type('def mean(xs):\n    return sum(xs) / len(xs)\n');
+  await expect(page.getByText(/^Saved \d/)).toBeVisible();
+
+  await activate(page, page.getByRole('button', { name: 'Review submission' }));
+  await expect(page.getByRole('heading', { name: 'Review submission' })).toBeFocused();
+  await activate(page, page.getByRole('button', { name: 'Submit test' }));
+  await expect(page.getByRole('heading', { name: 'Test submitted' })).toBeVisible();
+
+  // The instructor grades by hand and releases; the student then finds the feedback by keyboard.
+  const overview = await (
+    await page.request.get(`/api/classes/${ids.classA}/resources/${resourceId}/test`)
+  ).json();
+  const attemptId = overview.attempts[0].id as string;
+  const gradeUrl = `/api/classes/${ids.classA}/test-attempts/${attemptId}/grade`;
+  const drafted = await (
+    await priya.post(gradeUrl, {
+      data: {
+        expectedGradeId: null,
+        manual: [{ questionId: 'why', criteria: [{ id: 'averaging', points: 3 }] }],
+        feedback: [{ target: { kind: 'attempt' }, text: 'Well argued.' }],
+      },
+    })
+  ).json();
+  const overridden = await priya.post(`${gradeUrl}/override`, {
+    data: { expectedGradeId: drafted.history[0].id, points: 9, reason: 'No runner attached' },
+  });
+  expect(overridden.ok()).toBe(true);
+  const graded = await overridden.json();
+  const released = await priya.post(`/api/classes/${ids.classA}/grade-releases`, {
+    data: { grades: [{ attemptId, gradeId: graded.history[0].id }] },
+  });
+  expect(released.ok()).toBe(true);
+
+  await page.goto(`/classes/${ids.classA}/topics/${ids.sampling}/tests`);
+  await expect(listed.or(heading)).toBeVisible();
+  if (await listed.isVisible()) await activate(page, listed);
+  await activate(page, page.getByRole('button', { name: /^View feedback for attempt 1/ }));
+  await expect(page.getByRole('heading', { name: /attempt 1 feedback/ })).toBeFocused();
+  await expect(page.getByText('Well argued.')).toBeVisible();
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+});
+
+const exercise = {
+  schema: 'exercise.v1',
+  steps: [
+    {
+      id: 'predict',
+      kind: 'single_choice',
+      title: 'Predict',
+      prompt: 'What happens to the standard error when n goes from 25 to 100?',
+      options: [
+        { id: 'half', label: 'It halves' },
+        { id: 'same', label: 'It stays the same' },
+      ],
+      correct: 'half',
+      feedback: { correct: 'Yes, the standard error halves.', incorrect: 'Not quite.' },
+    },
+    {
+      id: 'explain',
+      kind: 'text',
+      title: 'Explain',
+      prompt: 'Which distribution narrowed, and which did not?',
+      feedback: { saved: 'Saved. Your practice is complete.' },
+    },
+  ],
+};
+
+test('A20 a keyboard-only student completes an exercise', async ({ page, playwright, baseURL }) => {
+  const base = baseURL ?? '';
+  const title = `Keyboard exercise ${Date.now()}-${test.info().workerIndex}`;
+  const setup = await playwright.request.newContext({ baseURL });
+  const { ids } = await (await setup.post('/api/test/world')).json();
+  const elena = await signedIn(playwright, base, 'elena@example.test');
+  const created = await elena.post(
+    `/api/courses/${ids.statistics}/topics/${ids.sampling}/resources`,
+    { data: { type: 'exercise', title, content: exercise } },
+  );
+  expect(created.ok()).toBe(true);
+  const { release } = await (await elena.post(`/api/courses/${ids.statistics}/releases`)).json();
+  const priya = await signedIn(playwright, base, 'priya@example.test');
+  const current = await (await priya.get(`/api/classes/${ids.classA}/release`)).json();
+  expect(
+    (
+      await priya.post(`/api/classes/${ids.classA}/adopt`, {
+        data: { releaseId: release.id, expectedReleaseId: current.release.id },
+      })
+    ).ok(),
+  ).toBe(true);
+
+  expect(
+    (await page.request.post('/api/test/signin-as', { data: { email: 'sam@example.test' } })).ok(),
+  ).toBe(true);
+  await page.goto(`/classes/${ids.classA}/topics/${ids.sampling}/slides`);
+  await chooseTab(page, 'Exercises');
+  const start = page
+    .getByRole('listitem')
+    .filter({ hasText: title })
+    .getByRole('button', { name: 'Start' });
+  const predict = page.getByRole('heading', { name: 'Predict' });
+  await expect(start.or(predict)).toBeVisible();
+  if (await start.isVisible()) await activate(page, start);
+  await expect(predict).toBeVisible();
+
+  await tabTo(page, page.getByRole('radio', { name: 'It halves' }));
+  await page.keyboard.press('Space');
+  await expect(page.getByRole('radio', { name: 'It halves' })).toBeChecked();
+  await activate(page, page.getByRole('button', { name: 'Check answer' }));
+  await expect(page.getByText('Yes, the standard error halves.')).toBeVisible();
+  await activate(page, page.getByRole('button', { name: 'Continue' }));
+  await tabTo(page, page.getByLabel('Your explanation'));
+  await page.keyboard.type('The distribution of sample means narrowed.');
+  await activate(page, page.getByRole('button', { name: 'Done' }));
+  await expect(page.getByText('Saved. Your practice is complete.')).toBeVisible();
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+});
+
+test('A20 a sheet keeps focus inside, closes on Escape and gives focus back to its opener', async ({
+  page,
+}) => {
+  expect(
+    (await page.request.post('/api/test/signin-as', { data: { email: 'sam@example.test' } })).ok(),
+  ).toBe(true);
+  await page.goto('/courses?view=student');
+  const opener = page.getByRole('button', { name: 'Join a class' });
+  await activate(page, opener);
+  const sheet = page.getByRole('dialog', { name: 'Join a class' });
+  await expect(sheet).toBeVisible();
+  await expect(sheet.locator(':focus')).toHaveCount(1);
+  // Tab and Shift+Tab wrap inside the sheet; the page behind never takes focus.
+  for (let presses = 0; presses < 8; presses++) {
+    await page.keyboard.press('Tab');
+    await expect(sheet.locator(':focus')).toHaveCount(1);
+  }
+  await page.keyboard.press('Shift+Tab');
+  await expect(sheet.locator(':focus')).toHaveCount(1);
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([]);
+  await page.keyboard.press('Escape');
+  await expect(sheet).toBeHidden();
+  await expect(opener).toBeFocused();
+});

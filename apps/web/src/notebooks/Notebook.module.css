@@ -244,6 +244,10 @@
   gap: 8px 12px;
   margin: 16px 0;
 }
+.submit input[type="file"] {
+  max-width: 100%;
+  min-width: 0;
+}
 .submit p {
   flex-basis: 100%;
   margin: 0;
