@@ -418,6 +418,41 @@ describe('A09 stored HTML and JavaScript outputs cannot run script', () => {
     expect(sanitizeSvg('<div>no svg</div>')).toBeNull();
   });
 
+  test('A09 a template inside an SVG is dropped, not thrown on, wherever it sits', () => {
+    for (const body of [
+      '<template><rect/></template>',
+      '<g><template><script>alert(1)</script></template></g>',
+      '<defs><template onload="alert(1)"/></defs>',
+      '<template/>',
+      '<foreignObject><template><p>x</p></template></foreignObject>',
+      '<g><g><template><template><rect/></template></template></g></g>',
+    ]) {
+      const out = storedSvg(`<svg ${NS}>${body}<circle id="keep" r="1"/></svg>`);
+      expect(out.text).not.toMatch(/template|<rect|<p>/i);
+      expect(out.text).toContain('<circle id="keep"');
+      expect(out.scriptsRemoved).toBe(true);
+    }
+  });
+
+  test('A09 a notebook with a template inside an SVG output imports with the template dropped', () => {
+    const rendered = render([
+      code('s', 'plot()', [
+        {
+          output_type: 'display_data',
+          metadata: {},
+          data: {
+            'image/svg+xml': `<svg ${NS}><template><rect/></template><circle id="keep" r="1"/></svg>`,
+          },
+        },
+      ]),
+    ]);
+    const [svgOut] = outputsOf(rendered);
+    expect(svgOut).toMatchObject({ type: 'image', contentType: 'image/svg+xml' });
+    const stored = new TextDecoder().decode(rendered.objects[0]?.bytes);
+    expect(stored).toContain('<circle id="keep"');
+    expect(stored).not.toMatch(/template|<rect/i);
+  });
+
   test('A09 a stripped element cannot split a token so that an external url( is rebuilt', () => {
     for (const split of ['u<set>x</set>rl', 'u<script>x</script>rl', 'u<metadata>x</metadata>rl']) {
       const out = storedSvg(

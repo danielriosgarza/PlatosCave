@@ -9,7 +9,9 @@ import {
   type StoredNotebookOutput,
 } from '@parallax/contracts';
 import type { Element, ElementContent, Root, RootContent } from 'hast';
+import { fromParse5 } from 'hast-util-from-parse5';
 import { toString as hastToString } from 'hast-util-to-string';
+import { type DefaultTreeAdapterMap, parseFragment } from 'parse5';
 import rehypeParse from 'rehype-parse';
 import rehypeSanitize, { defaultSchema, type Options as SanitizeSchema } from 'rehype-sanitize';
 import rehypeStringify from 'rehype-stringify';
@@ -232,7 +234,36 @@ const svgSanitizer = unified()
   .use(rehypeSanitize, svgSchema)
   .use(rehypeStringify, { space: 'svg' })
   .freeze();
-const svgParser = unified().use(rehypeParse, { fragment: true, space: 'svg' }).freeze();
+
+type ParentNode = DefaultTreeAdapterMap['parentNode'];
+
+/**
+ * Removes every `template` element that parse5 made in the SVG namespace (one directly inside
+ * `svg`, or in `g`, `defs`, ...). Only an HTML `template` has a `content` fragment, and
+ * `hast-util-from-parse5` throws when it reads the missing one. An HTML `template` (reached
+ * through `foreignObject`) keeps its content, which is searched too, and is dropped later by the
+ * allow-list. True when one was removed; `template` counts as script-capable (`SCRIPT_CAPABLE`).
+ */
+function dropForeignTemplates(node: ParentNode): boolean {
+  let dropped = false;
+  node.childNodes = node.childNodes.filter((child) => {
+    if (child.nodeName === 'template' && !('content' in child)) {
+      dropped = true;
+      return false;
+    }
+    if ('content' in child && dropForeignTemplates(child.content)) dropped = true;
+    if ('childNodes' in child && dropForeignTemplates(child)) dropped = true;
+    return true;
+  });
+  return dropped;
+}
+
+/** SVG text as a hast fragment parsed as HTML would read it, without foreign `template`s. */
+function parseSvg(svg: string): { tree: Root; templateRemoved: boolean } {
+  const fragment = parseFragment(svg, { sourceCodeLocationInfo: true, scriptingEnabled: false });
+  const templateRemoved = dropForeignTemplates(fragment);
+  return { tree: fromParse5(fragment, { space: 'svg' }) as Root, templateRemoved };
+}
 
 /** In-document references: `url(#id)`, quoted or spaced. */
 const LOCAL_URL = /url\(\s*(['"]?)\s*#[^)'"\s]*\s*\1\s*\)/gi;
@@ -318,12 +349,11 @@ function finishSvg(root: Element): boolean {
  * early; what follows the root is dropped so the stored text stays one well-formed element.
  */
 export function sanitizeSvg(svg: string): { text: string; scriptsRemoved: boolean } | null {
-  const root = svgParser
-    .parse(svg)
-    .children.find((n): n is Element => isElement(n) && n.tagName === 'svg');
+  const parsed = parseSvg(svg);
+  const root = parsed.tree.children.find((n): n is Element => isElement(n) && n.tagName === 'svg');
   if (!root) return null;
   const tree: Root = { type: 'root', children: [root] };
-  const scriptsRemoved = hasScript(tree, true);
+  const scriptsRemoved = hasScript(tree, true) || parsed.templateRemoved;
   const clean = svgSanitizer.runSync(tree);
   const [cleanRoot] = clean.children;
   if (!cleanRoot || !isElement(cleanRoot)) return null;
