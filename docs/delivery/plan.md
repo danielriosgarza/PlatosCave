@@ -550,7 +550,7 @@ Tracks: **connector** (P3-01 → server P3-02 → P3-02a → P3-06 → P3-06a �
 - Scope: per design §15. Compose profile `connector` in `infra/compose.yml`: `sshd-jupyter` (`infra/docker/sshd-jupyter.Dockerfile`: `python:3.12-slim`, `openssh-server`, `jupyter-server==2.21.1`, `ipykernel==7.4.0`, `nbformat==5.11.1`; sshd on port 22 published as `127.0.0.1:2222`, a second instance on 2223 with `AllowTcpForwarding no`; users `student`, `bare`, `locked`; host keys generated at start into a volume) and `jump` (`infra/docker/jump.Dockerfile`, `PermitOpen sshd-jupyter:22`, published `127.0.0.1:2225`); `scripts/connector-fixture-keys.sh`; `connector/internal/fixture/*_test.go` under the build tag `fixture` (TestA28/TestA29/TestA30 against the real sshd); `e2e/tests/connector/` with `a27-local-connector.e2e.ts`, `a28-ssh-connector.e2e.ts`, `a29-failing-stages.e2e.ts`, `a30-host-key-change.e2e.ts`, `a31-reconnect.e2e.ts` and a helper that builds and spawns the connector with a temporary `PARALLAX_CONNECTOR_HOME` and `--allow-net 127.0.0.0/8`; `.github/workflows/connector-e2e.yml` (path-filtered on pull requests as design §15 lists, `workflow_dispatch`, 15 minutes; and a weekly schedule running `go test ./...` on `macos-latest` and `windows-latest` and the full Playwright matrix); the extension of ADR-0006's table is already covered by its `connector-e2e` row.
 - Tests: the five flows above: `A27 a student pairs a local connector and runs a cell` (including the loopback-only listener assertion), `A28 SSH and a jump host: host, account, workspace and kernel are visible and no Jupyter port is published`, `A29 forwarding forbidden, Jupyter missing and token rejected each name their stage and never reach Ready`, `A30 a rotated host key stops the connection and keeps the trust record`, `A31 offline then online runs the cell once`; plus the Go `fixture` tests with the same IDs.
 - Spec: §10, §17. ADR-0005, ADR-0006; design §15. Scenarios: A27, A28, A29, A30, A31 (e2e). Depends on: P3-05a, P3-08. Model: sonnet. Security: yes. Size: M.
-- Touches: `infra/compose.yml`, `infra/docker/sshd-jupyter.Dockerfile`, `infra/docker/jump.Dockerfile`, `infra/connector-fixtures/**`, `scripts/connector-fixture-keys.sh`, `connector/internal/fixture/**`, `e2e/tests/connector/**`, `.github/workflows/connector-e2e.yml`.
+- Touches: `infra/compose.yml`, `infra/docker/sshd-jupyter.Dockerfile`, `infra/docker/jump.Dockerfile`, `infra/connector-fixtures/**`, `scripts/connector-fixture-keys.sh`, `connector/internal/fixture/**`, `e2e/tests/connector/**`, `e2e/playwright.config.ts`, `.github/workflows/connector-e2e.yml`.
 
 ### P3-12 · Runner detailed design
 - Scope: `docs/design/runner.md`: job and result JSON schemas, harness API for Python and R, check kinds and comparison modes, image contents and pinning, limit bounds, per-student cap, replay/regrade semantics, production placement and network policy; **rewrites P3-13, P3-14, P3-16, P4-11 in this plan**.
@@ -639,6 +639,11 @@ Tracks: **connector** (P3-01 → server P3-02 → P3-02a → P3-06 → P3-06a �
 - Scope: `scripts/backup.sh` (pg_dump + storage snapshot manifest) and `scripts/restore.sh`, integration test that backs up the fixture world with a graded attempt, restores into a fresh database and storage root, and verifies attempt, resource revision, code, grader version and released feedback; weekly CI job.
 - Spec: §13. Scenarios: A22. Depends on: P4-01. Model: opus. Security: no. Size: M.
 
+### P4-07a · Backup and restore for the S3 storage driver
+- Scope: `scripts/backup.sh` and `scripts/restore.sh` with `STORAGE_DRIVER=s3`: the bucket's content-addressed objects in the same `parallax-backup/1` layout, restored into an empty bucket with the same checks; A22 against Garage in the `integration` CI job; `docs/backup-restore.md`.
+- Built as: `apps/server/src/scripts/s3-backup.ts` (the server's AWS SDK and `S3_*` variables; `download`, `check-empty`, `upload` refusing existing keys, `verify`, `remove`) called by both scripts; a failed restore deletes the objects it uploaded; `scripts/garage-init.sh` lets the development key create buckets so `a22-backup-restore-s3.itest.ts` uses its own.
+- Spec: §13. Scenarios: A22 (s3 variant). Depends on: P4-07. Model: opus. Security: no. Size: S.
+
 ### P4-08 · Accessibility validation
 - Scope: axe on every route in e2e, keyboard-only journeys (courses → reading annotation → exercise → code test → feedback), screen-reader labels and status announcements audit, 320 px width and 200 % zoom checks with horizontal scroll confined to code/tables/tab strip, focus restoration for sheets, fixes found.
 - Spec: §14. Scenarios: A19, A20. Depends on: P4-04, P4-03. Model: sonnet. Security: no. Size: M.
@@ -676,7 +681,7 @@ Tracks: **connector** (P3-01 → server P3-02 → P3-02a → P3-06 → P3-06a �
 | A01 | P1-01, P1-02, P1-03, P1-06, P1-09, P1-16 | | A19 | P4-08, P1-09 |
 | A02 | P1-01, P1-03, P1-09, P1-10, P1-11 | | A20 | P4-08, P3-17, P4-04 |
 | A03 | P1-12, P2-06, P1-11 | | A21 | P1-01, P1-06, P2-04, P3-15, P4-05 |
-| A04 | P2-02, P1-13 | | A22 | P4-07 |
+| A04 | P2-02, P1-13 | | A22 | P4-07, P4-07a |
 | A05 | P2-04, P2-06, P2-07 | | A23 | P2-10, P2-11 |
 | A06 | P2-05, P1-08 | | A24 | P2-02, P2-09 |
 | A07 | P2-08 | | A25 | P4-02, P4-03 |

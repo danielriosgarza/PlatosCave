@@ -1,6 +1,8 @@
 import { basename } from 'node:path';
 import type { Readable } from 'node:stream';
-import { type NbNotebook, parseNotebook } from '@parallax/contracts';
+import type { NbNotebook } from '@parallax/contracts';
+import { checkNotebookInThread } from './submission-check';
+import { ThreadInputError } from './thread';
 
 /** A problem with the submitted file itself, answered as a 400 that names it. */
 export class SubmissionRejected extends Error {}
@@ -17,38 +19,44 @@ export const submissionFilename = (name: string): string =>
 
 /**
  * Passes a submitted `.ipynb` through while checking it: UTF-8 text without NUL bytes, not empty,
- * within the stream's size limit, and a valid nbformat 4 notebook (§10.7). The notebook is parsed
- * and kept as data; nothing in it is executed or rendered. The parsed notebook is handed to
- * `onParsed` before the stream ends, so a refusal throws before the object is recorded. A refusal
+ * within the stream's size limit, and a valid nbformat 4 notebook of at most
+ * MAX_SUBMISSION_CELLS cells (§10.7). The bytes are decoded and parsed in a bounded thread, off the
+ * event loop, and kept as data; nothing in it is executed or rendered. What the file says about its
+ * environment is handed to `onChecked` before the stream ends, so a refusal throws before the
+ * object is recorded. A refusal
  * leaves the stream open for the caller to drain.
  */
 export async function* checkedNotebook(
   stream: Readable & { truncated?: boolean },
-  onParsed: (notebook: NbNotebook) => void,
+  onChecked: (environment: Record<string, string | number>) => void,
 ): AsyncGenerator<Buffer> {
-  const decoder = new TextDecoder('utf-8', { fatal: true });
-  const text: string[] = [];
-  let empty = true;
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of stream.iterator({
+    destroyOnReturn: false,
+  }) as AsyncIterable<Buffer>) {
+    if (chunk.includes(0)) throw new SubmissionRejected('The file is not text');
+    chunks.push(chunk);
+    size += chunk.length;
+    yield chunk;
+  }
+  // The parser stops at the limit without an error; refusing here keeps the object unstored.
+  if (stream.truncated) throw new SubmissionTooLarge();
+  if (size === 0) throw new SubmissionRejected('The file is empty');
+  // One copy that the thread takes over; it decodes (UTF-8 is checked there) and parses.
+  const bytes = new Uint8Array(size);
+  let at = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, at);
+    at += chunk.length;
+  }
+  chunks.length = 0;
   try {
-    for await (const chunk of stream.iterator({
-      destroyOnReturn: false,
-    }) as AsyncIterable<Buffer>) {
-      if (chunk.includes(0)) throw new SubmissionRejected('The file is not text');
-      text.push(decoder.decode(chunk, { stream: true }));
-      empty = false;
-      yield chunk;
-    }
-    // The parser stops at the limit without an error; refusing here keeps the object unstored.
-    if (stream.truncated) throw new SubmissionTooLarge();
-    text.push(decoder.decode());
+    onChecked(await checkNotebookInThread(bytes));
   } catch (err) {
-    if (err instanceof TypeError) throw new SubmissionRejected('The text is not valid UTF-8');
+    if (err instanceof ThreadInputError) throw new SubmissionRejected(err.message);
     throw err;
   }
-  if (empty) throw new SubmissionRejected('The file is empty');
-  const parsed = parseNotebook(text.join(''));
-  if (!parsed.ok) throw new SubmissionRejected(parsed.error);
-  onParsed(parsed.notebook);
 }
 
 const clean = (value: unknown): string | undefined => {

@@ -234,7 +234,7 @@ describe('A06 mapping a mark to a changed revision', () => {
     expect(mapAnchor(figure, v1, reading([], ['fig-2'])).status).toBe('needs_reattachment');
   });
 
-  test('A24 a web deck slide maps while its text is unchanged and the slide count is the same', () => {
+  test('A06 a web deck slide maps while its text is unchanged and the slide count is the same', () => {
     const web = (texts: string[]) =>
       layoutOf('slides_web', {
         slides: texts.map((t) => `<p>${t}</p>`),

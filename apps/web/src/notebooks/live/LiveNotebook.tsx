@@ -433,7 +433,16 @@ export function LiveNotebook({
       </div>,
     );
   }
-  if (gate.pending) {
+  if (gate.pending && gate.listing.isPending) {
+    banner.push(
+      <div key="copyin" className={live.banner} role="status">
+        <p>
+          Reading the workspace to find any files this notebook declares. Cells cannot run until
+          then.
+        </p>
+      </div>,
+    );
+  } else if (gate.pending) {
     banner.push(
       <div key="copyin" className={live.banner} role="status">
         <p>

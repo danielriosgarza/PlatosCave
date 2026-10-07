@@ -16,14 +16,15 @@ test.beforeAll(async ({ playwright, baseURL }) => {
   expect((await setup.post('/api/test/world')).ok()).toBe(true);
 });
 
+/** Runs the setup on a connector the caller created, so a failure here still reaches its `finally`. */
 async function failingTarget(
   page: import('@playwright/test').Page,
+  connector: Connector,
   name: string,
   user: string,
   port: number,
   person: Person,
-): Promise<Connector> {
-  const connector = new Connector();
+): Promise<void> {
   await openConnect(page, person);
   await pairAndApprove(page, connector, name);
   await connect(page, connector, name);
@@ -35,7 +36,6 @@ async function failingTarget(
     workspace: `/home/${user}/work`,
   });
   await trustUntilDone(page);
-  return connector;
 }
 
 const notReady = (page: import('@playwright/test').Page) =>
@@ -43,14 +43,16 @@ const notReady = (page: import('@playwright/test').Page) =>
 
 test('A29 forwarding forbidden names its stage and never reaches Ready', async ({ page }) => {
   test.setTimeout(180_000);
-  const connector = await failingTarget(
-    page,
-    'A29 forwarding',
-    'student',
-    fixtures.noForwarding,
-    'reader',
-  );
+  const connector = new Connector();
   try {
+    await failingTarget(
+      page,
+      connector,
+      'A29 forwarding',
+      'student',
+      fixtures.noForwarding,
+      'reader',
+    );
     await expect(stage(page, 'forwarding')).toHaveAttribute('data-status', 'failed');
     await expect(stage(page, 'forwarding')).toContainText(
       'The SSH server forbids port forwarding for this account.',
@@ -69,8 +71,9 @@ test('A29 forwarding forbidden names its stage and never reaches Ready', async (
 
 test('A29 Jupyter missing names its stage and never reaches Ready', async ({ page }) => {
   test.setTimeout(180_000);
-  const connector = await failingTarget(page, 'A29 missing', 'bare', fixtures.direct, 'instructor');
+  const connector = new Connector();
   try {
+    await failingTarget(page, connector, 'A29 missing', 'bare', fixtures.direct, 'instructor');
     await expect(stage(page, 'runtime')).toHaveAttribute('data-status', 'failed');
     await expect(stage(page, 'runtime')).toContainText(
       'Jupyter Server is not installed in that environment.',
@@ -87,8 +90,9 @@ test('A29 Jupyter missing names its stage and never reaches Ready', async ({ pag
 
 test('A29 a token the server rejects names its stage and never reaches Ready', async ({ page }) => {
   test.setTimeout(240_000);
-  const connector = await failingTarget(page, 'A29 token', 'locked', fixtures.direct, 'instructor');
+  const connector = new Connector();
   try {
+    await failingTarget(page, connector, 'A29 token', 'locked', fixtures.direct, 'instructor');
     // Test connection starts nothing, so every stage before the server passes...
     await expect(stage(page, 'ssh_auth')).toHaveAttribute('data-status', 'ok');
     await expect(stage(page, 'runtime')).toHaveAttribute('data-status', 'ok');

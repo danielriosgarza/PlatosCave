@@ -246,14 +246,14 @@ function pdfDocument(options: { hold?: boolean } = {}) {
 }
 
 describe('empty category', () => {
-  it('A03 tells a student that no reading has been added and offers nothing to add', async () => {
+  it('tells a student that no reading has been added and offers nothing to add', async () => {
     api(makeWorld({ readings: [], lastRevisionId: null }));
     renderApp(READING);
     expect(await screen.findByText('No reading has been added')).toBeVisible();
     expect(screen.queryByRole('link', { name: 'Add reading' })).toBeNull();
   });
 
-  it('A03 offers an instructor Add reading', async () => {
+  it('offers an instructor Add reading', async () => {
     api(
       makeWorld({ readings: [], lastRevisionId: null }),
       makeMe({
@@ -274,7 +274,7 @@ describe('empty category', () => {
     expect(screen.getByRole('link', { name: 'Add reading' })).toBeVisible();
   });
 
-  it('A03 offers no Add reading to an instructor who cannot edit the course', async () => {
+  it('offers no Add reading to an instructor who cannot edit the course', async () => {
     api(
       makeWorld({ readings: [], lastRevisionId: null }),
       makeMe({ classes: [instructorIn(CLASS_A, 'Class A')] }),
