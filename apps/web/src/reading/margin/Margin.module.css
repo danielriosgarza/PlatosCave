@@ -249,9 +249,3 @@
 .thread p.small {
   margin-top: 2px;
 }
-@media (pointer: coarse) {
-  .tools button {
-    min-height: var(--pc-touch-target, 44px);
-    min-width: var(--pc-touch-target, 44px);
-  }
-}

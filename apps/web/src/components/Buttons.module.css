@@ -9,15 +9,6 @@
   min-height: 36px;
   text-align: left;
 }
-/* The 36 px above would otherwise beat the global coarse-pointer minimum. */
-@media (pointer: coarse) {
-  .primary,
-  .outline,
-  .textButton,
-  .tool {
-    min-height: 44px;
-  }
-}
 .primary {
   color: var(--pc-accent-ink);
   background: var(--pc-accent);
@@ -68,11 +59,6 @@
 .tool[aria-expanded="true"] {
   background: var(--pc-soft);
   font-weight: 600;
-}
-@media (pointer: coarse) {
-  .tool {
-    min-height: 44px;
-  }
 }
 .primary:disabled,
 .outline:disabled,
