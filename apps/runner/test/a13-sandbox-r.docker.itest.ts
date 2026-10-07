@@ -3,11 +3,11 @@ import { randomUUID } from 'node:crypto';
 import { promisify } from 'node:util';
 import type { RunnerCheck, RunnerJob, RunnerOutcome } from '@parallax/contracts';
 import Docker from 'dockerode';
-import { describe, expect, onTestFailed, test } from 'vitest';
+import { afterAll, describe, expect, onTestFailed, test } from 'vitest';
 import { DockerExecutor, imageDaemon } from '../src/executor';
 import { RunnerFailure } from '../src/failure';
 import { ImageAllowlist } from '../src/images';
-import { JOB_LABEL, SANDBOX_LABEL } from '../src/policy';
+import { JOB_LABEL } from '../src/policy';
 import { parseJob, runJob } from '../src/worker';
 
 /**
@@ -16,21 +16,7 @@ import { parseJob, runJob } from '../src/worker';
  * Skipped without a Docker daemon or the image; mandatory in CI.
  */
 const IMAGE = process.env.IMAGE_R ?? 'parallax-runner-r:dev';
-/**
- * The Python suite beside this file sweeps every container labelled `parallax.runner` when it
- * ends, which would remove one of ours mid-run. These containers carry the job label only, so
- * that sweep (and a sweep from here) cannot reach them; the policy is otherwise untouched.
- */
-class IsolatedDocker extends Docker {
-  // biome-ignore lint/suspicious/noExplicitAny: dockerode's overloaded signature
-  override createContainer(options: any, ...rest: any[]): any {
-    const { [SANDBOX_LABEL]: _label, ...labels } = options.Labels ?? {};
-    // biome-ignore lint/suspicious/noExplicitAny: dockerode's overloaded signature
-    return (super.createContainer as any)({ ...options, Labels: labels }, ...rest);
-  }
-}
-
-const docker = new IsolatedDocker();
+const docker = new Docker();
 const daemon = await docker.ping().then(
   () => true,
   () => false,
@@ -51,6 +37,11 @@ process.env.RUNNER_DATABASE_URL = `postgres://parallax_runner:${SECRET}@db/paral
 
 const executor = new DockerExecutor(docker);
 const images = new ImageAllowlist({ 'r-4.6': [IMAGE] }, imageDaemon(docker), 'never');
+
+// The runner project runs its files one at a time, so a sweep here cannot reach another suite's containers.
+afterAll(async () => {
+  if (daemon) await executor.sweep();
+});
 
 /** What a failing probe prints: statuses, kinds, messages and stream tails, never whole streams. */
 function summary(outcome: RunnerOutcome): string {

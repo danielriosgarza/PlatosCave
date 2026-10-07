@@ -92,9 +92,15 @@ const EnvAllowNet = "PARALLAX_ALLOW_NET"
 const MaxRanges = 64
 
 // Scope is what this connector may dial: global unicast, plus the loopback and private ranges
-// the person allowed. Hard-denied addresses are never allowed, whatever the ranges say.
+// the person allowed. Hard-denied addresses are never allowed, whatever the ranges say. A managed
+// scope (ParseManagedScope) starts empty instead: only its ranges, names and ports are reachable,
+// and loopback never is.
 type Scope struct {
 	ranges []netip.Prefix
+	// managed scopes only
+	managed bool
+	hosts   []string
+	ports   map[int]bool
 }
 
 // ParseScope builds a scope from --allow-net values and the value of PARALLAX_ALLOW_NET.
@@ -125,6 +131,155 @@ func ParseScope(flags []string, env string) (Scope, error) {
 	return s, nil
 }
 
+// Environment variables of a managed connector's scope (design §12).
+const (
+	EnvAllowHosts = "PARALLAX_ALLOW_HOSTS"
+	EnvAllowPorts = "PARALLAX_ALLOW_PORTS"
+)
+
+// neverManaged are the ranges a managed scope may not overlap: loopback and the hard-denied
+// classes (link-local among them), in their own and in every wrapped IPv6 form.
+var neverManaged = func() []netip.Prefix {
+	var out []netip.Prefix
+	for _, p := range append(append([]netip.Prefix{}, loopback...), hardDenied...) {
+		out = append(out, p)
+		if !p.Addr().Is4() {
+			continue
+		}
+		v4 := p.Addr().As4()
+		for _, w := range []struct {
+			prefix [16]byte
+			at     int
+			bits   int
+		}{
+			{[16]byte{10: 0xff, 11: 0xff}, 12, 96},                 // ::ffff:a.b.c.d
+			{[16]byte{0: 0x00, 1: 0x64, 2: 0xff, 3: 0x9b}, 12, 96}, // 64:ff9b::a.b.c.d
+			{[16]byte{0: 0x20, 1: 0x02}, 2, 16},                    // 2002:aabb:ccdd::
+		} {
+			b := w.prefix
+			copy(b[w.at:], v4[:])
+			out = append(out, netip.PrefixFrom(netip.AddrFrom16(b), w.bits+p.Bits()).Masked())
+		}
+	}
+	return out
+}()
+
+// ParseManagedScope builds a managed connector's scope from PARALLAX_ALLOW_NET (comma-separated
+// ranges), PARALLAX_ALLOW_HOSTS (comma-separated names, or *.suffix patterns) and
+// PARALLAX_ALLOW_PORTS (comma-separated ports, default 22). Nothing else is reachable, and a range
+// that would reach loopback or a link-local or other hard-denied address is refused here.
+func ParseManagedScope(nets, hosts, ports string) (Scope, error) {
+	s, err := ParseScope(nil, nets)
+	if err != nil {
+		return Scope{}, fmt.Errorf("%s: %v", EnvAllowNet, err)
+	}
+	for _, p := range s.ranges {
+		for _, n := range neverManaged {
+			if p.Overlaps(n) {
+				return Scope{}, fmt.Errorf("%s: %s reaches %s, which is loopback, link-local or otherwise never reachable by a managed connector",
+					EnvAllowNet, p, n)
+			}
+		}
+	}
+	s.managed = true
+	seen := map[string]bool{}
+	for _, h := range strings.Split(hosts, ",") {
+		h = strings.ToLower(strings.TrimSpace(h))
+		if h == "" || seen[h] {
+			continue
+		}
+		name := strings.TrimPrefix(h, "*.")
+		if err := protocol.CheckHostSyntax(name); err != nil || strings.Contains(name, ":") || isDottedQuad(name) {
+			return Scope{}, fmt.Errorf("%s: %q is not a host name or a *.domain pattern (put addresses in %s)", EnvAllowHosts, h, EnvAllowNet)
+		}
+		seen[h] = true
+		s.hosts = append(s.hosts, h)
+	}
+	if len(s.hosts) > MaxRanges {
+		return Scope{}, fmt.Errorf("%s: at most %d names may be allowed", EnvAllowHosts, MaxRanges)
+	}
+	if strings.TrimSpace(ports) == "" {
+		ports = "22"
+	}
+	s.ports = map[int]bool{}
+	for _, v := range strings.Split(ports, ",") {
+		v = strings.TrimSpace(v)
+		if v == "" {
+			continue
+		}
+		p, err := strconv.Atoi(v)
+		if err != nil || p < 1 || p > 65535 || strconv.Itoa(p) != v {
+			return Scope{}, fmt.Errorf("%s: %q is not a port between 1 and 65535", EnvAllowPorts, v)
+		}
+		s.ports[p] = true
+	}
+	if len(s.ports) == 0 {
+		return Scope{}, fmt.Errorf("%s names no port", EnvAllowPorts)
+	}
+	return s, nil
+}
+
+func isDottedQuad(h string) bool {
+	a, err := netip.ParseAddr(h)
+	return err == nil && a.Is4()
+}
+
+// Managed reports whether this is a managed connector's scope.
+func (s Scope) Managed() bool { return s.managed }
+
+// Hosts returns the allowed names and patterns, for hello.networkScope.
+func (s Scope) Hosts() []string { return append([]string{}, s.hosts...) }
+
+// AllowsName reports whether a managed scope names host in PARALLAX_ALLOW_HOSTS, exactly or by a
+// *.suffix pattern (which covers names below the suffix, not the suffix itself). A personal
+// scope names nothing: it judges addresses only.
+func (s Scope) AllowsName(host string) bool {
+	host = strings.ToLower(host)
+	for _, h := range s.hosts {
+		if suffix, ok := strings.CutPrefix(h, "*."); ok {
+			if strings.HasSuffix(host, "."+suffix) {
+				return true
+			}
+		} else if host == h {
+			return true
+		}
+	}
+	return false
+}
+
+// AllowsOnward reports whether a jump host may be asked to reach host, the next hop it dials on
+// the connector's behalf (design §8, step 4). The connector classifies a literal itself; a name it
+// cannot resolve, so a personal connector relies on the jump host's own policy and a managed one
+// requires the name in PARALLAX_ALLOW_HOSTS.
+func (s Scope) AllowsOnward(host string) (bool, string) {
+	if a, err := netip.ParseAddr(host); err == nil {
+		return s.Allows(a)
+	}
+	if !s.managed || s.AllowsName(host) {
+		return true, ""
+	}
+	return false, fmt.Sprintf("%s is not named in %s", host, EnvAllowHosts)
+}
+
+// AllowsPort reports whether the scope lets the connector dial port: any port for a personal
+// connector, only PARALLAX_ALLOW_PORTS for a managed one.
+func (s Scope) AllowsPort(port int) bool {
+	if port < 1 || port > 65535 {
+		return false
+	}
+	return !s.managed || s.ports[port]
+}
+
+// allowsResolved judges an answer for a name: a managed scope also reaches the global unicast
+// addresses of a name it allows.
+func (s Scope) allowsResolved(named bool, a netip.Addr) (bool, string) {
+	ok, why := s.Allows(a)
+	if !ok && named && Classify(a) == Global {
+		return true, ""
+	}
+	return ok, why
+}
+
 // CIDRs returns the allowed ranges in canonical form, for hello.networkScope.
 func (s Scope) CIDRs() []string {
 	out := make([]string, len(s.ranges))
@@ -137,10 +292,12 @@ func (s Scope) CIDRs() []string {
 // Allows reports whether the scope lets the connector dial a, and if not, why.
 func (s Scope) Allows(a netip.Addr) (bool, string) {
 	a = a.WithZone("")
-	switch c := Classify(a); c {
-	case HardDenied:
+	switch c := Classify(a); {
+	case c == HardDenied:
 		return false, "is never reachable (unspecified, multicast, broadcast or link-local)"
-	case Global:
+	case c == Loopback && s.managed:
+		return false, "is a loopback address, which a managed connector never reaches"
+	case c == Global && !s.managed:
 		return true, ""
 	default:
 		// A wrapped address is judged by the IPv4 address it carries.
@@ -150,7 +307,7 @@ func (s Scope) Allows(a netip.Addr) (bool, string) {
 				return true, ""
 			}
 		}
-		return false, fmt.Sprintf("is a %s address outside the approved network scope", c)
+		return false, fmt.Sprintf("is a %s address outside the approved network scope", Classify(a))
 	}
 }
 
@@ -202,10 +359,11 @@ func (d *Dialer) Resolve(ctx context.Context, host string) ([]netip.Addr, error)
 		}
 		return nil, &Error{Code: protocol.CodeHostUnresolved, Detail: fmt.Sprintf("%s did not resolve", host), Err: err}
 	}
+	named := d.Scope.AllowsName(host)
 	for _, a := range addrs {
 		// One denied answer refuses the name: mixing allowed and denied answers is how a
 		// rebinding attack would reach an internal address.
-		if ok, why := d.Scope.Allows(a); !ok {
+		if ok, why := d.Scope.allowsResolved(named, a); !ok {
 			return nil, &Error{Code: protocol.CodeNetworkScopeDenied,
 				Detail: fmt.Sprintf("%s resolves to %s, which %s", host, a.WithZone(""), why)}
 		}
@@ -220,21 +378,33 @@ func (d *Dialer) DialContext(ctx context.Context, host string, port int) (net.Co
 	if port < 1 || port > 65535 {
 		return nil, &Error{Code: protocol.CodeInvalidTarget, Detail: fmt.Sprintf("port %d is outside 1–65535", port)}
 	}
+	if !d.Scope.AllowsPort(port) {
+		return nil, &Error{Code: protocol.CodeNetworkScopeDenied, Detail: fmt.Sprintf("port %d is not in %s", port, EnvAllowPorts)}
+	}
 	addrs, err := d.Resolve(ctx, host)
 	if err != nil {
 		return nil, err
 	}
-	return d.dialAddr(ctx, netip.AddrPortFrom(addrs[0].WithZone(""), uint16(port)))
+	// A name a managed scope allows reaches its global unicast answers; a literal is judged alone.
+	_, notLiteral := netip.ParseAddr(host)
+	named := notLiteral != nil && d.Scope.AllowsName(host)
+	return d.dial(ctx, netip.AddrPortFrom(addrs[0].WithZone(""), uint16(port)), named)
 }
 
-// dialAddr connects to one address. The Control hook classifies the address the socket is
-// actually connecting to, so nothing between the check and the connect can redirect it.
+// dialAddr connects to one address, judged by the scope alone.
 func (d *Dialer) dialAddr(ctx context.Context, ap netip.AddrPort) (net.Conn, error) {
+	return d.dial(ctx, ap, false)
+}
+
+// dial connects to one address. The Control hook classifies the address the socket is actually
+// connecting to, so nothing between the check and the connect can redirect it.
+func (d *Dialer) dial(ctx context.Context, ap netip.AddrPort, named bool) (net.Conn, error) {
 	timeout := d.Timeout
 	if timeout <= 0 {
 		timeout = 10 * time.Second
 	}
-	nd := &net.Dialer{Timeout: timeout, Control: d.control}
+	control := func(network, address string, c syscall.RawConn) error { return d.check(named, network, address) }
+	nd := &net.Dialer{Timeout: timeout, Control: control}
 	conn, err := nd.DialContext(ctx, "tcp", ap.String())
 	if err == nil {
 		return conn, nil
@@ -255,6 +425,12 @@ func (d *Dialer) dialAddr(ctx context.Context, ap netip.AddrPort) (net.Conn, err
 
 // control is net.Dialer.Control: it runs after the socket is created and before it connects.
 func (d *Dialer) control(network, address string, _ syscall.RawConn) error {
+	return d.check(false, network, address)
+}
+
+// check judges the address a socket is connecting to; named is true when it answers a name the
+// managed scope allows.
+func (d *Dialer) check(named bool, network, address string) error {
 	host, portStr, err := net.SplitHostPort(address)
 	if err != nil {
 		return &Error{Code: protocol.CodeNetworkScopeDenied, Detail: "unparseable destination", Err: err}
@@ -263,10 +439,10 @@ func (d *Dialer) control(network, address string, _ syscall.RawConn) error {
 	if err != nil {
 		return &Error{Code: protocol.CodeNetworkScopeDenied, Detail: "the destination is not an address", Err: err}
 	}
-	if ok, why := d.Scope.Allows(a); !ok {
+	if ok, why := d.Scope.allowsResolved(named, a); !ok {
 		return &Error{Code: protocol.CodeNetworkScopeDenied, Detail: fmt.Sprintf("%s %s", a.WithZone(""), why)}
 	}
-	if p, err := strconv.Atoi(portStr); err != nil || p < 1 || p > 65535 {
+	if p, err := strconv.Atoi(portStr); err != nil || !d.Scope.AllowsPort(p) {
 		return &Error{Code: protocol.CodeNetworkScopeDenied, Detail: "the destination port is invalid"}
 	}
 	return nil

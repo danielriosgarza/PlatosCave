@@ -20,6 +20,7 @@ import (
 	"parallax/connector/internal/identity"
 	"parallax/connector/internal/jupyter"
 	"parallax/connector/internal/link"
+	"parallax/connector/internal/managed"
 	"parallax/connector/internal/netscope"
 	"parallax/connector/internal/protocol"
 	"parallax/connector/internal/redact"
@@ -59,12 +60,19 @@ func run(ctx context.Context, args []string, env Env) error {
 	flags.Var(&nets, "allow-net", "also allow this private range, such as 10.20.0.0/16 (repeatable)")
 	stateDir := flags.String("state-dir", "", "state directory (default: the one for this computer)")
 	confirm := flags.Bool("confirm-sessions", false, "ask on this terminal before opening each session")
+	managedMode := flags.Bool("managed", false, "run as a managed connector, configured only from the environment")
 	if err := parse(flags, args); err != nil {
 		return err
 	}
 	getenv := env.Getenv
 	if getenv == nil {
 		getenv = func(string) string { return "" }
+	}
+	if *managedMode {
+		if len(nets) > 0 || *stateDir != "" || *confirm {
+			return usageError{"run --managed is configured only from the environment; it takes no other flag"}
+		}
+		return runManaged(ctx, env, getenv)
 	}
 	scope, err := netscope.ParseScope(nets, getenv(netscope.EnvAllowNet))
 	if err != nil {
@@ -121,25 +129,7 @@ func run(ctx context.Context, args []string, env Env) error {
 		return fmt.Errorf("this computer cannot run the connector: %v", err)
 	}
 
-	lock, err := lockStore(store)
-	if err != nil {
-		return err
-	}
-	defer lock.Release()
-
-	rec := &runtimeRecorder{store: store, env: env, rt: state.Runtime{
-		V: 1, PID: os.Getpid(), StartedAt: stamp(env.Now()), Link: string(link.Connecting), Since: stamp(env.Now()),
-	}}
-	if err := rec.write(); err != nil {
-		return err
-	}
-	defer store.Remove(state.RuntimeFile)
-
 	out := env.Stdout
-	fmt.Fprintf(out, "Connecting %q to %s.\n", cfg.Name, cfg.Server)
-	if *confirm {
-		fmt.Fprintln(out, "Each session will be shown here for you to allow or decline.")
-	}
 	jupyterLog := func(line string) { fmt.Fprintf(env.Stderr, "jupyter: %s\n", line) }
 	remote := &sshtarget.Remote{
 		SSH: &sshtarget.Target{
@@ -157,10 +147,6 @@ func run(ctx context.Context, args []string, env Env) error {
 			protocol.TargetLocal: &target.Local{OS: env.GOOS, Arch: env.GOARCH, Log: jupyterLog},
 			protocol.TargetSSH:   remote,
 		},
-		Log:   out,
-		Now:   env.Now,
-		Store: store,
-		OS:    env.GOOS,
 		// An owned remote server left by a crash is stopped over a non-interactive connection.
 		SweepRemote: func(ctx context.Context, rec session.Record) error {
 			return remote.SweepOrphan(ctx, rec.Target, rec.SessionID, rec.Process.PID, jupyter.DefaultStopTimes)
@@ -173,6 +159,99 @@ func run(ctx context.Context, args []string, env Env) error {
 	if *confirm {
 		mgrCfg.Confirm = newAsker(env.Stdin, out).ask
 	}
+	return serve(ctx, env, serving{
+		store: store, name: cfg.Name, server: cfg.Server, connectorID: cfg.ConnectorID,
+		identity: id, hello: hello, mgr: mgrCfg, confirm: *confirm,
+	})
+}
+
+// runManaged is `run --managed` (design §12): everything from the environment, a scope that
+// starts empty, pinned host keys, keys from the key store, `managed` targets only, no prompts.
+func runManaged(ctx context.Context, env Env, getenv func(string) string) error {
+	if env.GOOS == "windows" {
+		return usageError{"run --managed runs on Linux or macOS; its secret files are judged by their POSIX permissions"}
+	}
+	cfg, err := managed.Load(getenv)
+	if err != nil {
+		return usageError{err.Error()}
+	}
+	store, err := openStore(env)
+	if err != nil {
+		return err
+	}
+	hello := protocol.Hello{
+		Version: version.String(),
+		OS:      env.GOOS,
+		Arch:    env.GOARCH,
+		Mode:    "managed",
+		Targets: []string{protocol.TargetManaged},
+		// No terminal and no agent: nothing is ever asked, and only the key store signs.
+		Features:     protocol.Features{},
+		NetworkScope: protocol.NetworkScope{CIDRs: cfg.Scope.CIDRs(), Hosts: cfg.Scope.Hosts()},
+	}
+	if _, err := protocol.Encode(&hello); err != nil {
+		return fmt.Errorf("this computer cannot run the connector: %v", err)
+	}
+	out := env.Stdout
+	mt := &managed.Target{
+		Targets: cfg.Targets,
+		Remote: &sshtarget.Remote{
+			SSH: managed.NewSSH(cfg, func(line string) { fmt.Fprintln(out, redact.Redact(line)) }),
+			Log: func(line string) { fmt.Fprintf(env.Stderr, "jupyter: %s\n", line) },
+		},
+	}
+	fmt.Fprintf(out, "Managed connector %s, identity %s, targets %s.\n",
+		cfg.ConnectorID, cfg.Identity.Fingerprint(), strings.Join(cfg.Targets.IDs(), ", "))
+	return serve(ctx, env, serving{
+		store: store, name: "managed connector " + cfg.ConnectorID, server: cfg.Server, connectorID: cfg.ConnectorID,
+		identity: cfg.Identity, hello: hello,
+		mgr: session.Config{
+			Targets: map[string]target.Target{protocol.TargetManaged: mt},
+			SweepRemote: func(ctx context.Context, rec session.Record) error {
+				return mt.SweepOrphan(ctx, rec.Target, rec.SessionID, rec.Process.PID)
+			},
+		},
+	})
+}
+
+// serving is what `run` links with, in either mode.
+type serving struct {
+	store       *state.Store
+	name        string
+	server      string
+	connectorID string
+	identity    *identity.Identity
+	hello       protocol.Hello
+	// mgr holds the targets, the sweep and the confirmation; serve fills in the rest.
+	mgr     session.Config
+	confirm bool
+}
+
+// serve holds the state directory's lock, keeps runtime.json current and keeps the link up until
+// ctx ends or the link is revoked, stopping every owned session on the way out.
+func serve(ctx context.Context, env Env, sv serving) error {
+	store := sv.store
+	lock, err := lockStore(store)
+	if err != nil {
+		return err
+	}
+	defer lock.Release()
+
+	rec := &runtimeRecorder{store: store, env: env, rt: state.Runtime{
+		V: 1, PID: os.Getpid(), StartedAt: stamp(env.Now()), Link: string(link.Connecting), Since: stamp(env.Now()),
+	}}
+	if err := rec.write(); err != nil {
+		return err
+	}
+	defer store.Remove(state.RuntimeFile)
+
+	out := env.Stdout
+	fmt.Fprintf(out, "Connecting %q to %s.\n", sv.name, sv.server)
+	if sv.confirm {
+		fmt.Fprintln(out, "Each session will be shown here for you to allow or decline.")
+	}
+	mgrCfg := sv.mgr
+	mgrCfg.Log, mgrCfg.Now, mgrCfg.Store, mgrCfg.OS = out, env.Now, store, env.GOOS
 	mgr := session.New(ctx, mgrCfg)
 	// Sessions an earlier run left: stopped ones wait for the first heartbeat, orphans are swept.
 	mgr.Restore(ctx)
@@ -186,10 +265,10 @@ func run(ctx context.Context, args []string, env Env) error {
 	var mu sync.Mutex
 	last := link.Connecting
 	err = link.Run(ctx, link.Config{
-		Origin:      cfg.Server,
-		ConnectorID: cfg.ConnectorID,
-		Identity:    id,
-		Hello:       hello,
+		Origin:      sv.server,
+		ConnectorID: sv.connectorID,
+		Identity:    sv.identity,
+		Hello:       sv.hello,
 		HTTPClient:  env.HTTP,
 		Handler:     mgr,
 		Sessions:    mgr.Sessions,
@@ -203,7 +282,7 @@ func run(ctx context.Context, args []string, env Env) error {
 			}
 			switch e.State {
 			case link.Up:
-				fmt.Fprintf(out, "Connected to %s. Press Ctrl+C to disconnect.\n", cfg.Server)
+				fmt.Fprintf(out, "Connected to %s. Press Ctrl+C to disconnect.\n", sv.server)
 			case link.Down, link.Pending:
 				fmt.Fprintf(out, "%s. Next attempt in %s.\n", redact.Redact(e.Message), e.Retry.Round(100*time.Millisecond))
 			case link.Revoked, link.Rejected:

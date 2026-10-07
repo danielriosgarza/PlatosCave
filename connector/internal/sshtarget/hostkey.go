@@ -82,6 +82,8 @@ type hostCheck struct {
 	server        string
 	confirmations []protocol.Confirmation
 	log           func(string)
+	// pinned: the connector's record is the only one, and it is never written.
+	pinned bool
 
 	mu        sync.Mutex
 	accepted  ssh.PublicKey
@@ -94,8 +96,16 @@ type hostCheck struct {
 	local []ssh.PublicKey
 }
 
-func newHostCheck(known *KnownHosts, h hop, req *protocol.TestConnection, log func(string)) (*hostCheck, error) {
-	c := &hostCheck{known: known, host: h.host, port: h.port, hop: h.name, log: log, decided: make(chan struct{})}
+func newHostCheck(known *KnownHosts, h hop, req *protocol.TestConnection, log func(string), pinned bool) (*hostCheck, error) {
+	c := &hostCheck{known: known, host: h.host, port: h.port, hop: h.name, log: log, pinned: pinned, decided: make(chan struct{})}
+	if pinned {
+		local, err := known.Lookup(h.host, h.port)
+		if err != nil {
+			return nil, err
+		}
+		c.local = local
+		return c, nil
+	}
 	for _, k := range req.Target.HostKeys {
 		if sameEndpoint(k.Host, k.Port, h.host, h.port) {
 			c.server = k.SHA256
@@ -140,8 +150,11 @@ func (c *hostCheck) callback(_ string, _ net.Addr, key ssh.PublicKey) error {
 			local = append(local, ssh.FingerprintSHA256(k))
 		}
 	}
-	d := Decide(local, c.server, c.confirmations, p)
 	name := endpointName(c.host, c.port)
+	if c.pinned {
+		return c.pinnedDecision(key, local, p, name)
+	}
+	d := Decide(local, c.server, c.confirmations, p)
 	switch d.Write {
 	case "add":
 		if err := c.known.Add(c.host, c.port, key); err != nil {
@@ -170,6 +183,29 @@ func (c *hostCheck) callback(_ string, _ net.Addr, key ssh.PublicKey) error {
 		c.data = &protocol.StageData{Hop: c.hop, Expected: d.Expected, Presented: p}
 		c.logf("Refused %s: it presented the host key %s, but %s is trusted.", name, p, d.Expected)
 	}
+	return errHostKey
+}
+
+// pinnedDecision is a managed connector's host identity (design §12): the key must be one the
+// operator pinned. There is no trust on first use and no replacement, and nothing is written.
+func (c *hostCheck) pinnedDecision(key ssh.PublicKey, local []string, p, name string) error {
+	for _, l := range local {
+		if l == p {
+			c.accepted = key
+			return nil
+		}
+	}
+	if len(local) > 0 {
+		c.failure = &target.Failure{Code: protocol.CodeHostKeyChanged,
+			Detail: fmt.Sprintf("%s presented %s, but %s is pinned; the connection was stopped", name, p, local[0])}
+		c.data = &protocol.StageData{Hop: c.hop, Expected: local[0], Presented: p}
+		c.logf("Refused %s: it presented the host key %s, but %s is pinned.", name, p, local[0])
+		return errHostKey
+	}
+	c.failure = &target.Failure{Code: protocol.CodeHostKeyUntrustedManaged,
+		Detail: fmt.Sprintf("%s presented %s, which the operator has not pinned for this connector", name, p)}
+	c.data = &protocol.StageData{Hop: c.hop, Fingerprint: p, Algorithm: key.Type()}
+	c.logf("Refused %s: its host key %s is not pinned.", name, p)
 	return errHostKey
 }
 

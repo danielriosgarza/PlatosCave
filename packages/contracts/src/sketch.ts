@@ -7,7 +7,17 @@ import type { Strokes } from './anchors';
  */
 export const SKETCH_REFERENCE_WIDTH = 900;
 
-const escapeXml = (s: string) => s.replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
+// XML 1.0 forbids C0 controls other than tab, LF and CR, and the non-characters U+FFFE and U+FFFF,
+// even as character references; drop them so the document stays well-formed.
+const xmlLegal = (char: string) => {
+  const code = char.charCodeAt(0);
+  return code >= 0x20 ? code < 0xfffe : code === 0x9 || code === 0xa || code === 0xd;
+};
+const escapeXml = (s: string) =>
+  [...s]
+    .filter(xmlLegal)
+    .join('')
+    .replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 const round = (n: number) => Math.round(n * 100) / 100;
 
 /**

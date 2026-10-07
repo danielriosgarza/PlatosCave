@@ -3,13 +3,21 @@ package cli
 import (
 	"bytes"
 	"context"
+	"crypto/ed25519"
+	"crypto/rand"
+	"encoding/pem"
 	"io"
 	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
 	"time"
 
+	"golang.org/x/crypto/ssh"
+
+	"parallax/connector/internal/identity"
 	"parallax/connector/internal/protocol"
 	"parallax/connector/internal/state"
 	"parallax/connector/internal/testserver"
@@ -273,3 +281,116 @@ func TestConfirmSessionsAsksFirst(t *testing.T) {
 		t.Errorf("run exit %d: %s", code, h.stderr)
 	}
 }
+
+// managedEnv writes the files an operator provides for `run --managed` and returns the
+// environment that names them.
+func managedEnv(t *testing.T, server, connectorID string, id *identity.Identity) map[string]string {
+	t.Helper()
+	dir := t.TempDir()
+	write := func(name string, data []byte, perm os.FileMode) string {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, data, perm); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Chmod(p, perm); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	pemData, err := id.MarshalPEM()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(filepath.Join(dir, "keys"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	_, priv, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	block, err := ssh.MarshalPrivateKey(priv, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	write("keys/hpc", pem.EncodeToMemory(block), 0o600)
+	return map[string]string{
+		"PARALLAX_SERVER":            server,
+		"PARALLAX_CONNECTOR_ID":      connectorID,
+		"PARALLAX_IDENTITY_KEY_FILE": write("identity.key", pemData, 0o600),
+		"PARALLAX_KNOWN_HOSTS_FILE":  write("known_hosts", nil, 0o644),
+		"PARALLAX_KEYS_DIR":          filepath.Join(dir, "keys"),
+		"PARALLAX_TARGETS_FILE": write("targets.json", []byte(`{"v":1,"targets":{"hpc":{"host":"login.hpc.example.org","port":22,`+
+			`"user":"p-{subject}","keyId":"hpc","workspace":"/scratch/{subject}","runtime":{}}}}`), 0o644),
+		"PARALLAX_ALLOW_HOSTS": "login.hpc.example.org",
+		"PARALLAX_ALLOW_NET":   "10.20.0.0/16",
+	}
+}
+
+func TestRunManaged(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("managed mode judges secret files by their POSIX permissions")
+	}
+	srv := testserver.New()
+	t.Cleanup(srv.Close)
+	srv.LinkOptions.HeartbeatSeconds = 60
+	id, err := identity.Generate()
+	if err != nil {
+		t.Fatal(err)
+	}
+	connectorID := srv.AddConnector(id.PublicKey(), testserver.StatusActive)
+	h := newHarness(t, srv.Client())
+	h.tty = true // a terminal is present, and still nothing is asked in it
+	vars := managedEnv(t, srv.URL, connectorID, id)
+	h.env.Getenv = func(k string) string { return vars[k] }
+
+	if code := h.run("run", "--managed", "--allow-net", "10.0.0.0/8"); code != ExitUsage || !strings.Contains(h.stderr.String(), "only from the environment") {
+		t.Fatalf("run --managed with a flag: exit %d: %s", code, h.stderr)
+	}
+	vars["PARALLAX_ALLOW_NET"] = "127.0.0.0/8"
+	if code := h.run("run", "--managed"); code != ExitUsage || !strings.Contains(h.stderr.String(), "loopback") {
+		t.Fatalf("run --managed with loopback allowed: exit %d: %s", code, h.stderr)
+	}
+	vars["PARALLAX_ALLOW_NET"] = "10.20.0.0/16"
+
+	out := &syncBuffer{}
+	h.env.Stdout = out
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan int, 1)
+	go func() { done <- Main(ctx, []string{"run", "--managed"}, h.env) }()
+	lctx, lcancel := context.WithTimeout(ctx, 10*time.Second)
+	l, err := srv.NextLink(lctx)
+	lcancel()
+	if err != nil {
+		t.Fatalf("no link: %v (stdout %s, stderr %s)", err, out, h.stderr)
+	}
+	hello := l.Hello
+	if l.ConnectorID != connectorID || hello.Mode != "managed" || strings.Join(hello.Targets, ",") != "managed" ||
+		hello.Features.TTY || hello.Features.Agent ||
+		strings.Join(hello.NetworkScope.CIDRs, ",") != "10.20.0.0/16" || strings.Join(hello.NetworkScope.Hosts, ",") != "login.hpc.example.org" {
+		t.Errorf("hello = %+v", hello)
+	}
+	// A personal target is refused before anything is dialled.
+	if err := l.Send(&protocol.TestConnection{RequestID: requestIDForTests, Target: protocol.Target{Kind: "local", Workspace: t.TempDir()},
+		Runtime: protocol.Runtime{Mode: "start"}}); err != nil {
+		t.Fatal(err)
+	}
+	nctx, ncancel := context.WithTimeout(ctx, 10*time.Second)
+	r, err := l.Next(nctx)
+	ncancel()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if e, ok := r.Message.(*protocol.Error); !ok || e.Code != protocol.CodeUnsupportedTarget {
+		t.Errorf("a local target on a managed connector: %+v", r.Message)
+	}
+	cancel()
+	if code := <-done; code != ExitOK {
+		t.Errorf("run exit %d: %s", code, h.stderr)
+	}
+	if h.exists(state.ConfigFile) {
+		t.Error("run --managed wrote config.json")
+	}
+}
+
+const requestIDForTests = "c0ffee00-1111-4222-8333-444455556666"

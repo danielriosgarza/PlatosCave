@@ -9,7 +9,8 @@
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/db/migrate.ts",
-    "db:reset": "tsx src/db/reset.ts"
+    "db:reset": "tsx src/db/reset.ts",
+    "connectors:register-managed": "tsx src/scripts/register-managed-connector.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "3.1144.0",
