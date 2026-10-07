@@ -74,7 +74,7 @@ for (const { width, side, notes, cards } of widths) {
       ).toBe(true);
     });
 
-    test(`A04 course cards at ${width} px use ${cards} column(s)`, async ({ page }) => {
+    test(`A19 course cards at ${width} px use ${cards} column(s)`, async ({ page }) => {
       await page.goto('/courses?view=student');
       await expect(page.getByRole('heading', { name: 'Your courses' })).toBeVisible();
       const grid = await page.evaluate(() => {

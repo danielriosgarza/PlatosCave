@@ -93,6 +93,8 @@ const Env = z
     AUTH_LINK_RATE_LIMIT: z.coerce.number().int().positive().default(120),
     /** Sign-in link uses (`/api/auth/verify`) allowed per client IP per 15 minutes. */
     AUTH_VERIFY_RATE_LIMIT: z.coerce.number().int().positive().default(240),
+    /** Notebook uploads (`notebook-submissions`) one person may make per 15 minutes (§13). */
+    SUBMISSION_RATE_LIMIT: z.coerce.number().int().positive().default(30),
     /**
      * Code-run requests (sample runs, replays, instructor previews) allowed per session per
      * minute. Counted per session, not per address, so a class behind one campus NAT, or the load

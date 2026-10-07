@@ -12,10 +12,10 @@ import {
 import type { FastifyInstance } from 'fastify';
 import type { z } from 'zod';
 import type { RouteDeps } from '../../app';
+import { GateBusy } from '../../content/gate';
 import { downloadName, mintContentUrl } from '../../content/media';
 import {
   checkedNotebook,
-  notebookEnvironment,
   SubmissionRejected,
   SubmissionTooLarge,
   submissionFilename,
@@ -23,6 +23,7 @@ import {
 import * as submissions from '../../db/notebookSubmissions';
 import type { Outcome } from '../../outcome';
 import { classSubmissionPrefix } from '../../storage/storage';
+import { WindowLimit } from '../budgets';
 import { notFound, registerRoute, settle } from '../register';
 
 const NOTEBOOK_TYPE = 'application/x-ipynb+json';
@@ -48,7 +49,17 @@ export default function notebookSubmissionRoutes(app: FastifyInstance, deps: Rou
     settle(await submissions.recordColabLaunch(db(), scope, params.resourceId, now())),
   );
 
+  // Per person, counted after the scope resolves: a person who signs in again has a new
+  // session, and the bound must not grow with the number of sessions. Every request counts,
+  // refused files and replays of a submissionKey included, so the limit bounds the work asked
+  // for. No version quota is applied (product decision, PR Decisions).
+  const uploads = new WindowLimit({
+    max: deps.config.SUBMISSION_RATE_LIMIT,
+    windowMs: 15 * 60_000,
+  });
+
   registerRoute(app, submitNotebook, async ({ scope, params, query, req, fail }) => {
+    if (!uploads.take(scope.user.id, now())) fail(429, { error: 'too many requests' });
     const invalid: (message: string) => never = (message) =>
       fail(400, { error: 'invalid', message });
     // Before anything is stored: a notebook the caller may not submit to, or an archived class,
@@ -68,8 +79,8 @@ export default function notebookSubmissionRoutes(app: FastifyInstance, deps: Rou
     try {
       const stored = await deps.storage.put(
         classSubmissionPrefix(scope.classId),
-        checkedNotebook(part.file, (notebook) => {
-          environment = notebookEnvironment(notebook);
+        checkedNotebook(part.file, (found) => {
+          environment = found;
         }),
       );
       outcome = await submissions.recordSubmission(
@@ -83,6 +94,9 @@ export default function notebookSubmissionRoutes(app: FastifyInstance, deps: Rou
       // Read the rest of a refused file before answering: unread, it holds the connection open.
       await drain(part.file);
       if (err instanceof SubmissionRejected) invalid(err.message);
+      if (err instanceof GateBusy) {
+        throw app.httpErrors.serviceUnavailable('Uploads are busy; try again in a moment');
+      }
       if (err instanceof SubmissionTooLarge) {
         throw app.httpErrors.payloadTooLarge(
           `The file is larger than ${MAX_SUBMISSION_BYTES / (1024 * 1024)} MB`,

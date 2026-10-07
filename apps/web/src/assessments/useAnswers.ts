@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useReducer, useRef } from 'react';
 import { ApiError } from '../api/client';
+import { UNSENT_ANSWERS_PREFIX } from '../reading/margin/drafts';
 import { type AttemptView, closedReceipt, type Receipt, saveAnswer } from './api';
 
 /**
@@ -17,7 +18,7 @@ export interface Entry {
 }
 
 const AUTOSAVE_MS = 800;
-const localKey = (attemptId: string) => `pc-test-unsent:${attemptId}`;
+const localKey = (attemptId: string) => `${UNSENT_ANSWERS_PREFIX}${attemptId}`;
 
 type Unsent = Record<string, { value: unknown; flagged: boolean; seq: number }>;
 

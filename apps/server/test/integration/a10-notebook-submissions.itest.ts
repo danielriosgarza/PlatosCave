@@ -1,8 +1,11 @@
 import { createHash } from 'node:crypto';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdtemp, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { MAX_SUBMISSION_BYTES } from '@parallax/contracts/routes/notebookSubmissions';
+import {
+  MAX_SUBMISSION_BYTES,
+  MAX_SUBMISSION_CELLS,
+} from '@parallax/contracts/routes/notebookSubmissions';
 import { and, eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
@@ -31,14 +34,15 @@ import { createTestDatabase, type TestDatabase } from './db';
  */
 
 const now = new Date('2026-10-01T09:00:00Z');
-const config = loadConfig({
+const env = {
   NODE_ENV: 'test',
   LOG_LEVEL: 'silent',
   APP_HOST: '127.0.0.1',
   CONTENT_HOST: 'localhost',
   CONTENT_ORIGIN: 'http://localhost:3100',
   APP_ORIGIN: 'http://127.0.0.1:3100',
-});
+};
+const config = loadConfig(env);
 
 /** A notebook as Colab saves it: its own metadata block, outputs stored, nothing to run. */
 const colabNotebook = (answer: string) =>
@@ -308,6 +312,55 @@ describe('notebook upload', () => {
     );
     expect(res.status).toBe(413);
     expect(await rowCount()).toBe(2);
+  });
+
+  test('A10 uploads beyond the per-person limit are refused with 429 and nothing is stored', async () => {
+    // Its own app, so the counts of the tests around it are not shared.
+    const limited = await buildApp(loadConfig({ ...env, SUBMISSION_RATE_LIMIT: '3' }), {
+      db: testDb.db,
+      now: () => now,
+      storage: new FsStorage(root),
+    });
+    await limited.ready();
+    const send = async (name: string, bytes: string, key: string) =>
+      (
+        await limited.inject({
+          method: 'POST',
+          url: `${base(ids.classA)}/notebook-submissions?submissionKey=${key}`,
+          headers: {
+            host: '127.0.0.1:3100',
+            cookie: world.cookie.sam,
+            'content-type': 'multipart/form-data; boundary=zz',
+          },
+          payload: `--zz\r\nContent-Disposition: form-data; name="file"; filename="${name}"\r\n\r\n${bytes}\r\n--zz--\r\n`,
+        })
+      ).statusCode;
+    try {
+      // Refused files count too: the limit bounds requests, not accepted versions.
+      for (let i = 0; i < 3; i++) expect(await send('a.txt', 'x', `flood-key-${i}x0000`)).toBe(400);
+      const before = await rowCount();
+      expect(await send('late.ipynb', colabNotebook('over'), 'flood-key-over00')).toBe(429);
+      expect(await rowCount()).toBe(before);
+    } finally {
+      await limited.close();
+    }
+  });
+
+  test('A10 a notebook over the cell cap is refused with the reason and nothing is stored', async () => {
+    const cell = { cell_type: 'raw', metadata: {}, source: '' };
+    const bytes = JSON.stringify({
+      nbformat: 4,
+      nbformat_minor: 4,
+      metadata: {},
+      cells: Array.from({ length: MAX_SUBMISSION_CELLS + 1 }, () => cell),
+    });
+    const objectsBefore = await readdir(root, { recursive: true });
+    const res = await submit('sam', { name: 'cells.ipynb', bytes }, 'cells-key-0001');
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('invalid');
+    expect(res.body.message).toMatch(new RegExp(`at most ${MAX_SUBMISSION_CELLS} are accepted`));
+    expect(await rowCount()).toBe(2);
+    expect(await readdir(root, { recursive: true })).toEqual(objectsBefore);
   });
 });
 

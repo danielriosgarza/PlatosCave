@@ -1367,6 +1367,15 @@ class RRuntime(HarnessCase):
         "echo <- function() paste(readLines(file('stdin')), collapse = '\\n')\n"
         "count <- function() length(readLines(file('stdin')))\n"
         "noisy <- function() { cat('to stdout\\n'); 1 }\n"
+        "ident <- function(x) x\n"
+        "lens <- function(x) list(is.list(x), length(x))\n"
+        "bigvec <- function() rep(c('a\"b', 'caf\\u00e9', NA), length.out = 100000)\n"
+        "stop_warning <- function() stop(simpleWarning('w'))\n"
+        "stop_message <- function() stop(simpleMessage('m'))\n"
+        "nested_signal <- function() withCallingHandlers(stop('boom'), error = function(e) signalCondition(structure(class = c('note', 'condition'), list(message = 'fyi', call = NULL))))\n"
+        "deep <- function(n) { if (n == 0) return(0); message('d'); deep(n - 1) + 1 }\n"
+        "custom <- function() stop(structure(class = c('myFailure', 'condition'), list(message = 'custom failure', call = NULL)))\n"
+        "signals <- function() { signalCondition(structure(class = c('note', 'condition'), list(message = 'fyi', call = NULL))); 7 }\n"
     )
 
     def outcome_for(self, *checks):
@@ -1528,6 +1537,88 @@ class RRuntime(HarnessCase):
             )
         )
         self.assertEqual([c["status"] for c in outcome.result["checks"]], ["passed"] * 3, outcome.result["checks"])
+
+    def test_empty_array_arguments_are_empty_vectors(self):
+        outcome = self.outcome_for(
+            r_call("Sum of empty", "total", {"value": 0}, args=[[]]),
+            r_call("Length of empty", "lens", {"value": [False, 0]}, args=[[]]),
+            r_call("Empty round trip", "ident", {"value": []}, args=[[]]),
+            r_call("Empty among others", "lens", {"value": [True, 2]}, args=[[[], [1]]]),
+        )
+        self.assertEqual([c["status"] for c in outcome.result["checks"]], ["passed"] * 4, outcome.result["checks"])
+
+    def test_arrays_of_arrays_stay_lists(self):
+        outcome = self.outcome_for(
+            r_call("One-element arrays", "lens", {"value": [True, 2]}, args=[[[1], [2]]]),
+            r_call("Longer arrays", "lens", {"value": [True, 2]}, args=[[[1, 2], [3, 4]]]),
+            r_call("Scalars are a vector", "lens", {"value": [False, 2]}, args=[[1, 2]]),
+            r_call("Nested round trip", "ident", {"value": [1, 2]}, args=[[[1], [2]]]),
+        )
+        self.assertEqual([c["status"] for c in outcome.result["checks"]], ["passed"] * 4, outcome.result["checks"])
+
+    def test_a_condition_that_is_not_an_error_is_an_exception_and_signals_are_not(self):
+        outcome = self.outcome_for(
+            r_call("Raises custom", "custom", {"raises": {"type": "myFailure", "message": "custom"}}),
+            r_call("Unexpected custom", "custom", {"value": 1}),
+            r_call("Signal continues", "signals", {"value": 7}),
+        )
+        self.assertEqual([c["status"] for c in outcome.result["checks"]], ["passed", "error", "passed"], outcome.result["checks"])
+        self.assertEqual(outcome.check(1)["message"], "myFailure: custom failure")
+        self.assertEqual(outcome.check(1)["errorKind"], "exception")
+
+    def test_a_large_character_vector_is_serialised_quickly_and_exactly(self):
+        # 100 000 elements, non-ASCII and NA among them; a per-element serialiser took ~10 s.
+        pattern = ['a"b', "caf\u00e9", None]
+        expected = [pattern[i % 3] for i in range(100000)]
+        entry = self.outcome_for(r_call("Big", "bigvec", {"value": expected}, timeoutSeconds=5)).check()
+        self.assertEqual(entry["status"], "passed", {k: entry[k] for k in entry if k not in ("expected", "actual")})
+
+    def test_stop_with_a_warning_or_message_condition_is_an_exception(self):
+        outcome = self.outcome_for(
+            r_call("Warning", "stop_warning", {"raises": {"type": "simpleWarning", "message": "w"}}),
+            r_call("Message", "stop_message", {"raises": {"type": "simpleMessage"}}),
+            r_call("Handler signal during error", "nested_signal", {"raises": {"type": "simpleError", "message": "boom"}}),
+        )
+        self.assertEqual([c["status"] for c in outcome.result["checks"]], ["passed"] * 3, outcome.result["checks"])
+
+    def test_messages_in_deep_recursion_cost_no_more_than_without_the_driver(self):
+        entry = self.outcome_for(r_call("Deep", "deep", {"value": 1500}, args=[1500], timeoutSeconds=5)).check()
+        self.assertEqual(entry["status"], "passed", {k: entry[k] for k in entry if k not in ("stderr",)})
+
+    def test_a_non_error_condition_at_the_top_of_the_solution_file_is_an_exception(self):
+        job = r_job(
+            {"solution.R": "stop(structure(class = c('myFailure', 'condition'), list(message = 'top', call = NULL)))\n"},
+            [r_call("Top level", "f", {"raises": {"type": "myFailure", "message": "top"}})],
+        )
+        self.assertEqual(self.go(job).check()["status"], "passed")
+
+    def test_q_defined_by_a_sourced_helper_is_found(self):
+        files = {"solution.R": "source('helper.R')\n", "helper.R": "q <- function() 'helper q'\n"}
+        entry = self.go(r_job(files, [r_call("Q", "q", {"value": "helper q"})])).check()
+        self.assertEqual(entry["status"], "passed", entry)
+
+    def test_character_vectors_keep_quotes_unicode_and_missing_values(self):
+        files = {"solution.R": "v <- function() c('a\"b', 'caf\\u00e9', NA, 'back\\\\slash')\nk <- function() c('x\"y' = 1, z = 2)\n"}
+        outcome = self.go(
+            r_job(
+                files,
+                [
+                    r_call("Vector", "v", {"value": ['a"b', "caf\u00e9", None, "back\\slash"]}),
+                    r_call("Keys", "k", {"value": {'x"y': 1, "z": 2}}),
+                ],
+            )
+        )
+        self.assertEqual([c["status"] for c in outcome.result["checks"]], ["passed"] * 2, outcome.result["checks"])
+
+    def test_q_and_quit_are_not_found_unless_the_solution_defines_them(self):
+        files = {"solution.R": "other <- function() 1\n"}
+        outcome = self.go(
+            r_job(files, [r_call("Q", "q", {"value": 1}), r_call("Quit", "quit", {"value": 1})])
+        )
+        self.assertEqual([c["status"] for c in outcome.result["checks"]], ["error", "error"])
+        self.assertIn("was not found", outcome.check()["message"])
+        defined = self.go(r_job({"solution.R": "q <- function() 'mine'\n"}, [r_call("Q", "q", {"value": "mine"})]))
+        self.assertEqual(defined.check()["status"], "passed", defined.check())
 
     def test_integer_arguments_are_doubles(self):
         files = {"solution.R": "square <- function(n) n * n\nkind <- function(n) is.double(n)\n"}
