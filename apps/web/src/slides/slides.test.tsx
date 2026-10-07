@@ -268,10 +268,7 @@ describe('slide viewer', () => {
     );
     expect(position()).toHaveTextContent('2 / 12');
     expect(onPage).toHaveBeenLastCalledWith(2);
-    expect(screen.getByRole('button', { name: 'Hide notes' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
+    expect(screen.getByRole('button', { name: 'Hide notes' })).not.toHaveAttribute('aria-pressed');
   });
 
   it('opens at the slide studied last and saves the new one once it settles', async () => {
@@ -357,7 +354,7 @@ describe('slide viewer', () => {
     expect(screen.getByRole('button', { name: 'Fit' })).toBeDisabled();
     await user.click(screen.getByRole('button', { name: 'Zoom in' }));
     await waitFor(() => expect(doc.rendered.at(-1)?.width).toBe(Math.floor(550 * (16 / 9) * 1.5)));
-    expect(screen.getByRole('status')).toHaveTextContent('Zoom 150%');
+    expect(screen.getByText('Zoom 150%')).toHaveAttribute('role', 'status');
     await user.click(screen.getByRole('button', { name: 'Fit' }));
     await waitFor(() => expect(doc.rendered.at(-1)?.width).toBe(fit));
     expect(screen.getByRole('button', { name: 'Fit' })).toBeDisabled();

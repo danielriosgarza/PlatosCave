@@ -66,3 +66,9 @@
     padding-right: 16px;
   }
 }
+
+.notice:empty {
+  padding-top: 0;
+  padding-bottom: 0;
+  border-bottom: 0;
+}

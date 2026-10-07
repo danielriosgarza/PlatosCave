@@ -135,7 +135,6 @@ export function ReadingTab({ classId, courseId, topicId, instructor, search, onS
           <button
             type="button"
             className={buttons.tool}
-            aria-pressed={marginOpen}
             onClick={() => setMarginOpen((open) => !open)}
           >
             {marginOpen ? 'Hide notes' : 'Notes'}

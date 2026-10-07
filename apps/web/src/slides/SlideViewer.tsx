@@ -239,16 +239,13 @@ export function SlideViewer({
       >
         Fit
       </button>
-      {zoom > 0 && (
-        <span className={styles.label} role="status">
-          Zoom {Math.round(level * 100)}%
-        </span>
-      )}
+      <span className={styles.label} role="status">
+        {zoom > 0 ? `Zoom ${Math.round(level * 100)}%` : ''}
+      </span>
       {notes && (
         <button
           type="button"
           className={buttons.tool}
-          aria-pressed={notesOpen}
           onClick={() => setNotesOpen((open) => !open)}
         >
           {notesOpen ? 'Hide notes' : 'Notes'}

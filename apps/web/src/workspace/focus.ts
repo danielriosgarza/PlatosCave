@@ -39,6 +39,14 @@ export function isEditable(target: EventTarget | null): boolean {
   );
 }
 
+/**
+ * Whether a modal dialog is open. Keys then belong to the dialog: Escape closes only it, and
+ * F does not toggle the workspace behind it (§5, §14).
+ */
+export function modalOpen(): boolean {
+  return document.querySelector('[aria-modal="true"]') !== null;
+}
+
 export const FULLSCREEN_FALLBACK =
   'Browser full screen is unavailable. Focus stays on; Escape or Exit focus closes it.';
 
@@ -131,7 +139,7 @@ export function useFocusMode(workspace: RefObject<HTMLElement | null>) {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (event.defaultPrevented) return;
+      if (event.defaultPrevented || modalOpen()) return;
       if (event.key === 'Escape' && focusOn && !isOurs()) {
         event.preventDefault();
         void exitFocus();
