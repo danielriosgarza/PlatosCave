@@ -36,6 +36,19 @@ local({
     as.character(jsonlite::toJSON(clean_text(s)[[1L]], auto_unbox = TRUE))
   }
 
+  # One JSON string text per element of a character vector, in a single serialiser call (NA is
+  # null). The array text is split again with a string-aware pattern: jsonlite escapes every
+  # quote inside a string, so the tokens are exactly the elements.
+  string_items <- function(s) {
+    if (length(s) == 0L) return(character(0))
+    text <- as.character(jsonlite::toJSON(clean_text(s), na = "null"))
+    inner <- substr(text, 2L, nchar(text) - 1L)
+    # useBytes: character offsets in a long UTF-8 text make the matching quadratic.
+    tokens <- regmatches(inner, gregexpr("\"(?:[^\"\\\\]++|\\\\.)*+\"|null", inner, perl = TRUE, useBytes = TRUE))[[1L]]
+    Encoding(tokens) <- "UTF-8"
+    tokens
+  }
+
   not_json <- function() stop(structure(class = c(NOT_JSON, "error", "condition"),
                                         list(message = "not json", call = NULL)))
 
@@ -56,9 +69,7 @@ local({
       return(out)
     }
     if (is.character(x)) {
-      return(vapply(seq_along(x), function(i) {
-        if (is.na(x[[i]])) "null" else json_string(x[[i]])
-      }, ""))
+      return(string_items(x))
     }
     not_json()
   }
@@ -67,7 +78,7 @@ local({
     if (length(keys) == 0L) return("{}")
     keys <- clean_text(keys)
     if (anyNA(keys) || any(keys == "") || anyDuplicated(keys)) not_json()
-    paste0("{", paste0(vapply(keys, json_string, ""), ":", items, collapse = ","), "}")
+    paste0("{", paste0(string_items(keys), ":", items, collapse = ","), "}")
   }
 
   to_json <- function(x) {
@@ -94,8 +105,9 @@ local({
     )
   }
 
-  # JSON from the harness to R values: arrays of scalars of one kind become atomic vectors,
-  # objects named lists, everything else lists.
+  # JSON from the harness to R values: arrays of scalars of one kind become atomic vectors
+  # (an empty array is logical(0)), objects named lists, everything else lists. An array
+  # with an array among its items stays a list, so [[1],[2]] is list(1, 2), not c(1, 2).
   from_json <- function(x) {
     if (!is.list(x)) {
       # JSON integers are doubles, as a number typed in R is: n * n must not overflow.
@@ -103,7 +115,9 @@ local({
       return(x)
     }
     items <- lapply(x, from_json)
-    if (!is.null(names(x)) || length(items) == 0L) return(items)
+    if (!is.null(names(x))) return(items)
+    if (length(items) == 0L) return(logical(0))
+    if (any(vapply(x, is.list, NA))) return(items)
     missing <- vapply(items, is.null, NA)
     present <- items[!missing]
     scalar <- length(present) > 0L &&
@@ -144,12 +158,28 @@ local({
       # The student file's own definitions: its environment first, then what it sourced into the
       # global environment (empty in a fresh Rscript, so base R is never searched).
       name <- spec$`function`
-      holder <- if (exists(name, envir = env, mode = "function", inherits = FALSE)) env else globalenv()
+      # The driver's own quit/q overrides sit in the global environment: they are not solution code.
+      own <- exists(name, envir = env, mode = "function", inherits = FALSE)
+      holder <- if (own || name %in% c("q", "quit")) env else globalenv()
       fn <- get(name, envir = holder, mode = "function", inherits = FALSE)
       args <- lapply(spec$args, from_json)
       kwargs <- lapply(spec$kwargs, from_json)
-      list(value = do.call(fn, c(args, kwargs)))
-    }, error = function(e) e, quit_called = function(e) e)
+      # stop(cond) with a condition that does not inherit "error" would halt Rscript: catch it
+      # here, only when raised by stop() (a signalCondition() call is not an exception).
+      stop_fn <- stop
+      from_stop <- function() {
+        for (i in seq_len(sys.nframe())) if (identical(sys.function(i), stop_fn)) return(TRUE)
+        FALSE
+      }
+      list(value = withCallingHandlers(
+        do.call(fn, c(args, kwargs)),
+        condition = function(cond) {
+          if (!inherits(cond, c("error", "warning", "message", "interrupt", "quit_called")) && from_stop()) {
+            signalCondition(structure(class = c("driver_stop", "condition"), list(message = "", call = NULL, cond = cond)))
+          }
+        }
+      ))
+    }, error = function(e) e, quit_called = function(e) e, driver_stop = function(e) e$cond)
     if (inherits(state, "condition")) return(exception_text(state))
     value <- state$value
     json <- tryCatch(to_json(value), error = function(e) NULL)

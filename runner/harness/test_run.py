@@ -1367,6 +1367,11 @@ class RRuntime(HarnessCase):
         "echo <- function() paste(readLines(file('stdin')), collapse = '\\n')\n"
         "count <- function() length(readLines(file('stdin')))\n"
         "noisy <- function() { cat('to stdout\\n'); 1 }\n"
+        "ident <- function(x) x\n"
+        "lens <- function(x) list(is.list(x), length(x))\n"
+        "bigvec <- function() rep(c('a\"b', 'caf\\u00e9', NA), length.out = 100000)\n"
+        "custom <- function() stop(structure(class = c('myFailure', 'condition'), list(message = 'custom failure', call = NULL)))\n"
+        "signals <- function() { signalCondition(structure(class = c('note', 'condition'), list(message = 'fyi', call = NULL))); 7 }\n"
     )
 
     def outcome_for(self, *checks):
@@ -1528,6 +1533,62 @@ class RRuntime(HarnessCase):
             )
         )
         self.assertEqual([c["status"] for c in outcome.result["checks"]], ["passed"] * 3, outcome.result["checks"])
+
+    def test_empty_array_arguments_are_empty_vectors(self):
+        outcome = self.outcome_for(
+            r_call("Sum of empty", "total", {"value": 0}, args=[[]]),
+            r_call("Length of empty", "lens", {"value": [False, 0]}, args=[[]]),
+            r_call("Empty round trip", "ident", {"value": []}, args=[[]]),
+            r_call("Empty among others", "lens", {"value": [True, 2]}, args=[[[], [1]]]),
+        )
+        self.assertEqual([c["status"] for c in outcome.result["checks"]], ["passed"] * 4, outcome.result["checks"])
+
+    def test_arrays_of_arrays_stay_lists(self):
+        outcome = self.outcome_for(
+            r_call("One-element arrays", "lens", {"value": [True, 2]}, args=[[[1], [2]]]),
+            r_call("Longer arrays", "lens", {"value": [True, 2]}, args=[[[1, 2], [3, 4]]]),
+            r_call("Scalars are a vector", "lens", {"value": [False, 2]}, args=[[1, 2]]),
+            r_call("Nested round trip", "ident", {"value": [1, 2]}, args=[[[1], [2]]]),
+        )
+        self.assertEqual([c["status"] for c in outcome.result["checks"]], ["passed"] * 4, outcome.result["checks"])
+
+    def test_a_condition_that_is_not_an_error_is_an_exception_and_signals_are_not(self):
+        outcome = self.outcome_for(
+            r_call("Raises custom", "custom", {"raises": {"type": "myFailure", "message": "custom"}}),
+            r_call("Unexpected custom", "custom", {"value": 1}),
+            r_call("Signal continues", "signals", {"value": 7}),
+        )
+        self.assertEqual([c["status"] for c in outcome.result["checks"]], ["passed", "error", "passed"], outcome.result["checks"])
+        self.assertEqual(outcome.check(1)["message"], "myFailure: custom failure")
+        self.assertEqual(outcome.check(1)["errorKind"], "exception")
+
+    def test_a_large_character_vector_is_serialised_quickly(self):
+        job = r_job({"solution.R": self.SOURCE}, [r_call("Big", "bigvec", {"value": "x"}, "repr", timeoutSeconds=5)])
+        entry = self.go(job).check()
+        self.assertEqual(entry["status"], "failed", entry)
+
+    def test_character_vectors_keep_quotes_unicode_and_missing_values(self):
+        files = {"solution.R": "v <- function() c('a\"b', 'caf\\u00e9', NA, 'back\\\\slash')\nk <- function() c('x\"y' = 1, z = 2)\n"}
+        outcome = self.go(
+            r_job(
+                files,
+                [
+                    r_call("Vector", "v", {"value": ['a"b', "caf\u00e9", None, "back\\slash"]}),
+                    r_call("Keys", "k", {"value": {'x"y': 1, "z": 2}}),
+                ],
+            )
+        )
+        self.assertEqual([c["status"] for c in outcome.result["checks"]], ["passed"] * 2, outcome.result["checks"])
+
+    def test_q_and_quit_are_not_found_unless_the_solution_defines_them(self):
+        files = {"solution.R": "other <- function() 1\n"}
+        outcome = self.go(
+            r_job(files, [r_call("Q", "q", {"value": 1}), r_call("Quit", "quit", {"value": 1})])
+        )
+        self.assertEqual([c["status"] for c in outcome.result["checks"]], ["error", "error"])
+        self.assertIn("was not found", outcome.check()["message"])
+        defined = self.go(r_job({"solution.R": "q <- function() 'mine'\n"}, [r_call("Q", "q", {"value": "mine"})]))
+        self.assertEqual(defined.check()["status"], "passed", defined.check())
 
     def test_integer_arguments_are_doubles(self):
         files = {"solution.R": "square <- function(n) n * n\nkind <- function(n) is.double(n)\n"}
