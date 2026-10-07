@@ -9,13 +9,14 @@ import {
   reviewSubmissions,
   submitNotebook,
 } from '@parallax/contracts/routes/notebookSubmissions';
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { z } from 'zod';
 import type { RouteDeps } from '../../app';
+import { readSessionToken } from '../../auth/sessions';
+import { hashToken } from '../../auth/tokens';
 import { downloadName, mintContentUrl } from '../../content/media';
 import {
   checkedNotebook,
-  notebookEnvironment,
   SubmissionRejected,
   SubmissionTooLarge,
   submissionFilename,
@@ -48,50 +49,70 @@ export default function notebookSubmissionRoutes(app: FastifyInstance, deps: Rou
     settle(await submissions.recordColabLaunch(db(), scope, params.resourceId, now())),
   );
 
-  registerRoute(app, submitNotebook, async ({ scope, params, query, req, fail }) => {
-    const invalid: (message: string) => never = (message) =>
-      fail(400, { error: 'invalid', message });
-    // Before anything is stored: a notebook the caller may not submit to, or an archived class,
-    // refuses without keeping the bytes.
-    const found = await submissions.submittableNotebook(db(), scope, params.resourceId, now());
-    settle(found);
-    if (!req.isMultipart()) invalid('send the file as multipart/form-data');
-    const part = await req.file();
-    if (part?.fieldname !== 'file') invalid('the request has no file part');
-    const filename = submissionFilename(part.filename ?? '');
-    if (!filename.toLowerCase().endsWith('.ipynb')) {
-      await drain(part.file);
-      invalid('Upload a Jupyter notebook (.ipynb) file');
-    }
-    let environment: Record<string, string | number> = {};
-    let outcome: Outcome<z.input<typeof submitNotebook.response>>;
-    try {
-      const stored = await deps.storage.put(
-        classSubmissionPrefix(scope.classId),
-        checkedNotebook(part.file, (notebook) => {
-          environment = notebookEnvironment(notebook);
-        }),
-      );
-      outcome = await submissions.recordSubmission(
-        db(),
-        scope,
-        params.resourceId,
-        { submissionKey: query.submissionKey, filename, stored, environment },
-        now(),
-      );
-    } catch (err) {
-      // Read the rest of a refused file before answering: unread, it holds the connection open.
-      await drain(part.file);
-      if (err instanceof SubmissionRejected) invalid(err.message);
-      if (err instanceof SubmissionTooLarge) {
-        throw app.httpErrors.payloadTooLarge(
-          `The file is larger than ${MAX_SUBMISSION_BYTES / (1024 * 1024)} MB`,
-        );
+  // Per session, not per address: a class may upload from one network at once. Parsing is
+  // bounded work (checkNotebookInThread); this bounds how often a person can ask for it and how
+  // fast versions pile up. No version quota is applied (product decision, PR Decisions). The key
+  // is the token's hash, as in members.routes.ts, so the store never holds a live secret.
+  const uploadLimit = {
+    rateLimit: {
+      max: deps.config.SUBMISSION_RATE_LIMIT,
+      timeWindow: '15 minutes',
+      keyGenerator: (req: FastifyRequest) => {
+        const token = readSessionToken(req);
+        return token ? hashToken(token) : req.ip;
+      },
+    },
+  };
+
+  registerRoute(
+    app,
+    submitNotebook,
+    async ({ scope, params, query, req, fail }) => {
+      const invalid: (message: string) => never = (message) =>
+        fail(400, { error: 'invalid', message });
+      // Before anything is stored: a notebook the caller may not submit to, or an archived class,
+      // refuses without keeping the bytes.
+      const found = await submissions.submittableNotebook(db(), scope, params.resourceId, now());
+      settle(found);
+      if (!req.isMultipart()) invalid('send the file as multipart/form-data');
+      const part = await req.file();
+      if (part?.fieldname !== 'file') invalid('the request has no file part');
+      const filename = submissionFilename(part.filename ?? '');
+      if (!filename.toLowerCase().endsWith('.ipynb')) {
+        await drain(part.file);
+        invalid('Upload a Jupyter notebook (.ipynb) file');
       }
-      throw err;
-    }
-    return settle(outcome);
-  });
+      let environment: Record<string, string | number> = {};
+      let outcome: Outcome<z.input<typeof submitNotebook.response>>;
+      try {
+        const stored = await deps.storage.put(
+          classSubmissionPrefix(scope.classId),
+          checkedNotebook(part.file, (found) => {
+            environment = found;
+          }),
+        );
+        outcome = await submissions.recordSubmission(
+          db(),
+          scope,
+          params.resourceId,
+          { submissionKey: query.submissionKey, filename, stored, environment },
+          now(),
+        );
+      } catch (err) {
+        // Read the rest of a refused file before answering: unread, it holds the connection open.
+        await drain(part.file);
+        if (err instanceof SubmissionRejected) invalid(err.message);
+        if (err instanceof SubmissionTooLarge) {
+          throw app.httpErrors.payloadTooLarge(
+            `The file is larger than ${MAX_SUBMISSION_BYTES / (1024 * 1024)} MB`,
+          );
+        }
+        throw err;
+      }
+      return settle(outcome);
+    },
+    uploadLimit,
+  );
 
   registerRoute(app, listOwnSubmissions, async ({ scope, params }) => ({
     submissions: await submissions.listOwnSubmissions(db(), scope, params.resourceId),

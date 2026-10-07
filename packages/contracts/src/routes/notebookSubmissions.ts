@@ -15,6 +15,9 @@ export const COLAB_URL = 'https://colab.research.google.com/';
 /** Largest notebook a submission accepts, with its saved outputs. */
 export const MAX_SUBMISSION_BYTES = 25 * 1024 * 1024;
 
+/** Most cells a submitted notebook may have; a longer one is refused before it is checked (§13). */
+export const MAX_SUBMISSION_CELLS = 10_000;
+
 const exampleClass = exampleIds.zero;
 const exampleResource = exampleIds.bb;
 const exampleSubmission = exampleIds.ee;
@@ -90,7 +93,8 @@ const submissionKey = z
  * Multipart body with one `file` part: a Jupyter `.ipynb` of at most MAX_SUBMISSION_BYTES.
  * `submissionKey` makes the request idempotent: the same key answers the same receipt and adds no
  * version. 400 names the problem for another file type, an empty file, text that is not valid
- * UTF-8 or a notebook that is not valid nbformat 4 (§10.7); 413 for a file over the limit; 409
+ * UTF-8 or a notebook that is not valid nbformat 4 or has more than MAX_SUBMISSION_CELLS cells
+ * (§10.7); 413 for a file over the limit; 429 beyond the per-session upload limit; 409
  * `class_archived` once the class is archived. The notebook is never run.
  */
 export const submitNotebook = defineRoute({
@@ -101,7 +105,7 @@ export const submitNotebook = defineRoute({
   params: resourceParams,
   query: z.object({ submissionKey }),
   response: submissionReceipt,
-  errors: { 400: invalidBody, 409: classArchived, 413: errorBody },
+  errors: { 400: invalidBody, 409: classArchived, 413: errorBody, 429: errorBody },
   examples: {
     params: { classId: exampleClass, resourceId: exampleResource },
     query: { submissionKey: 'example-key-0001' },
