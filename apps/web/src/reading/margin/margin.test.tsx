@@ -984,6 +984,57 @@ describe('reading margin: layout and sign-out', () => {
     await waitFor(() => expect(entry().style.marginTop).toBe('550px'));
   });
 
+  it('A06 reflowing the reading keeps a highlight anchored to the same block, offsets and quote', async () => {
+    const w = world();
+    api(w);
+    const layout = { mark: 400 };
+    vi.stubGlobal('matchMedia', (query: string) => ({
+      matches: true,
+      media: query,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    }));
+    vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (
+      this: Element,
+    ) {
+      const shift = Number.parseFloat((this as HTMLElement).style?.marginTop) || 0;
+      const top = this.matches('mark')
+        ? layout.mark
+        : this.matches('[data-active="true"]')
+          ? 100 + shift
+          : 0;
+      return { top, bottom: top + 20, height: 20, left: 0, right: 0, width: 0 } as DOMRect;
+    });
+    Element.prototype.scrollIntoView = vi.fn();
+    const user = userEvent.setup();
+    await open();
+    select(B3, 0, 13);
+    await user.click(within(await toolbar()).getByRole('button', { name: 'Highlight' }));
+    await waitFor(() => expect(marks().map((m) => m.textContent)).toEqual(['Wider samples']));
+    const sent = w.calls[0]?.body?.anchor;
+    expect(sent).toEqual(textAnchor(B3, 0, 13, P3));
+
+    await user.click(screen.getByRole('button', { name: 'Highlight: Wider samples' }));
+    const entry = () =>
+      document.querySelector(
+        'div[data-active="true"], li[data-active="true"], section[data-active="true"]',
+      ) as HTMLElement;
+    await waitFor(() => expect(entry().style.marginTop).toBe('300px'));
+
+    // A narrower window: the text wraps differently and the passage moves down.
+    layout.mark = 700;
+    window.innerWidth = 480;
+    window.dispatchEvent(new Event('resize'));
+    await waitFor(() => expect(entry().style.marginTop).toBe('600px'));
+
+    // The mark is on the same passage, the entry still aligns, and nothing was sent or changed.
+    expect(marks().map((m) => m.textContent)).toEqual(['Wider samples']);
+    expect(marks()[0]?.closest('[data-block-id]')).toHaveAttribute('data-block-id', B3);
+    expect(w.calls).toHaveLength(1);
+    expect(w.annotations).toHaveLength(1);
+    expect(w.annotations[0]?.anchor).toEqual(sent);
+  });
+
   it('A05 a note still being sent when the reading is left is not sent again when it is opened again', async () => {
     const w = world();
     const mock = api(w);
