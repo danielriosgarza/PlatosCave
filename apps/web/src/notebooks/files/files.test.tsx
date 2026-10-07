@@ -330,6 +330,8 @@ describe('save controls', () => {
     expect(
       within(alert).getByRole('button', { name: 'Save my draft as revision 6' }),
     ).toBeInTheDocument();
+    // The plain button would overwrite the other save: only the explicit choice is offered.
+    expect(screen.queryByRole('button', { name: 'Save to Parallax' })).not.toBeInTheDocument();
   });
 });
 
