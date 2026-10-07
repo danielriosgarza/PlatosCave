@@ -35,7 +35,7 @@ export function ResourceToolbar({
           <button type="button" ref={fullscreenButton} aria-keyshortcuts="f" onClick={onFullscreen}>
             {fullscreen ? 'Exit full screen' : 'Full screen'}
           </button>
-          <button type="button" ref={focusButton} onClick={onFocus}>
+          <button type="button" ref={focusButton} data-on={focus} onClick={onFocus}>
             {focus ? 'Exit focus' : 'Focus'}
           </button>
         </div>

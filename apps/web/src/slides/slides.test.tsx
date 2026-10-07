@@ -268,7 +268,7 @@ describe('slide viewer', () => {
     );
     expect(position()).toHaveTextContent('2 / 12');
     expect(onPage).toHaveBeenLastCalledWith(2);
-    expect(screen.getByRole('button', { name: 'Hide notes' })).not.toHaveAttribute('aria-pressed');
+    expect(screen.getByRole('button', { name: 'Hide notes' })).toHaveAttribute('data-on', 'true');
   });
 
   it('opens at the slide studied last and saves the new one once it settles', async () => {

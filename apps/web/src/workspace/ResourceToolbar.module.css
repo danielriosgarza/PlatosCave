@@ -34,7 +34,7 @@
   color: var(--pc-ink);
   border-radius: var(--pc-radius-control);
 }
-.tools button[aria-pressed="true"] {
+.tools button[data-on="true"] {
   background: var(--pc-soft);
   font-weight: 600;
 }

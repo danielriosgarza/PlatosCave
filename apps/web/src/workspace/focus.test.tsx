@@ -70,6 +70,7 @@ describe('focus and full screen', () => {
     expect(screen.queryByRole('heading', { name: 'Sampling' })).not.toBeInTheDocument();
     expect(tabs()).not.toBeInTheDocument();
     expect(screen.getByRole('toolbar', { name: 'Resource tools' })).toBeVisible();
+    expect(screen.getByRole('button', { name: 'Exit focus' })).toHaveAttribute('data-on', 'true');
     expect(screen.getByRole('button', { name: 'Exit focus' })).not.toHaveAttribute('aria-pressed');
 
     await user.keyboard('{Escape}');
@@ -245,7 +246,7 @@ describe('focus and full screen', () => {
     enterFullscreen(inner);
     leaveFullscreen();
     expect(bar()).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Exit focus' })).not.toHaveAttribute('aria-pressed');
+    expect(screen.getByRole('button', { name: 'Exit focus' })).toHaveAttribute('data-on', 'true');
     inner.remove();
   });
 });
