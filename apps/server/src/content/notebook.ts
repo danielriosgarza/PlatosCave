@@ -587,6 +587,23 @@ export function buildNotebook(nb: NbNotebook, prefix: string): RenderedNotebook 
   };
 }
 
+/**
+ * One live output (a `display_data` or `execute_result` bundle a kernel sent during a session,
+ * docs/design/connector.md §14) as stored output would be: the same `bundle` choice, the same
+ * `outputSchema`, `sanitizeSvg` and `hasScript` passes, objects keyed under `prefix` as storage
+ * will name them. Nothing else is shared with a notebook import; Markdown and LaTeX go through
+ * the reading pipeline as stored outputs do.
+ */
+export function renderLiveOutput(
+  data: Record<string, unknown>,
+  executionCount: number | null,
+  prefix: string,
+): { output: StoredNotebookOutput; objects: NotebookObject[] } {
+  const builder = new Builder(prefix);
+  const output = builder.bundle(data, executionCount);
+  return { output, objects: [...builder.objects.values()] };
+}
+
 /** Checks and renders the text of an `.ipynb` file; throws `NotebookError` with the reason. */
 export function renderNotebook(text: string, prefix: string): RenderedNotebook {
   const parsed = parseNotebook(text);

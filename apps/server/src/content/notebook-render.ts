@@ -1,4 +1,5 @@
-import type { RenderedNotebook } from './notebook';
+import type { StoredNotebookOutput } from '@parallax/contracts';
+import type { NotebookObject, RenderedNotebook } from './notebook';
 import { runInThread } from './thread';
 
 /**
@@ -21,5 +22,26 @@ export function renderNotebookInThread(
       outOfMemory: 'The notebook is too large to render',
     },
     { timeoutMs, maxHeapMb: 512, signal },
+  );
+}
+
+/**
+ * `renderLiveOutput` in the same thread script, bounded more tightly: one output, answered while
+ * the person waits (docs/design/connector.md §14). Over a bound it fails with `ThreadInputError`.
+ */
+export function renderLiveOutputInThread(
+  live: { data: Record<string, unknown>; executionCount: number | null },
+  prefix: string,
+  { timeoutMs = 20_000 }: { timeoutMs?: number } = {},
+): Promise<{ output: StoredNotebookOutput; objects: NotebookObject[] }> {
+  return runInThread(
+    new URL('./notebook.worker.mjs', import.meta.url),
+    { live, prefix },
+    {
+      failed: 'The output could not be rendered',
+      timeout: 'Rendering the output took too long',
+      outOfMemory: 'The output is too large to render',
+    },
+    { timeoutMs, maxHeapMb: 256 },
   );
 }

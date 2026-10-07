@@ -1,0 +1,15 @@
+{
+  "_comment": "One hostile live output (A09, docs/design/connector.md \u00a714). The server runs each bundle through the stored-output path and the live path (apps/server/src/content/notebook.test.ts, a09-live-output.itest.ts); the web test sends the same bundles over the channel and shows the Markdown answer through the browser's sanitiser (apps/web/src/notebooks/live/live.test.tsx).",
+  "html": {
+    "text/html": "<div onclick=\"steal()\"><table><tr><td>x online = 3</td></tr></table><script>fetch(\"/api/me\").then(r=>r.text()).then(t=>parent.postMessage(t,\"*\"))</script><img src=x onerror=\"window.__pwned=1\"><a href=\"javascript:alert(2)\">link</a><iframe src=\"https://evil.example\"></iframe><object data=\"x.swf\"></object><embed src=\"x.swf\"><form action=\"javascript:alert(3)\"><input value=\"q\"></form></div>",
+    "text/plain": "<IPython.core.display.HTML object>"
+  },
+  "svg": {
+    "image/svg+xml": "<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 10 10\" onload=\"window.__pwned=1\"><script>window.__pwned=2</script><foreignObject><div>x</div></foreignObject><a href=\"javascript:alert(2)\"><rect width=\"5\" height=\"5\" fill=\"red\" onclick=\"alert(3)\"/></a><animate attributeName=\"href\" to=\"javascript:alert(4)\"/><circle r=\"4\"/></svg>",
+    "text/plain": "<Figure size 640x480>"
+  },
+  "markdown": {
+    "text/markdown": "**bold** <script>window.__pwned=3</script><img src=x onerror=\"window.__pwned=4\"> [x](javascript:alert(5))",
+    "text/plain": "<IPython.core.display.Markdown object>"
+  }
+}

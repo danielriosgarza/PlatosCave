@@ -178,16 +178,22 @@ describe('live output', () => {
     expect(shown).toEqual({ kind: 'text', stream: 'stdout', text: '<script>alert(1)</script>' });
   });
 
-  it('A09 an HTML output is withheld: its plain alternative is kept and no markup is produced', () => {
-    const shown = shownOutput({
-      output_type: 'display_data',
-      metadata: {},
-      data: { 'text/html': '<p onclick="x()">hi</p><script>1</script>', 'text/plain': 'hi' },
+  it('A09 an HTML output is left to the server to render: its plain alternative is kept and no markup is produced', () => {
+    const data = { 'text/html': '<p onclick="x()">hi</p><script>1</script>', 'text/plain': 'hi' };
+    const shown = shownOutput({ output_type: 'display_data', metadata: {}, data });
+    expect(shown).toEqual({
+      kind: 'rich',
+      data,
+      executionCount: null,
+      mimeTypes: ['text/html'],
+      text: 'hi',
     });
-    expect(shown).toEqual({ kind: 'withheld', mimeTypes: ['text/html'], text: 'hi' });
+    expect(
+      shownOutput({ output_type: 'execute_result', execution_count: 3, metadata: {}, data }),
+    ).toMatchObject({ kind: 'rich', executionCount: 3 });
   });
 
-  it('error tracebacks and withheld plain text count against the same cap', () => {
+  it('error tracebacks and the plain text of rich output count against the same cap', () => {
     const big = 'y'.repeat(40_000);
     const { shown, truncated } = groupOutputs([
       {
@@ -209,11 +215,7 @@ describe('live output', () => {
     const total = shown.reduce(
       (n, o) =>
         n +
-        (o.kind === 'error'
-          ? o.traceback.length
-          : o.kind === 'withheld'
-            ? (o.text?.length ?? 0)
-            : 0),
+        (o.kind === 'error' ? o.traceback.length : o.kind === 'rich' ? (o.text?.length ?? 0) : 0),
       0,
     );
     expect(total).toBe(50_000);
