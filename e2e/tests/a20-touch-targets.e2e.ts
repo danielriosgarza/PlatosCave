@@ -62,6 +62,7 @@ async function releaseExercise(
 ) {
   const setup = await playwright.request.newContext({ baseURL });
   const { ids } = await (await setup.post('/api/test/world')).json();
+  await setup.dispose();
   const elena = await signedIn(playwright, baseURL, 'elena@example.test');
   const created = await elena.post(
     `/api/courses/${ids.statistics}/topics/${ids.sampling}/resources`,
@@ -72,13 +73,15 @@ async function releaseExercise(
   const published = await elena.post(`/api/courses/${ids.statistics}/releases`);
   expect(published.ok()).toBe(true);
   const { release } = await published.json();
+  await elena.dispose();
   const priya = await signedIn(playwright, baseURL, 'priya@example.test');
   const current = await (await priya.get(`/api/classes/${ids.classA}/release`)).json();
   const adopted = await priya.post(`/api/classes/${ids.classA}/adopt`, {
     data: { releaseId: release.id, expectedReleaseId: current.release.id },
   });
   expect(adopted.ok()).toBe(true);
-  return { ids, resourceId: resource.id as string, priya };
+  await priya.dispose();
+  return { ids, resourceId: resource.id as string };
 }
 
 async function openExercise(page: Page, classId: string, topicId: string, title: string) {
@@ -96,6 +99,7 @@ async function openExercise(page: Page, classId: string, topicId: string, title:
 test.beforeAll(async ({ playwright, baseURL }) => {
   const setup = await playwright.request.newContext({ baseURL });
   expect((await setup.post('/api/test/world')).ok()).toBe(true);
+  await setup.dispose();
 });
 
 test.beforeEach(async ({ page }) => {
