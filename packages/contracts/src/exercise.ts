@@ -141,7 +141,12 @@ const sameSet = (a: string[], b: string[]) =>
  */
 export function onControlGrid(value: number, min: number, step: number): boolean {
   const k = Math.round((value - min) / step);
-  return Number.isFinite(k) && value === Number((min + k * step).toFixed(6));
+  return Number.isFinite(k) && value === controlGridPoint(min, step, k);
+}
+
+/** The control's k-th point min + k·step, snapped to six decimals as the control sends it. */
+export function controlGridPoint(min: number, step: number, k: number): number {
+  return Number((min + k * step).toFixed(6));
 }
 
 /** Cross-field rules a step's own shape cannot express; the message names what is wrong. */

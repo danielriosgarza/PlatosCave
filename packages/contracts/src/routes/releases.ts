@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { classArchived, defineRoute } from '../define';
 import { exampleIds } from '../examples';
 import { exerciseCredit } from '../exercise';
+import { resourceTypes, tabs } from '../resources';
 
 const courseParams = z.object({ courseId: z.uuid() });
 const classParams = z.object({ classId: z.uuid() });
@@ -9,17 +10,8 @@ const exampleCourse = { courseId: exampleIds.zero };
 const exampleClass = { classId: exampleIds.zero };
 const exampleRelease = exampleIds.zero;
 
-const tab = z.enum(['slides', 'reading', 'exercises', 'notebooks', 'tests']);
-const resourceType = z.enum([
-  'slides_pdf',
-  'slides_web',
-  'reading_native',
-  'reading_pdf',
-  'exercise',
-  'notebook',
-  'shiny',
-  'test',
-]);
+const tab = z.enum(tabs);
+const resourceType = z.enum(resourceTypes);
 
 export const validationIssue = z.object({
   code: z.string(),
@@ -63,7 +55,7 @@ export const publishRelease = defineRoute({
   examples: { params: exampleCourse },
 });
 
-const releasedResource = z.object({
+export const releasedResource = z.object({
   /** The `release_resources` row: stable for this release only. */
   id: z.uuid(),
   resourceId: z.uuid(),

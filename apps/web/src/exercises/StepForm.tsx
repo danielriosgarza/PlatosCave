@@ -1,3 +1,4 @@
+import { controlGridPoint } from '@parallax/contracts';
 import { type ReactNode, useId } from 'react';
 import buttons from '../components/Buttons.module.css';
 import type { AttemptStep } from './attempt';
@@ -298,11 +299,15 @@ function SimulationControl({
   if (!control) return null;
   // The last grid point min + k·step ≤ max: the server refuses values off the grid.
   const lastIndex = Math.floor((control.max - control.min) / control.step + 1e-9);
-  const last = Number((control.min + lastIndex * control.step).toFixed(6));
-  const clamp = (v: number) =>
-    Math.min(lastIndex, Math.max(0, Math.round((v - control.min) / control.step))) * control.step +
-    control.min;
-  const set = (v: number) => onChange(Number(clamp(v).toFixed(6)));
+  const last = controlGridPoint(control.min, control.step, lastIndex);
+  const set = (v: number) =>
+    onChange(
+      controlGridPoint(
+        control.min,
+        control.step,
+        Math.min(lastIndex, Math.max(0, Math.round((v - control.min) / control.step))),
+      ),
+    );
   const compared = step.compared ?? [];
   return (
     <div className={styles.lab}>

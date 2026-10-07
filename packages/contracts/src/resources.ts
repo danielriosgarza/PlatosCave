@@ -10,3 +10,7 @@ export const resourceTypes = [
   'test',
 ] as const;
 export type ResourceType = (typeof resourceTypes)[number];
+
+/** The five study tabs of a topic (§4), in display order. */
+export const tabs = ['slides', 'reading', 'exercises', 'notebooks', 'tests'] as const;
+export type Tab = (typeof tabs)[number];
