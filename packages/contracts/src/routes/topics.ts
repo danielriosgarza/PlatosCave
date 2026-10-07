@@ -1,8 +1,9 @@
 import { z } from 'zod';
 import { defineRoute } from '../define';
 import { exampleIds } from '../examples';
+import { tabs } from '../resources';
 
-export const topicTab = z.enum(['slides', 'reading', 'exercises', 'notebooks', 'tests']);
+export const topicTab = z.enum(tabs);
 
 /**
  * `available` and `complete` topics open; `scheduled` waits for a release date and `locked`

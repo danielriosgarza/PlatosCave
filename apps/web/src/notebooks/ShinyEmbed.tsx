@@ -4,7 +4,7 @@ import styles from './Shiny.module.css';
 import { readShinyMessage } from './shinyMessages';
 
 /** Without a `ready` message in this time the frame is treated as blocked or unresponsive. */
-export const BLOCKED_AFTER_MS = 10_000;
+const BLOCKED_AFTER_MS = 10_000;
 
 interface Props {
   title: string;

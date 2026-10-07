@@ -1,7 +1,8 @@
 import { z } from 'zod';
 import { defineRoute } from '../define';
+import { tabs } from '../resources';
 
-const tab = z.enum(['slides', 'reading', 'exercises', 'notebooks', 'tests']);
+const tab = z.enum(tabs);
 
 /** Where a student last studied in a class (§4): the saved resource inside the adopted release. */
 const resume = z.object({
