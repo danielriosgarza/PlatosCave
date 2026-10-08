@@ -1,0 +1,33 @@
+.composer {
+  margin-top: 8px;
+  padding-top: 14px;
+  border-top: 1px solid var(--pc-rule);
+}
+.field {
+  display: grid;
+  gap: 6px;
+  margin: 10px 0 0;
+  font: var(--pc-text-label);
+}
+.field textarea,
+.field select {
+  font: var(--pc-text-field);
+  width: 100%;
+  border: 1px solid var(--pc-rule);
+  background: var(--pc-soft);
+  color: var(--pc-ink);
+  padding: 12px;
+  border-radius: var(--pc-radius-note);
+}
+.field textarea {
+  min-height: 140px;
+  resize: vertical;
+}
+.field select {
+  padding: 8px 10px;
+  border-radius: var(--pc-radius-control);
+}
+.field textarea:focus,
+.field select:focus {
+  border-color: var(--pc-muted);
+}

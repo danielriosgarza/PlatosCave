@@ -1,9 +1,16 @@
-import { type KeyboardEvent, useCallback, useEffect, useRef, useState } from 'react';
+import {
+  type KeyboardEvent,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import styles from './TabRow.module.css';
 
 export interface TabDef<Id extends string> {
   id: Id;
-  label: string;
+  label: ReactNode;
 }
 
 interface TabRowProps<Id extends string> {
@@ -14,6 +21,8 @@ interface TabRowProps<Id extends string> {
   /** Id of the element the tabs control (the tab panel). */
   panelId: string;
   idPrefix?: string;
+  /** `margin` is the compact strip above the notes margin; `page` is the full-width topic strip. */
+  variant?: 'page' | 'margin';
 }
 
 /** ARIA tabs with automatic activation: arrows, Home and End move and select (roving tabindex). */
@@ -24,6 +33,7 @@ export function TabRow<Id extends string>({
   onSelect,
   panelId,
   idPrefix = 'pc-tab',
+  variant = 'page',
 }: TabRowProps<Id>) {
   const refs = useRef(new Map<Id, HTMLButtonElement>());
   const strip = useRef<HTMLDivElement | null>(null);
@@ -64,7 +74,7 @@ export function TabRow<Id extends string>({
   };
 
   return (
-    <div className={styles.wrap} data-more={more}>
+    <div className={`${styles.wrap} ${variant === 'margin' ? styles.margin : ''}`} data-more={more}>
       <div
         ref={strip}
         className={styles.tabs}

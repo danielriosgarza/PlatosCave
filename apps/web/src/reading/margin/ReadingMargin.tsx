@@ -10,7 +10,10 @@ import {
   useSyncExternalStore,
 } from 'react';
 import { createPortal } from 'react-dom';
-import buttons from '../../components/Buttons.module.css';
+import { type Audience, DiscussionComposer } from '../../components/DiscussionComposer';
+import { type MarginTab, MarginTabs } from '../../components/MarginTabs';
+import { RetryNotice } from '../../components/RetryNotice';
+import { SaveLine } from '../../components/SaveLine';
 import { useSession } from '../../session/useSession';
 import { downloadSvg, FIGURE_ASPECT, PAGE_ASPECT, sketchSvg } from '../sketch/exportSvg';
 import { FigureSketches, figureLabel } from '../sketch/FigureSketches';
@@ -45,12 +48,10 @@ import {
   sendsSettled,
 } from './drafts';
 import styles from './Margin.module.css';
+import { NoteConflict } from './NoteConflict';
 import { NoteController, type NoteState } from './notes';
 import { shownAnchor } from './placement';
 import { ThreadPosts } from './ThreadEntry';
-
-type Tab = 'notes' | 'discussion';
-type Audience = 'instructor' | 'class';
 
 interface Ask {
   anchor: Anchor;
@@ -111,7 +112,7 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
   const actions = useMarginActions(classId, resourceId);
 
   const [root, setRoot] = useState<HTMLDivElement | null>(null);
-  const [tab, setTab] = useState<Tab>('notes');
+  const [tab, setTab] = useState<MarginTab>('notes');
   const [activeId, setActiveId] = useState<string | null>(null);
   const [focusId, setFocusId] = useState<string | null>(null);
   const [deleteProblem, setDeleteProblem] = useState<string | null>(null);
@@ -711,111 +712,100 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
       </div>
       {open ? (
         <aside className={styles.margin} aria-label="Notes and discussion">
-          <div className={styles.tabs}>
-            <button type="button" aria-pressed={tab === 'notes'} onClick={() => setTab('notes')}>
-              My notes
-            </button>
-            <button
-              type="button"
-              aria-pressed={tab === 'discussion'}
-              onClick={() => setTab('discussion')}
-            >
-              Discussion <span className={styles.count}>{threads.length}</span>
-            </button>
-          </div>
-          {list.isError && !list.data ? (
-            <p role="alert" className={styles.empty}>
-              Notes could not be loaded.{' '}
-              <button type="button" className={styles.link} onClick={() => void list.refetch()}>
-                Try again
-              </button>
-            </p>
-          ) : tab === 'notes' ? (
-            <div ref={entriesRef} className={styles.entries}>
-              {notes.length === 0 && sketches.saved.length === 0 ? (
-                <p className={styles.empty}>
-                  {html === null
-                    ? 'No notes on this reading yet.'
-                    : 'Select text in the reading to highlight it or add a note.'}
-                </p>
-              ) : null}
-              {deleteProblem ? (
-                <p role="alert" className={styles.empty}>
-                  The note could not be deleted. Your text is kept.{' '}
-                  <button
-                    type="button"
-                    className={styles.link}
-                    onClick={() => {
+          <MarginTabs tab={tab} onTab={setTab} count={threads.length} idPrefix="reading-margin">
+            {list.isError && !list.data ? (
+              <RetryNotice
+                message="Notes could not be loaded."
+                onRetry={() => void list.refetch()}
+              />
+            ) : tab === 'notes' ? (
+              <div ref={entriesRef} className={styles.entries}>
+                {notes.length === 0 && sketches.saved.length === 0 ? (
+                  <p className={styles.empty}>
+                    {html === null
+                      ? 'No notes on this reading yet.'
+                      : 'Select text in the reading to highlight it or add a note.'}
+                  </p>
+                ) : null}
+                {deleteProblem ? (
+                  <RetryNotice
+                    message="The note could not be deleted. Your text is kept."
+                    onRetry={() => {
                       const entry = notes.find(
                         (n) => (n.controller?.key ?? n.id) === deleteProblem,
                       );
                       if (entry) removeEntry(entry.id, entry.controller);
                     }}
+                  />
+                ) : null}
+                {notes.map((n, index) => (
+                  <NoteEntry
+                    key={n.controller?.key ?? n.id}
+                    id={n.controller?.key ?? n.id}
+                    index={index}
+                    annotation={n.annotation}
+                    controller={n.controller}
+                    anchor={n.anchor}
+                    place={surfaceLabel(surfaceOf(n.anchor))}
+                    active={isActive(n)}
+                    alignTop={isActive(n) ? alignTop : 0}
+                    onSelect={() => select(n.id, true)}
+                    onEdit={(text) =>
+                      (n.annotation ? editorFor(n.annotation) : n.controller)?.edit(text)
+                    }
+                    onBlur={() => n.controller?.blur()}
+                    onRemove={() => {
+                      removeEntry(n.id, n.controller);
+                    }}
+                    actions={actions}
+                  />
+                ))}
+                {sketchEntries.map(({ annotation, surface, editable }) => (
+                  <SketchEntry
+                    key={annotation.id}
+                    annotation={annotation}
+                    label={surfaceLabel(surface ?? surfaceOf(annotation.anchor))}
+                    needsReattachment={surface === null}
+                    pending={annotation.placement?.status === 'pending'}
+                    editing={sketches.open?.annotationId === annotation.id}
+                    blocked={sketches.open !== null}
+                    editable={editable}
+                    onEdit={() => openSketch(annotation, surface)}
+                    onExport={() =>
+                      exportSketch(annotation, surface ?? surfaceOf(annotation.anchor))
+                    }
+                    onDelete={async () => {
+                      expectRemoval(annotation.id);
+                      const removed = await actions.remove(annotation.id).catch(() => false);
+                      settleRemoval(annotation.id, removed);
+                      return removed;
+                    }}
+                  />
+                ))}
+                <p>
+                  <button
+                    type="button"
+                    className={styles.link}
+                    data-add-note=""
+                    onClick={topicNote}
                   >
-                    Try again
+                    Add a topic note
                   </button>
                 </p>
-              ) : null}
-              {notes.map((n, index) => (
-                <NoteEntry
-                  key={n.controller?.key ?? n.id}
-                  id={n.controller?.key ?? n.id}
-                  index={index}
-                  annotation={n.annotation}
-                  controller={n.controller}
-                  anchor={n.anchor}
-                  place={surfaceLabel(surfaceOf(n.anchor))}
-                  active={isActive(n)}
-                  alignTop={isActive(n) ? alignTop : 0}
-                  onSelect={() => select(n.id, true)}
-                  onEdit={(text) =>
-                    (n.annotation ? editorFor(n.annotation) : n.controller)?.edit(text)
-                  }
-                  onBlur={() => n.controller?.blur()}
-                  onRemove={() => {
-                    removeEntry(n.id, n.controller);
-                  }}
-                  actions={actions}
-                />
-              ))}
-              {sketchEntries.map(({ annotation, surface, editable }) => (
-                <SketchEntry
-                  key={annotation.id}
-                  annotation={annotation}
-                  label={surfaceLabel(surface ?? surfaceOf(annotation.anchor))}
-                  needsReattachment={surface === null}
-                  pending={annotation.placement?.status === 'pending'}
-                  editing={sketches.open?.annotationId === annotation.id}
-                  blocked={sketches.open !== null}
-                  editable={editable}
-                  onEdit={() => openSketch(annotation, surface)}
-                  onExport={() => exportSketch(annotation, surface ?? surfaceOf(annotation.anchor))}
-                  onDelete={async () => {
-                    expectRemoval(annotation.id);
-                    const removed = await actions.remove(annotation.id).catch(() => false);
-                    settleRemoval(annotation.id, removed);
-                    return removed;
-                  }}
-                />
-              ))}
-              <p>
-                <button type="button" className={styles.link} data-add-note="" onClick={topicNote}>
-                  Add a topic note
-                </button>
-              </p>
-            </div>
-          ) : (
-            <Discussion
-              threads={threads}
-              userId={userId}
-              actions={actions}
-              activeId={activeId}
-              onSelect={(id) => select(id, true)}
-              ask={ask}
-              onAsk={setAskDraft}
-              onPost={() => void post()}
-            />
-          )}
+              </div>
+            ) : (
+              <Discussion
+                threads={threads}
+                userId={userId}
+                actions={actions}
+                activeId={activeId}
+                onSelect={(id) => select(id, true)}
+                ask={ask}
+                onAsk={setAskDraft}
+                onPost={() => void post()}
+              />
+            )}
+          </MarginTabs>
         </aside>
       ) : null}
     </div>
@@ -940,7 +930,7 @@ function NoteEntry({
       ) : active ? (
         <>
           {state.status === 'conflict' && state.conflict ? (
-            <ConflictView
+            <NoteConflict
               controller={controller}
               mine={state.body}
               saved={state.conflict.body ?? ''}
@@ -957,7 +947,7 @@ function NoteEntry({
               />
             </label>
           )}
-          <SaveLine
+          <NoteSaveLine
             state={state}
             onRetry={() => controller?.retry()}
             onSaveAsNew={() => controller?.saveAsNew()}
@@ -973,7 +963,8 @@ function NoteEntry({
   );
 }
 
-export function SaveLine({
+/** The save line of a note: its controller state in the vocabulary of §8. */
+export function NoteSaveLine({
   state,
   onRetry,
   onSaveAsNew,
@@ -982,61 +973,31 @@ export function SaveLine({
   onRetry: () => void;
   onSaveAsNew: () => void;
 }) {
-  let text: ReactNode = null;
-  if (state.status === 'saving') text = 'Saving';
-  else if (state.status === 'saved') text = 'Saved';
-  else if (state.status === 'offline') text = 'Offline · changes on this device';
-  else if (state.gone) {
-    text = (
-      <>
-        This note was deleted elsewhere ·{' '}
-        <button type="button" className={styles.link} onClick={onSaveAsNew}>
-          Save as a new note
-        </button>
-      </>
-    );
-  } else if (state.status === 'failed') {
-    text = (
-      <>
-        {state.reason ?? 'Could not save'} ·{' '}
-        <button type="button" className={styles.link} onClick={onRetry}>
-          Retry
-        </button>
-      </>
-    );
-  }
+  const live = state.status === 'saving' || state.status === 'saved' || state.status === 'offline';
+  const gone = state.gone && !live;
   return (
-    <div className={styles.saveLine} role="status">
-      {text}
-    </div>
-  );
-}
-
-export function ConflictView({
-  controller,
-  mine,
-  saved,
-}: {
-  controller: NoteController | undefined;
-  mine: string;
-  saved: string;
-}) {
-  return (
-    <div className={styles.conflict} role="alert">
-      <h3>This note changed somewhere else</h3>
-      <div className={styles.small}>Your text on this device</div>
-      <pre>{mine}</pre>
-      <div className={styles.small}>Saved version</div>
-      <pre>{saved}</pre>
-      <div className={styles.row}>
-        <button type="button" className={buttons.outline} onClick={() => controller?.keepMine()}>
-          Keep my text
-        </button>
-        <button type="button" className={buttons.outline} onClick={() => controller?.takeSaved()}>
-          Use the saved version
-        </button>
-      </div>
-    </div>
+    <SaveLine
+      status={
+        state.status === 'saving' ||
+        state.status === 'saved' ||
+        state.status === 'offline' ||
+        state.status === 'failed'
+          ? state.status
+          : 'idle'
+      }
+      reason={state.reason}
+      onRetry={onRetry}
+      override={
+        gone ? (
+          <>
+            This note was deleted elsewhere ·{' '}
+            <button type="button" className={styles.link} onClick={onSaveAsNew}>
+              Save as a new note
+            </button>
+          </>
+        ) : undefined
+      }
+    />
   );
 }
 
@@ -1088,55 +1049,31 @@ function Discussion({
           </div>
         );
       })}
-      <div className={styles.composer}>
-        <label className={styles.field}>
-          Visible to
-          <select
-            value={ask.audience}
-            onChange={(e) => onAsk({ audience: e.target.value as Audience })}
-          >
-            <option value="instructor">Instructor</option>
-            <option value="class">Class</option>
-          </select>
-        </label>
-        {quote ? (
-          <blockquote className={styles.quote}>
-            {quote}{' '}
-            <button
-              type="button"
-              className={styles.link}
-              onClick={() => onAsk({ anchor: NO_ANCHOR })}
-            >
-              Ask about the whole reading
-            </button>
-          </blockquote>
-        ) : null}
-        <label className={styles.field}>
-          Comment or question
-          <textarea
-            id="margin-question"
-            rows={3}
-            placeholder={quote ? 'Ask about this passage' : 'Ask about this reading'}
-            value={ask.body}
-            onChange={(e) => onAsk({ body: e.target.value })}
-          />
-        </label>
-        <div className={styles.saveLine} role="status">
-          {ask.problem === 'offline'
-            ? 'Offline · your text is kept on this device. Post when you are back online.'
-            : ask.problem === 'failed'
-              ? 'Could not post. Your text is kept.'
-              : null}
-        </div>
-        <button
-          type="button"
-          className={buttons.outline}
-          disabled={ask.body.trim() === '' || ask.posting}
-          onClick={onPost}
-        >
-          {ask.problem ? 'Retry' : 'Post'}
-        </button>
-      </div>
+      <DiscussionComposer
+        audience={ask.audience}
+        onAudience={(audience) => onAsk({ audience })}
+        body={ask.body}
+        onBody={(body) => onAsk({ body })}
+        problem={ask.problem}
+        posting={ask.posting}
+        onPost={onPost}
+        textareaId="margin-question"
+        placeholder={quote ? 'Ask about this passage' : 'Ask about this reading'}
+        context={
+          quote ? (
+            <blockquote className={styles.quote}>
+              {quote}{' '}
+              <button
+                type="button"
+                className={styles.link}
+                onClick={() => onAsk({ anchor: NO_ANCHOR })}
+              >
+                Ask about the whole reading
+              </button>
+            </blockquote>
+          ) : null
+        }
+      />
     </div>
   );
 }

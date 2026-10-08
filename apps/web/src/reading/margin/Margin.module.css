@@ -180,26 +180,6 @@
   text-underline-offset: 4px;
   cursor: pointer;
 }
-.conflict {
-  border: 1px solid var(--pc-ink);
-  border-radius: var(--pc-radius-note);
-  padding: 12px;
-  margin-top: 10px;
-}
-.conflict h3 {
-  margin: 0 0 8px;
-  font: var(--pc-text-ui);
-  font-weight: 600;
-}
-.conflict pre {
-  margin: 4px 0 12px;
-  font: var(--pc-text-ui);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  background: var(--pc-soft);
-  padding: 8px;
-  border-radius: var(--pc-radius-control);
-}
 .thread p {
   margin: 8px 0 0;
   font-size: 14px;

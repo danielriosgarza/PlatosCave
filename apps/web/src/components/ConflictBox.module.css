@@ -1,0 +1,30 @@
+.conflict {
+  border: 1px solid var(--pc-ink);
+  border-radius: var(--pc-radius-note);
+  padding: 12px;
+  margin-top: 10px;
+}
+.conflict h3 {
+  margin: 0 0 8px;
+  font: var(--pc-text-ui);
+  font-weight: 600;
+}
+.label {
+  font: var(--pc-text-label);
+  color: var(--pc-muted);
+}
+.conflict pre {
+  margin: 4px 0 12px;
+  font: var(--pc-text-ui);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  background: var(--pc-soft);
+  padding: 8px;
+  border-radius: var(--pc-radius-control);
+}
+.row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  flex-wrap: wrap;
+}

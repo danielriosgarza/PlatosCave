@@ -3,7 +3,7 @@ import { getWorkingCopy, type WorkingCopyView } from '@parallax/contracts/routes
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { call } from '../../api/client';
-import buttons from '../../components/Buttons.module.css';
+import { RetryNotice } from '../../components/RetryNotice';
 import { FilesPanel, SaveControls, SubmitPanel } from '../files';
 import { refusalText } from '../files/files';
 import type { Notebook } from '../notebooks';
@@ -228,13 +228,10 @@ function Panels({
     if (stored.isPending) return <p role="status">Reading your working copy</p>;
     return (
       <section className={live.panels} aria-label="Files, save and submit">
-        <p role="alert">
-          {refusalText(stored.error, 'Your working copy could not be read.')} Saving, importing and
-          submitting are unavailable.
-        </p>
-        <button type="button" className={buttons.tool} onClick={() => void stored.refetch()}>
-          Try again
-        </button>
+        <RetryNotice
+          message={`${refusalText(stored.error, 'Your working copy could not be read.')} Saving, importing and submitting are unavailable.`}
+          onRetry={() => void stored.refetch()}
+        />
       </section>
     );
   }

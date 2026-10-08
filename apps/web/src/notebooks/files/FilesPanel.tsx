@@ -9,6 +9,7 @@ import { useRef, useState } from 'react';
 import type { z } from 'zod';
 import { ApiError, call } from '../../api/client';
 import buttons from '../../components/Buttons.module.css';
+import { RetryNotice } from '../../components/RetryNotice';
 import { type Conflict, ConflictDialog } from './ConflictDialog';
 import styles from './Files.module.css';
 import {
@@ -79,13 +80,10 @@ export function FilesPanel({
     return (
       <section className={styles.panel} aria-labelledby="files-heading">
         <h3 id="files-heading">Files</h3>
-        <p role="alert">
-          {refusalText(listing.error, 'The workspace could not be read.')} Nothing on the computer
-          was changed.
-        </p>
-        <button type="button" className={buttons.tool} onClick={() => void listing.refetch()}>
-          Try again
-        </button>
+        <RetryNotice
+          message={`${refusalText(listing.error, 'The workspace could not be read.')} Nothing on the computer was changed.`}
+          onRetry={() => void listing.refetch()}
+        />
       </section>
     );
   }
@@ -98,22 +96,20 @@ export function FilesPanel({
         or changed; the rest of the computer is never read.
       </p>
       {listing.isError ? (
-        <div role="alert">
-          <p>
-            {dir
+        <RetryNotice
+          message={`${
+            dir
               ? `The folder ${dir} could not be read.`
-              : refusalText(listing.error, 'The workspace could not be read.')}{' '}
-            Nothing on the computer was changed.
-          </p>
-          <button type="button" className={buttons.tool} onClick={() => void listing.refetch()}>
-            Try again
-          </button>{' '}
+              : refusalText(listing.error, 'The workspace could not be read.')
+          } Nothing on the computer was changed.`}
+          onRetry={() => void listing.refetch()}
+        >
           {dir ? (
             <button type="button" className={buttons.tool} onClick={() => setDir('')}>
               Back to the workspace folder
             </button>
           ) : null}
-        </div>
+        </RetryNotice>
       ) : null}
       {data.declared.length > 0 ? (
         <CopyIn

@@ -248,7 +248,7 @@ function select(blockId: string, from: number, to: number) {
 
 const open = async () => {
   renderApp(READING);
-  await screen.findByRole('button', { name: 'My notes' });
+  await screen.findByRole('tab', { name: 'My notes' });
   await waitFor(() => expect(document.querySelector(`[data-block-id="${B2}"]`)).not.toBeNull());
 };
 
@@ -801,7 +801,7 @@ describe('reading margin: notes and autosave', () => {
     // Still deleting: the margin waits and does not offer the text again.
     expect(screen.queryByDisplayValue('Unsent edit')).toBeNull();
     finish();
-    await screen.findByRole('button', { name: /^Discussion/ });
+    await screen.findByRole('tab', { name: /^Discussion/ });
     await waitFor(async () => expect(await listDrafts(SAM_ID, CLASS_A, RES)).toEqual([]));
     expect(screen.queryByDisplayValue('Unsent edit')).toBeNull();
     expect(w.annotations).toEqual([]);
@@ -871,7 +871,7 @@ describe('reading margin: Ask and the audience', () => {
     api(w);
     const user = userEvent.setup();
     await open();
-    await user.click(screen.getByRole('button', { name: /^Discussion/ }));
+    await user.click(screen.getByRole('tab', { name: /^Discussion/ }));
     await user.selectOptions(screen.getByRole('combobox', { name: 'Visible to' }), 'class');
     await user.type(
       screen.getByRole('textbox', { name: 'Comment or question' }),
@@ -887,12 +887,12 @@ describe('reading margin: Ask and the audience', () => {
     api(w);
     const user = userEvent.setup();
     await open();
-    await user.click(screen.getByRole('button', { name: /^Discussion/ }));
+    await user.click(screen.getByRole('tab', { name: /^Discussion/ }));
     await user.selectOptions(screen.getByRole('combobox', { name: 'Visible to' }), 'class');
     await user.type(screen.getByRole('textbox', { name: 'Comment or question' }), 'Half a thought');
 
-    await user.click(screen.getByRole('button', { name: 'My notes' }));
-    await user.click(screen.getByRole('button', { name: /^Discussion/ }));
+    await user.click(screen.getByRole('tab', { name: 'My notes' }));
+    await user.click(screen.getByRole('tab', { name: /^Discussion/ }));
     expect(screen.getByRole('combobox', { name: 'Visible to' })).toHaveValue('class');
     expect(screen.getByRole('textbox', { name: 'Comment or question' })).toHaveValue(
       'Half a thought',
@@ -901,7 +901,7 @@ describe('reading margin: Ask and the audience', () => {
     cleanup(); // another tab, or a reload: the page's memory is gone
     api(w);
     await open();
-    await user.click(screen.getByRole('button', { name: /^Discussion/ }));
+    await user.click(screen.getByRole('tab', { name: /^Discussion/ }));
     expect(await screen.findByDisplayValue('Half a thought')).toBeInTheDocument();
     expect(screen.getByRole('combobox', { name: 'Visible to' })).toHaveValue('class');
     expect(w.threads).toEqual([]); // never posted on its own
@@ -925,8 +925,8 @@ describe('reading margin: Ask and the audience', () => {
     });
     const user = userEvent.setup();
     renderApp(READING, { strict: true });
-    await screen.findByRole('button', { name: 'My notes' });
-    await user.click(screen.getByRole('button', { name: /^Discussion/ }));
+    await screen.findByRole('tab', { name: 'My notes' });
+    await user.click(screen.getByRole('tab', { name: /^Discussion/ }));
     expect(await screen.findByDisplayValue('Left unsent yesterday')).toBeInTheDocument();
     expect(screen.getByRole('combobox', { name: 'Visible to' })).toHaveValue('class');
   });
@@ -936,7 +936,7 @@ describe('reading margin: Ask and the audience', () => {
     api(w);
     const user = userEvent.setup();
     await open();
-    await user.click(screen.getByRole('button', { name: /^Discussion/ }));
+    await user.click(screen.getByRole('tab', { name: /^Discussion/ }));
     const box = screen.getByRole('textbox', { name: 'Comment or question' });
     await user.type(box, 'First question');
     let release: () => void = () => {};
@@ -966,7 +966,7 @@ describe('reading margin: Ask and the audience', () => {
     api(w);
     const user = userEvent.setup();
     await open();
-    await user.click(screen.getByRole('button', { name: /^Discussion/ }));
+    await user.click(screen.getByRole('tab', { name: /^Discussion/ }));
     browserOffline(true);
     await user.type(
       screen.getByRole('textbox', { name: 'Comment or question' }),
@@ -1015,8 +1015,8 @@ describe('reading margin: Ask and the audience', () => {
     await user.click(marks()[0] as HTMLElement); // a mark opens its discussion entry
     expect(await screen.findByText('Ada Lovelace → Class')).toBeInTheDocument();
     expect(screen.getByText('A classmate’s question')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^Discussion 1/ })).toHaveAttribute(
-      'aria-pressed',
+    expect(screen.getByRole('tab', { name: /^Discussion 1/ })).toHaveAttribute(
+      'aria-selected',
       'true',
     );
   });
@@ -1123,7 +1123,7 @@ describe('reading margin: layout and sign-out', () => {
     await user.click(screen.getByRole('tab', { name: 'Slides' }));
     await waitFor(() => expect(posts()).toHaveLength(1));
     await user.click(screen.getByRole('tab', { name: 'Reading' }));
-    await screen.findByRole('button', { name: 'My notes' });
+    await screen.findByRole('tab', { name: 'My notes' });
     // Held: the text on the device is being sent, so it is not restored (and sent) a second time.
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(posts()).toHaveLength(1);
@@ -1177,7 +1177,7 @@ describe('reading margin: layout and sign-out', () => {
     // The reload: the margin comes back with whatever the device still holds.
     await user.click(screen.getByRole('tab', { name: 'Slides' }));
     await user.click(screen.getByRole('tab', { name: 'Reading' }));
-    await screen.findByRole('button', { name: 'My notes' });
+    await screen.findByRole('tab', { name: 'My notes' });
     await new Promise((resolve) => setTimeout(resolve, 100));
     expect(screen.getAllByText('one note')).toHaveLength(1);
     expect(posts()).toHaveLength(1);
@@ -1205,7 +1205,7 @@ describe('reading margin: layout and sign-out', () => {
     });
     const user = userEvent.setup();
     await open();
-    await user.click(screen.getByRole('button', { name: /^Discussion/ }));
+    await user.click(screen.getByRole('tab', { name: /^Discussion/ }));
     await user.type(
       screen.getByRole('textbox', { name: 'Comment or question' }),
       'Why n minus one?',
@@ -1213,7 +1213,7 @@ describe('reading margin: layout and sign-out', () => {
     await user.click(screen.getByRole('button', { name: 'Post' }));
     await user.click(screen.getByRole('tab', { name: 'Slides' }));
     await user.click(screen.getByRole('tab', { name: 'Reading' }));
-    await user.click(await screen.findByRole('button', { name: /^Discussion/ }));
+    await user.click(await screen.findByRole('tab', { name: /^Discussion/ }));
     // Still posting: the text kept on the device is not offered again as unsent.
     await new Promise((resolve) => setTimeout(resolve, 50));
     release();
@@ -1230,7 +1230,7 @@ describe('reading margin: layout and sign-out', () => {
     const release = holdDraftDeletes();
     const user = userEvent.setup();
     await open();
-    await user.click(screen.getByRole('button', { name: /^Discussion/ }));
+    await user.click(screen.getByRole('tab', { name: /^Discussion/ }));
     await user.type(
       screen.getByRole('textbox', { name: 'Comment or question' }),
       'Why n minus one?',
@@ -1245,7 +1245,7 @@ describe('reading margin: layout and sign-out', () => {
     // offer it again.
     expect(screen.queryByDisplayValue('Why n minus one?')).toBeNull();
     release(); // the device commits at last
-    await user.click(await screen.findByRole('button', { name: /^Discussion/ }));
+    await user.click(await screen.findByRole('tab', { name: /^Discussion/ }));
     expect(screen.getByRole('textbox', { name: 'Comment or question' })).toHaveValue('');
     expect(w.threads).toHaveLength(1);
     expect(await listDrafts(SAM_ID, CLASS_A, RES)).toEqual([]);
@@ -1292,7 +1292,7 @@ describe('reading margin: layout and sign-out', () => {
     await new Promise((resolve) => setTimeout(resolve, 100));
     expect(screen.queryByDisplayValue('Unsent edit')).toBeNull();
     release();
-    await screen.findByRole('button', { name: 'My notes' });
+    await screen.findByRole('tab', { name: 'My notes' });
     await waitFor(async () => expect(await listDrafts(SAM_ID, CLASS_A, RES)).toEqual([]));
     expect(screen.queryByDisplayValue('Unsent edit')).toBeNull();
     expect(screen.queryByRole('button', { name: /^Note 1/ })).toBeNull();
@@ -1304,7 +1304,7 @@ describe('reading margin: layout and sign-out', () => {
     const release = holdDraftDeletes();
     const user = userEvent.setup();
     await open();
-    await user.click(screen.getByRole('button', { name: /^Discussion/ }));
+    await user.click(screen.getByRole('tab', { name: /^Discussion/ }));
     const box = screen.getByRole('textbox', { name: 'Comment or question' });
     await user.type(box, 'Why n minus one?');
     await waitFor(async () => expect(await listDrafts(SAM_ID, CLASS_A, RES)).toHaveLength(1));
@@ -1314,7 +1314,7 @@ describe('reading margin: layout and sign-out', () => {
     await new Promise((resolve) => setTimeout(resolve, 100));
     expect(screen.queryByDisplayValue('Why n minus one?')).toBeNull();
     release();
-    await user.click(await screen.findByRole('button', { name: /^Discussion/ }));
+    await user.click(await screen.findByRole('tab', { name: /^Discussion/ }));
     expect(screen.getByRole('textbox', { name: 'Comment or question' })).toHaveValue('');
     expect(await listDrafts(SAM_ID, CLASS_A, RES)).toEqual([]);
   });
@@ -1347,7 +1347,7 @@ describe('reading margin: layout and sign-out', () => {
         : answer(input, init),
     );
     await open();
-    await user.click(screen.getByRole('button', { name: /^Discussion/ }));
+    await user.click(screen.getByRole('tab', { name: /^Discussion/ }));
     await user.type(
       screen.getByRole('textbox', { name: 'Comment or question' }),
       'Unsent on sign-out',
@@ -1459,7 +1459,7 @@ describe('reading margin: follow-ups to the first review', () => {
     const w = world();
     const mock = api(w);
     const { router } = renderApp(READING);
-    await screen.findByRole('button', { name: 'My notes' });
+    await screen.findByRole('tab', { name: 'My notes' });
     // Another tab signs the person out; this tab cannot re-check its session (the server is
     // unreachable) and keeps showing the cached one.
     await clearDrafts(SAM_ID);
@@ -1472,9 +1472,9 @@ describe('reading margin: follow-ups to the first review', () => {
       return answer(input, init);
     });
     router.history.push('/courses');
-    await waitFor(() => expect(screen.queryByRole('button', { name: 'My notes' })).toBeNull());
+    await waitFor(() => expect(screen.queryByRole('tab', { name: 'My notes' })).toBeNull());
     router.history.push(READING);
-    await screen.findByRole('button', { name: 'My notes' });
+    await screen.findByRole('tab', { name: 'My notes' });
     await waitFor(() => expect(document.querySelector(`[data-block-id="${B2}"]`)).not.toBeNull());
     const refused = await saveDraft({
       key: draftKey(SAM_ID, CLASS_A, RES, 'ask'),
@@ -1498,7 +1498,7 @@ describe('reading margin: follow-ups to the first review', () => {
     const mock = api(w);
     const user = userEvent.setup();
     await open();
-    await user.click(screen.getByRole('button', { name: /^Discussion/ }));
+    await user.click(screen.getByRole('tab', { name: /^Discussion/ }));
     let release: () => void = () => {};
     const held = new Promise<void>((resolve) => {
       release = resolve;
@@ -1585,7 +1585,7 @@ describe('discussion threads', () => {
   });
   const openDiscussion = async (user: ReturnType<typeof userEvent.setup>) => {
     await open();
-    await user.click(await screen.findByRole('button', { name: /^Discussion/ }));
+    await user.click(await screen.findByRole('tab', { name: /^Discussion/ }));
   };
 
   it('A05 an instructor response is labelled, and a reply shows what the server returned', async () => {

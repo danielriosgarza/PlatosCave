@@ -70,3 +70,25 @@
     font-size: 13px;
   }
 }
+
+/* Compact variant above the notes margin (ported from the margin's own tab buttons). */
+.margin {
+  margin-bottom: 16px;
+}
+.margin .tabs {
+  gap: 20px;
+  padding: 0;
+  min-height: 0;
+}
+.margin .tabs > button {
+  font: var(--pc-text-ui);
+  font-size: 13px;
+  min-height: 0;
+  padding: 0 0 10px;
+}
+.margin .tabs > button[aria-selected="true"]::after {
+  bottom: -1px;
+}
+.count {
+  color: var(--pc-muted);
+}

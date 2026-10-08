@@ -1,5 +1,7 @@
 import { useEffect, useRef } from 'react';
 import buttons from '../../components/Buttons.module.css';
+import { ConflictBox } from '../../components/ConflictBox';
+import { SaveLine } from '../../components/SaveLine';
 import styles from './Sketch.module.css';
 import { PALETTE, type Sketches, WIDTHS } from './useSketches';
 
@@ -127,33 +129,35 @@ export function SketchPanel({ api, label }: { api: Sketches; label: string }) {
         />
       </label>
       {s.status === 'conflict' && s.current ? (
-        <div className={styles.conflict} role="alert">
-          <h3>This sketch changed somewhere else</h3>
-          <p className={styles.small}>Saved description</p>
-          <pre>{s.current.body ?? ''}</pre>
-          <div className={styles.row}>
-            <button type="button" className={buttons.outline} onClick={api.keepMine}>
-              Keep my drawing
-            </button>
-            <button type="button" className={buttons.outline} onClick={api.useSaved}>
-              Use the saved sketch
-            </button>
-          </div>
-        </div>
+        <ConflictBox
+          title="This sketch changed somewhere else"
+          versions={[{ label: 'Saved description', text: s.current.body ?? '' }]}
+          keepLabel="Keep my drawing"
+          useLabel="Use the saved sketch"
+          onKeep={api.keepMine}
+          onUse={api.useSaved}
+        />
       ) : null}
-      <div className={styles.status} role="status">
-        {saving
-          ? 'Saving'
-          : s.status === 'offline'
-            ? 'Offline · not saved. Press Done when you are back online.'
-            : s.status === 'failed'
-              ? `${s.message ?? 'Could not save'} · press Done to retry`
-              : s.status === 'invalid'
-                ? s.message
-                : describing
-                  ? null
-                  : `${strokes} ${strokes === 1 ? 'stroke' : 'strokes'}`}
-      </div>
+      <SaveLine
+        status={
+          saving
+            ? 'saving'
+            : s.status === 'offline'
+              ? 'offline'
+              : s.status === 'failed'
+                ? 'failed'
+                : 'idle'
+        }
+        reason={s.message}
+        onRetry={() => void api.done()}
+        note={
+          s.status === 'invalid'
+            ? s.message
+            : describing
+              ? null
+              : `${strokes} ${strokes === 1 ? 'stroke' : 'strokes'}`
+        }
+      />
       <div className={styles.row}>
         <button
           type="button"

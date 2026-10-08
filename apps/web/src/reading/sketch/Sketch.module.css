@@ -108,18 +108,3 @@
   font: var(--pc-text-label);
   color: var(--pc-muted);
 }
-.conflict {
-  margin-top: 12px;
-  border: 1px solid var(--pc-rule);
-  border-radius: var(--pc-radius-note);
-  padding: 12px;
-}
-.conflict h3 {
-  font-size: 14px;
-  margin: 0 0 8px;
-}
-.conflict pre {
-  white-space: pre-wrap;
-  margin: 4px 0 8px;
-  font: inherit;
-}
