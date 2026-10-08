@@ -11,10 +11,13 @@
 }
 .filters label {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  max-width: 100%;
   gap: 6px;
   font-size: 12px;
 }
 .wrap {
+  position: relative;
   overflow-x: auto;
   max-width: 100%;
 }

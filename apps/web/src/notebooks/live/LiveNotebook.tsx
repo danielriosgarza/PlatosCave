@@ -513,7 +513,10 @@ export function LiveNotebook({
           ask === 'restart' ? 'Restart kernel' : ask === 'stop' ? 'Stop session' : 'Disconnect'
         }
         onKeyDown={(e) => {
-          if (e.key === 'Escape') setAsk(null);
+          if (e.key !== 'Escape') return;
+          // Handled here, so Focus's document listener leaves the workspace alone.
+          e.preventDefault();
+          setAsk(null);
         }}
       >
         {ask === 'restart' ? (

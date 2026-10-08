@@ -191,6 +191,13 @@
   overflow: auto;
   max-width: 100%;
 }
+/* CodeMirror's default syntax colours are chosen for a white page (keyword #708 is 1.7:1 on the dark
+   sheet), so the dark palette shows code in the page ink. */
+@media (prefers-color-scheme: dark) {
+  .cm :global(.cm-content) span {
+    color: inherit;
+  }
+}
 .cm :global(.cm-editor) {
   min-height: 260px;
   background: transparent;

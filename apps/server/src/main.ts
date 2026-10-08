@@ -8,7 +8,7 @@ import type { JobLogger } from './jobs/logger';
 import { retentionPolicy, workMaintenance } from './jobs/maintenance';
 import { loadJobs } from './jobs/registry';
 import { ensureQueues, workScopedJob } from './jobs/scoped';
-import { createLogger } from './logging';
+import { createLogger, warningFields } from './logging';
 import { createStorage } from './storage/create';
 import type { Storage } from './storage/storage';
 
@@ -79,7 +79,7 @@ function onSignals(log: JobLogger, close: () => Promise<unknown>): void {
 if (mode === 'api' || mode === 'relay') {
   // The API only sends jobs (adoption queues annotation mapping); workers run them.
   let logBossError = (err: Error) => console.error('pg-boss error', err);
-  let logBossWarning = (warning: object) => console.warn('pg-boss warning', warning);
+  let logBossWarning = (warning: object) => console.warn('pg-boss warning', warningFields(warning));
   const boss =
     database &&
     createBoss(database.pool, {
@@ -131,7 +131,8 @@ if (mode === 'api' || mode === 'relay') {
   });
   logPoolError = (err) => app.log.error({ err }, 'pg pool error');
   logBossError = (err) => app.log.error({ err }, 'pg-boss error');
-  logBossWarning = (warning) => app.log.warn({ warning }, 'pg-boss warning');
+  logBossWarning = (warning) =>
+    app.log.warn({ warning: warningFields(warning) }, 'pg-boss warning');
   await app.listen({ port: config.PORT, host: config.HOST });
   onSignals(app.log, async () => {
     await app.close();
@@ -149,7 +150,7 @@ if (mode === 'api' || mode === 'relay') {
     role: 'worker',
     schedule: true,
     onError: (err) => log.error({ err }, 'pg-boss error'),
-    onWarning: (warning) => log.warn({ warning }, 'pg-boss warning'),
+    onWarning: (warning) => log.warn({ warning: warningFields(warning) }, 'pg-boss warning'),
   });
   // The runner's channel: this worker supervises pgboss_exec, so it expires the `active` job of
   // a runner that died mid-run (design §7.5), and consumes results and dead letters.
@@ -157,7 +158,7 @@ if (mode === 'api' || mode === 'relay') {
     role: 'worker',
     schema: EXEC_SCHEMA,
     onError: (err) => log.error({ err }, 'pg-boss error'),
-    onWarning: (warning) => log.warn({ warning }, 'pg-boss warning'),
+    onWarning: (warning) => log.warn({ warning: warningFields(warning) }, 'pg-boss warning'),
   });
   let storage: Storage | undefined;
   const started = (async () => {

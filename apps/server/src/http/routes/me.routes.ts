@@ -11,6 +11,10 @@ export default function meRoutes(app: FastifyInstance, deps: RouteDeps): void {
     return {
       user: { id: user.id, name: user.name, email: user.email, kind: user.kind },
       ...(await listContexts(db, scope)),
+      defaultLease: {
+        idleTimeoutMin: deps.config.LEASE_IDLE_MINUTES,
+        gracePeriodMin: deps.config.LEASE_GRACE_MINUTES,
+      },
     };
   });
 }
