@@ -20,6 +20,7 @@ import { type Surface, surfaceKey, surfaceOf, useSketches } from '../sketch/useS
 import {
   activateMarks,
   applyMarks,
+  clearMarks,
   firstMarkTop,
   type MarkSource,
   marksAt,
@@ -322,11 +323,17 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
   const sources: MarkSource[] = [];
   for (const n of notes) {
     const a = textAnchorOf(n.annotation ? shownAnchor(n.annotation) : n.anchor);
-    if (a) sources.push({ id: n.id, anchor: a });
+    if (a) {
+      sources.push({
+        id: n.id,
+        anchor: a,
+        kind: n.annotation?.kind === 'highlight' ? 'highlight' : 'note',
+      });
+    }
   }
   for (const t of threads) {
     const a = textAnchorOf(shownAnchor(t));
-    if (a) sources.push({ id: t.id, anchor: a });
+    if (a) sources.push({ id: t.id, anchor: a, kind: 'question' });
   }
   const sourcesKey = JSON.stringify(sources);
 
@@ -335,6 +342,7 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
     if (!root) return;
     applyMarks(root, sources);
     activateMarks(root, activeMarkId);
+    return () => clearMarks(root);
   }, [root, html, sourcesKey, activeMarkId]);
 
   // --- the selection toolbar, in the flow after the passage's block -----------------------------
