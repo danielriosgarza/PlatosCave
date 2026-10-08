@@ -727,7 +727,7 @@ None of these blocks Phases 1–4, which run entirely locally and in GitHub Acti
 | 6 | Exercise definition format | Versioned JSON (`exercise.v1`) validated by zod, edited through a form; no DSL (P2-10) |
 | 7 | Hidden-check storage | Inside the test resource revision; student contracts use response schemas without those fields, asserted structurally (P3-16) |
 | 8 | Runner isolation in production vs CI | Same Docker policy everywhere; gVisor runtime enabled by config on the dedicated production host (ADR-0004) |
-| 9 | Server-side (managed) connector requirement | Same Go binary in `--managed` mode, optional deployment; not needed for A27–A36 (ADR-0005) |
+| 9 | Server-side (managed) connector requirement | Same Go binary in `--managed` mode, optional deployment; not needed for A27–A36 (ADR-0005). Connector side only (P3-05b) until the owner decides; no server or web path reaches it yet (issue #460) |
 | 10 | Lease defaults (§10.4 "visible and enforced") | 30 min idle, 5 min grace, shown before Connect; class-level override later |
 | 11 | Time zone display | Browser time zone, labelled explicitly; server stores UTC and decides lateness (P3-15) |
 | 12 | Timed-attempt expiry while the student is offline | pg-boss job at the deadline submits the latest acknowledged draft as `auto_submitted`; local unsent work stays in IndexedDB for the recovery request (P3-15, P4-06) |
@@ -752,4 +752,4 @@ None of these blocks Phases 1–4, which run entirely locally and in GitHub Acti
 | 31 | Credential and MFA methods (spec §17) | SSH agent, then key file with optional certificate, then `keyboard-interactive` as a second factor typed in the connector's own terminal; no password, GSSAPI, `ProxyCommand` or OS keychain in v1; nothing secret ever crosses Parallax (`docs/design/connector.md` §5.3) |
 | 32 | Number of relay processes | One `relay` process in production and the pilot; the live-link registry is in memory (`docs/design/connector.md` §10.1) |
 | 33 | Connector URLs | `/api/connector/v1/…` so the structural scope guard applies (`docs/design/connector.md` §17) |
-| 34 | Who operates managed connectors (spec §17) | Not decided; the mode is specified and scheduled as P3-05b, registered by an operator script because no instance-administrator role exists (item 29) |
+| 34 | Who operates managed connectors (spec §17) | Not decided. The mode is specified and its connector side is built (P3-05b, registered by an operator script because no instance-administrator role exists, item 29). It stays connector side only: templates and connections accept `local` and `ssh` targets, and managed targets get an item only after the owner decides (2026-10-08, issue #460) |
