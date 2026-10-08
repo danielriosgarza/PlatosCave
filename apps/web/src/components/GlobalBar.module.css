@@ -106,8 +106,8 @@
   .brand,
   .signOut,
   .skip {
-    min-height: 44px;
-    min-width: 44px;
+    min-height: var(--pc-touch-target, 44px);
+    min-width: var(--pc-touch-target, 44px);
     display: inline-flex;
     align-items: center;
   }

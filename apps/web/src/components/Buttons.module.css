@@ -9,15 +9,6 @@
   min-height: 36px;
   text-align: left;
 }
-/* The 36 px above would otherwise beat the global coarse-pointer minimum. */
-@media (pointer: coarse) {
-  .primary,
-  .outline,
-  .textButton,
-  .tool {
-    min-height: 44px;
-  }
-}
 .primary {
   color: var(--pc-accent-ink);
   background: var(--pc-accent);
@@ -69,11 +60,6 @@
   background: var(--pc-soft);
   font-weight: 600;
 }
-@media (pointer: coarse) {
-  .tool {
-    min-height: 44px;
-  }
-}
 .primary:disabled,
 .outline:disabled,
 .textButton:disabled,
@@ -91,4 +77,13 @@
 .tool:focus-visible {
   outline: 2px solid var(--pc-ink);
   outline-offset: 2px;
+}
+/* Anchors styled as buttons are skipped by the global rule; keep this last so it beats the sizes above. */
+@media (pointer: coarse) {
+  .primary,
+  .outline,
+  .textButton,
+  .tool {
+    min-height: var(--pc-touch-target, 44px);
+  }
 }
