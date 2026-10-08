@@ -62,12 +62,25 @@ export function passageFromSelection(
   };
 }
 
+export type MarkKind = 'note' | 'highlight' | 'question';
+
 export interface MarkSource {
   id: string;
   anchor: TextAnchor;
+  kind: MarkKind;
 }
 
 const MARK = 'mark[data-marks]';
+/**
+ * Where the descriptions of a reading's marks live: outside the reading, so its text (and block
+ * offsets) stay as they were.
+ */
+const holders = new WeakMap<HTMLElement, HTMLElement>();
+let descriptionCount = 0;
+
+/** What a mark holds, said after its text: "highlight", or "2 entries: note, question". */
+const describe = (kinds: readonly MarkKind[]) =>
+  kinds.length > 1 ? `${kinds.length} entries: ${kinds.join(', ')}` : (kinds[0] ?? '');
 
 const blockById = (root: HTMLElement, blockId: string) =>
   [...root.querySelectorAll<HTMLElement>('[data-block-id]')].find(
@@ -76,6 +89,8 @@ const blockById = (root: HTMLElement, blockId: string) =>
 
 /** Takes every mark out again, leaving the reading's text as it was. */
 export function clearMarks(root: HTMLElement) {
+  holders.get(root)?.remove();
+  holders.delete(root);
   for (const mark of root.querySelectorAll(MARK)) {
     const parent = mark.parentNode;
     mark.replaceWith(...mark.childNodes);
@@ -98,11 +113,11 @@ export function applyMarks(root: HTMLElement, sources: readonly MarkSource[]) {
   for (const [blockId, list] of byBlock) {
     const block = blockById(root, blockId);
     if (!block) continue;
-    markBlock(block, list);
+    markBlock(root, block, list);
   }
 }
 
-function markBlock(block: HTMLElement, list: readonly MarkSource[]) {
+function markBlock(root: HTMLElement, block: HTMLElement, list: readonly MarkSource[]) {
   const length = block.textContent?.length ?? 0;
   const bounds = new Set<number>();
   for (const { anchor } of list) {
@@ -110,12 +125,19 @@ function markBlock(block: HTMLElement, list: readonly MarkSource[]) {
     bounds.add(Math.min(anchor.end, length));
   }
   const cuts = [...bounds].sort((a, b) => a - b);
-  const segments: { start: number; end: number; ids: string[] }[] = [];
+  const segments: { start: number; end: number; ids: string[]; kinds: MarkKind[] }[] = [];
   for (let i = 0; i + 1 < cuts.length; i++) {
     const start = cuts[i] as number;
     const end = cuts[i + 1] as number;
-    const ids = list.filter((s) => s.anchor.start <= start && s.anchor.end >= end).map((s) => s.id);
-    if (ids.length > 0) segments.push({ start, end, ids });
+    const covering = list.filter((s) => s.anchor.start <= start && s.anchor.end >= end);
+    if (covering.length > 0) {
+      segments.push({
+        start,
+        end,
+        ids: covering.map((s) => s.id),
+        kinds: covering.map((s) => s.kind),
+      });
+    }
   }
   if (segments.length === 0) return;
 
@@ -126,6 +148,10 @@ function markBlock(block: HTMLElement, list: readonly MarkSource[]) {
     nodes.push({ node: node as Text, start: offset });
     offset += (node as Text).length;
   }
+  // A passage that crosses inline elements is several marks; only its first is a tab stop and
+  // carries the name, so a screen reader meets the passage once and reads its words.
+  const named = new Set<(typeof segments)[number]>();
+  const descriptions = document.createDocumentFragment();
   for (const { node, start } of nodes) {
     const size = node.length;
     // Last piece first: splitting leaves the head in `node`, so earlier offsets stay valid.
@@ -140,17 +166,30 @@ function markBlock(block: HTMLElement, list: readonly MarkSource[]) {
       const mark = document.createElement('mark');
       mark.dataset.marks = piece.ids.join(' ');
       if (piece.ids.length > 1) mark.dataset.count = String(piece.ids.length);
-      mark.tabIndex = 0;
-      mark.setAttribute('role', 'button');
-      mark.setAttribute(
-        'aria-label',
-        piece.ids.length > 1
-          ? `Note on this passage, ${piece.ids.length} entries`
-          : 'Note on this passage',
-      );
+      if (!named.has(piece)) {
+        named.add(piece);
+        mark.tabIndex = 0;
+        mark.setAttribute('role', 'button');
+        // The marked words stay the name; what the mark holds is its description.
+        const description = document.createElement('span');
+        description.id = `mark-description-${++descriptionCount}`;
+        description.textContent = describe(piece.kinds);
+        descriptions.append(description);
+        mark.setAttribute('aria-describedby', description.id);
+      }
       target.replaceWith(mark);
       mark.append(target);
     }
+  }
+  if (descriptions.childElementCount > 0) {
+    let holder = holders.get(root);
+    if (!holder) {
+      holder = document.createElement('div');
+      holder.hidden = true;
+      document.body.append(holder);
+      holders.set(root, holder);
+    }
+    holder.append(descriptions);
   }
 }
 

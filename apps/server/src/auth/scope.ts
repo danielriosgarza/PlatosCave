@@ -1,6 +1,11 @@
 import type { Scope } from '@parallax/contracts';
 import type { FastifyRequest } from 'fastify';
-import { findActor, findClassAccess, findCourseAccess } from '../db/auth/scope';
+import {
+  findActor,
+  findClassAccess,
+  findCourseAccess,
+  findStandInInstructor,
+} from '../db/auth/scope';
 import { type Actor, findPrincipal, type Principal } from '../db/auth/sessions';
 import type { Db } from '../db/client';
 import { readSessionToken } from './sessions';
@@ -182,6 +187,25 @@ export async function resolveActorScope(
   return rule.kind === 'class'
     ? resolveClass(db, base, rule, targetId)
     : resolveCourse(db, base, rule, targetId);
+}
+
+/**
+ * The class scope of a stand-in for a job's actor (`ScopedJob.standIn`): the class's real
+ * instructor who joined it first, resolved against the job's rule exactly as `resolveActorScope`
+ * resolves any actor. Only for a class rule without a grant, whose role an instructor holds.
+ */
+export async function resolveStandInScope(
+  db: Db,
+  rule: ClassRule,
+  classId: string,
+): Promise<Resolution> {
+  if (rule.grant !== undefined || rule.role === 'student') {
+    return deny(403, 'no stand-in holds this rule');
+  }
+  if (!UUID.test(classId)) return deny(404, 'classId is not a uuid');
+  const instructorId = await findStandInInstructor(db, classId);
+  if (!instructorId) return deny(404, 'the class has no instructor');
+  return resolveActorScope(db, instructorId, rule, classId);
 }
 
 /** A principal's membership in one class, checked against a route's or job's rule. */

@@ -64,10 +64,11 @@ h3 {
   :root {
     --pc-touch-target: 44px;
   }
+  /* !important: a module rule with higher specificity must not shrink a touch target. */
   button,
   select,
   input:not([type="checkbox"], [type="radio"]) {
-    min-height: var(--pc-touch-target, 44px);
-    min-width: var(--pc-touch-target, 44px);
+    min-height: var(--pc-touch-target, 44px) !important;
+    min-width: var(--pc-touch-target, 44px) !important;
   }
 }

@@ -203,3 +203,10 @@
 .contents {
   display: contents;
 }
+@media (pointer: coarse) {
+  .group .link {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--pc-touch-target, 44px);
+  }
+}
