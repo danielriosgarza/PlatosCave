@@ -186,6 +186,35 @@ describe('focus and full screen', () => {
     expect(screen.getByRole('dialog').closest('[inert]')).toBeNull();
   });
 
+  it('A04 A20 a second dialog opened in full screen stays operable and the first is operable again after it closes', async () => {
+    const user = userEvent.setup();
+    await open();
+    await user.keyboard('f');
+    await screen.findByRole('button', { name: 'Exit full screen' });
+    function Two({ second }: { second: boolean }) {
+      return (
+        <>
+          <Dialog title="First" onClose={() => undefined}>
+            <button type="button">First action</button>
+          </Dialog>
+          {second ? (
+            <Dialog title="Second" onClose={() => undefined}>
+              <button type="button">Second action</button>
+            </Dialog>
+          ) : null}
+        </>
+      );
+    }
+    const { rerender } = render(<Two second={false} />);
+    rerender(<Two second />);
+    const second = screen.getByRole('button', { name: 'Second action' });
+    await waitFor(() => expect(second).toHaveFocus());
+    expect(second.closest('[inert]')).toBeNull();
+    await user.click(second);
+    rerender(<Two second={false} />);
+    expect(screen.getByRole('button', { name: 'First action' }).closest('[inert]')).toBeNull();
+  });
+
   it('A04 Exit focus also leaves full screen', async () => {
     const user = userEvent.setup();
     await open();

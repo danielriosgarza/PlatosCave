@@ -175,13 +175,15 @@ export function Dialog({
   const headingId = useId();
   const ref = useRef<HTMLDivElement>(null);
   // Fixed at open: the browser shows only the full-screen element's subtree (§5).
-  // A frame or media element in full screen cannot hold the sheet, so it falls back to <body>.
+  // A frame or media element in full screen cannot hold the sheet: leave full screen and use <body>.
   const [container] = useState<HTMLElement>(() => {
     const element = document.fullscreenElement;
-    return element instanceof HTMLElement &&
-      !(element instanceof HTMLIFrameElement || element instanceof HTMLMediaElement)
-      ? element
-      : document.body;
+    if (!(element instanceof HTMLElement)) return document.body;
+    if (element instanceof HTMLIFrameElement || element instanceof HTMLMediaElement) {
+      void document.exitFullscreen().catch(() => undefined);
+      return document.body;
+    }
+    return element;
   });
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
@@ -217,32 +219,36 @@ export function Dialog({
       }
     };
     const onFocusIn = (e: FocusEvent) => {
-      if (dialog && e.target instanceof Node && !dialog.contains(e.target)) inside()[0]?.focus();
+      // Focus inside another, newer sheet is that sheet's to keep.
+      if (!(e.target instanceof Element) || e.target.closest('[aria-modal="true"]')) return;
+      if (dialog && !dialog.contains(e.target)) inside()[0]?.focus();
     };
     // The sheet is portalled to the full-screen element when there is one (only its subtree is
     // shown), else to <body>. Everything beside it on the way up to <body> is the page behind it.
     // Nodes that mount while the sheet is open (page chrome restored when full screen ends) are
-    // inerted too.
+    // inerted too, except another sheet, which the newer dialog keeps operable.
     const background = new Set<HTMLElement>();
-    const observer = new MutationObserver(() => sweep());
-    const watched = new Set<HTMLElement>();
-    const sweep = () => {
-      for (let node = dialog?.parentElement; node && node !== document.body; ) {
-        const parent: HTMLElement | null = node.parentElement;
-        if (parent && !watched.has(parent)) {
-          watched.add(parent);
-          observer.observe(parent, { childList: true });
-        }
-        for (const el of Array.from(parent?.children ?? [])) {
-          if (el !== node && el instanceof HTMLElement && !el.hasAttribute('inert')) {
-            el.setAttribute('inert', '');
-            background.add(el);
-          }
-        }
-        node = parent;
-      }
+    const hide = (el: Node) => {
+      if (!(el instanceof HTMLElement) || el.hasAttribute('inert')) return;
+      background.add(el);
+      el.setAttribute('inert', '');
     };
-    sweep();
+    const observer = new MutationObserver((records) => {
+      for (const record of records) {
+        for (const added of Array.from(record.addedNodes)) {
+          const isSheet =
+            added instanceof Element &&
+            (added.matches('[aria-modal="true"]') || added.querySelector('[aria-modal="true"]'));
+          if (!isSheet) hide(added);
+        }
+      }
+    });
+    for (let node = dialog?.parentElement; node && node !== document.body; ) {
+      const parent: HTMLElement | null = node.parentElement;
+      if (parent) observer.observe(parent, { childList: true });
+      for (const el of Array.from(parent?.children ?? [])) if (el !== node) hide(el);
+      node = parent;
+    }
     document.addEventListener('keydown', onKeyDown);
     document.addEventListener('focusin', onFocusIn);
     return () => {
