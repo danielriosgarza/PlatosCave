@@ -1,6 +1,6 @@
 {
   "v": 1,
-  "harnessVersion": "3",
+  "harnessVersion": "4",
   "runtime": { "language": "r", "version": "4.6.1" },
   "checks": [
     {
