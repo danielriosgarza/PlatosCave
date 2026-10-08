@@ -200,7 +200,7 @@
 }
 .native :global(mark[data-count])::after {
   content: attr(data-count);
-  font: 600 12px var(--pc-font-sans);
+  font: 600 var(--pc-size-label) var(--pc-font-sans);
   vertical-align: super;
   margin-left: 4px;
 }
@@ -328,11 +328,5 @@
   }
   .stage {
     padding: 24px 16px 40px;
-  }
-  .native {
-    font-size: var(--pc-size-body);
-  }
-  .native pre {
-    font-size: var(--pc-size-ui);
   }
 }

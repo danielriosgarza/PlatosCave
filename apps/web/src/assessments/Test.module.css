@@ -64,10 +64,7 @@
   white-space: pre-wrap;
 }
 .prompt code {
-  font:
-    14px ui-monospace,
-    Consolas,
-    monospace;
+  font: var(--pc-text-code);
   overflow-wrap: anywhere;
 }
 .rule {
@@ -183,10 +180,7 @@
 .cm {
   border: 1px solid var(--pc-muted);
   background: var(--pc-sheet);
-  font:
-    15px / 1.7 ui-monospace,
-    Consolas,
-    monospace;
+  font: var(--pc-text-code-editor);
   min-height: 260px;
   overflow: auto;
   max-width: 100%;
@@ -226,10 +220,7 @@
   display: block;
   width: 100%;
   min-height: 260px;
-  font:
-    16px / 1.75 ui-monospace,
-    Consolas,
-    monospace;
+  font: var(--pc-text-code-editor);
   border-radius: 0;
   border: 1px solid var(--pc-muted);
   resize: vertical;
@@ -261,10 +252,7 @@
   overflow-x: auto;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  font:
-    13px / 1.6 ui-monospace,
-    Consolas,
-    monospace;
+  font: var(--pc-text-code);
 }
 .check {
   border-top: 1px solid var(--pc-rule);

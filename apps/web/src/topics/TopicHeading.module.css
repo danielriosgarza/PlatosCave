@@ -33,6 +33,6 @@
     min-height: 84px;
   }
   .heading h1 {
-    font-size: var(--pc-size-title);
+    font-size: var(--pc-size-section);
   }
 }

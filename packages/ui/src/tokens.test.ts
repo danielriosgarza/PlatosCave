@@ -22,6 +22,8 @@ const declared = new Map<string, string>();
 for (const m of css.matchAll(/(--pc-[a-z0-9-]+)\s*:\s*([^;]+);/g)) {
   declared.set(m[1] as string, squash(m[2] as string));
 }
+const resolveSizes = (v: string): string =>
+  v.replace(/var\((--pc-size-[a-z]+)\)/g, (_, name: string) => declared.get(name) ?? '');
 
 describe('design tokens match DESIGN.md', () => {
   it('colors', () => {
@@ -41,17 +43,18 @@ describe('design tokens match DESIGN.md', () => {
   });
   it('typography weight, size and line height', () => {
     for (const [k, t] of Object.entries(front.typography)) {
-      const v = declared.get(`--pc-text-${k}`) ?? '';
+      const v = resolveSizes(declared.get(`--pc-text-${k}`) ?? '');
       const rem = `${Number.parseFloat(t.fontSize) / 16}rem`;
       expect(v, k).toContain(`${t.fontWeight}${rem}/${t.lineHeight}`);
     }
   });
-  it('size tokens are rem and equal the role sizes', () => {
-    for (const k of ['title', 'section', 'subsection', 'body', 'field', 'ui', 'label']) {
-      const role = declared.get(`--pc-text-${k}`) ?? '';
-      expect(role, k).toContain(`${declared.get(`--pc-size-${k}`)}/`);
+  it('roles take their size from the rem size tokens', () => {
+    for (const [k, t] of Object.entries(front.typography)) {
+      if (!declared.has(`--pc-size-${k}`)) continue;
+      expect(declared.get(`--pc-size-${k}`), k).toBe(`${Number.parseFloat(t.fontSize) / 16}rem`);
+      expect(declared.get(`--pc-text-${k}`), k).toContain(`var(--pc-size-${k})`);
     }
-    expect(declared.get('--pc-reading-size')).toBe(declared.get('--pc-size-body'));
+    expect(declared.get('--pc-reading-size')).toBe('var(--pc-size-body)');
   });
   it('tokenNames lists every declared property', () => {
     expect([...tokenNames].sort()).toEqual([...declared.keys()].sort());

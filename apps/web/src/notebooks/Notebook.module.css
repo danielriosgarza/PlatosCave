@@ -202,7 +202,6 @@
   }
   .code {
     padding: 12px;
-    font-size: var(--pc-size-ui);
   }
   .output {
     padding: 12px;

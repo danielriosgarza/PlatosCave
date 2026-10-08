@@ -20,22 +20,10 @@ describe('A19 module CSS uses the type tokens', () => {
     expect(files.length).toBeGreaterThan(10);
   });
 
-  it('A19 no literal px or rem font-size outside tokens.css', () => {
-    const offenders: string[] = [];
-    for (const f of files) {
-      readFileSync(f, 'utf8')
-        .split('\n')
-        .forEach((line, i) => {
-          if (/^\s*font-size\s*:\s*[\d.]+(px|rem|pt)\b/.test(line)) {
-            offenders.push(`${relative(src, f)}:${i + 1} ${line.trim()}`);
-          }
-        });
-    }
-    expect(offenders).toEqual([]);
-  });
-
-  it('A19 no literal px font shorthand', () => {
-    const offenders = files.filter((f) => /^\s*font\s*:[^;]*\d+px/m.test(readFileSync(f, 'utf8')));
-    expect(offenders).toEqual([]);
+  it('A19 no literal px, rem or pt in any font-size or font declaration', () => {
+    const offenders = files.filter((f) =>
+      /\bfont(-size)?\s*:[^;{}]*\d(px|rem|pt)\b/.test(readFileSync(f, 'utf8')),
+    );
+    expect(offenders.map((f) => relative(src, f))).toEqual([]);
   });
 });

@@ -41,6 +41,7 @@ export const tokenNames: string[] = [
   '--pc-radius-primary',
   '--pc-radius-choice',
   '--pc-radius-square',
+  '--pc-radius-mark',
   '--pc-space-4',
   '--pc-space-8',
   '--pc-space-12',
