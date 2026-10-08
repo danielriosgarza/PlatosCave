@@ -172,7 +172,7 @@ test('A05 the instructor sees only the shared question, answers it and resolves 
   expect(seen.annotations).toEqual([]);
   expect(JSON.stringify(seen)).not.toContain(privateNote);
   await page.goto(reading);
-  await page.getByRole('button', { name: /^Discussion/ }).click();
+  await page.getByRole('tab', { name: /^Discussion/ }).click();
   const entry = threadOf(page, question);
   await expect(entry.first()).toBeVisible();
   await entry.first().getByRole('button', { name: 'Reply' }).click();
@@ -186,7 +186,7 @@ test('A05 the instructor sees only the shared question, answers it and resolves 
   // The student sees the labelled response and may reopen their own question.
   await page.request.post('/api/test/signin-as', { data: { email: 'lab-reader@example.test' } });
   await page.goto(reading);
-  await page.getByRole('button', { name: /^Discussion/ }).click();
+  await page.getByRole('tab', { name: /^Discussion/ }).click();
   const mine = threadOf(page, question);
   await expect(mine.first().getByText('Because the mean is estimated.')).toBeVisible();
   await expect(mine.first().getByText('Resolved')).toBeVisible();
@@ -207,7 +207,7 @@ test('A05 the instructor sees only the shared question, answers it and resolves 
   expect(unseenBody).not.toContain(privateNote);
   await other.goto(reading);
   await expect(other.getByText('Paragraph 1.', { exact: false }).first()).toBeVisible();
-  await other.getByRole('button', { name: /^Discussion/ }).click();
+  await other.getByRole('tab', { name: /^Discussion/ }).click();
   await expect(other.getByText(question)).toHaveCount(0);
   await expect(other.getByText(privateNote)).toHaveCount(0);
   await expect(other.locator('mark[data-marks]')).toHaveCount(0);

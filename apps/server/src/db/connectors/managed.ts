@@ -8,7 +8,8 @@ import { connectors } from '../schema';
  * Managed connectors (docs/design/connector.md §12). There is no instance-administrator role
  * yet, so an operator registers one with `connectors:register-managed`: an `active` row with
  * `mode = 'managed'` and no owner. No person owns it, so no person's `GET /api/me/connectors`
- * lists it; templates name its targets (`kind: 'managed'`).
+ * lists it. No template or connection names its targets yet: that waits for the owner's
+ * decision on who operates managed connectors (spec §17).
  */
 
 export interface ManagedConnectorInput {
