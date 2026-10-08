@@ -13,6 +13,7 @@ import { createBoss } from '../../src/db/jobs/boss';
 import { signinTokens } from '../../src/db/schema';
 import type { JobLogger } from '../../src/jobs/logger';
 import { PURGE_SIGNIN_TOKENS, workMaintenance } from '../../src/jobs/maintenance';
+import type { Storage } from '../../src/storage/storage';
 import { createTestDatabase, type TestDatabase } from './db';
 
 // Real clock: the queue test's handler purges against `new Date()`, so every fixture is relative to it.
@@ -89,7 +90,7 @@ describe('sign-in link purge', () => {
   });
 
   test('the worker schedules the purge and runs it from the queue', async () => {
-    await workMaintenance(boss, testDb.db, quietLog);
+    await workMaintenance(boss, testDb.db, quietLog, {} as Storage);
     const schedules = await boss.getSchedules();
     expect(schedules.map((s) => s.name)).toContain(PURGE_SIGNIN_TOKENS);
 

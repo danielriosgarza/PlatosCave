@@ -85,6 +85,18 @@ describe.skipIf(!env.S3_ENDPOINT)('s3 storage (Garage)', () => {
     expect(await tmpObjects()).toEqual([]);
   });
 
+  test('lists exactly the objects under a prefix, with when they were written', async () => {
+    const area = courseObjectPrefix(randomUUID());
+    const before = Date.now() - 60_000;
+    const a = await storage.put(area, Buffer.from('listed a'));
+    const b = await storage.put(area, Buffer.from('listed b'));
+    await storage.put(prefix, Buffer.from('elsewhere'));
+    const listed = [];
+    for await (const o of storage.list(area)) listed.push(o);
+    expect(listed.map((o) => o.key).sort()).toEqual([a.key, b.key].sort());
+    for (const o of listed) expect(o.modifiedAt.getTime()).toBeGreaterThan(before);
+  });
+
   test('missing objects report not found; delete is idempotent; unsafe keys are refused', async () => {
     const key = `${prefix}/objects/${sha('absent')}`;
     await expect(storage.get(key)).rejects.toBeInstanceOf(StorageNotFoundError);

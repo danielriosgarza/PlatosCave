@@ -38,6 +38,7 @@ import {
   retentionPolicy,
   workMaintenance,
 } from '../../src/jobs/maintenance';
+import type { Storage } from '../../src/storage/storage';
 import {
   buildWorld,
   cookieFor,
@@ -1093,7 +1094,7 @@ describe('retention job', () => {
         work: async (name: string) => void queues.push(name),
       } as unknown as PgBoss;
       const quiet = { info() {}, error() {}, warn() {} } as never;
-      await workMaintenance(boss, testDb.db, quiet, retention);
+      await workMaintenance(boss, testDb.db, quiet, {} as Storage, retention);
       return queues;
     };
     expect(await run()).not.toContain(RETENTION);
