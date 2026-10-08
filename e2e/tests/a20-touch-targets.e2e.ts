@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { openExercise, releaseExercise, small } from '../touch';
+import { openExercise, releaseExercise, signedIn, small } from '../touch';
 
 test.use({ colorScheme: 'light', hasTouch: true, isMobile: true });
 
@@ -106,37 +106,30 @@ test('A20 the class chooser links and the join notice link are at least 44 px wi
   playwright,
   baseURL,
 }) => {
-  const setup = await playwright.request.newContext({ baseURL });
-  const { ids } = await (await setup.post('/api/test/world')).json();
-  await setup.dispose();
-  const owner = await playwright.request.newContext({ baseURL });
-  expect(
-    (await owner.post('/api/test/signin-as', { data: { email: 'elena@example.test' } })).ok(),
-  ).toBe(true);
-  const issued = async (classId: string) =>
-    (
-      await (
-        await owner.post(`/api/classes/${classId}/invites`, {
-          data: { kind: 'enrolment', maxUses: 1 },
-        })
-      ).json()
-    ).code as string;
-  const codes = [await issued(ids.classA), await issued(ids.classB)];
+  const { ids } = await (await page.request.post('/api/test/world')).json();
+  const owner = await signedIn(playwright, baseURL ?? '', 'elena@example.test');
+  const issued = async (classId: string) => {
+    const res = await owner.post(`/api/classes/${classId}/invites`, {
+      data: { kind: 'enrolment', maxUses: 1 },
+    });
+    expect(res.ok()).toBe(true);
+    return (await res.json()).code as string;
+  };
+  const codeA = await issued(ids.classA);
+  const codeB = await issued(ids.classB);
   await owner.dispose();
 
   const email = `a20-chooser-${Date.now()}@example.test`;
   expect((await page.request.post('/api/test/signin-as', { data: { email } })).ok()).toBe(true);
   await page.goto('/courses');
-  await page.getByLabel('Invitation code').fill(codes[0] ?? '');
+  await page.getByLabel('Invitation code').fill(codeA);
   await page.getByRole('button', { name: 'Join class' }).click();
-  const notice = page.getByRole('status');
-  await expect(notice).toContainText('You joined');
+  await expect(page.getByRole('status')).toContainText('You joined');
   expect(await small(page, 'main [role="status"] a')).toEqual([]);
 
-  expect((await page.request.post('/api/join', { data: { code: codes[1] } })).ok()).toBe(true);
+  expect((await page.request.post('/api/join', { data: { code: codeB } })).ok()).toBe(true);
   await page.goto('/courses');
   await page.getByRole('button', { name: 'Choose class' }).click();
   await expect(page.getByRole('list', { name: /^Classes of / })).toBeVisible();
-  expect(await small(page, 'main [aria-label^="Classes of "] a')).toEqual([]);
   expect(await small(page, 'main button, main a, main select, main input')).toEqual([]);
 });

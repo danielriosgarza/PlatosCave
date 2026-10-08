@@ -84,6 +84,8 @@
   .outline,
   .textButton,
   .tool {
+    display: inline-flex;
+    align-items: center;
     min-height: var(--pc-touch-target, 44px);
     min-width: var(--pc-touch-target, 44px);
   }
