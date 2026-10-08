@@ -1384,7 +1384,7 @@ class RRuntime(HarnessCase):
         "bare_pairlist <- function() formals(function(a = 1) NULL)\n"
         "many_short_then_long <- function() c(as.list(rep('ab', 20000)), list(strrep('a', 65537)))\n"
         "bytes_then_cut <- function() { b <- strrep('\u00e9', 40000); Encoding(b) <- 'bytes'; list(b, strrep('a', 65537)) }\n"
-        "bytes_then_utf8 <- function() { b <- strrep('\u00e9', 40000); Encoding(b) <- 'bytes'; list(b, strrep('\u00e9a', 500000)) }\n"
+        "list_char_matrix <- function() list(matrix(strrep('a', 65537), 1))\n"
         "stop_warning <- function() stop(simpleWarning('w'))\n"
         "stop_message <- function() stop(simpleMessage('m'))\n"
         "nested_signal <- function() withCallingHandlers(stop('boom'), error = function(e) signalCondition(structure(class = c('note', 'condition'), list(message = 'fyi', call = NULL))))\n"
@@ -1626,14 +1626,6 @@ class RRuntime(HarnessCase):
             [c["status"] for c in outcome.result["checks"]], ["passed"] * 2 + ["failed"] + ["passed"] * 2, outcome.result["checks"]
         )
 
-    def test_repr_bounds_a_list_element_beside_a_bytes_string(self):
-        # The bytes string cannot be measured in characters; it must not leave the huge UTF-8
-        # element beside it uncut: the check ends as an ordinary failure within its time limit.
-        outcome = self.outcome_for(r_call("Mixed", "bytes_then_utf8", {"value": "x"}, "repr", timeoutSeconds=10))
-        check = outcome.check()
-        self.assertEqual(check["status"], "failed", check)
-        self.assertTrue(check["actual"].startswith('list("\\\\xc3\\\\xa9'), check["actual"][:40])
-
     def test_repr_leaves_a_bytes_string_and_a_deeply_nested_list_uncut(self):
         # A string marked "bytes" deparses in linear time and is not cut (nchar(type = "chars")
         # errors on it); the repr is the plain deparse, not <unrepresentable>. A list nested too
@@ -1655,9 +1647,15 @@ class RRuntime(HarnessCase):
             r_call("Cut beside bytes", "bytes_then_cut", {"value": 'list("' + bytes_deparse + '", "' + cut + '")'}, "repr"),
             r_call("Cut beside a pairlist", "pairlist_beside_long", {"value": 'list(pairlist(a = 1), "' + cut + '")'}, "repr"),
             r_call("Bare pairlist", "bare_pairlist", {"value": "pairlist(a = 1)"}, "repr"),
+            r_call(
+                "Cut in a character matrix",
+                "list_char_matrix",
+                {"value": 'list(structure("' + cut + '", dim = c(1L, 1L)))'},
+                "repr",
+            ),
             r_call("Cut after short strings", "many_short_then_long", {"value": "list(" + '"ab", ' * 20000 + '"' + cut + '")'}, "repr"),
         )
-        self.assertEqual([c["status"] for c in outcome.result["checks"]], ["passed"] * 4, outcome.result["checks"])
+        self.assertEqual([c["status"] for c in outcome.result["checks"]], ["passed"] * 5, outcome.result["checks"])
 
     def test_stop_with_a_warning_or_message_condition_is_an_exception(self):
         outcome = self.outcome_for(

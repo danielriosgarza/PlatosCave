@@ -128,47 +128,60 @@ local({
     length(over) > 0L && any(Encoding(s[over]) != "bytes")
   }
 
-  # TRUE if a plain character vector anywhere in the plain list x has a string over the
-  # limit in bytes (a cheap upper bound of its characters) that bound_for_repr would cut
+  # TRUE if a plain (unclassed) character vector anywhere in the plain list x has a string
+  # over the limit in bytes (a cheap upper bound of its characters) that would be cut
   # ("bytes"-encoded strings are never cut). rapply walks in C and calls back only for
-  # character leaves, so a list of numbers costs almost nothing.
+  # character leaves, so a list of numbers costs almost nothing; a character matrix or array
+  # has the implicit class "matrix" or "array", so those are listed too.
   has_long_string <- function(x) {
-    any(rapply(x, long_cuttable, classes = "character", deflt = FALSE, how = "unlist"))
+    any(rapply(x, function(s) {
+      over <- nchar(s, type = "bytes") > REPR_CHARS
+      if (!any(over)) return(FALSE)
+      is.character(s) && !is.object(s) && any(Encoding(s[over]) != "bytes")
+    }, classes = c("character", "matrix", "array"), deflt = FALSE, how = "unlist"))
   }
 
   # A plain list (pairlists and classed objects excluded: rapply rejects the former and the
   # latter are out of the bound).
   is_plain_list <- function(x) typeof(x) == "list" && !is.object(x)
 
-  # TRUE if bound_for_repr would change the element e.
-  has_cuttable <- function(e) {
-    if (is.character(e)) {
-      !is.object(e) && long_cuttable(e)
+  # The cheap byte test runs first, so a short string costs one nchar. A "bytes" string
+  # deparses in linear time and nchar(type = "chars") errors on it, so it is skipped;
+  # clean_text makes every other string valid UTF-8, so nchar cannot fail here.
+  cut_strings <- function(x) {
+    big <- which(nchar(x, type = "bytes") > REPR_CHARS)
+    big <- big[Encoding(x[big]) != "bytes"]
+    if (length(big)) {
+      text <- clean_text(enc2utf8(x[big]))
+      cut <- nchar(text, type = "chars") > REPR_CHARS
+      if (any(cut)) {
+        x[big[cut]] <- paste0(substr(text[cut], 1L, REPR_CHARS), "\u2026")
+      }
+    }
+    x
+  }
+
+  # Every element of a plain list is visited once; the caller has established that a string
+  # to cut exists somewhere below.
+  bound_elements <- function(x) {
+    if (is.character(x) && !is.object(x)) {
+      cut_strings(x)
+    } else if (is_plain_list(x) && length(x)) {
+      x[] <- lapply(x, bound_elements)
+      x
     } else {
-      is_plain_list(e) && length(e) > 0L && has_long_string(e)
+      x
     }
   }
 
   bound_for_repr <- function(x) {
     if (is.character(x) && !is.object(x)) {
-      # The cheap byte test runs first, so a short string costs one nchar. A "bytes" string
-      # deparses in linear time and nchar(type = "chars") errors on it, so it is skipped;
-      # clean_text makes every other string valid UTF-8, so nchar cannot fail here.
-      big <- which(nchar(x, type = "bytes") > REPR_CHARS)
-      big <- big[Encoding(x[big]) != "bytes"]
-      if (length(big)) {
-        text <- clean_text(enc2utf8(x[big]))
-        cut <- nchar(text, type = "chars") > REPR_CHARS
-        if (any(cut)) {
-          x[big[cut]] <- paste0(substr(text[cut], 1L, REPR_CHARS), "\u2026")
-        }
-      }
+      cut_strings(x)
     } else if (is_plain_list(x) && length(x) && has_long_string(x)) {
-      # Only the elements that hold a string to cut are visited.
-      idx <- which(vapply(x, has_cuttable, NA))
-      x[idx] <- lapply(x[idx], bound_for_repr)
+      bound_elements(x)
+    } else {
+      x
     }
-    x
   }
 
   repr_text <- function(x) {
