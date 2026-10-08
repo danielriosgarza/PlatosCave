@@ -59,7 +59,8 @@ export default function lifecycleRoutes(app: FastifyInstance, deps: RouteDeps): 
     const at = now();
     const result = await lifecycle.closeAccount(db(), scope, mode, at);
     if (!result.ok) return fail(409, { error: 'owns_courses' });
-    // Their connectors were revoked with the account (§10.6); live links close now.
+    // Their connectors were revoked with the account (§10.6); live links close now, here in the
+    // relay or, from another process, through the revocation notice the relay listens for (§3).
     closeRevokedLinks(links, result.revokedConnectorIds);
     return { deactivatedAt: result.deactivatedAt.toISOString() };
   }

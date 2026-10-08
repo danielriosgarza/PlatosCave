@@ -151,8 +151,15 @@ export async function buildApp(config: Config, deps: Deps = {}): Promise<Fastify
           log: app.log.child({ component: 'links' }),
         })
       : emptyLinkRegistry);
-  // Links close before the server does: 1001 tells connectors to redial (§4.6).
-  if (links instanceof LiveLinkRegistry) app.addHook('preClose', async () => links.closeAll());
+  if (links instanceof LiveLinkRegistry) {
+    // Revocations committed by any process close their live links here (§3).
+    app.addHook('onReady', async () => links.listen());
+    // Links close before the server does: 1001 tells connectors to redial (§4.6).
+    app.addHook('preClose', async () => {
+      links.stopListening();
+      links.closeAll();
+    });
+  }
   const routeDeps: RouteDeps = {
     ...deps,
     links,

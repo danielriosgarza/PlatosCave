@@ -88,6 +88,7 @@ export default function connectorRoutes(app: FastifyInstance, deps: RouteDeps): 
       now(),
     );
     if (!result.ok) return notFound();
+    // In the relay this closes the link now; any process's commit also notifies the relay (§3).
     if (result.revoked) links.get(result.connector.id)?.close(CLOSE_REVOKED, 'revoked');
     return toView(result.connector);
   });

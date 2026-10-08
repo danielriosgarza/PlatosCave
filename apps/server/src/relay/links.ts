@@ -17,6 +17,7 @@ import {
   revokeUserConnectors as revokeUserConnectorRows,
   touchLinkConnector,
 } from '../db/connectors/registry';
+import { listenForRevocations, type RevocationListener } from '../db/connectors/revocations';
 import { authenticateLink, Challenge, checkHello } from './auth';
 import { CreditWindow, decodeFrame, encodeFrame, FLAG_END, FLAG_TEXT } from './framing';
 
@@ -69,6 +70,8 @@ export const DEFAULT_HEARTBEAT_SECONDS = 15;
 export const AUTH_DEADLINE_MS = 10_000;
 /** How often a live link re-reads its connector row (§3 "Revoke and unpair"). */
 export const RECHECK_MS = 60_000;
+/** How long the revocation listener waits before it reconnects to Postgres. */
+export const LISTEN_RETRY_MS = 5_000;
 /** Link attempts allowed per address per minute (§10.3). */
 export const LINK_ATTEMPTS_PER_MINUTE = 30;
 /** Messages a connector may send before its `auth` or `hello` was checked. */
@@ -191,6 +194,10 @@ export class LiveLinkRegistry implements LinkRegistry {
   private readonly sockets = new Set<WebSocket>();
   private readonly attempts = new Map<string, number[]>();
   private readonly listeners: LinkEvents[] = [];
+  /** The connection listening for revocations, while it is up. */
+  private listener: RevocationListener | undefined;
+  private listening = false;
+  private cancelListenRetry: () => void = () => {};
   readonly heartbeatSeconds: number;
   readonly limits: LinkLimits;
   readonly timers: LinkTimers;
@@ -267,6 +274,57 @@ export class LiveLinkRegistry implements LinkRegistry {
   /** Forgets a closed link unless a newer one already replaced it. */
   unregister(link: LiveLink): void {
     if (this.links.get(link.connectorId) === link) this.links.delete(link.connectorId);
+  }
+
+  /**
+   * Listens for revocations committed by any process (§3): the api serves revoke, unpair and
+   * account closure too, and its registry holds no links. A lost connection is retried every
+   * `LISTEN_RETRY_MS`; each (re)connection re-reads every live link's row, so a revocation
+   * committed while nobody listened still closes its link at once, not at the 60 s re-read.
+   */
+  async listen(): Promise<void> {
+    if (this.listening) return;
+    this.listening = true;
+    await this.connectListener();
+  }
+
+  /** Stops listening and returns the connection (server shutdown). */
+  stopListening(): void {
+    this.listening = false;
+    this.cancelListenRetry();
+    this.listener?.stop();
+    this.listener = undefined;
+  }
+
+  private async connectListener(): Promise<void> {
+    let listener: RevocationListener;
+    try {
+      listener = await listenForRevocations(this.options.db, {
+        revoked: (id) => this.links.get(id)?.close(reasonCode('revoked'), 'revoked'),
+        lost: (err) => {
+          if (this.listener !== listener) return;
+          this.listener = undefined;
+          if (this.listening) this.retryListen(err);
+        },
+      });
+    } catch (err) {
+      if (this.listening) this.retryListen(err);
+      return;
+    }
+    if (!this.listening) {
+      listener.stop();
+      return;
+    }
+    this.listener = listener;
+    for (const link of this.links.values()) link.recheck();
+  }
+
+  private retryListen(err: unknown): void {
+    this.options.log.error({ err }, 'revocation listener lost; retrying');
+    this.cancelListenRetry();
+    this.cancelListenRetry = this.timers.after(LISTEN_RETRY_MS, () => {
+      if (this.listening && !this.listener) void this.connectListener();
+    });
   }
 
   /** Closes every socket (server shutdown: 1001, so connectors redial). */
@@ -489,6 +547,7 @@ class LiveLink implements Link {
   private closed = false;
   private cancelWatchdog: () => void = () => {};
   private cancelRecheck: () => void = () => {};
+  private rechecking = false;
 
   constructor(
     private readonly registry: LiveLinkRegistry,
@@ -527,20 +586,28 @@ class LiveLink implements Link {
 
   /** Every 60 s: a connector no longer active loses its link even if the notice was lost. */
   private armRecheck(): void {
-    this.cancelRecheck = this.registry.timers.after(RECHECK_MS, () => {
-      const { db, now } = this.registry.options;
-      touchLinkConnector(db, this.connectorId, now()).then(
-        (active) => {
-          if (this.closed) return;
-          if (active) this.armRecheck();
-          else this.close(reasonCode('revoked'), 'revoked');
-        },
-        (err) => {
-          this.log.error({ err, connectorId: this.connectorId }, 'connector re-read failed');
-          if (!this.closed) this.armRecheck();
-        },
-      );
-    });
+    this.cancelRecheck = this.registry.timers.after(RECHECK_MS, () => this.recheck());
+  }
+
+  /** Re-reads the connector row now; a connector no longer active loses its link. */
+  recheck(): void {
+    if (this.closed || this.rechecking) return;
+    this.rechecking = true;
+    this.cancelRecheck();
+    const { db, now } = this.registry.options;
+    touchLinkConnector(db, this.connectorId, now()).then(
+      (active) => {
+        this.rechecking = false;
+        if (this.closed) return;
+        if (active) this.armRecheck();
+        else this.close(reasonCode('revoked'), 'revoked');
+      },
+      (err) => {
+        this.rechecking = false;
+        this.log.error({ err, connectorId: this.connectorId }, 'connector re-read failed');
+        if (!this.closed) this.armRecheck();
+      },
+    );
   }
 
   private sendRaw(message: ServerMessage): void {

@@ -36,9 +36,11 @@ The reverse proxy owns TLS and routes by host and path. It must forward `Host` u
 
 | Host | Path | To |
 | --- | --- | --- |
-| `APP_HOST` | `/api/connector/v1/link` (WebSocket) and the notebook-session routes: `/api/classes/*/notebook-sessions…` and `/api/me/connections/*/test…` (including their WebSockets) | `relay` (`127.0.0.1:${RELAY_PORT:-3001}`) |
+| `APP_HOST` | Every route that reads or closes a live connector link: the connector API `/api/connector/v1/…` (including the link's WebSocket), the device list and its actions `/api/me/connectors…`, account closure `/api/me/deactivate` and `/api/me/delete`, and the notebook-session routes `/api/classes/*/notebook-sessions…` and `/api/me/connections/*/test…` (including their WebSockets) | `relay` (`127.0.0.1:${RELAY_PORT:-3001}`) |
 | `APP_HOST` | everything else | `api` (`127.0.0.1:${API_PORT:-3000}`); the relay serves the same, so a small deployment may send every path to the relay |
 | `CONTENT_HOST` | everything | `api`; it answers only `/content/<token>` |
+
+Links live only in the relay's memory (design §10.1), so a device's `online` and Test connection are true only where the relay answers; the `api` reads every connector as offline. A revocation committed by any process (revoke, unpair or account closure) is announced on the Postgres channel `parallax_connector_revoked`, and the relay closes that link at once with 4403 `revoked`; if the relay's listening connection drops, it reconnects within 5 seconds and re-reads every live link's row, and each link still re-reads its row every 60 seconds.
 
 Allow WebSocket upgrades and an idle timeout of at least 60 seconds on the relay's paths (links ping every 15 seconds). Set `TRUST_PROXY` to the proxy's address or CIDR range: `req.ip` keys the per-address limits and the logs, and without it every client shares the proxy's address. A proxy that appends to `X-Forwarded-For` (nginx's default) must be named by address, not by `true` (`apps/server/src/config.ts`).
 
