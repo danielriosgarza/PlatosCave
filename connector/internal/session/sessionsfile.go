@@ -14,6 +14,10 @@ import (
 	"parallax/connector/internal/state"
 )
 
+// maxPID is the largest process id sessions.json holds (state.schema.json): Windows ids are
+// 32-bit, above Linux's 4194304.
+const maxPID = 1<<32 - 1
+
 // maxRecords is the most records sessions.json holds (state.schema.json#/$defs/Sessions).
 const maxRecords = 64
 
@@ -118,7 +122,7 @@ func (r *Record) validate() error {
 		switch {
 		case p.Where != "local" && p.Where != "remote":
 			return fmt.Errorf("process.where %q", p.Where)
-		case p.PID < 1 || p.PID > 4194304:
+		case p.PID < 1 || int64(p.PID) > maxPID: // a Windows process id is any 32-bit value
 			return fmt.Errorf("process.pid %d out of range", p.PID)
 		case p.Port < 1 || p.Port > 65535:
 			return fmt.Errorf("process.port %d out of range", p.Port)
