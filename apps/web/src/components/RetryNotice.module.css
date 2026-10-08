@@ -1,0 +1,19 @@
+.compact {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 12px;
+  color: var(--pc-muted);
+  font-size: var(--pc-size-ui);
+  margin: 0 0 12px;
+}
+.retry {
+  font: inherit;
+  background: none;
+  border: 0;
+  padding: 2px 0;
+  color: var(--pc-ink);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  cursor: pointer;
+}

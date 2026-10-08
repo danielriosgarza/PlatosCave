@@ -88,6 +88,3 @@
 .margin .tabs > button[aria-selected="true"] {
   font-weight: 600;
 }
-.count {
-  color: var(--pc-muted);
-}

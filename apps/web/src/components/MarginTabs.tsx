@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
+import styles from './MarginTabs.module.css';
 import { TabRow } from './TabRow';
-import styles from './TabRow.module.css';
 
 export type MarginTab = 'notes' | 'discussion';
 
