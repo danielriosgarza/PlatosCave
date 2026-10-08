@@ -46,7 +46,7 @@ test('A09 a live HTML output with a script runs no script, in a sandboxed frame 
     expect(new URL((await frame.getAttribute('src')) ?? '').origin).not.toBe(
       new URL(page.url()).origin,
     );
-    await expect(page.frameLocator('iframe').locator('#state')).toHaveText(
+    await expect(cell.frameLocator('iframe').locator('#state')).toHaveText(
       'Live chart without script',
     );
     await expect(cell.getByText('Scripts in this output were removed and not run')).toBeVisible();

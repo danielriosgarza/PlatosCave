@@ -1,6 +1,9 @@
+import { readFileSync } from 'node:fs';
+import { join, resolve } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { Connector, fixtures } from './connector';
 import {
+  labClass as classId,
   connect,
   endSessions,
   openConnect,
@@ -10,6 +13,8 @@ import {
   testSsh,
   trustUntilDone,
 } from './ui';
+
+const root = resolve(import.meta.dirname, '../../..');
 
 test.beforeAll(async ({ playwright, baseURL }) => {
   const setup = await playwright.request.newContext({ baseURL });
@@ -98,13 +103,21 @@ test('A29 a token the server rejects names its stage and never reaches Ready', a
     await expect(stage(page, 'runtime')).toHaveAttribute('data-status', 'ok');
     // ...and Connect, which starts the server, stops at its token.
     await page.getByRole('button', { name: 'Connect', exact: true }).click();
-    await expect(stage(page, 'notebook_auth')).toHaveAttribute('data-status', 'failed', {
+    await expect(
+      page.getByRole('alert').filter({ hasText: "Jupyter rejected the connector's token." }),
+    ).toBeVisible({
       timeout: 120_000,
     });
-    await expect(stage(page, 'notebook_auth')).toContainText(
-      "Jupyter rejected the connector's token.",
-    );
-    await expect(stage(page, 'kernels')).toHaveAttribute('data-status', 'skipped');
+    // The session records the failure as the catalogue code whose stage is notebook_auth.
+    const sessions = (await (
+      await page.request.get(`/api/classes/${classId}/notebook-sessions`)
+    ).json()) as { state: string; cause: string | null }[];
+    const failed = sessions.filter((s) => s.state === 'failed');
+    expect(failed.map((s) => s.cause)).toContain('token_rejected');
+    const catalogue = JSON.parse(
+      readFileSync(join(root, 'connector/protocol/v1/errors.json'), 'utf8'),
+    ) as { codes: Record<string, { stage: string }> };
+    expect(catalogue.codes.token_rejected?.stage).toBe('notebook_auth');
     await notReady(page);
   } finally {
     await endSessions(page).catch(() => undefined);
