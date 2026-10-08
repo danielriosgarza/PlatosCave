@@ -1,6 +1,6 @@
 {
   "v": 1,
-  "harnessVersion": "3",
+  "harnessVersion": "4",
   "runtime": { "language": "python", "version": "3.12.8" },
   "compileError": {
     "file": "solution.py",

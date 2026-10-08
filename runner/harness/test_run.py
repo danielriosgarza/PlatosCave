@@ -1376,6 +1376,11 @@ class RRuntime(HarnessCase):
         "utf8_within <- function() strrep('\u00e9', 40000)\n"
         "ascii_at <- function() strrep('a', 65536)\n"
         "ascii_over <- function() strrep('a', 65537)\n"
+        "list_over <- function() list(strrep('a', 65537), 1)\n"
+        "list_at <- function() list(strrep('a', 65536), 1)\n"
+        "attr_list <- function() structure(list(strrep('a', 65537)), note = 1)\n"
+        "list_matrix <- function() matrix(list(strrep('a', 65537), 1, 2, 3), 2)\n"
+        "bytes_then_utf8 <- function() { b <- strrep('\u00e9', 40000); Encoding(b) <- 'bytes'; list(b, strrep('\u00e9a', 500000)) }\n"
         "stop_warning <- function() stop(simpleWarning('w'))\n"
         "stop_message <- function() stop(simpleMessage('m'))\n"
         "nested_signal <- function() withCallingHandlers(stop('boom'), error = function(e) signalCondition(structure(class = c('note', 'condition'), list(message = 'fyi', call = NULL))))\n"
@@ -1598,6 +1603,32 @@ class RRuntime(HarnessCase):
         self.assertEqual(
             [c["status"] for c in outcome.result["checks"]], ["passed"] * 3 + ["failed"], outcome.result["checks"]
         )
+
+    def test_repr_bounds_strings_in_plain_lists_with_or_without_attributes(self):
+        cut = "a" * 65536 + "\u2026"
+        outcome = self.outcome_for(
+            r_call("List over the bound", "list_over", {"value": 'list("' + cut + '", 1)'}, "repr"),
+            r_call("List at the bound", "list_at", {"value": 'list("' + "a" * 65536 + '", 1)'}, "repr"),
+            r_call("List over the bound with an uncut expected", "list_over", {"value": 'list("' + "a" * 65537 + '", 1)'}, "repr"),
+            r_call("List with an attribute", "attr_list", {"value": 'structure(list("' + cut + '"), note = 1)'}, "repr"),
+            r_call(
+                "List matrix",
+                "list_matrix",
+                {"value": 'structure(list("' + cut + '", 1, 2, 3), dim = c(2L, 2L))'},
+                "repr",
+            ),
+        )
+        self.assertEqual(
+            [c["status"] for c in outcome.result["checks"]], ["passed"] * 2 + ["failed"] + ["passed"] * 2, outcome.result["checks"]
+        )
+
+    def test_repr_bounds_a_list_element_beside_a_bytes_string(self):
+        # The bytes string cannot be measured in characters; it must not leave the huge UTF-8
+        # element beside it uncut: the check ends as an ordinary failure within its time limit.
+        outcome = self.outcome_for(r_call("Mixed", "bytes_then_utf8", {"value": "x"}, "repr", timeoutSeconds=10))
+        check = outcome.check()
+        self.assertEqual(check["status"], "failed", check)
+        self.assertTrue(check["actual"].startswith('list("\\\\xc3\\\\xa9'), check["actual"][:40])
 
     def test_repr_falls_back_to_the_whole_deparse_when_bounding_fails(self):
         # nchar(type = "chars") errors on a string marked "bytes"; the repr must then be the

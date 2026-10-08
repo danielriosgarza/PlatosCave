@@ -114,11 +114,12 @@ local({
   # and with the expected value of a non-JSON result in the other modes (design section 4.4),
   # and it is shown in messages, so nothing within the bound may change: a character string
   # longer than REPR_CHARS characters is cut to its first REPR_CHARS characters plus an
-  # ellipsis, in plain (unclassed) character vectors and plain lists only. A value with
+  # ellipsis, in plain (unclassed) character vectors and plain (unclassed) lists, which may
+  # carry attributes (dim, names, others) and mix element types. A value with
   # nothing to cut is deparsed as it is, attributes and classes included; a string in a
   # classed container, a name or an attribute is deparsed whole; and if bounding fails (a
-  # list nested too deeply for the recursion, a string with a "bytes" encoding) the value is
-  # deparsed whole, as it was before the bound existed.
+  # list nested too deeply for the recursion) the value is deparsed whole, as it was before
+  # the bound existed. A string with a "bytes" encoding is never cut: it deparses linearly.
   REPR_CHARS <- 65536L
 
   # TRUE if a plain character vector anywhere in the plain list x has a string over the
@@ -131,15 +132,20 @@ local({
 
   bound_for_repr <- function(x) {
     if (is.character(x) && !is.object(x)) {
-      big <- which(!is.na(x) & nchar(x, type = "bytes") > REPR_CHARS)
-      if (length(big)) {
-        text <- clean_text(enc2utf8(x[big]))
-        cut <- nchar(text, type = "chars") > REPR_CHARS
-        if (any(cut)) {
-          x[big[cut]] <- paste0(substr(text[cut], 1L, REPR_CHARS), "\u2026")
+      # A "bytes" string deparses in linear time and nchar(type = "chars") errors on it, so
+      # it is skipped; any other failure leaves this vector as it is, not the whole value.
+      x <- tryCatch({
+        big <- which(!is.na(x) & nchar(x, type = "bytes") > REPR_CHARS & Encoding(x) != "bytes")
+        if (length(big)) {
+          text <- clean_text(enc2utf8(x[big]))
+          cut <- nchar(text, type = "chars") > REPR_CHARS
+          if (any(cut)) {
+            x[big[cut]] <- paste0(substr(text[cut], 1L, REPR_CHARS), "\u2026")
+          }
         }
-      }
-    } else if (is.vector(x, "list") && !is.object(x) && length(x) && has_long_string(x)) {
+        x
+      }, error = function(e) x)
+    } else if (is.list(x) && !is.object(x) && length(x) && has_long_string(x)) {
       x[] <- lapply(x, bound_for_repr)
     }
     x
