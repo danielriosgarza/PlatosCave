@@ -7,6 +7,7 @@ import {
   CAUSE_RECOVERIES,
   CODE_COPY,
   CODE_RECOVERIES,
+  CODE_STAGE,
   RECOVERY_COPY,
   STAGE_LABEL,
 } from './messages';
@@ -29,6 +30,15 @@ describe('connect messages', () => {
       expect(CODE_RECOVERIES[code], `recoveries for ${code}`).toEqual(entry.recoveries);
     }
     expect(Object.keys(CODE_COPY).sort()).toEqual(Object.keys(catalogue.codes).sort());
+  });
+
+  it('every catalogue code that names a stage maps to it, with a label', () => {
+    for (const [code, entry] of Object.entries(catalogue.codes)) {
+      expect(CODE_STAGE[code] ?? null, `stage of ${code}`).toBe(entry.stage);
+      if (entry.stage) expect(STAGE_LABEL[entry.stage], `label of ${entry.stage}`).toBeTruthy();
+    }
+    const staged = Object.entries(catalogue.codes).filter(([, e]) => e.stage);
+    expect(Object.keys(CODE_STAGE).sort()).toEqual(staged.map(([code]) => code).sort());
   });
 
   it('every loss cause has copy and the catalogue’s recoveries', () => {

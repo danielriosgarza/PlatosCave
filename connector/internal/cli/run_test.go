@@ -15,12 +15,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/santhosh-tekuri/jsonschema/v6"
 	"golang.org/x/crypto/ssh"
 
 	"parallax/connector/internal/identity"
 	"parallax/connector/internal/protocol"
 	"parallax/connector/internal/state"
 	"parallax/connector/internal/testserver"
+	schemas "parallax/connector/protocol"
 )
 
 // syncBuffer is a bytes.Buffer safe to read while `run` writes it.
@@ -106,6 +108,12 @@ func TestRunWritesRuntimeJSON(t *testing.T) {
 	if rt.PID != os.Getpid() || rt.LastError != "" || rt.Sessions != 0 {
 		t.Errorf("runtime.json = %+v", rt)
 	}
+	// The bytes `run` wrote, not a value built by the test, satisfy state.schema.json#/$defs/Runtime.
+	written, err := h.store().ReadFile(state.RuntimeFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	validRuntimeFile(t, written)
 	waitFor(t, "the connected line", func() bool { return strings.Contains(out.String(), "Connected to "+srv.Origin) })
 
 	h.stdout.Reset()
@@ -394,3 +402,31 @@ func TestRunManaged(t *testing.T) {
 }
 
 const requestIDForTests = "c0ffee00-1111-4222-8333-444455556666"
+
+func validRuntimeFile(t *testing.T, data []byte) {
+	t.Helper()
+	raw, err := schemas.V1.ReadFile("v1/state.schema.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := jsonschema.UnmarshalJSON(bytes.NewReader(raw))
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := jsonschema.NewCompiler()
+	const base = "https://parallax.invalid/connector/v1/state.schema.json"
+	if err := c.AddResource(base, doc); err != nil {
+		t.Fatal(err)
+	}
+	sch, err := c.Compile(base + "#/$defs/Runtime")
+	if err != nil {
+		t.Fatal(err)
+	}
+	inst, err := jsonschema.UnmarshalJSON(bytes.NewReader(data))
+	if err != nil {
+		t.Fatalf("runtime.json is not JSON: %v\n%s", err, data)
+	}
+	if err := sch.Validate(inst); err != nil {
+		t.Fatalf("runtime.json fails state.schema.json#/$defs/Runtime: %v\n%s", err, data)
+	}
+}

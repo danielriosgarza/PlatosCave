@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { type ReactNode, useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createQueryClient } from '../../session/revocation';
+import { expectNoAxeViolations } from '../../test/axe';
 import { CLASS_A, stubApi } from '../../test/render';
 import { ColabSubmission } from '../ColabSubmission';
 import { FilesPanel } from './FilesPanel';
@@ -828,7 +829,9 @@ describe('instructor snapshot', () => {
           ? { status: 200, body: { submissions: [row] } }
           : { status: 404 },
     );
-    render(wrap(<ColabSubmission classId={CLASS_A} resourceId={RES} instructor />));
+    const { container } = render(
+      wrap(<ColabSubmission classId={CLASS_A} resourceId={RES} instructor />),
+    );
     const snapshot = await screen.findByRole('region', { name: 'Snapshot of Sam Okafor' });
     expect(snapshot).toHaveTextContent('Notebook revision 4');
     expect(snapshot).toHaveTextContent(
@@ -845,6 +848,7 @@ describe('instructor snapshot', () => {
     for (const [url] of fetchMock.mock.calls) {
       expect(String(url)).not.toMatch(/notebook-sessions|connections|connectors/);
     }
+    await expectNoAxeViolations(container);
   });
 });
 
@@ -855,5 +859,154 @@ describe('snapshot environment line', () => {
     );
     expect(snapshotEnvironment({ language: 'python' })).toContain('python');
     expect(snapshotEnvironment({})).toBe('Not reported');
+  });
+});
+
+describe('accessibility', () => {
+  it('A34 axe finds no violations in the save controls with the conflict dialog open', async () => {
+    stubApi((_, init) =>
+      init?.method === 'POST'
+        ? {
+            status: 200,
+            body: {
+              transfers: [
+                transfer({
+                  kind: 'save',
+                  direction: 'in',
+                  path: 'notebook.ipynb',
+                  state: 'conflict',
+                  outcome: null,
+                  remote: { sha256: 'c'.repeat(64), size: 999 },
+                }),
+              ],
+            },
+          }
+        : { status: 404 },
+    );
+    const { container } = render(
+      wrap(<SaveHost getNotebook={() => notebook} onWorkingCopy={vi.fn()} />),
+    );
+    await expectNoAxeViolations(container);
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Save to computer' }));
+    await screen.findByRole('dialog', {
+      name: /notebook\.ipynb already exists/i,
+    });
+    await expectNoAxeViolations(document.body);
+  });
+
+  it('A34 axe finds no violations in the files panel with its copied list', async () => {
+    stubApi((url, init) => {
+      if (init?.method === 'POST') {
+        return {
+          status: 200,
+          body: {
+            transfers: [
+              transfer({
+                direction: 'in',
+                kind: 'copy_in',
+                path: 'data/sample.csv',
+                size: 2048,
+              }),
+            ],
+          },
+        };
+      }
+      return url.includes('/files')
+        ? {
+            status: 200,
+            body: {
+              workspace: WORKSPACE,
+              host: 'hpc.example.edu',
+              dir: '',
+              entries: [
+                {
+                  path: 'out.csv',
+                  name: 'out.csv',
+                  type: 'file',
+                  size: 4096,
+                  modified: NOW,
+                },
+                {
+                  path: 'results',
+                  name: 'results',
+                  type: 'directory',
+                  size: null,
+                  modified: null,
+                },
+              ],
+              declared: [{ path: 'data/sample.csv', size: 2048, sha256: 'd'.repeat(64) }],
+            },
+          }
+        : { status: 404 };
+    });
+    const { container } = render(
+      wrap(
+        <FilesPanel
+          classId={CLASS_A}
+          sessionId={SESSION}
+          workingCopy={copy() as never}
+          onWorkingCopy={vi.fn()}
+          onStale={vi.fn()}
+        />,
+      ),
+    );
+    const copyIn = await screen.findByRole('button', {
+      name: `Copy 1 file to ${WORKSPACE}`,
+    });
+    await expectNoAxeViolations(container);
+    await userEvent.setup().click(copyIn);
+    await screen.findByLabelText('Copy results');
+    await expectNoAxeViolations(container);
+  });
+
+  it('A34 axe finds no violations in the submit panel, before and after the receipt', async () => {
+    stubApi((url, init) =>
+      init?.method === 'POST'
+        ? {
+            status: 200,
+            body: {
+              id: SUB,
+              resourceId: RES,
+              resourceRevisionId: REV,
+              version: 1,
+              filename: 'notebook.ipynb',
+              size: 120,
+              sha256: 'e'.repeat(64),
+              environment: {},
+              receivedAt: NOW,
+              workingCopyRevision: 2,
+              files: [
+                {
+                  id: FILE,
+                  path: 'results.csv',
+                  size: 2048,
+                  sha256: 'b'.repeat(64),
+                },
+              ],
+            },
+          }
+        : url.includes('/transfers')
+          ? { status: 200, body: { transfers: [transfer()] } }
+          : { status: 404 },
+    );
+    const { container } = render(
+      wrap(
+        <SubmitPanel
+          classId={CLASS_A}
+          sessionId={SESSION}
+          workingCopy={copy() as never}
+          environment={{
+            os: 'linux',
+            arch: 'amd64',
+            interpreter: 'Python 3.12.4',
+          }}
+        />,
+      ),
+    );
+    await userEvent.setup().click(await screen.findByRole('checkbox'));
+    await expectNoAxeViolations(container);
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Submit notebook' }));
+    await screen.findByRole('status');
+    await expectNoAxeViolations(container);
   });
 });
