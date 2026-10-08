@@ -101,24 +101,64 @@ const codeOf = (err: unknown): string | undefined =>
   [...chain(err)].find((e) => typeof e.code === 'string')?.code as string | undefined;
 
 /**
- * pino's error serializer minus what a database library copies from private input: the fields
- * above are dropped, and an error from the database keeps only its error code, because its
- * message, stack and causes all quote the SQL and the bound values. Never throws, and never
- * changes what the caller passed: a value pino does not turn into a new object (a string, null, a
- * plain object) is returned as it came.
+ * Removes from `serialised` what a database library copies from private input. `original` is the
+ * value it was made from; an error from the database keeps only its error code, because its
+ * message, stack and causes all quote the SQL and the bound values.
  */
-export function serialiseError(err: unknown): unknown {
-  const out = pino.stdSerializers.err(err as Error) as unknown;
-  if (!isObject(out) || out === err) return out;
-  const serialised = out as Serialised;
+function scrub(serialised: Serialised, original: unknown): void {
   for (const field of QUOTING_FIELDS) delete serialised[field];
-  if (fromDatabase(err)) {
-    const code = codeOf(err);
+  // Only an error has a message and a stack to replace; a plain object just loses its fields.
+  if (typeof serialised.message === 'string' && fromDatabase(original)) {
+    const code = codeOf(original);
     serialised.message = `database query failed${code ? ` (${code})` : ''}`;
     serialised.stack = `${String(serialised.type ?? 'Error')}: ${serialised.message}`;
     if (code) serialised.code = code;
   }
-  return serialised;
+  // pino serialises the members of an `AggregateError` itself, outside the `cause` chain.
+  const members = isObject(original) ? (original as { errors?: unknown }).errors : undefined;
+  if (Array.isArray(serialised.aggregateErrors)) {
+    serialised.aggregateErrors = serialised.aggregateErrors.map((entry: unknown, i: number) =>
+      scrubValue(entry, Array.isArray(members) ? members[i] : undefined),
+    );
+  }
+}
+
+/** `scrub` for one serialised value, which may be a string, a plain object or an error. */
+function scrubValue(serialised: unknown, original: unknown): unknown {
+  if (!isObject(serialised)) return serialised;
+  // A value pino returned as it came (not error-like) is copied, never changed in place.
+  const copy = serialised === original ? { ...serialised } : (serialised as Serialised);
+  scrub(copy as Serialised, original);
+  return copy;
+}
+
+/**
+ * pino's error serializer minus what a database library copies from private input: the fields
+ * above are dropped from the error, from each member of an `AggregateError` and from a plain
+ * object logged as an error, and an error from the database keeps only its error code. Never
+ * throws, and never changes what the caller passed: a value pino does not turn into a new object
+ * (a plain object) is copied before it is scrubbed; a string or null is returned as it came.
+ */
+export function serialiseError(err: unknown): unknown {
+  const out = pino.stdSerializers.err(err as Error) as unknown;
+  return scrubValue(out, err);
+}
+
+/**
+ * The fields of a pg-boss warning that are safe to log. A slow-query warning is
+ * `{ message, data: { elapsed, sql, values } }` and `values` holds the bound job data, three
+ * levels down where the key list does not reach, so only the message and the numbers are kept.
+ */
+export function warningFields(warning: unknown): {
+  message?: string;
+  elapsedSeconds?: number;
+} {
+  const w = isObject(warning) ? (warning as { message?: unknown; data?: unknown }) : {};
+  const elapsed = isObject(w.data) ? (w.data as { elapsed?: unknown }).elapsed : undefined;
+  return {
+    ...(typeof w.message === 'string' && { message: w.message }),
+    ...(typeof elapsed === 'number' && Number.isFinite(elapsed) && { elapsedSeconds: elapsed }),
+  };
 }
 
 /** Options shared by the API's Fastify logger and the worker's pino logger. */
