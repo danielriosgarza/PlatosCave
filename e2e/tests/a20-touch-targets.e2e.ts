@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
-import { openExercise, releaseExercise, releaseTest, signedIn, small } from '../touch';
+import { openExercise, releaseExercise, releaseTest, small } from '../touch';
+import { signedIn } from './released';
 
 test.use({ colorScheme: 'light', hasTouch: true, isMobile: true });
 
@@ -74,8 +75,7 @@ test('A20 the exercise range control is at least 44 px tall with a touch screen'
   baseURL,
 }) => {
   const title = `Touch range ${Date.now()}-${test.info().workerIndex}`;
-  const { ids, priya } = await releaseExercise(playwright, baseURL ?? '', title);
-  await priya.dispose();
+  const { ids } = await releaseExercise(playwright, baseURL ?? '', title);
   expect(
     (await page.request.post('/api/test/signin-as', { data: { email: 'sam@example.test' } })).ok(),
   ).toBe(true);
