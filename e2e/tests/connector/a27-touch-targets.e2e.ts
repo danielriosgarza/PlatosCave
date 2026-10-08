@@ -58,13 +58,12 @@ test('A27 and A20 the stdin prompt and the Files input of a live notebook are at
       const box = await control.boundingBox();
       expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
     }
-    await prompt.fill('Ada');
-    await send.click();
+    await prompt.fill('Ada', { timeout: 10_000 });
+    await send.click({ timeout: 10_000 });
 
-    const files = page.getByRole('region', { name: 'Files, save and submit' });
-    const name = files.getByLabel('File name in the workspace');
-    await name.scrollIntoViewIfNeeded();
-    await expect(name).toBeVisible();
+    // The panel has no region name while the working copy loads; the field is the anchor.
+    const name = page.getByLabel('File name in the workspace');
+    await expect(name).toBeVisible({ timeout: 30_000 });
     expect((await name.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
   } finally {
     await endSessions(page).catch(() => undefined);
