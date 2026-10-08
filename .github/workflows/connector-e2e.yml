@@ -15,41 +15,45 @@ on:
   pull_request:
     paths:
       - connector/**
-      - apps/server/src/relay/**
-      - apps/server/src/http/relay/**
-      - apps/server/src/http/routes/**
+      - apps/server/src/content/workingCopy*.ts
       - apps/server/src/db/connectors/**
-      - apps/server/src/db/notebooks/**
-      - apps/server/src/db/notebooks.ts
       - apps/server/src/db/jobs/derived.ts
+      - apps/server/src/db/notebookSubmissions.ts
+      - apps/server/src/db/notebooks.ts
+      - apps/server/src/db/notebooks/**
       - apps/server/src/db/schema/connectors.ts
       - apps/server/src/db/schema/notebook-sessions.ts
-      - apps/server/src/content/workingCopy*.ts
+      - apps/server/src/db/schema/notebookSubmissions.ts
       - apps/server/src/http/budgets.ts
-      - apps/server/test/fixtures/**
-      - apps/server/src/db/notebookSubmissions.ts
+      - apps/server/src/http/relay/**
+      - apps/server/src/http/routes/**
       - apps/server/src/jobs/**
+      - apps/server/src/relay/**
+      - apps/server/test/fixtures/**
       - apps/web/src/notebooks/**
-      - packages/contracts/src/connector*
-      - packages/contracts/src/notebookChannel.ts
+      - packages/contracts/src/routes/computeTemplates.ts
       - packages/contracts/src/routes/connections.ts
       - packages/contracts/src/routes/connectors.ts
       - packages/contracts/src/routes/notebookSessions.ts
+      - packages/contracts/src/routes/notebookSubmissions.ts
       - packages/contracts/src/routes/notebooks.ts
       - packages/contracts/src/routes/test.ts
-      - packages/contracts/src/routes/workingCopies.ts
       - packages/contracts/src/routes/transfers.ts
+      - packages/contracts/src/routes/workingCopies.ts
+      - packages/contracts/src/connector*
       - packages/contracts/src/notebook.ts
-      - packages/contracts/src/routes/notebookSubmissions.ts
+      - packages/contracts/src/notebookChannel.ts
       - infra/compose.yml
-      - infra/docker/sshd-jupyter.Dockerfile
-      - infra/docker/jump.Dockerfile
       - infra/connector-fixtures/**
+      - infra/docker/jump.Dockerfile
+      - infra/docker/sshd-jupyter.Dockerfile
       - scripts/connector-fixture-keys.sh
-      - e2e/tests/connector/**
-      - e2e/playwright.config.ts
       - e2e/global-setup.ts
+      - e2e/package.json
       - e2e/paths.ts
+      - e2e/playwright.config.ts
+      - e2e/tests/connector/**
+      - e2e/tsconfig.json
       - .github/workflows/connector-e2e.yml
   schedule:
     - cron: '17 4 * * 1'
