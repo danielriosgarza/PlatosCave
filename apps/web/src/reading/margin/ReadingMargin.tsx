@@ -462,6 +462,55 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
 
   // --- the editor of the selected note sits beside its passage (measured after layout) -----------
   const entriesRef = useRef<HTMLDivElement>(null);
+
+  // A removed entry takes the focused button with it: once the server has deleted it, focus goes to
+  // the entry that took its place.
+  const afterRemove = useRef<{ id: string; index: number; done: boolean } | null>(null);
+  const entryList = () => [
+    ...(entriesRef.current?.querySelectorAll<HTMLElement>('[data-entry]') ?? []),
+  ];
+  const expectRemoval = (entryId: string) => {
+    const at = entryList().findIndex((e) => e.dataset.entryId === entryId);
+    afterRemove.current = { id: entryId, index: Math.max(0, at), done: false };
+  };
+  /** The delete answered: move focus once the entry is gone; drop the request if it failed. */
+  const removeEntry = (id: string, controller: NoteController | undefined) => {
+    const key = controller?.key ?? id;
+    expectRemoval(key);
+    removeNote(id, controller).then(
+      (removed) => settleRemoval(key, removed),
+      () => settleRemoval(key, false),
+    );
+  };
+  const settleRemoval = (entryId: string, removed: boolean) => {
+    const pending = afterRemove.current;
+    if (pending?.id !== entryId) return;
+    if (!removed) {
+      afterRemove.current = null;
+      return;
+    }
+    pending.done = true;
+    touch();
+    // An entry that never leaves the list (it came back) must not claim focus later.
+    setTimeout(() => {
+      if (afterRemove.current === pending) afterRemove.current = null;
+    }, 3000);
+  };
+  const focusAfterRemoval = () => {
+    const pending = afterRemove.current;
+    if (!pending?.done) return;
+    const all = entryList();
+    if (all.some((e) => e.dataset.entryId === pending.id)) return;
+    afterRemove.current = null;
+    // Focus the user has since moved elsewhere (another editor, the reading) stays where it is.
+    if (document.activeElement && document.activeElement !== document.body) return;
+    const next = all[Math.min(pending.index, all.length - 1)];
+    const target =
+      next?.querySelector<HTMLElement>('button:not(:disabled)') ??
+      entriesRef.current?.querySelector<HTMLElement>('[data-add-note]');
+    target?.focus();
+  };
+  useEffect(focusAfterRemoval);
   const measure = useCallback(() => {
     wide.current = typeof window.matchMedia === 'function' && window.matchMedia(WIDE).matches;
     const entry = entriesRef.current?.querySelector<HTMLElement>('[data-active="true"]');
@@ -548,18 +597,24 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
 
   // The note's device draft stays pending for the whole delete (the editor's discard leaves it), so
   // a margin that comes back while the server's delete runs does not restore the note as unsent.
-  const removeNote = async (entryId: string, controller: NoteController | undefined) => {
+  const removeNote = async (
+    entryId: string,
+    controller: NoteController | undefined,
+  ): Promise<boolean> => {
     const sent = userId
       ? beginSend(draftKey(userId, classId, resourceId, controller?.key ?? entryId))
       : null;
     try {
-      await deleteNote(entryId, controller);
+      return await deleteNote(entryId, controller);
     } finally {
       sent?.();
     }
   };
 
-  const deleteNote = async (entryId: string, controller: NoteController | undefined) => {
+  const deleteNote = async (
+    entryId: string,
+    controller: NoteController | undefined,
+  ): Promise<boolean> => {
     setDeleteProblem(null);
     // A save still running is waited for, so a note it creates is deleted too and cannot return.
     const left = controller ? await controller.discard() : null;
@@ -595,7 +650,7 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
       }
       setDeleteProblem(controller?.key ?? entryId);
       touch();
-      return;
+      return false;
     }
     if (controller) {
       controllers.current.delete(controller.key);
@@ -603,6 +658,7 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
     }
     setActiveId(null);
     touch();
+    return true;
   };
 
   // Focus follows a new note or question to its editor (selecting a note moves focus to it).
@@ -639,6 +695,10 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
       <div>
         {children(setRoot, pdfSketch(sketches, showPage))}
         {toolbar}
+        {/* The toolbar appears after the passage's block, away from the reader's place: say so. */}
+        <div className={styles.srOnly} role="status" aria-live="polite">
+          {toolbar ? 'Highlight, Note, Ask available' : ''}
+        </div>
         <FigureSketches root={root} html={html} api={sketches} />
       </div>
       {open ? (
@@ -681,7 +741,7 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
                       const entry = notes.find(
                         (n) => (n.controller?.key ?? n.id) === deleteProblem,
                       );
-                      if (entry) void removeNote(entry.id, entry.controller);
+                      if (entry) removeEntry(entry.id, entry.controller);
                     }}
                   >
                     Try again
@@ -704,7 +764,9 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
                     (n.annotation ? editorFor(n.annotation) : n.controller)?.edit(text)
                   }
                   onBlur={() => n.controller?.blur()}
-                  onRemove={() => void removeNote(n.id, n.controller)}
+                  onRemove={() => {
+                    removeEntry(n.id, n.controller);
+                  }}
                   actions={actions}
                 />
               ))}
@@ -720,11 +782,16 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
                   editable={editable}
                   onEdit={() => openSketch(annotation, surface)}
                   onExport={() => exportSketch(annotation, surface ?? surfaceOf(annotation.anchor))}
-                  onDelete={() => actions.remove(annotation.id)}
+                  onDelete={async () => {
+                    expectRemoval(annotation.id);
+                    const removed = await actions.remove(annotation.id).catch(() => false);
+                    settleRemoval(annotation.id, removed);
+                    return removed;
+                  }}
                 />
               ))}
               <p>
-                <button type="button" className={styles.link} onClick={topicNote}>
+                <button type="button" className={styles.link} data-add-note="" onClick={topicNote}>
                   Add a topic note
                 </button>
               </p>
@@ -838,6 +905,8 @@ function NoteEntry({
   return (
     <div
       className={styles.entry}
+      data-entry=""
+      data-entry-id={id}
       data-active={active}
       style={active && alignTop ? { marginTop: alignTop } : undefined}
     >
