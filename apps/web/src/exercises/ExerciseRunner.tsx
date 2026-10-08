@@ -200,9 +200,9 @@ function PracticeAttempt({
 }) {
   const actions = useAttemptActions(classId, resourceId, attempt, setNotice);
   const steps = attempt.steps;
+  const [announced, setAnnounced] = useState('');
   // The step on show. It stays put when its check completes, so the feedback can be read;
   // Continue moves on. A reopened attempt starts at the first step still open.
-  const [announced, setAnnounced] = useState('');
   const [index, setIndex] = useState(() => {
     const open = steps.findIndex((s) => s.status === 'pending');
     return open === -1 ? steps.length : open;
@@ -294,10 +294,23 @@ function StepPanel({
   onContinue: () => void;
 }) {
   const heading = useRef<HTMLHeadingElement>(null);
+  const next = useRef<HTMLButtonElement>(null);
   // biome-ignore lint/correctness/useExhaustiveDependencies: once, when this step's panel mounts
   useEffect(() => {
     if (focusHeading) heading.current?.focus();
   }, []);
+  // The check that completes the step swaps Check answer for Continue: focus follows to it.
+  const wasOpen = useRef(step.status !== 'completed');
+  useEffect(() => {
+    if (step.status !== 'completed') {
+      wasOpen.current = true;
+      return;
+    }
+    if (wasOpen.current && (!document.activeElement || document.activeElement === document.body)) {
+      next.current?.focus();
+    }
+    wasOpen.current = false;
+  }, [step.status]);
   const [draft, setDraft] = useState<Draft>(() => initialDraft(step));
   const [problem, setProblem] = useState<string | null>(null);
   const [hintsOpen, setHintsOpen] = useState(true);
@@ -341,7 +354,7 @@ function StepPanel({
       <StepForm step={step} draft={draft} disabled={completed || actions.busy} onChange={change} />
       <div className={styles.actions}>
         {completed ? (
-          <button type="button" className={buttons.primary} onClick={onContinue}>
+          <button ref={next} type="button" className={buttons.primary} onClick={onContinue}>
             {isLast ? 'See summary' : 'Continue'}
           </button>
         ) : (

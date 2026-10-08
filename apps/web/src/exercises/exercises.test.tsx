@@ -360,6 +360,8 @@ describe('exercise UI', () => {
     await user.keyboard('{Enter}');
     expect(await screen.findByText('Correct.')).toBeVisible();
     expect(posted(calls, '/check')).toHaveLength(2);
+    // The completed step swaps Check answer for Continue: focus follows to it, not to the body.
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Continue' })).toHaveFocus());
   });
 
   it('A08 checking with nothing chosen asks for an answer and records nothing', async () => {

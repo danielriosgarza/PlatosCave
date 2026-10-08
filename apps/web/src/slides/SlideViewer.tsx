@@ -51,12 +51,6 @@ type Load =
   | { state: 'ready'; doc: PdfDocument }
   | { state: 'web' };
 
-/**
- * A deck shown one slide at a time (§7). A PDF is drawn by pdf.js: the file is opened over its
- * content link with range requests, so a slide costs only the bytes it needs. A web deck is the
- * sanitised HTML of the slide, laid out in a 16:9 box. Either keeps its ratio inside a neutral
- * stage; arrow keys move it only while the stage holds focus.
- */
 const PAN = 60;
 const ZOOMED_MAT = { tabIndex: 0, role: 'region', 'aria-label': 'Zoomed slide, arrow keys pan' };
 
@@ -74,12 +68,18 @@ function panMat(mat: HTMLElement, key: string): boolean {
           : y < 0
             ? mat.scrollTop
             : 0;
-  if (room <= 0) return false;
+  if (room < 1) return false;
   mat.scrollLeft += x;
   mat.scrollTop += y;
   return true;
 }
 
+/**
+ * A deck shown one slide at a time (§7). A PDF is drawn by pdf.js: the file is opened over its
+ * content link with range requests, so a slide costs only the bytes it needs. A web deck is the
+ * sanitised HTML of the slide, laid out in a 16:9 box. Either keeps its ratio inside a neutral
+ * stage; arrow keys move it only while the stage holds focus.
+ */
 export function SlideViewer({
   url,
   slides,
@@ -227,11 +227,17 @@ export function SlideViewer({
       event.preventDefault();
       return;
     }
+    // Up and Down on a zoomed slide never scroll the page behind it.
+    const onMat = zoom > 0 && mat !== null && event.target === mat;
+    if (onMat && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
+      event.preventDefault();
+      return;
+    }
     if (event.key === 'ArrowRight') go(page + 1);
     else if (event.key === 'ArrowLeft') go(page - 1);
     else return;
     // A slide changed from the zoomed slide keeps focus there, so the next arrows pan the new one.
-    if (zoom > 0 && mat && event.target === mat) mat.focus({ preventScroll: true });
+    if (onMat) mat.focus({ preventScroll: true });
     event.preventDefault();
   };
 

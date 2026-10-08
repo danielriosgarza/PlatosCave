@@ -474,6 +474,14 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
     afterRemove.current = { id: entryId, index: Math.max(0, at), done: false };
   };
   /** The delete answered: move focus once the entry is gone; drop the request if it failed. */
+  const removeEntry = (id: string, controller: NoteController | undefined) => {
+    const key = controller?.key ?? id;
+    expectRemoval(key);
+    removeNote(id, controller).then(
+      (removed) => settleRemoval(key, removed),
+      () => settleRemoval(key, false),
+    );
+  };
   const settleRemoval = (entryId: string, removed: boolean) => {
     const pending = afterRemove.current;
     if (pending?.id !== entryId) return;
@@ -494,6 +502,8 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
     const all = entryList();
     if (all.some((e) => e.dataset.entryId === pending.id)) return;
     afterRemove.current = null;
+    // Focus the user has since moved elsewhere (another editor, the reading) stays where it is.
+    if (document.activeElement && document.activeElement !== document.body) return;
     const next = all[Math.min(pending.index, all.length - 1)];
     const target =
       next?.querySelector<HTMLElement>('button:not(:disabled)') ??
@@ -731,7 +741,7 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
                       const entry = notes.find(
                         (n) => (n.controller?.key ?? n.id) === deleteProblem,
                       );
-                      if (entry) void removeNote(entry.id, entry.controller);
+                      if (entry) removeEntry(entry.id, entry.controller);
                     }}
                   >
                     Try again
@@ -755,12 +765,7 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
                   }
                   onBlur={() => n.controller?.blur()}
                   onRemove={() => {
-                    const key = n.controller?.key ?? n.id;
-                    expectRemoval(key);
-                    removeNote(n.id, n.controller).then(
-                      (removed) => settleRemoval(key, removed),
-                      () => settleRemoval(key, false),
-                    );
+                    removeEntry(n.id, n.controller);
                   }}
                   actions={actions}
                 />
