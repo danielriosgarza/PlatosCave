@@ -210,6 +210,41 @@ describe('slide viewer', () => {
     expect(position()).toHaveTextContent('5 / 12');
   });
 
+  it('A24 a zoomed slide is a focusable region the arrow keys pan, and slides change only at its edge', async () => {
+    const user = userEvent.setup();
+    const doc = pdfDocument();
+    openPdf.mockResolvedValue(doc);
+    api(makeWorld([deck(REV_A, 'Sampling lecture')]));
+    renderApp(SLIDES);
+    await viewer();
+    await waitFor(() => expect(doc.rendered).toHaveLength(1));
+    // Fitted, the mat does not scroll and is not a tab stop.
+    expect(screen.queryByRole('region', { name: /Zoomed slide/ })).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Zoom in' }));
+    const mat = await screen.findByRole('region', { name: 'Zoomed slide, arrow keys pan' });
+    expect(mat).toHaveAttribute('tabindex', '0');
+    Object.defineProperty(mat, 'scrollWidth', { configurable: true, value: 2000 });
+    Object.defineProperty(mat, 'clientWidth', { configurable: true, value: 1000 });
+    Object.defineProperty(mat, 'scrollHeight', { configurable: true, value: 500 });
+    Object.defineProperty(mat, 'clientHeight', { configurable: true, value: 500 });
+    mat.focus();
+    await user.keyboard('{ArrowRight}{ArrowRight}{ArrowLeft}');
+    expect(mat.scrollLeft).toBe(60);
+    expect(position()).toHaveTextContent('1 / 12');
+    // Nothing to scroll vertically: the arrow does not change the slide either.
+    await user.keyboard('{ArrowDown}');
+    expect(position()).toHaveTextContent('1 / 12');
+    // At the left edge ArrowLeft has no room: it goes to the previous slide (none on slide 1).
+    mat.scrollLeft = 0;
+    await user.keyboard('{ArrowLeft}');
+    expect(position()).toHaveTextContent('1 / 12');
+    // At the right edge ArrowRight changes the slide, and focus stays on the zoomed slide.
+    mat.scrollLeft = 1000;
+    await user.keyboard('{ArrowRight}');
+    expect(position()).toHaveTextContent('2 / 12');
+    expect(mat).toHaveFocus();
+  });
+
   it('A24 a viewer given no notes slot has no Notes control', async () => {
     openPdf.mockResolvedValue(pdfDocument());
     api(makeWorld([deck(REV_A, 'Sampling lecture')]));

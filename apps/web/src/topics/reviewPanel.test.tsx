@@ -154,6 +154,18 @@ describe('reviewed marks', () => {
     expect(await screen.findByText('This topic is complete.')).toBeVisible();
   });
 
+  it('A20 a reviewed box toggled from the keyboard keeps focus and is never disabled', async () => {
+    stubReviews();
+    const user = userEvent.setup();
+    renderApp(`/classes/${CLASS_A}/topics/${T_SAMPLING}/reading`);
+    const box = await screen.findByRole('checkbox', { name: /Why samples vary/ });
+    box.focus();
+    await user.keyboard(' ');
+    expect(box).not.toBeDisabled();
+    await waitFor(() => expect(box).toBeChecked());
+    expect(box).toHaveFocus();
+  });
+
   it('a refused mark stays unchecked and says why', async () => {
     stubReviews({ putStatus: 409 });
     const user = userEvent.setup();

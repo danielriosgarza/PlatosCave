@@ -1659,6 +1659,19 @@ class RRuntime(HarnessCase):
         defined = self.go(r_job({"solution.R": "q <- function() 'mine'\n"}, [r_call("Q", "q", {"value": "mine"})]))
         self.assertEqual(defined.check()["status"], "passed", defined.check())
 
+    def test_an_alias_of_quit_defined_by_the_solution_is_found_and_ends_the_call(self):
+        files = {"solution.R": "finish <- quit\nq2 <- q\n"}
+        outcome = self.go(
+            r_job(
+                files,
+                [
+                    r_call("Finish", "finish", {"raises": {"type": "SystemExit"}}),
+                    r_call("Q alias", "q2", {"raises": {"type": "SystemExit"}}),
+                ],
+            )
+        )
+        self.assertEqual([c["status"] for c in outcome.result["checks"]], ["passed", "passed"], outcome.result["checks"])
+
     def test_integer_arguments_are_doubles(self):
         files = {"solution.R": "square <- function(n) n * n\nkind <- function(n) is.double(n)\n"}
         outcome = self.go(

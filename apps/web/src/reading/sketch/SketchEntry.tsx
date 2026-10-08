@@ -35,7 +35,7 @@ export function SketchEntry({
 }: Props) {
   const [problem, setProblem] = useState(false);
   return (
-    <div className={styles.entry} data-active={editing}>
+    <div className={styles.entry} data-entry="" data-entry-id={annotation.id} data-active={editing}>
       <div className={styles.entryHead}>
         <span>Sketch · {label}</span>
         <span className={styles.muted}>
@@ -48,6 +48,7 @@ export function SketchEntry({
           type="button"
           className={styles.link}
           disabled={editing || blocked || !editable || needsReattachment}
+          data-return-focus={`sketch:${annotation.id}`}
           onClick={onEdit}
         >
           Open sketch

@@ -51,6 +51,29 @@ type Load =
   | { state: 'ready'; doc: PdfDocument }
   | { state: 'web' };
 
+const PAN = 60;
+const ZOOMED_MAT = { tabIndex: 0, role: 'region', 'aria-label': 'Zoomed slide, arrow keys pan' };
+
+/** Scrolls the zoomed mat one step for an arrow key; false when it has no room left that way. */
+function panMat(mat: HTMLElement, key: string): boolean {
+  const x = key === 'ArrowRight' ? PAN : key === 'ArrowLeft' ? -PAN : 0;
+  const y = key === 'ArrowDown' ? PAN : key === 'ArrowUp' ? -PAN : 0;
+  const room =
+    x > 0
+      ? mat.scrollWidth - mat.clientWidth - mat.scrollLeft
+      : x < 0
+        ? mat.scrollLeft
+        : y > 0
+          ? mat.scrollHeight - mat.clientHeight - mat.scrollTop
+          : y < 0
+            ? mat.scrollTop
+            : 0;
+  if (room < 1) return false;
+  mat.scrollLeft += x;
+  mat.scrollTop += y;
+  return true;
+}
+
 /**
  * A deck shown one slide at a time (§7). A PDF is drawn by pdf.js: the file is opened over its
  * content link with range requests, so a slide costs only the bytes it needs. A web deck is the
@@ -198,9 +221,23 @@ export function SlideViewer({
       return;
     }
     if (isEditable(event.target)) return;
+    // A zoomed slide pans with the arrows while the mat itself has focus (§7); where it cannot
+    // move that way, the key still changes the slide.
+    if (zoom > 0 && event.target === mat && mat && panMat(mat, event.key)) {
+      event.preventDefault();
+      return;
+    }
+    // Up and Down on a zoomed slide never scroll the page behind it.
+    const onMat = zoom > 0 && mat !== null && event.target === mat;
+    if (onMat && (event.key === 'ArrowUp' || event.key === 'ArrowDown')) {
+      event.preventDefault();
+      return;
+    }
     if (event.key === 'ArrowRight') go(page + 1);
     else if (event.key === 'ArrowLeft') go(page - 1);
     else return;
+    // A slide changed from the zoomed slide keeps focus there, so the next arrows pan the new one.
+    if (onMat) mat.focus({ preventScroll: true });
     event.preventDefault();
   };
 
@@ -295,6 +332,8 @@ export function SlideViewer({
               data-slide-stage=""
               className={styles.mat}
               data-zoomed={zoom > 0 || undefined}
+              // A zoomed slide scrolls, so the keyboard must be able to reach and pan it.
+              {...(zoom > 0 ? ZOOMED_MAT : {})}
               data-focus={focusMode || undefined}
             >
               {load.state === 'loading' && (

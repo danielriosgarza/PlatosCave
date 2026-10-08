@@ -141,6 +141,13 @@ function markBlock(block: HTMLElement, list: readonly MarkSource[]) {
       mark.dataset.marks = piece.ids.join(' ');
       if (piece.ids.length > 1) mark.dataset.count = String(piece.ids.length);
       mark.tabIndex = 0;
+      mark.setAttribute('role', 'button');
+      mark.setAttribute(
+        'aria-label',
+        piece.ids.length > 1
+          ? `Note on this passage, ${piece.ids.length} entries`
+          : 'Note on this passage',
+      );
       target.replaceWith(mark);
       mark.append(target);
     }
