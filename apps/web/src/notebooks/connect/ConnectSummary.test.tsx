@@ -1,6 +1,7 @@
 import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { ComputeTemplate } from './api';
 import { ConnectSummary } from './ConnectSummary';
 import { connector, sshConnection, testView } from './fixtures';
 
@@ -56,5 +57,46 @@ describe('ConnectSummary', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Connect' }));
     expect(screen.getByRole('alert')).toHaveTextContent('from 5 to 240');
     expect(onConnect).not.toHaveBeenCalled();
+  });
+
+  it('A33 a class computer that sets a lease holds it: the times cannot be changed', async () => {
+    const onConnect = vi.fn();
+    const template = {
+      id: '00000000-0000-4000-8000-0000000f0001',
+      classId: '00000000-0000-4000-8000-000000000a01',
+      name: 'Department cluster',
+      description: '',
+      target: { host: 'jupyter.cluster.example.org', port: 22, workspace: '/home/{user}/work' },
+      runtime: { mode: 'start' },
+      isolation: 'account',
+      lease: { idleTimeoutMin: 90, gracePeriodMin: 15 },
+      hostOwnerConfirmedAt: '2026-10-04T09:00:00Z',
+      createdAt: '2026-10-04T09:00:00Z',
+      archivedAt: null,
+    } satisfies ComputeTemplate;
+    render(
+      <ConnectSummary
+        connection={sshConnection({ templateId: template.id })}
+        connector={connector()}
+        template={template}
+        test={testView({ outcome: 'ready_to_start' })}
+        defaultLease={{ idleTimeoutMin: 30, gracePeriodMin: 5 }}
+        busy={false}
+        onConnect={onConnect}
+      />,
+    );
+    const idle = screen.getByLabelText(/Stop after minutes with no activity/);
+    expect(idle).toHaveValue('90');
+    expect(idle).toHaveAttribute('readonly');
+    await userEvent.type(idle, '0');
+    expect(idle).toHaveValue('90');
+    expect(screen.getByLabelText(/Keep the kernel after closing this tab/)).toHaveAttribute(
+      'readonly',
+    );
+    expect(screen.getByText(/instructor set these times/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Connect' }));
+    expect(onConnect).toHaveBeenCalledWith(
+      expect.objectContaining({ idleTimeoutMin: 90, gracePeriodMin: 15 }),
+    );
   });
 });

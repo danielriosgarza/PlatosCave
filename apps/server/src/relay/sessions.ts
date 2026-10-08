@@ -3,7 +3,7 @@ import { type LinkRuntime, validateTarget } from '@parallax/contracts';
 import type { FastifyBaseLogger } from 'fastify';
 import type { ClassScope } from '../auth/scope';
 import type { Db } from '../db/client';
-import type { SessionConnection } from '../db/connectors/connections';
+import { holdsTemplateRuntime, type SessionConnection } from '../db/connectors/connections';
 import {
   type Applied,
   applyConnectorEvent,
@@ -65,7 +65,7 @@ export type OpenResult =
   | {
       ok: false;
       reason: 'target_not_allowed';
-      code: 'invalid_target' | 'network_scope_denied';
+      code: 'invalid_target' | 'network_scope_denied' | 'template_mismatch';
       rules?: number[];
     };
 
@@ -247,7 +247,8 @@ export class SessionRelay {
   /**
    * Connect (§2, step 4): inserts the `starting` row and sends `open_session` with the lease.
    * The connection is the caller's (`connectionForSession`); the connector must hold a live link
-   * and its reported scope must still cover the target (§8).
+   * and its reported scope must still cover the target (§8). One made from a class template opens
+   * with that template's runtime (another kernel aside) and, when it sets one, its lease (§11).
    */
   async open(
     scope: ClassScope,
@@ -264,11 +265,21 @@ export class SessionRelay {
       return { ok: false, reason: 'wrong_class' };
     }
     if (found.templateArchived) return { ok: false, reason: 'template_archived' };
+    const runtime = input.runtime ?? connection.runtime;
+    if (found.templateClassId !== null) {
+      const leaseHeld =
+        !found.templateLease ||
+        !input.lease ||
+        (input.lease.idleTimeoutMin === found.templateLease.idleTimeoutMin &&
+          input.lease.gracePeriodMin === found.templateLease.gracePeriodMin);
+      if (!holdsTemplateRuntime(runtime, found.templateRuntime) || !leaseHeld) {
+        return { ok: false, reason: 'target_not_allowed', code: 'template_mismatch' };
+      }
+    }
     const link = this.options.links.get(connection.connectorId);
     if (!link || found.connector.status !== 'active') {
       return { ok: false, reason: 'connector_offline' };
     }
-    const runtime = input.runtime ?? connection.runtime;
     const lease = input.lease ?? found.templateLease ?? this.options.defaultLease ?? DEFAULT_LEASE;
     const target = connection.target;
     const hostKeys = connection.trustedHostKeys.map(({ host, port, sha256 }) => ({
