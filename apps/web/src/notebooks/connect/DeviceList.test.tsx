@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createQueryClient } from '../../session/revocation';
 import { stubApi } from '../../test/render';
-import { DeviceList } from './DeviceList';
+import { CONNECTOR_RELEASES, DeviceList } from './DeviceList';
 import { CONNECTOR, connector } from './fixtures';
 
 afterEach(() => {
@@ -65,18 +65,12 @@ describe('DeviceList', () => {
     );
   });
 
-  it('A27 it links the connector download and its checksums', async () => {
+  it('links the connector releases, where each release carries its own checksums', async () => {
     stubApi(() => ({ status: 200, body: [] }));
     renderList();
     const releases = await screen.findByRole('link', { name: 'connector releases' });
-    expect(releases).toHaveAttribute(
-      'href',
-      'https://github.com/danielriosgarza/PlatosCave/releases',
-    );
-    expect(screen.getByRole('link', { name: 'SHA256SUMS' })).toHaveAttribute(
-      'href',
-      'https://github.com/danielriosgarza/PlatosCave/releases/latest/download/SHA256SUMS',
-    );
+    expect(releases).toHaveAttribute('href', CONNECTOR_RELEASES);
+    expect(screen.getByText('SHA256SUMS')).toBeInTheDocument();
   });
 
   it('a computer that registers while a pairing code is live appears without a refocus', async () => {

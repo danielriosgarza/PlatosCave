@@ -19,9 +19,8 @@ const REFUSALS: Record<string, string> = {
 };
 
 // Connector binaries are GitHub release assets of this repository (tag connector-v<version>), each
-// release carrying a SHA256SUMS file (docs/operations.md, "Connector downloads").
-const CONNECTOR_RELEASES = 'https://github.com/danielriosgarza/PlatosCave/releases';
-const CONNECTOR_CHECKSUMS = `${CONNECTOR_RELEASES}/latest/download/SHA256SUMS`;
+// release carrying its own SHA256SUMS file (docs/operations.md, "Connector downloads").
+export const CONNECTOR_RELEASES = 'https://github.com/danielriosgarza/PlatosCave/releases';
 
 /** The message for a refused request: its own reason when the API gave one, else a plain failure. */
 const refusal = (error: unknown, fallback: string) => REFUSALS[errorCode(error) ?? ''] ?? fallback;
@@ -111,16 +110,17 @@ export function DeviceList() {
         <p>No computer is paired. Pair the computer that will run your notebooks.</p>
       )}
       <p>
-        The connector is a program for the computer that will run your notebooks (Linux, macOS or
-        Windows). Download the file for that system from the{' '}
+        The connector is a program for the computer that will run your notebooks. Download the file
+        named <code>parallax-connector_&lt;version&gt;_&lt;system&gt;_&lt;chip&gt;</code> that
+        matches that computer (linux, darwin for macOS or windows; amd64, or arm64 for Apple silicon
+        and ARM Linux) from the{' '}
         <a href={CONNECTOR_RELEASES} target="_blank" rel="noreferrer">
           connector releases
-        </a>{' '}
-        and check it against{' '}
-        <a href={CONNECTOR_CHECKSUMS} target="_blank" rel="noreferrer">
-          SHA256SUMS
         </a>
-        .
+        . Check it against the <code>SHA256SUMS</code> file of the same release. On Linux and macOS,
+        make it executable with <code>chmod +x</code>; the release notes say how to clear the macOS
+        quarantine flag. Run it as <code>parallax-connector</code> (rename it or put it on your
+        path).
       </p>
       <div className={styles.row}>
         <button
