@@ -11,11 +11,15 @@ export const TESTS_EXPIRE = 'tests.expire-attempt';
  * Submits an attempt at its deadline from its last acknowledged answers (§11, A15). Sent when an
  * attempt starts (as its student) and when an extension moves its deadline (as the instructor);
  * it runs again at the new deadline while the attempt stays open. Every read of the attempt
- * settles it too, so a late or lost job never leaves it open past its deadline.
+ * settles it too, so a late or lost job never leaves it open past its deadline. The deadline is
+ * the class's, not the actor's: when the student or the granting instructor has left the class
+ * by then, the class's stand-in instructor runs it, so the attempt is still submitted and its
+ * grading queued.
  */
 const testsExpire = defineScopedJob({
   name: TESTS_EXPIRE,
   scope: { kind: 'class', role: 'any' },
+  standIn: 'class_instructor',
   input: z.object({ attemptId: z.uuid() }),
   queue: { retryLimit: 5, retryDelay: 30, retryBackoff: true },
   run: async ({ scope, input, db, boss, exec }) => {

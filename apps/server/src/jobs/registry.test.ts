@@ -57,6 +57,31 @@ describe('loadJobs', () => {
         'input is not a schema',
       ],
       'no-parse.job.ts': [job('x').replace('parse: (v) => v, ', ''), 'input is not a schema'],
+      'course-stand-in.job.ts': [
+        job('x', "{ kind: 'course', role: 'owner' }").replace(
+          'run:',
+          "standIn: 'class_instructor', run:",
+        ),
+        'standIn needs a class rule an instructor holds',
+      ],
+      'student-stand-in.job.ts': [
+        job('x', "{ kind: 'class', role: 'student' }").replace(
+          'run:',
+          "standIn: 'class_instructor', run:",
+        ),
+        'standIn needs a class rule an instructor holds',
+      ],
+      'grant-stand-in.job.ts': [
+        job('x', "{ kind: 'class', role: 'any', grant: 'manage_members' }").replace(
+          'run:',
+          "standIn: 'class_instructor', run:",
+        ),
+        'standIn needs a class rule an instructor holds',
+      ],
+      'unknown-stand-in.job.ts': [
+        job('x').replace('run:', "standIn: 'anyone', run:"),
+        'standIn needs a class rule an instructor holds',
+      ],
     };
     for (const [file, [source, problem]] of Object.entries(cases)) {
       const dir = moduleDir({ 'a.job.ts': job('fine'), [file]: source });
