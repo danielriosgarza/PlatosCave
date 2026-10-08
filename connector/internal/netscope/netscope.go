@@ -403,8 +403,7 @@ func (d *Dialer) dial(ctx context.Context, ap netip.AddrPort, named bool) (net.C
 	if timeout <= 0 {
 		timeout = 10 * time.Second
 	}
-	control := func(network, address string, c syscall.RawConn) error { return d.check(named, network, address) }
-	nd := &net.Dialer{Timeout: timeout, Control: control}
+	nd := &net.Dialer{Timeout: timeout, Control: d.control(named)}
 	conn, err := nd.DialContext(ctx, "tcp", ap.String())
 	if err == nil {
 		return conn, nil
@@ -423,9 +422,10 @@ func (d *Dialer) dial(ctx context.Context, ap netip.AddrPort, named bool) (net.C
 	return nil, &Error{Code: protocol.CodeConnectionRefused, Detail: fmt.Sprintf("could not connect to %s", ap), Err: err}
 }
 
-// control is net.Dialer.Control: it runs after the socket is created and before it connects.
-func (d *Dialer) control(network, address string, _ syscall.RawConn) error {
-	return d.check(false, network, address)
+// control returns the net.Dialer.Control hook of a dial: it runs after the socket is created
+// and before it connects. named is true when the dial answers a name the managed scope allows.
+func (d *Dialer) control(named bool) func(network, address string, _ syscall.RawConn) error {
+	return func(network, address string, _ syscall.RawConn) error { return d.check(named, network, address) }
 }
 
 // check judges the address a socket is connecting to; named is true when it answers a name the

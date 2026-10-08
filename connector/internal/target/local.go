@@ -13,6 +13,8 @@ import (
 
 	"parallax/connector/internal/jupyter"
 	"parallax/connector/internal/protocol"
+	"parallax/connector/internal/redact"
+	"parallax/connector/internal/state"
 )
 
 // Local is the `local` target: this computer, with no SSH. It dials nothing but the loopback
@@ -166,14 +168,17 @@ func (l *Local) attach(ctx context.Context, rt protocol.Runtime, resolved string
 	if err != nil {
 		return nil, err
 	}
+	// The token is redacted from every detail and log line for as long as the session holds it
+	// (design §6); Release drops this reference.
+	redact.Register(srv.Token)
 	c := jupyter.NewClient(srv.Port, srv.Token, jupyter.LoopbackDial(srv.Port))
-	r := &Runtime{Client: c, ContentRoot: root, JupyterVersion: jupyterVersion(srv.Version), Environment: l.environment(jupyter.RuntimeInfo{})}
+	r := &Runtime{Client: c, ContentRoot: root, JupyterVersion: jupyterVersion(srv.Version), Environment: l.environment(jupyter.RuntimeInfo{}), attachedToken: srv.Token}
 	if err := c.Status(ctx); err != nil {
-		c.CloseIdle()
+		r.Release()
 		return nil, asFailure(err, protocol.CodeNotebookServiceUnreachable)
 	}
 	if err := l.verify(ctx, r, rt.KernelName); err != nil {
-		c.CloseIdle()
+		r.Release()
 		return nil, err
 	}
 	return r, nil
@@ -205,18 +210,14 @@ func checkKernel(specs []protocol.Kernelspec, name string) error {
 	return nil
 }
 
-// expandHome turns a leading ~/ of a validated interpreter path (design §4.4 rule 5) into this
-// account's home directory: exec does not expand it, and on this computer there is no shell.
+// expandHome expands a leading ~/ of a validated interpreter path (design §4.4 rule 5); a home
+// directory that is not known is environment_invalid.
 func expandHome(p string) (string, error) {
-	rest, ok := strings.CutPrefix(p, "~/")
-	if !ok {
-		return p, nil
+	path, err := state.ExpandHome(p)
+	if err != nil {
+		return "", fail(protocol.CodeEnvironmentInvalid, "%v", err)
 	}
-	home, err := os.UserHomeDir()
-	if err != nil || home == "" {
-		return "", fail(protocol.CodeEnvironmentInvalid, "the home directory for %s is not known", p)
-	}
-	return filepath.Join(home, filepath.FromSlash(rest)), nil
+	return path, nil
 }
 
 // findAttach finds the server to attach to on port: a loopback listener from `jupyter server

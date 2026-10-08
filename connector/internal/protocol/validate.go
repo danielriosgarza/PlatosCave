@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"regexp"
 	"unicode/utf8"
+
+	"parallax/connector/internal/safetext"
 )
 
 // The checks below are the value rules of link.schema.json; key presence and unknown keys are
@@ -73,12 +75,8 @@ func between(field string, n, lo, hi int64) error {
 	return nil
 }
 
-func clip(s string) string {
-	if len(s) > 40 {
-		return s[:40] + "…"
-	}
-	return s
-}
+// clip keeps a rejected value short in an error.
+func clip(s string) string { return safetext.Clip(s, 41) }
 
 func optional(s string, check func() error) error {
 	if s == "" {

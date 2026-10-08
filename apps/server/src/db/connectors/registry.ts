@@ -406,6 +406,7 @@ export async function findLinkConnector(db: Db, connectorId: string) {
       mode: connectors.mode,
       publicKey: connectors.publicKey,
       approveBy: connectors.approveBy,
+      revokedReason: connectors.revokedReason,
     })
     .from(connectors)
     .where(eq(connectors.id, connectorId));
