@@ -434,10 +434,10 @@ const REDACTED_TRANSFER_PATH = 'removed';
  * submission froze, sessions no submission refers to (their cell executions go with them), and
  * connections no remaining session needs. What a submission still refers to stays without what
  * identified the person's machines: a kept transfer loses its remote path and conflict detail, a
- * kept session the environment its connector reported, a kept connection its name, target
- * details, runtime and trusted host keys. Every connector of theirs keeps its row (its id is in
- * the audit trail) without its name, OS or network scope, and their audit events lose the same
- * details. Stored objects of deleted transfers are not removed here, as for working copies.
+ * kept session the environment and workspace root its connector reported, a kept connection its
+ * name, target details, runtime and trusted host keys. Every connector of theirs keeps its row
+ * (its id is in the audit trail) without its name, OS or network scope, and their audit events
+ * lose the same details. Stored objects of deleted transfers are not removed here, as for working copies.
  */
 async function deleteNotebookCompute(tx: Tx, userIds: string[], now: Date): Promise<void> {
   const connectorIds = (
@@ -481,7 +481,7 @@ async function deleteNotebookCompute(tx: Tx, userIds: string[], now: Date): Prom
   );
   await tx
     .update(notebookSessions)
-    .set({ environment: null })
+    .set({ environment: null, runtime: sql`${notebookSessions.runtime} - 'contentRoot'` })
     .where(inArray(notebookSessions.userId, userIds));
   await tx.delete(notebookConnections).where(
     and(

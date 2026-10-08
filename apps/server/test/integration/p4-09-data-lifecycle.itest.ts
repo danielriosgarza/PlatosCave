@@ -778,7 +778,8 @@ describe('deleting an account with notebook compute (P3-AUD10)', () => {
           state: 'stopped',
           stoppedAt: start,
           owned: true,
-          runtime: { mode: 'start' },
+          // The connector's first report adds the workspace root, relative to Jupyter's root.
+          runtime: { mode: 'start', contentRoot: 'kai-private/stats' },
           environment: { os: 'linux', runtime: 'Python 3.12' },
           lease: { idleTimeoutMin: 30, gracePeriodMin: 5 },
         })
@@ -893,6 +894,7 @@ describe('deleting an account with notebook compute (P3-AUD10)', () => {
       .where(eq(notebookSessions.userId, userId));
     expect(sessions.map((s) => s.id).sort()).toEqual([submittedSession, filesSession].sort());
     expect(sessions.every((s) => s.environment === null)).toBe(true);
+    expect(sessions.map((s) => s.runtime)).toEqual([{ mode: 'start' }, { mode: 'start' }]);
     // Only the connections those sessions need remain, archived and without target details.
     const connections = await testDb.db
       .select()
