@@ -2,8 +2,9 @@
  * The server's view of a notebook session (docs/design/connector.md §10.7) as a pure function:
  * every change of `notebook_sessions.state` is computed here, so the table in the design and the
  * table test in session-state.test.ts are the same thing. The server never decides that a process
- * stopped: only the connector's word (`stopped`) or the person's Forget (`abandoned`, which says
- * nothing about the process) ends a session.
+ * stopped: only the connector's word (`stopped`), the person's Forget (`abandoned`) or their
+ * removal from the class (`membership_removed`) ends a session, and the last two say nothing about
+ * the process.
  */
 
 export const SESSION_STATES = [
@@ -61,6 +62,11 @@ export type SessionEvent =
   | { t: 'forget' }
   /** The connector was revoked or unpaired. */
   | { t: 'revoked' }
+  /**
+   * The person was removed from the session's class. The session closes at once; the relay's
+   * clean-up stops an owned process at the connector's next heartbeat.
+   */
+  | { t: 'membership_removed' }
   /** This relay process started; nothing it held in memory survived. */
   | { t: 'relay_start' };
 
@@ -110,6 +116,8 @@ export function nextSessionState(
         : null;
     case 'revoked':
       return isOpen(state) ? to('unconfirmed', 'connector_revoked') : null;
+    case 'membership_removed':
+      return isOpen(state) ? to('stopped', 'membership_removed') : null;
     case 'relay_start':
       return state === 'starting' ||
         state === 'ready' ||

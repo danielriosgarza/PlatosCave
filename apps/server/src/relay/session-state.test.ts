@@ -123,6 +123,17 @@ const rows: Row[] = [
     },
   },
   {
+    name: 'A33 removal from the class closes every open session as membership_removed',
+    event: { t: 'membership_removed' },
+    moves: {
+      starting: at('stopped', 'membership_removed'),
+      ready: at('stopped', 'membership_removed'),
+      disconnected: at('stopped', 'membership_removed'),
+      unconfirmed: at('stopped', 'membership_removed'),
+      stopping: at('stopped', 'membership_removed'),
+    },
+  },
+  {
     name: 'a session still starting after 300 s fails with test_timeout',
     event: { t: 'start_timeout' },
     moves: { starting: at('failed', 'test_timeout') },

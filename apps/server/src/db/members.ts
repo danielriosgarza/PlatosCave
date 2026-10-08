@@ -3,7 +3,9 @@ import type { ClassManagerScope, CourseContext, CourseScope } from '../auth/scop
 import { audit } from './audit';
 import type { Db, Tx } from './client';
 import { otherActiveOwnerExists } from './courseOwners';
+import { cancelSamplesOfRemoved } from './execution/runs';
 import { auditRevoked, openInvite, type RevokeReason, revokeInvites } from './invites';
+import { closeForRemovedMembers } from './notebooks/sessions';
 import {
   authSessions,
   classes,
@@ -97,10 +99,13 @@ export function setManageMembers(
 }
 
 /**
- * Removes one membership. An instructor's preview membership in the class goes with them (its
- * sessions revoked), the draft editing their invitation granted ends once they teach no class of
- * the course, and the open instructor invitations they issued in the class are revoked unless
- * they own the course. Each cascade is audited on its own. A student has none of these.
+ * Removes one membership. The person's open notebook sessions in the class close and their queued
+ * sample runs there are cancelled (ADR-0002 "Permission revoked"); `cancelledJobs` are the run
+ * jobs the caller cancels on the runner's queue after the commit. An instructor's preview
+ * membership in the class goes with them (its sign-in sessions revoked, its notebook sessions and
+ * runs ended the same way), the draft editing their invitation granted ends once they teach no
+ * class of the course, and the open instructor invitations they issued in the class are revoked
+ * unless they own the course. Each cascade is audited on its own.
  */
 export function removeMember(db: Db, scope: ClassManagerScope, userId: string, now: Date) {
   return db.transaction(async (tx) => {
@@ -119,18 +124,29 @@ export function removeMember(db: Db, scope: ClassManagerScope, userId: string, n
       before: removed,
       after: { via: scope.via },
     });
+    const gone = [userId];
     if (removed.role === 'instructor') {
-      await dropPreviews(tx, scope, userId, now);
+      gone.push(...(await dropPreviews(tx, scope, userId, now)));
       const course = await lockCourseMembership(tx, scope, userId);
       await dropEditorIfNotTeaching(tx, scope, userId, course);
       await revokeIssuedBy(tx, scope, userId, course, now, 'issuer_removed');
     }
-    return { ok: true as const };
+    await closeForRemovedMembers(tx, scope, gone, now);
+    const cancelledJobs = await cancelSamplesOfRemoved(tx, scope, gone, now);
+    return { ok: true as const, cancelledJobs };
   });
 }
 
-/** The instructor's preview principals lose their membership in the class and their sessions. */
-async function dropPreviews(tx: Tx, scope: ClassManagerScope, userId: string, now: Date) {
+/**
+ * The instructor's preview principals lose their membership in the class and their sign-in
+ * sessions. Resolves with their ids.
+ */
+async function dropPreviews(
+  tx: Tx,
+  scope: ClassManagerScope,
+  userId: string,
+  now: Date,
+): Promise<string[]> {
   const previews = tx.select({ id: users.id }).from(users).where(eq(users.ownerUserId, userId));
   const dropped = await tx
     .delete(classMemberships)
@@ -142,7 +158,7 @@ async function dropPreviews(tx: Tx, scope: ClassManagerScope, userId: string, no
       ),
     )
     .returning({ userId: classMemberships.userId, role: classMemberships.role });
-  if (dropped.length === 0) return;
+  if (dropped.length === 0) return [];
   // The preview user row stays (later records and audit events may name it), but it can no
   // longer sign anything in.
   const ids = dropped.map((d) => d.userId);
@@ -162,6 +178,7 @@ async function dropPreviews(tx: Tx, scope: ClassManagerScope, userId: string, no
       after: { via: scope.via, previewOf: userId },
     });
   }
+  return ids;
 }
 
 /**

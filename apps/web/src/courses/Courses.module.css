@@ -241,9 +241,11 @@
   margin-top: var(--pc-space-20);
 }
 @media (pointer: coarse) {
-  .status a {
+  .status a,
+  .chooser li a {
     display: inline-flex;
     align-items: center;
     min-height: var(--pc-touch-target, 44px);
+    min-width: var(--pc-touch-target, 44px);
   }
 }

@@ -100,6 +100,7 @@ export const CAUSE_COPY: Record<string, string> = {
   connector_offline: 'The connector is not connected to Parallax.',
   connector_revoked: 'This device was revoked or unpaired.',
   kernel_lost: 'The kernel no longer exists. Its variables are gone.',
+  membership_removed: 'You were removed from this class, so the session was closed.',
 };
 
 /** The recovery steps of the catalogue as sentences; a few also have a button in the panel. */
@@ -245,4 +246,5 @@ export const CAUSE_RECOVERIES: Record<string, string[]> = {
   connector_offline: ['reconnect'],
   connector_revoked: ['pick_other_target', 'new_session'],
   kernel_lost: ['new_session'],
+  membership_removed: ['new_session'],
 };
