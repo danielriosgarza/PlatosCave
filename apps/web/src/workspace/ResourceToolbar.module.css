@@ -34,7 +34,7 @@
   color: var(--pc-ink);
   border-radius: var(--pc-radius-control);
 }
-.tools button[aria-pressed="true"] {
+.tools button[data-on="true"] {
   background: var(--pc-soft);
   font-weight: 600;
 }
@@ -66,6 +66,13 @@
     padding-right: 16px;
   }
 }
+
+.notice:empty {
+  padding-top: 0;
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
 @media (pointer: coarse) {
   .tools button {
     min-height: var(--pc-touch-target, 44px);

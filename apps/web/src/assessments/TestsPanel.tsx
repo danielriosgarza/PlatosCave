@@ -7,6 +7,7 @@ import pageStyles from '../components/Page.module.css';
 import { RetryNotice } from '../components/RetryNotice';
 import { type ReleasedResource, useClassRelease } from '../exercises/attempt';
 import { formatOpens } from '../topics/topics';
+import { AccommodationsPanel } from './AccommodationsPanel';
 import { AttemptWorkspace } from './AttemptWorkspace';
 import { recoveryAnswered } from './answers';
 import {
@@ -90,6 +91,7 @@ function TopicTests({
           <p className={pageStyles.intro}>
             {selected.title}: students take this test here. Results are reviewed under Class review.
           </p>
+          <AccommodationsPanel classId={classId} resourceId={selected.resourceId} />
           <RecoveryPanel classId={classId} resourceId={selected.resourceId} />
         </div>
       );
