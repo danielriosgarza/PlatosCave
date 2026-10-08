@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"runtime"
@@ -24,7 +25,10 @@ const (
 	EnvDir = "PARALLAX_JUPYTER_STUB_DIR"
 	// EnvMode changes the stub's behaviour: "" (a working Jupyter), "exit" (prints its URL and
 	// exits while starting), "hang" (never answers), "old" (Jupyter Server 1.24), "missing"
-	// (jupyter_server is not installed), "stubborn" (ignores shutdown and SIGTERM).
+	// (jupyter_server is not installed), "stubborn" (ignores shutdown and SIGTERM), "holder"
+	// (leaves a child holding its output open, as a kernel does, after it exits; POSIX only),
+	// "slowbind" (binds its port 500 ms after printing its URL), "refuse" (refuses the token it
+	// was given).
 	EnvMode = "PARALLAX_JUPYTER_STUB_MODE"
 	// EnvList is printed for `jupyter server list --json`.
 	EnvList = "PARALLAX_JUPYTER_STUB_LIST"
@@ -39,6 +43,8 @@ type Record struct {
 	RuntimeDir string   `json:"runtimeDir"`
 	Listen     string   `json:"listen"`
 	Requests   []string `json:"requests,omitempty"`
+	// HolderPID is the child the "holder" mode leaves holding the output.
+	HolderPID int `json:"holderPid,omitempty"`
 }
 
 // RunIfStub turns the test binary into the stub program when the connector runs it as
@@ -117,6 +123,13 @@ func stubServe(flags []string) {
 	}
 	wd, _ := os.Getwd()
 	rec := Record{PID: os.Getpid(), Argv: os.Args, Dir: wd, TokenInEnv: token != "", RuntimeDir: os.Getenv("JUPYTER_RUNTIME_DIR"), Listen: net.JoinHostPort(ip, port)}
+	if mode == "holder" {
+		holder := exec.Command("/bin/sleep", "60")
+		holder.Stdout, holder.Stderr = os.Stderr, os.Stderr
+		if err := holder.Start(); err == nil {
+			rec.HolderPID = holder.Process.Pid
+		}
+	}
 	var mu sync.Mutex
 	write := func() {
 		mu.Lock()
@@ -140,6 +153,8 @@ func stubServe(flags []string) {
 		os.Exit(1)
 	case "stubborn":
 		signal.Ignore(syscall.SIGTERM, os.Interrupt)
+	case "slowbind":
+		time.Sleep(500 * time.Millisecond)
 	}
 	ln, err := net.Listen("tcp", rec.Listen)
 	if err != nil {
@@ -147,6 +162,9 @@ func stubServe(flags []string) {
 		os.Exit(1)
 	}
 	srv := New(token)
+	if mode == "refuse" {
+		srv = New("not-" + token)
+	}
 	srv.OnShutdown = func() {
 		if mode == "stubborn" {
 			return

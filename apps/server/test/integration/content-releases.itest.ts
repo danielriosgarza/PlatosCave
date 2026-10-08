@@ -299,4 +299,38 @@ describe('content releases and revisions', () => {
       await rm(root, { recursive: true, force: true });
     }
   });
+
+  test('bytes first stored as a workspace file take the type of a later source upload', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'parallax-objects-'));
+    try {
+      const storage = new FsStorage(root);
+      const scope = { courseId: ids.statistics, user: { id: ids.elena } } as unknown as CourseScope;
+      const typeOf = async (bytes: string, contentType: string) => {
+        const stored = await storeCourseObject(
+          testDb.db,
+          storage,
+          scope,
+          Buffer.from(bytes),
+          contentType,
+        );
+        const [row] = await testDb.db
+          .select({ contentType: storageObjects.contentType })
+          .from(storageObjects)
+          .where(eq(storageObjects.key, stored.key));
+        return row?.contentType;
+      };
+      // A workspace file, then the same bytes as a PDF reading: the PDF's type replaces the generic one.
+      expect(await typeOf('%PDF-1.4 workspace first', 'application/octet-stream')).toBe(
+        'application/octet-stream',
+      );
+      expect(await typeOf('%PDF-1.4 workspace first', 'application/pdf')).toBe('application/pdf');
+      // A specific type is kept: neither a workspace upload nor another specific type replaces it.
+      expect(await typeOf('%PDF-1.4 workspace first', 'application/octet-stream')).toBe(
+        'application/pdf',
+      );
+      expect(await typeOf('%PDF-1.4 workspace first', 'text/html')).toBe('application/pdf');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
+  });
 });

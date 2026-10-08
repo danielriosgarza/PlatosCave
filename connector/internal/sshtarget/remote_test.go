@@ -441,6 +441,65 @@ func TestA29_NotebookAuthRejected(t *testing.T) {
 	wantCode(t, err, protocol.CodeTokenRejected)
 }
 
+// A start whose port is held by another server that refuses the session's token waits for its
+// start command to end with "address already in use" and starts again on another port; the
+// stranger only ever saw a status request.
+func TestStartRetriesWhenAStrangerHoldsThePort(t *testing.T) {
+	h := newRemoteHost(t, "slowbind")
+	stranger := jupytertest.New("someone-elses-token")
+	srv := httptest.NewServer(stranger)
+	t.Cleanup(srv.Close)
+	held := srv.Listener.Addr().(*net.TCPAddr).Port
+	var calls sync.Mutex
+	first := true
+	h.r.Ports = func() int {
+		calls.Lock()
+		defer calls.Unlock()
+		if first {
+			first = false
+			return held
+		}
+		return sshtest.QuietPorts()
+	}
+	rt, err := h.open(h.start())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pid, port := rt.Remote.Process(); port == held || pid == 0 {
+		t.Fatalf("the session runs at pid %d port %d", pid, port)
+	}
+	if recs := jupytertest.Records(t, h.stub); len(recs) != 2 {
+		t.Fatalf("%d start attempts, want 2", len(recs))
+	}
+	reqs := stranger.Requests()
+	if len(reqs) == 0 {
+		t.Fatal("the held port was never asked, so the grace for a refused token did not run")
+	}
+	for _, r := range reqs {
+		if r.Method != "GET" || r.URI != "/api/status" {
+			t.Errorf("the stranger received %s %s", r.Method, r.URI)
+		}
+	}
+}
+
+// A started server that refuses the session's token for longer than the grace fails the start
+// with token_rejected, and the server is stopped.
+func TestStartGivesUpOnItsOwnServerRefusingTheToken(t *testing.T) {
+	h := newRemoteHost(t, "refuse")
+	h.r.ReadyTimeout = time.Second // the grace is the shorter of 5 s and the ready timeout
+	began := time.Now()
+	_, err := h.open(h.start())
+	wantCode(t, err, protocol.CodeTokenRejected)
+	if took := time.Since(began); took < time.Second {
+		t.Errorf("gave up after %s, before the grace", took)
+	}
+	recs := jupytertest.Records(t, h.stub)
+	if len(recs) != 1 {
+		t.Fatalf("%d start attempts, want 1", len(recs))
+	}
+	waitGone(t, recs[0].PID)
+}
+
 // TestA29_RemoteExecDenied (A29): an account that may not run commands fails with
 // remote_exec_denied at its first exec, and the runtime and kernel stages are blocked.
 func TestA29_RemoteExecDenied(t *testing.T) {
