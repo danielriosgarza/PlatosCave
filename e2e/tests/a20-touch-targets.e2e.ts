@@ -134,6 +134,15 @@ test('A20 the class chooser links and the join notice link are at least 44 px wi
   expect(await small(page, 'main button, main a, main select, main input')).toEqual([]);
 });
 
+test('A20 the topic index title and Start or Resume links are at least 44 px with a touch screen', async ({
+  page,
+}) => {
+  await page.goto(`/classes/${lab.class}/topics`);
+  await expect(page.getByRole('table')).toBeVisible();
+  await expect(page.locator('main table a').first()).toBeVisible();
+  expect(await small(page, 'main table a')).toEqual([]);
+});
+
 test('A12 and A14 the test question navigation is at least 44 px with a touch screen', async ({
   page,
   playwright,
