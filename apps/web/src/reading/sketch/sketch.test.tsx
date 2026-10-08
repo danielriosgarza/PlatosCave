@@ -717,6 +717,30 @@ describe('sketches already saved', () => {
     });
   });
 
+  it('A20 deleting the note above a sketch that cannot be opened focuses the sketch’s first enabled button', async () => {
+    const mapped = stored(
+      uuid(3),
+      'sketch',
+      { kind: 'figure', figureId: 'oldfigure0001', strokes: line },
+      'Old.',
+    );
+    mapped.placement = {
+      resourceRevisionId: REV,
+      status: 'mapped',
+      anchor: { kind: 'figure', figureId: FIG1, strokes: line },
+      confidence: 0.95,
+    };
+    const w = world('native', [stored(uuid(1), 'note', { kind: 'none' }, 'Topic words'), mapped]);
+    api(w);
+    const user = userEvent.setup();
+    await openNative();
+    await user.click(await screen.findByRole('button', { name: /^Note 1|Topic note/ }));
+    await user.click(screen.getByRole('button', { name: 'Delete note' }));
+    await waitFor(() => expect(w.annotations).toHaveLength(1));
+    expect(screen.getByRole('button', { name: 'Open sketch' })).toBeDisabled();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Download SVG' })).toHaveFocus());
+  });
+
   it('A07 a sketch on a revision still being mapped says it is waiting to be placed, not lost', async () => {
     const waiting = stored(
       uuid(4),

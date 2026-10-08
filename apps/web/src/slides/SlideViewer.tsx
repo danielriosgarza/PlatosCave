@@ -60,12 +60,20 @@ type Load =
 const PAN = 60;
 const ZOOMED_MAT = { tabIndex: 0, role: 'region', 'aria-label': 'Zoomed slide, arrow keys pan' };
 
-/** Scrolls the zoomed mat one step for an arrow key; false when it cannot move that way. */
+/** Scrolls the zoomed mat one step for an arrow key; false when it has no room left that way. */
 function panMat(mat: HTMLElement, key: string): boolean {
   const x = key === 'ArrowRight' ? PAN : key === 'ArrowLeft' ? -PAN : 0;
   const y = key === 'ArrowDown' ? PAN : key === 'ArrowUp' ? -PAN : 0;
-  if (x === 0 && y === 0) return false;
-  const room = x !== 0 ? mat.scrollWidth - mat.clientWidth : mat.scrollHeight - mat.clientHeight;
+  const room =
+    x > 0
+      ? mat.scrollWidth - mat.clientWidth - mat.scrollLeft
+      : x < 0
+        ? mat.scrollLeft
+        : y > 0
+          ? mat.scrollHeight - mat.clientHeight - mat.scrollTop
+          : y < 0
+            ? mat.scrollTop
+            : 0;
   if (room <= 0) return false;
   mat.scrollLeft += x;
   mat.scrollTop += y;
@@ -222,6 +230,8 @@ export function SlideViewer({
     if (event.key === 'ArrowRight') go(page + 1);
     else if (event.key === 'ArrowLeft') go(page - 1);
     else return;
+    // A slide changed from the zoomed slide keeps focus there, so the next arrows pan the new one.
+    if (zoom > 0 && mat && event.target === mat) mat.focus({ preventScroll: true });
     event.preventDefault();
   };
 

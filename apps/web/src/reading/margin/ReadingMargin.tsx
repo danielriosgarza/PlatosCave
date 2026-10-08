@@ -463,25 +463,40 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
   // --- the editor of the selected note sits beside its passage (measured after layout) -----------
   const entriesRef = useRef<HTMLDivElement>(null);
 
-  // A removed entry takes the focused button with it: focus goes to the entry that took its place.
-  const afterRemove = useRef<{ index: number; count: number } | null>(null);
+  // A removed entry takes the focused button with it: once the server has deleted it, focus goes to
+  // the entry that took its place.
+  const afterRemove = useRef<{ id: string; index: number; done: boolean } | null>(null);
   const entryList = () => [
     ...(entriesRef.current?.querySelectorAll<HTMLElement>('[data-entry]') ?? []),
   ];
   const expectRemoval = (entryId: string) => {
-    const all = entryList();
-    const at = all.findIndex((e) => e.dataset.entryId === entryId);
-    afterRemove.current = { index: Math.max(0, at), count: all.length };
+    const at = entryList().findIndex((e) => e.dataset.entryId === entryId);
+    afterRemove.current = { id: entryId, index: Math.max(0, at), done: false };
+  };
+  /** The delete answered: move focus once the entry is gone; drop the request if it failed. */
+  const settleRemoval = (entryId: string, removed: boolean) => {
+    const pending = afterRemove.current;
+    if (pending?.id !== entryId) return;
+    if (!removed) {
+      afterRemove.current = null;
+      return;
+    }
+    pending.done = true;
+    touch();
+    // An entry that never leaves the list (it came back) must not claim focus later.
+    setTimeout(() => {
+      if (afterRemove.current === pending) afterRemove.current = null;
+    }, 3000);
   };
   const focusAfterRemoval = () => {
     const pending = afterRemove.current;
-    if (!pending) return;
+    if (!pending?.done) return;
     const all = entryList();
-    if (all.length >= pending.count) return;
+    if (all.some((e) => e.dataset.entryId === pending.id)) return;
     afterRemove.current = null;
     const next = all[Math.min(pending.index, all.length - 1)];
     const target =
-      next?.querySelector<HTMLElement>('button') ??
+      next?.querySelector<HTMLElement>('button:not(:disabled)') ??
       entriesRef.current?.querySelector<HTMLElement>('[data-add-note]');
     target?.focus();
   };
@@ -572,18 +587,24 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
 
   // The note's device draft stays pending for the whole delete (the editor's discard leaves it), so
   // a margin that comes back while the server's delete runs does not restore the note as unsent.
-  const removeNote = async (entryId: string, controller: NoteController | undefined) => {
+  const removeNote = async (
+    entryId: string,
+    controller: NoteController | undefined,
+  ): Promise<boolean> => {
     const sent = userId
       ? beginSend(draftKey(userId, classId, resourceId, controller?.key ?? entryId))
       : null;
     try {
-      await deleteNote(entryId, controller);
+      return await deleteNote(entryId, controller);
     } finally {
       sent?.();
     }
   };
 
-  const deleteNote = async (entryId: string, controller: NoteController | undefined) => {
+  const deleteNote = async (
+    entryId: string,
+    controller: NoteController | undefined,
+  ): Promise<boolean> => {
     setDeleteProblem(null);
     // A save still running is waited for, so a note it creates is deleted too and cannot return.
     const left = controller ? await controller.discard() : null;
@@ -617,10 +638,9 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
           } else void removeDraft(scoped);
         }
       }
-      afterRemove.current = null;
       setDeleteProblem(controller?.key ?? entryId);
       touch();
-      return;
+      return false;
     }
     if (controller) {
       controllers.current.delete(controller.key);
@@ -628,6 +648,7 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
     }
     setActiveId(null);
     touch();
+    return true;
   };
 
   // Focus follows a new note or question to its editor (selecting a note moves focus to it).
@@ -734,8 +755,12 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
                   }
                   onBlur={() => n.controller?.blur()}
                   onRemove={() => {
-                    expectRemoval(n.controller?.key ?? n.id);
-                    void removeNote(n.id, n.controller);
+                    const key = n.controller?.key ?? n.id;
+                    expectRemoval(key);
+                    removeNote(n.id, n.controller).then(
+                      (removed) => settleRemoval(key, removed),
+                      () => settleRemoval(key, false),
+                    );
                   }}
                   actions={actions}
                 />
@@ -754,8 +779,8 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
                   onExport={() => exportSketch(annotation, surface ?? surfaceOf(annotation.anchor))}
                   onDelete={async () => {
                     expectRemoval(annotation.id);
-                    const removed = await actions.remove(annotation.id);
-                    if (!removed) afterRemove.current = null;
+                    const removed = await actions.remove(annotation.id).catch(() => false);
+                    settleRemoval(annotation.id, removed);
                     return removed;
                   }}
                 />

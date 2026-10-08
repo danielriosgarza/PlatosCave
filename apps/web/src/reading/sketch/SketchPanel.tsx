@@ -33,7 +33,9 @@ export function SketchPanel({ api, label }: { api: Sketches; label: string }) {
       const active = document.activeElement;
       if (!from || (active && active !== document.body)) return;
       const again = from.key
-        ? document.querySelector<HTMLElement>(`[data-return-focus="${from.key}"]`)
+        ? ([...document.querySelectorAll<HTMLElement>('[data-return-focus]')].find(
+            (e) => e.dataset.returnFocus === from.key,
+          ) ?? null)
         : null;
       const target = from.element?.isConnected ? from.element : again;
       if (target instanceof HTMLElement) target.focus();

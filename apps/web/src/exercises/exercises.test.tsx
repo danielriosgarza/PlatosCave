@@ -336,6 +336,32 @@ describe('exercise UI', () => {
     expect(screen.getByText('Step 2 of 3: Inspect', { selector: '[role="status"]' })).toBeVisible();
   });
 
+  it('A08 a wrong answer keeps keyboard focus on Check answer, and the kept choice is re-checked from the keyboard', async () => {
+    const user = userEvent.setup();
+    const { calls } = exerciseApi();
+    open();
+    await screen.findByRole('heading', { name: 'Predict' });
+    const wider = screen.getByRole('radio', { name: 'Wider' });
+    wider.focus();
+    await user.keyboard(' ');
+    expect(wider).toBeChecked();
+    const check = screen.getByRole('button', { name: 'Check answer' });
+    check.focus();
+    await user.keyboard('{Enter}');
+    expect(await screen.findByText('Larger samples average out more noise.')).toBeVisible();
+    // The check never disabled the button that held focus, and the choice is kept.
+    expect(screen.getByRole('button', { name: 'Check answer' })).toHaveFocus();
+    expect(screen.getByRole('button', { name: 'Check answer' })).not.toBeDisabled();
+    expect(screen.getByRole('radio', { name: 'Wider' })).toBeChecked();
+    // Retry from the keyboard alone: pick the other answer, then check again.
+    screen.getByRole('radio', { name: 'Narrower' }).focus();
+    await user.keyboard(' ');
+    screen.getByRole('button', { name: 'Check answer' }).focus();
+    await user.keyboard('{Enter}');
+    expect(await screen.findByText('Correct.')).toBeVisible();
+    expect(posted(calls, '/check')).toHaveLength(2);
+  });
+
   it('A08 checking with nothing chosen asks for an answer and records nothing', async () => {
     const user = userEvent.setup();
     const { calls } = exerciseApi();

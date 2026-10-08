@@ -261,7 +261,7 @@ function PracticeAttempt({
             onContinue={() => {
               const next = steps[index + 1];
               setAnnounced(
-                next ? `Step ${index + 2} of ${steps.length}: ${next.title}` : 'Exercise summary',
+                next ? `Step ${index + 2} of ${steps.length}: ${next.title}` : 'Exercise complete.',
               );
               setIndex(index + 1);
             }}
@@ -349,8 +349,11 @@ function StepPanel({
             <button
               type="button"
               className={buttons.primary}
-              disabled={actions.busy}
-              onClick={() => void submit()}
+              // Not `disabled`: the button holds keyboard focus while the answer is checked.
+              aria-disabled={actions.busy || undefined}
+              onClick={() => {
+                if (!actions.busy) void submit();
+              }}
             >
               {primary}
             </button>
@@ -368,8 +371,9 @@ function StepPanel({
               <button
                 type="button"
                 className={buttons.textButton}
-                disabled={actions.busy}
+                aria-disabled={actions.busy || undefined}
                 onClick={async () => {
+                  if (actions.busy) return;
                   const next = await actions.hint({ stepId: step.id });
                   if (next) setHintsOpen(true);
                 }}
@@ -381,8 +385,10 @@ function StepPanel({
               <button
                 type="button"
                 className={buttons.textButton}
-                disabled={actions.busy}
-                onClick={() => void actions.solution({ stepId: step.id })}
+                aria-disabled={actions.busy || undefined}
+                onClick={() => {
+                  if (!actions.busy) void actions.solution({ stepId: step.id });
+                }}
               >
                 Show solution
               </button>
