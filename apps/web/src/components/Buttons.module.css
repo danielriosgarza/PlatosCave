@@ -85,5 +85,6 @@
   .textButton,
   .tool {
     min-height: var(--pc-touch-target, 44px);
+    min-width: var(--pc-touch-target, 44px);
   }
 }
