@@ -3,13 +3,9 @@
   padding-top: 14px;
   border-top: 1px solid var(--pc-rule);
 }
-/* Same labelled-field look as the margin's own forms. */
 .field {
-  composes: field from "../reading/margin/Margin.module.css";
+  composes: field from "./Field.module.css";
 }
 .status {
-  font: var(--pc-text-label);
-  color: var(--pc-muted);
-  margin: 4px 0 8px;
-  min-height: 18px;
+  composes: line from "./SaveLine.module.css";
 }

@@ -81,17 +81,16 @@
   min-height: 0;
 }
 .margin .tabs > button {
-  font: var(--pc-text-ui);
+  font-family: inherit;
   font-size: 13px;
+  line-height: 1.5;
+  color: var(--pc-ink);
   min-height: 0;
   padding: 0 0 10px;
 }
-.margin .tabs > button[aria-selected="true"]::after {
-  bottom: -1px;
+.margin .tabs > button[aria-selected="true"] {
+  font-weight: 600;
 }
 .count {
   color: var(--pc-muted);
-}
-.margin .tabs > button {
-  color: var(--pc-ink);
 }

@@ -48,9 +48,8 @@ export function SketchPanel({ api, label }: { api: Sketches; label: string }) {
   }, [s?.status]);
   if (!s) return null;
   const saving = s.status === 'saving';
-  // The sketch was deleted elsewhere: Done saves it again, so no Retry beside the message.
-  const gone =
-    s.status === 'failed' && s.annotationId === null && s.message?.includes('deleted elsewhere');
+  // Deleted elsewhere: Done saves it again, so no Retry beside the explanation.
+  const gone = s.status === 'failed' && s.gone;
   const strokes = s.history.strokes.length;
   return (
     <section ref={panel} tabIndex={-1} className={styles.panel} aria-label={`Sketch on ${label}`}>
