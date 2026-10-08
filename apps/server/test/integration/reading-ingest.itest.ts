@@ -321,6 +321,7 @@ describe('reading.ingest', () => {
       put: storage.put.bind(storage),
       head: storage.head.bind(storage),
       delete: storage.delete.bind(storage),
+      list: storage.list.bind(storage),
       get: async () => {
         throw new Error('backend unavailable at /internal/path');
       },
@@ -404,6 +405,7 @@ describe('reading.ingest', () => {
       put: storage.put.bind(storage),
       head: storage.head.bind(storage),
       delete: storage.delete.bind(storage),
+      list: storage.list.bind(storage),
       get: async (key) => {
         const object = await storage.get(key);
         return { ...object, size: object.size + 10 };
@@ -478,6 +480,7 @@ describe('reading.ingest', () => {
       put: storage.put.bind(storage),
       head: storage.head.bind(storage),
       delete: storage.delete.bind(storage),
+      list: storage.list.bind(storage),
       get: async () => {
         controller.abort();
         throw new Error('connection closed by shutdown');
@@ -527,6 +530,7 @@ describe('reading.ingest', () => {
       put: storage.put.bind(storage),
       head: storage.head.bind(storage),
       delete: storage.delete.bind(storage),
+      list: storage.list.bind(storage),
       get: async (key) => {
         await setDerivedStatus(testDb.db, elena, running, statusFor(OTHER_JOB));
         return storage.get(key);

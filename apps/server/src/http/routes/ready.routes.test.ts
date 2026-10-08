@@ -14,6 +14,7 @@ const storage = (head: Storage['head']): Storage => ({
   get: async () => ({ body: Readable.from([]), size: 0 }),
   head,
   delete: async () => undefined,
+  list: async function* () {},
 });
 
 test('ready answers 503 and says which required dependency is missing when none is configured', async () => {
