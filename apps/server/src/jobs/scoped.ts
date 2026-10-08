@@ -13,6 +13,7 @@ import {
   type CourseScope,
   NoRecentAuthError,
   resolveActorScope,
+  resolveStandInScope,
   type ScopeFor,
 } from '../auth/scope';
 import type { Db } from '../db/client';
@@ -49,6 +50,14 @@ export interface ScopedJob<R extends JobRule = JobRule, I extends z.ZodType = z.
   scope: R;
   input: I;
   queue?: QueueOptions;
+  /**
+   * For system work the class needs whoever queued it (a test deadline): when the actor's own
+   * scope is refused (removed from the class, account gone), the job runs as the class's
+   * stand-in instructor instead (`resolveStandInScope`), resolved against the same rule. Only
+   * for a class rule without a grant that an instructor holds; refused as before when the class
+   * has no instructor.
+   */
+  standIn?: R extends { kind: 'class' } ? 'class_instructor' : never;
   run: (args: ScopedJobArgs<R, I>) => Promise<object | undefined>;
 }
 
@@ -115,14 +124,16 @@ export async function ensureQueues(boss: PgBoss, jobs: readonly ScopedJob[]): Pr
 }
 
 export type ScopedOutcome =
-  | { status: 'completed'; output: object | undefined }
+  /** `standIn` is why the actor was refused, when a stand-in ran the job instead. */
+  | { status: 'completed'; output: object | undefined; standIn?: string }
   | { status: 'refused'; reason: string };
 
 const refuse = (reason: string): ScopedOutcome => ({ status: 'refused', reason });
 
 /**
  * Runs one job for its actor (ADR-0002): rejects a payload without actor and scope, re-resolves
- * the actor's membership against the job's rule, and only then hands the handler a branded
+ * the actor's membership against the job's rule (or, for a job declaring `standIn`, the class's
+ * stand-in instructor's when the actor's is refused), and only then hands the handler a branded
  * scope. A refusal is final, including a handler calling `requireRecentAuth()`; any other error
  * thrown by the handler is left to pg-boss to retry.
  */
@@ -139,7 +150,15 @@ export async function runScopedJob<R extends JobRule, I extends z.ZodType>(
   if (scope.kind !== job.scope.kind) return refuse(`job needs ${job.scope.kind} scope`);
 
   const targetId = scope.kind === 'class' ? scope.classId : scope.courseId;
-  const resolution = await resolveActorScope(db, actorId, job.scope, targetId);
+  let resolution = await resolveActorScope(db, actorId, job.scope, targetId);
+  let standIn: string | undefined;
+  if (!resolution.ok && job.standIn === 'class_instructor' && job.scope.kind === 'class') {
+    const stand = await resolveStandInScope(db, job.scope, targetId);
+    if (stand.ok) {
+      standIn = resolution.reason;
+      resolution = stand;
+    }
+  }
   if (!resolution.ok) return refuse(resolution.reason);
 
   const parsed = job.input.safeParse(input);
@@ -152,7 +171,7 @@ export async function runScopedJob<R extends JobRule, I extends z.ZodType>(
       job: pgJob,
       ...services,
     });
-    return { status: 'completed', output };
+    return { status: 'completed', output, ...(standIn !== undefined && { standIn }) };
   } catch (err) {
     // `requireRecentAuth()` inside a job: a refusal, not an error worth retrying.
     if (err instanceof NoRecentAuthError) return refuse('a job cannot count as a recent sign-in');
@@ -199,6 +218,12 @@ export async function workScopedJob<R extends JobRule, I extends z.ZodType>(
             output: { refused: outcome.reason },
           });
         } else {
+          if (outcome.standIn !== undefined) {
+            log.info(
+              { job: job.name, jobId: pgJob.id, refused: outcome.standIn },
+              'job ran as the class stand-in',
+            );
+          }
           results.push({ id: pgJob.id, status: 'completed' as const, output: outcome.output });
         }
       }
