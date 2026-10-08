@@ -10,8 +10,11 @@ import { SESSION_COOKIE, sessionCookieOptions } from '../../auth/sessions';
 import { userForVerifiedEmail } from '../../db/auth/accounts';
 import { createSession } from '../../db/auth/sessions';
 import { approveConnector, listConnectors } from '../../db/connectors/registry';
-import { classify, parseAddress } from '../../relay/netpolicy';
 import { notFound, registerRoute } from '../register';
+
+// A socket peer on this machine: ::1, 127.0.0.0/8, or that range v4-mapped. Not the connector's
+// `classify`, which also unwraps 6to4 and NAT64 addresses; right for a dial target, wrong here.
+const LOOPBACK_PEER = /^(?:::1|(?:::ffff:)?127\.\d{1,3}\.\d{1,3}\.\d{1,3})$/i;
 
 /** E2E fixture routes (ADR-0006); mounted only when TEST_ROUTES=1, never in production. */
 export default function testRoutes(app: FastifyInstance, deps: RouteDeps): void {
@@ -21,12 +24,12 @@ export default function testRoutes(app: FastifyInstance, deps: RouteDeps): void 
   const now = deps.now;
 
   // The fixtures mint sessions for any email: answer only peers on this machine, judged by the
-  // socket (not `req.ip`, which TRUST_PROXY lets a header set), however the server is bound. This module is its own
-  // encapsulated plugin, so the hook sees only these routes; no path test, which an encoded
-  // spelling (`/api/%74est/…`) would slip past.
+  // socket (not `req.ip`, which TRUST_PROXY lets a header set). A proxy on this machine still
+  // looks like loopback, so never put one in front of a server that has TEST_ROUTES on. This
+  // module is its own encapsulated plugin, so the hook sees only these routes; no path test,
+  // which an encoded spelling (`/api/%74est/…`) would slip past.
   app.addHook('onRequest', async (req, reply) => {
-    const peer = parseAddress(req.socket.remoteAddress ?? '');
-    if (!peer || classify(peer) !== 'loopback') return reply.callNotFound();
+    if (!LOOPBACK_PEER.test(req.socket.remoteAddress ?? '')) return reply.callNotFound();
   });
   // One server process serves every Playwright worker: build the world at most once.
   let building: Promise<boolean> | undefined;

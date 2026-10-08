@@ -22,7 +22,14 @@ test('AUD16 test routes answer only peers on this machine', async () => {
     app.inject({ method: 'POST', url, payload: body, remoteAddress });
 
   for (const url of paths) {
-    for (const peer of ['203.0.113.9', '10.0.0.5', '::ffff:10.0.0.5', '2001:db8::1']) {
+    for (const peer of [
+      '203.0.113.9',
+      '10.0.0.5',
+      '::ffff:10.0.0.5',
+      '2001:db8::1',
+      '2002:7f00:1::1',
+      '64:ff9b::7f00:1',
+    ]) {
       const res = await post(url, peer);
       expect(res.statusCode, `${peer} ${url}`).toBe(404);
       expect(res.headers['set-cookie'], `${peer} ${url}`).toBeUndefined();
