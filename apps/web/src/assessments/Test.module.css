@@ -246,7 +246,7 @@
   padding: 16px;
   border: 1px solid var(--pc-rule);
   margin-top: 16px;
-  border-radius: 4px;
+  border-radius: var(--pc-radius-control);
   /* The pane is adjustable and scrolls: a long log never pushes the prompt out of reach. */
   resize: vertical;
   overflow: auto;

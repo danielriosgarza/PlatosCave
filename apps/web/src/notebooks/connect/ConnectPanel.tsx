@@ -27,7 +27,14 @@ import { ConnectSummary } from './ConnectSummary';
 import { DeviceList } from './DeviceList';
 import { useCancelOnEscape } from './escape';
 import { LossNotice } from './LossNotice';
-import { CODE_COPY, CODE_RECOVERIES, causeText, codeText, recoveryText } from './messages';
+import {
+  CODE_COPY,
+  CODE_RECOVERIES,
+  causeText,
+  codeText,
+  kernelLabel,
+  recoveryText,
+} from './messages';
 import { StageList } from './StageList';
 import { TargetForm, type TargetKind, type TargetValues } from './TargetForm';
 import { TemplateManager } from './TemplateManager';
@@ -528,16 +535,6 @@ interface KernelNote {
   onAction: () => void;
 }
 
-const KERNEL_LABEL: Record<string, string> = {
-  idle: 'Ready',
-  busy: 'Running',
-  waiting_for_input: 'Waiting for input',
-  restarting: 'Restarting',
-  dead: 'Kernel stopped',
-  unknown: 'Kernel state unknown',
-  lost: 'No kernel',
-};
-
 function runtimeLabel(session: NotebookSession) {
   return session.runtime.mode === 'attach' ? 'Attached' : 'Python';
 }
@@ -574,7 +571,7 @@ function SessionBlock({
     const label =
       session.state === 'starting' || !kernelState || kernelState === 'starting'
         ? 'Starting'
-        : (KERNEL_LABEL[kernelState] ?? 'Kernel state unknown');
+        : kernelLabel(kernelState);
     return (
       // biome-ignore lint/a11y/noStaticElementInteractions: Escape cancels the open stop confirmation
       <div className={styles.section} onKeyDown={stop.onKeyDown}>

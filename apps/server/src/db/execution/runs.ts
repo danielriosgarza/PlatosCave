@@ -3,7 +3,7 @@ import { type RunnerJob, testV1 } from '@parallax/contracts';
 import type { InstructorRun, StudentRun } from '@parallax/contracts/routes/runs';
 import { and, desc, eq, inArray, isNull, sql } from 'drizzle-orm';
 import type { PgBoss } from 'pg-boss';
-import type { ClassScope } from '../../auth/scope';
+import type { ClassManagerScope, ClassScope } from '../../auth/scope';
 import type { RunnerRuntime } from '../../config';
 import {
   buildRunnerJob,
@@ -442,6 +442,22 @@ export async function cancelRun(
   return { ok: true, value: (await viewOf(db, exec, scope, row, now)) as StudentRun };
 }
 
+/** The queued rows whose job no slot has fetched: still waiting, or not yet sent (§8.5). */
+async function unfetchedOf(ex: Ex, queued: RunRow[], now: Date): Promise<RunRow[]> {
+  if (queued.length === 0) return [];
+  const states = await jobStates(
+    ex,
+    RUN_QUEUE,
+    queued.map((r) => r.bossJobId),
+  );
+  return queued.filter((r) => {
+    const state = states.get(r.bossJobId);
+    return (
+      state === 'created' || state === 'retry' || (state === undefined && isLive(r, state, now))
+    );
+  });
+}
+
 /**
  * Cancels the attempt's queued sample runs whose job no slot has fetched (§8.4, P3-12e):
  * submission and expiry end the attempt, so nothing queued for it should still start.
@@ -464,18 +480,7 @@ async function cancelQueuedSamples(
         eq(executionJobs.state, 'queued'),
       ),
     );
-  if (queued.length === 0) return;
-  const states = await jobStates(
-    db,
-    RUN_QUEUE,
-    queued.map((r) => r.bossJobId),
-  );
-  const unfetched = queued.filter((r) => {
-    const state = states.get(r.bossJobId);
-    return (
-      state === 'created' || state === 'retry' || (state === undefined && isLive(r, state, now))
-    );
-  });
+  const unfetched = await unfetchedOf(db, queued, now);
   if (unfetched.length === 0) return;
   const moved = await db
     .update(executionJobs)
@@ -497,6 +502,65 @@ async function cancelQueuedSamples(
       moved.map((m) => m.bossJobId),
     );
   }
+}
+
+/**
+ * Inside the transaction that removes `userIds` from the class: their queued sample runs there
+ * whose job no slot has fetched become `cancelled` (ADR-0002 "Permission revoked"). Resolves with
+ * those runs' pg-boss job ids, which the caller cancels on the runner's queue once the
+ * transaction has committed; a job the cancel misses finds its row settled and its result is
+ * ignored (§8.5). A run a slot already runs finishes and is recorded as usual.
+ */
+export async function cancelSamplesOfRemoved(
+  tx: Tx,
+  scope: ClassManagerScope,
+  userIds: string[],
+  now: Date,
+): Promise<string[]> {
+  if (userIds.length === 0) return [];
+  const queued = await tx
+    .select()
+    .from(executionJobs)
+    .where(
+      and(
+        forClass(scope, executionJobs),
+        inArray(executionJobs.userId, userIds),
+        eq(executionJobs.reason, 'sample'),
+        eq(executionJobs.state, 'queued'),
+      ),
+    );
+  const unfetched = await unfetchedOf(tx, queued, now);
+  if (unfetched.length === 0) return [];
+  const moved = await tx
+    .update(executionJobs)
+    .set({ state: 'cancelled', finishedAt: now })
+    .where(
+      and(
+        forClass(scope, executionJobs),
+        inArray(
+          executionJobs.id,
+          unfetched.map((r) => r.id),
+        ),
+        eq(executionJobs.state, 'queued'),
+      ),
+    )
+    .returning({ id: executionJobs.id, bossJobId: executionJobs.bossJobId });
+  if (moved.length > 0) {
+    await audit(
+      tx,
+      moved.map((m) => ({
+        actorId: scope.user.id,
+        action: 'execution.cancelled',
+        scopeKind: 'class' as const,
+        scopeId: scope.classId,
+        targetType: 'execution_job',
+        targetId: m.id,
+        after: { reason: 'membership_removed' },
+        createdAt: now,
+      })),
+    );
+  }
+  return moved.map((m) => m.bossJobId);
 }
 
 /** The editable files of a submitted code answer; an unanswered question runs the starter. */

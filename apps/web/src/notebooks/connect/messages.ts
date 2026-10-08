@@ -16,6 +16,22 @@ export const STAGE_LABEL: Record<string, string> = {
   kernels: 'Check the kernel',
 };
 
+/** One word per kernel state, shared by the connect panel and the live toolbar (§5.6). */
+export const KERNEL_LABEL: Record<string, string> = {
+  starting: 'Starting',
+  idle: 'Ready',
+  busy: 'Running',
+  waiting_for_input: 'Waiting for input',
+  restarting: 'Restarting',
+  dead: 'Kernel stopped',
+  unknown: 'Unconfirmed',
+  lost: 'No kernel',
+};
+
+/** The word for a kernel state; a state nobody confirmed reads Unconfirmed. */
+export const kernelLabel = (state: string | null | undefined): string =>
+  KERNEL_LABEL[state ?? 'unknown'] ?? 'Unconfirmed';
+
 /** What each failing code means for the person, in the words of spec §14's six causes. */
 export const CODE_COPY: Record<string, string> = {
   host_unresolved: 'The host name could not be found.',
@@ -100,6 +116,7 @@ export const CAUSE_COPY: Record<string, string> = {
   connector_offline: 'The connector is not connected to Parallax.',
   connector_revoked: 'This device was revoked or unpaired.',
   kernel_lost: 'The kernel no longer exists. Its variables are gone.',
+  membership_removed: 'You were removed from this class, so the session was closed.',
 };
 
 /** The recovery steps of the catalogue as sentences; a few also have a button in the panel. */
@@ -148,7 +165,7 @@ const SERVER_CODE_COPY: Record<string, string> = {
   connector_offline:
     'That computer is not connected to Parallax. Start the connector there and try again.',
   template_mismatch:
-    'A connection to a class computer keeps the host and working directory its instructor set. Make a new connection from the class computer instead.',
+    'A connection to a class computer keeps the host, working directory, Jupyter settings and session times its instructor set. Make a new connection from the class computer instead.',
   workspace_needs_user:
     'On a computer with an account per student, the working directory must contain {user}.',
 };
@@ -245,4 +262,5 @@ export const CAUSE_RECOVERIES: Record<string, string[]> = {
   connector_offline: ['reconnect'],
   connector_revoked: ['pick_other_target', 'new_session'],
   kernel_lost: ['new_session'],
+  membership_removed: ['new_session'],
 };

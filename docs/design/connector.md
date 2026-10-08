@@ -458,7 +458,7 @@ An **attached** session is never stopped: when its detached deadline passes, the
 
 It is written to a temporary file in the same directory and renamed, mode 0600, on every state or phase change and otherwise at most every 5 seconds.
 
-**Server view.** `notebook_sessions.lease_expires_at` mirrors `leaseExpiresAt` for display. The server never stops a session itself. It marks a session `unconfirmed` (cause `link_lost`) when 45 s pass without a heartbeat, back to the connector-reported state when the link returns, and `stopped` only on the connector's word, or with cause `connector_restarted` when a returning connector does not know the session. It never marks one completed because a link closed (spec §10.4).
+**Server view.** `notebook_sessions.lease_expires_at` mirrors `leaseExpiresAt` for display. The server never stops a session itself. It marks a session `unconfirmed` (cause `link_lost`) when 45 s pass without a heartbeat, back to the connector-reported state when the link returns, and `stopped` only on the connector's word, with cause `connector_restarted` when a returning connector does not know the session, or with cause `membership_removed` when the person is removed from the class (ADR-0002 "Permission revoked"; an owned process is then stopped by the heartbeat clean-up of §10.7). It never marks one completed because a link closed (spec §10.4).
 
 ## 10. Server side (`apps/server`)
 
@@ -581,6 +581,7 @@ JSON text frames over the WebSocket, validated with zod in `packages/contracts/s
 | `unconfirmed` | the link returns and the connector reports `disconnected` | `disconnected` (the connector's cause) |
 | `starting`, `stopping` | the link closes | `unconfirmed` (`link_lost`) |
 | any open state | the connector is revoked | `unconfirmed` (`connector_revoked`) |
+| any open state | the person is removed from the session's class (in the removing transaction, audited) | `stopped` (`membership_removed`); says nothing about the process, which the clean-up below stops at the next heartbeat when it is owned |
 | any state | relay process start | every `sent`/`running` execution becomes `unconfirmed` (§10.6); sessions that were open become `unconfirmed` until their connector reports |
 
 A heartbeat that lists an owned session the server has as `stopped` **or `failed`** (and whose own entry is not `stopped`) makes the server send `close_session { stop: true }` (clean-up of a leak), but never before the first heartbeat after `hello` has been processed. A session still `starting` after the 300 s of §5.1 becomes `failed` (`test_timeout`); a `ready` that arrives later is answered by that clean-up, so the process does not linger.

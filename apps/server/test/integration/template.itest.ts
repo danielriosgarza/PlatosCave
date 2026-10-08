@@ -3,7 +3,12 @@ import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
 import { buildApp } from '../../src/app';
 import { loadConfig } from '../../src/config';
-import { auditEvents, classComputeTemplates, classes } from '../../src/db/schema';
+import {
+  auditEvents,
+  classComputeTemplates,
+  classes,
+  notebookConnections,
+} from '../../src/db/schema';
 import { insertConnector, keyFromSeed, seedOf } from '../fixtures/fake-connector';
 import { buildWorld, ids, type PersonName, type World } from '../fixtures/world';
 import { createTestDatabase, type TestDatabase } from './db';
@@ -105,12 +110,17 @@ const derived = (user: string, auth: object = { method: 'agent', hint: 'cluster'
 });
 
 let named = 0;
-const connect = (who: 'sam' | 'bea' | 'priya', templateId: string, target: object) =>
+const connect = (
+  who: 'sam' | 'bea' | 'priya',
+  templateId: string,
+  target: object,
+  runtime: object = { mode: 'start', kernelName: 'python3' },
+) =>
   as(who, 'POST', '/api/me/connections', {
     name: `From template ${++named}`,
     connectorId: connector[who],
     target,
-    runtime: { mode: 'start', kernelName: 'python3' },
+    runtime,
     templateId,
   });
 
@@ -187,6 +197,56 @@ describe('class host templates', () => {
     });
     expect(renamed.status, JSON.stringify(renamed.body)).toBe(200);
     expect(renamed.body.target.workspace).toBe('/home/bea.lindqvist/parallax');
+  });
+
+  test('A33 a connection from a template holds its runtime when made and when changed', async () => {
+    const templateId = await publish();
+    // The template starts Jupyter with the host's own interpreter: no learner attaches to a
+    // running server or picks another interpreter or login shell.
+    for (const runtime of [
+      { mode: 'attach', port: 8888 },
+      { mode: 'attach', port: 8888, kernelName: 'python3' },
+      { mode: 'start', kernelName: 'python3', python: '/opt/conda/bin/python' },
+      { mode: 'start', kernelName: 'python3', login: true },
+    ]) {
+      expect(
+        await connect('bea', templateId, derived('bea'), runtime),
+        JSON.stringify(runtime),
+      ).toMatchObject({
+        status: 400,
+        body: { error: 'target_not_allowed', code: 'template_mismatch' },
+      });
+    }
+    // The kernel is the learner's choice among those the host offers.
+    const made = await connect('bea', templateId, derived('bea'), {
+      mode: 'start',
+      kernelName: 'ir',
+    });
+    expect(made.status, JSON.stringify(made.body)).toBe(201);
+    expect(made.body.runtime).toEqual({ mode: 'start', kernelName: 'ir' });
+
+    const url = `/api/me/connections/${made.body.id}`;
+    for (const change of [
+      { runtime: { mode: 'attach', port: 8888 } },
+      { runtime: { mode: 'start', login: true } },
+      { target: derived('bea'), runtime: { mode: 'attach', port: 8888 } },
+      { name: 'Mine now', runtime: { mode: 'attach', port: 9999 } },
+    ]) {
+      expect(await as('bea', 'PATCH', url, change), JSON.stringify(change)).toMatchObject({
+        status: 400,
+        body: { error: 'target_not_allowed', code: 'template_mismatch' },
+      });
+    }
+    const [kept] = await testDb.db
+      .select()
+      .from(notebookConnections)
+      .where(eq(notebookConnections.id, made.body.id));
+    expect(kept?.runtime).toEqual({ mode: 'start', kernelName: 'ir' });
+    expect(kept?.name).toBe(made.body.name);
+
+    const kernel = await as('bea', 'PATCH', url, { runtime: { mode: 'start' } });
+    expect(kernel.status, JSON.stringify(kernel.body)).toBe(200);
+    expect(kernel.body.runtime).toEqual({ mode: 'start' });
   });
 
   test('instructor writes and every member reads', async () => {

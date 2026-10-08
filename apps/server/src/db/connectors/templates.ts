@@ -271,12 +271,13 @@ export async function usableTemplate(
   tx: Tx,
   scope: UserScope,
   templateId: string,
-): Promise<{ id: string; classId: string; target: unknown } | null> {
+): Promise<{ id: string; classId: string; target: unknown; runtime: unknown } | null> {
   const [row] = await tx
     .select({
       id: classComputeTemplates.id,
       classId: classComputeTemplates.classId,
       target: classComputeTemplates.target,
+      runtime: classComputeTemplates.runtime,
     })
     .from(classComputeTemplates)
     .innerJoin(
@@ -291,13 +292,16 @@ export async function usableTemplate(
   return row ?? null;
 }
 
-/** The target a connection's template holds, for checking a change to that connection. */
-export async function templateTargetOf(tx: Tx, templateId: string): Promise<unknown> {
+/** The target and runtime a connection's template holds, for checking a change to it. */
+export async function templateHeldBy(
+  tx: Tx,
+  templateId: string,
+): Promise<{ target: unknown; runtime: unknown }> {
   const [row] = await tx
-    .select({ target: classComputeTemplates.target })
+    .select({ target: classComputeTemplates.target, runtime: classComputeTemplates.runtime })
     .from(classComputeTemplates)
     .where(eq(classComputeTemplates.id, templateId));
-  return row?.target;
+  return { target: row?.target, runtime: row?.runtime };
 }
 
 /** `template.used`: a learner made a connection from a class's template, in that class. */

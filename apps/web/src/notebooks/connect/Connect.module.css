@@ -82,7 +82,7 @@
 .alert {
   border-left: 3px solid var(--pc-ink);
   padding: var(--pc-space-8) var(--pc-space-12);
-  background: var(--pc-highlight);
+  background: var(--pc-secondary);
 }
 .alert p {
   margin: 0;
