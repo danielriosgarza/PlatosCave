@@ -82,6 +82,9 @@ type Process struct {
 	out        *tail
 }
 
+// outputGrace is how long the output of an exited server is still read.
+const outputGrace = time.Second
+
 // startAttempts is how often a bind race on the chosen port is retried.
 const startAttempts = 3
 
@@ -133,6 +136,9 @@ func startOnce(ctx context.Context, o StartOptions) (*Process, error) {
 	cmd := exec.Command(name, args...)
 	cmd.Dir = o.Workspace
 	cmd.Stdin = nil
+	// A kernel that outlives the server inherits its output; once the server has exited, its
+	// output is read for at most outputGrace more, so the exit is seen.
+	cmd.WaitDelay = outputGrace
 	cmd.Env = childEnv([]string{"JUPYTER_TOKEN=" + o.Token, "JUPYTER_RUNTIME_DIR=" + runtimeDir})
 	out := &tail{token: o.Token, log: o.Log}
 	pr, pw := io.Pipe()

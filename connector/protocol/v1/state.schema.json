@@ -325,9 +325,10 @@
               "enum": ["local", "remote"]
             },
             "pid": {
+              "description": "A Linux pid is at most 4194304; a Windows process id is any 32-bit value.",
               "type": "integer",
               "minimum": 1,
-              "maximum": 4194304
+              "maximum": 4294967295
             },
             "port": {
               "$ref": "#/$defs/port"
