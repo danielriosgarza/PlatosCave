@@ -1,5 +1,5 @@
 import { and, desc, eq, inArray, or } from 'drizzle-orm';
-import type { ClassScope } from '../../auth/scope';
+import type { ClassManagerScope, ClassScope } from '../../auth/scope';
 import {
   isOpen,
   nextSessionState,
@@ -300,6 +300,47 @@ async function applyToOpen(
   };
   // Inside a caller's transaction this is a savepoint.
   return db.transaction(run);
+}
+
+/**
+ * Inside the transaction that removes `userIds` from the class: their open sessions there are
+ * `stopped` with cause `membership_removed`, each audited with the remover as actor (ADR-0002
+ * "Permission revoked"). Nothing is sent from here: the relay that holds the connector's link
+ * stops an owned process at its next heartbeat (§10.7 clean-up), and an attached runtime is the
+ * person's own, left to its lease. A re-enrolled person therefore starts with no open session.
+ */
+export async function closeForRemovedMembers(
+  tx: Tx,
+  scope: ClassManagerScope,
+  userIds: string[],
+  now: Date,
+): Promise<string[]> {
+  if (userIds.length === 0) return [];
+  const rows = await tx
+    .select()
+    .from(notebookSessions)
+    .where(
+      and(
+        forClass(scope, notebookSessions),
+        inArray(notebookSessions.userId, userIds),
+        inArray(notebookSessions.state, [...OPEN_STATES]),
+      ),
+    )
+    .orderBy(notebookSessions.id)
+    .for('update');
+  const closed: string[] = [];
+  for (const row of rows) {
+    const applied = await applyLocked(
+      tx,
+      row,
+      { t: 'membership_removed' },
+      undefined,
+      scope.user.id,
+      now,
+    );
+    if (applied.changed) closed.push(row.id);
+  }
+  return closed;
 }
 
 /** The link closed or went 45 s without a heartbeat: open sessions become `unconfirmed`. */

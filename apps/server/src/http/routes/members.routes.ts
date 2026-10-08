@@ -15,6 +15,7 @@ import type { RouteDeps } from '../../app';
 import * as identity from '../../db/identity';
 import * as invites from '../../db/invites';
 import * as members from '../../db/members';
+import { RUN_QUEUE } from '../../execution/queues';
 import { perSession } from '../rate-limit';
 import { notFound, registerRoute } from '../register';
 
@@ -81,6 +82,14 @@ export default function memberRoutes(app: FastifyInstance, deps: RouteDeps): voi
     scope.requireRecentAuth();
     const result = await members.removeMember(db(), scope, params.userId, now());
     if (!result.ok) return notFound();
+    // The rows are already cancelled; a job this misses runs, and its result is ignored.
+    if (result.cancelledJobs.length > 0 && deps.bossExec) {
+      try {
+        await deps.bossExec.cancel(RUN_QUEUE, result.cancelledJobs);
+      } catch (err) {
+        app.log.error({ err }, 'cancelling the removed member’s queued runs failed');
+      }
+    }
     return { removed: true as const };
   });
 
