@@ -47,7 +47,7 @@ export const DEV_RUNNER_RUNTIMES: RunnerRuntime[] = [
     language: 'python',
     image: 'parallax-runner-python:dev',
     digest: null,
-    harnessVersion: '2',
+    harnessVersion: '3',
     packages: ['numpy', 'pandas', 'scipy'],
   },
   {
@@ -55,7 +55,7 @@ export const DEV_RUNNER_RUNTIMES: RunnerRuntime[] = [
     language: 'r',
     image: 'parallax-runner-r:dev',
     digest: null,
-    harnessVersion: '2',
+    harnessVersion: '3',
     packages: ['jsonlite'],
   },
 ];
