@@ -150,26 +150,43 @@ export function ConnectPanel({ classId, revisionId, instructor = false, onClose 
     readySession?.kernelName ??
     readySession?.runtime.kernelName ??
     readySession?.runtime.kernelspecs?.[0]?.name;
+  // One kernel start or restart at a time: a second click, or a restart while the first start is
+  // still on its way, would run against a kernel that is changing under it.
+  const kernelCalling = useRef(false);
+  const [kernelBusy, setKernelBusy] = useState(false);
+  const oneKernelCall = (call: () => Promise<void>) => {
+    if (kernelCalling.current) return Promise.resolve();
+    kernelCalling.current = true;
+    setKernelBusy(true);
+    return call().finally(() => {
+      kernelCalling.current = false;
+      setKernelBusy(false);
+    });
+  };
   const startFor = (id: string, name: string) =>
-    startKernel(classId, id, name)
-      .then(() => setKernelError(null))
-      .catch((e) =>
-        setKernelError({
-          id,
-          text: kernelRefusalText(e, 'The kernel could not be started.'),
-          again: 'start',
-        }),
-      );
+    oneKernelCall(() =>
+      startKernel(classId, id, name)
+        .then(() => setKernelError(null))
+        .catch((e) =>
+          setKernelError({
+            id,
+            text: kernelRefusalText(e, 'The kernel could not be started.'),
+            again: 'start',
+          }),
+        ),
+    );
   const restartFor = (id: string) =>
-    restartKernel(classId, id)
-      .then(() => setKernelError(null))
-      .catch((e) =>
-        setKernelError({
-          id,
-          text: kernelRefusalText(e, 'The kernel could not be restarted.'),
-          again: 'restart',
-        }),
-      );
+    oneKernelCall(() =>
+      restartKernel(classId, id)
+        .then(() => setKernelError(null))
+        .catch((e) =>
+          setKernelError({
+            id,
+            text: kernelRefusalText(e, 'The kernel could not be restarted.'),
+            again: 'restart',
+          }),
+        ),
+    );
   // biome-ignore lint/correctness/useExhaustiveDependencies: `startFor` is rebuilt every render; the effect runs once per ready session
   useEffect(() => {
     if (!readySession || !kernelKnown || kernelView || kernelLost || !kernelToStart) return;
@@ -192,6 +209,7 @@ export function ConnectPanel({ classId, revisionId, instructor = false, onClose 
   let kernelNote: KernelNote | null = null;
   if (readySession && kernelFailure) {
     kernelNote = {
+      busy: kernelBusy,
       text: kernelFailure,
       actionLabel:
         kernelError?.again === 'restart' ? 'Restart the kernel' : 'Start the kernel again',
@@ -203,6 +221,7 @@ export function ConnectPanel({ classId, revisionId, instructor = false, onClose 
     };
   } else if (readySession && kernelLost) {
     kernelNote = {
+      busy: kernelBusy,
       text: `${causeText('kernel_lost')} A new kernel starts empty.`,
       actionLabel: 'Start a new kernel',
       onAction: () => {
@@ -211,6 +230,7 @@ export function ConnectPanel({ classId, revisionId, instructor = false, onClose 
     };
   } else if (readySession && (kernelView?.state === 'dead' || kernelView?.state === 'unknown')) {
     kernelNote = {
+      busy: kernelBusy,
       text:
         kernelView.state === 'dead'
           ? 'The kernel is not running. Its variables are gone.'
@@ -533,6 +553,8 @@ interface KernelNote {
   text: string;
   actionLabel: string;
   onAction: () => void;
+  /** A kernel start or restart is on its way; the action waits for it. */
+  busy: boolean;
 }
 
 function runtimeLabel(session: NotebookSession) {
@@ -586,7 +608,12 @@ function SessionBlock({
         {kernelNote ? (
           <div className={styles.alert} role="alert">
             <p>{kernelNote.text}</p>
-            <button type="button" className={buttons.outline} onClick={kernelNote.onAction}>
+            <button
+              type="button"
+              className={buttons.outline}
+              onClick={kernelNote.onAction}
+              disabled={kernelNote.busy}
+            >
               {kernelNote.actionLabel}
             </button>
           </div>

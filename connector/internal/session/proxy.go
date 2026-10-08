@@ -160,7 +160,15 @@ func (m *Manager) serveHTTP(s *Session, c *jupyter.Client, msg *protocol.HTTP, r
 		}
 		body = bytes.NewReader(data)
 	default:
-		if msg.Body == "stream" {
+		if msg.Body == "stream" && length == 0 {
+			// An empty body is read whole here and sent with Content-Length: 0. A pipe would
+			// reach Jupyter as a chunked body of unknown length.
+			if err := copyBody(ctx, st, io.Discard, 0); err != nil {
+				bodyFailed(st, err)
+				return
+			}
+			body = http.NoBody
+		} else if msg.Body == "stream" {
 			pr, pw := io.Pipe()
 			go func() { pw.CloseWithError(copyBody(ctx, st, pw, length)) }()
 			body = pr
