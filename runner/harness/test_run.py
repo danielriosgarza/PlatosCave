@@ -1384,6 +1384,8 @@ class RRuntime(HarnessCase):
         "bare_pairlist <- function() formals(function(a = 1) NULL)\n"
         "many_short_then_long <- function() c(as.list(rep('ab', 20000)), list(strrep('a', 65537)))\n"
         "bytes_then_cut <- function() { b <- strrep('\u00e9', 40000); Encoding(b) <- 'bytes'; list(b, strrep('a', 65537)) }\n"
+        "na_beside_long <- function() list(NA_character_, strrep('a', 65537))\n"
+        "numeric_matrix_in_list <- function() list(matrix(1:6, 2), 'x')\n"
         "list_char_matrix <- function() list(matrix(strrep('a', 65537), 1))\n"
         "stop_warning <- function() stop(simpleWarning('w'))\n"
         "stop_message <- function() stop(simpleMessage('m'))\n"
@@ -1653,9 +1655,16 @@ class RRuntime(HarnessCase):
                 {"value": 'list(structure("' + cut + '", dim = c(1L, 1L)))'},
                 "repr",
             ),
+            r_call("Cut beside a missing value", "na_beside_long", {"value": 'list(NA_character_, "' + cut + '")'}, "repr"),
+            r_call(
+                "Numeric matrix left alone",
+                "numeric_matrix_in_list",
+                {"value": 'list(structure(1:6, dim = 2:3), "x")'},
+                "repr",
+            ),
             r_call("Cut after short strings", "many_short_then_long", {"value": "list(" + '"ab", ' * 20000 + '"' + cut + '")'}, "repr"),
         )
-        self.assertEqual([c["status"] for c in outcome.result["checks"]], ["passed"] * 5, outcome.result["checks"])
+        self.assertEqual([c["status"] for c in outcome.result["checks"]], ["passed"] * 7, outcome.result["checks"])
 
     def test_stop_with_a_warning_or_message_condition_is_an_exception(self):
         outcome = self.outcome_for(

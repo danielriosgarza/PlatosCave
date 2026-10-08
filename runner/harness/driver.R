@@ -123,11 +123,6 @@ local({
   # the bound existed. A string with a "bytes" encoding is never cut: it deparses linearly.
   REPR_CHARS <- 65536L
 
-  long_cuttable <- function(s) {
-    over <- which(nchar(s, type = "bytes") > REPR_CHARS)
-    length(over) > 0L && any(Encoding(s[over]) != "bytes")
-  }
-
   # TRUE if a plain (unclassed) character vector anywhere in the plain list x has a string
   # over the limit in bytes (a cheap upper bound of its characters) that would be cut
   # ("bytes"-encoded strings are never cut). rapply walks in C and calls back only for
@@ -135,9 +130,10 @@ local({
   # has the implicit class "matrix" or "array", so those are listed too.
   has_long_string <- function(x) {
     any(rapply(x, function(s) {
+      if (!is.character(s)) return(FALSE)
       over <- nchar(s, type = "bytes") > REPR_CHARS
-      if (!any(over)) return(FALSE)
-      is.character(s) && !is.object(s) && any(Encoding(s[over]) != "bytes")
+      if (!any(over, na.rm = TRUE)) return(FALSE)
+      !is.object(s) && any(Encoding(s[which(over)]) != "bytes")
     }, classes = c("character", "matrix", "array"), deflt = FALSE, how = "unlist"))
   }
 
@@ -175,13 +171,7 @@ local({
   }
 
   bound_for_repr <- function(x) {
-    if (is.character(x) && !is.object(x)) {
-      cut_strings(x)
-    } else if (is_plain_list(x) && length(x) && has_long_string(x)) {
-      bound_elements(x)
-    } else {
-      x
-    }
+    if (is_plain_list(x) && length(x) && !has_long_string(x)) x else bound_elements(x)
   }
 
   repr_text <- function(x) {
