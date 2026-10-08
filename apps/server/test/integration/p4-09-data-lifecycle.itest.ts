@@ -807,6 +807,7 @@ describe('deleting an account with notebook compute (P3-AUD10)', () => {
       return row?.id ?? '';
     };
     const submittedTransfer = await transfer(filesSession, 'kai-private/results.csv');
+    const alsoSubmitted = await transfer(filesSession, 'kai-private/run-2/results.csv');
     const looseTransfer = await transfer(filesSession, 'kai-private/draft.csv');
     const unsubmittedTransfer = await transfer(unsubmittedSession, 'kai-private/scratch.csv');
     const submission = (version: number, sessionId: string | null) => ({
@@ -827,15 +828,22 @@ describe('deleting an account with notebook compute (P3-AUD10)', () => {
       .insert(notebookSubmissions)
       .values(submission(2, null))
       .returning({ id: notebookSubmissions.id });
-    await testDb.db.insert(notebookSubmissionFiles).values({
+    // A submission freezes each file under its workspace path, as the submit route records it.
+    const frozenFile = (fileTransferId: string, path: string) => ({
       submissionId: withFiles?.id ?? '',
-      path: 'results.csv',
+      path,
       classId: ids.classA,
-      fileTransferId: submittedTransfer,
+      fileTransferId,
       sha256: 'c'.repeat(64),
       size: 10,
-      objectKey: `classes/${ids.classA}/transfers/1`,
+      objectKey: `classes/${ids.classA}/transfers/${fileTransferId}`,
     });
+    await testDb.db
+      .insert(notebookSubmissionFiles)
+      .values([
+        frozenFile(submittedTransfer, 'kai-private/results.csv'),
+        frozenFile(alsoSubmitted, 'kai-private/run-2/results.csv'),
+      ]);
     const audited = (targetType: string, targetId: string, after: object) => ({
       actorId: userId,
       action: `${targetType}.test`,
@@ -870,9 +878,12 @@ describe('deleting an account with notebook compute (P3-AUD10)', () => {
       .select()
       .from(fileTransfers)
       .where(eq(fileTransfers.userId, userId));
-    expect(transfers.map((t) => [t.id, t.path, t.conflict])).toEqual([
-      [submittedTransfer, 'removed', null],
-    ]);
+    expect(transfers.map((t) => [t.id, t.path, t.conflict]).sort()).toEqual(
+      [
+        [submittedTransfer, 'removed', null],
+        [alsoSubmitted, 'removed', null],
+      ].sort(),
+    );
     expect(transfers[0]?.objectKey).not.toBeNull();
     for (const gone of [looseTransfer, unsubmittedTransfer])
       expect(transfers.some((t) => t.id === gone)).toBe(false);
@@ -915,16 +926,22 @@ describe('deleting an account with notebook compute (P3-AUD10)', () => {
         .from(notebookSubmissions)
         .where(eq(notebookSubmissions.userId, userId)),
     ).toHaveLength(2);
-    expect(
-      await testDb.db
-        .select()
-        .from(notebookSubmissionFiles)
-        .where(eq(notebookSubmissionFiles.fileTransferId, submittedTransfer)),
-    ).toHaveLength(1);
+    // The frozen files keep their contents and only their file names, still one per name.
+    const frozen = await testDb.db
+      .select()
+      .from(notebookSubmissionFiles)
+      .where(eq(notebookSubmissionFiles.submissionId, withFiles?.id ?? ''));
+    expect(frozen.map((f) => [f.fileTransferId, f.path]).sort()).toEqual(
+      [
+        [submittedTransfer, 'results.csv'],
+        [alsoSubmitted, '2-results.csv'],
+      ].sort(),
+    );
 
     // Nothing that named their machines, accounts or files is left anywhere in the database.
     const dump = JSON.stringify([
       transfers,
+      frozen,
       sessions,
       connections,
       connector,

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { strokesToSvg } from '@parallax/contracts';
 import type * as contracts from '@parallax/contracts/routes/lifecycle';
 import { and, asc, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
@@ -261,7 +262,9 @@ export function exportOwnAnnotations(db: Db, scope: ClassScope, now: Date): Prom
  * P3-AUD10): `deleted`, every row of theirs goes; `pruned`, rows no submission needs go and the
  * rest keep no identifying detail; `redacted`, rows stay with identifying details replaced;
  * `kept`, records the organisation keeps, which show the pseudonym. `lifecycle.test.ts` fails
- * when a table referring to `users` is missing here, so a new one cannot be forgotten.
+ * when a table referring to `users` is missing here, so a new one cannot be forgotten; only
+ * `deleted` is checked generically (the lifecycle integration test), the other values record
+ * what `anonymiseIdentity` does and are checked table by table where it does it.
  */
 export const accountDeletion = {
   annotation_placements: 'kept',
@@ -467,6 +470,7 @@ async function deleteNotebookCompute(tx: Tx, userIds: string[], now: Date): Prom
     .update(fileTransfers)
     .set({ path: REDACTED_TRANSFER_PATH, conflict: null })
     .where(inArray(fileTransfers.userId, userIds));
+  await keepOnlyFileNames(tx, userIds);
   await tx.delete(notebookSessions).where(
     and(
       inArray(notebookSessions.userId, userIds),
@@ -494,7 +498,7 @@ async function deleteNotebookCompute(tx: Tx, userIds: string[], now: Date): Prom
       runtime: sql`jsonb_build_object('mode', ${notebookConnections.runtime} -> 'mode')`,
       trustedHostKeys: [],
       updatedAt: now,
-      archivedAt: sql`coalesce(${notebookConnections.archivedAt}, ${now.toISOString()}::timestamptz)`,
+      archivedAt: sql`coalesce(${notebookConnections.archivedAt}, ${now})`,
     })
     .where(inArray(notebookConnections.ownerUserId, userIds));
   await tx
@@ -522,6 +526,53 @@ async function deleteNotebookCompute(tx: Tx, userIds: string[], now: Date): Prom
       })
       .where(and(eq(auditEvents.targetType, targetType), inArray(auditEvents.targetId, ids)));
   }
+}
+
+/**
+ * A submission froze each file under its workspace path; what stays of a deleted person's
+ * submissions names each file by its last segment only, numbered where two would share a name
+ * (the key is submission and path). Every row moves to a temporary name first, so no rename can
+ * meet a name another row is about to leave.
+ */
+async function keepOnlyFileNames(tx: Tx, userIds: string[]): Promise<void> {
+  const rows = await tx
+    .select({
+      submissionId: notebookSubmissionFiles.submissionId,
+      path: notebookSubmissionFiles.path,
+    })
+    .from(notebookSubmissionFiles)
+    .innerJoin(
+      notebookSubmissions,
+      eq(notebookSubmissions.id, notebookSubmissionFiles.submissionId),
+    )
+    .where(inArray(notebookSubmissions.userId, userIds))
+    .orderBy(asc(notebookSubmissionFiles.submissionId), asc(notebookSubmissionFiles.path));
+  if (rows.length === 0) return;
+  const taken = new Map<string, Set<string>>();
+  const renames = rows.map((row) => {
+    const names = taken.get(row.submissionId) ?? new Set<string>();
+    taken.set(row.submissionId, names);
+    const base = row.path.slice(row.path.lastIndexOf('/') + 1) || 'file';
+    let name = base;
+    for (let n = 2; names.has(name); n += 1) name = `${n}-${base}`;
+    names.add(name);
+    return { ...row, temporary: randomUUID(), name };
+  });
+  const at = (submissionId: string, path: string) =>
+    and(
+      eq(notebookSubmissionFiles.submissionId, submissionId),
+      eq(notebookSubmissionFiles.path, path),
+    );
+  for (const r of renames)
+    await tx
+      .update(notebookSubmissionFiles)
+      .set({ path: r.temporary })
+      .where(at(r.submissionId, r.path));
+  for (const r of renames)
+    await tx
+      .update(notebookSubmissionFiles)
+      .set({ path: r.name })
+      .where(at(r.submissionId, r.temporary));
 }
 
 export type CloseOutcome =
