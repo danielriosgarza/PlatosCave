@@ -211,6 +211,22 @@ describe('rendering', () => {
     expect(html).toBe(`<p data-block-id="${blockMap[0]?.id}">Hi</p>`);
   });
 
+  test('A09 a template inside svg or math is dropped, not thrown on, at ingestion and at read time', () => {
+    for (const source of [
+      '<p>Before</p><svg><template><rect/></template></svg><p>After</p>',
+      '<p>Before</p><math><template><mi>x</mi></template></math><p>After</p>',
+      '<p>Before</p><svg><g><template><rect/></template></g></svg><p>After</p>',
+    ]) {
+      const { html, blockMap } = renderReading(source, 'html');
+      expect(html).not.toMatch(/template|<rect|<mi>/i);
+      expect(blockMap.map((b) => b.text)).toEqual(['Before', 'After']);
+      expect(resolveReadingImages(html, () => null)).toBe(html);
+    }
+    expect(() =>
+      resolveReadingImages('<p data-object-key="k">x</p><svg><template/></svg>', () => null),
+    ).not.toThrow();
+  });
+
   test('in-document links still reach ids that already carry the sanitiser prefix', () => {
     const { html } = renderReading(
       '<h2 id="user-content-x">X</h2><p><a href="#user-content-x">to X</a> <a href="#y">to Y</a></p><p id="y">Y</p>',

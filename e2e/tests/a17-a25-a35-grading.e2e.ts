@@ -1,4 +1,5 @@
 import { type APIRequestContext, expect, type Page, test } from '@playwright/test';
+import { small } from '../touch';
 
 test.use({ colorScheme: 'light', viewport: { width: 1440, height: 900 } });
 
@@ -269,4 +270,37 @@ test('A35 an instructor inspects a submitted notebook snapshot in Parallax witho
   // Nothing was asked of any computer: no connector, connection or session route was touched.
   expect(requests.filter((p) => /connector|connection|notebook-sessions/.test(p))).toEqual([]);
   await expect(page.getByRole('button', { name: /connect/i })).toHaveCount(0);
+});
+
+test.describe('coarse pointer', () => {
+  test.use({ hasTouch: true, isMobile: true });
+
+  test('A20 the class review filters, release tick and table buttons are at least 44 px with a touch screen', async ({
+    page,
+    playwright,
+    baseURL,
+  }) => {
+    const title = `Grading test ${Date.now()}-${test.info().workerIndex}-a20`;
+    const { ids, resourceId, attempts } = await submittedTest(playwright, baseURL ?? '', title);
+    await signInInstructor(page, 'marcus@example.test');
+    await page.goto(
+      `/classes/${ids.classB}/review?assignment=${resourceId}&selected=${ids.bea}&attempt=${attempts.bea}`,
+    );
+    await saveDraft(page);
+    await page.goto(`/classes/${ids.classB}/review?assignment=${resourceId}`);
+    const tick = page.getByRole('checkbox', { name: 'Select Bea Lindqvist for release' });
+    await expect(tick).toBeVisible();
+    const row = await tick.evaluate((node) => {
+      const box = (node.closest('label') ?? node).getBoundingClientRect();
+      return { width: box.width, height: box.height };
+    });
+    expect(row.width).toBeGreaterThanOrEqual(44);
+    expect(row.height).toBeGreaterThanOrEqual(44);
+    expect(
+      await small(
+        page,
+        'main button, main select, main input:not([type="checkbox"], [type="radio"])',
+      ),
+    ).toEqual([]);
+  });
 });

@@ -9,13 +9,12 @@ import {
   type StoredNotebookOutput,
 } from '@parallax/contracts';
 import type { Element, ElementContent, Root, RootContent } from 'hast';
-import { fromParse5 } from 'hast-util-from-parse5';
 import { toString as hastToString } from 'hast-util-to-string';
-import { type DefaultTreeAdapterMap, parseFragment } from 'parse5';
 import rehypeSanitize, { defaultSchema, type Options as SanitizeSchema } from 'rehype-sanitize';
 import rehypeStringify from 'rehype-stringify';
 import { unified } from 'unified';
 import { visit } from 'unist-util-visit';
+import { parseHtmlFragment } from './html-fragment';
 import { renderReading } from './reading';
 
 /**
@@ -137,49 +136,72 @@ const BLANK = '[\\u0000-\\u0020]';
 const BLANKS = new RegExp(BLANK, 'g');
 const attrText = (value: unknown) => (Array.isArray(value) ? value.join(' ') : String(value));
 
-const ANIMATION_TAGS = new Set(['animate', 'animateMotion', 'animateTransform', 'set']);
+/** Animation elements, which the SVG schema strips. */
+const ANIMATION_TAGS = ['animate', 'animateMotion', 'animateTransform', 'set'];
 /** Where an animation can put a script URL. SMIL cannot set event-handler attributes. */
 const ANIMATED_VALUES = new Set(['to', 'from', 'by', 'values']);
-/** Elements that load or run a document of their own, in or out of `foreignObject`. */
-const SCRIPT_CAPABLE = new Set([
-  'iframe',
-  'object',
-  'embed',
-  'meta',
-  'template',
-  'frame',
-  'applet',
-]);
+/** The attributes an animation must target to turn a value into a link. */
+const ANIMATED_LINKS = new Set(['href', 'xlink:href']);
+/** Elements that may load or run a document of their own, in or out of `foreignObject`. */
+const SCRIPT_CAPABLE = ['iframe', 'object', 'embed', 'meta', 'template', 'frame', 'applet'];
 const URL_ATTRIBUTES = new Set(['href', 'xLinkHref', 'src', 'action', 'formAction']);
+
+const isScriptUrl = (value: string) => /^javascript:/i.test(value.replace(BLANKS, ''));
+
+/**
+ * Whether a `capable` element brings a document of its own. `meta` only with `http-equiv=refresh`
+ * and `iframe` only with `srcdoc` (a script `src` counts as any script URL does); an HTML
+ * `template` is searched for what it holds instead. The rest always count.
+ */
+function bringsDocument(el: Element): boolean {
+  if (!SCRIPT_CAPABLE.includes(el.tagName) || el.tagName === 'template') return false;
+  if (el.tagName === 'meta')
+    return (
+      attrText(el.properties.httpEquiv ?? '')
+        .trim()
+        .toLowerCase() === 'refresh'
+    );
+  if (el.tagName === 'iframe') return el.properties.srcDoc !== undefined;
+  return true;
+}
+
+/** An animation that sets a link to a script URL: `values` is a list, the rest one value. */
+function animatesScriptUrl(el: Element): boolean {
+  if (!ANIMATION_TAGS.includes(el.tagName)) return false;
+  const target = attrText(el.properties.attributeName ?? '')
+    .replace(BLANKS, '')
+    .toLowerCase();
+  if (!ANIMATED_LINKS.has(target)) return false;
+  return [...ANIMATED_VALUES].some((name) => {
+    const value = el.properties[name];
+    return value !== undefined && attrText(value).split(';').some(isScriptUrl);
+  });
+}
 
 /**
  * True when the markup held something that would run script were it not removed: a script
- * element, an event handler, a script URL, or (with `capable`) an element that brings a document
- * of its own. Elements are removed whole, so what they held counts without looking inside
- * (`template` content, which `visit` does not enter, and `srcdoc`).
+ * element, an event handler, a script URL, an animation that sets a link to one, the content of a
+ * `template` (searched, though `visit` does not enter it) or, with `capable`, an element that
+ * brings a document of its own (see `bringsDocument`). Elements are removed whole, so what they
+ * held counts without looking inside.
  */
 function hasScript(tree: Root, capable = false): boolean {
   let found = false;
-  visit(tree, 'element', (el) => {
-    if (el.tagName === 'script' || (capable && SCRIPT_CAPABLE.has(el.tagName))) found = true;
-    for (const [name, value] of Object.entries(el.properties)) {
-      if (/^on[a-z]/i.test(name)) found = true;
-      if (
-        ANIMATION_TAGS.has(el.tagName) &&
-        ANIMATED_VALUES.has(name) &&
-        /javascript:/i.test(attrText(value).replace(BLANKS, ''))
-      ) {
+  const scan = (node: Root): void =>
+    visit(node, 'element', (el) => {
+      if (el.tagName === 'script' || (capable && bringsDocument(el)) || animatesScriptUrl(el)) {
         found = true;
       }
-      if (
-        URL_ATTRIBUTES.has(name) &&
-        typeof value === 'string' &&
-        /^javascript:/i.test(value.replace(BLANKS, ''))
-      ) {
-        found = true;
+      if (el.tagName === 'template' && el.content) scan(el.content);
+      for (const [name, value] of Object.entries(el.properties)) {
+        if (/^on[a-z]/i.test(name)) found = true;
+        if (URL_ATTRIBUTES.has(name) && typeof value === 'string' && isScriptUrl(value)) {
+          found = true;
+        }
       }
-    }
-  });
+      return undefined;
+    });
+  scan(tree);
   return found;
 }
 
@@ -217,67 +239,14 @@ const svgSchema: SanitizeSchema = {
   attributes: { '*': SVG_ATTRIBUTES, style: ['media'] },
   protocols: {},
   clobber: [],
-  strip: [
-    'script',
-    'foreignObject',
-    'metadata',
-    'animate',
-    'animateMotion',
-    'animateTransform',
-    'set',
-  ],
+  strip: ['script', 'foreignObject', 'metadata', ...ANIMATION_TAGS],
 };
+/** The link attributes (`href`, `xlink:href`) the SVG allow-list lets through to the checks. */
+const SVG_REFERENCES = new Set(SVG_ATTRIBUTES.filter((name) => URL_ATTRIBUTES.has(name)));
 const svgSanitizer = unified()
   .use(rehypeSanitize, svgSchema)
   .use(rehypeStringify, { space: 'svg' })
   .freeze();
-
-type Parse5Node = DefaultTreeAdapterMap['node'];
-
-/**
- * Removes every `template` element that parse5 made in a foreign namespace (inside `svg` or
- * `math`: directly, or in `g`, `defs`, ...). Only an HTML `template` has a `content` fragment, and
- * `hast-util-from-parse5` throws when it reads the missing one. An HTML `template` keeps its
- * content, which is searched too, and is dropped later by the allow-lists. True when one was
- * removed. Splices in place, so a tree without a foreign `template` is not copied.
- */
-function dropForeignTemplates(node: Parse5Node): boolean {
-  let dropped = false;
-  if ('content' in node && dropForeignTemplates(node.content)) dropped = true;
-  if ('childNodes' in node) {
-    for (let i = node.childNodes.length - 1; i >= 0; i -= 1) {
-      const child = node.childNodes[i];
-      if (!child) continue;
-      if (child.nodeName === 'template' && !('content' in child)) {
-        node.childNodes.splice(i, 1);
-        dropped = true;
-      } else if (dropForeignTemplates(child)) dropped = true;
-    }
-  }
-  return dropped;
-}
-
-/**
- * Markup as a hast fragment, parsed the way `rehype-parse` does it (`fragment` mode, no
- * scripting) but with foreign `template`s removed first, so it does not throw on them. Uses the
- * same `parse5` that `rehype-parse` resolves; keep their versions together. `templateRemoved` is
- * true when one was removed from the first top-level node that `keep` accepts (every node when
- * `keep` is not given).
- */
-function parseHtmlFragment(
-  html: string,
-  space: 'html' | 'svg' = 'html',
-  keep?: (node: Parse5Node) => boolean,
-): { tree: Root; templateRemoved: boolean } {
-  const fragment = parseFragment(html, { scriptingEnabled: false });
-  const dropped = new Set<Parse5Node>();
-  if (/template/i.test(html)) {
-    for (const child of fragment.childNodes) if (dropForeignTemplates(child)) dropped.add(child);
-  }
-  const kept = keep && fragment.childNodes.find(keep);
-  const templateRemoved = kept ? dropped.has(kept) : !keep && dropped.size > 0;
-  return { tree: fromParse5(fragment, { space }) as Root, templateRemoved };
-}
 
 /** In-document references: `url(#id)`, quoted or spaced. */
 const LOCAL_URL = /url\(\s*(['"]?)\s*#[^)'"\s]*\s*\1\s*\)/gi;
@@ -301,8 +270,13 @@ const LEADING_BLANK = new RegExp(`^${BLANK}+`);
 /** A reference into the document, as URL parsing reads it: `#` after any leading blanks. */
 const LOCAL_REFERENCE = new RegExp(`^${BLANK}*#`);
 /** Script written as markup in the text of a dropped `<style>` (an escaped or CDATA payload). */
-const STYLE_SCRIPT =
-  /<\s*(script|foreignObject|iframe|object|embed|meta|template)|<[^>]*\son[a-z]+\s*=/i;
+const STYLE_SCRIPT = new RegExp(
+  `<\\s*(script|foreignObject|${SCRIPT_CAPABLE.join('|')})\\b|<[^>]*\\son[a-z]+\\s*=`,
+  'i',
+);
+/** C0 controls other than tab, LF and CR: not legal in XML 1.0, so never stored. */
+const stripIllegal = (text: string) =>
+  text.replace(/\p{Cc}/gu, (c) => (c > '\u001f' || '\t\n\r'.includes(c) ? c : ''));
 
 /**
  * Runs on the sanitised tree, so a stripped element cannot sit inside a token the check reads.
@@ -313,6 +287,17 @@ const STYLE_SCRIPT =
 function finishSvg(root: Element): boolean {
   let markup = false;
   let xlink = false;
+  // First, so the checks below see the values as they will be stored, not as they were written.
+  visit(root, (node) => {
+    if (node.type === 'text') node.value = stripIllegal(node.value);
+    if (node.type !== 'element') return;
+    for (const [name, value] of Object.entries(node.properties)) {
+      if (typeof value === 'string') node.properties[name] = stripIllegal(value);
+      else if (Array.isArray(value)) {
+        node.properties[name] = value.map((v) => (typeof v === 'string' ? stripIllegal(v) : v));
+      }
+    }
+  });
   visit(root, (node, index, parent) => {
     if (node.type === 'text') {
       node.value = node.value.replaceAll(']]>', ']] >');
@@ -333,7 +318,7 @@ function finishSvg(root: Element): boolean {
     }
     for (const [name, value] of Object.entries(el.properties)) {
       const text = attrText(value);
-      const reference = name === 'href' || name === 'xLinkHref';
+      const reference = SVG_REFERENCES.has(name);
       if (
         text.includes('<') ||
         (name === 'xmlns' && el !== root) ||
@@ -357,10 +342,12 @@ function finishSvg(root: Element): boolean {
  * SVG text as it may be stored: only the root `svg` element, rebuilt from the allow-list, with
  * the SVG namespace set so it displays on its own; null when the text holds no `svg` element.
  * `scriptsRemoved` when that element held a script element, a handler, a script URL (also set by
- * an animation), an element that brings a document of its own (`iframe`, `object`, ...) or script
- * written as markup text in a `<style>`; `foreignObject` and animation without these are removed
- * without the flag. It is a list of what the sanitiser removes, kept next to the allow-list. Parsing as HTML lets HTML-only tags close the `svg`
- * early; what follows the root is dropped so the stored text stays one well-formed element.
+ * an animation that sets a link to one), an element that brings a document of its own (an
+ * `iframe` with `srcdoc`, `object`, a `meta` refresh, ...), a `template` that held any of these, or
+ * script written as markup text in a `<style>`; `foreignObject`, animation, and `meta` or `iframe`
+ * without these are removed without the flag. C0 controls other than tab, LF and CR are removed
+ * from text and values, as XML 1.0 forbids them. Parsing as HTML lets HTML-only tags close the
+ * `svg` early; what follows the root is dropped so the stored text stays one well-formed element.
  */
 export function sanitizeSvg(svg: string): { text: string; scriptsRemoved: boolean } | null {
   const parsed = parseHtmlFragment(svg, 'svg', (n) => n.nodeName === 'svg');
