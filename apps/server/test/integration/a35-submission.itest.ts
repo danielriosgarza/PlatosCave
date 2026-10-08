@@ -1,8 +1,9 @@
 import { notInArray } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
-import { notebookSessions } from '../../src/db/schema';
+import { removeMember } from '../../src/db/members';
+import { notebookSessions, notebookSubmissions } from '../../src/db/schema';
 import type { Storage } from '../../src/storage/storage';
-import { ids } from '../fixtures/world';
+import { asManagerScope, ids } from '../fixtures/world';
 import { createTestDatabase, type TestDatabase } from './db';
 import { readySession } from './kernel-channel';
 import { call } from './notebook-sessions';
@@ -173,5 +174,38 @@ describe('A35 submitted snapshots', () => {
     expect(everything).not.toContain(hidden);
     expect(everything).not.toContain('hidden grading check');
     expect(everything).not.toContain(notebook.hiddenKey);
+  });
+
+  test("A35 A10 an instructor cannot download another instructor's submission", async () => {
+    const [row] = await testDb.db
+      .insert(notebookSubmissions)
+      .values({
+        classId: ids.classA,
+        userId: ids.noor,
+        resourceId: notebook.resourceId,
+        resourceRevisionId: notebook.revisionId,
+        version: 1,
+        submissionKey: 'a35-instructor-key',
+        objectKey: notebook.dataKey,
+        sha256: 'a'.repeat(64),
+        size: 1,
+        filename: 'instructor.ipynb',
+        createdAt: relay.now(),
+      })
+      .returning({ id: notebookSubmissions.id });
+    const path = `/api/classes/${ids.classA}/notebook-submissions/${row?.id}/download`;
+    const { priya, noor } = relay.world.cookie;
+    expect((await call(relay, noor, 'GET', path)).status).toBe(200);
+    expect((await call(relay, priya, 'GET', path)).status).toBe(404);
+
+    // Removed, the instructor's work stays out of review and out of download alike.
+    const removed = await removeMember(
+      testDb.db,
+      asManagerScope(ids.classA, ids.statistics, ids.elena),
+      ids.noor,
+      relay.now(),
+    );
+    expect(removed.ok).toBe(true);
+    expect((await call(relay, priya, 'GET', path)).status).toBe(404);
   });
 });
