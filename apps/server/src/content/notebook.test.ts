@@ -424,7 +424,6 @@ describe('A09 stored HTML and JavaScript outputs cannot run script', () => {
       '<g><template><script>alert(1)</script></template></g>',
       '<defs><template onload="alert(1)"/></defs>',
       '<template/>',
-      '<foreignObject><template><p>x</p></template></foreignObject>',
       '<g><g><template><template><rect/></template></template></g></g>',
     ]) {
       const out = storedSvg(`<svg ${NS}>${body}<circle id="keep" r="1"/></svg>`);
@@ -432,6 +431,12 @@ describe('A09 stored HTML and JavaScript outputs cannot run script', () => {
       expect(out.text).toContain('<circle id="keep"');
       expect(out.scriptsRemoved).toBe(true);
     }
+    // An HTML template is searched for what it holds; a harmless one is not a removed script.
+    const plain = storedSvg(
+      `<svg ${NS}><foreignObject><template><p>x</p></template></foreignObject><rect/></svg>`,
+    );
+    expect(plain.text).not.toMatch(/template|<p>/i);
+    expect(plain.scriptsRemoved).toBe(false);
   });
 
   test('A09 a notebook with a template inside an SVG output imports with the template dropped', () => {
@@ -598,6 +603,84 @@ describe('A09 stored HTML and JavaScript outputs cannot run script', () => {
     expect(storedSvg(`<svg ${NS}><style media="print">b{}</style></svg>`).text).toContain(
       '<style media="print">',
     );
+  });
+
+  test('A09 control characters that XML 1.0 forbids are removed from references, ids and text', () => {
+    const out = storedSvg(
+      `<svg ${NS}><use href="\u0001#a"/><g id="a\u0002b"><text>x\u0003y\u000bz\ttab</text></g></svg>`,
+    );
+    const illegal = [...out.text].filter((c) => c < ' ' && !'\t\n\r'.includes(c));
+    expect(illegal).toEqual([]);
+    expect(out.text).toContain('href="#a"');
+    expect(out.text).toContain('id="ab"');
+    expect(out.text).toContain('xyz\ttab');
+  });
+
+  test('A09 a control character cannot hide url( in CSS from the check', () => {
+    const out = storedSvg(
+      `<svg ${NS}><rect style="fill:u\u0001rl(https://e.example/x)"/><style>r{fill:u\u0001rl(https://e.example/x)}</style></svg>`,
+    );
+    expect(out.text).not.toMatch(/e\.example/);
+  });
+
+  test('A09 meta and iframe count as removed script only when they can run one', () => {
+    for (const inner of [
+      '<meta charset="utf-8">',
+      '<iframe src="https://example.org/x"></iframe>',
+      '<template><b>plain</b></template>',
+    ]) {
+      const out = storedSvg(`<svg ${NS}><foreignObject>${inner}</foreignObject><rect/></svg>`);
+      expect(out.scriptsRemoved).toBe(false);
+      expect(out.text).not.toMatch(/iframe|<meta|template/);
+    }
+    for (const inner of [
+      '<meta http-equiv="Refresh" content="0">',
+      '<iframe srcdoc="x"></iframe>',
+      '<iframe src="javascript:alert(1)"></iframe>',
+    ]) {
+      const out = storedSvg(`<svg ${NS}><foreignObject>${inner}</foreignObject><rect/></svg>`);
+      expect(out.scriptsRemoved).toBe(true);
+    }
+  });
+
+  test('A09 escaped markup that only starts like a script element in a style is not flagged', () => {
+    const out = storedSvg(
+      `<svg ${NS}><style>&lt;metadata&gt; &lt;objective&gt;</style><rect/></svg>`,
+    );
+    expect(out.scriptsRemoved).toBe(false);
+    expect(
+      storedSvg(`<svg ${NS}><style>&lt;meta charset&gt;</style><rect/></svg>`).scriptsRemoved,
+    ).toBe(true);
+  });
+
+  test('A09 an animation is reported only when it sets a link to a script URL', () => {
+    for (const anim of [
+      '<animate attributeName="fill" to="javascript:alert(1)"/>',
+      '<animate attributeName="href" to="https://example.org/"/>',
+      '<animate attributeName="href" values="a;b"/>',
+    ]) {
+      expect(storedSvg(`<svg ${NS}><rect>${anim}</rect></svg>`).scriptsRemoved).toBe(false);
+    }
+    for (const anim of [
+      '<animate attributeName="href" values="#a; javascript:alert(1)"/>',
+      '<set attributeName="xlink:href" to=" javascript:alert(1)"/>',
+      '<animate attributeName="href" from="x" by="javascript:alert(1)"/>',
+    ]) {
+      expect(storedSvg(`<svg ${NS}><a>${anim}</a></svg>`).scriptsRemoved).toBe(true);
+    }
+  });
+
+  test('A09 a handler inside a template of an HTML output is reported as removed', () => {
+    const rendered = render([
+      code('t', 'display(HTML(...))', [
+        {
+          output_type: 'display_data',
+          metadata: {},
+          data: { 'text/html': '<template><img src="x" onerror="alert(1)"></template><p>ok</p>' },
+        },
+      ]),
+    ]);
+    expect(outputsOf(rendered)[0]).toMatchObject({ type: 'html', scriptsRemoved: true });
   });
 
   test('A09 a style element keeps its media attribute so a print stylesheet stays print-only', () => {
