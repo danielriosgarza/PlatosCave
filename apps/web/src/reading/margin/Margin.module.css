@@ -108,11 +108,8 @@
 .field {
   composes: field from "../../components/Field.module.css";
 }
-.saveLine {
-  font: var(--pc-text-label);
-  color: var(--pc-muted);
-  margin: 4px 0 8px;
-  min-height: 18px;
+.composer {
+  composes: composer from "../../components/DiscussionComposer.module.css";
 }
 .row {
   display: flex;

@@ -23,6 +23,7 @@ import (
 	"parallax/connector/internal/pairing"
 	"parallax/connector/internal/protocol"
 	"parallax/connector/internal/redact"
+	"parallax/connector/internal/safetext"
 )
 
 // Path is the link endpoint under the server origin.
@@ -621,12 +622,8 @@ func (l *Link) reply(ctx context.Context, m protocol.Message) {
 	}
 }
 
-func clip(s string) string {
-	if len(s) > 200 {
-		return s[:200]
-	}
-	return s
-}
+// clip keeps a detail of a refusal short.
+func clip(s string) string { return safetext.Clip(s, 200) }
 
 // Refuse is the handler until sessions exist (P3-04): every request is answered with an error,
 // never left unanswered.

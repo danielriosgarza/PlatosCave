@@ -14,6 +14,7 @@ import (
 	"parallax/connector/internal/jupyter"
 	"parallax/connector/internal/jupyter/jupytertest"
 	"parallax/connector/internal/protocol"
+	"parallax/connector/internal/redact"
 )
 
 func TestMain(m *testing.M) {
@@ -320,8 +321,42 @@ func TestOpenLocalAttachIsNotOwned(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer rt.Release()
 	if rt.Owned || rt.Process != nil || rt.Exited() != nil || rt.ContentRoot != "parallax" || len(rt.Kernelspecs) != 2 {
 		t.Errorf("runtime %+v", rt)
+	}
+}
+
+// TestA32_LocalAttachRedactsSharedToken (A32, attach mode): an attached server's token is
+// redacted while any session attached to it is open, and only once the last one is released.
+func TestA32_LocalAttachRedactsSharedToken(t *testing.T) {
+	ws, port, fake := attachFixture(t)
+	l := &Local{OS: "linux", Arch: "amd64"}
+	open := func() *Runtime {
+		rt, err := l.Open(context.Background(), &protocol.OpenSession{RequestID: requestID, SessionID: requestID,
+			Target: protocol.Target{Kind: "local", Workspace: ws}, Runtime: protocol.Runtime{Mode: "attach", Port: port},
+			Lease: protocol.Lease{IdleTimeoutMin: 30, GracePeriodMin: 5}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return rt
+	}
+	line := "GET /api/kernels Authorization: token " + fake.Token
+	if got := redact.Redact(line); !strings.Contains(got, fake.Token) {
+		t.Fatalf("token redacted before any attach; the test proves nothing: %q", got)
+	}
+	first, second := open(), open()
+	if got := redact.Redact(line); strings.Contains(got, fake.Token) {
+		t.Fatalf("attached token left in %q", got)
+	}
+	first.Release()
+	first.Release() // a second release of one session drops nothing more
+	if got := redact.Redact(line); strings.Contains(got, fake.Token) {
+		t.Fatalf("token unredacted while the second session still holds it: %q", got)
+	}
+	second.Release()
+	if got := redact.Redact(line); !strings.Contains(got, fake.Token) {
+		t.Fatalf("token still registered after both sessions were released: %q", got)
 	}
 }
 

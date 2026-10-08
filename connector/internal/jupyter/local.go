@@ -19,6 +19,7 @@ import (
 
 	"parallax/connector/internal/protocol"
 	"parallax/connector/internal/redact"
+	"parallax/connector/internal/safetext"
 )
 
 // NewToken returns a fresh session token: 32 random bytes, hex-encoded (design §6).
@@ -80,6 +81,10 @@ type Process struct {
 	exited     chan struct{}
 	exitErr    error
 	out        *tail
+	// holdsToken is set once Start returns the process: it then holds the token's redaction
+	// reference, dropped once by cleanup.
+	holdsToken bool
+	forgetOnce sync.Once
 }
 
 // outputGrace is how long the output of an exited server is still read.
@@ -98,12 +103,13 @@ func Start(ctx context.Context, o StartOptions) (*Process, error) {
 	if o.PollInterval <= 0 {
 		o.PollInterval = 250 * time.Millisecond
 	}
+	// One reference for the whole start; a successful process drops it in its cleanup.
+	redact.Register(o.Token)
 	var last error
 	for attempt := 0; attempt < startAttempts; attempt++ {
-		// A failed attempt's cleanup forgets the token, so each attempt registers it again.
-		redact.Register(o.Token)
 		p, err := startOnce(ctx, o)
 		if err == nil {
+			p.holdsToken = true
 			return p, nil
 		}
 		last = err
@@ -184,7 +190,7 @@ func startOnce(ctx context.Context, o StartOptions) (*Process, error) {
 		select {
 		case <-p.exited:
 			p.cleanup()
-			return nil, &Failure{Code: protocol.CodeJupyterStartFailed, Detail: clipDetail("Jupyter exited while starting: " + out.last())}
+			return nil, &Failure{Code: protocol.CodeJupyterStartFailed, Detail: safetext.ClipTail(safetext.Sanitize("Jupyter exited while starting: "+out.last()), 512)}
 		case <-deadline.C:
 			p.kill()
 			return nil, &Failure{Code: protocol.CodeJupyterStartTimeout, Detail: "Jupyter did not answer within 30 seconds"}
@@ -265,7 +271,9 @@ func (p *Process) cleanup() {
 		p.release()
 	}
 	os.RemoveAll(p.runtimeDir)
-	redact.Forget(p.token)
+	if p.holdsToken {
+		p.forgetOnce.Do(func() { redact.Forget(p.token) })
+	}
 }
 
 // tail keeps the last lines of a child's output, redacted, and passes each line to log.
@@ -292,7 +300,8 @@ func (t *tail) read(r io.Reader) {
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 64<<10), 1<<20)
 	for sc.Scan() {
-		line := cleanText(rd.Redact(redact.Redact(sc.Text())))
+		// Sanitised first, so a token split by control or format characters is whole when redacted.
+		line := rd.Redact(redact.Redact(safetext.Line(sc.Text())))
 		t.mu.Lock()
 		t.lines = append(t.lines, line)
 		if len(t.lines) > tailLines {
@@ -315,14 +324,4 @@ func (t *tail) last() string {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	return strings.Join(t.lines, "\n")
-}
-
-// clipDetail keeps the end of a detail within the 512 characters a message allows.
-func clipDetail(s string) string {
-	s = cleanLines(s)
-	if len([]rune(s)) <= 512 {
-		return s
-	}
-	r := []rune(s)
-	return "…" + string(r[len(r)-511:])
 }

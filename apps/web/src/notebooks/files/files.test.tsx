@@ -501,7 +501,11 @@ describe('files panel', () => {
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent('The folder sub could not be read');
     expect(screen.getByRole('checkbox', { name: 'Copy out.csv to Parallax' })).toBeInTheDocument();
-    await user.click(within(alert).getByRole('button', { name: 'Back to the workspace folder' }));
+    await user.click(
+      within(alert.parentElement as HTMLElement).getByRole('button', {
+        name: 'Back to the workspace folder',
+      }),
+    );
     await waitFor(() => expect(screen.queryByRole('alert')).toBeNull());
   });
 
@@ -740,7 +744,9 @@ describe('submit panel', () => {
     );
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent(/could not be read/i);
-    expect(within(alert).getByRole('button', { name: 'Try again' })).toBeInTheDocument();
+    expect(
+      within(alert.parentElement as HTMLElement).getByRole('button', { name: 'Try again' }),
+    ).toBeInTheDocument();
     expect(screen.queryByText(/no files have been copied/i)).toBeNull();
     expect(screen.getByRole('button', { name: 'Submit notebook' })).toBeDisabled();
   });
