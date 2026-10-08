@@ -140,7 +140,7 @@ describe('focus and full screen', () => {
     expect(screen.getByRole('button', { name: 'Full screen' })).toHaveFocus();
   });
 
-  it('A04 a dialog opened in full screen is shown inside the full-screen element and can be operated', async () => {
+  it('A04 A20 a dialog opened in full screen is shown inside the full-screen element and can be operated', async () => {
     const user = userEvent.setup();
     await open();
     await user.keyboard('f');
@@ -165,7 +165,7 @@ describe('focus and full screen', () => {
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 
-  it('A04 leaving full screen while a dialog is open keeps focus inside the dialog', async () => {
+  it('A04 A20 leaving full screen while a dialog is open keeps focus inside the dialog and the restored page inert', async () => {
     const user = userEvent.setup();
     await open();
     await user.keyboard('f');
@@ -180,6 +180,10 @@ describe('focus and full screen', () => {
     await waitFor(() => expect(bar()).toBeInTheDocument());
     expect(screen.getByRole('button', { name: 'Keep mine' })).toHaveFocus();
     expect(screen.getByRole('button', { name: 'Full screen' })).not.toHaveFocus();
+    // Page chrome that mounted when full screen ended stays inert behind the dialog.
+    const tablist = screen.getByRole('tablist', { name: 'Topic materials', hidden: true });
+    await waitFor(() => expect(tablist.closest('[inert]')).not.toBeNull());
+    expect(screen.getByRole('dialog').closest('[inert]')).toBeNull();
   });
 
   it('A04 Exit focus also leaves full screen', async () => {

@@ -175,9 +175,14 @@ export function Dialog({
   const headingId = useId();
   const ref = useRef<HTMLDivElement>(null);
   // Fixed at open: the browser shows only the full-screen element's subtree (§5).
-  const [container] = useState<HTMLElement>(() =>
-    document.fullscreenElement instanceof HTMLElement ? document.fullscreenElement : document.body,
-  );
+  // A frame or media element in full screen cannot hold the sheet, so it falls back to <body>.
+  const [container] = useState<HTMLElement>(() => {
+    const element = document.fullscreenElement;
+    return element instanceof HTMLElement &&
+      !(element instanceof HTMLIFrameElement || element instanceof HTMLMediaElement)
+      ? element
+      : document.body;
+  });
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
   useEffect(() => {
@@ -216,22 +221,34 @@ export function Dialog({
     };
     // The sheet is portalled to the full-screen element when there is one (only its subtree is
     // shown), else to <body>. Everything beside it on the way up to <body> is the page behind it.
-    const background: HTMLElement[] = [];
-    for (let node = dialog?.parentElement; node && node !== document.body; ) {
-      const parent: HTMLElement | null = node.parentElement;
-      for (const el of Array.from(parent?.children ?? [])) {
-        if (el !== node && el instanceof HTMLElement && !el.hasAttribute('inert')) {
-          background.push(el);
+    // Nodes that mount while the sheet is open (page chrome restored when full screen ends) are
+    // inerted too.
+    const background = new Set<HTMLElement>();
+    const observer = new MutationObserver(() => sweep());
+    const watched = new Set<HTMLElement>();
+    const sweep = () => {
+      for (let node = dialog?.parentElement; node && node !== document.body; ) {
+        const parent: HTMLElement | null = node.parentElement;
+        if (parent && !watched.has(parent)) {
+          watched.add(parent);
+          observer.observe(parent, { childList: true });
         }
+        for (const el of Array.from(parent?.children ?? [])) {
+          if (el !== node && el instanceof HTMLElement && !el.hasAttribute('inert')) {
+            el.setAttribute('inert', '');
+            background.add(el);
+          }
+        }
+        node = parent;
       }
-      node = parent;
-    }
-    for (const el of background) el.setAttribute('inert', '');
+    };
+    sweep();
     document.addEventListener('keydown', onKeyDown);
     document.addEventListener('focusin', onFocusIn);
     return () => {
       document.removeEventListener('keydown', onKeyDown);
       document.removeEventListener('focusin', onFocusIn);
+      observer.disconnect();
       for (const el of background) el.removeAttribute('inert');
       if (opener?.isConnected && opener !== document.body) opener.focus();
       else focusPageAnchor();
