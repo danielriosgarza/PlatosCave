@@ -1,0 +1,23 @@
+.line {
+  font: var(--pc-text-label);
+  color: var(--pc-muted);
+  margin: 4px 0 8px;
+  min-height: 18px;
+}
+.saved {
+  color: var(--pc-success);
+}
+.failed {
+  color: var(--pc-ink);
+  font-weight: 600;
+}
+.retry {
+  font: inherit;
+  background: none;
+  border: 0;
+  padding: 2px 0;
+  color: var(--pc-ink);
+  text-decoration: underline;
+  text-underline-offset: 4px;
+  cursor: pointer;
+}

@@ -48,6 +48,8 @@ export interface Session {
   width: number;
   status: SaveStatus;
   message: string | null;
+  /** The save failed because the sketch was deleted elsewhere: Done saves it again as a new one. */
+  gone: boolean;
   /** The server's copy, while a save found it changed elsewhere. */
   current: Annotation | null;
 }
@@ -75,6 +77,7 @@ const fresh = (surface: Surface, mode: Session['mode']): Session => ({
   width: WIDTHS[1],
   status: 'idle',
   message: null,
+  gone: false,
   current: null,
 });
 
@@ -189,7 +192,7 @@ export function useSketches(actions: MarginActions, annotations: Annotation[]): 
           message: 'Draw at least one stroke, or describe the figure in text instead.',
         });
       }
-      patch({ status: 'saving', message: null });
+      patch({ status: 'saving', message: null, gone: false });
       const anchor = anchorFor(s.surface, s.mode === 'draw' ? strokes : []);
       const result =
         s.mode === 'describe'
@@ -205,6 +208,7 @@ export function useSketches(actions: MarginActions, annotations: Annotation[]): 
         if (s.annotationId) actions.forget(s.annotationId);
         return patch({
           status: 'failed',
+          gone: true,
           annotationId: null,
           revision: null,
           message: 'This sketch was deleted elsewhere. Done saves it again as a new sketch.',

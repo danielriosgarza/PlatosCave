@@ -347,7 +347,7 @@ describe('topic editor', () => {
       estimatedMinutes: 45,
       completionRule: null,
     });
-    expect(await screen.findByText(/Draft saved at/)).toBeInTheDocument();
+    expect(await screen.findByText(/^Saved$/)).toBeInTheDocument();
     // The next edit is based on the revision the server just acknowledged.
     await user.type(screen.getByLabelText('Learning objective'), ' Again.');
     await waitFor(() => expect(s.patched).toHaveLength(2), { timeout: 3000 });
@@ -361,10 +361,10 @@ describe('topic editor', () => {
     expect(await screen.findByRole('alert', {}, { timeout: 3000 })).toHaveTextContent(
       'Your changes are not saved.',
     );
-    expect(screen.queryByText(/Draft saved/)).toBeNull();
+    expect(screen.queryByText(/^Saved$/)).toBeNull();
     s.topicStatus = undefined;
     await user.click(screen.getByRole('button', { name: 'Retry' }));
-    expect(await screen.findByText(/Draft saved at/)).toBeInTheDocument();
+    expect(await screen.findByText(/^Saved$/)).toBeInTheDocument();
   });
 
   it('A26 Retry after a failed save sends the edits once, not again for a request made during the failure', async () => {
@@ -388,7 +388,7 @@ describe('topic editor', () => {
     );
     s.topicStatus = undefined;
     await user.click(screen.getByRole('button', { name: 'Retry' }));
-    expect(await screen.findByText(/Draft saved at/)).toBeInTheDocument();
+    expect(await screen.findByText(/^Saved$/)).toBeInTheDocument();
     await new Promise((resolve) => setTimeout(resolve, 300));
     // The failed attempt and one retry; no third request with the same values.
     expect(s.patched).toHaveLength(2);
@@ -409,7 +409,7 @@ describe('topic editor', () => {
     );
     expect(within(conflict).getByText('My title')).toBeInTheDocument();
     expect(within(conflict).getByText('Sampling, by Priya')).toBeInTheDocument();
-    expect(screen.queryByText(/Draft saved/)).toBeNull();
+    expect(screen.queryByText(/^Saved$/)).toBeNull();
 
     s.topicStatus = undefined;
     s.topic = theirs;
@@ -417,7 +417,7 @@ describe('topic editor', () => {
     await waitFor(() => expect(s.patched).toHaveLength(2), { timeout: 3000 });
     // Their revision is the base: the save cannot overwrite it unseen.
     expect(s.patched[1]?.body).toMatchObject({ expectedRevision: 3, title: 'My title' });
-    expect(await screen.findByText(/Draft saved at/)).toBeInTheDocument();
+    expect(await screen.findByText(/^Saved$/)).toBeInTheDocument();
   });
 
   it('A26 taking their version replaces the form without saving anything', async () => {
@@ -765,7 +765,7 @@ describe('web slides', () => {
     await user.type(screen.getByLabelText('Slides title'), '!');
     await waitFor(() => expect(s.patched).toHaveLength(1), { timeout: 4000 });
     expect(s.patched[0]?.body).toMatchObject({ title: 'Sampling in slides!' });
-    expect(await screen.findByText(/Draft saved at/)).toBeInTheDocument();
+    expect(await screen.findByText(/^Saved$/)).toBeInTheDocument();
 
     await user.type(markdown, '{enter}---{enter}Slide three');
     expect(await screen.findByText('Unsaved changes')).toBeInTheDocument();
@@ -863,7 +863,7 @@ describe('Shiny apps', () => {
       content: { url: 'https://shiny.example.org/lab-2' },
       accessibleAlternative: { text: 'A table of repeated samples' },
     });
-    expect(await screen.findByText(/Draft saved at/)).toBeInTheDocument();
+    expect(await screen.findByText(/^Saved$/)).toBeInTheDocument();
   });
 
   it('P2-15a does not save an invalid address and says so', async () => {

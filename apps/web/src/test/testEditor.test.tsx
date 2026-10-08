@@ -247,7 +247,7 @@ describe('test editor', () => {
     const saved = s.patched[0]?.content as typeof content & { settings: { attempts: number } };
     expect(saved.questions[0]?.prompt).toBe('Write mean(xs). Return a float.');
     expect(saved.settings.attempts).toBe(1);
-    expect(await screen.findByText(/Draft saved at/)).toBeInTheDocument();
+    expect(await screen.findByText(/^Saved$/)).toBeInTheDocument();
   });
 
   it('keeps invalid edits out of the revision and says what is wrong', async () => {
