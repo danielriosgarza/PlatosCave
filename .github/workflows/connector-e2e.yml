@@ -4,24 +4,56 @@ name: connector-e2e
 # profile `connector` (sshd-jupyter, jump), the Go `fixture` tests (A28, A29, A30) and the
 # Playwright flows of e2e/tests/connector/ (A27–A31). It runs on pull requests that touch what it
 # tests; the `ci` workflow still runs on every pull request, so a path filter that does not match
-# leaves the merge rule satisfied. A weekly schedule adds the connector's unit tests on macOS and
-# Windows (their runners have neither Docker nor Postgres, so the end-to-end flows stay on Linux).
+# leaves the merge rule satisfied. Path filter rule: list the connector, relay and notebook-session
+# code, the HTTP routes and contracts the flows call, their data access, the test routes and
+# fixtures they seed through, and the e2e setup. Shared server infrastructure (app.ts, auth, db
+# schema helpers) is not listed; the weekly schedule and workflow_dispatch cover it. A weekly
+# schedule also adds the connector's unit tests on macOS and Windows (their runners have neither
+# Docker nor Postgres, so the end-to-end flows stay on Linux).
 
 on:
   pull_request:
     paths:
       - connector/**
-      - apps/server/src/relay/**
+      - apps/server/src/content/workingCopy*.ts
+      - apps/server/src/db/connectors/**
+      - apps/server/src/db/jobs/derived.ts
+      - apps/server/src/db/notebookSubmissions.ts
+      - apps/server/src/db/notebooks.ts
+      - apps/server/src/db/notebooks/**
+      - apps/server/src/db/schema/connectors.ts
+      - apps/server/src/db/schema/notebook-sessions.ts
+      - apps/server/src/db/schema/notebookSubmissions.ts
+      - apps/server/src/http/budgets.ts
       - apps/server/src/http/relay/**
+      - apps/server/src/http/routes/**
+      - apps/server/src/jobs/**
+      - apps/server/src/relay/**
+      - apps/server/test/fixtures/**
       - apps/web/src/notebooks/**
+      - packages/contracts/src/routes/computeTemplates.ts
+      - packages/contracts/src/routes/connections.ts
+      - packages/contracts/src/routes/connectors.ts
+      - packages/contracts/src/routes/notebookSessions.ts
+      - packages/contracts/src/routes/notebookSubmissions.ts
+      - packages/contracts/src/routes/notebooks.ts
+      - packages/contracts/src/routes/test.ts
+      - packages/contracts/src/routes/transfers.ts
+      - packages/contracts/src/routes/workingCopies.ts
       - packages/contracts/src/connector*
+      - packages/contracts/src/notebook.ts
       - packages/contracts/src/notebookChannel.ts
       - infra/compose.yml
-      - infra/docker/sshd-jupyter.Dockerfile
-      - infra/docker/jump.Dockerfile
       - infra/connector-fixtures/**
+      - infra/docker/jump.Dockerfile
+      - infra/docker/sshd-jupyter.Dockerfile
       - scripts/connector-fixture-keys.sh
+      - e2e/global-setup.ts
+      - e2e/package.json
+      - e2e/paths.ts
+      - e2e/playwright.config.ts
       - e2e/tests/connector/**
+      - e2e/tsconfig.json
       - .github/workflows/connector-e2e.yml
   schedule:
     - cron: '17 4 * * 1'

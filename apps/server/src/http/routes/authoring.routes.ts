@@ -17,7 +17,7 @@ import type { FastifyInstance } from 'fastify';
 import type { RouteDeps } from '../../app';
 import { courseOverview } from '../../db/courseOverview';
 import { listResourceJobStatus, type ResourceJobStatus } from '../../db/jobs/derived';
-import { courseObjectId } from '../../db/storage/objects';
+import { courseObjectId, GENERIC_CONTENT_TYPE } from '../../db/storage/objects';
 import { enqueueReadingIngest, isProcessed } from '../../jobs/reading-ingest.job';
 import { storeCourseObject } from '../../storage/objects';
 import { notFound, registerRoute } from '../register';
@@ -197,14 +197,14 @@ export default function authoringRoutes(app: FastifyInstance, deps: RouteDeps): 
     if (!part.filename) invalid('the file part has no file name');
     const filename = displayName(part.filename);
     try {
-      // Objects are shared by hash within a course, so bytes first stored here keep this type
-      // for any later use of the same bytes (the object is recorded once).
+      // Objects are shared by hash within a course: the generic type gives way to the type of
+      // a later upload of the same bytes as a source file (recordCourseObject).
       const stored = await storeCourseObject(
         db(),
         deps.storage,
         scope,
         nonEmpty(part.file),
-        'application/octet-stream',
+        GENERIC_CONTENT_TYPE,
       );
       const id = await courseObjectId(db(), scope, stored.key);
       if (!id) throw new Error('the stored object was not recorded');

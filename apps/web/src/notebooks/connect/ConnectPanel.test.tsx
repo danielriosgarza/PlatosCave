@@ -498,6 +498,39 @@ describe('ConnectPanel', () => {
     await waitFor(() => expect(screen.queryByText(/The kernel could not be restarted/)).toBeNull());
   });
 
+  it('A36 a restart on its way cannot be asked for again until it is answered', async () => {
+    const w = world({
+      connections: [sshConnection()],
+      sessions: [session()],
+      session: session(),
+      kernel: kernel('dead'),
+    });
+    const fetchMock = serve(w);
+    const answer = fetchMock.getMockImplementation();
+    let release = () => {};
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    fetchMock.mockImplementation(async (input, init) => {
+      if (String(input).endsWith('/kernel/restart')) await held;
+      return answer?.(input, init) as Promise<Response>;
+    });
+    const restarts = () =>
+      fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/kernel/restart'));
+    renderPanel();
+    const restart = await screen.findByRole('button', { name: 'Restart the kernel' });
+    await userEvent.click(restart);
+    await waitFor(() => expect(restart).toBeDisabled());
+    await userEvent.click(restart);
+    expect(restarts()).toHaveLength(1);
+    w.kernel = kernel('restarting');
+    release();
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: 'Restart the kernel' })).toBeNull(),
+    );
+    expect(restarts()).toHaveLength(1);
+  });
+
   it('a refused new kernel after a lost one is started again by the retry', async () => {
     const w = world({
       connections: [sshConnection()],

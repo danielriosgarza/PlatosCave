@@ -1,17 +1,24 @@
 package session
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"regexp"
 	"strings"
 	"time"
 
 	"parallax/connector/internal/cause"
+	"parallax/connector/internal/state"
 )
 
 // Processes inspects and signals the processes a sweep finds in sessions.json.
 type Processes interface {
 	// Inspect returns a process's command line and whether it still runs.
 	Inspect(pid int) (args string, alive bool, err error)
+	// Find returns the pids of this user's live processes whose command line has field as one of
+	// its arguments.
+	Find(field string) ([]int, error)
 	// Signal asks a process to end (SIGTERM), or kills it when kill is set.
 	Signal(pid int, kill bool) error
 }
@@ -23,15 +30,16 @@ type Processes interface {
 // session's own is gone); an owned remote one goes to SweepRemote. Each becomes a stopped record
 // whose cause is the lease's when its deadline passed while the connector was not running, else
 // connector_restarted. A record the sweep cannot resolve stays in the file as possibly orphaned
-// until its hard deadline, and is not reported as stopped.
+// until its hard deadline, and is not reported as stopped. An unreadable file is salvaged
+// (salvage) before it is replaced.
 func (m *Manager) Restore(ctx context.Context) {
 	if m.cfg.Store == nil {
 		return
 	}
 	f, err := readFile(m.cfg.Store)
 	if err != nil {
-		m.logf("sessions.json is unreadable (%v); starting without it.", err)
-		return
+		m.logf("sessions.json is unreadable (%v); sweeping what it names before replacing it.", err)
+		f = m.salvage(ctx)
 	}
 	now := m.cfg.Now()
 	for _, r := range f.Sessions {
@@ -106,16 +114,21 @@ func marker(sessionID string) string { return "--ParallaxMarker.session=" + sess
 // sweepLocal kills the recorded process of an owned local session if its command line carries
 // the session's marker, and reports whether the session's process is now gone.
 func (m *Manager) sweepLocal(ctx context.Context, rec Record) bool {
-	procs := m.cfg.Processes
-	pid := rec.Process.PID
-	args, alive, err := procs.Inspect(pid)
+	args, alive, err := m.cfg.Processes.Inspect(rec.Process.PID)
 	if err != nil {
 		return false
 	}
 	if !alive || !hasField(args, marker(rec.SessionID)) {
 		return true // gone, or the pid now belongs to another process
 	}
-	m.logf("Stopping process %d left by session %s.", pid, rec.SessionID)
+	return m.kill(ctx, rec.Process.PID, rec.SessionID)
+}
+
+// kill ends a process whose marker was just proved: SIGTERM, then SIGKILL, each followed by up
+// to the terminate time for it to go. It reports whether the process is gone.
+func (m *Manager) kill(ctx context.Context, pid int, sessionID string) bool {
+	procs := m.cfg.Processes
+	m.logf("Stopping process %d left by session %s.", pid, sessionID)
 	for _, kill := range []bool{false, true} {
 		if err := procs.Signal(pid, kill); err != nil {
 			return false
@@ -132,8 +145,66 @@ func (m *Manager) sweepLocal(ctx context.Context, rec Record) bool {
 			}
 		}
 	}
-	_, alive, err = procs.Inspect(pid)
+	_, alive, err := procs.Inspect(pid)
 	return err == nil && !alive
+}
+
+// maxSalvagedIDs bounds the session ids taken from an unreadable sessions.json.
+const maxSalvagedIDs = 4 * maxRecords
+
+// reAnyUUID finds session ids anywhere in an unreadable file.
+var reAnyUUID = regexp.MustCompile(`[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}`)
+
+// salvage recovers what it can from a sessions.json that readFile refused, so that replacing
+// the file does not leave a Jupyter server running unseen (design §6). Every record that is
+// valid on its own is returned for the normal sweep. For every other session id the file
+// mentions, a local process of this user whose command line carries that id's marker is killed:
+// the marker proves the process is a session's own, and the id coming from this state directory
+// proves the session was this connector's, though its pid could not be read. A remote process
+// of an unreadable record cannot be reached without its target and is only logged.
+func (m *Manager) salvage(ctx context.Context) *File {
+	f := &File{V: 1}
+	data, err := m.cfg.Store.ReadFile(state.SessionsFile)
+	if err != nil {
+		m.logf("sessions.json cannot be read at all (%v); no process it names can be swept.", err)
+		return f
+	}
+	var loose struct {
+		Sessions []json.RawMessage `json:"sessions"`
+	}
+	known := map[string]bool{}
+	if json.Unmarshal(data, &loose) == nil {
+		for _, raw := range loose.Sessions {
+			var rec Record
+			dec := json.NewDecoder(bytes.NewReader(raw))
+			dec.DisallowUnknownFields()
+			if dec.Decode(&rec) != nil || rec.validate() != nil || known[rec.SessionID] || len(f.Sessions) == maxRecords {
+				continue
+			}
+			known[rec.SessionID] = true
+			f.Sessions = append(f.Sessions, rec)
+		}
+	}
+	var ids []string
+	for _, id := range reAnyUUID.FindAllString(string(data), -1) {
+		if !known[id] && len(ids) < maxSalvagedIDs {
+			known[id] = true
+			ids = append(ids, id)
+		}
+	}
+	for _, id := range ids {
+		pids, err := m.cfg.Processes.Find(marker(id))
+		if err != nil {
+			m.logf("Session %s from the unreadable sessions.json may still be running (%v).", id, err)
+			continue
+		}
+		for _, pid := range pids {
+			if !m.kill(ctx, pid, id) {
+				m.logf("Process %d of session %s from the unreadable sessions.json could not be stopped.", pid, id)
+			}
+		}
+	}
+	return f
 }
 
 func hasField(args, field string) bool {

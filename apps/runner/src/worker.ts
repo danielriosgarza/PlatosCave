@@ -99,22 +99,23 @@ export async function handleJob(job: Job<unknown>, deps: WorkerDeps): Promise<Jo
     );
     return { id: job.id, status: 'completed', output: outcome };
   } catch (error) {
-    const failure =
-      error instanceof RunnerFailure
-        ? error
-        : new RunnerFailure('harness_failed', `runner error: ${String(error)}`);
+    // Only a RunnerFailure names a kind. Anything else, such as a failed execution.result send
+    // or a bug, is thrown as it is: pg-boss retries it, and the server records what is still
+    // failed after the retries as kind `unknown` with its message (design §8.5), never as
+    // `harness_failed`, which names a harness that exited non-zero.
+    const failure = error instanceof RunnerFailure ? error : undefined;
     deps.log.warn(
       {
         ...context,
         jobId: loggableJobId(job.data),
-        kind: failure.kind,
-        terminal: failure.terminal,
+        kind: failure?.kind ?? 'unknown',
+        terminal: failure?.terminal ?? false,
         durationMs: Date.now() - started,
       },
-      `run failed: ${failure.message}`,
+      `run failed: ${failure ? failure.message : `runner error: ${String(error)}`}`,
     );
-    if (failure.terminal) return { id: job.id, status: 'deadletter', output: failure.toOutput() };
-    throw failure;
+    if (failure?.terminal) return { id: job.id, status: 'deadletter', output: failure.toOutput() };
+    throw error;
   }
 }
 

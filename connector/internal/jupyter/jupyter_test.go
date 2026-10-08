@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -534,6 +535,37 @@ func TestStopEscalatesToKill(t *testing.T) {
 	}
 	if time.Since(start) < 200*time.Millisecond {
 		t.Error("Stop did not wait for the shutdown request first")
+	}
+}
+
+// A kernel that outlives its server keeps the server's output open; the stop still returns once
+// the server itself has gone, rather than when the kernel lets go of the output.
+func TestStopDoesNotWaitForOutputHeldByAChild(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("the holder stub is POSIX only")
+	}
+	dir := jupytertest.Install(t, "holder")
+	token, _ := NewToken()
+	p, err := Start(context.Background(), StartOptions{SessionID: s1, Workspace: t.TempDir(), Token: token})
+	if err != nil {
+		t.Fatal(err)
+	}
+	recs := jupytertest.Records(t, dir)
+	if len(recs) != 1 || recs[0].HolderPID == 0 {
+		t.Fatalf("records: %+v", recs)
+	}
+	t.Cleanup(func() {
+		if h, err := os.FindProcess(recs[0].HolderPID); err == nil {
+			h.Kill()
+		}
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+	if err := p.Stop(ctx, StopTimes{Shutdown: 2 * time.Second, Terminate: 200 * time.Millisecond}); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	if p.Running() {
+		t.Fatal("Stop returned while the process runs")
 	}
 }
 
