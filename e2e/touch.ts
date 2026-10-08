@@ -1,12 +1,5 @@
-import {
-  type APIRequestContext,
-  expect,
-  type Page,
-  type PlaywrightWorkerArgs,
-} from '@playwright/test';
+import { expect, type Page, type PlaywrightWorkerArgs } from '@playwright/test';
 import { releaseToClassA, testDefinition, worldIds } from './tests/released';
-
-type Playwright = { request: { newContext(o: object): Promise<APIRequestContext> } };
 
 export const exerciseDefinition = {
   schema: 'exercise.v1',
@@ -46,39 +39,17 @@ export const exerciseDefinition = {
   ],
 };
 
-export async function signedIn(
-  playwright: Playwright,
+/** Releases a fresh exercise in Sampling to class A (see released.ts for the cross-worker handling). */
+export async function releaseExercise(
+  playwright: PlaywrightWorkerArgs['playwright'],
   baseURL: string,
-  email: string,
-): Promise<APIRequestContext> {
-  const client = await playwright.request.newContext({ baseURL });
-  expect((await client.post('/api/test/signin-as', { data: { email } })).ok()).toBe(true);
-  return client;
-}
-
-/** Releases a fresh exercise in Sampling to class A, the way an instructor would. */
-export async function releaseExercise(playwright: Playwright, baseURL: string, title: string) {
-  const setup = await playwright.request.newContext({ baseURL });
-  const { ids } = await (await setup.post('/api/test/world')).json();
-  await setup.dispose();
-  const elena = await signedIn(playwright, baseURL, 'elena@example.test');
-  const created = await elena.post(
-    `/api/courses/${ids.statistics}/topics/${ids.sampling}/resources`,
-    { data: { type: 'exercise', title, content: exerciseDefinition } },
-  );
-  expect(created.ok()).toBe(true);
-  const resource = await created.json();
-  const published = await elena.post(`/api/courses/${ids.statistics}/releases`);
-  expect(published.ok()).toBe(true);
-  const { release } = await published.json();
-  await elena.dispose();
-  const priya = await signedIn(playwright, baseURL, 'priya@example.test');
-  const current = await (await priya.get(`/api/classes/${ids.classA}/release`)).json();
-  const adopted = await priya.post(`/api/classes/${ids.classA}/adopt`, {
-    data: { releaseId: release.id, expectedReleaseId: current.release.id },
-  });
-  expect(adopted.ok()).toBe(true);
-  return { ids, resourceId: resource.id as string, priya };
+  title: string,
+) {
+  const ids = await worldIds(playwright, baseURL);
+  const [resourceId] = await releaseToClassA(playwright, baseURL, ids, [
+    { type: 'exercise', title, content: exerciseDefinition },
+  ]);
+  return { ids, resourceId: resourceId as string };
 }
 
 export async function openExercise(page: Page, classId: string, topicId: string, title: string) {
@@ -117,8 +88,8 @@ export async function releaseTest(
   title: string,
 ) {
   const ids = await worldIds(playwright, baseURL);
-  await releaseToClassA(playwright, baseURL, ids, [
+  const [resourceId] = await releaseToClassA(playwright, baseURL, ids, [
     { type: 'test', title, content: testDefinition },
   ]);
-  return { ids };
+  return { ids, resourceId: resourceId as string };
 }

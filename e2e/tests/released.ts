@@ -111,6 +111,8 @@ export interface NewResource {
   type: 'exercise' | 'test';
   title: string;
   content: object;
+  /** A scheduled resource: students cannot open it yet, so it is checked in the class release. */
+  releaseAt?: string;
 }
 
 /**
@@ -131,16 +133,26 @@ export async function releaseToClassA(
   const sam = await signedIn(playwright, baseURL, 'sam@example.test');
   try {
     const resourceIds: string[] = [];
-    for (const { type, title, content } of resources) {
+    for (const { type, title, content, releaseAt } of resources) {
       const created = await elena.post(
         `/api/courses/${ids.statistics}/topics/${ids.sampling}/resources`,
-        { data: { type, title, content } },
+        { data: { type, title, content, ...(releaseAt && { releaseAt }) } },
       );
       expect(created.ok()).toBe(true);
       resourceIds.push(((await created.json()) as { id: string }).id);
     }
     const visible = async () => {
-      for (const [index, { type }] of resources.entries()) {
+      for (const [index, { type, releaseAt }] of resources.entries()) {
+        if (releaseAt) {
+          const listed = (await (await priya.get(`/api/classes/${ids.classA}/release`)).json()) as {
+            topics: { resources: { resourceId: string }[] }[];
+          };
+          const inRelease = listed.topics.some((t) =>
+            t.resources.some((r) => r.resourceId === resourceIds[index]),
+          );
+          if (!inRelease) return false;
+          continue;
+        }
         const opens = `/api/classes/${ids.classA}/resources/${resourceIds[index]}/${type}`;
         if (!(await sam.get(opens)).ok()) return false;
       }
