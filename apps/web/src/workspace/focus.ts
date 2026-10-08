@@ -130,7 +130,8 @@ export function useFocusMode(workspace: RefObject<HTMLElement | null>) {
       if (!active) {
         setFocusOn(false);
         setNotice(null);
-        fullscreenButton.current?.focus({ preventScroll: true });
+        // A dialog keeps focus until it closes (§14); the dialog then restores focus to its opener.
+        if (!modalOpen()) fullscreenButton.current?.focus({ preventScroll: true });
       }
     };
     document.addEventListener('fullscreenchange', onChange);

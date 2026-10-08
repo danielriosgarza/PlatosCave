@@ -208,6 +208,7 @@ export const LOSS_CAUSES = [
   'lease_idle',
   'link_lost',
   'max_lifetime',
+  'membership_removed',
   'network_change',
   'process_exited',
   'service_stopped',
