@@ -11,7 +11,7 @@
   background: var(--pc-sheet);
 }
 .title {
-  font-size: 12px;
+  font-size: var(--pc-size-label);
   line-height: 1.5;
 }
 .tools {
@@ -25,7 +25,7 @@
 }
 .tools button {
   font: inherit;
-  font-size: 12px;
+  font-size: var(--pc-size-label);
   min-height: 32px;
   cursor: pointer;
   border: 1px solid var(--pc-muted);
@@ -41,7 +41,7 @@
 .notice {
   margin: 0;
   padding: 8px 40px;
-  font-size: 12px;
+  font-size: var(--pc-size-label);
   background: var(--pc-soft);
   border-bottom: 1px solid var(--pc-rule);
 }

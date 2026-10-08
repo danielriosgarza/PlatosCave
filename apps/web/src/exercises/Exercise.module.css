@@ -24,7 +24,7 @@
 }
 .stepLabel {
   text-align: center;
-  font-size: 12px;
+  font-size: var(--pc-size-label);
   color: var(--pc-muted);
   margin-bottom: 8px;
 }
@@ -56,12 +56,12 @@
   color: var(--pc-muted);
 }
 .small {
-  font-size: 12px;
+  font-size: var(--pc-size-label);
   line-height: 1.5;
 }
 .prompt {
   text-align: center;
-  font-size: 18px;
+  font-size: var(--pc-size-body);
   margin: 0;
 }
 .fieldset {
@@ -75,7 +75,7 @@
   width: 100%;
   padding: 0;
   text-align: center;
-  font-size: 18px;
+  font-size: var(--pc-size-body);
   font-weight: 600;
 }
 .options {
@@ -196,14 +196,14 @@
   gap: 8px;
 }
 .readout {
-  font-size: 20px;
+  font-size: var(--pc-size-subsection);
   font-variant-numeric: tabular-nums;
 }
 .readout ul {
   list-style: none;
   padding: 0;
   margin: 8px 0 0;
-  font-size: 14px;
+  font-size: var(--pc-size-ui);
 }
 .actions {
   display: flex;
@@ -236,7 +236,7 @@
 .notice {
   margin-top: 12px;
   text-align: center;
-  font-size: 14px;
+  font-size: var(--pc-size-ui);
 }
 .summary {
   list-style: none;
@@ -292,7 +292,7 @@
 .solutionNote {
   flex-basis: 100%;
   margin: 0;
-  font-size: 14px;
+  font-size: var(--pc-size-ui);
 }
 .hintsUsed {
   text-align: center;

@@ -23,14 +23,14 @@
   justify-content: space-between;
 }
 .context {
-  font-size: 12px;
+  font-size: var(--pc-size-label);
   color: var(--pc-muted);
 }
 .muted {
   color: var(--pc-muted);
 }
 .small {
-  font-size: 12px;
+  font-size: var(--pc-size-label);
   line-height: 1.5;
 }
 .grid {
@@ -58,16 +58,13 @@
   margin-top: 12px;
 }
 .prompt p {
-  font-size: 18px;
+  font-size: var(--pc-size-body);
   line-height: 1.6;
   margin: 18px 0;
   white-space: pre-wrap;
 }
 .prompt code {
-  font:
-    14px ui-monospace,
-    Consolas,
-    monospace;
+  font: var(--pc-text-code);
   overflow-wrap: anywhere;
 }
 .rule {
@@ -78,7 +75,7 @@
   display: grid;
   grid-template-columns: auto 1fr;
   gap: 6px 16px;
-  font-size: 13px;
+  font-size: var(--pc-size-ui);
   margin: 0;
 }
 .terms dt {
@@ -104,7 +101,7 @@
 }
 .navItem {
   font: inherit;
-  font-size: 13px;
+  font-size: var(--pc-size-ui);
   cursor: pointer;
   min-height: 36px;
   text-align: left;
@@ -120,7 +117,7 @@
 }
 .navState {
   display: block;
-  font-size: 12px;
+  font-size: var(--pc-size-label);
   font-weight: 400;
   color: var(--pc-muted);
 }
@@ -135,7 +132,7 @@
   min-width: 0;
 }
 .options legend {
-  font-size: 13px;
+  font-size: var(--pc-size-ui);
   color: var(--pc-muted);
   margin-bottom: 8px;
 }
@@ -163,7 +160,7 @@
 }
 .error {
   color: var(--pc-ink);
-  font-size: 13px;
+  font-size: var(--pc-size-ui);
   margin: 6px 0 0;
   padding-left: 10px;
   border-left: 3px solid var(--pc-ink);
@@ -174,7 +171,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 12px;
+  font-size: var(--pc-size-label);
   gap: 12px;
   border: 1px solid var(--pc-rule);
   border-bottom: 0;
@@ -183,10 +180,7 @@
 .cm {
   border: 1px solid var(--pc-muted);
   background: var(--pc-sheet);
-  font:
-    15px / 1.7 ui-monospace,
-    Consolas,
-    monospace;
+  font: var(--pc-text-code-editor);
   min-height: 260px;
   overflow: auto;
   max-width: 100%;
@@ -226,10 +220,7 @@
   display: block;
   width: 100%;
   min-height: 260px;
-  font:
-    16px / 1.75 ui-monospace,
-    Consolas,
-    monospace;
+  font: var(--pc-text-code-editor);
   border-radius: 0;
   border: 1px solid var(--pc-muted);
   resize: vertical;
@@ -261,10 +252,7 @@
   overflow-x: auto;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  font:
-    13px / 1.6 ui-monospace,
-    Consolas,
-    monospace;
+  font: var(--pc-text-code);
 }
 .check {
   border-top: 1px solid var(--pc-rule);
@@ -274,7 +262,7 @@
   border-top: 0;
 }
 .check h4 {
-  font-size: 14px;
+  font-size: var(--pc-size-ui);
   margin: 0;
 }
 .stale {
@@ -322,7 +310,7 @@
   display: grid;
   grid-template-columns: auto 1fr;
   gap: 6px 16px;
-  font-size: 14px;
+  font-size: var(--pc-size-ui);
   margin: 16px 0;
 }
 .receiptList dt {
@@ -346,7 +334,7 @@
   margin-top: 8px;
 }
 .statusLine {
-  font-size: 12px;
+  font-size: var(--pc-size-label);
   color: var(--pc-muted);
 }
 

@@ -103,6 +103,10 @@ function Editor({ label, value, onChange, language }: Omit<Props, 'plain'>) {
         ],
       }),
     });
+    // The scroller is a scrollable region: reach it by keyboard (axe scrollable-region-focusable).
+    created.scrollDOM.tabIndex = 0;
+    created.scrollDOM.setAttribute('role', 'group');
+    created.scrollDOM.setAttribute('aria-label', `${label} (scrollable)`);
     view.current = created;
     return () => {
       created.destroy();

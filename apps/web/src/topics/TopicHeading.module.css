@@ -4,15 +4,15 @@
   padding: 22px 40px 14px;
 }
 .heading h1 {
-  font-size: 28px;
+  font-size: var(--pc-size-title);
 }
 .objective {
-  font-size: 15px;
+  font-size: var(--pc-size-ui);
   line-height: 1.4;
   margin-top: 6px;
 }
 .context {
-  font-size: 12px;
+  font-size: var(--pc-size-label);
   color: var(--pc-muted);
   margin-top: 5px;
 }
@@ -33,6 +33,6 @@
     min-height: 84px;
   }
   .heading h1 {
-    font-size: 24px;
+    font-size: var(--pc-size-section);
   }
 }
