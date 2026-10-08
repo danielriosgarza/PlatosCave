@@ -53,30 +53,6 @@
 .margin {
   min-width: 0;
 }
-.tabs {
-  display: flex;
-  gap: 20px;
-  border-bottom: 1px solid var(--pc-rule);
-  margin-bottom: 16px;
-}
-.tabs button {
-  font: var(--pc-text-ui);
-  font-size: 13px;
-  background: none;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  border-radius: 0;
-  padding: 0 0 10px;
-  cursor: pointer;
-  color: var(--pc-ink);
-}
-.tabs button[aria-pressed="true"] {
-  border-bottom-color: var(--pc-ink);
-  font-weight: 600;
-}
-.count {
-  color: var(--pc-muted);
-}
 .entries {
   min-width: 0;
 }
@@ -130,32 +106,7 @@
   white-space: pre-wrap;
 }
 .field {
-  display: grid;
-  gap: 6px;
-  margin: 10px 0 0;
-  font: var(--pc-text-label);
-}
-.field textarea,
-.field select {
-  font: var(--pc-text-field);
-  width: 100%;
-  border: 1px solid var(--pc-rule);
-  background: var(--pc-soft);
-  color: var(--pc-ink);
-  padding: 12px;
-  border-radius: var(--pc-radius-note);
-}
-.field textarea {
-  min-height: 140px;
-  resize: vertical;
-}
-.field select {
-  padding: 8px 10px;
-  border-radius: var(--pc-radius-control);
-}
-.field textarea:focus,
-.field select:focus {
-  border-color: var(--pc-muted);
+  composes: field from "../../components/Field.module.css";
 }
 .saveLine {
   font: var(--pc-text-label);
@@ -180,26 +131,6 @@
   text-underline-offset: 4px;
   cursor: pointer;
 }
-.conflict {
-  border: 1px solid var(--pc-ink);
-  border-radius: var(--pc-radius-note);
-  padding: 12px;
-  margin-top: 10px;
-}
-.conflict h3 {
-  margin: 0 0 8px;
-  font: var(--pc-text-ui);
-  font-weight: 600;
-}
-.conflict pre {
-  margin: 4px 0 12px;
-  font: var(--pc-text-ui);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  background: var(--pc-soft);
-  padding: 8px;
-  border-radius: var(--pc-radius-control);
-}
 .thread p {
   margin: 8px 0 0;
   font-size: 14px;
@@ -210,11 +141,6 @@
   color: var(--pc-muted);
   font-size: 14px;
   margin: 0 0 12px;
-}
-.composer {
-  margin-top: 8px;
-  padding-top: 14px;
-  border-top: 1px solid var(--pc-rule);
 }
 
 @media (max-width: 1199px) {

@@ -152,7 +152,7 @@ describe('exercise editor', () => {
         steps: [{ id: 'inspect', prompt: 'Compare n = 200 with n = 25.' }],
       },
     });
-    expect(await screen.findByText(/Draft saved at/)).toBeInTheDocument();
+    expect(await screen.findByText(/^Saved$/)).toBeInTheDocument();
   });
 
   it('lists what is wrong and sends no steps, saying the last saved version stays current', async () => {
@@ -177,7 +177,7 @@ describe('exercise editor', () => {
       ),
     ).toBeInTheDocument();
     expect(patched).toHaveLength(0);
-    expect(screen.queryByText(/Draft saved at/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^Saved$/)).not.toBeInTheDocument();
   });
 
   it('sends nothing more while only the steps change and they stay invalid', async () => {

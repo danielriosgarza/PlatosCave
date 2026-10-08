@@ -268,7 +268,7 @@ describe('slide notes', () => {
     const user = userEvent.setup();
     api(world());
     await openNotes(user);
-    await user.click(screen.getByRole('button', { name: /^Discussion/ }));
+    await user.click(screen.getByRole('tab', { name: /^Discussion/ }));
     await user.selectOptions(screen.getByLabelText('Visible to'), 'class');
     await user.type(screen.getByLabelText('Comment or question'), 'Why n − 1?');
     await user.click(screen.getByRole('button', { name: 'Next' }));
@@ -285,7 +285,7 @@ describe('slide notes', () => {
     api(w);
     await openNotes(user);
     await user.click(screen.getByRole('button', { name: 'Next' }));
-    await user.click(screen.getByRole('button', { name: /^Discussion/ }));
+    await user.click(screen.getByRole('tab', { name: /^Discussion/ }));
     await user.type(screen.getByLabelText('Comment or question'), 'Is slide 2 on the test?');
     await user.click(screen.getByRole('button', { name: 'Post' }));
     const margin = screen.getByRole('complementary', { name: 'Slide notes' });
@@ -308,7 +308,7 @@ describe('slide notes', () => {
     // The device's delete of the posted question's draft stays uncommitted until the test lets it go.
     const release = holdDraftDeletes();
     const { margin } = await openNotes(user);
-    await user.click(screen.getByRole('button', { name: /^Discussion/ }));
+    await user.click(screen.getByRole('tab', { name: /^Discussion/ }));
     await user.type(screen.getByLabelText('Comment or question'), 'Is slide 1 on the test?');
     await user.click(screen.getByRole('button', { name: 'Post' }));
     expect(await within(margin).findByText('You → Instructor')).toBeVisible();
@@ -320,12 +320,12 @@ describe('slide notes', () => {
     // offer it again.
     const notes = screen.queryByRole('button', { name: 'Notes' });
     if (notes) await user.click(notes);
-    const discussion = screen.queryByRole('button', { name: /^Discussion/ });
+    const discussion = screen.queryByRole('tab', { name: /^Discussion/ });
     if (discussion) await user.click(discussion);
     expect(screen.queryByDisplayValue('Is slide 1 on the test?')).toBeNull();
     release(); // the device commits at last
     if (!notes) await user.click(await screen.findByRole('button', { name: 'Notes' }));
-    if (!discussion) await user.click(await screen.findByRole('button', { name: /^Discussion/ }));
+    if (!discussion) await user.click(await screen.findByRole('tab', { name: /^Discussion/ }));
     expect(screen.getByLabelText('Comment or question')).toHaveValue('');
     expect(w.calls.filter((c) => c.method === 'POST')).toHaveLength(1);
     await waitFor(async () => expect(await listDrafts(SAM_ID, CLASS_A, RES)).toEqual([]));
@@ -440,7 +440,7 @@ describe('slide notes', () => {
     api(world());
     const release = holdDraftDeletes();
     await openNotes(user);
-    await user.click(screen.getByRole('button', { name: /^Discussion/ }));
+    await user.click(screen.getByRole('tab', { name: /^Discussion/ }));
     const box = screen.getByLabelText('Comment or question');
     await user.type(box, 'Is slide 1 on the test?');
     await waitFor(async () => expect(await listDrafts(SAM_ID, CLASS_A, RES)).toHaveLength(1));
@@ -450,12 +450,12 @@ describe('slide notes', () => {
     await new Promise((resolve) => setTimeout(resolve, 100));
     const notes = screen.queryByRole('button', { name: 'Notes' });
     if (notes) await user.click(notes);
-    const discussion = screen.queryByRole('button', { name: /^Discussion/ });
+    const discussion = screen.queryByRole('tab', { name: /^Discussion/ });
     if (discussion) await user.click(discussion);
     expect(screen.queryByDisplayValue('Is slide 1 on the test?')).toBeNull();
     release();
     if (!notes) await user.click(await screen.findByRole('button', { name: 'Notes' }));
-    if (!discussion) await user.click(await screen.findByRole('button', { name: /^Discussion/ }));
+    if (!discussion) await user.click(await screen.findByRole('tab', { name: /^Discussion/ }));
     expect(screen.getByLabelText('Comment or question')).toHaveValue('');
     await waitFor(async () => expect(await listDrafts(SAM_ID, CLASS_A, RES)).toEqual([]));
   });
@@ -555,12 +555,12 @@ describe('slide notes', () => {
       return original(input, init);
     });
     await openNotes(user);
-    await user.click(screen.getByRole('button', { name: /^Discussion/ }));
+    await user.click(screen.getByRole('tab', { name: /^Discussion/ }));
     await user.type(screen.getByLabelText('Comment or question'), 'Why n minus one?');
     await user.click(screen.getByRole('button', { name: 'Post' }));
     await user.click(screen.getByRole('button', { name: 'Hide notes' }));
     await user.click(screen.getByRole('button', { name: 'Notes' }));
-    await user.click(screen.getByRole('button', { name: /^Discussion/ }));
+    await user.click(screen.getByRole('tab', { name: /^Discussion/ }));
     release();
     await waitFor(() => expect(w.threads).toHaveLength(1));
     await waitFor(() => expect(screen.getByText('Why n minus one?')).toBeVisible());
@@ -584,7 +584,7 @@ describe('slide notes', () => {
       return original(input, init);
     });
     await openNotes(user);
-    await user.click(screen.getByRole('button', { name: /^Discussion/ }));
+    await user.click(screen.getByRole('tab', { name: /^Discussion/ }));
     const box = screen.getByLabelText('Comment or question');
     await user.type(box, 'Why n minus one?');
     await user.click(screen.getByRole('button', { name: 'Post' }));
@@ -600,7 +600,7 @@ describe('slide notes', () => {
     cleanup();
     renderApp(SLIDES);
     await user.click(await screen.findByRole('button', { name: 'Notes' }));
-    await user.click(await screen.findByRole('button', { name: /^Discussion/ }));
+    await user.click(await screen.findByRole('tab', { name: /^Discussion/ }));
     await waitFor(() =>
       expect(screen.getByLabelText('Comment or question')).toHaveValue(' And why not n?'),
     );

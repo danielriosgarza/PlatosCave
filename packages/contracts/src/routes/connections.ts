@@ -26,7 +26,8 @@ const preview = z.object({ error: z.literal('forbidden') });
 const [localTarget, sshTarget] = LinkTarget.options;
 /**
  * The target a person saves: `local` or `ssh` as in §4.4, without `hostKeys`, which the server
- * fills from the keys the person trusted. `managed` targets come from class templates (P3-10).
+ * fills from the keys the person trusted. `managed` targets are not offered yet
+ * (connector side only until the owner decides, design §12).
  */
 export const ConnectionTarget = z.discriminatedUnion('kind', [
   localTarget,

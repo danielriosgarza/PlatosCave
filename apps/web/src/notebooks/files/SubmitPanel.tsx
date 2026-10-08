@@ -6,6 +6,7 @@ import { useState } from 'react';
 import type { z } from 'zod';
 import { ApiError, call } from '../../api/client';
 import buttons from '../../components/Buttons.module.css';
+import { RetryNotice } from '../../components/RetryNotice';
 import styles from './Files.module.css';
 import { refusalText, size, when } from './files';
 
@@ -103,15 +104,10 @@ export function SubmitPanel({ classId, sessionId, workingCopy, environment }: Pr
       {transfers.isPending ? (
         <p role="status">Reading the files copied to Parallax</p>
       ) : transfers.isError ? (
-        <div role="alert">
-          <p>
-            {refusalText(transfers.error, 'The files copied to Parallax could not be read.')} The
-            list of files you can include is unknown, so submitting is paused.
-          </p>
-          <button type="button" className={buttons.tool} onClick={() => void transfers.refetch()}>
-            Try again
-          </button>
-        </div>
+        <RetryNotice
+          message={`${refusalText(transfers.error, 'The files copied to Parallax could not be read.')} The list of files you can include is unknown, so submitting is paused.`}
+          onRetry={() => void transfers.refetch()}
+        />
       ) : available.length > 0 ? (
         <fieldset className={styles.fieldset}>
           <legend>Files copied to Parallax to include</legend>

@@ -98,11 +98,14 @@ test('A29 a token the server rejects names its stage and never reaches Ready', a
     await expect(stage(page, 'runtime')).toHaveAttribute('data-status', 'ok');
     // ...and Connect, which starts the server, stops at its token.
     await page.getByRole('button', { name: 'Connect', exact: true }).click();
-    await expect(
-      page.getByRole('alert').filter({ hasText: "Jupyter rejected the connector's token." }),
-    ).toBeVisible({
-      timeout: 120_000,
-    });
+    // A session that fails after Connect names the stage of its error code and offers its recoveries.
+    const alert = page.getByRole('alert').filter({ hasText: 'This session could not start.' });
+    await expect(alert).toBeVisible({ timeout: 120_000 });
+    await expect(alert).toContainText(
+      "Reach the notebook service failed. Jupyter rejected the connector's token.",
+    );
+    await expect(alert).toContainText('Choose another Python interpreter or kernel.');
+    await expect(alert).toContainText("Ask the host's owner.");
     await notReady(page);
   } finally {
     await endSessions(page).catch(() => undefined);

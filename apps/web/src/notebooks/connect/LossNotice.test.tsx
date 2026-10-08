@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { session } from './fixtures';
 import { LossNotice } from './LossNotice';
+import { RECOVERY_COPY } from './messages';
 
 afterEach(cleanup);
 
@@ -77,5 +78,25 @@ describe('LossNotice', () => {
     setup({ state: 'failed', cause: 'jupyter_missing' });
     expect(screen.getByRole('alert')).toHaveTextContent('This session could not start.');
     expect(screen.getByRole('alert')).toHaveTextContent('Jupyter Server is not installed');
+  });
+
+  it('A29 a session that failed at a stage names it and shows the code’s recoveries', () => {
+    setup({ state: 'failed', cause: 'token_rejected' });
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveTextContent(
+      "Reach the notebook service failed. Jupyter rejected the connector's token.",
+    );
+    expect(alert).toHaveTextContent(RECOVERY_COPY.choose_environment ?? 'missing');
+    expect(alert).toHaveTextContent(RECOVERY_COPY.contact_host_owner ?? 'missing');
+  });
+
+  it('A29 a failed session lists only recoveries it can act on', () => {
+    setup({ state: 'failed', cause: 'host_key_changed' });
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveTextContent("Ask the host's owner.");
+    expect(alert).not.toHaveTextContent(/replace the trusted key|then trust it/i);
+    expect(alert).not.toHaveTextContent(
+      /Choose another target\.|Start a new session\.|Try again\./,
+    );
   });
 });

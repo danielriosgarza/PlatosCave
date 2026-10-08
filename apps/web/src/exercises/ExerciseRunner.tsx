@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { ApiError } from '../api/client';
 import buttons from '../components/Buttons.module.css';
 import { Loading } from '../components/Loading';
+import { RetryNotice } from '../components/RetryNotice';
 import {
   type Attempt,
   type AttemptStep,
@@ -79,12 +80,10 @@ function OpenFailure({ error, retry }: { error: unknown; retry: () => void }) {
     );
   }
   return (
-    <div className={styles.inlineError} role="alert">
-      <p>This exercise could not be opened. Check your connection and try again.</p>
-      <button type="button" className={buttons.outline} onClick={retry}>
-        Try again
-      </button>
-    </div>
+    <RetryNotice
+      message="This exercise could not be opened. Check your connection and try again."
+      onRetry={retry}
+    />
   );
 }
 
