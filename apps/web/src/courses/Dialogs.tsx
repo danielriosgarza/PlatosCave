@@ -7,6 +7,7 @@ import type { z } from 'zod';
 import { ApiError, call } from '../api/client';
 import buttons from '../components/Buttons.module.css';
 import page from '../components/Page.module.css';
+import { MODAL_SELECTOR } from '../workspace/focus';
 import styles from './Courses.module.css';
 import { refreshContexts } from './queries';
 
@@ -158,10 +159,47 @@ function focusPageAnchor() {
   anchor.focus();
 }
 
+/** Open sheets, oldest first. Only the newest handles keys; the ones beneath it stay inert. */
+const openSheets: object[] = [];
+
+/** How many open sheets hide each element, so the page stays inert until the last one closes. */
+const hiddenBy = new Map<HTMLElement, number>();
+
+function hide(el: Node) {
+  if (!(el instanceof HTMLElement)) return null;
+  const count = hiddenBy.get(el);
+  // Inert set by something else is not ours to set or clear.
+  if (count === undefined && el.hasAttribute('inert')) return null;
+  hiddenBy.set(el, (count ?? 0) + 1);
+  el.setAttribute('inert', '');
+  return el;
+}
+
+function reveal(el: HTMLElement) {
+  const count = (hiddenBy.get(el) ?? 1) - 1;
+  if (count > 0) {
+    hiddenBy.set(el, count);
+    return;
+  }
+  hiddenBy.delete(el);
+  el.removeAttribute('inert');
+}
+
+/** The element that shows the sheet: the full-screen element (only its subtree is shown), else <body>. */
+function sheetContainer(): HTMLElement {
+  const element = document.fullscreenElement;
+  return element instanceof HTMLElement && !isEmbeddedFullscreen(element) ? element : document.body;
+}
+
+/** A frame or media element in full screen cannot hold the sheet. */
+function isEmbeddedFullscreen(element: Element) {
+  return element instanceof HTMLIFrameElement || element instanceof HTMLMediaElement;
+}
+
 /**
  * A modal sheet: focus moves in and stays inside (Tab and Shift+Tab wrap), Escape closes from
  * wherever focus is, and on close focus returns to the opener, or to the page heading when the
- * opener is gone.
+ * opener is gone. With several sheets open, only the newest handles keys.
  */
 export function Dialog({
   title,
@@ -174,31 +212,49 @@ export function Dialog({
 }) {
   const headingId = useId();
   const ref = useRef<HTMLDivElement>(null);
-  // Fixed at open: the browser shows only the full-screen element's subtree (§5).
-  // A frame or media element in full screen cannot hold the sheet: leave full screen and use <body>.
-  const [container] = useState<HTMLElement>(() => {
+  const opener = useRef<HTMLElement | null>(null);
+  // Fixed once known. While a frame is full screen the sheet waits (null) for it to leave full
+  // screen, then joins the element that is still full screen (the workspace) or <body>.
+  const [container, setContainer] = useState<HTMLElement | null>(() => {
     const element = document.fullscreenElement;
-    if (!(element instanceof HTMLElement)) return document.body;
-    if (element instanceof HTMLIFrameElement || element instanceof HTMLMediaElement) {
-      void document.exitFullscreen().catch(() => undefined);
-      return document.body;
-    }
-    return element;
+    return element && isEmbeddedFullscreen(element) ? null : sheetContainer();
   });
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
   useEffect(() => {
+    opener.current = document.activeElement as HTMLElement | null;
+  }, []);
+  useEffect(() => {
+    if (container) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        await document.exitFullscreen();
+      } catch {
+        // The browser already left full screen.
+      }
+      if (!cancelled) setContainer(sheetContainer());
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [container]);
+  useEffect(() => {
     const dialog = ref.current;
-    const opener = document.activeElement as HTMLElement | null;
-    const inside = () => Array.from(dialog?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? []);
+    if (!container || !dialog) return;
+    const token = {};
+    openSheets.push(token);
+    const newest = () => openSheets[openSheets.length - 1] === token;
+    const inside = () => Array.from(dialog.querySelectorAll<HTMLElement>(FOCUSABLE));
     inside()[0]?.focus();
     const onKeyDown = (e: KeyboardEvent) => {
+      if (!newest()) return;
       if (e.key === 'Escape') {
         e.preventDefault();
         closeRef.current();
         return;
       }
-      if (e.key !== 'Tab' || !dialog) return;
+      if (e.key !== 'Tab') return;
       const items = inside();
       const first = items[0];
       const last = items[items.length - 1];
@@ -220,33 +276,31 @@ export function Dialog({
     };
     const onFocusIn = (e: FocusEvent) => {
       // Focus inside another, newer sheet is that sheet's to keep.
-      if (!(e.target instanceof Element) || e.target.closest('[aria-modal="true"]')) return;
-      if (dialog && !dialog.contains(e.target)) inside()[0]?.focus();
+      if (!newest() || !(e.target instanceof Element) || e.target.closest(MODAL_SELECTOR)) return;
+      if (!dialog.contains(e.target)) inside()[0]?.focus();
     };
-    // The sheet is portalled to the full-screen element when there is one (only its subtree is
-    // shown), else to <body>. Everything beside it on the way up to <body> is the page behind it.
-    // Nodes that mount while the sheet is open (page chrome restored when full screen ends) are
-    // inerted too, except another sheet, which the newer dialog keeps operable.
+    // Everything beside the sheet on the way up to <body> is the page behind it (and any older
+    // sheet). Nodes that mount while the sheet is open (page chrome restored when full screen
+    // ends) are inerted too, except another sheet, which its own dialog keeps operable.
     const background = new Set<HTMLElement>();
-    const hide = (el: Node) => {
-      if (!(el instanceof HTMLElement) || el.hasAttribute('inert')) return;
-      background.add(el);
-      el.setAttribute('inert', '');
-    };
     const observer = new MutationObserver((records) => {
       for (const record of records) {
         for (const added of Array.from(record.addedNodes)) {
           const isSheet =
             added instanceof Element &&
-            (added.matches('[aria-modal="true"]') || added.querySelector('[aria-modal="true"]'));
-          if (!isSheet) hide(added);
+            (added.matches(MODAL_SELECTOR) || added.querySelector(MODAL_SELECTOR));
+          const hidden = isSheet ? null : hide(added);
+          if (hidden) background.add(hidden);
         }
       }
     });
-    for (let node = dialog?.parentElement; node && node !== document.body; ) {
+    for (let node: HTMLElement | null = dialog.parentElement; node && node !== document.body; ) {
       const parent: HTMLElement | null = node.parentElement;
       if (parent) observer.observe(parent, { childList: true });
-      for (const el of Array.from(parent?.children ?? [])) if (el !== node) hide(el);
+      for (const el of Array.from(parent?.children ?? [])) {
+        const hidden = el === node ? null : hide(el);
+        if (hidden) background.add(hidden);
+      }
       node = parent;
     }
     document.addEventListener('keydown', onKeyDown);
@@ -255,11 +309,14 @@ export function Dialog({
       document.removeEventListener('keydown', onKeyDown);
       document.removeEventListener('focusin', onFocusIn);
       observer.disconnect();
-      for (const el of background) el.removeAttribute('inert');
-      if (opener?.isConnected && opener !== document.body) opener.focus();
+      openSheets.splice(openSheets.indexOf(token), 1);
+      for (const el of background) reveal(el);
+      const from = opener.current;
+      if (from?.isConnected && from !== document.body) from.focus();
       else focusPageAnchor();
     };
-  }, []);
+  }, [container]);
+  if (!container) return null;
   return createPortal(
     <div className={styles.backdrop}>
       <div
