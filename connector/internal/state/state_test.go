@@ -273,11 +273,15 @@ func TestStateValidatorsAgreeWithSchema(t *testing.T) {
 	if err := c.AddResource(base, doc); err != nil {
 		t.Fatal(err)
 	}
-	schemaAccepts := func(def string, v any) bool {
+	compiled := map[string]*jsonschema.Schema{}
+	for _, def := range []string{"Config", "Runtime"} {
 		sch, err := c.Compile(base + "#/$defs/" + def)
 		if err != nil {
 			t.Fatal(err)
 		}
+		compiled[def] = sch
+	}
+	schemaAccepts := func(def string, v any) bool {
 		body, err := json.Marshal(v)
 		if err != nil {
 			t.Fatal(err)
@@ -286,7 +290,7 @@ func TestStateValidatorsAgreeWithSchema(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		return sch.Validate(inst) == nil
+		return compiled[def].Validate(inst) == nil
 	}
 
 	configs := map[string]func(*Config){

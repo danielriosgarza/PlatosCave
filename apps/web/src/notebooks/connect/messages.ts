@@ -60,6 +60,22 @@ export const CODE_STAGE: Record<string, string> = {
   kernel_start_failed: 'kernels',
 };
 
+/** One word per kernel state, shared by the connect panel and the live toolbar (§5.6). */
+export const KERNEL_LABEL: Record<string, string> = {
+  starting: 'Starting',
+  idle: 'Ready',
+  busy: 'Running',
+  waiting_for_input: 'Waiting for input',
+  restarting: 'Restarting',
+  dead: 'Kernel stopped',
+  unknown: 'Unconfirmed',
+  lost: 'No kernel',
+};
+
+/** The word for a kernel state; a state nobody confirmed reads Unconfirmed. */
+export const kernelLabel = (state: string | null | undefined): string =>
+  KERNEL_LABEL[state ?? 'unknown'] ?? 'Unconfirmed';
+
 /** What each failing code means for the person, in the words of spec §14's six causes. */
 export const CODE_COPY: Record<string, string> = {
   host_unresolved: 'The host name could not be found.',

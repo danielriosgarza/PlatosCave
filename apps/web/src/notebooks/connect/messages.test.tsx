@@ -37,6 +37,8 @@ describe('connect messages', () => {
       expect(CODE_STAGE[code] ?? null, `stage of ${code}`).toBe(entry.stage);
       if (entry.stage) expect(STAGE_LABEL[entry.stage], `label of ${entry.stage}`).toBeTruthy();
     }
+    const staged = Object.entries(catalogue.codes).filter(([, e]) => e.stage);
+    expect(Object.keys(CODE_STAGE).sort()).toEqual(staged.map(([code]) => code).sort());
   });
 
   it('every loss cause has copy and the catalogue’s recoveries', () => {

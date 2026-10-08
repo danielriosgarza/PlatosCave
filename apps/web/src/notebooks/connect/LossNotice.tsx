@@ -20,6 +20,19 @@ interface Props {
   onNewSession: () => void;
 }
 
+/**
+ * Recoveries a failed session does not list: the buttons below cover choosing another target and
+ * starting a new session (there is no retry of its own), and the host-key steps need the connection
+ * test's fingerprint and Trust or Replace buttons, which this notice does not have.
+ */
+const HAS_OWN_ACTION = new Set([
+  'verify_host_key',
+  'replace_host_key',
+  'pick_other_target',
+  'new_session',
+  'retry',
+]);
+
 const FORGETTABLE = new Set(['disconnected', 'unconfirmed', 'stopping']);
 
 /**
@@ -41,7 +54,9 @@ export function LossNotice({
   const open = FORGETTABLE.has(session.state);
   const stage = failed ? CODE_STAGE[session.cause ?? ''] : undefined;
   const recoveries = recoveryText(
-    (failed ? CODE_RECOVERIES : CAUSE_RECOVERIES)[session.cause ?? ''] ?? [],
+    ((failed ? CODE_RECOVERIES : CAUSE_RECOVERIES)[session.cause ?? ''] ?? []).filter(
+      (r) => !failed || !HAS_OWN_ACTION.has(r),
+    ),
   );
   const canReconnect =
     open &&

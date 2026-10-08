@@ -28,6 +28,9 @@ test('A09 a live HTML output with a script runs no script, in a sandboxed frame 
     const notebook = page.getByRole('article', { name: 'Live notebook' });
     const cell = notebook.getByRole('region', { name: /^Code cell 2/ });
 
+    // The cell starts with its stored output, labelled as stored.
+    await expect(cell.getByText(/Stored output/)).toBeVisible();
+
     const html =
       '<p id="state">Live chart without script</p>' +
       "<script>document.getElementById('state').textContent='Script ran';" +

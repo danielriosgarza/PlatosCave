@@ -89,4 +89,14 @@ describe('LossNotice', () => {
     expect(alert).toHaveTextContent(RECOVERY_COPY.choose_environment ?? 'missing');
     expect(alert).toHaveTextContent(RECOVERY_COPY.contact_host_owner ?? 'missing');
   });
+
+  it('A29 a failed session lists only recoveries it can act on', () => {
+    setup({ state: 'failed', cause: 'host_key_changed' });
+    const alert = screen.getByRole('alert');
+    expect(alert).toHaveTextContent("Ask the host's owner.");
+    expect(alert).not.toHaveTextContent(/replace the trusted key|then trust it/i);
+    expect(alert).not.toHaveTextContent(
+      /Choose another target\.|Start a new session\.|Try again\./,
+    );
+  });
 });
