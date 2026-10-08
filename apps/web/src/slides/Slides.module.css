@@ -6,9 +6,12 @@
 .picker {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
+  max-width: 100%;
 }
 .picker select {
+  min-width: 0;
   border: 1px solid var(--pc-muted);
   background: var(--pc-sheet);
   border-radius: var(--pc-radius-control);
@@ -248,6 +251,16 @@
     padding: 12px 16px;
   }
 }
+
+/* The zoom live region stays mounted and announced, but is out of the layout while empty. */
+.zoomStatus:empty {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+}
+
 @media (pointer: coarse) {
   .indexButton {
     min-height: var(--pc-touch-target, 44px);
