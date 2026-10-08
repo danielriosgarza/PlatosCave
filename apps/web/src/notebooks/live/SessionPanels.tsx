@@ -242,6 +242,7 @@ function Panels({
   // An imported notebook replaces the code in the editor: the person asked for that revision.
   const imported = (next: WorkingCopyView) => {
     keep(next);
+    setMoved(null);
     for (const [id, source] of Object.entries(sourcesFor(next.notebook, notebook)))
       onEdit(id, source);
   };
