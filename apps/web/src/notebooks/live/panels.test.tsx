@@ -401,6 +401,117 @@ describe('files, save and submit in the live notebook', () => {
     });
   });
 
+  describe('after an Import conflict', () => {
+    const newer = {
+      ...stored,
+      currentRevision: 5,
+      revision: { ...revision, revision: 5 },
+      notebook: {
+        ...stored.notebook,
+        cells: [{ id: 'c1', cell_type: 'code', source: 'z = 5', metadata: {}, outputs: [] }],
+      },
+    };
+    const entries = [
+      { path: 'e.ipynb', name: 'e.ipynb', type: 'notebook', size: 9, modified: NOW },
+    ];
+
+    /** POST (import) answers each entry of `imports` in turn; PUT is answered by `put`. */
+    function mountConflict(
+      imports: { status: number; body: unknown }[],
+      put?: () => Promise<Response>,
+    ) {
+      let posts = 0;
+      const fetchMock = stubApi((url, init) => {
+        if (init?.method === 'POST') {
+          const answer = imports[Math.min(posts, imports.length - 1)];
+          posts += 1;
+          return answer as { status: number; body: unknown };
+        }
+        if (init?.method === 'PUT') return { status: 200, body: { ...newer, currentRevision: 6 } };
+        if (url.includes('/notebook-working-copies/')) return { status: 200, body: stored };
+        if (url.includes('/transfers')) return { status: 200, body: { transfers: [] } };
+        if (url.includes('/files')) return { status: 200, body: { ...listing([]), entries } };
+        return { status: 404, body: {} };
+      });
+      if (put) {
+        const answer = fetchMock.getMockImplementation();
+        fetchMock.mockImplementation(async (input, init) =>
+          init?.method === 'PUT' ? put() : (answer as NonNullable<typeof answer>)(input, init),
+        );
+      }
+      render(
+        <QueryClientProvider client={createQueryClient({ retry: false })}>
+          <Host over={{}} />
+        </QueryClientProvider>,
+      );
+      attach();
+    }
+    const conflict = { status: 409, body: { error: 'revision_conflict', current: newer } };
+    const importFile = async (revision: number) => {
+      fireEvent.click(await screen.findByRole('button', { name: 'Import e.ipynb' }));
+      fireEvent.click(screen.getByRole('button', { name: `Import as revision ${revision}` }));
+    };
+
+    it('A34 a successful Import after a conflict offers Save to Parallax again and clears the stale alert', async () => {
+      mountConflict([
+        conflict,
+        { status: 200, body: { transfers: [], workingCopy: { ...newer, currentRevision: 6 } } },
+      ]);
+      await screen.findByRole('heading', { name: 'Save' });
+      edit('c1', 'y = 3');
+      await importFile(3);
+      expect(await screen.findByText(/now at revision 5/)).toBeInTheDocument();
+      expect(screen.getByText(/your draft is still in this page/)).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Save to Parallax' })).not.toBeInTheDocument();
+      await importFile(6);
+      expect(await screen.findByText(/Imported e.ipynb as revision 6/)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Save to Parallax' })).toBeInTheDocument();
+      expect(screen.queryByText(/your draft is still in this page/)).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /Save my draft/ })).not.toBeInTheDocument();
+    });
+
+    it('A34 an Import conflict with no unsaved edits shows no stale alert about a draft', async () => {
+      // The newer copy holds what the editor shows: there is no draft to place.
+      const same = { ...newer, notebook: stored.notebook };
+      mountConflict([{ status: 409, body: { error: 'revision_conflict', current: same } }]);
+      await screen.findByRole('heading', { name: 'Save' });
+      await importFile(3);
+      expect(await screen.findByText(/now at revision 5/)).toBeInTheDocument();
+      expect(screen.queryByText(/your draft is still in this page/)).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Save to Parallax' })).toBeInTheDocument();
+    });
+
+    it('A34 the stale save keeps its control in place, disabled and showing Saving, until the PUT answers', async () => {
+      let release: (r: Response) => void = () => {};
+      mountConflict(
+        [conflict],
+        () =>
+          new Promise<Response>((resolve) => {
+            release = resolve;
+          }),
+      );
+      await screen.findByRole('heading', { name: 'Save' });
+      edit('c1', 'y = 3');
+      await importFile(3);
+      const button = await screen.findByRole('button', { name: 'Save my draft as revision 6' });
+      button.focus();
+      fireEvent.click(button);
+      await waitFor(() => expect(button).toHaveTextContent('Saving'));
+      expect(button).toBeDisabled();
+      expect(button).toBeInTheDocument();
+      expect(button.isConnected).toBe(true);
+      expect(screen.queryByRole('button', { name: 'Save to Parallax' })).not.toBeInTheDocument();
+      release(
+        new Response(JSON.stringify({ ...newer, currentRevision: 6 }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        }),
+      );
+      expect(await screen.findByText(/Saved to Parallax as revision 6/)).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Save to Parallax' })).toBeInTheDocument();
+    });
+  });
+
   it('A34 the working copy is not refetched behind the editor when the window regains focus', async () => {
     const fetchMock = mount([]);
     attach();

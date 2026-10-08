@@ -50,3 +50,8 @@ button.retry {
     margin: 0;
   }
 }
+/* A box whose mark is still being saved: it keeps focus but shows it will not change yet. */
+.item input[type="checkbox"][aria-disabled="true"] {
+  opacity: 0.5;
+  cursor: progress;
+}
