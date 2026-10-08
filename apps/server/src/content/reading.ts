@@ -2,7 +2,6 @@ import type { Element, ElementContent, Nodes, Root } from 'hast';
 import { toString as hastToString } from 'hast-util-to-string';
 import rehypeHighlight from 'rehype-highlight';
 import rehypeKatex from 'rehype-katex';
-import rehypeParse from 'rehype-parse';
 import rehypeSanitize, { defaultSchema, type Options as SanitizeSchema } from 'rehype-sanitize';
 import rehypeStringify from 'rehype-stringify';
 import remarkGfm from 'remark-gfm';
@@ -12,6 +11,7 @@ import remarkRehype from 'remark-rehype';
 import { unified } from 'unified';
 import { SKIP, visit } from 'unist-util-visit';
 import { VFile } from 'vfile';
+import { parseHtmlFragment } from './html-fragment';
 import { blockId, normaliseText, sha12 } from './text';
 
 /**
@@ -297,7 +297,6 @@ const markdownProcessor = unified()
   // Footnote ids without a prefix: the sanitiser adds one, and fixLinks follows it.
   .use(remarkRehype, { clobberPrefix: '' })
   .freeze();
-const htmlParser = unified().use(rehypeParse, { fragment: true }).freeze();
 const transformProcessor = unified()
   .use(rehypeKatex, { output: 'mathml' })
   .use(rehypeHighlight, { detect: false })
@@ -337,7 +336,7 @@ function renderTree(
   const tree: Root =
     format === 'markdown'
       ? markdownProcessor.runSync(markdownProcessor.parse(source))
-      : htmlParser.parse(source);
+      : parseHtmlFragment(source).tree;
 
   const file = new VFile();
   const clean = transformProcessor.runSync(tree, file);
@@ -457,7 +456,7 @@ export function renderSlides(source: string): RenderedSlides {
  */
 export function resolveReadingImages(html: string, urlFor: (key: string) => string | null): string {
   if (!html.includes('data-object-key')) return html;
-  const tree = htmlParser.parse(html);
+  const tree = parseHtmlFragment(html).tree;
   visit(tree, 'element', (el) => {
     if (el.tagName !== 'img' || typeof el.properties.dataObjectKey !== 'string') return;
     const url = urlFor(el.properties.dataObjectKey);
