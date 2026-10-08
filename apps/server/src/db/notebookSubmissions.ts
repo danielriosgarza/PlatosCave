@@ -305,8 +305,8 @@ export async function reviewSubmissions(
 }
 
 /**
- * The stored snapshot of one submission the caller may download: their own, or any real
- * student's for an instructor. Others' submissions look like missing ones.
+ * The stored snapshot of one submission the caller may download: their own, or a student's (or
+ * removed student's) for an instructor, as `reviewSubmissions` lists. Others' look like missing ones.
  */
 export async function submissionObject(
   db: Db,
@@ -318,9 +318,27 @@ export async function submissionObject(
     .from(notebookSubmissions)
     .where(and(forClass(scope, notebookSubmissions), eq(notebookSubmissions.id, submissionId)));
   if (!row) return null;
-  const mine = row.userId === scope.user.id;
-  const reviewable = scope.role === 'instructor' && !row.isPreview;
-  return mine || reviewable ? { key: row.objectKey, filename: row.filename } : null;
+  if (row.userId === scope.user.id) return { key: row.objectKey, filename: row.filename };
+  if (scope.role !== 'instructor' || row.isPreview) return null;
+  // The listing's predicate: only a student's (or removed student's) work, never another instructor's.
+  const [reviewable] = await db
+    .select({ id: notebookSubmissions.id })
+    .from(notebookSubmissions)
+    .leftJoin(
+      classMemberships,
+      and(
+        eq(classMemberships.classId, notebookSubmissions.classId),
+        eq(classMemberships.userId, notebookSubmissions.userId),
+      ),
+    )
+    .where(
+      and(
+        forClass(scope, notebookSubmissions),
+        eq(notebookSubmissions.id, submissionId),
+        studentOrRemovedStudent(notebookSubmissions),
+      ),
+    );
+  return reviewable ? { key: row.objectKey, filename: row.filename } : null;
 }
 
 /**

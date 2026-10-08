@@ -14,6 +14,7 @@ import {
   studentIn,
   T_SAMPLING,
 } from '../../test/render';
+import { modeLabel } from '../live/LiveNotebook';
 import { ConnectPanel } from './ConnectPanel';
 import {
   CONNECTION,
@@ -30,6 +31,7 @@ import {
   TEST_ID,
   testView,
 } from './fixtures';
+import { KERNEL_LABEL, kernelLabel } from './messages';
 
 afterEach(() => {
   cleanup();
@@ -191,6 +193,29 @@ describe('ConnectPanel', () => {
     expect(screen.queryByText(/· Ready/)).toBeNull();
     w.kernel = kernel('idle');
     expect(await screen.findByText('Cluster · Python · Ready')).toBeInTheDocument();
+  });
+
+  it('A27 A31 the panel and the toolbar show the same word for each kernel state', async () => {
+    for (const state of Object.keys(KERNEL_LABEL).filter((k) => k !== 'lost')) {
+      const word = kernelLabel(state);
+      const toolbar = modeLabel({
+        connectionName: 'Cluster',
+        language: 'Python',
+        sessionState: 'ready',
+        kernelState: state,
+        confirmed: true,
+      });
+      expect(toolbar).toBe(`Cluster · Python · ${word}`);
+    }
+    const w = world({
+      connections: [sshConnection()],
+      sessions: [session()],
+      session: session(),
+      kernel: kernel('unknown'),
+    });
+    serve(w);
+    renderPanel();
+    expect(await screen.findByText('Cluster · Python · Unconfirmed')).toBeInTheDocument();
   });
 
   it('A27 a session that is ready with no kernel gets its chosen kernel started, once', async () => {

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import buttons from '../../components/Buttons.module.css';
+import composer from '../../components/DiscussionComposer.module.css';
 import type { MarginActions, Thread, ThreadAction } from './data';
 import styles from './Margin.module.css';
 
@@ -208,7 +209,7 @@ function Form({
   onCancel: () => void;
 }) {
   return (
-    <div className={styles.composer}>
+    <div className={composer.composer}>
       <label className={styles.field}>
         {label}
         <textarea rows={3} value={text} onChange={(e) => onText(e.target.value)} />
