@@ -16,6 +16,7 @@ import (
 
 	"parallax/connector/internal/protocol"
 	"parallax/connector/internal/redact"
+	"parallax/connector/internal/safetext"
 )
 
 // maxToolOutput bounds what the connector reads from one tool run.
@@ -110,7 +111,7 @@ func childEnv(extra []string) []string {
 
 // lastLines returns the tail of s, at most n bytes, on whole lines where it can.
 func lastLines(s string, n int) string {
-	s = strings.TrimSpace(cleanLines(s))
+	s = strings.TrimSpace(safetext.Sanitize(s))
 	if len(s) <= n {
 		return s
 	}
@@ -119,17 +120,6 @@ func lastLines(s string, n int) string {
 		s = s[i+1:]
 	}
 	return strings.ToValidUTF8(s, "")
-}
-
-// cleanLines drops control characters other than newlines.
-func cleanLines(s string) string {
-	b := make([]rune, 0, len(s))
-	for _, r := range s {
-		if r == '\n' || r >= 0x20 && r != 0x7f {
-			b = append(b, r)
-		}
-	}
-	return string(b)
 }
 
 // RuntimeInfo is what the runtime stage learns about an environment.

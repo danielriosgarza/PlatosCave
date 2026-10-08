@@ -41,15 +41,20 @@ export type LinkAuthResult =
       ok: false;
       reason: Extract<
         LinkCloseReason,
-        'protocol_error' | 'clock_skew' | 'bad_signature' | 'pending' | 'revoked'
+        | 'protocol_error'
+        | 'clock_skew'
+        | 'bad_signature'
+        | 'pending'
+        | 'approval_expired'
+        | 'revoked'
       >;
     };
 
 /**
  * Checks an `auth` answer to `challenge`: the challenge unexpired and unused, `ts` within 120 s
  * of `now`, the signature of the stored key over the link layout with this server's `origin`,
- * and only then the connector's state. A pending connector past its approval window is as
- * good as revoked: it has to pair again.
+ * and only then the connector's state. A pending connector past its approval window is
+ * `approval_expired`: it has to pair again, but nobody revoked it, so it is not told so.
  */
 export async function authenticateLink(
   db: Db,
@@ -70,7 +75,7 @@ export async function authenticateLink(
   if (row.status === 'revoked') return { ok: false, reason: 'revoked' };
   if (row.status === 'pending') {
     const lapsed = row.approveBy !== null && row.approveBy.getTime() <= now.getTime();
-    return { ok: false, reason: lapsed ? 'revoked' : 'pending' };
+    return { ok: false, reason: lapsed ? 'approval_expired' : 'pending' };
   }
   return { ok: true, connector: row };
 }

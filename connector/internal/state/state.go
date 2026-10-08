@@ -344,3 +344,17 @@ func decodeStrict(data []byte, v any) error {
 	}
 	return nil
 }
+
+// ExpandHome turns a leading ~/ of a configured path (an interpreter, a key file) into this
+// account's home directory: exec and file opens do not expand it, and there is no shell.
+func ExpandHome(p string) (string, error) {
+	rest, ok := strings.CutPrefix(p, "~/")
+	if !ok {
+		return p, nil
+	}
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return "", fmt.Errorf("the home directory for %s is not known", p)
+	}
+	return filepath.Join(home, filepath.FromSlash(rest)), nil
+}

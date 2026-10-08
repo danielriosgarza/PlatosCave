@@ -736,3 +736,22 @@ func TestCLIKernelspecs(t *testing.T) {
 		t.Errorf("CLIKernelspecs = %+v, %v", ks, err)
 	}
 }
+
+// TestA27_JupyterTextSanitized (A27): what a Jupyter child prints and the kernel names it lists
+// reach the terminal log and the web app without escape sequences, C1 controls (the one-byte
+// CSI 0x9b) or format characters.
+func TestA27_JupyterTextSanitized(t *testing.T) {
+	specs, err := ParseKernelspecList([]byte(`{"kernelspecs": {"py": {"spec": {"display_name": "Py\u009b2J‮thon 3\n(x)", "language": "py\u0085thon"}}}}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(specs) != 1 || specs[0].DisplayName != "Python 3 (x)" || specs[0].Language != "python" {
+		t.Errorf("kernelspecs %+v", specs)
+	}
+	log := &lines{}
+	out := &tail{token: "unused-token-0123", log: log.add}
+	out.read(strings.NewReader("[I] Serving\u009b2J \x1b[31mred\x1b[0m​\n"))
+	if got := log.String(); strings.ContainsAny(got, "\u009b\x1b​") || !strings.Contains(got, "[I] Serving red") {
+		t.Errorf("log line %q", got)
+	}
+}

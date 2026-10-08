@@ -146,12 +146,12 @@ describe('link authentication', () => {
     expect(await connector.closed).toEqual({ code: 4403, reason: 'pending' });
   });
 
-  test('a pending connector past its approval window is refused as revoked', async () => {
+  test('A27 a pending connector past its approval window is refused with 4403 approval_expired, not revoked', async () => {
     const { id, key } = await relay.connector({ status: 'pending' });
     relay.advance(15 * 60_000);
     const connector = await relay.dial(id, key);
     void connector.authenticate();
-    expect(await connector.closed).toEqual({ code: 4403, reason: 'revoked' });
+    expect(await connector.closed).toEqual({ code: 4403, reason: 'approval_expired' });
   });
 
   test('a revoked connector is refused with 4403 revoked', async () => {

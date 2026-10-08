@@ -309,6 +309,7 @@ describe('connector protocol v1 error catalogue', () => {
       bad_signature: 4401,
       clock_skew: 4401,
       pending: 4403,
+      approval_expired: 4403,
       revoked: 4403,
       mode_mismatch: 4403,
       heartbeat_timeout: 4408,

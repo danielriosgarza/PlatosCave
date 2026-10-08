@@ -7,12 +7,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
+	"sync"
 	"time"
 
 	"parallax/connector/internal/cause"
 	"parallax/connector/internal/jupyter"
 	"parallax/connector/internal/protocol"
+	"parallax/connector/internal/redact"
+	"parallax/connector/internal/safetext"
 )
 
 // Progress receives each finished stage as soon as it finishes.
@@ -41,6 +43,26 @@ type Runtime struct {
 	Process *jupyter.Process
 	// Remote is the transport of a runtime on another computer (`ssh`); nil for `local`.
 	Remote Remote
+	// attachedToken is the token of a local attached server, registered with redact until
+	// Release.
+	attachedToken string
+	releaseOnce   sync.Once
+}
+
+// Release closes the runtime's connections once its session has ended: the client's idle
+// connections (the tunnel of an attached session), the transport of a remote runtime, and the
+// redaction reference of a local attached server's token. It never signals the server, and
+// only its first call has an effect.
+func (r *Runtime) Release() {
+	r.releaseOnce.Do(func() {
+		r.Client.CloseIdle()
+		if r.Remote != nil {
+			r.Remote.Close()
+		}
+		if r.attachedToken != "" {
+			redact.Forget(r.attachedToken)
+		}
+	})
 }
 
 // Remote is a runtime reached over a transport that can be lost and re-established (design
@@ -212,7 +234,7 @@ func (s *Stages) Finish(name string, elapsed time.Duration, data *protocol.Stage
 		st.Status, st.Data, st.MS = "skipped", &protocol.StageData{Reason: sk.reason}, nil
 	default:
 		f := asFailure(err, protocol.CodeInternal)
-		st.Status, st.Code, st.Detail, st.Data = "failed", f.Code, clipDetail(f.Detail), data
+		st.Status, st.Code, st.Detail, st.Data = "failed", f.Code, safetext.Clip(safetext.Sanitize(f.Detail), 512), data
 		if f.NeedsAction {
 			st.Status = "needs_action"
 		}
@@ -257,19 +279,4 @@ func (s *Stages) Outcome() string {
 		return "ready_to_start"
 	}
 	return "ready"
-}
-
-// clipDetail keeps a detail within the 512 characters a message allows, without control
-// characters other than tabs and newlines.
-func clipDetail(s string) string {
-	r := []rune(strings.Map(func(c rune) rune {
-		if c < 0x20 && c != '\t' && c != '\n' || c == 0x7f {
-			return -1
-		}
-		return c
-	}, s))
-	if len(r) <= 512 {
-		return string(r)
-	}
-	return string(r[:511]) + "…"
 }
