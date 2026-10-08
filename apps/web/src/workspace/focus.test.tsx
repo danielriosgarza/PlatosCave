@@ -140,6 +140,48 @@ describe('focus and full screen', () => {
     expect(screen.getByRole('button', { name: 'Full screen' })).toHaveFocus();
   });
 
+  it('A04 a dialog opened in full screen is shown inside the full-screen element and can be operated', async () => {
+    const user = userEvent.setup();
+    await open();
+    await user.keyboard('f');
+    const exit = await screen.findByRole('button', { name: 'Exit full screen' });
+    const workspace = fullscreenElement as HTMLElement;
+    expect(workspace.contains(exit)).toBe(true);
+    const onClose = vi.fn();
+    render(
+      <Dialog title="File conflict" onClose={onClose}>
+        <button type="button">Keep mine</button>
+      </Dialog>,
+    );
+    const dialog = screen.getByRole('dialog', { name: 'File conflict' });
+    expect(workspace.contains(dialog)).toBe(true);
+    expect(dialog.closest('[inert]')).toBeNull();
+    expect(workspace.hasAttribute('inert')).toBe(false);
+    expect(exit.closest('[inert]')).not.toBeNull();
+    const keep = screen.getByRole('button', { name: 'Keep mine' });
+    expect(keep).toHaveFocus();
+    await user.click(keep);
+    await user.keyboard('{Escape}');
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('A04 leaving full screen while a dialog is open keeps focus inside the dialog', async () => {
+    const user = userEvent.setup();
+    await open();
+    await user.keyboard('f');
+    await screen.findByRole('button', { name: 'Exit full screen' });
+    render(
+      <Dialog title="File conflict" onClose={() => undefined}>
+        <button type="button">Keep mine</button>
+      </Dialog>,
+    );
+    expect(screen.getByRole('button', { name: 'Keep mine' })).toHaveFocus();
+    leaveFullscreen(); // the browser handles Escape itself
+    await waitFor(() => expect(bar()).toBeInTheDocument());
+    expect(screen.getByRole('button', { name: 'Keep mine' })).toHaveFocus();
+    expect(screen.getByRole('button', { name: 'Full screen' })).not.toHaveFocus();
+  });
+
   it('A04 Exit focus also leaves full screen', async () => {
     const user = userEvent.setup();
     await open();

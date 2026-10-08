@@ -174,6 +174,10 @@ export function Dialog({
 }) {
   const headingId = useId();
   const ref = useRef<HTMLDivElement>(null);
+  // Fixed at open: the browser shows only the full-screen element's subtree (§5).
+  const [container] = useState<HTMLElement>(() =>
+    document.fullscreenElement instanceof HTMLElement ? document.fullscreenElement : document.body,
+  );
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
   useEffect(() => {
@@ -210,12 +214,18 @@ export function Dialog({
     const onFocusIn = (e: FocusEvent) => {
       if (dialog && e.target instanceof Node && !dialog.contains(e.target)) inside()[0]?.focus();
     };
-    // The sheet is portalled to <body>, so every other child of <body> is the page behind it.
-    const backdrop = dialog?.parentElement;
-    const background = Array.from(document.body.children).filter(
-      (el): el is HTMLElement =>
-        el !== backdrop && el instanceof HTMLElement && !el.hasAttribute('inert'),
-    );
+    // The sheet is portalled to the full-screen element when there is one (only its subtree is
+    // shown), else to <body>. Everything beside it on the way up to <body> is the page behind it.
+    const background: HTMLElement[] = [];
+    for (let node = dialog?.parentElement; node && node !== document.body; ) {
+      const parent: HTMLElement | null = node.parentElement;
+      for (const el of Array.from(parent?.children ?? [])) {
+        if (el !== node && el instanceof HTMLElement && !el.hasAttribute('inert')) {
+          background.push(el);
+        }
+      }
+      node = parent;
+    }
     for (const el of background) el.setAttribute('inert', '');
     document.addEventListener('keydown', onKeyDown);
     document.addEventListener('focusin', onFocusIn);
@@ -240,6 +250,6 @@ export function Dialog({
         {children}
       </div>
     </div>,
-    document.body,
+    container,
   );
 }
