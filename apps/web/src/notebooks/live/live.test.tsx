@@ -576,6 +576,20 @@ describe('live notebook', () => {
     expect(posts).toHaveLength(0);
   });
 
+  it('A04 Escape on a kernel confirmation cancels it and marks the key handled', () => {
+    vi.useFakeTimers();
+    attach({}, { kernel: { id: KERNEL, name: 'python3', state: 'busy', generation: 0 } });
+    fireEvent.click(screen.getByRole('button', { name: 'Interrupt' }));
+    act(() => {
+      vi.advanceTimersByTime(5100);
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Restart kernel' }));
+    const confirm = screen.getByLabelText('Restart kernel', { selector: 'section' });
+    const notPrevented = fireEvent.keyDown(confirm, { key: 'Escape' });
+    expect(notPrevented).toBe(false);
+    expect(screen.queryByLabelText('Restart kernel', { selector: 'section' })).toBeNull();
+  });
+
   it('an interrupt that returns the kernel to idle offers no restart', () => {
     vi.useFakeTimers();
     const { socket } = attach(
