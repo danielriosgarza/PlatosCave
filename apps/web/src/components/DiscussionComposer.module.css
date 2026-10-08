@@ -1,0 +1,11 @@
+.composer {
+  margin-top: 8px;
+  padding-top: 14px;
+  border-top: 1px solid var(--pc-rule);
+}
+.field {
+  composes: field from "./Field.module.css";
+}
+.status {
+  composes: line from "./SaveLine.module.css";
+}

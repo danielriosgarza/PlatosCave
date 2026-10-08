@@ -10,6 +10,7 @@ import {
 import { Compartment, EditorState } from '@codemirror/state';
 import { drawSelection, EditorView, keymap } from '@codemirror/view';
 import { useEffect, useRef } from 'react';
+import { releaseTab } from '../../components/releaseTab';
 import styles from './Live.module.css';
 
 interface Props {
@@ -116,16 +117,4 @@ export function CellEditor({ label, value, onChange, onRun }: Props) {
   }, [value]);
 
   return <div ref={host} className={styles.editor} />;
-}
-
-/** Lets the next Tab leave the editor instead of indenting. */
-function releaseTab(v: EditorView) {
-  const dom = v.contentDOM;
-  const hold = (event: KeyboardEvent) => {
-    if (event.key !== 'Tab') return;
-    dom.removeEventListener('keydown', hold, true);
-    event.stopImmediatePropagation();
-  };
-  dom.addEventListener('keydown', hold, true);
-  window.setTimeout(() => dom.removeEventListener('keydown', hold, true), 3000);
 }

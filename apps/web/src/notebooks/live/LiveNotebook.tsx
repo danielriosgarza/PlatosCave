@@ -10,7 +10,7 @@ import {
   useSessionActions,
 } from '../connect/api';
 import { LossNotice } from '../connect/LossNotice';
-import { causeText, codeText } from '../connect/messages';
+import { causeText, codeText, kernelLabel } from '../connect/messages';
 import styles from '../Notebook.module.css';
 import { Markdown, Outline, Output } from '../NotebookView';
 import type { Notebook, NotebookCell } from '../notebooks';
@@ -47,16 +47,6 @@ const INTERRUPT_STALL_MS = 5000;
 const RUNNABLE = new Set(['idle', 'busy', 'waiting_for_input']);
 const LOST = new Set(['disconnected', 'unconfirmed', 'stopping', 'stopped', 'failed']);
 
-const KERNEL_LABEL: Record<string, string> = {
-  starting: 'Starting',
-  idle: 'Ready',
-  busy: 'Running',
-  waiting_for_input: 'Waiting for input',
-  restarting: 'Restarting',
-  dead: 'Kernel stopped',
-  unknown: 'Unconfirmed',
-};
-
 const languageOf = (kernelName: string | null | undefined, fallback: string | null) => {
   const name = kernelName ?? fallback ?? '';
   if (/^python/i.test(name)) return 'Python';
@@ -79,7 +69,7 @@ export function modeLabel(args: {
   else if (sessionState === 'stopped') state = 'Stopped';
   else if (sessionState === 'failed') state = 'Failed';
   else if (sessionState === 'unconfirmed' || !confirmed) state = 'Unconfirmed';
-  else state = KERNEL_LABEL[kernelState ?? 'unknown'] ?? 'Unconfirmed';
+  else state = kernelLabel(kernelState);
   return `${args.connectionName ?? 'Computer'} · ${args.language} · ${state}`;
 }
 

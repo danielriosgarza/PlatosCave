@@ -16,6 +16,7 @@ import {
   lineNumbers,
 } from '@codemirror/view';
 import { useEffect, useRef } from 'react';
+import { releaseTab } from '../components/releaseTab';
 import styles from './Test.module.css';
 
 interface Props {
@@ -122,16 +123,4 @@ function Editor({ label, value, onChange, language }: Omit<Props, 'plain'>) {
   }, [value]);
 
   return <div ref={host} className={styles.cm} />;
-}
-
-/** Lets the next Tab leave the editor instead of indenting. */
-function releaseTab(v: EditorView) {
-  const dom = v.contentDOM;
-  const hold = (event: KeyboardEvent) => {
-    if (event.key !== 'Tab') return;
-    dom.removeEventListener('keydown', hold, true);
-    event.stopImmediatePropagation();
-  };
-  dom.addEventListener('keydown', hold, true);
-  window.setTimeout(() => dom.removeEventListener('keydown', hold, true), 3000);
 }

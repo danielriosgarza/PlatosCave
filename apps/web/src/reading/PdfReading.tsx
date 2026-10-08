@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import buttons from '../components/Buttons.module.css';
+import { RetryNotice } from '../components/RetryNotice';
 import { openPdf, type PdfDocument, type RenderHandle } from './pdfjs';
 import styles from './Reading.module.css';
 import { HOLD_MS, READER_INPUT } from './readerInput';
@@ -213,18 +214,19 @@ export function PdfReading({ url, pageCount, renew, initial, source, onPosition,
 
   if (load.state === 'failed') {
     return (
-      <div className={styles.notice} role="alert">
-        <p>This PDF could not be loaded.</p>
-        <button type="button" className={buttons.tool} onClick={() => setAttempt((n) => n + 1)}>
-          Try again
-        </button>
-        {source.key && (
-          <SourceDownload
-            classId={source.classId}
-            revisionId={source.revisionId}
-            sourceKey={source.key}
-          />
-        )}
+      <div className={styles.notice}>
+        <RetryNotice
+          message="This PDF could not be loaded."
+          onRetry={() => setAttempt((n) => n + 1)}
+        >
+          {source.key && (
+            <SourceDownload
+              classId={source.classId}
+              revisionId={source.revisionId}
+              sourceKey={source.key}
+            />
+          )}
+        </RetryNotice>
       </div>
     );
   }

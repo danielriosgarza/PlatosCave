@@ -381,7 +381,7 @@ describe('sketch on a figure', () => {
     expect(await screen.findByText('Description · Figure 2')).toBeVisible();
   });
 
-  it('A07 a save that fails keeps the drawing and the text, and Done tries again', async () => {
+  it('A07 a save that fails keeps the drawing and the text, and Retry tries again', async () => {
     const w = world();
     w.refuse = 503;
     api(w);
@@ -394,7 +394,7 @@ describe('sketch on a figure', () => {
     expect(await screen.findByText(/Could not save/)).toBeVisible();
     expect(screen.getByLabelText('Text description (required)')).toHaveValue('Kept.');
     w.refuse = null;
-    await user.click(screen.getByRole('button', { name: 'Done' }));
+    await user.click(screen.getByRole('button', { name: 'Retry' }));
     await waitFor(() => expect(w.annotations).toHaveLength(1));
     await waitFor(() =>
       expect(screen.queryByRole('region', { name: 'Sketch on Figure 1' })).toBeNull(),
@@ -411,7 +411,7 @@ describe('sketch on a figure', () => {
     await user.type(screen.getByLabelText('Text description (required)'), 'Offline.');
     vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
     await user.click(screen.getByRole('button', { name: 'Done' }));
-    expect(await screen.findByText(/Offline · not saved/)).toBeVisible();
+    expect(await screen.findByText(/Offline · not saved\. Press Done/)).toBeVisible();
     expect(screen.queryByText('Saved')).toBeNull();
     expect(w.calls).toHaveLength(0);
   });
