@@ -1380,6 +1380,10 @@ class RRuntime(HarnessCase):
         "list_at <- function() list(strrep('a', 65536), 1)\n"
         "attr_list <- function() structure(list(strrep('a', 65537)), note = 1)\n"
         "list_matrix <- function() matrix(list(strrep('a', 65537), 1, 2, 3), 2)\n"
+        "pairlist_beside_long <- function() list(formals(function(a = 1) NULL), strrep('a', 65537))\n"
+        "bare_pairlist <- function() formals(function(a = 1) NULL)\n"
+        "many_short_then_long <- function() c(as.list(rep('ab', 20000)), list(strrep('a', 65537)))\n"
+        "bytes_then_cut <- function() { b <- strrep('\u00e9', 40000); Encoding(b) <- 'bytes'; list(b, strrep('a', 65537)) }\n"
         "bytes_then_utf8 <- function() { b <- strrep('\u00e9', 40000); Encoding(b) <- 'bytes'; list(b, strrep('\u00e9a', 500000)) }\n"
         "stop_warning <- function() stop(simpleWarning('w'))\n"
         "stop_message <- function() stop(simpleMessage('m'))\n"
@@ -1630,9 +1634,10 @@ class RRuntime(HarnessCase):
         self.assertEqual(check["status"], "failed", check)
         self.assertTrue(check["actual"].startswith('list("\\\\xc3\\\\xa9'), check["actual"][:40])
 
-    def test_repr_falls_back_to_the_whole_deparse_when_bounding_fails(self):
-        # nchar(type = "chars") errors on a string marked "bytes"; the repr must then be the
-        # plain deparse, not <unrepresentable>. A nested list shows no change in its repr either.
+    def test_repr_leaves_a_bytes_string_and_a_deeply_nested_list_uncut(self):
+        # A string marked "bytes" deparses in linear time and is not cut (nchar(type = "chars")
+        # errors on it); the repr is the plain deparse, not <unrepresentable>. A list nested too
+        # deeply for the recursion shows no change in its repr either.
         outcome = self.outcome_for(
             r_call("Bytes string", "bytes_string", {"value": "x"}, "repr"),
             r_call("Nested list", "nested", {"value": "x"}, "repr", args=[500]),
@@ -1642,6 +1647,17 @@ class RRuntime(HarnessCase):
         self.assertTrue(bytes_check["actual"].startswith('"\\\\xc3\\\\xa9'), bytes_check["actual"][:40])
         self.assertEqual(nested_check["status"], "failed", nested_check)
         self.assertTrue(nested_check["actual"].startswith("list(list(list("), nested_check["actual"][:40])
+
+    def test_repr_cuts_beside_a_bytes_string_a_pairlist_and_many_short_strings(self):
+        cut = "a" * 65536 + "\u2026"
+        bytes_deparse = "\\\\xc3\\\\xa9" * 40000
+        outcome = self.outcome_for(
+            r_call("Cut beside bytes", "bytes_then_cut", {"value": 'list("' + bytes_deparse + '", "' + cut + '")'}, "repr"),
+            r_call("Cut beside a pairlist", "pairlist_beside_long", {"value": 'list(pairlist(a = 1), "' + cut + '")'}, "repr"),
+            r_call("Bare pairlist", "bare_pairlist", {"value": "pairlist(a = 1)"}, "repr"),
+            r_call("Cut after short strings", "many_short_then_long", {"value": "list(" + '"ab", ' * 20000 + '"' + cut + '")'}, "repr"),
+        )
+        self.assertEqual([c["status"] for c in outcome.result["checks"]], ["passed"] * 4, outcome.result["checks"])
 
     def test_stop_with_a_warning_or_message_condition_is_an_exception(self):
         outcome = self.outcome_for(

@@ -115,38 +115,58 @@ local({
   # and it is shown in messages, so nothing within the bound may change: a character string
   # longer than REPR_CHARS characters is cut to its first REPR_CHARS characters plus an
   # ellipsis, in plain (unclassed) character vectors and plain (unclassed) lists, which may
-  # carry attributes (dim, names, others) and mix element types. A value with
+  # carry attributes (dim, names, others) and mix element types (a pairlist is not a plain
+  # list: its elements are left alone, as before). A value with
   # nothing to cut is deparsed as it is, attributes and classes included; a string in a
   # classed container, a name or an attribute is deparsed whole; and if bounding fails (a
   # list nested too deeply for the recursion) the value is deparsed whole, as it was before
   # the bound existed. A string with a "bytes" encoding is never cut: it deparses linearly.
   REPR_CHARS <- 65536L
 
+  long_cuttable <- function(s) {
+    over <- which(nchar(s, type = "bytes") > REPR_CHARS)
+    length(over) > 0L && any(Encoding(s[over]) != "bytes")
+  }
+
   # TRUE if a plain character vector anywhere in the plain list x has a string over the
-  # limit in bytes (a cheap upper bound of its characters). rapply walks in C and calls back
-  # only for character leaves, so a list of numbers costs almost nothing.
+  # limit in bytes (a cheap upper bound of its characters) that bound_for_repr would cut
+  # ("bytes"-encoded strings are never cut). rapply walks in C and calls back only for
+  # character leaves, so a list of numbers costs almost nothing.
   has_long_string <- function(x) {
-    any(rapply(x, function(s) any(nchar(s, type = "bytes") > REPR_CHARS, na.rm = TRUE),
-               classes = "character", deflt = FALSE, how = "unlist"))
+    any(rapply(x, long_cuttable, classes = "character", deflt = FALSE, how = "unlist"))
+  }
+
+  # A plain list (pairlists and classed objects excluded: rapply rejects the former and the
+  # latter are out of the bound).
+  is_plain_list <- function(x) typeof(x) == "list" && !is.object(x)
+
+  # TRUE if bound_for_repr would change the element e.
+  has_cuttable <- function(e) {
+    if (is.character(e)) {
+      !is.object(e) && long_cuttable(e)
+    } else {
+      is_plain_list(e) && length(e) > 0L && has_long_string(e)
+    }
   }
 
   bound_for_repr <- function(x) {
     if (is.character(x) && !is.object(x)) {
-      # A "bytes" string deparses in linear time and nchar(type = "chars") errors on it, so
-      # it is skipped; any other failure leaves this vector as it is, not the whole value.
-      x <- tryCatch({
-        big <- which(!is.na(x) & nchar(x, type = "bytes") > REPR_CHARS & Encoding(x) != "bytes")
-        if (length(big)) {
-          text <- clean_text(enc2utf8(x[big]))
-          cut <- nchar(text, type = "chars") > REPR_CHARS
-          if (any(cut)) {
-            x[big[cut]] <- paste0(substr(text[cut], 1L, REPR_CHARS), "\u2026")
-          }
+      # The cheap byte test runs first, so a short string costs one nchar. A "bytes" string
+      # deparses in linear time and nchar(type = "chars") errors on it, so it is skipped;
+      # clean_text makes every other string valid UTF-8, so nchar cannot fail here.
+      big <- which(nchar(x, type = "bytes") > REPR_CHARS)
+      big <- big[Encoding(x[big]) != "bytes"]
+      if (length(big)) {
+        text <- clean_text(enc2utf8(x[big]))
+        cut <- nchar(text, type = "chars") > REPR_CHARS
+        if (any(cut)) {
+          x[big[cut]] <- paste0(substr(text[cut], 1L, REPR_CHARS), "\u2026")
         }
-        x
-      }, error = function(e) x)
-    } else if (is.list(x) && !is.object(x) && length(x) && has_long_string(x)) {
-      x[] <- lapply(x, bound_for_repr)
+      }
+    } else if (is_plain_list(x) && length(x) && has_long_string(x)) {
+      # Only the elements that hold a string to cut are visited.
+      idx <- which(vapply(x, has_cuttable, NA))
+      x[idx] <- lapply(x[idx], bound_for_repr)
     }
     x
   }
