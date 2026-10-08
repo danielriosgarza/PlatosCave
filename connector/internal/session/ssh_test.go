@@ -4,6 +4,8 @@ import (
 	"crypto/ed25519"
 	"crypto/rand"
 	"encoding/pem"
+	"net"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -163,6 +165,44 @@ func TestA36_SSHLossCausesOverRealTransport(t *testing.T) {
 		e.lost(StateDisconnected, cause.HostUnreachable)
 		e.relay.Refuse(false)
 	})
+}
+
+// TestA36_SSHServerReplacedAfterReconnect (A36): after a reconnect the owned server is watched
+// through /api/status. When another program takes its port and refuses the session's token, the
+// session is stopped with service_stopped only because its own process is proved gone.
+func TestA36_SSHServerReplacedAfterReconnect(t *testing.T) {
+	e := newSSHEnv(t)
+	pid := e.openSSH(e.target())
+	e.relay.Cut()
+	e.lost(StateDisconnected, cause.SSHTimeout)
+	e.state(StateReady)
+	listen := jupytertest.Records(t, e.stub)[0].Listen
+	// No keepalive is answered during the swap, so no check can find the port empty meanwhile.
+	e.relay.Freeze()
+	if err := syscall.Kill(pid, syscall.SIGKILL); err != nil {
+		t.Fatal(err)
+	}
+	var ln net.Listener
+	waitUntil(t, "the port to be free", func() bool {
+		var err error
+		ln, err = net.Listen("tcp", listen)
+		return err == nil
+	})
+	stranger := jupytertest.New("someone-elses-token")
+	srv := httptest.NewUnstartedServer(stranger)
+	srv.Listener.Close()
+	srv.Listener = ln
+	srv.Start()
+	t.Cleanup(srv.Close)
+	e.relay.Thaw()
+	e.lost(StateStopped, cause.ServiceStopped)
+	refused := false
+	for _, r := range stranger.Requests() {
+		refused = refused || r.URI == "/api/status"
+	}
+	if !refused {
+		t.Fatal("the stranger on the port was never asked")
+	}
 }
 
 // TestSSHReconnectKeepsSession (A36): after the transport drops, the connector reconnects on its

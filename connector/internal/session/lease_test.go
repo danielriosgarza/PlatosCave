@@ -278,6 +278,62 @@ func TestA32_StopConfirmsTermination(t *testing.T) {
 	}
 }
 
+// A32: the connector's exit stops an owned session within the exit budget even when that budget
+// is no longer than the shutdown wait and Jupyter ignores both the request and SIGTERM: the waits
+// are shortened so that SIGKILL still runs, and `stopped` with connector_exit follows.
+func TestA32_ConnectorExitStopsWithinItsBudget(t *testing.T) {
+	dir := jupytertest.Install(t, "stubborn")
+	e := newLeaseEnv(t, func(c *Config) { c.StopTimes = jupyterTimes(2*time.Second, 2*time.Second) })
+	e.openLocal(sessionA, reqA, t.TempDir(), protocol.Runtime{Mode: "start"})
+	pid := onlyPID(t, dir)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	e.mgr.Close(ctx)
+	cancel()
+	if processAlive(pid) {
+		t.Fatal("the owned Jupyter outlived the exit budget")
+	}
+	e.state(StateStopping)
+	if st := e.state(StateStopped); st.Cause != "connector_exit" {
+		t.Errorf("stopped = %+v", st)
+	}
+}
+
+// A32: a session still starting when the connector exits is not left behind: Close cancels the
+// start and returns only once the start has given up, which is when it has killed what it
+// began.
+func TestA32_ConnectorExitWaitsForAStartingSession(t *testing.T) {
+	slow := &slowStart{began: make(chan struct{})}
+	e := newLeaseEnv(t, func(c *Config) { c.Targets[protocol.TargetLocal] = slow })
+	e.send(&protocol.OpenSession{RequestID: reqA, SessionID: sessionA, Target: protocol.Target{Kind: "local", Workspace: t.TempDir()},
+		Runtime: protocol.Runtime{Mode: "start"}, Lease: lease()})
+	e.state(StateStarting)
+	<-slow.began
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	e.mgr.Close(ctx)
+	cancel()
+	if !slow.cleaned.Load() {
+		t.Fatal("Close returned before the starting session had cleaned up")
+	}
+	if len(e.mgr.list()) != 0 {
+		t.Error("the starting session is still held")
+	}
+}
+
+// slowStart is a target whose start, once cancelled, takes a while to kill what it began.
+type slowStart struct {
+	target.Target
+	began   chan struct{}
+	cleaned atomic.Bool
+}
+
+func (s *slowStart) Open(ctx context.Context, _ *protocol.OpenSession) (*target.Runtime, error) {
+	close(s.began)
+	<-ctx.Done()
+	time.Sleep(300 * time.Millisecond)
+	s.cleaned.Store(true)
+	return nil, &target.Failure{Code: protocol.CodeJupyterStartTimeout, Detail: "cancelled"}
+}
+
 // A32: a runtime attached from outside Parallax is never stopped. When its lease ends the
 // connector closes the tunnel and forgets the session (stopped, lease_grace, owned false), and
 // the person's server keeps running.

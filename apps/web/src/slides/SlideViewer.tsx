@@ -9,6 +9,7 @@ import {
   useState,
 } from 'react';
 import buttons from '../components/Buttons.module.css';
+import { RetryNotice } from '../components/RetryNotice';
 import { openPdf, type PdfDocument, type RenderHandle } from '../reading/pdfjs';
 import readingStyles from '../reading/Reading.module.css';
 import { SourceDownload } from '../reading/SourceDownload';
@@ -295,18 +296,19 @@ export function SlideViewer({
   if (load.state === 'failed') {
     return (
       <div className={styles.stage}>
-        <div className={styles.notice} role="alert">
-          <p>These slides could not be loaded.</p>
-          <button type="button" className={buttons.tool} onClick={() => setAttempt((n) => n + 1)}>
-            Try again
-          </button>
-          {source.key && (
-            <SourceDownload
-              classId={source.classId}
-              revisionId={source.revisionId}
-              sourceKey={source.key}
-            />
-          )}
+        <div className={styles.notice}>
+          <RetryNotice
+            message="These slides could not be loaded."
+            onRetry={() => setAttempt((n) => n + 1)}
+          >
+            {source.key && (
+              <SourceDownload
+                classId={source.classId}
+                revisionId={source.revisionId}
+                sourceKey={source.key}
+              />
+            )}
+          </RetryNotice>
         </div>
       </div>
     );

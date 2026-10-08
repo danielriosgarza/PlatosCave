@@ -4,6 +4,8 @@ package session
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
 	"os/exec"
 	"testing"
 	"time"
@@ -193,4 +195,77 @@ func TestLeaseSurvivesRestart(t *testing.T) {
 		t.Errorf("attached session within its lease: %+v", b)
 	}
 	waitUntil(t, "the stops to be reported and forgotten", func() bool { return len(readOrFail(t, next).Sessions) == 0 })
+}
+
+// A32: an unreadable sessions.json is not simply replaced. A record that is still valid on its
+// own goes through the normal sweep, and a session the file names only in a record that cannot
+// be read has its marked process killed; a marked process of a session the file never names,
+// and an unmarked process, are left alone.
+func TestA32_UnreadableSessionsFileStillSweepsOrphans(t *testing.T) {
+	const (
+		idA = "11111111-2222-4333-8444-555555555561" // a valid record among invalid ones
+		idB = "11111111-2222-4333-8444-555555555562" // an invalid record: its id is all that is left
+		idC = "11111111-2222-4333-8444-555555555563" // not in the file (another state directory's)
+	)
+	a, aDone := spawn(t, marker(idA))
+	_, bDone := spawn(t, marker(idB))
+	_, cDone := spawn(t, marker(idC))
+	_, plainDone := spawn(t, "--some-other-program")
+
+	valid, err := json.Marshal(ownedRecord(idA, a.Process.Pid, "local"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A record with a field this version does not know makes the whole file unreadable.
+	broken := fmt.Sprintf(`{"sessionId": %q, "owned": true, "state": "ready", "fromTheFuture": 1, "process": {"where": "local", "pid": 7}}`, idB)
+	store := state.Open(t.TempDir())
+	if err := store.WritePrivate(state.SessionsFile, []byte(fmt.Sprintf(`{"v": 1, "sessions": [%s, %s]}`, valid, broken))); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := readFile(store); err == nil {
+		t.Fatal("the file under test is readable")
+	}
+
+	mgr := newRestoredManager(t, store, leaseT0.Add(time.Minute))
+	for name, done := range map[string]<-chan struct{}{"the valid record's process": aDone, "the unreadable record's process": bDone} {
+		select {
+		case <-done:
+		case <-time.After(10 * time.Second):
+			t.Fatalf("%s was not stopped", name)
+		}
+	}
+	if !running(cDone) {
+		t.Error("a marked process of a session the file does not name was signalled")
+	}
+	if !running(plainDone) {
+		t.Error("an unmarked process was signalled")
+	}
+	got := mgr.Sessions()
+	if len(got) != 1 || got[0].SessionID != idA || got[0].State != StateStopped || got[0].Cause != "connector_restarted" {
+		t.Errorf("sessions after the salvage: %+v", got)
+	}
+	if f := readOrFail(t, store); len(f.Sessions) != 1 || f.Sessions[0].SessionID != idA {
+		t.Errorf("the replaced sessions.json: %+v", f)
+	}
+}
+
+// A Windows process id is any 32-bit value, so a record of one above Linux's pid_max is written,
+// read back and accepted by state.schema.json; one beyond 32 bits is refused.
+func TestSessionsFileHoldsWindowsProcessIDs(t *testing.T) {
+	const id = "11111111-2222-4333-8444-555555555571"
+	store := state.Open(t.TempDir())
+	if err := writeFile(store, &File{V: 1, Sessions: []Record{ownedRecord(id, 4294967292, "local")}}); err != nil {
+		t.Fatal(err)
+	}
+	if f := readOrFail(t, store); f.Sessions[0].Process.PID != 4294967292 {
+		t.Errorf("pid read back: %d", f.Sessions[0].Process.PID)
+	}
+	data, err := store.ReadFile(state.SessionsFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	validSessionsFile(t, compileSessionsSchema(t), data)
+	if err := writeFile(store, &File{V: 1, Sessions: []Record{ownedRecord(id, 1<<32, "local")}}); err == nil {
+		t.Error("a pid beyond 32 bits was written")
+	}
 }

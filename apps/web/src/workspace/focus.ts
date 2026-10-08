@@ -39,12 +39,24 @@ export function isEditable(target: EventTarget | null): boolean {
   );
 }
 
+/** Every open modal sheet carries this; Dialog and modalOpen() share it. */
+export const MODAL_SELECTOR = '[aria-modal="true"]';
+
+let pendingModals = 0;
+/** A sheet is about to open (it waits for a frame to leave full screen): keys already belong to it. */
+export const beginModalOpen = () => {
+  pendingModals += 1;
+};
+export const endModalOpen = () => {
+  pendingModals = Math.max(0, pendingModals - 1);
+};
+
 /**
  * Whether a modal dialog is open. Keys then belong to the dialog: Escape closes only it, and
  * F does not toggle the workspace behind it (§5, §14).
  */
 export function modalOpen(): boolean {
-  return document.querySelector('[aria-modal="true"]') !== null;
+  return pendingModals > 0 || document.querySelector(MODAL_SELECTOR) !== null;
 }
 
 export const FULLSCREEN_FALLBACK =

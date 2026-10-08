@@ -1,6 +1,9 @@
 import type { Anchor } from '@parallax/contracts';
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import buttons from '../components/Buttons.module.css';
+import { type Audience, DiscussionComposer } from '../components/DiscussionComposer';
+import { type MarginTab, MarginTabs } from '../components/MarginTabs';
+import { RetryNotice } from '../components/RetryNotice';
+import { SaveLine } from '../components/SaveLine';
 import {
   type Annotation,
   type Thread,
@@ -17,12 +20,10 @@ import {
   sendsSettled,
 } from '../reading/margin/drafts';
 import margin from '../reading/margin/Margin.module.css';
+import { NoteConflict } from '../reading/margin/NoteConflict';
 import { NoteController, type NoteState } from '../reading/margin/notes';
-import { audienceLabel, ConflictView, SaveLine } from '../reading/margin/ReadingMargin';
+import { audienceLabel, NoteSaveLine } from '../reading/margin/ReadingMargin';
 import { useSession } from '../session/useSession';
-
-type Tab = 'notes' | 'discussion';
-type Audience = 'instructor' | 'class';
 
 interface Ask {
   body: string;
@@ -75,7 +76,7 @@ export function SlideNotes({ classId, resourceId, page }: Props) {
   const list = useMarginList(classId, resourceId);
   const actions = useMarginActions(classId, resourceId);
 
-  const [tab, setTab] = useState<Tab>('notes');
+  const [tab, setTab] = useState<MarginTab>('notes');
   const [asks, setAsks] = useState<Record<number, Ask>>({});
   const [deleteProblem, setDeleteProblem] = useState<string | null>(null);
   const [, rerender] = useState(0);
@@ -347,123 +348,82 @@ export function SlideNotes({ classId, resourceId, page }: Props) {
 
   return (
     <div className={margin.margin}>
-      <div className={margin.tabs}>
-        <button type="button" aria-pressed={tab === 'notes'} onClick={() => setTab('notes')}>
-          My notes
-        </button>
-        <button
-          type="button"
-          aria-pressed={tab === 'discussion'}
-          onClick={() => setTab('discussion')}
-        >
-          Discussion <span className={margin.count}>{threadsHere.length}</span>
-        </button>
-      </div>
-      {list.isError && !list.data ? (
-        <p role="alert" className={margin.empty}>
-          Notes could not be loaded.{' '}
-          <button type="button" className={margin.link} onClick={() => void list.refetch()}>
-            Try again
-          </button>
-        </p>
-      ) : tab === 'notes' ? (
-        <div className={margin.entries}>
-          {deleteProblem && notesHere.some((n) => n.key === deleteProblem) ? (
-            <p role="alert" className={margin.empty}>
-              The note could not be deleted. It is still saved, with your changes.
-            </p>
-          ) : null}
-          {notesHere.map((n) => {
-            const controller = n.controller;
-            if (!controller) return null;
-            return (
-              <SlideNote
-                key={controller.key}
-                slide={page}
-                controller={controller}
-                onRemove={() => void removeNote(n.key, controller, n.annotation?.id ?? null)}
-              />
-            );
-          })}
-          {earlier.length > 0 ? (
-            <section aria-label="Notes on an earlier version of this deck">
-              <h3 className={margin.small}>Earlier version of this deck</h3>
-              {earlier.map((a) => (
-                <div key={a.id} className={margin.entry}>
-                  <div className={margin.entryHead}>
-                    <span>Slide {slideOf(a.anchor) ?? '?'}</span>
-                    <span className={margin.muted}>
-                      {a.placement?.status === 'pending'
-                        ? 'Waiting to be placed'
-                        : 'Needs reattachment'}
-                    </span>
-                  </div>
-                  {a.body ? <p className={margin.preview}>{a.body}</p> : null}
-                </div>
-              ))}
-            </section>
-          ) : null}
-        </div>
-      ) : (
-        <div className={margin.entries}>
-          {threadsHere.length === 0 ? (
-            <p className={margin.empty}>No questions or comments on this slide yet.</p>
-          ) : null}
-          {threadsHere.map((t) => (
-            <ThreadEntry key={t.id} thread={t} userId={userId} />
-          ))}
-          {earlierThreads.length > 0 ? (
-            <section aria-label="Discussion on an earlier version of this deck">
-              <h3 className={margin.small}>Earlier version of this deck</h3>
-              {earlierThreads.map((t) => (
-                <ThreadEntry
-                  key={t.id}
-                  thread={t}
-                  userId={userId}
-                  note={`Slide ${slideOf(t.anchor) ?? '?'} · ${t.placement?.status === 'pending' ? 'Waiting to be placed' : 'Needs reattachment'}`}
+      <MarginTabs tab={tab} onTab={setTab} count={threadsHere.length} idPrefix="slide-margin">
+        {list.isError && !list.data ? (
+          <RetryNotice message="Notes could not be loaded." onRetry={() => void list.refetch()} />
+        ) : tab === 'notes' ? (
+          <div className={margin.entries}>
+            {deleteProblem && notesHere.some((n) => n.key === deleteProblem) ? (
+              <p role="alert" className={margin.empty}>
+                The note could not be deleted. It is still saved, with your changes.
+              </p>
+            ) : null}
+            {notesHere.map((n) => {
+              const controller = n.controller;
+              if (!controller) return null;
+              return (
+                <SlideNote
+                  key={controller.key}
+                  slide={page}
+                  controller={controller}
+                  onRemove={() => void removeNote(n.key, controller, n.annotation?.id ?? null)}
                 />
-              ))}
-            </section>
-          ) : null}
-          <div className={margin.composer}>
-            <label className={margin.field}>
-              Visible to
-              <select
-                value={ask.audience}
-                onChange={(e) => setAsk(page, { audience: e.target.value as Audience })}
-              >
-                <option value="instructor">Instructor</option>
-                <option value="class">Class</option>
-              </select>
-            </label>
-            <label className={margin.field}>
-              Comment or question
-              <textarea
-                id="slide-question"
-                rows={3}
-                placeholder={`Ask about slide ${page}`}
-                value={ask.body}
-                onChange={(e) => setAsk(page, { body: e.target.value })}
-              />
-            </label>
-            <div className={margin.saveLine} role="status">
-              {ask.problem === 'offline'
-                ? 'Offline · your text is kept on this device. Post when you are back online.'
-                : ask.problem === 'failed'
-                  ? 'Could not post. Your text is kept.'
-                  : null}
-            </div>
-            <button
-              type="button"
-              className={buttons.outline}
-              disabled={ask.body.trim() === '' || ask.posting}
-              onClick={() => void post()}
-            >
-              {ask.problem ? 'Retry' : 'Post'}
-            </button>
+              );
+            })}
+            {earlier.length > 0 ? (
+              <section aria-label="Notes on an earlier version of this deck">
+                <h3 className={margin.small}>Earlier version of this deck</h3>
+                {earlier.map((a) => (
+                  <div key={a.id} className={margin.entry}>
+                    <div className={margin.entryHead}>
+                      <span>Slide {slideOf(a.anchor) ?? '?'}</span>
+                      <span className={margin.muted}>
+                        {a.placement?.status === 'pending'
+                          ? 'Waiting to be placed'
+                          : 'Needs reattachment'}
+                      </span>
+                    </div>
+                    {a.body ? <p className={margin.preview}>{a.body}</p> : null}
+                  </div>
+                ))}
+              </section>
+            ) : null}
           </div>
-        </div>
-      )}
+        ) : (
+          <div className={margin.entries}>
+            {threadsHere.length === 0 ? (
+              <p className={margin.empty}>No questions or comments on this slide yet.</p>
+            ) : null}
+            {threadsHere.map((t) => (
+              <ThreadEntry key={t.id} thread={t} userId={userId} />
+            ))}
+            {earlierThreads.length > 0 ? (
+              <section aria-label="Discussion on an earlier version of this deck">
+                <h3 className={margin.small}>Earlier version of this deck</h3>
+                {earlierThreads.map((t) => (
+                  <ThreadEntry
+                    key={t.id}
+                    thread={t}
+                    userId={userId}
+                    note={`Slide ${slideOf(t.anchor) ?? '?'} · ${t.placement?.status === 'pending' ? 'Waiting to be placed' : 'Needs reattachment'}`}
+                  />
+                ))}
+              </section>
+            ) : null}
+            <DiscussionComposer
+              audience={ask.audience}
+              onAudience={(audience) => setAsk(page, { audience })}
+              body={ask.body}
+              onBody={(body) => setAsk(page, { body })}
+              problem={ask.problem}
+              posting={ask.posting}
+              onPost={() => void post()}
+              textareaId="slide-question"
+              placeholder={`Ask about slide ${page}`}
+            />
+          </div>
+        )}
+      </MarginTabs>
     </div>
   );
 }
@@ -494,7 +454,7 @@ function SlideNote({
         <span className={margin.muted}>Private</span>
       </div>
       {state.status === 'conflict' && state.conflict ? (
-        <ConflictView controller={controller} mine={state.body} saved={state.conflict.body ?? ''} />
+        <NoteConflict controller={controller} mine={state.body} saved={state.conflict.body ?? ''} />
       ) : (
         <label className={margin.field}>
           {`Your note on slide ${slide}`}
@@ -506,7 +466,7 @@ function SlideNote({
           />
         </label>
       )}
-      <SaveLine
+      <NoteSaveLine
         state={state}
         onRetry={() => controller.retry()}
         onSaveAsNew={() => controller.saveAsNew()}
