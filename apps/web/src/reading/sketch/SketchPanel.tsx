@@ -7,12 +7,40 @@ import { PALETTE, type Sketches, WIDTHS } from './useSketches';
 export function SketchPanel({ api, label }: { api: Sketches; label: string }) {
   const s = api.open;
   const description = useRef<HTMLTextAreaElement>(null);
+  const panel = useRef<HTMLElement>(null);
+  // Read while rendering, before the button that opened the sketch is disabled or removed.
+  const opener = useRef<{ element: Element | null; key: string | null } | null>(null);
+  if (!opener.current) {
+    const element = document.activeElement;
+    const marked = element instanceof HTMLElement ? element.closest('[data-return-focus]') : null;
+    opener.current = {
+      element: element === document.body ? null : element,
+      key: marked instanceof HTMLElement ? (marked.dataset.returnFocus ?? null) : null,
+    };
+  }
   const describing = s?.mode === 'describe';
   const sessionId = s ? `${s.annotationId ?? 'new'}|${s.mode}` : '';
   // biome-ignore lint/correctness/useExhaustiveDependencies: focuses once per opened session
   useEffect(() => {
     if (describing) description.current?.focus();
   }, [sessionId]);
+  // The panel exists while a sketch is open: focus enters it, and returns to what opened it on close.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs once per mount, which is one session
+  useEffect(() => {
+    if (!describing) panel.current?.focus();
+    return () => {
+      const from = opener.current;
+      const active = document.activeElement;
+      if (!from || (active && active !== document.body)) return;
+      const again = from.key
+        ? ([...document.querySelectorAll<HTMLElement>('[data-return-focus]')].find(
+            (e) => e.dataset.returnFocus === from.key,
+          ) ?? null)
+        : null;
+      const target = from.element?.isConnected ? from.element : again;
+      if (target instanceof HTMLElement) target.focus();
+    };
+  }, []);
   useEffect(() => {
     if (s?.status === 'invalid') description.current?.focus();
   }, [s?.status]);
@@ -20,7 +48,7 @@ export function SketchPanel({ api, label }: { api: Sketches; label: string }) {
   const saving = s.status === 'saving';
   const strokes = s.history.strokes.length;
   return (
-    <section className={styles.panel} aria-label={`Sketch on ${label}`}>
+    <section ref={panel} tabIndex={-1} className={styles.panel} aria-label={`Sketch on ${label}`}>
       <div className={styles.head}>
         <span className={styles.small}>
           {describing ? `Private description · ${label}` : `Private sketch · ${label}`}

@@ -355,6 +355,36 @@ describe('reading margin: selection and marks', () => {
     expect(document.querySelector('mark[data-count="2"]')?.textContent).toBe('sample');
   });
 
+  it('A20 a mark is a named button saying how many entries it holds', async () => {
+    api(
+      world([
+        noteOf(uuid(1), textAnchor(B3, 0, 12, P3), 'one'),
+        noteOf(uuid(2), textAnchor(B3, 6, 12, P3), null, 'highlight'),
+        noteOf(uuid(3), textAnchor(B2, 6, 12, P2), 'About samples'),
+      ]),
+    );
+    await open();
+    await waitFor(() => expect(marks().length).toBeGreaterThan(0));
+    const labelled = marks().map((m) => [m.getAttribute('role'), m.getAttribute('aria-label')]);
+    expect(labelled).toContainEqual(['button', 'Note on this passage']);
+    expect(labelled).toContainEqual(['button', 'Note on this passage, 2 entries']);
+    expect(screen.getAllByRole('button', { name: 'Note on this passage, 2 entries' })).toHaveLength(
+      1,
+    );
+  });
+
+  it('A20 the selection toolbar is announced when it appears and the announcement clears with it', async () => {
+    api(world());
+    await open();
+    const live = () => document.querySelector('[role="status"][aria-live="polite"]');
+    select(B3, 0, 5);
+    await toolbar();
+    expect(live()).toHaveTextContent('Highlight, Note, Ask available');
+    window.getSelection()?.removeAllRanges();
+    document.dispatchEvent(new Event('selectionchange'));
+    await waitFor(() => expect(live()).toBeEmptyDOMElement());
+  });
+
   it('A05 keeps a mark that needs reattachment out of the text and says so in the margin', async () => {
     const lost = {
       ...noteOf(uuid(1), textAnchor(B3, 0, 5, P3), 'Old words'),
@@ -675,6 +705,35 @@ describe('reading margin: notes and autosave', () => {
     await waitFor(() => expect(w.annotations).toEqual([]));
     await waitFor(() => expect(marks()).toEqual([]));
     expect(screen.queryByText('Gone soon')).toBeNull();
+  });
+
+  it('A20 Delete note and Remove highlight leave focus in the margin, on the entry that took their place', async () => {
+    const w = world([
+      noteOf(uuid(1), textAnchor(B2, 6, 12, P2), 'First'),
+      noteOf(uuid(2), textAnchor(B3, 0, 5, P3), 'Second'),
+      noteOf(uuid(3), textAnchor(B3, 6, 12, P3), null, 'highlight'),
+    ]);
+    api(w);
+    const user = userEvent.setup();
+    Element.prototype.scrollIntoView = vi.fn();
+    await open();
+    await user.click(await screen.findByRole('button', { name: /^Note 2/ }));
+    await user.click(screen.getByRole('button', { name: 'Delete note' }));
+    await waitFor(() => expect(w.annotations).toHaveLength(2));
+    // The deleted note's neighbour (the highlight that took its place) is focused, not the body.
+    await waitFor(() => expect(screen.getByRole('button', { name: /^Highlight: / })).toHaveFocus());
+
+    await user.click(screen.getByRole('button', { name: /^Highlight: / }));
+    await user.click(await screen.findByRole('button', { name: 'Remove highlight' }));
+    await waitFor(() => expect(w.annotations).toHaveLength(1));
+    await waitFor(() => expect(screen.getByRole('button', { name: /^Note 1/ })).toHaveFocus());
+
+    await user.click(screen.getByRole('button', { name: /^Note 1/ }));
+    await user.click(screen.getByRole('button', { name: 'Delete note' }));
+    await waitFor(() => expect(w.annotations).toHaveLength(0));
+    await waitFor(() =>
+      expect(screen.getByRole('button', { name: 'Add a topic note' })).toHaveFocus(),
+    );
   });
 
   it('A03 a remount while a note\u2019s server delete is still running does not bring the note back', async () => {

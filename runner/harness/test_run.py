@@ -1370,6 +1370,12 @@ class RRuntime(HarnessCase):
         "ident <- function(x) x\n"
         "lens <- function(x) list(is.list(x), length(x))\n"
         "bigvec <- function() rep(c('a\"b', 'caf\\u00e9', NA), length.out = 100000)\n"
+        "huge_escapes <- function() strrep('\u00e9\\n\\t\\001\"\\\\', 300000)\n"
+        "nested <- function(n) { d <- list(); for (i in seq_len(n)) d <- list(d); d }\n"
+        "bytes_string <- function() { s <- strrep('\u00e9', 40000); Encoding(s) <- 'bytes'; s }\n"
+        "utf8_within <- function() strrep('\u00e9', 40000)\n"
+        "ascii_at <- function() strrep('a', 65536)\n"
+        "ascii_over <- function() strrep('a', 65537)\n"
         "stop_warning <- function() stop(simpleWarning('w'))\n"
         "stop_message <- function() stop(simpleMessage('m'))\n"
         "nested_signal <- function() withCallingHandlers(stop('boom'), error = function(e) signalCondition(structure(class = c('note', 'condition'), list(message = 'fyi', call = NULL))))\n"
@@ -1573,6 +1579,39 @@ class RRuntime(HarnessCase):
         entry = self.outcome_for(r_call("Big", "bigvec", {"value": expected}, timeoutSeconds=5)).check()
         self.assertEqual(entry["status"], "passed", {k: entry[k] for k in entry if k not in ("expected", "actual")})
 
+    def test_a_huge_escape_heavy_string_does_not_stall_the_repr(self):
+        # 1.8 M characters of escapes (about 4.8 MB of JSON, under the 8 MiB outcome cap): deparse
+        # alone took ~40 s, over the 10 s timeout; the bounded repr is a quick, ordinary failure.
+        outcome = self.outcome_for(r_call("Huge", "huge_escapes", {"value": "x"}, "repr", timeoutSeconds=10))
+        check = outcome.check()
+        self.assertEqual(check["status"], "failed", check)
+        self.assertTrue(check["actual"].startswith('"\u00e9\\n\\t'), check["actual"][:40])
+
+    def test_repr_keeps_a_string_within_the_bound_and_cuts_one_over_it(self):
+        # 40 000 characters are 80 000 bytes: over the limit in bytes, within it in characters.
+        outcome = self.outcome_for(
+            r_call("Within the bound and non-ASCII", "utf8_within", {"value": '"' + "\u00e9" * 40000 + '"'}, "repr"),
+            r_call("At the bound", "ascii_at", {"value": '"' + "a" * 65536 + '"'}, "repr"),
+            r_call("One over the bound", "ascii_over", {"value": '"' + "a" * 65536 + '\u2026"'}, "repr"),
+            r_call("One over with an uncut expected", "ascii_over", {"value": '"' + "a" * 65537 + '"'}, "repr"),
+        )
+        self.assertEqual(
+            [c["status"] for c in outcome.result["checks"]], ["passed"] * 3 + ["failed"], outcome.result["checks"]
+        )
+
+    def test_repr_falls_back_to_the_whole_deparse_when_bounding_fails(self):
+        # nchar(type = "chars") errors on a string marked "bytes"; the repr must then be the
+        # plain deparse, not <unrepresentable>. A nested list shows no change in its repr either.
+        outcome = self.outcome_for(
+            r_call("Bytes string", "bytes_string", {"value": "x"}, "repr"),
+            r_call("Nested list", "nested", {"value": "x"}, "repr", args=[500]),
+        )
+        bytes_check, nested_check = outcome.result["checks"]
+        self.assertEqual(bytes_check["status"], "failed", bytes_check)
+        self.assertTrue(bytes_check["actual"].startswith('"\\\\xc3\\\\xa9'), bytes_check["actual"][:40])
+        self.assertEqual(nested_check["status"], "failed", nested_check)
+        self.assertTrue(nested_check["actual"].startswith("list(list(list("), nested_check["actual"][:40])
+
     def test_stop_with_a_warning_or_message_condition_is_an_exception(self):
         outcome = self.outcome_for(
             r_call("Warning", "stop_warning", {"raises": {"type": "simpleWarning", "message": "w"}}),
@@ -1619,6 +1658,19 @@ class RRuntime(HarnessCase):
         self.assertIn("was not found", outcome.check()["message"])
         defined = self.go(r_job({"solution.R": "q <- function() 'mine'\n"}, [r_call("Q", "q", {"value": "mine"})]))
         self.assertEqual(defined.check()["status"], "passed", defined.check())
+
+    def test_an_alias_of_quit_defined_by_the_solution_is_found_and_ends_the_call(self):
+        files = {"solution.R": "finish <- quit\nq2 <- q\n"}
+        outcome = self.go(
+            r_job(
+                files,
+                [
+                    r_call("Finish", "finish", {"raises": {"type": "SystemExit"}}),
+                    r_call("Q alias", "q2", {"raises": {"type": "SystemExit"}}),
+                ],
+            )
+        )
+        self.assertEqual([c["status"] for c in outcome.result["checks"]], ["passed", "passed"], outcome.result["checks"])
 
     def test_integer_arguments_are_doubles(self):
         files = {"solution.R": "square <- function(n) n * n\nkind <- function(n) is.double(n)\n"}
