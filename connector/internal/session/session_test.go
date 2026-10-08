@@ -528,6 +528,22 @@ func TestRefusedRequestsNeverReachJupyter(t *testing.T) {
 	e.refused(sessionB, "session", "GET", "/api/status", nil, protocol.CodeUnknownSession)
 }
 
+// A streamed body reaches Jupyter with its length: an empty one as Content-Length: 0, not as a
+// chunked body of unknown length.
+func TestStreamedBodiesKeepTheirLength(t *testing.T) {
+	ws, port, fake := attachFixture(t)
+	e := newEnv(t, nil, protocol.Limits{})
+	e.openLocal(sessionA, reqA, ws, protocol.Runtime{Mode: "attach", Port: port})
+	for _, body := range [][]byte{{}, []byte(`{"type":"file","format":"text","content":"a,b"}`)} {
+		e.call(sessionA, "contents", "PUT", "/api/contents/parallax/b.csv", body)
+		last := fake.Requests()[len(fake.Requests())-1]
+		if last.Method != "PUT" || last.ContentLength != int64(len(body)) || len(last.TransferEncoding) != 0 || last.Body != string(body) {
+			t.Errorf("a %d-byte body as Jupyter saw it: length %d, transfer encoding %v, body %q",
+				len(body), last.ContentLength, last.TransferEncoding, last.Body)
+		}
+	}
+}
+
 // P3-09b: an attached session reports its content root with ready, so the relay can place the
 // workspace inside the server's root_dir; the encoded message carries it.
 func TestAttachedReadyReportsContentRoot(t *testing.T) {

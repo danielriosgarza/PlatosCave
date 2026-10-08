@@ -110,6 +110,8 @@ type Session struct {
 
 	ctx    context.Context
 	cancel context.CancelFunc
+	// started is closed when the start has returned, whether the session became ready or not.
+	started chan struct{}
 
 	mu            sync.Mutex
 	state         string
@@ -329,7 +331,7 @@ func (m *Manager) open(l *link.Link, req *protocol.OpenSession) {
 	// open_session is a person's request through a live link, so the session starts attached
 	// with its idle clock running (design §9).
 	s := &Session{ID: req.SessionID, Target: req.Target, Owned: req.Runtime.Mode == protocol.RuntimeStart,
-		ctx: ctx, cancel: cancel, state: StateStarting,
+		ctx: ctx, cancel: cancel, started: make(chan struct{}), state: StateStarting,
 		lease: req.Lease, phase: PhaseAttached, startedAt: now, lastActivityAt: now, lastHealthy: now,
 		hardDeadline: now.Add(maxLifetime)}
 	m.sessions[s.ID] = s
@@ -339,6 +341,7 @@ func (m *Manager) open(l *link.Link, req *protocol.OpenSession) {
 }
 
 func (m *Manager) start(t target.Target, s *Session, req *protocol.OpenSession) {
+	defer close(s.started)
 	m.logf("Session %s requested by Parallax %s.", s.ID, describe(req))
 	if m.cfg.Confirm != nil {
 		cctx, cancel := context.WithTimeout(s.ctx, confirmDeadline)
@@ -507,11 +510,12 @@ func (m *Manager) stopWithin(ctx context.Context, s *Session, requestID, why, pr
 	m.send(m.stateMsg(s, requestID))
 	if rt != nil && (rt.Process != nil || rt.Remote != nil) {
 		sctx, cancel := context.WithTimeout(ctx, stopDeadline)
+		times := fitStopTimes(sctx, m.cfg.StopTimes)
 		var err error
 		if rt.Remote != nil {
-			err = rt.Remote.Stop(sctx, m.cfg.StopTimes)
+			err = rt.Remote.Stop(sctx, times)
 		} else {
-			err = rt.Process.Stop(sctx, m.cfg.StopTimes)
+			err = rt.Process.Stop(sctx, times)
 		}
 		cancel()
 		if err != nil {
@@ -534,6 +538,19 @@ func (m *Manager) stopWithin(ctx context.Context, s *Session, requestID, why, pr
 	s.mu.Unlock()
 	m.logf("Session %s stopped.", s.ID)
 	m.finish(s, requestID, why)
+}
+
+// fitStopTimes shortens the waits of a stop so that the whole of it, the shutdown request, the
+// SIGTERM and the SIGKILL, fits before ctx's deadline: half the time left for the shutdown
+// request, a quarter for SIGTERM, and the rest for SIGKILL. The connector's exit budget is the
+// same 10 s as the default shutdown wait, which would otherwise spend all of it on the request.
+func fitStopTimes(ctx context.Context, times jupyter.StopTimes) jupyter.StopTimes {
+	deadline, ok := ctx.Deadline()
+	if !ok {
+		return times
+	}
+	left := time.Until(deadline)
+	return jupyter.StopTimes{Shutdown: min(times.Shutdown, left/2), Terminate: min(times.Terminate, left/4)}
 }
 
 // finish ends a session whose state is already stopped: it becomes a terminal record, kept in
@@ -619,9 +636,25 @@ func (m *Manager) Sessions() []protocol.HeartbeatSession {
 }
 
 // Close stops every owned session with cause connector_exit and ends every attached one, for
-// when the connector exits (SIGINT, SIGTERM, a revoked link). What cannot be reported on the
-// link that is going away stays in sessions.json for the next run's first heartbeat.
+// when the connector exits (SIGINT, SIGTERM, a revoked link). A session still starting is
+// cancelled first and waited for, so the process it began is killed before the connector exits
+// (macOS cannot tie a child's life to its parent); one that became ready meanwhile is stopped
+// like the others. What cannot be reported on the link that is going away stays in
+// sessions.json for the next run's first heartbeat.
 func (m *Manager) Close(ctx context.Context) {
+	var starting []*Session
+	for _, s := range m.list() {
+		if s.State() == StateStarting {
+			s.cancel() // the start gives up, kills what it began, and reports failed
+			starting = append(starting, s)
+		}
+	}
+	for _, s := range starting {
+		select {
+		case <-s.started:
+		case <-ctx.Done():
+		}
+	}
 	var wg sync.WaitGroup
 	for _, s := range m.list() {
 		s.mu.Lock()
@@ -629,13 +662,9 @@ func (m *Manager) Close(ctx context.Context) {
 		switch prev {
 		case StateReady, StateDisconnected:
 			s.state = StateStopping
-		case StateStarting:
-			s.mu.Unlock()
-			s.cancel() // the start gives up, kills what it began, and reports failed
-			continue
 		default:
 			s.mu.Unlock()
-			continue // already stopping or ending
+			continue // still starting past the budget, already stopping, or ending
 		}
 		owned := s.Owned
 		s.mu.Unlock()

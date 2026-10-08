@@ -39,6 +39,28 @@ func (systemProcesses) Inspect(pid int) (string, bool, error) {
 	return strings.TrimSpace(args), true, nil
 }
 
+// Find returns the pids of this user's live processes whose command line has field as one of
+// its arguments.
+func (systemProcesses) Find(field string) ([]int, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	out, err := exec.CommandContext(ctx, psPath(), "-ww", "-U", strconv.Itoa(os.Getuid()), "-o", "pid=", "-o", "stat=", "-o", "args=").Output()
+	if err != nil {
+		return nil, err // the connector itself is always listed, so ps cannot come back empty
+	}
+	var pids []int
+	for _, line := range strings.Split(string(out), "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 3 || strings.HasPrefix(fields[1], "Z") || !hasField(strings.Join(fields[2:], " "), field) {
+			continue
+		}
+		if pid, err := strconv.Atoi(fields[0]); err == nil && pid != os.Getpid() {
+			pids = append(pids, pid)
+		}
+	}
+	return pids, nil
+}
+
 // psPath is the system's ps, found where Linux and macOS install it rather than on PATH, so a
 // program named ps earlier on PATH cannot answer for it.
 func psPath() string {

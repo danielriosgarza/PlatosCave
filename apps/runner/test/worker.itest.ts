@@ -87,6 +87,9 @@ let server: PgBoss;
 /** The runner's instance: no migrations, no supervision, no schedules (design §7.2). */
 let runner: PgBoss;
 const executor = new FakeExecutor();
+/** Job ids whose execution.result send fails: once, or on every attempt. */
+const failedSends = new Map<string, 'once' | 'always'>();
+const sendAttempts = new Map<string, number>();
 const deadLetters: JobWithMetadata<unknown>[] = [];
 
 async function waitFor<T>(probe: () => Promise<T | null | undefined>, ms = 12_000): Promise<T> {
@@ -139,7 +142,20 @@ beforeAll(async () => {
   runner.on('error', () => undefined);
   await runner.start();
   const images = { resolve: async () => image };
-  await startSlots({ boss: runner, executor, images, log: pino({ level: 'silent' }) }, 2);
+  // The runner's own instance, except that a result send can be made to fail.
+  const boss: Pick<PgBoss, 'send' | 'work'> = {
+    send: (async (name: string, data: { jobId?: string }, options?: object) => {
+      const failing = name === RESULT_QUEUE ? failedSends.get(data.jobId ?? '') : undefined;
+      const attempt = (sendAttempts.get(data.jobId ?? '') ?? 0) + 1;
+      if (failing) sendAttempts.set(data.jobId ?? '', attempt);
+      if (failing === 'always' || (failing === 'once' && attempt === 1)) {
+        throw new Error('connection terminated unexpectedly');
+      }
+      return runner.send(name, data as object, options);
+    }) as PgBoss['send'],
+    work: runner.work.bind(runner) as PgBoss['work'],
+  };
+  await startSlots({ boss, executor, images, log: pino({ level: 'silent' }) }, 2);
 });
 
 afterAll(async () => {
@@ -194,6 +210,26 @@ describe('runner worker on pg-boss (design §7.5)', () => {
     expect(executor.attempts.get(payload.jobId)).toBe(2);
     expect(dead.data).toEqual(payload);
     expect(dead.sourceOutput).toMatchObject({ kind: 'daemon_unreachable' });
+  });
+
+  test('A13 a failed execution.result send is retried, and the run then completes', async () => {
+    const payload = job();
+    failedSends.set(payload.jobId, 'once');
+    const id = (await server.send(RUN_QUEUE, payload)) as string;
+    const done = await settled(id);
+    expect(done.state).toBe('completed');
+    expect(done.retryCount).toBe(1);
+    expect(await server.getJobById(RESULT_QUEUE, payload.jobId)).not.toBeNull();
+  });
+
+  test('A13 a result send that keeps failing is dead-lettered without a kind, not as harness_failed', async () => {
+    const payload = job();
+    failedSends.set(payload.jobId, 'always');
+    const id = (await server.send(RUN_QUEUE, payload)) as string;
+    const dead = await deadLetterOf(id);
+    expect(sendAttempts.get(payload.jobId)).toBe(2);
+    expect(dead.sourceOutput).not.toHaveProperty('kind');
+    expect(dead.sourceOutput).toMatchObject({ message: 'connection terminated unexpectedly' });
   });
 
   test('a terminal failure is dead-lettered at once with { kind, message }', async () => {

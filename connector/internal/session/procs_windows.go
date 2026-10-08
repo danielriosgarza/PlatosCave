@@ -12,4 +12,6 @@ var errNoInspect = errors.New("reading another process's command line is not sup
 
 func (systemProcesses) Inspect(int) (string, bool, error) { return "", false, errNoInspect }
 
+func (systemProcesses) Find(string) ([]int, error) { return nil, errNoInspect }
+
 func (systemProcesses) Signal(int, bool) error { return errNoInspect }

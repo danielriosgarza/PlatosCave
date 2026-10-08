@@ -26,6 +26,10 @@ type Request struct {
 	URI    string
 	Header http.Header
 	Body   string
+	// ContentLength and TransferEncoding are as the request arrived (-1 and chunked when the
+	// sender did not know the length).
+	ContentLength    int64
+	TransferEncoding []string
 }
 
 // Server is the fake's state.
@@ -96,7 +100,8 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	s.mu.Lock()
-	s.requests = append(s.requests, Request{Method: r.Method, URI: r.URL.RequestURI(), Header: r.Header.Clone(), Body: string(body)})
+	s.requests = append(s.requests, Request{Method: r.Method, URI: r.URL.RequestURI(), Header: r.Header.Clone(), Body: string(body),
+		ContentLength: r.ContentLength, TransferEncoding: r.TransferEncoding})
 	s.mu.Unlock()
 
 	if r.URL.Path == "/api" && r.Method == "GET" {
