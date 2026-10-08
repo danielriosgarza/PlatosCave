@@ -1,94 +1,8 @@
 import AxeBuilder from '@axe-core/playwright';
-import { type APIRequestContext, expect, type Page, test } from '@playwright/test';
+import { expect, test } from '@playwright/test';
+import { exerciseDefinition, openExercise, releaseExercise, signedIn } from '../touch';
 
 test.use({ colorScheme: 'light' });
-
-const definition = {
-  schema: 'exercise.v1',
-  steps: [
-    {
-      id: 'predict',
-      kind: 'single_choice',
-      title: 'Predict',
-      prompt: 'What happens to the standard error when n goes from 25 to 100?',
-      options: [
-        { id: 'half', label: 'It halves' },
-        { id: 'same', label: 'It stays the same', feedback: 'The error depends on √n, not on n.' },
-        { id: 'double', label: 'It doubles' },
-      ],
-      correct: 'half',
-      hints: ['SE is proportional to 1 / √n.', 'Compare √25 with √100.'],
-      solution: 'It halves: √100 is twice √25.',
-      feedback: { correct: 'Yes, the standard error halves.', incorrect: 'Not quite.' },
-    },
-    {
-      id: 'inspect',
-      kind: 'simulation',
-      title: 'Inspect',
-      prompt: 'Compare n = 100 with the baseline n = 25.',
-      control: { name: 'n', label: 'Sample size', min: 25, max: 200, step: 25, initial: 25 },
-      observations: [{ id: 'se', label: 'Standard error' }],
-      compare: [25, 100],
-      feedback: { correct: 'Both sample sizes compared.', incomplete: 'Now compare with n = 100.' },
-    },
-    {
-      id: 'explain',
-      kind: 'text',
-      title: 'Explain',
-      prompt: 'Which distribution narrowed, and which did not?',
-      feedback: { saved: 'Saved. Your practice is complete.' },
-    },
-  ],
-};
-
-async function signedIn(
-  playwright: { request: { newContext(o: object): Promise<APIRequestContext> } },
-  baseURL: string,
-  email: string,
-): Promise<APIRequestContext> {
-  const client = await playwright.request.newContext({ baseURL });
-  expect((await client.post('/api/test/signin-as', { data: { email } })).ok()).toBe(true);
-  return client;
-}
-
-/** Releases a fresh exercise in Sampling to class A, the way an instructor would. */
-async function releaseExercise(
-  playwright: { request: { newContext(o: object): Promise<APIRequestContext> } },
-  baseURL: string,
-  title: string,
-) {
-  const setup = await playwright.request.newContext({ baseURL });
-  const { ids } = await (await setup.post('/api/test/world')).json();
-  const elena = await signedIn(playwright, baseURL, 'elena@example.test');
-  const created = await elena.post(
-    `/api/courses/${ids.statistics}/topics/${ids.sampling}/resources`,
-    { data: { type: 'exercise', title, content: definition } },
-  );
-  expect(created.ok()).toBe(true);
-  const resource = await created.json();
-  const published = await elena.post(`/api/courses/${ids.statistics}/releases`);
-  expect(published.ok()).toBe(true);
-  const { release } = await published.json();
-  const priya = await signedIn(playwright, baseURL, 'priya@example.test');
-  const current = await (await priya.get(`/api/classes/${ids.classA}/release`)).json();
-  const adopted = await priya.post(`/api/classes/${ids.classA}/adopt`, {
-    data: { releaseId: release.id, expectedReleaseId: current.release.id },
-  });
-  expect(adopted.ok()).toBe(true);
-  return { ids, resourceId: resource.id as string, priya };
-}
-
-async function openExercise(page: Page, classId: string, topicId: string, title: string) {
-  await page.goto(`/classes/${classId}/topics/${topicId}/exercises`);
-  const start = page
-    .getByRole('listitem')
-    .filter({ hasText: title })
-    .getByRole('button', { name: 'Start' });
-  const predict = page.getByRole('heading', { name: 'Predict' });
-  await expect(start.or(predict)).toBeVisible();
-  if (await start.isVisible()) await start.click();
-  await expect(predict).toBeVisible();
-}
 
 test('A08 and A23 a student works Predict, Inspect and Explain; help is recorded and survives Start again', async ({
   page,
@@ -206,7 +120,12 @@ test('a scheduled exercise shows its release date to students instead of opening
   const created = await elena.post(
     `/api/courses/${ids.statistics}/topics/${ids.sampling}/resources`,
     {
-      data: { type: 'exercise', title, content: definition, releaseAt: '2099-01-15T09:00:00Z' },
+      data: {
+        type: 'exercise',
+        title,
+        content: exerciseDefinition,
+        releaseAt: '2099-01-15T09:00:00Z',
+      },
     },
   );
   expect(created.ok()).toBe(true);
