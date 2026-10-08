@@ -52,6 +52,8 @@ export function ConnectSummary({
     String(template?.lease?.gracePeriodMin ?? defaultLease?.gracePeriodMin ?? 5),
   );
   const [problem, setProblem] = useState<string | null>(null);
+  // A class computer that sets a lease holds it; the server refuses any other.
+  const leaseFixed = Boolean(template?.lease);
   const idle = Number(idleText);
   const grace = Number(graceText);
   const idleOk = /^\d+$/.test(idleText.trim()) && idle >= 5 && idle <= 240;
@@ -113,6 +115,7 @@ export function ConnectSummary({
           <span>Stop after minutes with no activity (5 to 240)</span>
           <input
             inputMode="numeric"
+            readOnly={leaseFixed}
             value={idleText}
             onChange={(e) => setIdleText(e.target.value)}
           />
@@ -121,6 +124,7 @@ export function ConnectSummary({
           <span>Keep the kernel after closing this tab, minutes (1 to 60)</span>
           <input
             inputMode="numeric"
+            readOnly={leaseFixed}
             value={graceText}
             onChange={(e) => setGraceText(e.target.value)}
           />
@@ -132,6 +136,9 @@ export function ConnectSummary({
         </div>
       ) : null}
       {idleOk && graceOk ? <p>{leaseSentence(idle, grace)}</p> : null}
+      {leaseFixed ? (
+        <p className={styles.muted}>The instructor set these times for this class computer.</p>
+      ) : null}
       {reach ? <p className={styles.muted}>{reach}</p> : null}
       <p className={styles.muted}>
         This connection can read and change the files this account can, with that account's

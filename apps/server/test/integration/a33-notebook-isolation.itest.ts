@@ -1,6 +1,6 @@
 import { eq, notInArray } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
-import { classComputeTemplates, notebookSessions } from '../../src/db/schema';
+import { classComputeTemplates, notebookConnections, notebookSessions } from '../../src/db/schema';
 import { ids, type PersonName } from '../fixtures/world';
 import { createTestDatabase, type TestDatabase } from './db';
 import {
@@ -289,6 +289,104 @@ describe('A33 notebook session isolation', () => {
       revisionId,
     });
     expect(refused).toMatchObject({ status: 409, body: { error: 'template_archived' } });
+  });
+
+  test("A33 a session from a class template opens with the template's runtime and lease", async () => {
+    const [template] = await testDb.db
+      .insert(classComputeTemplates)
+      .values({
+        classId: ids.classB,
+        name: 'Isolated servers',
+        description: 'One OS account per student',
+        target: { host: 'jupyter.isolated.example.org', port: 22, workspace: '/home/{user}/work' },
+        runtime: { mode: 'start' },
+        isolation: 'account',
+        lease: { idleTimeoutMin: 60, gracePeriodMin: 10 },
+        hostOwnerConfirmedBy: ids.marcus,
+        hostOwnerConfirmedAt: start,
+        createdBy: ids.marcus,
+      })
+      .returning({ id: classComputeTemplates.id });
+    const templateId = template?.id as string;
+    const live = await liveConnector(relay, ids.bea);
+    const connectionId = await saveConnection(relay, cookie('bea'), live.id, {
+      templateId,
+      target: {
+        kind: 'ssh',
+        host: 'jupyter.isolated.example.org',
+        port: 22,
+        user: 'bea',
+        auth: { method: 'agent', hint: 'bea@laptop' },
+        workspace: '/home/bea/work',
+      },
+    });
+    const open = (extra: object) =>
+      call(relay, cookie('bea'), 'POST', sessions(ids.classB), {
+        connectionId,
+        revisionId,
+        ...extra,
+      });
+
+    // Neither attaching to a running server nor another lease is the template's. (Six opens a
+    // minute per person, the last one below included.)
+    for (const extra of [
+      { runtime: { mode: 'attach', port: 8888 } },
+      { runtime: { mode: 'start', python: '/opt/conda/bin/python' } },
+      { lease: { idleTimeoutMin: 240, gracePeriodMin: 60 } },
+      { lease: { idleTimeoutMin: 60, gracePeriodMin: 30 } },
+    ]) {
+      expect(await open(extra), JSON.stringify(extra)).toMatchObject({
+        status: 400,
+        body: { error: 'target_not_allowed', code: 'template_mismatch' },
+      });
+    }
+    // A runtime stored before the template was enforced does not open either.
+    await testDb.db
+      .update(notebookConnections)
+      .set({ runtime: { mode: 'attach', port: 8888 } })
+      .where(eq(notebookConnections.id, connectionId));
+    expect(await open({})).toMatchObject({ status: 400, body: { code: 'template_mismatch' } });
+    await settled(relay, live.id);
+    expect(live.connector.received.filter((m) => m.t === 'open_session')).toEqual([]);
+    expect(
+      await testDb.db
+        .select()
+        .from(notebookSessions)
+        .where(eq(notebookSessions.connectionId, connectionId)),
+    ).toEqual([]);
+
+    // The template's runtime, with the kernel the learner picked, and its own lease open.
+    await testDb.db
+      .update(notebookConnections)
+      .set({ runtime: { mode: 'start', kernelName: 'python3' } })
+      .where(eq(notebookConnections.id, connectionId));
+    const res = await open({
+      runtime: { mode: 'start', kernelName: 'ir' },
+      lease: { idleTimeoutMin: 60, gracePeriodMin: 10 },
+    });
+    expect(res.status, JSON.stringify(res.body)).toBe(202);
+    const request = await live.connector.next('open_session');
+    expect(request).toMatchObject({
+      runtime: { mode: 'start', kernelName: 'ir' },
+      lease: { idleTimeoutMin: 60, gracePeriodMin: 10 },
+    });
+    await settled(relay, live.id);
+  });
+
+  test('A33 a class template that sets no lease leaves the lease to the learner', async () => {
+    const live = await liveConnector(relay, ids.bea);
+    const connectionId = await saveConnection(relay, cookie('bea'), live.id, {
+      templateId: templateB,
+    });
+    const res = await call(relay, cookie('bea'), 'POST', sessions(ids.classB), {
+      connectionId,
+      revisionId,
+      lease: { idleTimeoutMin: 120, gracePeriodMin: 20 },
+    });
+    expect(res.status, JSON.stringify(res.body)).toBe(202);
+    const request = await live.connector.next('open_session');
+    expect(request).toMatchObject({ lease: { idleTimeoutMin: 120, gracePeriodMin: 20 } });
+    await settled(relay, live.id);
   });
 
   test("A33 a connection made from a class's template cannot be used in another class", async () => {
