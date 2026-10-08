@@ -214,15 +214,20 @@ export function PdfReading({ url, pageCount, renew, initial, source, onPosition,
 
   if (load.state === 'failed') {
     return (
-      <RetryNotice message="This PDF could not be loaded." onRetry={() => setAttempt((n) => n + 1)}>
-        {source.key && (
-          <SourceDownload
-            classId={source.classId}
-            revisionId={source.revisionId}
-            sourceKey={source.key}
-          />
-        )}
-      </RetryNotice>
+      <div className={styles.notice}>
+        <RetryNotice
+          message="This PDF could not be loaded."
+          onRetry={() => setAttempt((n) => n + 1)}
+        >
+          {source.key && (
+            <SourceDownload
+              classId={source.classId}
+              revisionId={source.revisionId}
+              sourceKey={source.key}
+            />
+          )}
+        </RetryNotice>
+      </div>
     );
   }
 

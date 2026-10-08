@@ -53,30 +53,6 @@
 .margin {
   min-width: 0;
 }
-.tabs {
-  display: flex;
-  gap: 20px;
-  border-bottom: 1px solid var(--pc-rule);
-  margin-bottom: 16px;
-}
-.tabs button {
-  font: var(--pc-text-ui);
-  font-size: 13px;
-  background: none;
-  border: 0;
-  border-bottom: 2px solid transparent;
-  border-radius: 0;
-  padding: 0 0 10px;
-  cursor: pointer;
-  color: var(--pc-ink);
-}
-.tabs button[aria-pressed="true"] {
-  border-bottom-color: var(--pc-ink);
-  font-weight: 600;
-}
-.count {
-  color: var(--pc-muted);
-}
 .entries {
   min-width: 0;
 }
@@ -190,11 +166,6 @@
   color: var(--pc-muted);
   font-size: 14px;
   margin: 0 0 12px;
-}
-.composer {
-  margin-top: 8px;
-  padding-top: 14px;
-  border-top: 1px solid var(--pc-rule);
 }
 
 @media (max-width: 1199px) {

@@ -102,9 +102,3 @@
   width: 100%;
   margin-top: 4px;
 }
-.status {
-  min-height: 1.5em;
-  margin-top: 8px;
-  font: var(--pc-text-label);
-  color: var(--pc-muted);
-}

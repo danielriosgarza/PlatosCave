@@ -105,7 +105,7 @@ export function FilesPanel({
           onRetry={() => void listing.refetch()}
         >
           {dir ? (
-            <button type="button" className={buttons.tool} onClick={() => setDir('')}>
+            <button type="button" className={buttons.outline} onClick={() => setDir('')}>
               Back to the workspace folder
             </button>
           ) : null}

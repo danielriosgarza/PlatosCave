@@ -1,7 +1,6 @@
 import type { ReactNode } from 'react';
 import buttons from './Buttons.module.css';
 import styles from './DiscussionComposer.module.css';
-import { SaveLine } from './SaveLine';
 
 export type Audience = 'instructor' | 'class';
 
@@ -55,17 +54,13 @@ export function DiscussionComposer({
           onChange={(e) => onBody(e.target.value)}
         />
       </label>
-      <SaveLine
-        status="idle"
-        onRetry={onPost}
-        note={
-          problem === 'offline'
-            ? 'Offline · your text is kept on this device. Post when you are back online.'
-            : problem === 'failed'
-              ? 'Could not post. Your text is kept.'
-              : null
-        }
-      />
+      <div className={styles.status} role="status">
+        {problem === 'offline'
+          ? 'Offline · your text is kept on this device. Post when you are back online.'
+          : problem === 'failed'
+            ? 'Could not post. Your text is kept.'
+            : null}
+      </div>
       <button
         type="button"
         className={buttons.outline}

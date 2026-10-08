@@ -296,18 +296,20 @@ export function SlideViewer({
   if (load.state === 'failed') {
     return (
       <div className={styles.stage}>
-        <RetryNotice
-          message="These slides could not be loaded."
-          onRetry={() => setAttempt((n) => n + 1)}
-        >
-          {source.key && (
-            <SourceDownload
-              classId={source.classId}
-              revisionId={source.revisionId}
-              sourceKey={source.key}
-            />
-          )}
-        </RetryNotice>
+        <div className={styles.notice}>
+          <RetryNotice
+            message="These slides could not be loaded."
+            onRetry={() => setAttempt((n) => n + 1)}
+          >
+            {source.key && (
+              <SourceDownload
+                classId={source.classId}
+                revisionId={source.revisionId}
+                sourceKey={source.key}
+              />
+            )}
+          </RetryNotice>
+        </div>
       </div>
     );
   }

@@ -48,6 +48,9 @@ export function SketchPanel({ api, label }: { api: Sketches; label: string }) {
   }, [s?.status]);
   if (!s) return null;
   const saving = s.status === 'saving';
+  // The sketch was deleted elsewhere: Done saves it again, so no Retry beside the message.
+  const gone =
+    s.status === 'failed' && s.annotationId === null && s.message?.includes('deleted elsewhere');
   const strokes = s.history.strokes.length;
   return (
     <section ref={panel} tabIndex={-1} className={styles.panel} aria-label={`Sketch on ${label}`}>
@@ -139,23 +142,19 @@ export function SketchPanel({ api, label }: { api: Sketches; label: string }) {
         />
       ) : null}
       <SaveLine
-        status={
-          saving
-            ? 'saving'
-            : s.status === 'offline'
-              ? 'offline'
-              : s.status === 'failed'
-                ? 'failed'
-                : 'idle'
-        }
+        status={saving ? 'saving' : s.status === 'failed' && !gone ? 'failed' : 'idle'}
         reason={s.message}
         onRetry={() => void api.done()}
         note={
-          s.status === 'invalid'
-            ? s.message
-            : describing
-              ? null
-              : `${strokes} ${strokes === 1 ? 'stroke' : 'strokes'}`
+          s.status === 'offline'
+            ? 'Offline · not saved. Press Done when you are back online.'
+            : gone
+              ? s.message
+              : s.status === 'invalid'
+                ? s.message
+                : describing
+                  ? null
+                  : `${strokes} ${strokes === 1 ? 'stroke' : 'strokes'}`
         }
       />
       <div className={styles.row}>

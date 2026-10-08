@@ -13,7 +13,7 @@ import { createPortal } from 'react-dom';
 import { type Audience, DiscussionComposer } from '../../components/DiscussionComposer';
 import { type MarginTab, MarginTabs } from '../../components/MarginTabs';
 import { RetryNotice } from '../../components/RetryNotice';
-import { SaveLine } from '../../components/SaveLine';
+import { SaveLine, type SaveLineStatus } from '../../components/SaveLine';
 import { useSession } from '../../session/useSession';
 import { downloadSvg, FIGURE_ASPECT, PAGE_ASPECT, sketchSvg } from '../sketch/exportSvg';
 import { FigureSketches, figureLabel } from '../sketch/FigureSketches';
@@ -973,18 +973,17 @@ export function NoteSaveLine({
   onRetry: () => void;
   onSaveAsNew: () => void;
 }) {
-  const live = state.status === 'saving' || state.status === 'saved' || state.status === 'offline';
-  const gone = state.gone && !live;
+  const mapped: SaveLineStatus =
+    state.status === 'saving' ||
+    state.status === 'saved' ||
+    state.status === 'offline' ||
+    state.status === 'failed'
+      ? state.status
+      : 'idle';
+  const gone = state.gone && (mapped === 'idle' || mapped === 'failed');
   return (
     <SaveLine
-      status={
-        state.status === 'saving' ||
-        state.status === 'saved' ||
-        state.status === 'offline' ||
-        state.status === 'failed'
-          ? state.status
-          : 'idle'
-      }
+      status={mapped}
       reason={state.reason}
       onRetry={onRetry}
       override={

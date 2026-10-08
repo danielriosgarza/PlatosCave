@@ -411,7 +411,7 @@ describe('sketch on a figure', () => {
     await user.type(screen.getByLabelText('Text description (required)'), 'Offline.');
     vi.spyOn(navigator, 'onLine', 'get').mockReturnValue(false);
     await user.click(screen.getByRole('button', { name: 'Done' }));
-    expect(await screen.findByText(/Offline · changes on this device/)).toBeVisible();
+    expect(await screen.findByText(/Offline · not saved\. Press Done/)).toBeVisible();
     expect(screen.queryByText('Saved')).toBeNull();
     expect(w.calls).toHaveLength(0);
   });
