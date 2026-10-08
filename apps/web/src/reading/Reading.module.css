@@ -84,7 +84,7 @@
   letter-spacing: var(--pc-tracking-title);
 }
 .native h3 {
-  font-size: 21px;
+  font-size: var(--pc-size-subsection);
   letter-spacing: var(--pc-tracking-subsection);
 }
 .native p,
@@ -144,7 +144,7 @@
   overflow-x: auto;
   border-collapse: collapse;
   margin-top: 18px;
-  font-size: 15px;
+  font-size: var(--pc-size-ui);
   line-height: 1.5;
 }
 .native th,
@@ -200,7 +200,7 @@
 }
 .native :global(mark[data-count])::after {
   content: attr(data-count);
-  font: 600 12px var(--pc-font-sans);
+  font: 600 var(--pc-size-label) var(--pc-font-sans);
   vertical-align: super;
   margin-left: 4px;
 }
@@ -328,11 +328,5 @@
   }
   .stage {
     padding: 24px 16px 40px;
-  }
-  .native {
-    font-size: 17px;
-  }
-  .native pre {
-    font-size: 13px;
   }
 }

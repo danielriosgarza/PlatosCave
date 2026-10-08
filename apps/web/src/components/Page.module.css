@@ -10,7 +10,7 @@
   letter-spacing: var(--pc-tracking-title);
 }
 .intro {
-  font-size: 15px;
+  font-size: var(--pc-size-ui);
   line-height: 1.5;
   max-width: 700px;
   margin-top: 10px;
@@ -35,7 +35,7 @@
   color: var(--pc-muted);
 }
 .small {
-  font-size: 12px;
+  font-size: var(--pc-size-label);
   line-height: 1.5;
 }
 .link {
@@ -61,10 +61,10 @@
   margin-top: 20px;
 }
 .subheading {
-  font-size: 16px;
+  font-size: var(--pc-size-field);
 }
 .subheadingSmall {
-  font-size: 13px;
+  font-size: var(--pc-size-ui);
   margin-top: 16px;
 }
 .editGrid {
