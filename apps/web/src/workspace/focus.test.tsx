@@ -13,6 +13,7 @@ import {
   T_ESTIMATION,
   T_SAMPLING,
 } from '../test/render';
+import { modalOpen } from './focus';
 
 const me = makeMe({ classes: [studentIn(CLASS_A, 'Autumn 2026 A')] });
 const url = `/classes/${CLASS_A}/topics/${T_SAMPLING}/reading`;
@@ -264,6 +265,11 @@ describe('focus and full screen', () => {
     render(<Host />);
     const one = screen.getByRole('button', { name: 'Second one' });
     const two = screen.getByRole('button', { name: 'Second two' });
+    // Mounted in one commit: the newer sheet is operable, the older one is inert.
+    expect(one.closest('[inert]')).toBeNull();
+    expect(
+      screen.getByRole('button', { name: 'First action', hidden: true }).closest('[inert]'),
+    ).not.toBeNull();
     await waitFor(() => expect(one).toHaveFocus());
     await user.tab();
     expect(two).toHaveFocus();
@@ -279,6 +285,7 @@ describe('focus and full screen', () => {
       screen.getAllByRole('button', { name: 'Page action' })[0]?.closest('[inert]'),
     ).not.toBeNull();
     expect(screen.getByRole('button', { name: 'First action' }).closest('[inert]')).toBeNull();
+    expect(screen.getByRole('button', { name: 'First action' })).toHaveFocus();
 
     await user.keyboard('{Escape}');
     expect(closed).toEqual(['second', 'first']);
@@ -315,6 +322,69 @@ describe('focus and full screen', () => {
     expect(screen.getByRole('button', { name: 'Second action' }).closest('[inert]')).toBeNull();
     rerender(<Host first={false} second={false} />);
     expect(document.querySelector('[inert]')).toBeNull();
+  });
+
+  it('A04 A20 a node re-inserted behind an open dialog does not keep the page inert after it closes', async () => {
+    const fs = document.createElement('div');
+    const bg = document.createElement('p');
+    fs.append(bg);
+    document.body.append(fs);
+    enterFullscreen(fs);
+    function Host({ open }: { open: boolean }) {
+      return open ? (
+        <Dialog title="Sheet" onClose={() => undefined}>
+          <button type="button">Action</button>
+        </Dialog>
+      ) : null;
+    }
+    const { rerender } = render(<Host open />);
+    expect(bg.hasAttribute('inert')).toBe(true);
+    // Moving the node makes the observer report it as added again.
+    fs.prepend(bg);
+    await waitFor(() => expect(fs.firstChild).toBe(bg));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    rerender(<Host open={false} />);
+    expect(bg.hasAttribute('inert')).toBe(false);
+    leaveFullscreen();
+    fs.remove();
+  });
+
+  it('A04 A20 a frame leaving full screen is asked once for dialogs opened together, and keys already belong to the dialog meanwhile', async () => {
+    const user = userEvent.setup();
+    await open();
+    await user.keyboard('f');
+    await screen.findByRole('button', { name: 'Exit full screen' });
+    const workspace = fullscreenElement as HTMLElement;
+    const inner = document.createElement('iframe');
+    workspace.append(inner);
+    enterFullscreen(inner);
+    let release: () => void = () => undefined;
+    exitFullscreen.mockReset().mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          release = () => {
+            enterFullscreen(workspace);
+            resolve();
+          };
+        }),
+    );
+    render(
+      <>
+        <Dialog title="One" onClose={() => undefined}>
+          <button type="button">One action</button>
+        </Dialog>
+        <Dialog title="Two" onClose={() => undefined}>
+          <button type="button">Two action</button>
+        </Dialog>
+      </>,
+    );
+    expect(exitFullscreen).toHaveBeenCalledTimes(1);
+    expect(modalOpen()).toBe(true);
+    release();
+    await screen.findByRole('button', { name: 'Two action' });
+    expect(exitFullscreen).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole('button', { name: 'Exit full screen' })).toBeInTheDocument();
+    inner.remove();
   });
 
   it('A04 A20 a dialog opened while a frame is full screen inside the full-screen workspace is shown in the workspace after the frame leaves', async () => {

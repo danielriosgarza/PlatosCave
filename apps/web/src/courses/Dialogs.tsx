@@ -7,7 +7,7 @@ import type { z } from 'zod';
 import { ApiError, call } from '../api/client';
 import buttons from '../components/Buttons.module.css';
 import page from '../components/Page.module.css';
-import { MODAL_SELECTOR } from '../workspace/focus';
+import { beginModalOpen, endModalOpen, MODAL_SELECTOR } from '../workspace/focus';
 import styles from './Courses.module.css';
 import { refreshContexts } from './queries';
 
@@ -162,17 +162,29 @@ function focusPageAnchor() {
 /** Open sheets, oldest first. Only the newest handles keys; the ones beneath it stay inert. */
 const openSheets: object[] = [];
 
+/** The dialog element of each registered sheet; a sheet in the DOM but not here is still mounting. */
+const registered = new Set<HTMLElement>();
+
 /** How many open sheets hide each element, so the page stays inert until the last one closes. */
 const hiddenBy = new Map<HTMLElement, number>();
 
-function hide(el: Node) {
-  if (!(el instanceof HTMLElement)) return null;
+function hide(background: Set<HTMLElement>, el: Node) {
+  // One count per sheet and element, however often a node is reported (moved, re-inserted).
+  if (!(el instanceof HTMLElement) || background.has(el)) return;
   const count = hiddenBy.get(el);
   // Inert set by something else is not ours to set or clear.
-  if (count === undefined && el.hasAttribute('inert')) return null;
+  if (count === undefined && el.hasAttribute('inert')) return;
+  background.add(el);
   hiddenBy.set(el, (count ?? 0) + 1);
   el.setAttribute('inert', '');
-  return el;
+}
+
+/** Whether a node holds a sheet that has not registered yet (mounted in the same commit). */
+function holdsUnregisteredSheet(el: Element) {
+  const sheets = el.matches(MODAL_SELECTOR)
+    ? [el]
+    : Array.from(el.querySelectorAll(MODAL_SELECTOR));
+  return sheets.some((sheet) => !registered.has(sheet as HTMLElement));
 }
 
 function reveal(el: HTMLElement) {
@@ -183,6 +195,23 @@ function reveal(el: HTMLElement) {
   }
   hiddenBy.delete(el);
   el.removeAttribute('inert');
+}
+
+let exiting: Promise<void> | null = null;
+
+/** Leaves the frame's full screen once, however many sheets (or StrictMode remounts) ask. */
+function leaveEmbeddedFullscreen(): Promise<void> {
+  if (exiting) return exiting;
+  const element = document.fullscreenElement;
+  if (!element || !isEmbeddedFullscreen(element)) return Promise.resolve();
+  const done = document
+    .exitFullscreen()
+    .catch(() => undefined)
+    .finally(() => {
+      if (exiting === done) exiting = null;
+    });
+  exiting = done;
+  return done;
 }
 
 /** The element that shows the sheet: the full-screen element (only its subtree is shown), else <body>. */
@@ -227,16 +256,14 @@ export function Dialog({
   useEffect(() => {
     if (container) return;
     let cancelled = false;
-    void (async () => {
-      try {
-        await document.exitFullscreen();
-      } catch {
-        // The browser already left full screen.
-      }
+    // Keys already belong to the sheet that is about to appear (§5, §14).
+    beginModalOpen();
+    void leaveEmbeddedFullscreen().then(() => {
       if (!cancelled) setContainer(sheetContainer());
-    })();
+    });
     return () => {
       cancelled = true;
+      endModalOpen();
     };
   }, [container]);
   useEffect(() => {
@@ -244,6 +271,7 @@ export function Dialog({
     if (!container || !dialog) return;
     const token = {};
     openSheets.push(token);
+    registered.add(dialog);
     const newest = () => openSheets[openSheets.length - 1] === token;
     const inside = () => Array.from(dialog.querySelectorAll<HTMLElement>(FOCUSABLE));
     inside()[0]?.focus();
@@ -289,8 +317,7 @@ export function Dialog({
           const isSheet =
             added instanceof Element &&
             (added.matches(MODAL_SELECTOR) || added.querySelector(MODAL_SELECTOR));
-          const hidden = isSheet ? null : hide(added);
-          if (hidden) background.add(hidden);
+          if (!isSheet) hide(background, added);
         }
       }
     });
@@ -298,8 +325,9 @@ export function Dialog({
       const parent: HTMLElement | null = node.parentElement;
       if (parent) observer.observe(parent, { childList: true });
       for (const el of Array.from(parent?.children ?? [])) {
-        const hidden = el === node ? null : hide(el);
-        if (hidden) background.add(hidden);
+        // A sheet that is still mounting is the newer one: it hides this one when it registers.
+        if (el === node || holdsUnregisteredSheet(el)) continue;
+        hide(background, el);
       }
       node = parent;
     }
@@ -310,7 +338,16 @@ export function Dialog({
       document.removeEventListener('focusin', onFocusIn);
       observer.disconnect();
       openSheets.splice(openSheets.indexOf(token), 1);
+      registered.delete(dialog);
       for (const el of background) reveal(el);
+      // Focus stays in a sheet that is still open; the last one to close returns it.
+      if (openSheets.length > 0) {
+        const next = Array.from(registered).pop();
+        if (next && !next.contains(document.activeElement)) {
+          next.querySelector<HTMLElement>(FOCUSABLE)?.focus();
+        }
+        return;
+      }
       const from = opener.current;
       if (from?.isConnected && from !== document.body) from.focus();
       else focusPageAnchor();
