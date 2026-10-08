@@ -355,22 +355,41 @@ describe('reading margin: selection and marks', () => {
     expect(document.querySelector('mark[data-count="2"]')?.textContent).toBe('sample');
   });
 
-  it('A20 a mark is a named button saying how many entries it holds', async () => {
+  it('A20 a mark keeps the passage words as its name and says what it holds', async () => {
+    const asked: Thread = {
+      id: uuid(7),
+      resourceId: RES,
+      resourceRevisionId: REV,
+      anchor: textAnchor(B1, 0, 3, 'Why samples vary'),
+      audience: 'class',
+      status: 'open',
+      author: { id: SAM_ID, name: 'Sam Okafor' },
+      placement: placement(textAnchor(B1, 0, 3, 'Why samples vary')),
+      createdAt: '2026-10-01T09:00:00Z',
+      can: { reply: true, resolve: false, reopen: false },
+      posts: [],
+    };
     api(
-      world([
-        noteOf(uuid(1), textAnchor(B3, 0, 12, P3), 'one'),
-        noteOf(uuid(2), textAnchor(B3, 6, 12, P3), null, 'highlight'),
-        noteOf(uuid(3), textAnchor(B2, 6, 12, P2), 'About samples'),
-      ]),
+      world(
+        [
+          noteOf(uuid(1), textAnchor(B3, 0, 12, P3), 'one'),
+          noteOf(uuid(2), textAnchor(B3, 6, 12, P3), null, 'highlight'),
+          noteOf(uuid(3), textAnchor(B2, 0, 5, P2), null, 'highlight'),
+          noteOf(uuid(4), textAnchor(B2, 13, 18, P2), 'About tells'),
+        ],
+        [asked],
+      ),
     );
     await open();
     await waitFor(() => expect(marks().length).toBeGreaterThan(0));
-    const labelled = marks().map((m) => [m.getAttribute('role'), m.getAttribute('aria-label')]);
-    expect(labelled).toContainEqual(['button', 'Note on this passage']);
-    expect(labelled).toContainEqual(['button', 'Note on this passage, 2 entries']);
-    expect(screen.getAllByRole('button', { name: 'Note on this passage, 2 entries' })).toHaveLength(
-      1,
-    );
+    const named = (name: string) => screen.getByRole('button', { name });
+    expect(named('Every')).toHaveAccessibleDescription('highlight');
+    expect(named('tells')).toHaveAccessibleDescription('note');
+    expect(named('Why')).toHaveAccessibleDescription('question');
+    expect(named('Wider')).toHaveAccessibleDescription('note');
+    expect(named('sample')).toHaveAccessibleDescription('2 entries: note, highlight');
+    for (const mark of marks()) expect(mark).not.toHaveAttribute('aria-label');
+    expect(document.querySelector('[aria-label*="Note on this passage"]')).toBeNull();
   });
 
   it('A20 the selection toolbar is announced when it appears and the announcement clears with it', async () => {

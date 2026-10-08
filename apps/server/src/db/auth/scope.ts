@@ -1,4 +1,4 @@
-import { and, eq } from 'drizzle-orm';
+import { and, asc, eq } from 'drizzle-orm';
 import type { Db } from '../client';
 import { classes, classMemberships, courseMemberships, courses, users } from '../schema';
 import { type Actor, actorColumns } from './sessions';
@@ -112,4 +112,25 @@ export async function findCourseAccess(
     )
     .where(eq(courses.id, courseId));
   return row ?? null;
+}
+
+/**
+ * The real (non-preview) instructor of the class who joined it first; null when it has none.
+ * The stand-in for system work a job owes the class after its own actor lost access
+ * (`resolveStandInScope`).
+ */
+export async function findStandInInstructor(db: Db, classId: string): Promise<string | null> {
+  const [row] = await db
+    .select({ userId: classMemberships.userId })
+    .from(classMemberships)
+    .where(
+      and(
+        eq(classMemberships.classId, classId),
+        eq(classMemberships.role, 'instructor'),
+        eq(classMemberships.isPreview, false),
+      ),
+    )
+    .orderBy(asc(classMemberships.createdAt), asc(classMemberships.id))
+    .limit(1);
+  return row?.userId ?? null;
 }

@@ -13,6 +13,13 @@ const scopedJobProblem = (value: unknown): string | null => {
   if (scope.data.kind !== 'class' && scope.data.kind !== 'course') {
     return 'scope is not class or course';
   }
+  const standIn = job.standIn;
+  if (standIn !== undefined) {
+    const rule = scope.data;
+    const holds = rule.kind === 'class' && rule.grant === undefined && rule.role !== 'student';
+    if (standIn !== 'class_instructor' || !holds)
+      return 'standIn needs a class rule an instructor holds';
+  }
   const input = job.input as { parse?: unknown; safeParse?: unknown } | undefined;
   if (typeof input?.parse !== 'function' || typeof input.safeParse !== 'function') {
     return 'input is not a schema';

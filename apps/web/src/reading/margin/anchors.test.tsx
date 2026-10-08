@@ -81,7 +81,13 @@ describe('selection to text anchor', () => {
 });
 
 describe('marks', () => {
-  const anchor = (id: string, start: number, end: number, blockId = A) => ({
+  const anchor = (
+    id: string,
+    start: number,
+    end: number,
+    blockId = A,
+    kind?: 'note' | 'highlight' | 'question',
+  ) => ({
     id,
     anchor: {
       kind: 'text' as const,
@@ -92,6 +98,7 @@ describe('marks', () => {
       prefix: '',
       suffix: '',
     },
+    kind: kind ?? ('note' as const),
   });
 
   it('A05 marks a passage across inline elements without changing the text', () => {
@@ -115,6 +122,22 @@ describe('marks', () => {
     // The count is drawn by CSS from the attribute, so it is not part of the text.
     expect(root.textContent).toContain('Wider samples');
     expect(root.querySelector(`[data-block-id="${B}"] mark`)?.textContent).toBe(' se');
+  });
+
+  it('A20 a passage across inline elements has one tab stop and the marked words as its name', () => {
+    const root = reading();
+    applyMarks(root, [anchor('n1', 6, 23, A, 'highlight')]);
+    const marks = [...root.querySelectorAll<HTMLElement>('mark[data-marks]')];
+    expect(marks.length).toBeGreaterThan(1);
+    const stops = marks.filter((m) => m.tabIndex === 0);
+    expect(stops).toHaveLength(1);
+    expect(stops[0]?.textContent).toBe('samples vary ');
+    expect(stops[0]).toHaveAttribute('role', 'button');
+    expect(stops[0]).not.toHaveAttribute('aria-label');
+    expect(stops[0]).toHaveAccessibleDescription('highlight');
+    // The other pieces still open the entry when clicked.
+    expect(marksAt(marks[1] ?? null)).toEqual(['n1']);
+    expect(marks.slice(1).every((m) => !m.hasAttribute('role') && m.tabIndex === -1)).toBe(true);
   });
 
   it('re-applying replaces marks, and clearing leaves the original text', () => {
