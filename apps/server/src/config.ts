@@ -47,7 +47,7 @@ export const DEV_RUNNER_RUNTIMES: RunnerRuntime[] = [
     language: 'python',
     image: 'parallax-runner-python:dev',
     digest: null,
-    harnessVersion: '3',
+    harnessVersion: '4',
     packages: ['numpy', 'pandas', 'scipy'],
   },
   {
@@ -55,7 +55,7 @@ export const DEV_RUNNER_RUNTIMES: RunnerRuntime[] = [
     language: 'r',
     image: 'parallax-runner-r:dev',
     digest: null,
-    harnessVersion: '3',
+    harnessVersion: '4',
     packages: ['jsonlite'],
   },
 ];
@@ -283,7 +283,7 @@ const Env = z
       });
     }
     // The development secret is public: anything reachable beyond this machine needs its own,
-    // whatever NODE_ENV says (tests excepted: e2e listens on 0.0.0.0 inside the runner).
+    // whatever NODE_ENV says (tests excepted: unit tests build configs for any HOST).
     if (env.NODE_ENV !== 'test' && !LOOPBACK.has(env.HOST) && !env.CONTENT_TOKEN_SECRET) {
       ctx.addIssue({
         code: 'custom',
