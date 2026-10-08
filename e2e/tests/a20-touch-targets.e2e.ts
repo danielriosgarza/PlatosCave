@@ -86,24 +86,17 @@ test('A20 the exercise range control is at least 44 px tall with a touch screen'
   const slider = page.getByRole('slider', { name: /Sample size/ });
   await expect(slider).toBeVisible();
   const box = await slider.boundingBox();
-  expect(box?.height ?? 0).toBeGreaterThanOrEqual(43.5);
+  expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
 });
 
-test('A20 the courses filters and status controls are at least 44 px with a touch screen', async ({
-  page,
-}) => {
-  expect(
-    (
-      await page.request.post('/api/test/signin-as', { data: { email: 'elena@example.test' } })
-    ).ok(),
-  ).toBe(true);
-  await page.goto('/courses');
-  await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
-  await expect(
-    page
-      .getByRole('group', { name: /filter/i })
-      .getByRole('button')
-      .first(),
-  ).toBeVisible();
-  expect(await small(page, 'main button, main a, main select, main input')).toEqual([]);
-});
+for (const email of ['marcus@example.test', 'priya@example.test']) {
+  test(`A20 the courses filters, status and view links of ${email} are at least 44 px with a touch screen`, async ({
+    page,
+  }) => {
+    expect((await page.request.post('/api/test/signin-as', { data: { email } })).ok()).toBe(true);
+    await page.goto('/courses');
+    await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
+    await expect(page.getByRole('group', { name: 'Filter courses' })).toBeVisible();
+    expect(await small(page, 'main button, main a, main select, main input')).toEqual([]);
+  });
+}

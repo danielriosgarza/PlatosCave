@@ -294,10 +294,13 @@ test.describe('coarse pointer', () => {
       const box = (node.closest('label') ?? node).getBoundingClientRect();
       return { width: box.width, height: box.height };
     });
-    expect(row.width).toBeGreaterThanOrEqual(43.5);
-    expect(row.height).toBeGreaterThanOrEqual(43.5);
+    expect(row.width).toBeGreaterThanOrEqual(44);
+    expect(row.height).toBeGreaterThanOrEqual(44);
     expect(
-      await small(page, 'main button, main select, main input:not([type="checkbox"])'),
+      await small(
+        page,
+        'main button, main select, main input:not([type="checkbox"], [type="radio"])',
+      ),
     ).toEqual([]);
   });
 });

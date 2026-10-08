@@ -54,6 +54,7 @@ export async function signedIn(
 export async function releaseExercise(playwright: Playwright, baseURL: string, title: string) {
   const setup = await playwright.request.newContext({ baseURL });
   const { ids } = await (await setup.post('/api/test/world')).json();
+  await setup.dispose();
   const elena = await signedIn(playwright, baseURL, 'elena@example.test');
   const created = await elena.post(
     `/api/courses/${ids.statistics}/topics/${ids.sampling}/resources`,
@@ -64,6 +65,7 @@ export async function releaseExercise(playwright: Playwright, baseURL: string, t
   const published = await elena.post(`/api/courses/${ids.statistics}/releases`);
   expect(published.ok()).toBe(true);
   const { release } = await published.json();
+  await elena.dispose();
   const priya = await signedIn(playwright, baseURL, 'priya@example.test');
   const current = await (await priya.get(`/api/classes/${ids.classA}/release`)).json();
   const adopted = await priya.post(`/api/classes/${ids.classA}/adopt`, {
@@ -98,6 +100,6 @@ export const small = (page: Page, selector: string) =>
           node.tagName;
         return { name, box };
       })
-      .filter(({ box }) => box.width > 0 && (box.height < 43.5 || box.width < 43.5))
+      .filter(({ box }) => box.width > 0 && (box.height < 44 || box.width < 44))
       .map(({ name, box }) => `${name}: ${Math.round(box.width)}x${Math.round(box.height)}`),
   );
