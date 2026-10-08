@@ -89,7 +89,7 @@ The harness also rejects a job that holds a lone surrogate (§4.2 step 1); `vali
 | `trimmed` | stdio | trailing whitespace removed from every line, trailing blank lines removed, then identical |
 | `tokens` | stdio | whitespace-separated token sequences identical |
 | `numeric` | stdio, call | stdio: token sequences of equal length where numeric tokens match within tolerance and other tokens are identical. call: recursive structural equality where numbers match within tolerance |
-| `repr` | call | the language's `repr` (Python) or `deparse` (R) of the value equals the string `expected.value`. The R driver cuts a character string longer than 65 536 characters (in a plain character vector or plain list) to its first 65 536 characters plus `…` before `deparse`, because `deparse` is quadratic on long escape-heavy strings. The cut text is the repr wherever it is compared or shown: `exact` and `numeric` comparison of a value that is not JSON, and the `returned …` message of an unexpected return. Two strings that share their first 65 536 characters therefore have the same repr. |
+| `repr` | call | the language's `repr` (Python) or `deparse` (R) of the value equals the string `expected.value`. The R driver cuts a character string longer than 65 536 characters (in a plain character vector or a plain, unclassed list, which may carry attributes and mix element types; a string marked `bytes` is not cut; a string in a classed container such as a data frame or factor, a name or an attribute is not either) to its first 65 536 characters plus `…` before `deparse`, because `deparse` is quadratic on long escape-heavy strings. The cut text is the repr wherever it is compared or shown: `exact` and `numeric` comparison of a value that is not JSON, and the `returned …` message of an unexpected return. Two strings that share their first 65 536 characters therefore have the same repr. |
 
 `expected.raises.type` is matched against the raised exception's class and its bases in Python (`ValueError`), and against the condition classes in R (`error` matches any error). `message`, when given, is a regular expression searched in the message. A `call` check that expects a value and gets an exception is `error`/`exception`, not `failed`; a check that expects an exception and gets a value is `failed` with `actual: 'returned <repr>'`, which is the wireframe's `Expected: ValueError` case.
 
@@ -228,7 +228,7 @@ Images have no shell entrypoint, no package managers reachable at run time (netw
 
 ```json
 [{ "id": "python-3.12", "language": "python", "image": "parallax-runner-python:dev", "digest": null,
-   "harnessVersion": "3", "packages": ["numpy", "pandas", "scipy"] }]
+   "harnessVersion": "4", "packages": ["numpy", "pandas", "scipy"] }]
 ```
 
 Production configuration requires `digest`. Test authoring offers only these ids; publication validation rejects a question whose runtime is not listed.

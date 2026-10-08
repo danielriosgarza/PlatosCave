@@ -208,7 +208,7 @@ test('RUNNER_RUNTIMES lists the approved runtimes; production pins each by diges
     language: 'python',
     image: 'registry.example.org/parallax-runner-python',
     digest: `sha256:${'a'.repeat(64)}`,
-    harnessVersion: '3',
+    harnessVersion: '4',
     packages: ['numpy'],
   };
   expect(loadConfig({ RUNNER_RUNTIMES: JSON.stringify([runtime]) }).RUNNER_RUNTIMES).toEqual([
