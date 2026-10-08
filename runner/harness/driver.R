@@ -220,8 +220,11 @@ local({
       name <- spec$`function`
       holder <- if (exists(name, envir = env, mode = "function", inherits = FALSE)) env else globalenv()
       fn <- get(name, envir = holder, mode = "function", inherits = FALSE)
-      # The driver's own override is not solution code.
-      if (identical(fn, exit_call)) {
+      # The driver's own override, found in the global environment, is not solution code. The
+      # same function reached through the solution file's environment (`finish <- quit`) is the
+      # solution's own binding and is called as usual; a helper sourced into the global
+      # environment with `finish <- quit` cannot be told apart from the override and is not found.
+      if (identical(holder, globalenv()) && identical(fn, exit_call)) {
         stop(sprintf("object '%s' of mode 'function' was not found", name))
       }
       args <- lapply(spec$args, from_json)
