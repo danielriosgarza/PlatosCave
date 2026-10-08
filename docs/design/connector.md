@@ -500,7 +500,7 @@ P3-06's migration also adds to `notebook_submissions` (created by P2-14) whichev
 
 ### 10.3 Endpoints
 
-All are registered with `registerRoute`; contracts live in `packages/contracts/src/routes/{connectors,connections,notebookSessions,...}.ts` with `examples`. `user` routes refuse a `kind: 'preview'` principal with 403. A row that is not the caller's is a 404 with the shared body, for the owner's own instructors too (A33).
+HTTP routes are registered with `registerRoute` and WebSocket routes (the link and `…/channels`) with `registerWebSocketRoute` (ADR-0002); contracts live in `packages/contracts/src/routes/{connectors,connections,notebookSessions,...}.ts` with `examples`. `user` routes refuse a `kind: 'preview'` principal with 403. A row that is not the caller's is a 404 with the shared body, for the owner's own instructors too (A33).
 
 | Method and path | Scope | Item | Notes |
 | --- | --- | --- | --- |
@@ -523,9 +523,9 @@ All are registered with `registerRoute`; contracts live in `packages/contracts/s
 | `GET …/:sessionId/channels` (WebSocket) | class, any | P3-06a | §10.5 |
 | `GET/POST /api/classes/:classId/compute-templates`, `PATCH/DELETE …/:templateId` | class: any to read, instructor to write | P3-10 | §11 |
 | `GET …/notebook-working-copies/:revisionId`, `PUT …/notebook-working-copies/:workingCopyId/revisions`, `POST …/notebook-working-copies/:workingCopyId/submit`, `GET …/notebook-sessions/:sessionId/files`, `POST` and `GET …/notebook-sessions/:sessionId/transfers`, `GET …/transfers/:transferId` | class, any | P3-09 | §11. `PUT …/revisions` takes `baseRevision` (`409 revision_conflict` carries the current copy) and a body up to 25 MiB (`bodyLimit`, declared `413`). `submit` takes `{ revision, sessionId, transferIds, submissionKey }` and works after the session ended. An attached session refuses transfers with `409 workspace_unknown` (the connector's content root is not reported, issue #299) |
-| `GET …/notebook-sessions/:sessionId/transfers/:transferId/download`, `GET /api/classes/:classId/notebook-submissions/:submissionId/files/:fileId/download` | class, any | P3-09 | beyond the plan's list, and a third beyond the transfer routes above: `GET …/transfers` (list, newest first, at most 200). Each download answers `{ url, expiresAt }`, a link on the content origin served as an `application/octet-stream` attachment with `nosniff`; the second is the student's own snapshot file or any student's for an instructor, and asks nothing of the student's computer (A35). `GET …/notebook-submissions/:submissionId/download` (the snapshot itself) is P2-14's |
+| `GET …/notebook-sessions/:sessionId/transfers/:transferId/download`, `GET /api/classes/:classId/notebook-submissions/:submissionId/files/:fileId/download` | class, any | P3-09 | not in the plan's original list. Routes beyond it, with the row above: `GET …/transfers` (the list, newest first, at most 200), `GET …/transfers/:transferId`, and these two downloads. Each download answers `{ url, expiresAt }`, a link on the content origin served as an `application/octet-stream` attachment with `nosniff`; the second is the student's own snapshot file or any student's for an instructor, and asks nothing of the student's computer (A35). `GET …/notebook-submissions/:submissionId/download` (the snapshot itself) is P2-14's |
 
-Rate limits (`@fastify/rate-limit`): connector pairing codes 5 an hour per person; `pair` failures 10 per 10 minutes per IP; `pair/poll` 1 a second per connector; link attempts 30 a minute per IP; tests 6 a minute per person; session creation 6 a minute per person; `execute` 30 a second per session.
+Rate limits (`@fastify/rate-limit`, except the live-output limit, enforced in the handler): connector pairing codes 5 an hour per person; `pair` failures 10 per 10 minutes per IP; `pair/poll` 1 a second per connector; link attempts 30 a minute per IP; tests 6 a minute per person; session creation 6 a minute per person; `execute` 30 a second per session; live outputs (`POST …/outputs`) 120 a minute per person.
 
 ### 10.4 The link registry and requests
 
