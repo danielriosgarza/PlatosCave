@@ -26,6 +26,7 @@ import (
 	"parallax/connector/internal/jupyter"
 	"parallax/connector/internal/jupyter/jupytertest"
 	"parallax/connector/internal/protocol"
+	"parallax/connector/internal/redact"
 	"parallax/connector/internal/sshtest"
 	"parallax/connector/internal/target"
 )
@@ -568,6 +569,31 @@ func TestA28_AttachNeverStops(t *testing.T) {
 		_, err = h.open(h.attach(1024))
 		wantCode(t, err, protocol.CodeAttachNoneFound)
 	})
+}
+
+// TestA28_AttachSharedTokenRedactedUntilLastClose (A28 and A32, SSH attach mode): two sessions attached to
+// one server share its token; closing the first leaves it redacted for the second.
+func TestA28_AttachSharedTokenRedactedUntilLastClose(t *testing.T) {
+	h := newRemoteHost(t, "")
+	const token = "tok-shared-attached-0123"
+	_, port := h.attachTo(token, token, filepath.Dir(h.ws))
+	line := "http://127.0.0.1:8888/api/kernels with " + token
+	first, err := h.open(h.attach(port))
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := h.open(h.attach(port))
+	if err != nil {
+		t.Fatal(err)
+	}
+	first.Release()
+	if got := redact.Redact(line); strings.Contains(got, token) {
+		t.Fatalf("token unredacted while the second session still holds it: %q", got)
+	}
+	second.Release()
+	if got := redact.Redact(line); !strings.Contains(got, token) {
+		t.Fatalf("token still registered after both sessions closed: %q", got)
+	}
 }
 
 // TestTunnelDestinationFixed: every channel the session opens goes to its own 127.0.0.1 port,

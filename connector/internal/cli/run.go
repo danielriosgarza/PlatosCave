@@ -15,7 +15,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-	"unicode/utf8"
 
 	"parallax/connector/internal/identity"
 	"parallax/connector/internal/jupyter"
@@ -24,6 +23,7 @@ import (
 	"parallax/connector/internal/netscope"
 	"parallax/connector/internal/protocol"
 	"parallax/connector/internal/redact"
+	"parallax/connector/internal/safetext"
 	"parallax/connector/internal/session"
 	"parallax/connector/internal/sshtarget"
 	"parallax/connector/internal/state"
@@ -393,20 +393,11 @@ func (r *runtimeRecorder) update(e link.Event) {
 	case link.Up:
 		r.rt.LastError = ""
 	case link.Down, link.Pending, link.Revoked, link.Rejected:
-		r.rt.LastError = clip(redact.Redact(e.Message), 200)
+		r.rt.LastError = safetext.Clip(redact.Redact(safetext.Line(e.Message)), 200)
 	}
 	if err := r.write(); err != nil {
 		fmt.Fprintf(r.env.Stderr, "parallax-connector: could not update %s: %v\n", state.RuntimeFile, err)
 	}
-}
-
-// clip shortens s to at most n characters.
-func clip(s string, n int) string {
-	if utf8.RuneCountInString(s) <= n {
-		return s
-	}
-	r := []rune(s)
-	return string(r[:n-1]) + "…"
 }
 
 var _ flag.Value = (*allowNet)(nil)

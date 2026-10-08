@@ -32,4 +32,19 @@ describe('SaveLine', () => {
     render(<SaveLine status="failed" reason="The note is too long" onRetry={() => {}} />);
     expect(screen.getByRole('status')).toHaveTextContent('The note is too long · Retry');
   });
+
+  it('A03 an assertive failure mounts a new alert element; the status region keeps its role', () => {
+    const { rerender } = render(<SaveLine status="saving" assertive onRetry={() => {}} />);
+    const region = screen.getByRole('status');
+    expect(screen.queryByRole('alert')).toBeNull();
+    rerender(<SaveLine status="failed" assertive onRetry={() => {}} />);
+    expect(screen.getByRole('status')).toBe(region);
+    expect(screen.getByRole('alert')).toHaveTextContent('Could not save · Retry');
+  });
+
+  it('A03 a note that is a failure has the failed tone and no Retry', () => {
+    render(<SaveLine status="idle" note="This note was deleted elsewhere" noteFailed />);
+    expect(screen.getByRole('status')).toHaveTextContent('This note was deleted elsewhere');
+    expect(screen.queryByRole('button')).toBeNull();
+  });
 });

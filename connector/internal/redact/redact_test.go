@@ -46,3 +46,25 @@ func TestProcessWideRedactor(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+// TestA32_SharedSecretStaysRedactedUntilLastForget (A32, attach mode): two sessions attached to
+// one Jupyter server register its token twice; the first to close must not unredact it.
+func TestA32_SharedSecretStaysRedactedUntilLastForget(t *testing.T) {
+	var r Redactor
+	const token = "shared-jupyter-token-0123"
+	r.Register(token)
+	r.Register(token)
+	r.Forget(token)
+	if got := r.Redact("log " + token); got != "log "+Placeholder {
+		t.Fatalf("token unredacted while another session still holds it: %q", got)
+	}
+	r.Forget(token)
+	if got := r.Redact("log " + token); got != "log "+token {
+		t.Fatalf("token still redacted after its last reference was dropped: %q", got)
+	}
+	r.Forget(token) // one Forget too many is harmless
+	r.Register(token)
+	if got := r.Redact(token); got != Placeholder {
+		t.Fatalf("an extra Forget left a debt against a later registration: %q", got)
+	}
+}

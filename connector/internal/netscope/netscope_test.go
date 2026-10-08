@@ -316,13 +316,13 @@ func TestDialRechecksConnectedAddress(t *testing.T) {
 	if codeOf(err) != protocol.CodeNetworkScopeDenied {
 		t.Fatalf("dialAddr outside the scope: %v, want network_scope_denied", err)
 	}
-	if err := strict.control("tcp4", "169.254.169.254:80", nil); codeOf(err) != protocol.CodeNetworkScopeDenied {
+	if err := strict.control(false)("tcp4", "169.254.169.254:80", nil); codeOf(err) != protocol.CodeNetworkScopeDenied {
 		t.Errorf("control(169.254.169.254) = %v", err)
 	}
-	if err := strict.control("tcp6", "[::ffff:10.0.0.1]:22", nil); codeOf(err) != protocol.CodeNetworkScopeDenied {
+	if err := strict.control(false)("tcp6", "[::ffff:10.0.0.1]:22", nil); codeOf(err) != protocol.CodeNetworkScopeDenied {
 		t.Errorf("control(::ffff:10.0.0.1) = %v", err)
 	}
-	if err := strict.control("tcp4", "93.184.216.34:22", nil); err != nil {
+	if err := strict.control(false)("tcp4", "93.184.216.34:22", nil); err != nil {
 		t.Errorf("control(global) = %v", err)
 	}
 	select {

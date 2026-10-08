@@ -8,15 +8,15 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"strings"
 	"sync"
-	"unicode"
 
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
 
 	"parallax/connector/internal/protocol"
+	"parallax/connector/internal/safetext"
+	"parallax/connector/internal/state"
 	"parallax/connector/internal/target"
 )
 
@@ -283,7 +283,7 @@ type keyFile struct {
 
 // loadKey reads the key file and, when present, <keyPath>-cert.pub.
 func (a *hopAuth) loadKey() (*keyFile, error) {
-	path, err := expandHome(a.ref.KeyPath)
+	path, err := state.ExpandHome(a.ref.KeyPath)
 	if err != nil {
 		return nil, a.record(protocol.CodeKeyFileUnreadable, "%v", err)
 	}
@@ -467,63 +467,10 @@ func (a *hopAuth) keyboard(name, instruction string, questions []string, echos [
 	return answers, nil
 }
 
-// sanitize strips escape sequences and control and format characters from text a host sent, so
-// it cannot move the cursor, rewrite what the terminal shows or hide characters (design §5.3).
-// Line breaks are kept; surrounding space is trimmed.
+// sanitize makes text a host sent safe to show (design §5.3; safetext.Sanitize) and trims the
+// space around it.
 func sanitize(s string) string {
-	var b strings.Builder
-	rs := []rune(s)
-	for i := 0; i < len(rs); i++ {
-		r := rs[i]
-		if r == 0x1b || r == 0x9b || r == 0x9d {
-			i = skipEscape(rs, i)
-			continue
-		}
-		if r == '\n' {
-			b.WriteRune(r)
-			continue
-		}
-		if r == '\t' {
-			b.WriteRune(' ')
-			continue
-		}
-		if unicode.Is(unicode.Cc, r) || unicode.Is(unicode.Cf, r) || r == unicode.ReplacementChar {
-			continue
-		}
-		b.WriteRune(r)
-	}
-	return strings.TrimSpace(b.String())
-}
-
-// skipEscape returns the index of the last rune of the escape sequence starting at i.
-func skipEscape(rs []rune, i int) int {
-	csi := rs[i] == 0x9b
-	osc := rs[i] == 0x9d
-	if rs[i] == 0x1b {
-		if i+1 >= len(rs) {
-			return i
-		}
-		switch rs[i+1] {
-		case '[':
-			csi = true
-		case ']', 'P', '_', '^', 'X':
-			osc = true
-		default:
-			return i + 1
-		}
-		i++
-	}
-	for j := i + 1; j < len(rs); j++ {
-		switch {
-		case csi && rs[j] >= 0x40 && rs[j] <= 0x7e:
-			return j
-		case osc && (rs[j] == 0x07 || rs[j] == 0x9c):
-			return j
-		case osc && rs[j] == 0x1b && j+1 < len(rs) && rs[j+1] == '\\':
-			return j + 1
-		}
-	}
-	return len(rs) - 1
+	return strings.TrimSpace(safetext.Sanitize(s))
 }
 
 // track wraps a signer so that signing marks that the host accepted a key.
@@ -582,18 +529,6 @@ func (t *trackedMulti) SignWithAlgorithm(rand io.Reader, data []byte, algorithm 
 		t.mark()
 	}
 	return sig, err
-}
-
-// expandHome expands a leading ~/ to the connector's home directory.
-func expandHome(p string) (string, error) {
-	if !strings.HasPrefix(p, "~/") {
-		return p, nil
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("cannot find the home directory for %s: %v", p, err)
-	}
-	return filepath.Join(home, filepath.FromSlash(p[2:])), nil
 }
 
 // unwrapPathError drops the path from an *os.PathError: the caller names the path as the person

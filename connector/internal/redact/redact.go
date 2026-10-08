@@ -21,31 +21,49 @@ const minSecretLen = 4
 var tokenQuery = regexp.MustCompile(`(?i)([?&;][a-z0-9_.-]*token=)[^&#;\s"'<>]*`)
 
 // Redactor holds the registered secrets. The zero value is ready to use.
+//
+// Registrations are counted: a secret registered n times stays redacted until it has been
+// forgotten n times. Two sessions attached to the same Jupyter server share its token, so the
+// first session to end must not unredact the token the other still holds.
 type Redactor struct {
 	mu      sync.RWMutex
+	refs    map[string]int
 	secrets []string // longest first, so a secret containing another is removed whole
 }
 
-// Register adds a secret; later calls to Redact remove every occurrence of it.
+// Register adds a reference to a secret; later calls to Redact remove every occurrence of it.
 func (r *Redactor) Register(secret string) {
 	if len(secret) < minSecretLen {
 		return
 	}
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	for _, s := range r.secrets {
-		if s == secret {
-			return
-		}
+	if r.refs == nil {
+		r.refs = map[string]int{}
+	}
+	r.refs[secret]++
+	if r.refs[secret] > 1 {
+		return
 	}
 	r.secrets = append(r.secrets, secret)
 	sort.SliceStable(r.secrets, func(i, j int) bool { return len(r.secrets[i]) > len(r.secrets[j]) })
 }
 
-// Forget removes a secret that is no longer held (for example, a stopped session's token).
+// Forget drops one reference to a secret that is no longer held (for example, a stopped
+// session's token); the secret stops being redacted when its last reference is dropped.
+// Forgetting a secret that is not registered does nothing.
 func (r *Redactor) Forget(secret string) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
+	n, ok := r.refs[secret]
+	if !ok {
+		return
+	}
+	if n > 1 {
+		r.refs[secret] = n - 1
+		return
+	}
+	delete(r.refs, secret)
 	for i, s := range r.secrets {
 		if s == secret {
 			r.secrets = append(r.secrets[:i], r.secrets[i+1:]...)
@@ -69,7 +87,7 @@ var std Redactor
 // Register adds a secret to the process-wide redactor.
 func Register(secret string) { std.Register(secret) }
 
-// Forget removes a secret from the process-wide redactor.
+// Forget drops one reference to a secret in the process-wide redactor.
 func Forget(secret string) { std.Forget(secret) }
 
 // Redact applies the process-wide redactor.

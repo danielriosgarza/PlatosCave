@@ -143,18 +143,17 @@ export function SketchPanel({ api, label }: { api: Sketches; label: string }) {
       <SaveLine
         status={saving ? 'saving' : s.status === 'failed' && !gone ? 'failed' : 'idle'}
         reason={s.message}
-        onRetry={() => void api.done()}
+        onRetry={gone ? undefined : () => void api.done()}
         note={
           s.status === 'offline'
             ? 'Offline · not saved. Press Done when you are back online.'
-            : gone
+            : gone || s.status === 'invalid'
               ? s.message
-              : s.status === 'invalid'
-                ? s.message
-                : describing
-                  ? null
-                  : `${strokes} ${strokes === 1 ? 'stroke' : 'strokes'}`
+              : s.status === 'failed' || describing
+                ? null
+                : `${strokes} ${strokes === 1 ? 'stroke' : 'strokes'}`
         }
+        noteFailed={gone}
       />
       <div className={styles.row}>
         <button

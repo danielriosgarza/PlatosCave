@@ -1,8 +1,8 @@
-import { RUNNER_BOUNDS } from '@parallax/contracts';
+import { RUNNER_STOP_DRAIN_SECONDS } from '@parallax/contracts';
 import Docker from 'dockerode';
 import { PgBoss } from 'pg-boss';
 import { loadConfig } from './config';
-import { DockerExecutor, imageDaemon, KILL_GRACE_SECONDS } from './executor';
+import { DockerExecutor, imageDaemon } from './executor';
 import { ImageAllowlist } from './images';
 import { createLogger } from './log';
 import { EXEC_SCHEMA, startSlots } from './worker';
@@ -58,8 +58,7 @@ async function main(): Promise<void> {
     if (stopping) return;
     stopping = true;
     log.info('stopping: no new jobs; waiting for running containers');
-    const timeout = (RUNNER_BOUNDS.wallSeconds.max + KILL_GRACE_SECONDS + 10) * 1000;
-    await boss.stop({ graceful: true, timeout });
+    await boss.stop({ graceful: true, timeout: RUNNER_STOP_DRAIN_SECONDS * 1000 });
     process.exit(0);
   };
   process.on('SIGTERM', stop);

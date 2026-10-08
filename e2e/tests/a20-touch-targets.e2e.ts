@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test';
-import { openExercise, releaseExercise, releaseTest, signedIn, small } from '../touch';
+import { openExercise, releaseExercise, releaseTest, small } from '../touch';
+import { signedIn } from './released';
 
 test.use({ colorScheme: 'light', hasTouch: true, isMobile: true });
 
@@ -74,8 +75,7 @@ test('A20 the exercise range control is at least 44 px tall with a touch screen'
   baseURL,
 }) => {
   const title = `Touch range ${Date.now()}-${test.info().workerIndex}`;
-  const { ids, priya } = await releaseExercise(playwright, baseURL ?? '', title);
-  await priya.dispose();
+  const { ids } = await releaseExercise(playwright, baseURL ?? '', title);
   expect(
     (await page.request.post('/api/test/signin-as', { data: { email: 'sam@example.test' } })).ok(),
   ).toBe(true);
@@ -132,6 +132,15 @@ test('A20 the class chooser links and the join notice link are at least 44 px wi
   await page.getByRole('button', { name: 'Choose class' }).click();
   await expect(page.getByRole('list', { name: /^Classes of / })).toBeVisible();
   expect(await small(page, 'main button, main a, main select, main input')).toEqual([]);
+});
+
+test('A20 the topic index title and Start or Resume links are at least 44 px with a touch screen', async ({
+  page,
+}) => {
+  await page.goto(`/classes/${lab.class}/topics`);
+  await expect(page.getByRole('table')).toBeVisible();
+  await expect(page.locator('main table a').first()).toBeVisible();
+  expect(await small(page, 'main table a')).toEqual([]);
 });
 
 test('A12 and A14 the test question navigation is at least 44 px with a touch screen', async ({

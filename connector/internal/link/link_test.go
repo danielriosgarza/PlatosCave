@@ -591,6 +591,15 @@ func TestStreamLimit(t *testing.T) {
 	}
 }
 
+// TestA27_LapsedApprovalIsNotRevoked (A27): a paired computer nobody approved within the
+// window is told its pairing lapsed and to pair again, not that it was revoked.
+func TestA27_LapsedApprovalIsNotRevoked(t *testing.T) {
+	a := decide(CloseForbidden, ReasonApprovalExpired, "")
+	if !a.stop || a.state == Revoked || strings.Contains(strings.ToLower(a.msg), "revoked") || !strings.Contains(a.msg, "pair --force") {
+		t.Errorf("approval_expired: %+v", a)
+	}
+}
+
 func TestCloseCodeReactions(t *testing.T) {
 	cases := []struct {
 		code   int
@@ -605,6 +614,7 @@ func TestCloseCodeReactions(t *testing.T) {
 		{CloseUnauthorized, ReasonBadSignature, true, Rejected, 0},
 		{CloseUnauthorized, ReasonClockSkew, false, Down, 30},
 		{CloseForbidden, ReasonPending, false, Pending, 10},
+		{CloseForbidden, ReasonApprovalExpired, true, Rejected, 0},
 		{CloseForbidden, ReasonRevoked, true, Revoked, 0},
 		{CloseForbidden, ReasonModeMismatch, true, Rejected, 0},
 		{CloseHeartbeatTimeout, "heartbeat_timeout", false, Down, 0},

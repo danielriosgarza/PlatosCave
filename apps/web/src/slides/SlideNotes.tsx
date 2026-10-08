@@ -3,7 +3,6 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from '
 import { type Audience, DiscussionComposer } from '../components/DiscussionComposer';
 import { type MarginTab, MarginTabs } from '../components/MarginTabs';
 import { RetryNotice } from '../components/RetryNotice';
-import { SaveLine } from '../components/SaveLine';
 import {
   type Annotation,
   type Thread,
@@ -350,7 +349,11 @@ export function SlideNotes({ classId, resourceId, page }: Props) {
     <div className={margin.margin}>
       <MarginTabs tab={tab} onTab={setTab} count={threadsHere.length} idPrefix="slide-margin">
         {list.isError && !list.data ? (
-          <RetryNotice message="Notes could not be loaded." onRetry={() => void list.refetch()} />
+          <RetryNotice
+            compact
+            message="Notes could not be loaded."
+            onRetry={() => void list.refetch()}
+          />
         ) : tab === 'notes' ? (
           <div className={margin.entries}>
             {deleteProblem && notesHere.some((n) => n.key === deleteProblem) ? (
