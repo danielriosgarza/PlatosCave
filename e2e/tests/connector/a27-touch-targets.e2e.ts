@@ -1,7 +1,15 @@
 import { expect, test } from '@playwright/test';
 import { small } from '../../touch';
 import { Connector } from './connector';
-import { connect, endSessions, openConnect, pairAndApprove } from './ui';
+import {
+  connect,
+  endSessions,
+  liveLocalNotebook,
+  newConnection,
+  openConnect,
+  pairAndApprove,
+  typeInCell,
+} from './ui';
 
 test.use({ hasTouch: true, isMobile: true });
 
@@ -21,13 +29,43 @@ test('A27 and A20 the connect panel fields of an SSH host are at least 44 px wit
     await pairAndApprove(page, connector, name);
     await connect(page, connector, name);
     await page.getByRole('radio', { name: 'SSH host' }).check();
-    const saved = page.getByLabel('Saved connection');
-    if (await saved.count()) await saved.selectOption('new');
+    await newConnection(page);
     await expect(page.getByLabel('Host', { exact: true })).toBeVisible();
     await expect(page.getByLabel('Key file path')).toBeVisible();
     expect(
       await small(page, 'main input:not([type="radio"], [type="checkbox"]), main select'),
     ).toEqual([]);
+  } finally {
+    await endSessions(page).catch(() => undefined);
+    await connector.dispose();
+  }
+});
+
+test('A27 and A20 the stdin prompt and the Files input of a live notebook are at least 44 px with a touch screen', async ({
+  page,
+}) => {
+  test.setTimeout(240_000);
+  const connector = new Connector();
+  try {
+    await liveLocalNotebook(page, connector, 'A27 touch live laptop');
+    const notebook = page.getByRole('article', { name: 'Live notebook' });
+    await typeInCell(page, /^Code of cell 2/, "input('Your name? ')");
+    await notebook.getByRole('button', { name: /^Run cell 2/ }).click();
+    const prompt = notebook.getByRole('textbox', { name: 'Your name?' });
+    await expect(prompt).toBeVisible({ timeout: 60_000 });
+    const send = notebook.getByRole('button', { name: 'Send' });
+    for (const control of [prompt, send]) {
+      const box = await control.boundingBox();
+      expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
+    }
+    await prompt.fill('Ada');
+    await send.click();
+
+    const files = page.getByRole('region', { name: 'Files, save and submit' });
+    const name = files.getByLabel('File name in the workspace');
+    await name.scrollIntoViewIfNeeded();
+    await expect(name).toBeVisible();
+    expect((await name.boundingBox())?.height ?? 0).toBeGreaterThanOrEqual(44);
   } finally {
     await endSessions(page).catch(() => undefined);
     await connector.dispose();

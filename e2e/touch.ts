@@ -1,4 +1,10 @@
-import { type APIRequestContext, expect, type Page } from '@playwright/test';
+import {
+  type APIRequestContext,
+  expect,
+  type Page,
+  type PlaywrightWorkerArgs,
+} from '@playwright/test';
+import { releaseToClassA, testDefinition, worldIds } from './tests/released';
 
 type Playwright = { request: { newContext(o: object): Promise<APIRequestContext> } };
 
@@ -104,51 +110,15 @@ export const small = (page: Page, selector: string) =>
       .map(({ name, box }) => `${name}: ${Math.round(box.width)}x${Math.round(box.height)}`),
   );
 
-/** Releases a fresh two-question test in Sampling to class A; returns the ids and the title. */
-export async function releaseTest(playwright: Playwright, baseURL: string, title: string) {
-  const setup = await playwright.request.newContext({ baseURL });
-  const { ids } = await (await setup.post('/api/test/world')).json();
-  await setup.dispose();
-  const elena = await signedIn(playwright, baseURL, 'elena@example.test');
-  const definition = {
-    schema: 'test.v1',
-    settings: { attempts: 3, timeZone: 'Europe/Madrid' },
-    questions: [
-      {
-        id: 'spread',
-        kind: 'choice',
-        prompt: 'Which sample mean varies least?',
-        points: 2,
-        options: [
-          { id: 'n10', label: 'n = 10' },
-          { id: 'n100', label: 'n = 100' },
-        ],
-        correct: ['n100'],
-      },
-      {
-        id: 'why',
-        kind: 'explanation',
-        prompt: 'Why does the larger sample vary less?',
-        points: 3,
-        rubric: [{ id: 'averaging', label: 'Names averaging out of noise', points: 3 }],
-      },
-    ],
-  };
-  const created = await elena.post(
-    `/api/courses/${ids.statistics}/topics/${ids.sampling}/resources`,
-    { data: { type: 'test', title, content: definition } },
-  );
-  expect(created.ok()).toBe(true);
-  const published = await elena.post(`/api/courses/${ids.statistics}/releases`);
-  expect(published.ok()).toBe(true);
-  const { release } = await published.json();
-  await elena.dispose();
-  const priya = await signedIn(playwright, baseURL, 'priya@example.test');
-  const current = await (await priya.get(`/api/classes/${ids.classA}/release`)).json();
-  const adopted = await priya.post(`/api/classes/${ids.classA}/adopt`, {
-    data: { releaseId: release.id, expectedReleaseId: current.release.id },
-  });
-  expect(adopted.ok()).toBe(true);
-  await priya.dispose();
+/** Releases a fresh test in Sampling to class A (see released.ts for the cross-worker handling). */
+export async function releaseTest(
+  playwright: PlaywrightWorkerArgs['playwright'],
+  baseURL: string,
+  title: string,
+) {
+  const ids = await worldIds(playwright, baseURL);
+  await releaseToClassA(playwright, baseURL, ids, [
+    { type: 'test', title, content: testDefinition },
+  ]);
   return { ids };
 }
