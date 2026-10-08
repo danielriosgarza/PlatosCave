@@ -283,7 +283,7 @@ const Env = z
       });
     }
     // The development secret is public: anything reachable beyond this machine needs its own,
-    // whatever NODE_ENV says (tests excepted: e2e listens on 0.0.0.0 inside the runner).
+    // whatever NODE_ENV says (tests excepted: unit tests build configs for any HOST).
     if (env.NODE_ENV !== 'test' && !LOOPBACK.has(env.HOST) && !env.CONTENT_TOKEN_SECRET) {
       ctx.addIssue({
         code: 'custom',
