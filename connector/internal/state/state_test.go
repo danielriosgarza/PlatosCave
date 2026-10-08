@@ -1,6 +1,8 @@
 package state
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"io/fs"
 	"os"
@@ -8,6 +10,10 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/santhosh-tekuri/jsonschema/v6"
+
+	"parallax/connector/protocol"
 )
 
 func env(m map[string]string) func(string) string {
@@ -246,5 +252,64 @@ func TestReadFileRefusesSymlink(t *testing.T) {
 	}
 	if _, err := s.ReadFile(ConfigFile); err == nil {
 		t.Fatal("followed a symbolic link")
+	}
+}
+
+// TestStateFilesMatchSchema validates the bytes the store writes for config.json and runtime.json
+// against state.schema.json, so the hand-written Go rules cannot drift from the shared schema.
+func TestStateFilesMatchSchema(t *testing.T) {
+	data, err := protocol.V1.ReadFile("v1/state.schema.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := jsonschema.UnmarshalJSON(bytes.NewReader(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := jsonschema.NewCompiler()
+	if err := c.AddResource("https://parallax.invalid/connector/v1/state.schema.json", doc); err != nil {
+		t.Fatal(err)
+	}
+	validate := func(t *testing.T, def string, written []byte) {
+		t.Helper()
+		sch, err := c.Compile("https://parallax.invalid/connector/v1/state.schema.json#/$defs/" + def)
+		if err != nil {
+			t.Fatal(err)
+		}
+		inst, err := jsonschema.UnmarshalJSON(bytes.NewReader(written))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := sch.Validate(inst); err != nil {
+			t.Fatalf("%s as written does not match the schema: %v\n%s", def, err, written)
+		}
+	}
+
+	s := Open(t.TempDir())
+	if err := s.WriteConfig(validConfig()); err != nil {
+		t.Fatal(err)
+	}
+	written, err := s.ReadFile(ConfigFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	validate(t, "Config", written)
+
+	for _, rt := range []Runtime{
+		{V: 1, PID: 4242, StartedAt: "2026-10-03T09:30:00Z", Link: "up", Since: "2026-10-03T09:31:00Z", Sessions: 2},
+		{V: 1, PID: 4242, StartedAt: "2026-10-03T09:30:00Z", Link: "down", Since: "2026-10-03T09:31:00Z", LastError: "link closed", Sessions: 0},
+	} {
+		body, err := json.Marshal(rt)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := s.WritePrivate(RuntimeFile, body); err != nil {
+			t.Fatal(err)
+		}
+		written, err := s.ReadFile(RuntimeFile)
+		if err != nil {
+			t.Fatal(err)
+		}
+		validate(t, "Runtime", written)
 	}
 }

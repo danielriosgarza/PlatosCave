@@ -1,6 +1,7 @@
 import { QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import axe from 'axe-core';
 import { type ReactNode, useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createQueryClient } from '../../session/revocation';
@@ -855,5 +856,212 @@ describe('snapshot environment line', () => {
     );
     expect(snapshotEnvironment({ language: 'python' })).toContain('python');
     expect(snapshotEnvironment({})).toBe('Not reported');
+  });
+});
+
+// Contrast needs real layout, which jsdom lacks; the rule runs in the e2e pass.
+async function expectNoViolations(container: HTMLElement) {
+  const results = await axe.run(container, {
+    rules: { 'color-contrast': { enabled: false } },
+  });
+  expect(results.violations.map((v) => `${v.id}: ${v.nodes[0]?.html}`)).toEqual([]);
+}
+
+describe('accessibility', () => {
+  it('A34 axe finds no violations in the save controls with the conflict dialog open', async () => {
+    stubApi((_, init) =>
+      init?.method === 'POST'
+        ? {
+            status: 200,
+            body: {
+              transfers: [
+                transfer({
+                  kind: 'save',
+                  direction: 'in',
+                  path: 'notebook.ipynb',
+                  state: 'conflict',
+                  outcome: null,
+                  remote: { sha256: 'c'.repeat(64), size: 999 },
+                }),
+              ],
+            },
+          }
+        : { status: 404 },
+    );
+    const { container } = render(
+      wrap(<SaveHost getNotebook={() => notebook} onWorkingCopy={vi.fn()} />),
+    );
+    await expectNoViolations(container);
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Save to computer' }));
+    await screen.findByRole('dialog', {
+      name: /notebook\.ipynb already exists/i,
+    });
+    await expectNoViolations(document.body);
+  });
+
+  it('A34 axe finds no violations in the files panel with its copied list', async () => {
+    stubApi((url, init) => {
+      if (init?.method === 'POST') {
+        return {
+          status: 200,
+          body: {
+            transfers: [
+              transfer({
+                direction: 'in',
+                kind: 'copy_in',
+                path: 'data/sample.csv',
+                size: 2048,
+              }),
+            ],
+          },
+        };
+      }
+      return url.includes('/files')
+        ? {
+            status: 200,
+            body: {
+              workspace: WORKSPACE,
+              host: 'hpc.example.edu',
+              dir: '',
+              entries: [
+                {
+                  path: 'out.csv',
+                  name: 'out.csv',
+                  type: 'file',
+                  size: 4096,
+                  modified: NOW,
+                },
+                {
+                  path: 'results',
+                  name: 'results',
+                  type: 'directory',
+                  size: null,
+                  modified: null,
+                },
+              ],
+              declared: [{ path: 'data/sample.csv', size: 2048, sha256: 'd'.repeat(64) }],
+            },
+          }
+        : { status: 404 };
+    });
+    const { container } = render(
+      wrap(
+        <FilesPanel
+          classId={CLASS_A}
+          sessionId={SESSION}
+          workingCopy={copy() as never}
+          onWorkingCopy={vi.fn()}
+          onStale={vi.fn()}
+        />,
+      ),
+    );
+    const copyIn = await screen.findByRole('button', {
+      name: `Copy 1 file to ${WORKSPACE}`,
+    });
+    await expectNoViolations(container);
+    await userEvent.setup().click(copyIn);
+    await screen.findByLabelText('Copy results');
+    await expectNoViolations(container);
+  });
+
+  it('A34 axe finds no violations in the submit panel, before and after the receipt', async () => {
+    stubApi((url, init) =>
+      init?.method === 'POST'
+        ? {
+            status: 200,
+            body: {
+              id: SUB,
+              resourceId: RES,
+              resourceRevisionId: REV,
+              version: 1,
+              filename: 'notebook.ipynb',
+              size: 120,
+              sha256: 'e'.repeat(64),
+              environment: {},
+              receivedAt: NOW,
+              workingCopyRevision: 2,
+              files: [
+                {
+                  id: FILE,
+                  path: 'results.csv',
+                  size: 2048,
+                  sha256: 'b'.repeat(64),
+                },
+              ],
+            },
+          }
+        : url.includes('/transfers')
+          ? { status: 200, body: { transfers: [transfer()] } }
+          : { status: 404 },
+    );
+    const { container } = render(
+      wrap(
+        <SubmitPanel
+          classId={CLASS_A}
+          sessionId={SESSION}
+          workingCopy={copy() as never}
+          environment={{
+            os: 'linux',
+            arch: 'amd64',
+            interpreter: 'Python 3.12.4',
+          }}
+        />,
+      ),
+    );
+    await userEvent.setup().click(await screen.findByRole('checkbox'));
+    await expectNoViolations(container);
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Submit notebook' }));
+    await screen.findByRole('status');
+    await expectNoViolations(container);
+  });
+
+  it('A35 axe finds no violations in the instructor snapshot', async () => {
+    stubApi((url) =>
+      url.endsWith('/notebook-submissions/mine')
+        ? { status: 200, body: { submissions: [] } }
+        : url.endsWith('/notebook-submissions')
+          ? {
+              status: 200,
+              body: {
+                submissions: [
+                  {
+                    id: SUB,
+                    resourceId: RES,
+                    resourceRevisionId: REV,
+                    version: 1,
+                    filename: 'notebook.ipynb',
+                    size: 4096,
+                    sha256: 'e'.repeat(64),
+                    environment: {
+                      os: 'linux',
+                      arch: 'amd64',
+                      interpreter: 'Python 3.12.4',
+                    },
+                    receivedAt: NOW,
+                    workingCopyRevision: 4,
+                    files: [
+                      {
+                        id: FILE,
+                        path: 'results.csv',
+                        size: 9,
+                        sha256: 'b'.repeat(64),
+                      },
+                    ],
+                    student: {
+                      id: '00000000-0000-4000-8000-000000000004',
+                      name: 'Sam Okafor',
+                    },
+                    removed: false,
+                  },
+                ],
+              },
+            }
+          : { status: 404 },
+    );
+    const { container } = render(
+      wrap(<ColabSubmission classId={CLASS_A} resourceId={RES} instructor />),
+    );
+    await screen.findByRole('region', { name: 'Snapshot of Sam Okafor' });
+    await expectNoViolations(container);
   });
 });
