@@ -1,10 +1,7 @@
 package session
 
 import (
-	"bytes"
 	"testing"
-
-	"github.com/santhosh-tekuri/jsonschema/v6"
 
 	"parallax/connector/internal/state"
 	schemas "parallax/connector/protocol"
@@ -32,28 +29,5 @@ func TestSessionsFileMatchesSchema(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	raw, err := schemas.V1.ReadFile("v1/state.schema.json")
-	if err != nil {
-		t.Fatal(err)
-	}
-	doc, err := jsonschema.UnmarshalJSON(bytes.NewReader(raw))
-	if err != nil {
-		t.Fatal(err)
-	}
-	c := jsonschema.NewCompiler()
-	const loc = "https://parallax.invalid/connector/v1/state.schema.json"
-	if err := c.AddResource(loc, doc); err != nil {
-		t.Fatal(err)
-	}
-	sch, err := c.Compile(loc + "#/$defs/Sessions")
-	if err != nil {
-		t.Fatal(err)
-	}
-	inst, err := jsonschema.UnmarshalJSON(bytes.NewReader(written))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := sch.Validate(inst); err != nil {
-		t.Fatalf("sessions.json as written does not match the schema: %v\n%s", err, written)
-	}
+	validSessionsFile(t, compileSessionsSchema(t), written)
 }

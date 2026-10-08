@@ -255,9 +255,11 @@ func TestReadFileRefusesSymlink(t *testing.T) {
 	}
 }
 
-// TestStateFilesMatchSchema validates the bytes the store writes for config.json and runtime.json
-// against state.schema.json, so the hand-written Go rules cannot drift from the shared schema.
-func TestStateFilesMatchSchema(t *testing.T) {
+// TestStateValidatorsAgreeWithSchema runs the same valid and invalid config.json and runtime.json
+// documents through the Go rules and state.schema.json and requires one verdict from both, so a
+// rule tightened or loosened on one side only fails here. The bytes `run` writes for runtime.json
+// are checked against the schema in TestRunWritesRuntimeJSON.
+func TestStateValidatorsAgreeWithSchema(t *testing.T) {
 	data, err := protocol.V1.ReadFile("v1/state.schema.json")
 	if err != nil {
 		t.Fatal(err)
@@ -267,49 +269,74 @@ func TestStateFilesMatchSchema(t *testing.T) {
 		t.Fatal(err)
 	}
 	c := jsonschema.NewCompiler()
-	if err := c.AddResource("https://parallax.invalid/connector/v1/state.schema.json", doc); err != nil {
+	const base = "https://parallax.invalid/connector/v1/state.schema.json"
+	if err := c.AddResource(base, doc); err != nil {
 		t.Fatal(err)
 	}
-	validate := func(t *testing.T, def string, written []byte) {
-		t.Helper()
-		sch, err := c.Compile("https://parallax.invalid/connector/v1/state.schema.json#/$defs/" + def)
+	schemaAccepts := func(def string, v any) bool {
+		sch, err := c.Compile(base + "#/$defs/" + def)
 		if err != nil {
 			t.Fatal(err)
 		}
-		inst, err := jsonschema.UnmarshalJSON(bytes.NewReader(written))
+		body, err := json.Marshal(v)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := sch.Validate(inst); err != nil {
-			t.Fatalf("%s as written does not match the schema: %v\n%s", def, err, written)
+		inst, err := jsonschema.UnmarshalJSON(bytes.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
 		}
+		return sch.Validate(inst) == nil
 	}
 
-	s := Open(t.TempDir())
-	if err := s.WriteConfig(validConfig()); err != nil {
-		t.Fatal(err)
+	configs := map[string]func(*Config){
+		"valid":          func(*Config) {},
+		"name 60":        func(c *Config) { c.Name = strings.Repeat("x", 60) },
+		"version":        func(c *Config) { c.V = 2 },
+		"server path":    func(c *Config) { c.Server = "https://parallax.example.org/app" },
+		"server upper":   func(c *Config) { c.Server = "https://Parallax.example.org" },
+		"server scheme":  func(c *Config) { c.Server = "ftp://parallax.example.org" },
+		"connector id":   func(c *Config) { c.ConnectorID = "not-a-uuid" },
+		"empty name":     func(c *Config) { c.Name = "" },
+		"long name":      func(c *Config) { c.Name = strings.Repeat("x", 61) },
+		"pairedAt":       func(c *Config) { c.PairedAt = "2026-10-03 09:30:00" },
+		"mode":           func(c *Config) { c.Mode = "shared" },
+		"missing server": func(c *Config) { c.Server = "" },
 	}
-	written, err := s.ReadFile(ConfigFile)
-	if err != nil {
-		t.Fatal(err)
+	for name, mutate := range configs {
+		t.Run("config "+name, func(t *testing.T) {
+			cfg := validConfig()
+			mutate(&cfg)
+			goOK := cfg.Validate() == nil
+			if schemaOK := schemaAccepts("Config", cfg); goOK != schemaOK {
+				t.Fatalf("Go accepts=%v, schema accepts=%v for %+v", goOK, schemaOK, cfg)
+			}
+		})
 	}
-	validate(t, "Config", written)
 
-	for _, rt := range []Runtime{
-		{V: 1, PID: 4242, StartedAt: "2026-10-03T09:30:00Z", Link: "up", Since: "2026-10-03T09:31:00Z", Sessions: 2},
-		{V: 1, PID: 4242, StartedAt: "2026-10-03T09:30:00Z", Link: "down", Since: "2026-10-03T09:31:00Z", LastError: "link closed", Sessions: 0},
-	} {
-		body, err := json.Marshal(rt)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := s.WritePrivate(RuntimeFile, body); err != nil {
-			t.Fatal(err)
-		}
-		written, err := s.ReadFile(RuntimeFile)
-		if err != nil {
-			t.Fatal(err)
-		}
-		validate(t, "Runtime", written)
+	validRuntime := func() Runtime {
+		return Runtime{V: 1, PID: 4242, StartedAt: "2026-10-03T09:30:00Z", Link: "up", Since: "2026-10-03T09:31:00Z", Sessions: 2}
+	}
+	runtimes := map[string]func(*Runtime){
+		"valid":          func(*Runtime) {},
+		"fractional":     func(r *Runtime) { r.Since = "2026-10-03T09:31:00.250Z" },
+		"last error":     func(r *Runtime) { r.Link = "down"; r.LastError = "link closed" },
+		"version":        func(r *Runtime) { r.V = 2 },
+		"pid zero":       func(r *Runtime) { r.PID = 0 },
+		"link state":     func(r *Runtime) { r.Link = "sleeping" },
+		"started offset": func(r *Runtime) { r.StartedAt = "2026-10-03T09:30:00+02:00" },
+		"long error":     func(r *Runtime) { r.LastError = strings.Repeat("x", 201) },
+		"sessions 65":    func(r *Runtime) { r.Sessions = 65 },
+		"sessions -1":    func(r *Runtime) { r.Sessions = -1 },
+	}
+	for name, mutate := range runtimes {
+		t.Run("runtime "+name, func(t *testing.T) {
+			rt := validRuntime()
+			mutate(&rt)
+			goOK := rt.Validate() == nil
+			if schemaOK := schemaAccepts("Runtime", rt); goOK != schemaOK {
+				t.Fatalf("Go accepts=%v, schema accepts=%v for %+v", goOK, schemaOK, rt)
+			}
+		})
 	}
 }

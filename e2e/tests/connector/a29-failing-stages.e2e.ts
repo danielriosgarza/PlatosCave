@@ -1,9 +1,6 @@
-import { readFileSync } from 'node:fs';
-import { join, resolve } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { Connector, fixtures } from './connector';
 import {
-  labClass as classId,
   connect,
   endSessions,
   openConnect,
@@ -13,8 +10,6 @@ import {
   testSsh,
   trustUntilDone,
 } from './ui';
-
-const root = resolve(import.meta.dirname, '../../..');
 
 test.beforeAll(async ({ playwright, baseURL }) => {
   const setup = await playwright.request.newContext({ baseURL });
@@ -103,21 +98,14 @@ test('A29 a token the server rejects names its stage and never reaches Ready', a
     await expect(stage(page, 'runtime')).toHaveAttribute('data-status', 'ok');
     // ...and Connect, which starts the server, stops at its token.
     await page.getByRole('button', { name: 'Connect', exact: true }).click();
-    await expect(
-      page.getByRole('alert').filter({ hasText: "Jupyter rejected the connector's token." }),
-    ).toBeVisible({
-      timeout: 120_000,
-    });
-    // The session records the failure as the catalogue code whose stage is notebook_auth.
-    const sessions = (await (
-      await page.request.get(`/api/classes/${classId}/notebook-sessions`)
-    ).json()) as { state: string; cause: string | null }[];
-    const failed = sessions.filter((s) => s.state === 'failed');
-    expect(failed.map((s) => s.cause)).toContain('token_rejected');
-    const catalogue = JSON.parse(
-      readFileSync(join(root, 'connector/protocol/v1/errors.json'), 'utf8'),
-    ) as { codes: Record<string, { stage: string }> };
-    expect(catalogue.codes.token_rejected?.stage).toBe('notebook_auth');
+    // A session that fails after Connect names the stage of its error code and offers its recoveries.
+    const alert = page.getByRole('alert').filter({ hasText: 'This session could not start.' });
+    await expect(alert).toBeVisible({ timeout: 120_000 });
+    await expect(alert).toContainText(
+      "Reach the notebook service failed. Jupyter rejected the connector's token.",
+    );
+    await expect(alert).toContainText('Choose another Python interpreter or kernel.');
+    await expect(alert).toContainText("Ask the host's owner.");
     await notReady(page);
   } finally {
     await endSessions(page).catch(() => undefined);

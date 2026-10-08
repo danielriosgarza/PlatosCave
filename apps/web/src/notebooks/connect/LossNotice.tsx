@@ -1,7 +1,15 @@
 import buttons from '../../components/Buttons.module.css';
 import type { NotebookSession } from './api';
 import styles from './Connect.module.css';
-import { CAUSE_RECOVERIES, causeText, codeText, recoveryText } from './messages';
+import {
+  CAUSE_RECOVERIES,
+  CODE_RECOVERIES,
+  CODE_STAGE,
+  causeText,
+  codeText,
+  recoveryText,
+  STAGE_LABEL,
+} from './messages';
 
 interface Props {
   session: NotebookSession;
@@ -31,7 +39,10 @@ export function LossNotice({
   const failed = session.state === 'failed';
   const cause = failed ? codeText(session.cause ?? undefined) : causeText(session.cause);
   const open = FORGETTABLE.has(session.state);
-  const recoveries = failed ? [] : recoveryText(CAUSE_RECOVERIES[session.cause ?? ''] ?? []);
+  const stage = failed ? CODE_STAGE[session.cause ?? ''] : undefined;
+  const recoveries = recoveryText(
+    (failed ? CODE_RECOVERIES : CAUSE_RECOVERIES)[session.cause ?? ''] ?? [],
+  );
   const canReconnect =
     open &&
     session.state !== 'stopping' &&
@@ -50,7 +61,11 @@ export function LossNotice({
                   ? 'Stopping this session. The connector has not confirmed that it stopped.'
                   : 'This session is disconnected.'}
         </strong>{' '}
-        {session.state === 'stopping' ? null : cause}
+        {session.state === 'stopping'
+          ? null
+          : stage
+            ? `${STAGE_LABEL[stage]} failed. ${cause}`
+            : cause}
       </p>
       {open ? (
         <p>

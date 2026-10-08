@@ -1,10 +1,10 @@
 import { QueryClientProvider } from '@tanstack/react-query';
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import axe from 'axe-core';
 import { type ReactNode, useState } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createQueryClient } from '../../session/revocation';
+import { expectNoAxeViolations } from '../../test/axe';
 import { CLASS_A, stubApi } from '../../test/render';
 import { ColabSubmission } from '../ColabSubmission';
 import { FilesPanel } from './FilesPanel';
@@ -829,7 +829,9 @@ describe('instructor snapshot', () => {
           ? { status: 200, body: { submissions: [row] } }
           : { status: 404 },
     );
-    render(wrap(<ColabSubmission classId={CLASS_A} resourceId={RES} instructor />));
+    const { container } = render(
+      wrap(<ColabSubmission classId={CLASS_A} resourceId={RES} instructor />),
+    );
     const snapshot = await screen.findByRole('region', { name: 'Snapshot of Sam Okafor' });
     expect(snapshot).toHaveTextContent('Notebook revision 4');
     expect(snapshot).toHaveTextContent(
@@ -846,6 +848,7 @@ describe('instructor snapshot', () => {
     for (const [url] of fetchMock.mock.calls) {
       expect(String(url)).not.toMatch(/notebook-sessions|connections|connectors/);
     }
+    await expectNoAxeViolations(container);
   });
 });
 
@@ -858,14 +861,6 @@ describe('snapshot environment line', () => {
     expect(snapshotEnvironment({})).toBe('Not reported');
   });
 });
-
-// Contrast needs real layout, which jsdom lacks; the rule runs in the e2e pass.
-async function expectNoViolations(container: HTMLElement) {
-  const results = await axe.run(container, {
-    rules: { 'color-contrast': { enabled: false } },
-  });
-  expect(results.violations.map((v) => `${v.id}: ${v.nodes[0]?.html}`)).toEqual([]);
-}
 
 describe('accessibility', () => {
   it('A34 axe finds no violations in the save controls with the conflict dialog open', async () => {
@@ -891,12 +886,12 @@ describe('accessibility', () => {
     const { container } = render(
       wrap(<SaveHost getNotebook={() => notebook} onWorkingCopy={vi.fn()} />),
     );
-    await expectNoViolations(container);
+    await expectNoAxeViolations(container);
     await userEvent.setup().click(screen.getByRole('button', { name: 'Save to computer' }));
     await screen.findByRole('dialog', {
       name: /notebook\.ipynb already exists/i,
     });
-    await expectNoViolations(document.body);
+    await expectNoAxeViolations(document.body);
   });
 
   it('A34 axe finds no violations in the files panel with its copied list', async () => {
@@ -958,10 +953,10 @@ describe('accessibility', () => {
     const copyIn = await screen.findByRole('button', {
       name: `Copy 1 file to ${WORKSPACE}`,
     });
-    await expectNoViolations(container);
+    await expectNoAxeViolations(container);
     await userEvent.setup().click(copyIn);
     await screen.findByLabelText('Copy results');
-    await expectNoViolations(container);
+    await expectNoAxeViolations(container);
   });
 
   it('A34 axe finds no violations in the submit panel, before and after the receipt', async () => {
@@ -1009,59 +1004,9 @@ describe('accessibility', () => {
       ),
     );
     await userEvent.setup().click(await screen.findByRole('checkbox'));
-    await expectNoViolations(container);
+    await expectNoAxeViolations(container);
     await userEvent.setup().click(screen.getByRole('button', { name: 'Submit notebook' }));
     await screen.findByRole('status');
-    await expectNoViolations(container);
-  });
-
-  it('A35 axe finds no violations in the instructor snapshot', async () => {
-    stubApi((url) =>
-      url.endsWith('/notebook-submissions/mine')
-        ? { status: 200, body: { submissions: [] } }
-        : url.endsWith('/notebook-submissions')
-          ? {
-              status: 200,
-              body: {
-                submissions: [
-                  {
-                    id: SUB,
-                    resourceId: RES,
-                    resourceRevisionId: REV,
-                    version: 1,
-                    filename: 'notebook.ipynb',
-                    size: 4096,
-                    sha256: 'e'.repeat(64),
-                    environment: {
-                      os: 'linux',
-                      arch: 'amd64',
-                      interpreter: 'Python 3.12.4',
-                    },
-                    receivedAt: NOW,
-                    workingCopyRevision: 4,
-                    files: [
-                      {
-                        id: FILE,
-                        path: 'results.csv',
-                        size: 9,
-                        sha256: 'b'.repeat(64),
-                      },
-                    ],
-                    student: {
-                      id: '00000000-0000-4000-8000-000000000004',
-                      name: 'Sam Okafor',
-                    },
-                    removed: false,
-                  },
-                ],
-              },
-            }
-          : { status: 404 },
-    );
-    const { container } = render(
-      wrap(<ColabSubmission classId={CLASS_A} resourceId={RES} instructor />),
-    );
-    await screen.findByRole('region', { name: 'Snapshot of Sam Okafor' });
-    await expectNoViolations(container);
+    await expectNoAxeViolations(container);
   });
 });
