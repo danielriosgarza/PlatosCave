@@ -37,7 +37,7 @@
   text-decoration: none;
 }
 .brand {
-  font-size: 19px;
+  font-size: var(--pc-size-subsection);
   font-weight: 650;
   white-space: nowrap;
   letter-spacing: -0.03em;
@@ -51,7 +51,7 @@
   display: flex;
   gap: 4px;
   align-items: center;
-  font-size: 12px;
+  font-size: var(--pc-size-label);
 }
 .topicNav a {
   color: var(--pc-muted);
@@ -86,7 +86,7 @@
   display: flex;
   align-items: center;
   gap: 12px;
-  font-size: 12px;
+  font-size: var(--pc-size-label);
 }
 .who {
   color: var(--pc-muted);

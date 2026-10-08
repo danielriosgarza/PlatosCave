@@ -216,7 +216,7 @@ export async function endSessions(page: Page): Promise<void> {
 }
 
 /** A saved connection of an earlier test must not be edited by this one. */
-async function newConnection(page: Page): Promise<void> {
+export async function newConnection(page: Page): Promise<void> {
   const saved = page.getByLabel('Saved connection');
   if (await saved.count()) await saved.selectOption('new');
 }

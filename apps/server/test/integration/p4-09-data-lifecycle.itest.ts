@@ -1,5 +1,6 @@
 import type { RouteContract } from '@parallax/contracts';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, inArray, is, sql } from 'drizzle-orm';
+import { getTableConfig, PgTable } from 'drizzle-orm/pg-core';
 import type { FastifyInstance } from 'fastify';
 import type { PgBoss } from 'pg-boss';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
@@ -8,7 +9,8 @@ import { resolveActorScope } from '../../src/auth/scope';
 import { loadConfig } from '../../src/config';
 import { createSession, SESSION_TTL_MS, signInWithProof } from '../../src/db/auth/sessions';
 import { createCourse, createUser } from '../../src/db/identity';
-import { applyRetention } from '../../src/db/lifecycle';
+import { accountDeletion, applyRetention } from '../../src/db/lifecycle';
+import * as schema from '../../src/db/schema';
 import {
   annotations,
   auditEvents,
@@ -16,11 +18,14 @@ import {
   classes,
   classInvites,
   classMemberships,
+  connectorPairings,
   connectors,
   courseMemberships,
   courses,
+  fileTransfers,
   notebookConnections,
   notebookSessions,
+  notebookSubmissionFiles,
   notebookSubmissions,
   notebookWorkingCopies,
   notebookWorkingCopyRevisions,
@@ -686,11 +691,10 @@ describe('account deactivation and deletion', () => {
     expect(copies.map((c) => [c.id, c.currentRevision])).toEqual([[frozenId, 2]]);
     const kept = await testDb.db.select().from(notebookWorkingCopyRevisions);
     expect(kept.map((r) => [r.workingCopyId, r.revision])).toEqual([[frozenId, 2]]);
-    const [session] = await testDb.db
-      .select()
-      .from(notebookSessions)
-      .where(eq(notebookSessions.userId, ids.sam));
-    expect(session?.workingCopyId).toBeNull();
+    // The session no submission refers to goes too (P3-AUD10), taking its copy link with it.
+    expect(
+      await testDb.db.select().from(notebookSessions).where(eq(notebookSessions.userId, ids.sam)),
+    ).toEqual([]);
     expect(
       (await testDb.db.select().from(posts).where(eq(posts.authorId, ids.sam))).length,
     ).toBeGreaterThan(0);
@@ -718,6 +722,278 @@ describe('account deactivation and deletion', () => {
     // Class discussion now shows the pseudonym, never the old name.
     const thread = await call('noor', 'GET', `${readingUrl(ids.classA)}/threads`);
     expect(JSON.stringify(thread.body)).not.toContain('Sam');
+  });
+});
+
+describe('deleting an account with notebook compute (P3-AUD10)', () => {
+  test('connections, host keys and unsubmitted sessions and transfers go; submitted ones stay redacted', async () => {
+    const userId = await createUser(testDb.db, { email: 'kai@example.test', name: 'Kai Tanaka' });
+    const { token } = await createSession(testDb.db, userId, { now: clock });
+    const connectorId = await activeConnector(userId, 'SHA256:compute');
+    await testDb.db.insert(connectorPairings).values({
+      ownerUserId: userId,
+      codeHash: Buffer.alloc(32, 9),
+      expiresAt: new Date(clock.getTime() + day),
+    });
+    const sshTarget = {
+      kind: 'ssh',
+      host: 'kai-workstation.lab.example',
+      port: 22,
+      user: 'kai',
+      auth: { kind: 'key', keyPath: '~/.ssh/kai_lab' },
+      workspace: '/home/kai/stats',
+    };
+    const hostKey = {
+      host: 'kai-workstation.lab.example',
+      port: 22,
+      sha256: 'SHA256:hostkey',
+      confirmedAt: start.toISOString(),
+    };
+    const connection = async (name: string) => {
+      const [row] = await testDb.db
+        .insert(notebookConnections)
+        .values({
+          ownerUserId: userId,
+          connectorId,
+          name,
+          target: sshTarget,
+          runtime: { mode: 'start', python: '/home/kai/venv/bin/python' },
+          trustedHostKeys: [hostKey],
+        })
+        .returning({ id: notebookConnections.id });
+      return row?.id ?? '';
+    };
+    const [submittedVia, filesVia, unsubmittedVia, unused] = await Promise.all(
+      ['Lab workstation', 'Lab files', 'Lab scratch', 'Old laptop'].map(connection),
+    );
+    const session = async (connectionId: string, resourceRevisionId: string) => {
+      const [row] = await testDb.db
+        .insert(notebookSessions)
+        .values({
+          classId: ids.classA,
+          userId,
+          connectionId,
+          connectorId,
+          resourceRevisionId,
+          state: 'stopped',
+          stoppedAt: start,
+          owned: true,
+          // The connector's first report adds the workspace root, relative to Jupyter's root.
+          runtime: { mode: 'start', contentRoot: 'kai-private/stats' },
+          environment: { os: 'linux', runtime: 'Python 3.12' },
+          lease: { idleTimeoutMin: 30, gracePeriodMin: 5 },
+        })
+        .returning({ id: notebookSessions.id });
+      return row?.id ?? '';
+    };
+    const submittedSession = await session(submittedVia ?? '', ids.samplingReadingV1);
+    const filesSession = await session(filesVia ?? '', ids.answerKeyV1);
+    const unsubmittedSession = await session(unsubmittedVia ?? '', ids.samplingReadingV1);
+    const transfer = async (sessionId: string, path: string) => {
+      const [row] = await testDb.db
+        .insert(fileTransfers)
+        .values({
+          classId: ids.classA,
+          sessionId,
+          userId,
+          direction: 'out',
+          path,
+          sha256: 'c'.repeat(64),
+          size: 10,
+          state: 'done',
+          objectKey: `classes/${ids.classA}/transfers/${path.length}`,
+          conflict: { kind: 'copy_out', outcome: 'replaced', remote: { sha256: 'd', size: 3 } },
+        })
+        .returning({ id: fileTransfers.id });
+      return row?.id ?? '';
+    };
+    const submittedTransfer = await transfer(filesSession, 'kai-private/results.csv');
+    const alsoSubmitted = await transfer(filesSession, 'kai-private/run-2/results.csv');
+    const looseTransfer = await transfer(filesSession, 'kai-private/draft.csv');
+    const unsubmittedTransfer = await transfer(unsubmittedSession, 'kai-private/scratch.csv');
+    const submission = (version: number, sessionId: string | null) => ({
+      classId: ids.classA,
+      userId,
+      resourceId: ids.samplingReading,
+      resourceRevisionId: ids.samplingReadingV1,
+      version,
+      submissionKey: `kai-${version}`,
+      objectKey: `classes/x/submissions/kai-${version}`,
+      sha256: 'b'.repeat(64),
+      size: 10,
+      filename: 'work.ipynb',
+      sessionId,
+    });
+    await testDb.db.insert(notebookSubmissions).values(submission(1, submittedSession));
+    const [withFiles] = await testDb.db
+      .insert(notebookSubmissions)
+      .values(submission(2, null))
+      .returning({ id: notebookSubmissions.id });
+    // A submission freezes each file under its workspace path, as the submit route records it.
+    const frozenFile = (fileTransferId: string, path: string) => ({
+      submissionId: withFiles?.id ?? '',
+      path,
+      classId: ids.classA,
+      fileTransferId,
+      sha256: 'c'.repeat(64),
+      size: 10,
+      objectKey: `classes/${ids.classA}/transfers/${fileTransferId}`,
+    });
+    await testDb.db
+      .insert(notebookSubmissionFiles)
+      .values([
+        frozenFile(submittedTransfer, 'kai-private/results.csv'),
+        frozenFile(alsoSubmitted, 'kai-private/run-2/results.csv'),
+      ]);
+    const audited = (targetType: string, targetId: string, after: object) => ({
+      actorId: userId,
+      action: `${targetType}.test`,
+      scopeKind: 'user' as const,
+      scopeId: userId,
+      targetType,
+      targetId,
+      after,
+    });
+    await testDb.db.insert(auditEvents).values([
+      audited('connector', connectorId, { name: 'Laptop', os: 'linux', fingerprint: 'SHA256:x' }),
+      audited('connection', submittedVia ?? '', {
+        name: 'Lab workstation',
+        connectorId,
+        target: { kind: 'ssh', host: sshTarget.host, port: 22, user: 'kai' },
+      }),
+      audited('connection', unused ?? '', hostKey),
+      audited('file_transfer', submittedTransfer, { path: 'kai-private/results.csv', size: 10 }),
+      audited('file_transfer', unsubmittedTransfer, { path: 'kai-private/scratch.csv' }),
+    ]);
+
+    const res = await app.inject({
+      method: 'POST',
+      url: '/api/me/delete',
+      headers: { cookie: cookieFor(token) },
+      payload: { confirm: true },
+    });
+    expect(res.statusCode).toBe(200);
+
+    // Sessions and transfers a submission refers to stay; nothing else of theirs does.
+    const transfers = await testDb.db
+      .select()
+      .from(fileTransfers)
+      .where(eq(fileTransfers.userId, userId));
+    expect(transfers.map((t) => [t.id, t.path, t.conflict]).sort()).toEqual(
+      [
+        [submittedTransfer, 'removed', null],
+        [alsoSubmitted, 'removed', null],
+      ].sort(),
+    );
+    expect(transfers[0]?.objectKey).not.toBeNull();
+    for (const gone of [looseTransfer, unsubmittedTransfer])
+      expect(transfers.some((t) => t.id === gone)).toBe(false);
+    const sessions = await testDb.db
+      .select()
+      .from(notebookSessions)
+      .where(eq(notebookSessions.userId, userId));
+    expect(sessions.map((s) => s.id).sort()).toEqual([submittedSession, filesSession].sort());
+    expect(sessions.every((s) => s.environment === null)).toBe(true);
+    expect(sessions.map((s) => s.runtime)).toEqual([{ mode: 'start' }, { mode: 'start' }]);
+    // Only the connections those sessions need remain, archived and without target details.
+    const connections = await testDb.db
+      .select()
+      .from(notebookConnections)
+      .where(eq(notebookConnections.ownerUserId, userId));
+    expect(connections.map((c) => c.id).sort()).toEqual([submittedVia, filesVia].sort());
+    for (const c of connections) {
+      expect(c).toMatchObject({
+        name: 'Removed connection',
+        target: { kind: 'ssh' },
+        runtime: { mode: 'start' },
+        trustedHostKeys: [],
+      });
+      expect(c.archivedAt).not.toBeNull();
+    }
+    const [connector] = await testDb.db
+      .select()
+      .from(connectors)
+      .where(eq(connectors.id, connectorId));
+    expect(connector).toMatchObject({
+      status: 'revoked',
+      revokedReason: 'account',
+      name: 'Removed connector',
+      os: '',
+      networkScope: { cidrs: [], hosts: [] },
+    });
+    // Their submissions and the files frozen with them are the organisation's record.
+    expect(
+      await testDb.db
+        .select()
+        .from(notebookSubmissions)
+        .where(eq(notebookSubmissions.userId, userId)),
+    ).toHaveLength(2);
+    // The frozen files keep their contents and only their file names, still one per name.
+    const frozen = await testDb.db
+      .select()
+      .from(notebookSubmissionFiles)
+      .where(eq(notebookSubmissionFiles.submissionId, withFiles?.id ?? ''));
+    expect(frozen.map((f) => [f.fileTransferId, f.path]).sort()).toEqual(
+      [
+        [submittedTransfer, 'results.csv'],
+        [alsoSubmitted, '2-results.csv'],
+      ].sort(),
+    );
+
+    // Nothing that named their machines, accounts or files is left anywhere in the database.
+    const dump = JSON.stringify([
+      transfers,
+      frozen,
+      sessions,
+      connections,
+      connector,
+      await testDb.db
+        .select()
+        .from(auditEvents)
+        .where(
+          inArray(auditEvents.targetId, [
+            connectorId,
+            submittedVia ?? '',
+            unused ?? '',
+            submittedTransfer,
+            unsubmittedTransfer,
+          ]),
+        ),
+    ]);
+    for (const secret of [
+      'kai-workstation',
+      'kai_lab',
+      'kai-private',
+      'Laptop',
+      'linux',
+      'hostkey',
+      '"user":"kai"',
+    ])
+      expect(dump).not.toContain(secret);
+    const [connectorEvent] = await events('connector.test', connectorId);
+    expect(connectorEvent?.after).toEqual({ fingerprint: 'SHA256:x' });
+    const [transferEvent] = await events('file_transfer.test', submittedTransfer);
+    expect(transferEvent?.after).toEqual({ size: 10 });
+
+    // Every table declared `deleted` keeps no row referring to them.
+    const declared = accountDeletion as Record<string, string>;
+    const deleted = (Object.values(schema) as unknown[]).filter(
+      (t): t is PgTable => is(t, PgTable) && declared[getTableConfig(t).name] === 'deleted',
+    );
+    expect(deleted.length).toBeGreaterThan(0);
+    const snake = (s: string) => s.replace(/[A-Z]/g, (c) => `_${c.toLowerCase()}`);
+    for (const table of deleted) {
+      const { name, foreignKeys } = getTableConfig(table);
+      for (const fk of foreignKeys.filter((f) => f.reference().foreignTable === users)) {
+        for (const column of fk.reference().columns) {
+          const { rows } = await testDb.db.execute<{ n: number }>(
+            sql`select count(*)::int as n from ${sql.identifier(name)}
+              where ${sql.identifier(snake(column.name))} = ${userId}`,
+          );
+          expect(rows[0]?.n, `${name}.${column.name}`).toBe(0);
+        }
+      }
+    }
   });
 });
 

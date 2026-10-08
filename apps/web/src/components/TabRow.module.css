@@ -30,7 +30,7 @@
   padding: 10px 0;
   color: var(--pc-muted);
   white-space: nowrap;
-  font-size: 14px;
+  font-size: var(--pc-size-ui);
   min-height: 44px;
   cursor: pointer;
 }
@@ -66,9 +66,6 @@
     padding: 0 16px;
     gap: 18px;
   }
-  .tabs > button {
-    font-size: 13px;
-  }
 }
 
 /* Compact variant above the notes margin (ported from the margin's own tab buttons). */
@@ -82,7 +79,7 @@
 }
 .margin .tabs > button {
   font-family: inherit;
-  font-size: 13px;
+  font-size: var(--pc-size-ui);
   line-height: 1.5;
   color: var(--pc-ink);
   min-height: 0;

@@ -45,7 +45,7 @@
 .tool {
   display: inline-flex;
   align-items: center;
-  font-size: 12px;
+  font-size: var(--pc-size-label);
   min-height: 32px;
   padding: 4px 12px;
   border: 1px solid var(--pc-muted);

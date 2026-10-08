@@ -1,4 +1,10 @@
-import { type APIRequestContext, expect, type Page } from '@playwright/test';
+import {
+  type APIRequestContext,
+  expect,
+  type Page,
+  type PlaywrightWorkerArgs,
+} from '@playwright/test';
+import { releaseToClassA, testDefinition, worldIds } from './tests/released';
 
 type Playwright = { request: { newContext(o: object): Promise<APIRequestContext> } };
 
@@ -103,3 +109,16 @@ export const small = (page: Page, selector: string) =>
       .filter(({ box }) => box.width > 0 && (box.height < 44 || box.width < 44))
       .map(({ name, box }) => `${name}: ${Math.round(box.width)}x${Math.round(box.height)}`),
   );
+
+/** Releases a fresh test in Sampling to class A (see released.ts for the cross-worker handling). */
+export async function releaseTest(
+  playwright: PlaywrightWorkerArgs['playwright'],
+  baseURL: string,
+  title: string,
+) {
+  const ids = await worldIds(playwright, baseURL);
+  await releaseToClassA(playwright, baseURL, ids, [
+    { type: 'test', title, content: testDefinition },
+  ]);
+  return { ids };
+}
