@@ -503,9 +503,13 @@ describe('several decks and states', () => {
     renderApp(SLIDES);
     const alert = await screen.findByRole('alert');
     expect(alert).toHaveTextContent('These slides could not be loaded.');
-    expect(within(alert).getByRole('button', { name: 'Download' })).toBeVisible();
+    expect(
+      within(alert.parentElement as HTMLElement).getByRole('button', { name: 'Download' }),
+    ).toBeVisible();
     openPdf.mockResolvedValue(pdfDocument());
-    await user.click(within(alert).getByRole('button', { name: 'Try again' }));
+    await user.click(
+      within(alert.parentElement as HTMLElement).getByRole('button', { name: 'Try again' }),
+    );
     await viewer();
   });
 

@@ -202,7 +202,7 @@
 }
 .indexButton {
   font: inherit;
-  font-size: 12px;
+  font-size: var(--pc-size-label);
   min-height: 32px;
   min-width: 32px;
   cursor: pointer;

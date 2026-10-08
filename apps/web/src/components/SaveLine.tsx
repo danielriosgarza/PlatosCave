@@ -7,11 +7,15 @@ interface SaveLineProps {
   status: SaveLineStatus;
   /** What went wrong, when the server said; replaces "Could not save" (the Retry control stays). */
   reason?: string | null;
-  onRetry: () => void;
-  /** Shown instead of the status, such as a choice the status cannot express. */
-  override?: ReactNode;
-  /** Text for states outside the vocabulary (unsaved changes, a partial save). */
+  /** The Retry control of a failed save; without it a failure shows its text alone. */
+  onRetry?: () => void;
+  /**
+   * Text for states outside the vocabulary (unsaved changes, a partial save, a note deleted
+   * elsewhere). Shown while the status is idle or failed, in place of the failure and its Retry.
+   */
   note?: ReactNode;
+  /** The note is a failure: shown in the failed tone, without Retry. */
+  noteFailed?: boolean;
   /** Announce a failure at once (role alert) instead of politely; for the page's main editor. */
   assertive?: boolean;
 }
@@ -21,29 +25,38 @@ interface SaveLineProps {
  * Offline · changes on this device, Could not save · Retry. "Saved" is shown only for the
  * `saved` status, which callers set after a real acknowledgement.
  */
-export function SaveLine({ status, reason, onRetry, override, note, assertive }: SaveLineProps) {
-  let text: ReactNode = note ?? null;
-  if (override) text = override;
+export function SaveLine({ status, reason, onRetry, note, noteFailed, assertive }: SaveLineProps) {
+  const showNote = note && (status === 'idle' || status === 'failed');
+  let text: ReactNode = null;
+  if (showNote) text = note;
   else if (status === 'saving') text = 'Saving';
   else if (status === 'saved') text = 'Saved';
   else if (status === 'offline') text = 'Offline · changes on this device';
   else if (status === 'failed') {
     text = (
       <>
-        {reason ?? 'Could not save'} ·{' '}
-        <button type="button" className={styles.retry} onClick={onRetry}>
-          Retry
-        </button>
+        {reason ?? 'Could not save'}
+        {onRetry ? (
+          <>
+            {' '}
+            ·{' '}
+            <button type="button" className={styles.retry} onClick={onRetry}>
+              Retry
+            </button>
+          </>
+        ) : null}
       </>
     );
   }
-  const tone = status === 'saved' ? styles.saved : status === 'failed' ? styles.failed : '';
+  const failed = showNote ? noteFailed : status === 'failed';
+  const tone = status === 'saved' && !showNote ? styles.saved : failed ? styles.failed : '';
+  // A live region whose role changes after mount can be missed: the polite status stays as it
+  // is and an alert element is mounted for the failure, so assistive technology sees it appear.
+  const alert = assertive && failed;
   return (
-    <div
-      className={`${styles.line} ${tone}`}
-      role={assertive && status === 'failed' ? 'alert' : 'status'}
-    >
-      {text}
+    <div className={`${styles.line} ${tone}`}>
+      <span role="status">{alert ? null : text}</span>
+      {alert ? <span role="alert">{text}</span> : null}
     </div>
   );
 }

@@ -24,7 +24,7 @@
   color: var(--pc-muted);
   border-radius: var(--pc-radius-filter);
   padding: 7px 14px;
-  font-size: 13px;
+  font-size: var(--pc-size-ui);
 }
 .filters button[aria-pressed="true"] {
   background: var(--pc-soft);
@@ -36,14 +36,14 @@
   gap: 10px;
   align-items: center;
   color: var(--pc-muted);
-  font-size: 12px;
+  font-size: var(--pc-size-label);
 }
 .search input {
   width: 230px;
   border: 1px solid var(--pc-rule);
   background: var(--pc-sheet);
   border-radius: var(--pc-radius-search);
-  font-size: 14px;
+  font-size: var(--pc-size-ui);
   padding: 8px 14px;
 }
 .grid {
@@ -75,14 +75,14 @@
   text-decoration: none;
 }
 .card h2 {
-  font-size: 18px;
+  font-size: var(--pc-size-body);
   line-height: 1.3;
   margin: 12px 0 8px;
   letter-spacing: -0.01em;
 }
 .meta {
   display: block;
-  font-size: 12px;
+  font-size: var(--pc-size-label);
   color: var(--pc-muted);
   line-height: 1.55;
 }
@@ -91,21 +91,21 @@
   flex-wrap: wrap;
   gap: 8px 12px;
   align-items: center;
-  font-size: 12px;
+  font-size: var(--pc-size-label);
   color: var(--pc-muted);
   margin: 15px 0 12px;
   min-height: 24px;
 }
 .status a,
 .status button {
-  font-size: 12px;
+  font-size: var(--pc-size-label);
   min-height: 24px;
   color: var(--pc-ink);
   text-underline-offset: 4px;
 }
 .status button {
   font: inherit;
-  font-size: 12px;
+  font-size: var(--pc-size-label);
   background: none;
   border: 0;
   padding: 0;
@@ -143,7 +143,7 @@
   width: 100%;
   display: grid;
   gap: 6px;
-  font-size: 13px;
+  font-size: var(--pc-size-ui);
 }
 .chooser li {
   display: flex;
@@ -201,7 +201,7 @@
   padding: 8px 10px;
 }
 .error {
-  font-size: 14px;
+  font-size: var(--pc-size-ui);
   color: var(--pc-ink);
   border-left: 3px solid var(--pc-ink);
   padding-left: 10px;

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { strokesToSvg } from '@parallax/contracts';
 import type * as contracts from '@parallax/contracts/routes/lifecycle';
 import { and, asc, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
@@ -15,9 +16,13 @@ import {
   classes,
   classInvites,
   connectorPairings,
+  connectors,
   courseMemberships,
   courses,
+  fileTransfers,
+  notebookConnections,
   notebookSessions,
+  notebookSubmissionFiles,
   notebookSubmissions,
   notebookWorkingCopies,
   notebookWorkingCopyRevisions,
@@ -252,14 +257,65 @@ export function exportOwnAnnotations(db: Db, scope: ClassScope, now: Date): Prom
   });
 }
 
+/**
+ * What deleting an account does to each table that refers to a person (plan decision 23, §13,
+ * P3-AUD10): `deleted`, every row of theirs goes; `pruned`, rows no submission needs go and the
+ * rest keep no identifying detail; `redacted`, rows stay with identifying details replaced;
+ * `kept`, records the organisation keeps, which show the pseudonym. `lifecycle.test.ts` fails
+ * when a table referring to `users` is missing here, so a new one cannot be forgotten; only
+ * `deleted` is checked generically (the lifecycle integration test), the other values record
+ * what `anonymiseIdentity` does and are checked table by table where it does it.
+ */
+export const accountDeletion = {
+  annotation_placements: 'kept',
+  annotations: 'deleted',
+  assignment_overrides: 'kept',
+  assignments: 'kept',
+  audit_events: 'redacted',
+  auth_sessions: 'kept',
+  class_compute_templates: 'kept',
+  class_invites: 'redacted',
+  class_memberships: 'kept',
+  class_release_history: 'kept',
+  connector_pairings: 'deleted',
+  connectors: 'redacted',
+  course_memberships: 'kept',
+  course_releases: 'kept',
+  courses: 'kept',
+  execution_jobs: 'kept',
+  execution_results: 'kept',
+  exercise_attempts: 'kept',
+  file_transfers: 'pruned',
+  grade_overrides: 'kept',
+  grade_releases: 'kept',
+  grades: 'kept',
+  notebook_connections: 'pruned',
+  notebook_sessions: 'pruned',
+  notebook_submissions: 'kept',
+  notebook_working_copies: 'pruned',
+  posts: 'kept',
+  resource_revisions: 'kept',
+  resources: 'kept',
+  storage_objects: 'kept',
+  study_positions: 'kept',
+  test_attempts: 'kept',
+  test_submissions: 'kept',
+  threads: 'kept',
+  topic_reviews: 'kept',
+  topics: 'kept',
+  users: 'redacted',
+} as const satisfies Record<string, 'deleted' | 'pruned' | 'redacted' | 'kept'>;
+
 export const ANONYMISED_NAME = 'Former user';
 export const anonymisedEmail = (userId: string) => `deleted-${userId}@anonymised.invalid`;
 
 /**
  * Replaces one identity with a pseudonym and deletes what was only theirs (plan decision 23):
  * the name and address, private annotations (their placements go with them), unused sign-in
- * links and unused instructor invitations addressed to the old address. Memberships, grades,
- * submissions, posts and audit rows stay and now carry the pseudonym. The caller records why.
+ * links and unused instructor invitations addressed to the old address, unsubmitted working
+ * copies, and their compute: connections, trusted host keys, connector names and sessions and
+ * file transfers no submission refers to (P3-AUD10). Memberships, grades, submissions, posts and
+ * audit rows stay and now carry the pseudonym. The caller records why.
  */
 export async function anonymiseIdentity(tx: Tx, userId: string, now: Date): Promise<void> {
   const [row] = await tx
@@ -275,6 +331,7 @@ export async function anonymiseIdentity(tx: Tx, userId: string, now: Date): Prom
   const everyone = [userId, ...previews.map((p) => p.id)];
   await tx.delete(annotations).where(inArray(annotations.authorId, everyone));
   await deleteUnsubmittedWorkingCopies(tx, everyone);
+  await deleteNotebookCompute(tx, everyone, now);
   if (row.email) {
     const pseudonym = anonymisedEmail(userId);
     await tx.delete(signinTokens).where(eq(signinTokens.email, row.email));
@@ -362,6 +419,162 @@ async function deleteUnsubmittedWorkingCopies(tx: Tx, userIds: string[]): Promis
     .where(inArray(notebookWorkingCopies.userId, userIds));
 }
 
+/** What a connector, connection or file transfer's audit events said that identified the person. */
+const IDENTIFYING_AUDIT_KEYS: Record<string, string[]> = {
+  connector: ['name', 'os'],
+  connection: ['name', 'target', 'host', 'port', 'sha256'],
+  file_transfer: ['path'],
+};
+const REDACTED_CONNECTOR_NAME = 'Removed connector';
+const REDACTED_CONNECTION_NAME = 'Removed connection';
+const REDACTED_TRANSFER_PATH = 'removed';
+
+/**
+ * Deletes the people's notebook compute (P3-AUD10, owner decision on #459): file transfers no
+ * submission froze, sessions no submission refers to (their cell executions go with them), and
+ * connections no remaining session needs. What a submission still refers to stays without what
+ * identified the person's machines: a kept transfer loses its remote path and conflict detail, a
+ * kept session the environment and workspace root its connector reported, a kept connection its
+ * name, target details, runtime and trusted host keys. Every connector of theirs keeps its row
+ * (its id is in the audit trail) without its name, OS or network scope, and their audit events
+ * lose the same details. Stored objects of deleted transfers are not removed here, as for working copies.
+ */
+async function deleteNotebookCompute(tx: Tx, userIds: string[], now: Date): Promise<void> {
+  const connectorIds = (
+    await tx
+      .select({ id: connectors.id })
+      .from(connectors)
+      .where(inArray(connectors.ownerUserId, userIds))
+  ).map((r) => r.id);
+  const connectionIds = (
+    await tx
+      .select({ id: notebookConnections.id })
+      .from(notebookConnections)
+      .where(inArray(notebookConnections.ownerUserId, userIds))
+  ).map((r) => r.id);
+  const transferIds = (
+    await tx
+      .select({ id: fileTransfers.id })
+      .from(fileTransfers)
+      .where(inArray(fileTransfers.userId, userIds))
+  ).map((r) => r.id);
+
+  await tx.delete(fileTransfers).where(
+    and(
+      inArray(fileTransfers.userId, userIds),
+      sql`not exists (select 1 from ${notebookSubmissionFiles} f
+          where f.file_transfer_id = ${fileTransfers.id})`,
+    ),
+  );
+  await tx
+    .update(fileTransfers)
+    .set({ path: REDACTED_TRANSFER_PATH, conflict: null })
+    .where(inArray(fileTransfers.userId, userIds));
+  await keepOnlyFileNames(tx, userIds);
+  await tx.delete(notebookSessions).where(
+    and(
+      inArray(notebookSessions.userId, userIds),
+      sql`not exists (select 1 from ${notebookSubmissions} s
+          where s.session_id = ${notebookSessions.id})`,
+      sql`not exists (select 1 from ${fileTransfers} t where t.session_id = ${notebookSessions.id})`,
+    ),
+  );
+  await tx
+    .update(notebookSessions)
+    .set({ environment: null, runtime: sql`${notebookSessions.runtime} - 'contentRoot'` })
+    .where(inArray(notebookSessions.userId, userIds));
+  await tx.delete(notebookConnections).where(
+    and(
+      inArray(notebookConnections.ownerUserId, userIds),
+      sql`not exists (select 1 from ${notebookSessions} s
+          where s.connection_id = ${notebookConnections.id})`,
+    ),
+  );
+  await tx
+    .update(notebookConnections)
+    .set({
+      name: REDACTED_CONNECTION_NAME,
+      target: sql`jsonb_build_object('kind', ${notebookConnections.target} -> 'kind')`,
+      runtime: sql`jsonb_build_object('mode', ${notebookConnections.runtime} -> 'mode')`,
+      trustedHostKeys: [],
+      updatedAt: now,
+      archivedAt: sql`coalesce(${notebookConnections.archivedAt}, ${now})`,
+    })
+    .where(inArray(notebookConnections.ownerUserId, userIds));
+  await tx
+    .update(connectors)
+    .set({ name: REDACTED_CONNECTOR_NAME, os: '', networkScope: { cidrs: [], hosts: [] } })
+    .where(inArray(connectors.ownerUserId, userIds));
+
+  const targets: Record<string, string[]> = {
+    connector: connectorIds,
+    connection: connectionIds,
+    file_transfer: transferIds,
+  };
+  for (const [targetType, keys] of Object.entries(IDENTIFYING_AUDIT_KEYS)) {
+    const ids = targets[targetType] ?? [];
+    if (ids.length === 0) continue;
+    const dropped = sql`array[${sql.join(
+      keys.map((k) => sql`${k}`),
+      sql`, `,
+    )}]::text[]`;
+    await tx
+      .update(auditEvents)
+      .set({
+        before: sql`${auditEvents.before} - ${dropped}`,
+        after: sql`${auditEvents.after} - ${dropped}`,
+      })
+      .where(and(eq(auditEvents.targetType, targetType), inArray(auditEvents.targetId, ids)));
+  }
+}
+
+/**
+ * A submission froze each file under its workspace path; what stays of a deleted person's
+ * submissions names each file by its last segment only, numbered where two would share a name
+ * (the key is submission and path). Every row moves to a temporary name first, so no rename can
+ * meet a name another row is about to leave.
+ */
+async function keepOnlyFileNames(tx: Tx, userIds: string[]): Promise<void> {
+  const rows = await tx
+    .select({
+      submissionId: notebookSubmissionFiles.submissionId,
+      path: notebookSubmissionFiles.path,
+    })
+    .from(notebookSubmissionFiles)
+    .innerJoin(
+      notebookSubmissions,
+      eq(notebookSubmissions.id, notebookSubmissionFiles.submissionId),
+    )
+    .where(inArray(notebookSubmissions.userId, userIds))
+    .orderBy(asc(notebookSubmissionFiles.submissionId), asc(notebookSubmissionFiles.path));
+  if (rows.length === 0) return;
+  const taken = new Map<string, Set<string>>();
+  const renames = rows.map((row) => {
+    const names = taken.get(row.submissionId) ?? new Set<string>();
+    taken.set(row.submissionId, names);
+    const base = row.path.slice(row.path.lastIndexOf('/') + 1) || 'file';
+    let name = base;
+    for (let n = 2; names.has(name); n += 1) name = `${n}-${base}`;
+    names.add(name);
+    return { ...row, temporary: randomUUID(), name };
+  });
+  const at = (submissionId: string, path: string) =>
+    and(
+      eq(notebookSubmissionFiles.submissionId, submissionId),
+      eq(notebookSubmissionFiles.path, path),
+    );
+  for (const r of renames)
+    await tx
+      .update(notebookSubmissionFiles)
+      .set({ path: r.temporary })
+      .where(at(r.submissionId, r.path));
+  for (const r of renames)
+    await tx
+      .update(notebookSubmissionFiles)
+      .set({ path: r.name })
+      .where(at(r.submissionId, r.temporary));
+}
+
 export type CloseOutcome =
   | { ok: true; deactivatedAt: Date; revokedConnectorIds: string[] }
   | { ok: false; reason: 'owns_courses' };
@@ -425,11 +638,12 @@ export function closeAccount(
       targetId: userId,
       after: { deactivated: true, anonymised: mode === 'delete' },
     });
-    if (mode === 'delete') await anonymiseIdentity(tx, userId, now);
     // In the same transaction, so a failure cannot leave connectors live on a closed account.
     const revokedConnectorIds: string[] = [];
     for (const id of userIds)
       revokedConnectorIds.push(...(await revokeUserConnectorsIn(tx, id, now)));
+    // After revocation, which records the sessions it can no longer confirm, before they go.
+    if (mode === 'delete') await anonymiseIdentity(tx, userId, now);
     return { ok: true, deactivatedAt: now, revokedConnectorIds };
   });
 }

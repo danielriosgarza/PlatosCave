@@ -4,12 +4,12 @@
   border-top: 1px solid var(--pc-rule);
 }
 .heading {
-  font-size: 14px;
+  font-size: var(--pc-size-ui);
   font-weight: 600;
 }
 .status {
   margin-top: 4px;
-  font-size: 12px;
+  font-size: var(--pc-size-label);
   color: var(--pc-muted);
 }
 .list {
@@ -23,10 +23,10 @@
   display: flex;
   align-items: baseline;
   gap: 8px;
-  font-size: 14px;
+  font-size: var(--pc-size-ui);
 }
 .tab {
-  font-size: 12px;
+  font-size: var(--pc-size-label);
   color: var(--pc-muted);
 }
 button.retry {
