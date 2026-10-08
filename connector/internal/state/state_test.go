@@ -1,6 +1,8 @@
 package state
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"io/fs"
 	"os"
@@ -8,6 +10,10 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/santhosh-tekuri/jsonschema/v6"
+
+	"parallax/connector/protocol"
 )
 
 func env(m map[string]string) func(string) string {
@@ -246,5 +252,95 @@ func TestReadFileRefusesSymlink(t *testing.T) {
 	}
 	if _, err := s.ReadFile(ConfigFile); err == nil {
 		t.Fatal("followed a symbolic link")
+	}
+}
+
+// TestStateValidatorsAgreeWithSchema runs the same valid and invalid config.json and runtime.json
+// documents through the Go rules and state.schema.json and requires one verdict from both, so a
+// rule tightened or loosened on one side only fails here. The bytes `run` writes for runtime.json
+// are checked against the schema in TestRunWritesRuntimeJSON.
+func TestStateValidatorsAgreeWithSchema(t *testing.T) {
+	data, err := protocol.V1.ReadFile("v1/state.schema.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	doc, err := jsonschema.UnmarshalJSON(bytes.NewReader(data))
+	if err != nil {
+		t.Fatal(err)
+	}
+	c := jsonschema.NewCompiler()
+	const base = "https://parallax.invalid/connector/v1/state.schema.json"
+	if err := c.AddResource(base, doc); err != nil {
+		t.Fatal(err)
+	}
+	compiled := map[string]*jsonschema.Schema{}
+	for _, def := range []string{"Config", "Runtime"} {
+		sch, err := c.Compile(base + "#/$defs/" + def)
+		if err != nil {
+			t.Fatal(err)
+		}
+		compiled[def] = sch
+	}
+	schemaAccepts := func(def string, v any) bool {
+		body, err := json.Marshal(v)
+		if err != nil {
+			t.Fatal(err)
+		}
+		inst, err := jsonschema.UnmarshalJSON(bytes.NewReader(body))
+		if err != nil {
+			t.Fatal(err)
+		}
+		return compiled[def].Validate(inst) == nil
+	}
+
+	configs := map[string]func(*Config){
+		"valid":          func(*Config) {},
+		"name 60":        func(c *Config) { c.Name = strings.Repeat("x", 60) },
+		"version":        func(c *Config) { c.V = 2 },
+		"server path":    func(c *Config) { c.Server = "https://parallax.example.org/app" },
+		"server upper":   func(c *Config) { c.Server = "https://Parallax.example.org" },
+		"server scheme":  func(c *Config) { c.Server = "ftp://parallax.example.org" },
+		"connector id":   func(c *Config) { c.ConnectorID = "not-a-uuid" },
+		"empty name":     func(c *Config) { c.Name = "" },
+		"long name":      func(c *Config) { c.Name = strings.Repeat("x", 61) },
+		"pairedAt":       func(c *Config) { c.PairedAt = "2026-10-03 09:30:00" },
+		"mode":           func(c *Config) { c.Mode = "shared" },
+		"missing server": func(c *Config) { c.Server = "" },
+	}
+	for name, mutate := range configs {
+		t.Run("config "+name, func(t *testing.T) {
+			cfg := validConfig()
+			mutate(&cfg)
+			goOK := cfg.Validate() == nil
+			if schemaOK := schemaAccepts("Config", cfg); goOK != schemaOK {
+				t.Fatalf("Go accepts=%v, schema accepts=%v for %+v", goOK, schemaOK, cfg)
+			}
+		})
+	}
+
+	validRuntime := func() Runtime {
+		return Runtime{V: 1, PID: 4242, StartedAt: "2026-10-03T09:30:00Z", Link: "up", Since: "2026-10-03T09:31:00Z", Sessions: 2}
+	}
+	runtimes := map[string]func(*Runtime){
+		"valid":          func(*Runtime) {},
+		"fractional":     func(r *Runtime) { r.Since = "2026-10-03T09:31:00.250Z" },
+		"last error":     func(r *Runtime) { r.Link = "down"; r.LastError = "link closed" },
+		"version":        func(r *Runtime) { r.V = 2 },
+		"pid zero":       func(r *Runtime) { r.PID = 0 },
+		"link state":     func(r *Runtime) { r.Link = "sleeping" },
+		"started offset": func(r *Runtime) { r.StartedAt = "2026-10-03T09:30:00+02:00" },
+		"long error":     func(r *Runtime) { r.LastError = strings.Repeat("x", 201) },
+		"sessions 65":    func(r *Runtime) { r.Sessions = 65 },
+		"sessions -1":    func(r *Runtime) { r.Sessions = -1 },
+	}
+	for name, mutate := range runtimes {
+		t.Run("runtime "+name, func(t *testing.T) {
+			rt := validRuntime()
+			mutate(&rt)
+			goOK := rt.Validate() == nil
+			if schemaOK := schemaAccepts("Runtime", rt); goOK != schemaOK {
+				t.Fatalf("Go accepts=%v, schema accepts=%v for %+v", goOK, schemaOK, rt)
+			}
+		})
 	}
 }
