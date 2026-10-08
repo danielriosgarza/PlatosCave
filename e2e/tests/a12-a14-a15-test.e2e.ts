@@ -1,5 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
-import { type APIRequestContext, expect, type Page, test } from '@playwright/test';
+import { expect, type Page, type PlaywrightWorkerArgs, test } from '@playwright/test';
+import { releaseToClassA, signedIn, worldIds } from './released';
 
 test.use({ colorScheme: 'light' });
 
@@ -71,35 +72,18 @@ const definition = {
   ],
 };
 
-type Playwright = { request: { newContext(o: object): Promise<APIRequestContext> } };
-
-async function signedIn(playwright: Playwright, baseURL: string, email: string) {
-  const client = await playwright.request.newContext({ baseURL });
-  expect((await client.post('/api/test/signin-as', { data: { email } })).ok()).toBe(true);
-  return client;
-}
-
-/** Releases a fresh test in Sampling to class A, the way an instructor would. */
-async function releaseTest(playwright: Playwright, baseURL: string, title: string) {
-  const setup = await playwright.request.newContext({ baseURL });
-  const { ids } = await (await setup.post('/api/test/world')).json();
-  const elena = await signedIn(playwright, baseURL, 'elena@example.test');
-  const created = await elena.post(
-    `/api/courses/${ids.statistics}/topics/${ids.sampling}/resources`,
-    { data: { type: 'test', title, content: definition } },
-  );
-  expect(created.ok()).toBe(true);
-  const resource = await created.json();
-  const published = await elena.post(`/api/courses/${ids.statistics}/releases`);
-  expect(published.ok()).toBe(true);
-  const { release } = await published.json();
+/** Releases a fresh test in Sampling to class A (see released.ts for the cross-worker handling). */
+async function releaseTest(
+  playwright: PlaywrightWorkerArgs['playwright'],
+  baseURL: string,
+  title: string,
+) {
+  const ids = await worldIds(playwright, baseURL);
+  const [resourceId] = await releaseToClassA(playwright, baseURL, ids, [
+    { type: 'test', title, content: definition },
+  ]);
   const priya = await signedIn(playwright, baseURL, 'priya@example.test');
-  const current = await (await priya.get(`/api/classes/${ids.classA}/release`)).json();
-  const adopted = await priya.post(`/api/classes/${ids.classA}/adopt`, {
-    data: { releaseId: release.id, expectedReleaseId: current.release.id },
-  });
-  expect(adopted.ok()).toBe(true);
-  return { ids, resourceId: resource.id as string, priya };
+  return { ids, resourceId: resourceId as string, priya };
 }
 
 async function signInStudent(page: Page) {
