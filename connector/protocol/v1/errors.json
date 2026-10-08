@@ -500,6 +500,11 @@
       "recoveries": ["new_session"],
       "summary": "The kernel no longer exists; variables are gone. Server-side cause.",
       "origin": "server"
+    },
+    "membership_removed": {
+      "recoveries": ["new_session"],
+      "summary": "The person was removed from the session's class; an owned process is stopped at the connector's next heartbeat. Server-side cause.",
+      "origin": "server"
     }
   }
 }

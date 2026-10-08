@@ -206,7 +206,7 @@ export async function execWorld(options: ExecWorldOptions = {}): Promise<ExecWor
 export async function call(
   w: ExecWorld,
   who: PersonName,
-  method: 'GET' | 'POST',
+  method: 'GET' | 'POST' | 'DELETE',
   url: string,
   payload?: object,
 ) {
