@@ -5,6 +5,12 @@ import { and, asc, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
 import type { AnyPgColumn, PgColumn } from 'drizzle-orm/pg-core';
 import type { z } from 'zod';
 import type { ClassManagerScope, ClassScope, CourseScope, UserScope } from '../auth/scope';
+import {
+  classTransferPrefix,
+  classWorkingCopyPrefix,
+  objectKey,
+  type Storage,
+} from '../storage/storage';
 import { audit } from './audit';
 import type { Db, Tx } from './client';
 import { revokeUserConnectorsIn } from './connectors/registry';
@@ -27,8 +33,10 @@ import {
   notebookWorkingCopies,
   notebookWorkingCopyRevisions,
   posts,
+  resourceRevisions,
   resources,
   signinTokens,
+  storageObjects,
   threads,
   topics,
   users,
@@ -376,10 +384,10 @@ export async function anonymiseIdentity(tx: Tx, userId: string, now: Date): Prom
 
 /**
  * Deletes the people's working copies of notebooks that no submission froze, with their revisions
- * (the rows; stored objects are not removed here, and a key may be shared, so a later cleanup must
- * check references first). A copy a submission froze stays with only the revisions submissions
- * reference, and its current revision moves to the newest of them. Sessions that pointed at a
- * copy are unlinked first, because Connect ties every session to its copy.
+ * (the rows; `removeUnreferencedObjects` later removes the stored objects no row refers to). A
+ * copy a submission froze stays with only the revisions submissions reference, and its current
+ * revision moves to the newest of them. Sessions that pointed at a copy are unlinked first,
+ * because Connect ties every session to its copy.
  */
 async function deleteUnsubmittedWorkingCopies(tx: Tx, userIds: string[]): Promise<void> {
   const copies = tx
@@ -437,7 +445,8 @@ const REDACTED_TRANSFER_PATH = 'removed';
  * kept session the environment and workspace root its connector reported, a kept connection its
  * name, target details, runtime and trusted host keys. Every connector of theirs keeps its row
  * (its id is in the audit trail) without its name, OS or network scope, and their audit events
- * lose the same details. Stored objects of deleted transfers are not removed here, as for working copies.
+ * lose the same details. Stored objects of deleted transfers go later, as for working copies
+ * (`removeUnreferencedObjects`).
  */
 async function deleteNotebookCompute(tx: Tx, userIds: string[], now: Date): Promise<void> {
   const connectorIds = (
@@ -701,4 +710,84 @@ export async function applyRetention(
     auditEventsDeleted = gone.length;
   }
   return { anonymised, auditEventsDeleted };
+}
+
+/** Objects written this recently are left alone: a put lands before the row that names its key. */
+export const UNREFERENCED_OBJECT_MIN_AGE_MS = 86_400_000;
+
+/** The storage areas whose rows account deletion and retention delete (P3-AUD10b). */
+const SWEPT_AREAS = [classTransferPrefix, classWorkingCopyPrefix];
+
+/** How many keys one reference check asks about. */
+const SWEEP_BATCH = 500;
+
+/**
+ * Of `keys`, those some row still refers to. Content addressing lets rows share an object (a
+ * submission freezes its transfer's object, two people may store the same bytes), so every
+ * column that holds a storage key is asked, in every class, whichever area the key is in.
+ */
+async function referencedKeys(db: Db, keys: string[]): Promise<Set<string>> {
+  const list = sql`array[${sql.join(
+    keys.map((k) => sql`${k}`),
+    sql`, `,
+  )}]::text[]`;
+  const { rows } = await db.execute<{ key: string }>(sql`
+    select ${fileTransfers.objectKey} as key from ${fileTransfers}
+      where ${fileTransfers.objectKey} = any(${list})
+    union select ${notebookSubmissionFiles.objectKey} from ${notebookSubmissionFiles}
+      where ${notebookSubmissionFiles.objectKey} = any(${list})
+    union select ${notebookSubmissions.objectKey} from ${notebookSubmissions}
+      where ${notebookSubmissions.objectKey} = any(${list})
+    union select ${notebookWorkingCopyRevisions.objectKey} from ${notebookWorkingCopyRevisions}
+      where ${notebookWorkingCopyRevisions.objectKey} = any(${list})
+    union select ${storageObjects.key} from ${storageObjects}
+      where ${storageObjects.key} = any(${list})
+    union select k from ${resourceRevisions}, unnest(${resourceRevisions.objectKeys}) k
+      where ${resourceRevisions.objectKeys} && ${list} and k = any(${list})`);
+  return new Set(rows.map((r) => r.key));
+}
+
+/** What one sweep of unreferenced objects removed. */
+export interface SweepResult {
+  objectsRemoved: number;
+}
+
+/**
+ * Removes the stored file transfers and working-copy revisions that no row refers to any more
+ * (P3-AUD10b), such as those of a deleted account's unsubmitted transfers and working copies, so
+ * their contents do not outlive the rows. Only content-addressed objects older than
+ * `UNREFERENCED_OBJECT_MIN_AGE_MS` are candidates, and each batch is checked against every
+ * reference just before its objects go.
+ */
+export async function removeUnreferencedObjects(
+  db: Db,
+  storage: Storage,
+  now: Date,
+): Promise<SweepResult> {
+  const before = now.getTime() - UNREFERENCED_OBJECT_MIN_AGE_MS;
+  const classIds = (await db.select({ id: classes.id }).from(classes)).map((c) => c.id);
+  let objectsRemoved = 0;
+  let batch: string[] = [];
+  const sweep = async () => {
+    const referenced = await referencedKeys(db, batch);
+    for (const key of batch) {
+      if (referenced.has(key)) continue;
+      await storage.delete(key);
+      objectsRemoved += 1;
+    }
+    batch = [];
+  };
+  for (const classId of classIds) {
+    for (const area of SWEPT_AREAS) {
+      const prefix = area(classId);
+      const contentAddressed = new RegExp(`^${objectKey(prefix, '[0-9a-f]{64}')}$`);
+      for await (const object of storage.list(prefix)) {
+        if (!contentAddressed.test(object.key) || object.modifiedAt.getTime() > before) continue;
+        batch.push(object.key);
+        if (batch.length === SWEEP_BATCH) await sweep();
+      }
+    }
+  }
+  if (batch.length > 0) await sweep();
+  return { objectsRemoved };
 }

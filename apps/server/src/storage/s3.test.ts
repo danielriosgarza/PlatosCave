@@ -3,6 +3,7 @@ import {
   CopyObjectCommand,
   DeleteObjectCommand,
   HeadObjectCommand,
+  ListObjectsV2Command,
   PutObjectCommand,
   S3Client,
 } from '@aws-sdk/client-s3';
@@ -53,6 +54,40 @@ describe('s3 storage', () => {
     expect(sent.filter((s) => s.startsWith('CopyObjectCommand'))).toEqual([]);
     expect(sent).toContain(`HeadObjectCommand ${key}`);
     expect([...objects]).toEqual([key]);
+  });
+
+  test('list() pages through every object under the prefix', async () => {
+    const client = new S3Client({
+      endpoint: 'http://127.0.0.1:1',
+      region: 'test',
+      forcePathStyle: true,
+      credentials: { accessKeyId: 'k', secretAccessKey: 's' },
+    });
+    const asked: { Prefix?: string; ContinuationToken?: string }[] = [];
+    const at = new Date('2026-10-01T00:00:00Z');
+    client.send = (async (cmd: unknown) => {
+      if (!(cmd instanceof ListObjectsV2Command)) throw new Error('unexpected command');
+      asked.push(cmd.input);
+      return cmd.input.ContinuationToken
+        ? { Contents: [{ Key: 'p/objects/b', LastModified: at }], IsTruncated: false }
+        : {
+            Contents: [{ Key: 'p/objects/a', LastModified: at }],
+            IsTruncated: true,
+            NextContinuationToken: 'next',
+          };
+    }) as S3Client['send'];
+    const storage = new S3Storage({ bucket: 'b', client });
+    const listed = [];
+    for await (const o of storage.list('p')) listed.push(o);
+    expect(listed).toEqual([
+      { key: 'p/objects/a', modifiedAt: at },
+      { key: 'p/objects/b', modifiedAt: at },
+    ]);
+    // The prefix ends at a separator, so `p` never lists the objects of `p2`.
+    expect(asked.map((a) => [a.Prefix, a.ContinuationToken])).toEqual([
+      ['p/', undefined],
+      ['p/', 'next'],
+    ]);
   });
 
   test('destroy() leaves an injected client open: it belongs to the caller', () => {

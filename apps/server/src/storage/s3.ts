@@ -8,6 +8,7 @@ import {
   HeadBucketCommand,
   HeadObjectCommand,
   type HeadObjectCommandOutput,
+  ListObjectsV2Command,
   S3Client,
 } from '@aws-sdk/client-s3';
 import { Upload } from '@aws-sdk/lib-storage';
@@ -16,6 +17,7 @@ import {
   type Body,
   type ByteRange,
   hashingMeter,
+  type ListedObject,
   objectKey,
   type Storage,
   StorageNotFoundError,
@@ -171,6 +173,24 @@ export class S3Storage implements Storage {
   async delete(key: string): Promise<void> {
     assertSafeKey(key);
     await this.client.send(new DeleteObjectCommand({ Bucket: this.bucket, Key: key }));
+  }
+
+  async *list(prefix: string): AsyncIterable<ListedObject> {
+    assertSafeKey(prefix);
+    let token: string | undefined;
+    do {
+      const res = await this.client.send(
+        new ListObjectsV2Command({
+          Bucket: this.bucket,
+          Prefix: `${prefix}/`,
+          ...(token && { ContinuationToken: token }),
+        }),
+      );
+      for (const o of res.Contents ?? []) {
+        if (o.Key && o.LastModified) yield { key: o.Key, modifiedAt: o.LastModified };
+      }
+      token = res.IsTruncated ? res.NextContinuationToken : undefined;
+    } while (token);
   }
 
   destroy(): void {
