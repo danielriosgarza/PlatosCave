@@ -43,7 +43,8 @@ func Line(s string) string {
 	return strings.ReplaceAll(Sanitize(s), "\n", " ")
 }
 
-// skipEscape returns the index of the last rune of the escape sequence starting at i.
+// skipEscape returns the index of the last rune of the escape sequence starting at i. An
+// unterminated sequence ends at the end of its line, so it cannot swallow the lines after it.
 func skipEscape(rs []rune, i int) int {
 	csi := rs[i] == 0x9b
 	osc := rs[i] == 0x9d
@@ -63,6 +64,8 @@ func skipEscape(rs []rune, i int) int {
 	}
 	for j := i + 1; j < len(rs); j++ {
 		switch {
+		case rs[j] == '\n':
+			return j - 1
 		case csi && rs[j] >= 0x40 && rs[j] <= 0x7e:
 			return j
 		case osc && (rs[j] == 0x07 || rs[j] == 0x9c):

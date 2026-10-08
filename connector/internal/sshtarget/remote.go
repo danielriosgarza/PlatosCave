@@ -929,7 +929,8 @@ func (o *startOutput) line(raw string) {
 		o.mu.Unlock()
 		return
 	}
-	line := sanitize(o.red.Redact(redact.Redact(raw)))
+	// Sanitised first, so a token split by control or format characters is whole when redacted.
+	line := o.red.Redact(redact.Redact(sanitize(raw)))
 	o.lines = append(o.lines, line)
 	if len(o.lines) > 20 {
 		o.lines = o.lines[len(o.lines)-20:]

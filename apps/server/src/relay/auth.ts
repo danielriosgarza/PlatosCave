@@ -53,8 +53,9 @@ export type LinkAuthResult =
 /**
  * Checks an `auth` answer to `challenge`: the challenge unexpired and unused, `ts` within 120 s
  * of `now`, the signature of the stored key over the link layout with this server's `origin`,
- * and only then the connector's state. A pending connector past its approval window is
- * `approval_expired`: it has to pair again, but nobody revoked it, so it is not told so.
+ * and only then the connector's state. A pending connector past its approval window, whether
+ * or not the sweep has already marked it revoked with reason `expired`, is `approval_expired`:
+ * it has to pair again, but nobody revoked it, so it is not told so.
  */
 export async function authenticateLink(
   db: Db,
@@ -72,7 +73,11 @@ export async function authenticateLink(
   if (!row || !verifySignature(message, row.publicKey, answer.sig)) {
     return { ok: false, reason: 'bad_signature' };
   }
-  if (row.status === 'revoked') return { ok: false, reason: 'revoked' };
+  if (row.status === 'revoked') {
+    // The pending sweep (`expirePendingConnectors`) records a lapsed approval as revoked with
+    // reason `expired`; nobody revoked it, so it is told its approval lapsed.
+    return { ok: false, reason: row.revokedReason === 'expired' ? 'approval_expired' : 'revoked' };
+  }
   if (row.status === 'pending') {
     const lapsed = row.approveBy !== null && row.approveBy.getTime() <= now.getTime();
     return { ok: false, reason: lapsed ? 'approval_expired' : 'pending' };

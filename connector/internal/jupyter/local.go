@@ -300,7 +300,8 @@ func (t *tail) read(r io.Reader) {
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 64<<10), 1<<20)
 	for sc.Scan() {
-		line := safetext.Line(rd.Redact(redact.Redact(sc.Text())))
+		// Sanitised first, so a token split by control or format characters is whole when redacted.
+		line := rd.Redact(redact.Redact(safetext.Line(sc.Text())))
 		t.mu.Lock()
 		t.lines = append(t.lines, line)
 		if len(t.lines) > tailLines {

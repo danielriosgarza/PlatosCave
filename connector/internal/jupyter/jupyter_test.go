@@ -755,3 +755,16 @@ func TestA27_JupyterTextSanitized(t *testing.T) {
 		t.Errorf("log line %q", got)
 	}
 }
+
+// TestA27_TokenSplitByFormatCharactersRedacted (A27): a token broken up by zero-width or
+// control characters in Jupyter's output is rejoined by the sanitiser before redaction, so it
+// never reaches the log whole.
+func TestA27_TokenSplitByFormatCharactersRedacted(t *testing.T) {
+	const token = "split-token-0123456789abcdef"
+	log := &lines{}
+	out := &tail{token: token, log: log.add}
+	out.read(strings.NewReader("Jupyter at http://127.0.0.1:8888/ split-tok​en-0123456789\u0007abcdef\n"))
+	if got := log.String(); strings.Contains(got, token) || !strings.Contains(got, redact.Placeholder) {
+		t.Errorf("log line %q", got)
+	}
+}

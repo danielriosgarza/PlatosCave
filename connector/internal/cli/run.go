@@ -393,7 +393,7 @@ func (r *runtimeRecorder) update(e link.Event) {
 	case link.Up:
 		r.rt.LastError = ""
 	case link.Down, link.Pending, link.Revoked, link.Rejected:
-		r.rt.LastError = safetext.Clip(safetext.Line(redact.Redact(e.Message)), 200)
+		r.rt.LastError = safetext.Clip(redact.Redact(safetext.Line(e.Message)), 200)
 	}
 	if err := r.write(); err != nil {
 		fmt.Fprintf(r.env.Stderr, "parallax-connector: could not update %s: %v\n", state.RuntimeFile, err)

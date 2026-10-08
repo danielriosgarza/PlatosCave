@@ -37,3 +37,17 @@ func TestClip(t *testing.T) {
 		t.Errorf("ClipTail = %q", got)
 	}
 }
+
+// TestA29_UnterminatedEscapeKeepsLaterLines (A29): an escape sequence that never ends stops at
+// its line, so the lines after it, which say why a start failed, are kept.
+func TestA29_UnterminatedEscapeKeepsLaterLines(t *testing.T) {
+	cases := map[string]string{
+		"open \x1b]0;never ends\nnext line kept": "open \nnext line kept",
+		"csi \u009b12\nlast line":                "csi \nlast line",
+	}
+	for in, want := range cases {
+		if got := Sanitize(in); got != want {
+			t.Errorf("Sanitize(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

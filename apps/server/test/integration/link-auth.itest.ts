@@ -1,5 +1,6 @@
 import { eq } from 'drizzle-orm';
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from 'vitest';
+import { expirePendingConnectors } from '../../src/db/connectors/registry';
 import { connectors } from '../../src/db/schema';
 import { defaultHello, keyFromSeed, seedOf } from '../fixtures/fake-connector';
 import { ids } from '../fixtures/world';
@@ -149,6 +150,16 @@ describe('link authentication', () => {
   test('A27 a pending connector past its approval window is refused with 4403 approval_expired, not revoked', async () => {
     const { id, key } = await relay.connector({ status: 'pending' });
     relay.advance(15 * 60_000);
+    const connector = await relay.dial(id, key);
+    void connector.authenticate();
+    expect(await connector.closed).toEqual({ code: 4403, reason: 'approval_expired' });
+  });
+
+  test('A27 a lapsed connector the pending sweep marked revoked (expired) is still refused as approval_expired', async () => {
+    const { id, key } = await relay.connector({ status: 'pending' });
+    relay.advance(15 * 60_000);
+    expect(await expirePendingConnectors(testDb.db, relay.now())).toContain(id);
+    expect(await row(id)).toMatchObject({ status: 'revoked', revokedReason: 'expired' });
     const connector = await relay.dial(id, key);
     void connector.authenticate();
     expect(await connector.closed).toEqual({ code: 4403, reason: 'approval_expired' });
