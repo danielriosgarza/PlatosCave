@@ -4,8 +4,11 @@ name: connector-e2e
 # profile `connector` (sshd-jupyter, jump), the Go `fixture` tests (A28, A29, A30) and the
 # Playwright flows of e2e/tests/connector/ (A27–A31). It runs on pull requests that touch what it
 # tests; the `ci` workflow still runs on every pull request, so a path filter that does not match
-# leaves the merge rule satisfied. A weekly schedule adds the connector's unit tests on macOS and
-# Windows (their runners have neither Docker nor Postgres, so the end-to-end flows stay on Linux).
+# leaves the merge rule satisfied. Path filter rule: list every file the A27–A31 flows and the Go
+# fixture tests depend on (relay, connector routes, their data access, jobs, contracts, e2e setup),
+# so a pull request that can change their outcome runs them. A weekly schedule adds the
+# connector's unit tests on macOS and Windows (their runners have neither Docker nor Postgres, so
+# the end-to-end flows stay on Linux).
 
 on:
   pull_request:
@@ -13,15 +16,28 @@ on:
       - connector/**
       - apps/server/src/relay/**
       - apps/server/src/http/relay/**
+      - apps/server/src/http/routes/**
+      - apps/server/src/db/connectors/**
+      - apps/server/src/db/notebooks/**
+      - apps/server/src/db/notebookSubmissions.ts
+      - apps/server/src/jobs/**
       - apps/web/src/notebooks/**
       - packages/contracts/src/connector*
       - packages/contracts/src/notebookChannel.ts
+      - packages/contracts/src/routes/connections.ts
+      - packages/contracts/src/routes/connectors.ts
+      - packages/contracts/src/routes/notebookSessions.ts
+      - packages/contracts/src/routes/notebooks.ts
+      - packages/contracts/src/routes/notebookSubmissions.ts
       - infra/compose.yml
       - infra/docker/sshd-jupyter.Dockerfile
       - infra/docker/jump.Dockerfile
       - infra/connector-fixtures/**
       - scripts/connector-fixture-keys.sh
       - e2e/tests/connector/**
+      - e2e/playwright.config.ts
+      - e2e/global-setup.ts
+      - e2e/paths.ts
       - .github/workflows/connector-e2e.yml
   schedule:
     - cron: '17 4 * * 1'
