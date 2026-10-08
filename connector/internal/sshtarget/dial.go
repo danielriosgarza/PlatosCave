@@ -18,6 +18,7 @@ import (
 
 	"parallax/connector/internal/netscope"
 	"parallax/connector/internal/protocol"
+	"parallax/connector/internal/safetext"
 	"parallax/connector/internal/target"
 )
 
@@ -195,7 +196,7 @@ func readBanner(ctx context.Context, conn net.Conn) (net.Conn, string, error) {
 			continue
 		}
 		if !strings.HasPrefix(line, "SSH-2.0-") && !strings.HasPrefix(line, "SSH-1.99-") {
-			return nil, "", fmt.Errorf("the server speaks %q, not SSH 2", clipText(line, 40))
+			return nil, "", fmt.Errorf("the server speaks %q, not SSH 2", safetext.Clip(line, 40))
 		}
 		if !stop() {
 			return nil, "", ctx.Err()
@@ -203,13 +204,6 @@ func readBanner(ctx context.Context, conn net.Conn) (net.Conn, string, error) {
 		return &bannerConn{Conn: conn, r: io.MultiReader(bytes.NewReader(buf), conn)}, line, nil
 	}
 	return nil, "", errors.New("no SSH banner in the first 8 KiB")
-}
-
-func clipText(s string, n int) string {
-	if len(s) > n {
-		return s[:n]
-	}
-	return s
 }
 
 // dialHop opens the TCP connection of a hop and reads its banner: directly through the network

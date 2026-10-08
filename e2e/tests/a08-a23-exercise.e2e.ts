@@ -1,6 +1,7 @@
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
-import { exerciseDefinition, openExercise, releaseExercise, signedIn } from '../touch';
+import { exerciseDefinition, openExercise, releaseExercise } from '../touch';
+import { releaseToClassA, signedIn, worldIds } from './released';
 
 test.use({ colorScheme: 'light' });
 
@@ -11,7 +12,8 @@ test('A08 and A23 a student works Predict, Inspect and Explain; help is recorded
 }) => {
   const base = baseURL ?? '';
   const title = `Standard error ${Date.now()}-${test.info().workerIndex}`;
-  const { ids, resourceId, priya } = await releaseExercise(playwright, base, title);
+  const { ids, resourceId } = await releaseExercise(playwright, base, title);
+  const priya = await signedIn(playwright, base, 'priya@example.test');
   expect(
     (await page.request.post('/api/test/signin-as', { data: { email: 'sam@example.test' } })).ok(),
   ).toBe(true);
@@ -114,32 +116,10 @@ test('a scheduled exercise shows its release date to students instead of opening
 }) => {
   const base = baseURL ?? '';
   const title = `Scheduled ${Date.now()}-${test.info().workerIndex}`;
-  const setup = await playwright.request.newContext({ baseURL: base });
-  const { ids } = await (await setup.post('/api/test/world')).json();
-  const elena = await signedIn(playwright, base, 'elena@example.test');
-  const created = await elena.post(
-    `/api/courses/${ids.statistics}/topics/${ids.sampling}/resources`,
-    {
-      data: {
-        type: 'exercise',
-        title,
-        content: exerciseDefinition,
-        releaseAt: '2099-01-15T09:00:00Z',
-      },
-    },
-  );
-  expect(created.ok()).toBe(true);
-  const published = await elena.post(`/api/courses/${ids.statistics}/releases`);
-  const { release } = await published.json();
-  const priya = await signedIn(playwright, base, 'priya@example.test');
-  const current = await (await priya.get(`/api/classes/${ids.classA}/release`)).json();
-  expect(
-    (
-      await priya.post(`/api/classes/${ids.classA}/adopt`, {
-        data: { releaseId: release.id, expectedReleaseId: current.release.id },
-      })
-    ).ok(),
-  ).toBe(true);
+  const ids = await worldIds(playwright, base);
+  await releaseToClassA(playwright, base, ids, [
+    { type: 'exercise', title, content: exerciseDefinition, releaseAt: '2099-01-15T09:00:00Z' },
+  ]);
 
   expect(
     (await page.request.post('/api/test/signin-as', { data: { email: 'sam@example.test' } })).ok(),

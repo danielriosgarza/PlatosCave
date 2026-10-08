@@ -19,6 +19,7 @@ import (
 	"parallax/connector/internal/link"
 	"parallax/connector/internal/protocol"
 	"parallax/connector/internal/redact"
+	"parallax/connector/internal/safetext"
 	"parallax/connector/internal/state"
 	"parallax/connector/internal/target"
 )
@@ -564,10 +565,9 @@ func (m *Manager) finish(s *Session, requestID, why string) {
 	rt := s.runtime
 	s.mu.Unlock()
 	if rt != nil {
-		rt.Client.CloseIdle() // the tunnel of an attached session ends here
-		if rt.Remote != nil {
-			rt.Remote.Close() // and so does the SSH connection; the server is never signalled
-		}
+		// The tunnel of an attached session ends here, and so does the SSH connection and the
+		// session's hold on the token's redaction; the server is never signalled.
+		rt.Release()
 	}
 	m.mu.Lock()
 	m.stopped[s.ID] = &rec
@@ -697,18 +697,5 @@ func asFailure(err error) *target.Failure {
 	return &target.Failure{Code: protocol.CodeInternal, Detail: err.Error()}
 }
 
-// clip keeps a detail within 512 characters without control characters other than tab and
-// newline.
-func clip(s string) string {
-	r := make([]rune, 0, len(s))
-	for _, c := range s {
-		if c < 0x20 && c != '\t' && c != '\n' || c == 0x7f {
-			continue
-		}
-		r = append(r, c)
-	}
-	if len(r) > 512 {
-		r = append(r[:511], '…')
-	}
-	return string(r)
-}
+// clip keeps a detail within the 512 characters a message allows, sanitised.
+func clip(s string) string { return safetext.Clip(safetext.Sanitize(s), 512) }

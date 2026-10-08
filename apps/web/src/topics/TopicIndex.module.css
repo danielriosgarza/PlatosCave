@@ -14,7 +14,7 @@
 }
 .table th {
   text-align: left;
-  font-size: 12px;
+  font-size: var(--pc-size-label);
   font-weight: 400;
   padding: 12px 10px;
   color: var(--pc-muted);
@@ -23,11 +23,11 @@
 .table td {
   padding: 14px 10px;
   border-bottom: 1px solid var(--pc-rule);
-  font-size: 14px;
+  font-size: var(--pc-size-ui);
   vertical-align: middle;
 }
 .table td:first-child {
-  font-size: 12px;
+  font-size: var(--pc-size-label);
   width: 36px;
   color: var(--pc-muted);
 }
@@ -53,7 +53,7 @@
   width: 7px;
   height: 7px;
   border: 1px solid var(--pc-rule);
-  border-radius: 1px;
+  border-radius: var(--pc-radius-mark);
 }
 .available {
   background: var(--pc-ink);
@@ -66,11 +66,19 @@
   margin-top: 20px;
   flex-wrap: wrap;
   color: var(--pc-muted);
-  font-size: 12px;
+  font-size: var(--pc-size-label);
 }
 .reviewed {
   margin-left: auto;
 }
 .muted {
   color: var(--pc-muted);
+}
+@media (pointer: coarse) {
+  .table a {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--pc-touch-target, 44px);
+    min-width: var(--pc-touch-target, 44px);
+  }
 }

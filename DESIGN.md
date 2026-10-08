@@ -72,6 +72,7 @@ rounded:
   primary: "24px"
   choice: "28px"
   square: "0"
+  mark: "1px"
 spacing:
   "4": "4px"
   "8": "8px"
@@ -189,7 +190,9 @@ Segoe UI, with Arial and Helvetica fallbacks, serves headings, reading, and cont
 
 The shared title role covers page, topic, and reading titles. General section headings use the section role and smaller subheads use the subsection role. Reading paragraphs use the body role within a maximum measure of 720 px. Metadata and captions use the label role. General editable text uses the field role; textareas increase its line height to 1.6 and the code editor has its own monospace role.
 
-Local variants belong to the content hierarchy: course-card titles use 18 px / 1.3 with -0.01 em tracking; reading subheads use 21 px; note headings use 17 px; the learning objective uses 15 px / 1.4. Navigation and filter labels use 12–14 px. The wordmark uses 19 px, weight 650, and -0.03 em tracking. Slide titles use 38 px with -0.03 em tracking, 32 px at the tablet breakpoint, and 28 px on phones; the more specific slide-notes rule retains a 30 px title. Slide supporting prose uses 22 px / 1.5, becoming 20 px at the tablet breakpoint; the more specific notes variant retains 18 px. Equations use 48 px serif type with 1 px tracking. On phones, topic titles become 24 px, reading titles 27 px, reading body 17 px, and rendered code 13 px. Editable code remains 16 px.
+Sizes are rem-based (1 rem = 16 px), so browser text scaling applies; `tokens.css` carries a `--pc-size-*` token per role and module stylesheets use those instead of literal sizes, which a unit test enforces. Local variants that fall between roles resolve to the nearest role size: 13 px and 15 px become the UI size (14 px), 17 px the body size (18 px), 19 px and 21 px the subsection size (20 px), and the 24 px phone topic title the section size (26 px).
+
+Local variants belong to the content hierarchy: course-card titles use 18 px / 1.3 with -0.01 em tracking; reading subheads use the subsection size (20 px); the learning objective uses the UI size (14 px). Navigation and filter labels use 12–14 px. The wordmark uses the subsection size (20 px), weight 650, and -0.03 em tracking. Slide titles use 38 px with -0.03 em tracking, 32 px at the tablet breakpoint, and 28 px on phones; the more specific slide-notes rule retains a 30 px title. Slide supporting prose uses 22 px / 1.5, becoming 20 px at the tablet breakpoint; the more specific notes variant retains 18 px. Equations use 48 px serif type with 1 px tracking. On phones, topic titles become the section size (26 px), reading titles 27 px, reading body stays at the body size (18 px, spec §6), and rendered code stays at the code size (14 px). Editable code remains 16 px.
 
 **The Content Type Rule.** Use the shared sans-serif hierarchy for interface and prose; reserve monospace for code and the serif exception for mathematical notation.
 
@@ -218,7 +221,7 @@ There are no shadows, gradients, or blur layers. Surface tone, one-pixel divider
 
 ## Shapes
 
-Ordinary controls, fields, feedback, and code blocks use the control radius. The card, note, primary-action, and exercise-choice radii each have distinct roles. Catalog filters and search use their own rounded forms; the compact passage toolbar uses the passage-tools radius. Tabs, slides, and the code editor remain square. Resource-presence marks have a local 1 px radius, while sample points are circles. These diagram marks are content geometry, not new control shapes. Continuous reading and notebook material stay unboxed.
+Ordinary controls, fields, feedback, and code blocks use the control radius. The card, note, primary-action, and exercise-choice radii each have distinct roles. Catalog filters and search use their own rounded forms; the compact passage toolbar uses the passage-tools radius. Tabs, slides, and the code editor remain square. Resource-presence marks use the mark radius (1 px), while sample points are circles. These diagram marks are content geometry, not new control shapes. Continuous reading and notebook material stay unboxed.
 
 ## Components
 

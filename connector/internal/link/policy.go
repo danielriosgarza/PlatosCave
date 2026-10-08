@@ -35,11 +35,12 @@ const (
 
 // Close reasons that change what the connector does.
 const (
-	ReasonBadSignature = "bad_signature"
-	ReasonClockSkew    = "clock_skew"
-	ReasonPending      = "pending"
-	ReasonRevoked      = "revoked"
-	ReasonModeMismatch = "mode_mismatch"
+	ReasonBadSignature    = "bad_signature"
+	ReasonClockSkew       = "clock_skew"
+	ReasonPending         = "pending"
+	ReasonApprovalExpired = "approval_expired"
+	ReasonRevoked         = "revoked"
+	ReasonModeMismatch    = "mode_mismatch"
 )
 
 // Fixed waits of design §4.6, in protocol seconds.
@@ -77,6 +78,10 @@ func decide(code int, reason, minVersion string) action {
 		case ReasonPending:
 			return action{state: Pending, wait: pendingRetry,
 				msg: "Waiting for this computer to be approved in Parallax; retrying every 10 s"}
+		case ReasonApprovalExpired:
+			return action{stop: true, state: Rejected,
+				msg: "This computer was not approved in Parallax within its 15-minute approval window, so the pairing lapsed. " +
+					"Pair it again with `parallax-connector pair --force`"}
 		case ReasonRevoked:
 			return action{stop: true, state: Revoked,
 				msg: "This computer was revoked in Parallax. To use it again, pair it again with `parallax-connector pair --force`"}

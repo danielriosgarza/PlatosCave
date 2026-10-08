@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"regexp"
 	"sort"
-	"unicode/utf8"
 
 	"parallax/connector/internal/protocol"
+	"parallax/connector/internal/safetext"
 )
 
 // maxKernelspecs is the number of kernels a report can carry (link.schema.json).
@@ -64,7 +64,7 @@ func toKernelspecs(m map[string]specFields) []protocol.Kernelspec {
 		if !reKernelspecName.MatchString(name) {
 			continue
 		}
-		out = append(out, protocol.Kernelspec{Name: name, DisplayName: clipRunes(cleanText(s.DisplayName), 128), Language: clipRunes(cleanText(s.Language), 32)})
+		out = append(out, protocol.Kernelspec{Name: name, DisplayName: safetext.Clip(safetext.Line(s.DisplayName), 128), Language: safetext.Clip(safetext.Line(s.Language), 32)})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
 	if len(out) > maxKernelspecs {
@@ -91,22 +91,4 @@ func CLIKernelspecs(ctx context.Context, python string) ([]protocol.Kernelspec, 
 		return nil, err
 	}
 	return ParseKernelspecList(out)
-}
-
-func clipRunes(s string, n int) string {
-	if utf8.RuneCountInString(s) <= n {
-		return s
-	}
-	return string([]rune(s)[:n])
-}
-
-// cleanText drops control characters from text a tool printed.
-func cleanText(s string) string {
-	b := make([]rune, 0, len(s))
-	for _, r := range s {
-		if r >= 0x20 && r != 0x7f {
-			b = append(b, r)
-		}
-	}
-	return string(b)
 }

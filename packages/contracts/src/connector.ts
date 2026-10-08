@@ -104,13 +104,15 @@ export const LINK_SUBPROTOCOL = 'parallax.connector.v1';
 
 /**
  * Close codes of the link (§4.6) by reason string. The reason travels as the close frame's
- * reason, so the connector can tell `pending` from `revoked` under the shared 4403.
+ * reason, so the connector can tell `pending`, `approval_expired` and `revoked` apart under the
+ * shared 4403.
  */
 export const LINK_CLOSE = {
   protocol_error: 4400,
   bad_signature: 4401,
   clock_skew: 4401,
   pending: 4403,
+  approval_expired: 4403,
   revoked: 4403,
   mode_mismatch: 4403,
   heartbeat_timeout: 4408,

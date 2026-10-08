@@ -23,6 +23,7 @@ import (
 	"parallax/connector/internal/jupyter"
 	"parallax/connector/internal/protocol"
 	"parallax/connector/internal/redact"
+	"parallax/connector/internal/safetext"
 	"parallax/connector/internal/target"
 )
 
@@ -876,16 +877,7 @@ func startExit(waitErr error, tail, python string) error {
 	case status == 126 || status == 127:
 		return toolFailure(cmdResult{status: status, stderr: tail}, python)
 	}
-	return &target.Failure{Code: protocol.CodeJupyterStartFailed, Detail: clipTail("Jupyter exited while starting: " + tail)}
-}
-
-// clipTail keeps the end of a detail within the 512 characters a message allows.
-func clipTail(s string) string {
-	r := []rune(s)
-	if len(r) <= 512 {
-		return s
-	}
-	return "…" + string(r[len(r)-511:])
+	return &target.Failure{Code: protocol.CodeJupyterStartFailed, Detail: safetext.ClipTail("Jupyter exited while starting: "+tail, 512)}
 }
 
 // startOutput reads the start command's output: every line is redacted (the token itself and
@@ -937,7 +929,8 @@ func (o *startOutput) line(raw string) {
 		o.mu.Unlock()
 		return
 	}
-	line := sanitize(o.red.Redact(redact.Redact(raw)))
+	// Sanitised first, so a token split by control or format characters is whole when redacted.
+	line := o.red.Redact(redact.Redact(sanitize(raw)))
 	o.lines = append(o.lines, line)
 	if len(o.lines) > 20 {
 		o.lines = o.lines[len(o.lines)-20:]

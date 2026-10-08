@@ -14,7 +14,7 @@
   grid-template-columns: minmax(0, 1fr);
   max-width: 100%;
   gap: 6px;
-  font-size: 12px;
+  font-size: var(--pc-size-label);
 }
 .wrap {
   position: relative;
@@ -24,13 +24,13 @@
 .table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: var(--pc-size-ui);
   min-width: 580px;
   font-variant-numeric: tabular-nums;
 }
 .table th {
   text-align: left;
-  font-size: 12px;
+  font-size: var(--pc-size-label);
   color: var(--pc-muted);
   font-weight: 600;
   padding: 12px;
@@ -70,7 +70,7 @@
   align-items: center;
 }
 .nav button {
-  font-size: 12px;
+  font-size: var(--pc-size-label);
   color: var(--pc-muted);
   background: none;
   border: 0;
@@ -86,11 +86,11 @@
   gap: 16px;
   align-items: center;
   margin-top: 16px;
-  font-size: 12px;
+  font-size: var(--pc-size-label);
   color: var(--pc-muted);
 }
 .pages button {
-  font-size: 12px;
+  font-size: var(--pc-size-label);
   background: none;
   border: 0;
   padding: 4px 0;
@@ -108,7 +108,7 @@
   margin-top: 24px;
 }
 .empty h2 {
-  font-size: 20px;
+  font-size: var(--pc-size-subsection);
   margin: 0 0 12px;
 }
 @media (max-width: 720px) {
