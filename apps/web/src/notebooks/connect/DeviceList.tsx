@@ -18,6 +18,11 @@ const REFUSALS: Record<string, string> = {
   rate_limited: 'Too many pairing codes this hour. Try again later.',
 };
 
+// Connector binaries are GitHub release assets of this repository (tag connector-v<version>), each
+// release carrying a SHA256SUMS file (docs/operations.md, "Connector downloads").
+const CONNECTOR_RELEASES = 'https://github.com/danielriosgarza/PlatosCave/releases';
+const CONNECTOR_CHECKSUMS = `${CONNECTOR_RELEASES}/latest/download/SHA256SUMS`;
+
 /** The message for a refused request: its own reason when the API gave one, else a plain failure. */
 const refusal = (error: unknown, fallback: string) => REFUSALS[errorCode(error) ?? ''] ?? fallback;
 
@@ -105,6 +110,18 @@ export function DeviceList() {
       ) : (
         <p>No computer is paired. Pair the computer that will run your notebooks.</p>
       )}
+      <p>
+        The connector is a program for the computer that will run your notebooks (Linux, macOS or
+        Windows). Download the file for that system from the{' '}
+        <a href={CONNECTOR_RELEASES} target="_blank" rel="noreferrer">
+          connector releases
+        </a>{' '}
+        and check it against{' '}
+        <a href={CONNECTOR_CHECKSUMS} target="_blank" rel="noreferrer">
+          SHA256SUMS
+        </a>
+        .
+      </p>
       <div className={styles.row}>
         <button
           type="button"

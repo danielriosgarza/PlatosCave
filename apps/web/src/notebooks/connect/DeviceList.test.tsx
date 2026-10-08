@@ -65,6 +65,20 @@ describe('DeviceList', () => {
     );
   });
 
+  it('A27 it links the connector download and its checksums', async () => {
+    stubApi(() => ({ status: 200, body: [] }));
+    renderList();
+    const releases = await screen.findByRole('link', { name: 'connector releases' });
+    expect(releases).toHaveAttribute(
+      'href',
+      'https://github.com/danielriosgarza/PlatosCave/releases',
+    );
+    expect(screen.getByRole('link', { name: 'SHA256SUMS' })).toHaveAttribute(
+      'href',
+      'https://github.com/danielriosgarza/PlatosCave/releases/latest/download/SHA256SUMS',
+    );
+  });
+
   it('a computer that registers while a pairing code is live appears without a refocus', async () => {
     let registered = false;
     stubApi((_url, init) =>
