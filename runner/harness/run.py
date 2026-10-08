@@ -25,7 +25,7 @@ import threading
 import time
 from fractions import Fraction
 
-HARNESS_VERSION = "3"
+HARNESS_VERSION = "4"
 HARNESS_DIR = os.path.dirname(os.path.abspath(__file__))
 
 EXIT_BAD_INPUT = 64
