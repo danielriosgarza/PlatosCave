@@ -263,7 +263,7 @@ pg-boss is created with `schema: 'pgboss_exec'`, `migrate: false`, `supervise: f
 
 ```ts
 {
-  Image: image.ref, Hostname: 'sandbox', User: '10001:10001', WorkingDir: '/work',
+  Image: image.id, Hostname: 'sandbox', User: '10001:10001', WorkingDir: '/work',
   Cmd: ['python3', '/opt/parallax/harness/run.py'], Env: ['PARALLAX_JOB=1'],
   Labels: { 'parallax.runner': '1', 'parallax.job': job.jobId },
   AttachStdin: true, OpenStdin: true, StdinOnce: true, AttachStdout: true, AttachStderr: true, Tty: false,
@@ -281,6 +281,8 @@ pg-boss is created with `schema: 'pgboss_exec'`, `migrate: false`, `supervise: f
   },
 }
 ```
+
+`Image` is the image **id** that the allowlist inspected and recorded (the `Id` of the start-up inspection), not the allowlisted reference: a tag that moves after resolution cannot substitute another image for the one the outcome records (as built in P3-13, PR #188 decision 3; `policy.test.ts` asserts it).
 
 Seccomp is Docker's default profile. `Init: false` departs from ADR-0004's table (its pointer line names it): the harness itself is pid 1, reaps orphans continuously and kills and reaps after every check (§4.3), is unreachable by signal from inside the namespace, `SIGINT` going to its no-op handler (§4.4), and is the only process holding the container's stdout and stderr, which `docker-init` as a dumpable same-uid pid 1 would expose to student code through `/proc/1/fd/*` (§4.4, §13 item 1); `policy.test.ts` asserts the field. The job reaches the container only through the attached stdin: after `start()` the runner writes `<nonce>\n` followed by the job JSON (the same document it validated, at most 4 MiB) and ends the stream, which `StdinOnce` closes. Nothing is copied into the container (Docker refuses `putArchive` into a read-only root filesystem) and nothing is mounted from the host; the image's filesystem is the only one the sandbox has, read-only, plus the two tmpfs mounts.
 

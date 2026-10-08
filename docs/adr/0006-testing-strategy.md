@@ -44,7 +44,7 @@ Spec §16 lists 36 acceptance scenarios; §17 orders the build. PRs are written 
 
 Wall time stays under ten minutes because jobs run in parallel; per-test budgets: unit file < 2 s, itest < 5 s, e2e test < 30 s. A weekly `schedule` runs the load script and the full Playwright matrix at 1440 × 900, 1024 and 320 px with 200 % zoom.
 
-**Actions budget.** The repository is private, so GitHub Actions minutes are metered per job and rounded up. The table above is the target shape, but in practice `check`, `unit` and `go` run as one `check` job, `image` runs from a separate path-filtered workflow, CI triggers on `pull_request` and `workflow_dispatch` only, and scheduled workflows run weekly (see `docs/delivery/plan.md` §1.9). New jobs must justify their minutes.
+**Actions budget.** The repository is public (it was private when this was written), but job minutes are still treated as a budget: they are counted per job and rounded up, and the economy below stays in force. The table above is the target shape, but in practice `check`, `unit` and `go` run as one `check` job, `image` runs from a separate path-filtered workflow, CI triggers on `pull_request` and `workflow_dispatch` only, and scheduled workflows run weekly (see `docs/delivery/plan.md` §1.9). New jobs must justify their minutes.
 
 **Definition of done for an item.** Tests for every scenario in its `Scenarios` field exist with the ID in the title; `pnpm check` (lint, typecheck, unit, component) passes locally; integration/e2e pass in CI; the PR body lists `Scenarios: A05 (itest, e2e)`.
 
