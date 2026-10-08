@@ -715,6 +715,7 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
           <MarginTabs tab={tab} onTab={setTab} count={threads.length} idPrefix="reading-margin">
             {list.isError && !list.data ? (
               <RetryNotice
+                compact
                 message="Notes could not be loaded."
                 onRetry={() => void list.refetch()}
               />
@@ -729,6 +730,7 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
                 ) : null}
                 {deleteProblem ? (
                   <RetryNotice
+                    compact
                     message="The note could not be deleted. Your text is kept."
                     onRetry={() => {
                       const entry = notes.find(
@@ -986,7 +988,7 @@ export function NoteSaveLine({
       status={mapped}
       reason={state.reason}
       onRetry={onRetry}
-      override={
+      note={
         gone ? (
           <>
             This note was deleted elsewhere ·{' '}
@@ -996,6 +998,7 @@ export function NoteSaveLine({
           </>
         ) : undefined
       }
+      noteFailed={gone}
     />
   );
 }

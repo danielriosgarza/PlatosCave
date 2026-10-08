@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import buttons from '../../components/Buttons.module.css';
-import composer from '../../components/DiscussionComposer.module.css';
+import { SaveLine } from '../../components/SaveLine';
 import type { MarginActions, Thread, ThreadAction } from './data';
 import styles from './Margin.module.css';
 
@@ -184,9 +184,7 @@ export function ThreadPosts({
           </button>
         ) : null}
       </div>
-      <div className={styles.saveLine} role="status">
-        {problem}
-      </div>
+      <SaveLine status="idle" note={problem} noteFailed />
     </div>
   );
 }
@@ -209,7 +207,7 @@ function Form({
   onCancel: () => void;
 }) {
   return (
-    <div className={composer.composer}>
+    <div className={styles.composer}>
       <label className={styles.field}>
         {label}
         <textarea rows={3} value={text} onChange={(e) => onText(e.target.value)} />
