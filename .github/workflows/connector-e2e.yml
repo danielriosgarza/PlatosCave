@@ -6,15 +6,22 @@ name: connector-e2e
 # tests; the `ci` workflow still runs on every pull request, so a path filter that does not match
 # leaves the merge rule satisfied. Path filter rule: list the connector, relay and notebook-session
 # code, the HTTP routes and contracts the flows call, their data access, the test routes and
-# fixtures they seed through, and the e2e setup. Shared server infrastructure (app.ts, auth, db
-# schema helpers) is not listed; the weekly schedule and workflow_dispatch cover it. A weekly
-# schedule also adds the connector's unit tests on macOS and Windows (their runners have neither
+# fixtures they seed through, the connector and notebook-session migrations (and their snapshots)
+# that db:reset applies, the Notebooks tab route every flow opens, and the e2e setup. Shared server
+# infrastructure (app.ts, auth, db schema helpers) and dependency manifests (pnpm-lock.yaml, go.sum;
+# e2e/package.json is listed) are deliberately not listed: the weekly schedule and workflow_dispatch
+# do not gate a pull request, they are a post-merge backstop that catches a break in them after it
+# merges. A weekly schedule also adds the connector's unit tests on macOS and Windows (their runners have neither
 # Docker nor Postgres, so the end-to-end flows stay on Linux).
 
 on:
   pull_request:
     paths:
       - connector/**
+      - apps/server/drizzle/0007_p3-02_connectors.sql
+      - apps/server/drizzle/0009_p3-06_notebook_sessions.sql
+      - apps/server/drizzle/meta/0007_snapshot.json
+      - apps/server/drizzle/meta/0009_snapshot.json
       - apps/server/src/content/workingCopy*.ts
       - apps/server/src/db/connectors/**
       - apps/server/src/db/jobs/derived.ts
@@ -31,6 +38,7 @@ on:
       - apps/server/src/relay/**
       - apps/server/test/fixtures/**
       - apps/web/src/notebooks/**
+      - apps/web/src/routes/_authed/classes.$classId.topics.$topicId.$tab.tsx
       - packages/contracts/src/routes/computeTemplates.ts
       - packages/contracts/src/routes/connections.ts
       - packages/contracts/src/routes/connectors.ts
