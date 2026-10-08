@@ -10,7 +10,7 @@ import { SESSION_COOKIE, sessionCookieOptions } from '../../auth/sessions';
 import { userForVerifiedEmail } from '../../db/auth/accounts';
 import { createSession } from '../../db/auth/sessions';
 import { approveConnector, listConnectors } from '../../db/connectors/registry';
-import { NOT_FOUND, notFound, registerRoute } from '../register';
+import { notFound, registerRoute } from '../register';
 
 const LOOPBACK_PEERS = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 
@@ -26,7 +26,7 @@ export default function testRoutes(app: FastifyInstance, deps: RouteDeps): void 
   app.addHook('onRequest', async (req, reply) => {
     if (!req.url.startsWith('/api/test/')) return;
     if (!LOOPBACK_PEERS.has(req.socket.remoteAddress ?? '')) {
-      await reply.code(404).send(NOT_FOUND);
+      return reply.callNotFound();
     }
   });
   // One server process serves every Playwright worker: build the world at most once.
