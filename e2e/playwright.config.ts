@@ -34,7 +34,7 @@ export default defineConfig({
     // One server, two origins (ADR-0002): the app on 127.0.0.1, the content origin on localhost.
     env: {
       PORT: '3100',
-      HOST: '0.0.0.0',
+      HOST: '127.0.0.1',
       APP_HOST: '127.0.0.1',
       CONTENT_HOST: 'localhost',
       CONTENT_ORIGIN: 'http://localhost:3100',

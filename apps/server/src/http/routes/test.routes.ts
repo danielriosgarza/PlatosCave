@@ -10,7 +10,9 @@ import { SESSION_COOKIE, sessionCookieOptions } from '../../auth/sessions';
 import { userForVerifiedEmail } from '../../db/auth/accounts';
 import { createSession } from '../../db/auth/sessions';
 import { approveConnector, listConnectors } from '../../db/connectors/registry';
-import { notFound, registerRoute } from '../register';
+import { NOT_FOUND, notFound, registerRoute } from '../register';
+
+const LOOPBACK_PEERS = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
 
 /** E2E fixture routes (ADR-0006); mounted only when TEST_ROUTES=1, never in production. */
 export default function testRoutes(app: FastifyInstance, deps: RouteDeps): void {
@@ -18,6 +20,15 @@ export default function testRoutes(app: FastifyInstance, deps: RouteDeps): void 
   if (!config.TEST_ROUTES || config.NODE_ENV === 'production') return;
   const db = deps.requireDb;
   const now = deps.now;
+
+  // The fixtures mint sessions for any email: answer only peers on this machine, judged by the
+  // socket (not `req.ip`, which TRUST_PROXY lets a header set), however the server is bound.
+  app.addHook('onRequest', async (req, reply) => {
+    if (!req.url.startsWith('/api/test/')) return;
+    if (!LOOPBACK_PEERS.has(req.socket.remoteAddress ?? '')) {
+      await reply.code(404).send(NOT_FOUND);
+    }
+  });
   // One server process serves every Playwright worker: build the world at most once.
   let building: Promise<boolean> | undefined;
 
