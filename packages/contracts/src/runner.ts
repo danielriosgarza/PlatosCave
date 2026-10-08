@@ -18,6 +18,12 @@ export const RUNNER_BOUNDS = {
   outputBytes: { default: 1 * MiB, min: 4 * KiB, max: 4 * MiB },
 } as const;
 
+/**
+ * On SIGTERM the runner waits this long for running containers: the longest wall limit + 10 s
+ * (design §7.2). `infra/compose.prod.yml` gives the runner a stop grace period longer than this.
+ */
+export const RUNNER_STOP_DRAIN_SECONDS = RUNNER_BOUNDS.wallSeconds.max + 10;
+
 /** Fixed sizes of §3.1 and §5, not overridable by a course or a question. */
 export const RUNNER_MAX_FILES = 64;
 export const RUNNER_MAX_FILE_BYTES = 2 * MiB;

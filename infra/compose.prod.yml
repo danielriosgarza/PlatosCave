@@ -171,6 +171,9 @@ services:
     cap_drop: [ALL]
     security_opt: ["no-new-privileges:true"]
     working_dir: /app/apps/runner
+    # Longer than the 70 s main.ts waits for running sandboxes (design §7.2), so a deploy does not
+    # SIGKILL the runner mid-job and orphan its containers.
+    stop_grace_period: 80s
     command: ["node_modules/.bin/tsx", "src/main.ts"]
     group_add: ["${DOCKER_GID:?the group id of /var/run/docker.sock on the host}"]
     environment:

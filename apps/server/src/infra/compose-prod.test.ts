@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import { RUNNER_BOUNDS, RUNNER_STOP_DRAIN_SECONDS } from '@parallax/contracts';
 import { describe, expect, test } from 'vitest';
 import { parse } from 'yaml';
 import { loadConfig } from '../config';
@@ -82,6 +83,14 @@ describe('compose.prod.yml', () => {
 
   test('the worker may drain for the 8 s main.ts waits, so its stop grace is at least 10 s', () => {
     expect(services.worker?.stop_grace_period).toBe('10s');
+  });
+
+  test('A13 the runner may drain running sandboxes for the longest wall limit + 10 s before Docker kills it', () => {
+    // Design §7.2: on SIGTERM the runner waits up to the longest wall limit + 10 s.
+    expect(RUNNER_STOP_DRAIN_SECONDS).toBe(RUNNER_BOUNDS.wallSeconds.max + 10);
+    const grace = services.runner?.stop_grace_period ?? '';
+    expect(grace).toMatch(/^\d+s$/);
+    expect(Number.parseInt(grace, 10)).toBeGreaterThan(RUNNER_STOP_DRAIN_SECONDS);
   });
 
   test('the runner is given exactly the variables it reads and no application secret', () => {
