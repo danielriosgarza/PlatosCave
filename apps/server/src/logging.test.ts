@@ -3,7 +3,7 @@ import { DrizzleQueryError } from 'drizzle-orm';
 import { describe, expect, test } from 'vitest';
 import { buildApp } from './app';
 import { loadConfig } from './config';
-import { createLogger, REDACT_PATHS, serialiseError } from './logging';
+import { createLogger, REDACT_PATHS, serialiseError, warningFields } from './logging';
 
 /** Every sentinel below must never appear in any log line, whatever route or logger produced it. */
 const SECRETS = {
@@ -42,15 +42,24 @@ describe('structured logs', () => {
     await app.inject({
       method: 'GET',
       url: `/api/auth/verify?token=${SECRETS.signInToken}`,
-      headers: { cookie: `pc_session=${SECRETS.session}`, authorization: 'Bearer abc' },
+      headers: {
+        cookie: `pc_session=${SECRETS.session}`,
+        authorization: 'Bearer abc',
+      },
     });
-    await app.inject({ method: 'GET', url: `/content/${SECRETS.contentToken}` });
+    await app.inject({
+      method: 'GET',
+      url: `/content/${SECRETS.contentToken}`,
+    });
     await app.inject({
       method: 'POST',
       url: '/api/auth/link',
       payload: { email: SECRETS.email, answer: SECRETS.answer },
     });
-    await app.inject({ method: 'GET', url: `/anything/${SECRETS.contentToken}/page` });
+    await app.inject({
+      method: 'GET',
+      url: `/anything/${SECRETS.contentToken}/page`,
+    });
     await app.close();
     expect(lines.length).toBeGreaterThan(0);
     const parsed = lines.map((l) => JSON.parse(l));
@@ -105,7 +114,10 @@ describe('structured logs', () => {
     for (const written of [lines, worker.lines]) {
       expect(leaks(written)).toEqual([]);
       const line = written.map((l) => JSON.parse(l)).find((p) => p.err);
-      expect(line.err).toMatchObject({ code: '23505', message: 'database query failed (23505)' });
+      expect(line.err).toMatchObject({
+        code: '23505',
+        message: 'database query failed (23505)',
+      });
       expect(line.err).not.toHaveProperty('params');
     }
   });
@@ -115,7 +127,13 @@ describe('structured logs', () => {
     const app = await buildApp(config, { logStream: stream });
     app.log.info({ body: SECRETS.answer, id: 'visible-1' }, 'top level');
     app.log.info(
-      { request: { headers: { cookie: SECRETS.session }, content: SECRETS.answer }, count: 3 },
+      {
+        request: {
+          headers: { cookie: SECRETS.session },
+          content: SECRETS.answer,
+        },
+        count: 3,
+      },
       'nested',
     );
     app.log.info(
@@ -137,13 +155,18 @@ describe('structured logs', () => {
     const log = createLogger(config, 'worker', stream);
     log.error(
       {
-        err: Object.assign(new Error('job failed'), { detail: SECRETS.dbDetail }),
+        err: Object.assign(new Error('job failed'), {
+          detail: SECRETS.dbDetail,
+        }),
         payload: { email: SECRETS.email },
       },
       'job failed',
     );
     expect(leaks(lines)).toEqual([]);
-    expect(JSON.parse(lines[0] as string)).toMatchObject({ name: 'worker', msg: 'job failed' });
+    expect(JSON.parse(lines[0] as string)).toMatchObject({
+      name: 'worker',
+      msg: 'job failed',
+    });
   });
 
   test('the redaction list covers cookies, authorisation and tokens on requests and responses', () => {
@@ -176,7 +199,8 @@ describe('structured logs', () => {
     }
     expect(serialiseError('boom')).toBe('boom');
     expect(serialiseError(null)).toBeNull();
-    expect(serialiseError(plain)).toBe(plain);
+    expect(serialiseError(plain)).not.toBe(plain);
+    expect(serialiseError(plain)).toEqual({ code: 'X' });
     expect(plain).toEqual({ code: 'X', query: 'select 1' });
     // A primitive cause is left out of the line, as pino does.
     expect((serialiseError(new Error('x', { cause: 'text' })) as { message: string }).message).toBe(
@@ -192,8 +216,82 @@ describe('structured logs', () => {
         code: '22P02',
       },
     );
-    const out = serialiseError(pgError) as { message: string; stack: string; code: string };
-    expect(out).toMatchObject({ message: 'database query failed (22P02)', code: '22P02' });
+    const out = serialiseError(pgError) as {
+      message: string;
+      stack: string;
+      code: string;
+    };
+    expect(out).toMatchObject({
+      message: 'database query failed (22P02)',
+      code: '22P02',
+    });
     expect(JSON.stringify(out)).not.toContain(SECRETS.answer);
+  });
+
+  test('an AggregateError logs each member without its query or bound values', () => {
+    const member = () =>
+      new DrizzleQueryError(
+        'insert into answers (text) values ($1)',
+        [SECRETS.dbParam],
+        new Error('x'),
+      );
+    const aggregate = new AggregateError(
+      [member(), { query: SECRETS.dbParam, code: 'Y' }, 'text'],
+      'many',
+    );
+    const { lines, stream } = capture();
+    createLogger(config, 'worker', stream).error({ err: aggregate }, 'job failed');
+    expect(leaks(lines)).toEqual([]);
+    expect(lines.join('')).not.toContain('insert into answers');
+    const err = JSON.parse(lines[0] as string).err;
+    expect(err.aggregateErrors[0]).toMatchObject({
+      message: 'database query failed',
+    });
+    expect(err.aggregateErrors[1]).toEqual({ code: 'Y' });
+    expect(err.aggregateErrors[2]).toBe('text');
+  });
+
+  test('a plain object logged as err loses its quoting fields and is not mutated', () => {
+    const plain = {
+      code: 'Z',
+      query: SECRETS.dbParam,
+      params: [SECRETS.answer],
+      id: 7,
+    };
+    const { lines, stream } = capture();
+    createLogger(config, 'worker', stream).error({ err: plain }, 'failed');
+    expect(leaks(lines)).toEqual([]);
+    expect(JSON.parse(lines[0] as string).err).toEqual({ code: 'Z', id: 7 });
+    expect(plain.query).toBe(SECRETS.dbParam);
+  });
+
+  test('a pg-boss slow-query warning logs its message and elapsed time, not its sql or values', async () => {
+    const warning = {
+      message: 'Slow query detected',
+      data: {
+        elapsed: 31,
+        sql: 'insert into job (data) values ($1)',
+        values: [{ answer: SECRETS.answer }],
+      },
+    };
+    const api = capture();
+    const app = await buildApp(config, { logStream: api.stream });
+    app.log.warn({ warning: warningFields(warning) }, 'pg-boss warning');
+    await app.close();
+    const worker = capture();
+    createLogger(config, 'worker', worker.stream).warn(
+      { warning: warningFields(warning) },
+      'pg-boss warning',
+    );
+    for (const written of [api.lines, worker.lines]) {
+      expect(leaks(written)).toEqual([]);
+      expect(written.join('')).not.toContain('insert into job');
+      const line = JSON.parse(written.find((l) => l.includes('pg-boss warning')) as string);
+      expect(line.warning).toEqual({
+        message: 'Slow query detected',
+        elapsedSeconds: 31,
+      });
+    }
+    expect(warningFields(null)).toEqual({});
   });
 });

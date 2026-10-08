@@ -96,6 +96,7 @@ test('A09 the notebook source downloads as the .ipynb file', async ({ page }) =>
   await page.goto(notebooks);
   await expect(page.getByText('Stored output · Python 3').first()).toBeVisible();
   const download = page.waitForEvent('download');
-  await page.getByRole('button', { name: 'Download' }).click();
+  // The toolbar's download; removed-output notices carry the same link beside the output.
+  await page.getByLabel('Resource tools').getByRole('button', { name: 'Download' }).click();
   expect((await download).suggestedFilename()).toBe('Repeated samples.ipynb');
 });

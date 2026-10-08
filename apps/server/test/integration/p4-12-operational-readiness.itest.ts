@@ -217,6 +217,37 @@ describe('notebook lease defaults from LEASE_IDLE_MINUTES and LEASE_GRACE_MINUTE
   });
 });
 
+describe('GET /api/me reports the configured default lease', () => {
+  let testDb: TestDatabase;
+  let world: Awaited<ReturnType<typeof buildWorld>>;
+
+  beforeAll(async () => {
+    testDb = await createTestDatabase();
+    world = await buildWorld(testDb.db, start);
+  });
+  afterAll(async () => {
+    await testDb?.drop();
+  });
+
+  test.each([
+    [{ LEASE_IDLE_MINUTES: '60', LEASE_GRACE_MINUTES: '10' }, 60, 10],
+    [{}, 30, 5],
+  ])('with %j the lease is %i and %i minutes', async (env, idle, grace) => {
+    const app = await buildApp(loadConfig({ NODE_ENV: 'test', LOG_LEVEL: 'silent', ...env }), {
+      db: testDb.db,
+      now: () => start,
+    });
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/me',
+      headers: { cookie: world.cookie.sam },
+    });
+    expect(res.statusCode).toBe(200);
+    expect(res.json().defaultLease).toEqual({ idleTimeoutMin: idle, gracePeriodMin: grace });
+    await app.close();
+  });
+});
+
 describe('SESSION_TTL_DAYS on the preview paths', () => {
   let testDb: TestDatabase;
   let world: Awaited<ReturnType<typeof buildWorld>>;

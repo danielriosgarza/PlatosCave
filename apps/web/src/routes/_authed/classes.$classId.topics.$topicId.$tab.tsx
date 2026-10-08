@@ -189,7 +189,8 @@ function OpenTopic({
           className={tab === 'reading' || tab === 'slides' ? readingStyles.panel : styles.panel}
           role="tabpanel"
           id="pc-content"
-          aria-labelledby={`pc-tab-${tab}`}
+          // The tab row is not rendered during Focus, so the panel is then named by its label.
+          {...(mode.focus ? { 'aria-label': label } : { 'aria-labelledby': `pc-tab-${tab}` })}
           // biome-ignore lint/a11y/noNoninteractiveTabindex: panel without focusable content must be reachable
           tabIndex={0}
         >

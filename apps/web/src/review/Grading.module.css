@@ -61,6 +61,7 @@
   border-top: 1px solid var(--pc-rule);
 }
 .question pre,
+.prose,
 .code {
   margin: 12px 0;
   padding: 12px;
@@ -70,6 +71,14 @@
   font-family: var(--pc-font-mono);
   font-size: var(--pc-text-code);
   white-space: pre;
+}
+/* A written answer is prose: it wraps instead of scrolling sideways. */
+.question .prose {
+  overflow-x: visible;
+  font-family: inherit;
+  font-size: inherit;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 .line {
   display: block;
