@@ -150,7 +150,7 @@ export function PreviewRunPanel({
           </p>
           {shown.failure ? <p className={styles.small}>{shown.failure.message}</p> : null}
           {compileError ? (
-            <pre className={local.mono}>
+            <pre className={local.monoOutput}>
               {`${compileError.file}${compileError.line ? `:${compileError.line}` : ''}\n${compileError.message}`}
             </pre>
           ) : null}

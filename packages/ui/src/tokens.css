@@ -24,8 +24,8 @@
   --pc-text-ui: 400 var(--pc-size-ui) / 1.5 var(--pc-font-sans);
   --pc-text-field: 400 var(--pc-size-field) / 1.5 var(--pc-font-sans);
   --pc-text-label: 400 var(--pc-size-label) / 1.5 var(--pc-font-sans);
-  --pc-text-code: 400 0.875rem / 1.75 var(--pc-font-mono);
-  --pc-text-code-editor: 400 1rem / 1.75 var(--pc-font-mono);
+  --pc-text-code: 400 var(--pc-size-ui) / 1.75 var(--pc-font-mono);
+  --pc-text-code-editor: 400 var(--pc-size-field) / 1.75 var(--pc-font-mono);
   /* font sizes, rem so browser text scaling applies; same scale as the roles above */
   --pc-size-title: 1.75rem;
   --pc-size-section: 1.625rem;

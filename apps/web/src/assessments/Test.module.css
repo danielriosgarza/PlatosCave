@@ -180,7 +180,7 @@
 .cm {
   border: 1px solid var(--pc-muted);
   background: var(--pc-sheet);
-  font: var(--pc-text-code);
+  font: var(--pc-text-code-editor);
   min-height: 260px;
   overflow: auto;
   max-width: 100%;

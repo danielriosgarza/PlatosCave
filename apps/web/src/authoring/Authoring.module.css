@@ -140,12 +140,20 @@
   margin-top: 16px;
   padding-top: 4px;
 }
-.mono {
-  font: var(--pc-text-code);
+.mono,
+.monoOutput {
   line-height: 1.5;
   white-space: pre;
   max-width: 100%;
   overflow-x: auto;
+}
+/* Editable code text keeps the editor size (spec §6: 16 px minimum when editable). */
+.mono {
+  font: var(--pc-text-code-editor);
+  line-height: 1.5;
+}
+.monoOutput {
+  font: var(--pc-text-code);
 }
 .inlineFields {
   display: flex;
