@@ -2,6 +2,7 @@ import { isDeepStrictEqual } from 'node:util';
 import { type LinkRuntime, validateTarget } from '@parallax/contracts';
 import {
   accountOf,
+  TemplateRuntime,
   TemplateTarget,
   targetFromTemplate,
 } from '@parallax/contracts/routes/computeTemplates';
@@ -20,7 +21,7 @@ import {
 } from '../schema';
 import { forUser } from '../scoped';
 import { uniqueViolation } from '../unique';
-import { templateTargetOf, templateUsed, usableTemplate } from './templates';
+import { templateHeldBy, templateUsed, usableTemplate } from './templates';
 
 /**
  * Saved connections (docs/design/connector.md §2, §10.2): a person's own, secret-free target
@@ -78,6 +79,19 @@ export function fromTemplate(target: ConnectionTarget, templateTarget: unknown):
     ...(target.expectedEnd !== undefined && { expectedEnd: target.expectedEnd }),
   };
   return isDeepStrictEqual(target, expected);
+}
+
+/**
+ * Whether `runtime` is the one a class template holds (design §11): its mode (a template only
+ * starts Jupyter, never attaches to a running server), interpreter and login shell. The kernel
+ * stays the person's choice among those the host offers, as on Connect.
+ */
+export function holdsTemplateRuntime(runtime: LinkRuntime, templateRuntime: unknown): boolean {
+  const template = TemplateRuntime.safeParse(templateRuntime);
+  if (!template.success || runtime.mode !== 'start') return false;
+  const { kernelName: _chosen, ...held } = runtime;
+  const { kernelName: _offered, ...expected } = template.data;
+  return isDeepStrictEqual(held, expected);
 }
 
 const isNameTaken = (err: unknown) => uniqueViolation(err, 'notebook_connections_owner_name_key');
@@ -184,10 +198,10 @@ export interface NewConnection {
 
 /**
  * Saves a connection of the caller (§2, step 2). The connector must be the caller's own and
- * active; a template must be an unarchived one of a class the caller is a member of, and the
- * target the one it makes for the caller's account (§11; audited as `template.used` in that
- * class). The target is checked against the rules of §4.4 and the connector's reported scope
- * (§8) before it is stored.
+ * active; a template must be an unarchived one of a class the caller is a member of, the
+ * target the one it makes for the caller's account and the runtime its own (§11; audited as
+ * `template.used` in that class). The target is checked against the rules of §4.4 and the
+ * connector's reported scope (§8) before it is stored.
  */
 export async function createConnection(
   db: Db,
@@ -206,7 +220,15 @@ export async function createConnection(
       if (input.templateId && !template) {
         return { ok: false as const, reason: 'not_found' as const };
       }
-      if (template && !fromTemplate(input.target, template.target)) return templateMismatch;
+      if (
+        template &&
+        !(
+          fromTemplate(input.target, template.target) &&
+          holdsTemplateRuntime(input.runtime, template.runtime)
+        )
+      ) {
+        return templateMismatch;
+      }
       const refused = policy(input.target, input.runtime, connector.networkScope);
       if (refused) return refused;
       const [row] = await tx
@@ -268,7 +290,7 @@ export interface ConnectionChange {
 /**
  * Renames a connection or changes its target or runtime. A new target is checked as on create
  * and keeps only the trusted host keys it still names (§10.3); one made from a template stays
- * that template's target for the account it names.
+ * that template's target for the account it names, and keeps its runtime.
  */
 export async function updateConnection(
   db: Db,
@@ -283,8 +305,9 @@ export async function updateConnection(
       if (!current) return { ok: false as const, reason: 'not_found' as const };
       const target = change.target ?? current.target;
       const runtime = change.runtime ?? current.runtime;
-      if (change.target && current.templateId) {
-        if (!fromTemplate(target, await templateTargetOf(tx, current.templateId))) {
+      if ((change.target || change.runtime) && current.templateId) {
+        const held = await templateHeldBy(tx, current.templateId);
+        if (!fromTemplate(target, held.target) || !holdsTemplateRuntime(runtime, held.runtime)) {
           return templateMismatch;
         }
       }
@@ -457,6 +480,8 @@ export interface SessionConnection {
   templateArchived: boolean;
   /** The lease that template sets for its sessions, if any (§9). */
   templateLease: { idleTimeoutMin: number; gracePeriodMin: number } | null;
+  /** The runtime that template holds, if any; its sessions start with it (§11). */
+  templateRuntime: unknown;
 }
 
 /**
@@ -476,6 +501,7 @@ export async function connectionForSession(
       templateClassId: classComputeTemplates.classId,
       templateArchivedAt: classComputeTemplates.archivedAt,
       templateLease: classComputeTemplates.lease,
+      templateRuntime: classComputeTemplates.runtime,
     })
     .from(notebookConnections)
     .innerJoin(
@@ -500,5 +526,6 @@ export async function connectionForSession(
     templateClassId: row.templateClassId,
     templateArchived: row.templateArchivedAt !== null,
     templateLease: row.templateLease as SessionConnection['templateLease'],
+    templateRuntime: row.templateRuntime,
   };
 }
