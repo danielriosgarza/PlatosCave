@@ -42,8 +42,16 @@ describe('design tokens match DESIGN.md', () => {
   it('typography weight, size and line height', () => {
     for (const [k, t] of Object.entries(front.typography)) {
       const v = declared.get(`--pc-text-${k}`) ?? '';
-      expect(v, k).toContain(`${t.fontWeight}${t.fontSize}/${t.lineHeight}`);
+      const rem = `${Number.parseFloat(t.fontSize) / 16}rem`;
+      expect(v, k).toContain(`${t.fontWeight}${rem}/${t.lineHeight}`);
     }
+  });
+  it('size tokens are rem and equal the role sizes', () => {
+    for (const k of ['title', 'section', 'subsection', 'body', 'field', 'ui', 'label']) {
+      const role = declared.get(`--pc-text-${k}`) ?? '';
+      expect(role, k).toContain(`${declared.get(`--pc-size-${k}`)}/`);
+    }
+    expect(declared.get('--pc-reading-size')).toBe(declared.get('--pc-size-body'));
   });
   it('tokenNames lists every declared property', () => {
     expect([...tokenNames].sort()).toEqual([...declared.keys()].sort());

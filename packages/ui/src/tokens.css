@@ -17,15 +17,23 @@
   --pc-font-sans: "Segoe UI", Arial, Helvetica, sans-serif;
   --pc-font-mono: ui-monospace, Consolas, monospace;
   --pc-font-math: Georgia, "Times New Roman", serif;
-  --pc-text-title: 600 28px / 1.25 var(--pc-font-sans);
-  --pc-text-section: 600 26px / 1.25 var(--pc-font-sans);
-  --pc-text-subsection: 600 20px / 1.25 var(--pc-font-sans);
-  --pc-text-body: 400 18px / 1.65 var(--pc-font-sans);
-  --pc-text-ui: 400 14px / 1.5 var(--pc-font-sans);
-  --pc-text-field: 400 16px / 1.5 var(--pc-font-sans);
-  --pc-text-label: 400 12px / 1.5 var(--pc-font-sans);
-  --pc-text-code: 400 14px / 1.75 var(--pc-font-mono);
-  --pc-text-code-editor: 400 16px / 1.75 var(--pc-font-mono);
+  --pc-text-title: 600 1.75rem / 1.25 var(--pc-font-sans);
+  --pc-text-section: 600 1.625rem / 1.25 var(--pc-font-sans);
+  --pc-text-subsection: 600 1.25rem / 1.25 var(--pc-font-sans);
+  --pc-text-body: 400 1.125rem / 1.65 var(--pc-font-sans);
+  --pc-text-ui: 400 0.875rem / 1.5 var(--pc-font-sans);
+  --pc-text-field: 400 1rem / 1.5 var(--pc-font-sans);
+  --pc-text-label: 400 0.75rem / 1.5 var(--pc-font-sans);
+  --pc-text-code: 400 0.875rem / 1.75 var(--pc-font-mono);
+  --pc-text-code-editor: 400 1rem / 1.75 var(--pc-font-mono);
+  /* font sizes, rem so browser text scaling applies; same scale as the roles above */
+  --pc-size-title: 1.75rem;
+  --pc-size-section: 1.625rem;
+  --pc-size-subsection: 1.25rem;
+  --pc-size-body: 1.125rem;
+  --pc-size-field: 1rem;
+  --pc-size-ui: 0.875rem;
+  --pc-size-label: 0.75rem;
   --pc-tracking-title: -0.02em;
   --pc-tracking-subsection: -0.01em;
   /* rounded */
@@ -52,7 +60,7 @@
   --pc-space-56: 56px;
   /* layout measures, spec §5 */
   --pc-reading-width: 720px;
-  --pc-reading-size: 18px;
+  --pc-reading-size: 1.125rem;
   --pc-notes-width: 280px;
   --pc-notes-gap: 56px;
   --pc-stage-inset: 40px;

@@ -1,6 +1,6 @@
 /* Ported from the wireframe: .pc-topic-nav buttons. */
 .closed {
-  font-size: 12px;
+  font-size: var(--pc-size-label);
   color: var(--pc-muted);
   padding: 5px 9px;
 }

@@ -14,14 +14,14 @@
   align-items: center;
 }
 .resourceMeta {
-  font-size: 12px;
+  font-size: var(--pc-size-label);
   line-height: 1.5;
   color: var(--pc-muted);
 }
 .empty {
   border-top: 1px solid var(--pc-rule);
   padding: 14px 0;
-  font-size: 13px;
+  font-size: var(--pc-size-ui);
   color: var(--pc-muted);
 }
 .field {
@@ -45,7 +45,7 @@
   resize: vertical;
 }
 .hint {
-  font-size: 12px;
+  font-size: var(--pc-size-label);
   line-height: 1.5;
   color: var(--pc-muted);
 }
@@ -75,7 +75,7 @@
 .issues {
   margin: 12px 0 0;
   padding-left: 18px;
-  font-size: 13px;
+  font-size: var(--pc-size-ui);
   line-height: 1.5;
 }
 .conflict {
@@ -90,7 +90,7 @@
   grid-template-columns: max-content 1fr 1fr;
   gap: 6px 20px;
   margin: 12px 0;
-  font-size: 13px;
+  font-size: var(--pc-size-ui);
 }
 .conflict dt {
   font-weight: 600;
@@ -142,7 +142,7 @@
 }
 .mono {
   font-family: var(--pc-font-mono);
-  font-size: 13px;
+  font-size: var(--pc-size-ui);
   line-height: 1.5;
   white-space: pre;
   max-width: 100%;
@@ -163,7 +163,7 @@
   max-width: 240px;
 }
 .badge {
-  font-size: 12px;
+  font-size: var(--pc-size-label);
   border: 1px solid var(--pc-muted);
   border-radius: var(--pc-radius-control);
   padding: 0 6px;
@@ -182,5 +182,5 @@
   margin: 4px 0 0;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
-  font-size: 12px;
+  font-size: var(--pc-size-label);
 }

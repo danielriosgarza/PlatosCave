@@ -29,7 +29,7 @@
   color: var(--pc-accent-ink);
   border-radius: var(--pc-radius-passage-tools);
   font: var(--pc-text-ui);
-  font-size: 12px;
+  font-size: var(--pc-size-label);
 }
 .tools button {
   font: inherit;
@@ -93,14 +93,14 @@
   padding: 12px 14px;
   border: 1px solid var(--pc-rule);
   background: var(--pc-sheet);
-  font-size: 14px;
+  font-size: var(--pc-size-ui);
   line-height: 1.55;
   border-radius: var(--pc-radius-note);
   overflow-wrap: anywhere;
 }
 .preview {
   margin: 0;
-  font-size: 14px;
+  font-size: var(--pc-size-ui);
   line-height: 1.55;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
@@ -122,7 +122,7 @@
 }
 .link {
   font: inherit;
-  font-size: 12px;
+  font-size: var(--pc-size-label);
   background: none;
   border: 0;
   padding: 2px 0;
@@ -133,13 +133,13 @@
 }
 .thread p {
   margin: 8px 0 0;
-  font-size: 14px;
+  font-size: var(--pc-size-ui);
   line-height: 1.55;
   overflow-wrap: anywhere;
 }
 .empty {
   color: var(--pc-muted);
-  font-size: 14px;
+  font-size: var(--pc-size-ui);
   margin: 0 0 12px;
 }
 

@@ -23,14 +23,14 @@
   justify-content: space-between;
 }
 .context {
-  font-size: 12px;
+  font-size: var(--pc-size-label);
   color: var(--pc-muted);
 }
 .muted {
   color: var(--pc-muted);
 }
 .small {
-  font-size: 12px;
+  font-size: var(--pc-size-label);
   line-height: 1.5;
 }
 .grid {
@@ -58,7 +58,7 @@
   margin-top: 12px;
 }
 .prompt p {
-  font-size: 18px;
+  font-size: var(--pc-size-body);
   line-height: 1.6;
   margin: 18px 0;
   white-space: pre-wrap;
@@ -78,7 +78,7 @@
   display: grid;
   grid-template-columns: auto 1fr;
   gap: 6px 16px;
-  font-size: 13px;
+  font-size: var(--pc-size-ui);
   margin: 0;
 }
 .terms dt {
@@ -104,7 +104,7 @@
 }
 .navItem {
   font: inherit;
-  font-size: 13px;
+  font-size: var(--pc-size-ui);
   cursor: pointer;
   min-height: 36px;
   text-align: left;
@@ -120,7 +120,7 @@
 }
 .navState {
   display: block;
-  font-size: 12px;
+  font-size: var(--pc-size-label);
   font-weight: 400;
   color: var(--pc-muted);
 }
@@ -135,7 +135,7 @@
   min-width: 0;
 }
 .options legend {
-  font-size: 13px;
+  font-size: var(--pc-size-ui);
   color: var(--pc-muted);
   margin-bottom: 8px;
 }
@@ -163,7 +163,7 @@
 }
 .error {
   color: var(--pc-ink);
-  font-size: 13px;
+  font-size: var(--pc-size-ui);
   margin: 6px 0 0;
   padding-left: 10px;
   border-left: 3px solid var(--pc-ink);
@@ -174,7 +174,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 12px;
+  font-size: var(--pc-size-label);
   gap: 12px;
   border: 1px solid var(--pc-rule);
   border-bottom: 0;
@@ -274,7 +274,7 @@
   border-top: 0;
 }
 .check h4 {
-  font-size: 14px;
+  font-size: var(--pc-size-ui);
   margin: 0;
 }
 .stale {
@@ -322,7 +322,7 @@
   display: grid;
   grid-template-columns: auto 1fr;
   gap: 6px 16px;
-  font-size: 14px;
+  font-size: var(--pc-size-ui);
   margin: 16px 0;
 }
 .receiptList dt {
@@ -346,7 +346,7 @@
   margin-top: 8px;
 }
 .statusLine {
-  font-size: 12px;
+  font-size: var(--pc-size-label);
   color: var(--pc-muted);
 }
 

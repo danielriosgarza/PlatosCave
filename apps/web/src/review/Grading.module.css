@@ -24,7 +24,7 @@
   flex-wrap: wrap;
   padding: 12px 0;
   border-top: 1px solid var(--pc-rule);
-  font-size: 13px;
+  font-size: var(--pc-size-ui);
 }
 .split {
   display: grid;
@@ -39,7 +39,7 @@
 .rubric label {
   display: block;
   margin: 12px 0 5px;
-  font-size: 12px;
+  font-size: var(--pc-size-label);
 }
 .rubric input[type="number"] {
   width: 80px;
@@ -100,7 +100,7 @@
   list-style: none;
   padding: 0;
   margin: 8px 0;
-  font-size: 12px;
+  font-size: var(--pc-size-label);
 }
 .checks li {
   padding: 2px 0;
@@ -129,7 +129,7 @@
 }
 .thread p {
   margin: 9px 0;
-  font-size: 14px;
+  font-size: var(--pc-size-ui);
   line-height: 1.55;
 }
 .select {
@@ -142,7 +142,7 @@
   margin-top: 24px;
 }
 .history {
-  font-size: 12px;
+  font-size: var(--pc-size-label);
   padding-left: 18px;
   margin: 8px 0;
 }

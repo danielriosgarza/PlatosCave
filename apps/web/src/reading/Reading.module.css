@@ -84,7 +84,7 @@
   letter-spacing: var(--pc-tracking-title);
 }
 .native h3 {
-  font-size: 21px;
+  font-size: var(--pc-size-subsection);
   letter-spacing: var(--pc-tracking-subsection);
 }
 .native p,
@@ -144,7 +144,7 @@
   overflow-x: auto;
   border-collapse: collapse;
   margin-top: 18px;
-  font-size: 15px;
+  font-size: var(--pc-size-ui);
   line-height: 1.5;
 }
 .native th,
@@ -330,9 +330,9 @@
     padding: 24px 16px 40px;
   }
   .native {
-    font-size: 17px;
+    font-size: var(--pc-size-body);
   }
   .native pre {
-    font-size: 13px;
+    font-size: var(--pc-size-ui);
   }
 }

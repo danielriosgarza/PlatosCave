@@ -29,7 +29,7 @@
   background: var(--pc-sheet);
   border-radius: var(--pc-radius-control);
   padding: 4px 6px;
-  font-size: 12px;
+  font-size: var(--pc-size-label);
   min-height: 32px;
   max-width: 240px;
 }
@@ -86,7 +86,7 @@
   min-width: 0;
 }
 .num {
-  font-size: 12px;
+  font-size: var(--pc-size-label);
   color: var(--pc-muted);
   padding-top: 12px;
   font-family: var(--pc-font-mono);
@@ -202,7 +202,7 @@
   }
   .code {
     padding: 12px;
-    font-size: 13px;
+    font-size: var(--pc-size-ui);
   }
   .output {
     padding: 12px;
