@@ -139,8 +139,9 @@ services:
     networks: [backend, egress]
     healthcheck: *ready
 
-  # Exactly one: connector links live in this process's memory (main.ts). The proxy sends the
-  # connector link and the notebook-session routes here (docs/operations.md §Routing).
+  # Exactly one: connector links live in this process's memory (main.ts). The proxy sends every
+  # route that reads or closes a link here: the connector API and link, the device list, account
+  # closure and the notebook-session routes (docs/operations.md §Routing).
   relay:
     <<: *server
     command: ["node_modules/.bin/tsx", "src/main.ts", "relay"]

@@ -1,4 +1,4 @@
-import { and, count, desc, eq, inArray, lte } from 'drizzle-orm';
+import { and, count, desc, eq, inArray, lte, sql } from 'drizzle-orm';
 import type { UserScope } from '../../auth/scope';
 import { fingerprintOf } from '../../relay/signing';
 import { audit } from '../audit';
@@ -13,6 +13,14 @@ export const APPROVAL_WINDOW_MS = 15 * 60_000;
 /** Connectors one person may hold (§3). */
 export const MAX_ACTIVE_CONNECTORS = 5;
 export const MAX_PENDING_CONNECTORS = 3;
+
+/**
+ * The Postgres channel a revocation is announced on, with the connector's id as the payload.
+ * The notice is sent inside the revoking transaction, so it is delivered on commit and only
+ * then; the relay listens and closes the live link with 4403 `revoked` (§3), whichever process
+ * (api, relay or worker) revoked the row.
+ */
+export const REVOKED_CHANNEL = 'parallax_connector_revoked';
 
 export type RevokedReason = NonNullable<(typeof connectors.$inferSelect)['revokedReason']>;
 
@@ -242,8 +250,9 @@ export function approveConnector(
 
 /**
  * Revokes a connector of the scope's person: rejects a pending one (reason `rejected`) or
- * revokes an active one (`user`). Revoking a revoked connector changes nothing. The caller
- * closes its live link; the connector's open sessions become `unconfirmed` (`connector_revoked`).
+ * revokes an active one (`user`). Revoking a revoked connector changes nothing. The relay
+ * closes its live link on commit (`REVOKED_CHANNEL`); the connector's open sessions become
+ * `unconfirmed` (`connector_revoked`).
  */
 export function revokeConnector(
   db: Db,
@@ -277,6 +286,7 @@ async function revoke(
     .where(eq(connectors.id, connector.id));
   // The server can no longer ask the connector, so it does not claim its sessions stopped (§3).
   await markConnectorRevoked(tx, connector.id, now);
+  await tx.execute(sql`select pg_notify(${REVOKED_CHANNEL}, ${connector.id})`);
   await audit(
     tx,
     connectorEvent(
@@ -302,7 +312,8 @@ export function renameConnector(db: Db, scope: UserScope, connectorId: string, n
 
 /**
  * Revokes every pending and active connector of one person (account deactivation, P4-09) with
- * reason `account`, as a system action. Returns the revoked ids, whose links the caller closes.
+ * reason `account`, as a system action. Returns the revoked ids; the relay closes
+ * their live links on commit (`REVOKED_CHANNEL`).
  */
 export function revokeUserConnectors(db: Db, userId: string, now: Date): Promise<string[]> {
   return db.transaction((tx) => revokeUserConnectorsIn(tx, userId, now));
