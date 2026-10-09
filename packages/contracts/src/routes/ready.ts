@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { defineRoute } from '../define';
+import { defineRoute, errorBody } from '../define';
 
 /**
  * One dependency: `ok` it answered within the deadline, `unavailable` it did not, `skipped` the
@@ -13,8 +13,8 @@ const Check = z.object({
   latencyMs: z.number().int().nonnegative(),
 });
 
-/** The detail of `GET /api/ready` (docs/operations.md §Readiness). */
-export const ReadyBody = z.object({
+/** What a probe sees: every dependency, the version and the mode. */
+const ReadyDetail = z.object({
   status: z.enum(['ready', 'not_ready']),
   version: z.string(),
   mode: z.enum(['api', 'relay']),
@@ -27,6 +27,16 @@ export const ReadyBody = z.object({
 });
 
 /**
+ * `GET /api/ready` (docs/operations.md §Readiness). A caller bearing the probe token gets the
+ * full detail; every other caller gets `status` alone, so the version and which backing service
+ * is down are not disclosed (ADR-0002). A union of the two shapes, so a partial body is rejected.
+ */
+export const ReadyBody = z.union([
+  ReadyDetail,
+  z.object({ status: z.enum(['ready', 'not_ready']) }).strict(),
+]);
+
+/**
  * Readiness for a load balancer or an orchestrator: 200 when every required dependency answers,
  * 503 with the same body when one does not. `/api/health` stays the liveness probe: it answers
  * 200 while the process runs, whatever its dependencies do.
@@ -35,8 +45,8 @@ export const ready = defineRoute({
   method: 'GET',
   path: '/api/ready',
   scope: { kind: 'public' },
-  summary: 'Readiness with dependency detail',
+  summary: 'Readiness; dependency detail for probes only',
   response: ReadyBody,
-  errors: { 503: ReadyBody },
+  errors: { 429: errorBody, 503: ReadyBody },
   examples: {},
 });

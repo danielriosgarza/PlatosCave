@@ -77,15 +77,10 @@ for (const { width, side, notes, cards } of widths) {
     test(`A19 course cards at ${width} px use ${cards} column(s)`, async ({ page }) => {
       await page.goto('/courses?view=student');
       await expect(page.getByRole('heading', { name: 'Your courses' })).toBeVisible();
-      const grid = await page.evaluate(() => {
-        const found = [...document.querySelectorAll('main *')].find(
-          (el) => getComputedStyle(el).display === 'grid',
-        );
-        if (!found) return null;
-        found.setAttribute('data-test-grid', '');
-        return true;
-      });
-      expect(grid).toBe(true);
+      // The heading renders before the course list loads, so wait for the list itself.
+      const grid = page.getByRole('list', { name: 'Your courses', exact: true });
+      await expect(grid).toBeVisible();
+      await grid.evaluate((el) => el.setAttribute('data-test-grid', ''));
       expect(await columns(page, '[data-test-grid]')).toHaveLength(cards);
     });
   });

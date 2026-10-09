@@ -50,7 +50,7 @@ test('A20 a keyboard-only reader goes from the course list to a saved reading no
   playwright,
   baseURL,
 }) => {
-  await joinLabClassAs(playwright, baseURL, page, `a20-reader-${Date.now()}@example.test`);
+  await joinLabClassAs(playwright, baseURL, page.request, `a20-reader-${Date.now()}@example.test`);
 
   await page.goto('/courses?view=student');
   await activate(page, page.getByRole('link', { name: /^Open Reading lab/ }));
