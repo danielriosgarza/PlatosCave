@@ -17,6 +17,14 @@ Storage keys are content-addressed (`<prefix>/objects/<sha256>`, `apps/server/sr
 
 The layout is the same for both drivers, so a backup of either restores into either (`storage_driver` records where it came from and is informational).
 
+## Handling backups
+
+A backup is as sensitive as the live system: `database.dump` holds all personal data, sessions and grades, and `storage/` holds every uploaded file and dataset.
+
+- **Permissions.** `backup.sh` writes the backup private to the user running it: directories 0700, files 0600, whatever the umask and whatever the modes of the source objects. The parents of `<backup-dir>` are left as they are, so put the backup under a directory only that user (and the backup operator) can enter. Restore it as the same user, or copy it with `cp -a` and keep the modes. `restore.sh` itself writes the restored storage root as the application expects (directories 0755, objects 0644).
+- **Encrypt off-host.** Copy backups off the host only encrypted (for example `tar -C /backups -c 2026-10-06 | age -r <recipient> > 2026-10-06.tar.age`, or the encryption of the backup store), keep the key apart from the backup, and restrict who can read the destination. The scripts do not encrypt; choosing the tool, the key holders and the destination is a deployment decision (§13, §17).
+- **A restore brings back deleted data.** A backup keeps everything that existed when it was taken, including accounts, submissions and files that have since been deleted or anonymised (self-service deletion, retention rules, `docs/operations.md`). After restoring, re-apply every deletion and anonymisation made since the backup was taken before the application is opened to users, and delete or expire old backups on the same schedule as the retention rules.
+
 ## Running
 
 ```bash
