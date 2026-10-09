@@ -254,6 +254,8 @@ export const grantedOverride = overrideTerms.extend({
   student: z.object({ id: z.uuid(), name: z.string() }),
   reason: z.string(),
   grantedBy: z.uuid(),
+  /** The granting instructor's name; null once they have left the class. */
+  grantedByName: z.string().nullable(),
   createdAt: timestamp,
 });
 
@@ -275,6 +277,17 @@ export const readAssignment = defineRoute({
   summary: 'Read the class’s terms for a test and the overrides in force',
   params: resourceParams,
   response: assignmentView,
+  errors: { 400: invalidBody },
+  examples: { params: { classId: exampleClass, resourceId: exampleResource } },
+});
+
+export const listTestStudents = defineRoute({
+  method: 'GET',
+  path: '/api/classes/:classId/resources/:resourceId/assignment/students',
+  scope: { kind: 'class', role: 'instructor' },
+  summary: 'The class’s students, to choose who an override is granted to',
+  params: resourceParams,
+  response: z.object({ students: z.array(z.object({ id: z.uuid(), name: z.string() })) }),
   errors: { 400: invalidBody },
   examples: { params: { classId: exampleClass, resourceId: exampleResource } },
 });
