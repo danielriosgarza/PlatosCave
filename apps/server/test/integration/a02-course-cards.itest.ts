@@ -1,8 +1,9 @@
+import { eq } from 'drizzle-orm';
 import type { FastifyInstance } from 'fastify';
 import { afterAll, beforeAll, describe, expect, test } from 'vitest';
 import { buildApp } from '../../src/app';
 import { loadConfig } from '../../src/config';
-import { studyPositions } from '../../src/db/schema';
+import { courses, studyPositions } from '../../src/db/schema';
 import { buildWorld, ids, type PersonName, type World } from '../fixtures/world';
 import { createTestDatabase, type TestDatabase } from './db';
 
@@ -82,11 +83,28 @@ describe('GET /api/courses', () => {
         owner: true,
         topicCount: 2,
         classCount: 2,
+        archived: false,
       }),
     ]);
     expect((await get('olivia')).body.courses).toEqual([
       expect.objectContaining({ courseId: ids.linearModels, topicCount: 0, classCount: 0 }),
     ]);
+  });
+
+  test('A21 an archived course shows archived: true on its owner’s card and false once restored', async () => {
+    await testDb.db.update(courses).set({ archivedAt: now }).where(eq(courses.id, ids.statistics));
+    try {
+      const { body } = await get('elena');
+      expect(body.courses).toEqual([
+        expect.objectContaining({ courseId: ids.statistics, archived: true }),
+      ]);
+    } finally {
+      await testDb.db
+        .update(courses)
+        .set({ archivedAt: null })
+        .where(eq(courses.id, ids.statistics));
+    }
+    expect((await get('elena')).body.courses[0]).toMatchObject({ archived: false });
   });
 
   test('A02 a preview principal is not a context of the instructor who owns it', async () => {

@@ -10,6 +10,7 @@ import { RetryNotice } from '../../components/RetryNotice';
 import { CourseMark } from '../../courses/CourseMark';
 import styles from '../../courses/Courses.module.css';
 import { CreateCourseForm, Dialog, type Joined, JoinForm } from '../../courses/Dialogs';
+import { ArchiveControl } from '../../courses/Lifecycle';
 import { type Cards, type ClassCard, type CourseCard, coursesQuery } from '../../courses/queries';
 import { loadSessionOrCached, usableClasses, useSession } from '../../session/useSession';
 
@@ -213,6 +214,7 @@ function CoursesFor({ cards, view }: { cards: Cards; view: View }) {
               courses={cards.courses}
               filter={filter}
               search={search}
+              onDone={(text) => setNotice({ text })}
             />
           ) : (
             <StudentCards classes={studying} filter={filter} search={search} />
@@ -436,18 +438,26 @@ function InstructorCards({
   courses,
   filter,
   search,
+  onDone,
 }: {
   classes: ClassCard[];
   courses: CourseCard[];
   filter: Filter;
   search: string;
+  onDone: (text: string) => void;
 }) {
+  // The server also lets a membership manager archive a class, but the cards do not carry that
+  // grant, so the class control is offered to course owners, and only while the course is active
+  // (a class of an archived course shows archived and cannot be restored on its own); the server enforces the scope (§3, §13).
+  const owned = new Set(courses.filter((c) => c.owner && !c.archived).map((c) => c.courseId));
   const visibleClasses = classes.filter(
     (c) => matchesFilter(c, filter) && matchesTitle(c.courseTitle, search),
   );
-  // Course permissions have no archived state: they appear under All and In progress.
-  const visibleCourses =
-    filter === 'archived' ? [] : courses.filter((c) => matchesTitle(c.title, search));
+  const visibleCourses = courses.filter(
+    (c) =>
+      matchesTitle(c.title, search) &&
+      (filter === 'archived' ? c.archived : filter === 'all' || !c.archived),
+  );
   const nothing = visibleClasses.length === 0 && visibleCourses.length === 0;
   return (
     <>
@@ -480,6 +490,17 @@ function InstructorCards({
                 <Link to="/classes/$classId/review" params={{ classId: c.classId }}>
                   Class review
                 </Link>
+                {owned.has(c.courseId) ? (
+                  <ArchiveControl
+                    target={{
+                      kind: 'class',
+                      id: c.classId,
+                      name: `${c.courseTitle} · ${c.className}`,
+                      archived: c.archived,
+                    }}
+                    onDone={onDone}
+                  />
+                ) : null}
               </div>
             </li>
           ))}
@@ -515,7 +536,21 @@ function InstructorCards({
                     <div className={styles.open}>{body}</div>
                   )}
                   <div className={styles.status}>
-                    <span>{grantLabel(c)}</span>
+                    <span>
+                      {c.archived ? 'Archived · ' : ''}
+                      {grantLabel(c)}
+                    </span>
+                    {c.owner ? (
+                      <ArchiveControl
+                        target={{
+                          kind: 'course',
+                          id: c.courseId,
+                          name: c.title,
+                          archived: c.archived,
+                        }}
+                        onDone={onDone}
+                      />
+                    ) : null}
                   </div>
                 </li>
               );

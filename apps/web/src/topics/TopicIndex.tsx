@@ -8,6 +8,7 @@ import { RetryNotice } from '../components/RetryNotice';
 import { Unavailable } from '../components/Unavailable';
 import { useClassContext } from '../session/classContext';
 import type { SessionClass } from '../session/useSession';
+import { DownloadAnnotations } from './DownloadAnnotations';
 import styles from './TopicIndex.module.css';
 import {
   type ClassTopic,
@@ -45,6 +46,9 @@ function ClassSyllabus({ classId, context }: { classId: string; context: Session
         <p className={`${page.small} ${page.muted} ${styles.context}`}>
           {[data.cohort, ...data.instructors].join(' · ')}
         </p>
+      ) : null}
+      {context.role === 'student' ? (
+        <DownloadAnnotations key={classId} classId={classId} cohort={context.className} />
       ) : null}
       {query.isPending ? (
         <Loading label="Loading topics" className={page.intro} />

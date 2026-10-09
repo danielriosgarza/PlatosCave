@@ -132,6 +132,7 @@ export async function listCourseCards(db: Db, scope: UserScope, now: Date) {
       owner: courseMemberships.owner,
       editor: courseMemberships.editor,
       publisher: courseMemberships.publisher,
+      archivedAt: courses.archivedAt,
     })
     .from(courseMemberships)
     .innerJoin(courses, eq(courses.id, courseMemberships.courseId))
@@ -174,8 +175,9 @@ export async function listCourseCards(db: Db, scope: UserScope, now: Date) {
         studentCount: student ? null : (studentCounts.get(c.classId) ?? 0),
       };
     }),
-    courses: courseRows.map((c) => ({
+    courses: courseRows.map(({ archivedAt, ...c }) => ({
       ...c,
+      archived: archivedAt !== null,
       topicCount: draftTopics.get(c.courseId) ?? 0,
       classCount: classTotals.get(c.courseId) ?? 0,
     })),

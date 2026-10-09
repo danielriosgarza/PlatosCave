@@ -69,7 +69,7 @@ export function cardsFor(me: Me) {
         resume: null,
         studentCount: c.role === 'instructor' ? 0 : null,
       })),
-    courses: me.courses.map((c) => ({ ...c, topicCount: 0, classCount: 0 })),
+    courses: me.courses.map((c) => ({ ...c, archived: false, topicCount: 0, classCount: 0 })),
     // The server's rule with an empty INSTRUCTOR_EMAILS: only people who already teach.
     canCreateCourse:
       me.user.kind === 'user' &&
