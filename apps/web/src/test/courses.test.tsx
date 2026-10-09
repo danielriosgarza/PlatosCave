@@ -121,6 +121,7 @@ describe('course cards', () => {
       title: `Course ${n}`,
       topicCount: 2,
       classCount: 1,
+      archived: false,
       owner: false,
       editor: false,
       publisher: false,

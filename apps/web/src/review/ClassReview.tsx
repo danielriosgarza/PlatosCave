@@ -23,6 +23,7 @@ import {
   testText,
   useClassReview,
 } from './classReview';
+import { ExportResults } from './ExportResults';
 import grading from './Grading.module.css';
 import { useTestGrades } from './grading';
 import { StudentWork } from './StudentWork';
@@ -70,6 +71,7 @@ function Table({
       <p className={`${page.small} ${page.muted} ${styles.context}`}>
         {context.courseTitle} · {context.className}
       </p>
+      <ExportResults classId={classId} cohort={context.className} />
       {query.isPending ? (
         <Loading label="Loading class review" className={page.intro} />
       ) : !data ? (

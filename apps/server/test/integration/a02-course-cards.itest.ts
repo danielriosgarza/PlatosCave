@@ -82,6 +82,7 @@ describe('GET /api/courses', () => {
         owner: true,
         topicCount: 2,
         classCount: 2,
+        archived: false,
       }),
     ]);
     expect((await get('olivia')).body.courses).toEqual([
