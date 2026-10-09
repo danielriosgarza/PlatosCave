@@ -259,6 +259,13 @@ describe('archive and restore of a course', () => {
       status: 409,
       body: { error: 'course_archived' },
     });
+    // The class card says why it is archived, so a manager without a course role can see it.
+    const managerCards = await call('noor', 'GET', '/api/courses');
+    expect(managerCards.body).toMatchObject({
+      classes: expect.arrayContaining([
+        expect.objectContaining({ classId: ids.classA, archived: true, courseArchived: true }),
+      ]),
+    });
     // The draft stops taking edits and publications; editors still read it.
     const edit = await call('elena', 'POST', `/api/courses/${ids.statistics}/topics`, {
       title: 'Late topic',

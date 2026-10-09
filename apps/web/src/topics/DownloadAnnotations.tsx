@@ -12,6 +12,25 @@ type State =
   | { kind: 'done'; annotations: number; posts: number }
   | { kind: 'error' };
 
+/**
+ * A file name made of the course title and class name, with the characters that are unsafe in
+ * file names removed (as for the results CSV), or the class UUID when nothing usable is left.
+ */
+export function annotationsFileName(data: {
+  course: { title: string };
+  class: { id: string; name: string };
+}): string {
+  const clean = (text: string) => text.replace(/[\\/:*?"<>|\p{Cc}]+/gu, ' ').trim();
+  const name = [clean(data.course.title), clean(data.class.name)].filter(Boolean).join(' - ');
+  // Keep well under common file system limits (255 bytes), cutting on a character boundary.
+  let base = '';
+  for (const char of name) {
+    if (new TextEncoder().encode(base + char).length > 120) break;
+    base += char;
+  }
+  return `annotations-${base.trim() || data.class.id}.json`;
+}
+
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 /**
@@ -24,11 +43,7 @@ export function DownloadAnnotations({ classId, cohort }: { classId: string; coho
     setState({ kind: 'sending' });
     try {
       const data = await call(exportAnnotations, { params: { classId } });
-      downloadText(
-        JSON.stringify(data, null, 2),
-        `annotations-${classId}.json`,
-        'application/json',
-      );
+      downloadText(JSON.stringify(data, null, 2), annotationsFileName(data), 'application/json');
       setState({ kind: 'done', annotations: data.annotations.length, posts: data.posts.length });
     } catch {
       setState({ kind: 'error' });

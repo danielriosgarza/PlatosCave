@@ -64,8 +64,9 @@ export function ArchiveControl({
     setError(null);
     try {
       await run(target);
-      await refreshContexts(queryClient);
+      // Close first, so the title cannot flip to the opposite action while the cards reload.
       setOpen(false);
+      await refreshContexts(queryClient);
       onDone(`${target.name} was ${target.archived ? 'restored' : 'archived'}.`);
     } catch (e) {
       const text = refusal(e, target);
@@ -82,7 +83,10 @@ export function ArchiveControl({
       setBusy(false);
     }
   };
+  // The request cannot be taken back, so the dialog stays until the server has answered: its
+  // outcome is then always said, and a second request cannot start behind the first.
   const close = () => {
+    if (busy) return;
     setOpen(false);
     setError(null);
   };
@@ -92,6 +96,7 @@ export function ArchiveControl({
         type="button"
         className={buttons.outline}
         aria-label={`${label} ${target.name}`}
+        disabled={busy}
         onClick={() => setOpen(true)}
       >
         {label}
@@ -119,7 +124,7 @@ export function ArchiveControl({
             >
               {label}
             </button>
-            <button type="button" className={buttons.outline} onClick={close}>
+            <button type="button" className={buttons.outline} disabled={busy} onClick={close}>
               Cancel
             </button>
           </div>

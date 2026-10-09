@@ -17,6 +17,10 @@ Storage keys are content-addressed (`<prefix>/objects/<sha256>`, `apps/server/sr
 
 The layout is the same for both drivers, so a backup of either restores into either (`storage_driver` records where it came from and is informational).
 
+## What a backup keeps of the lifecycle actions
+
+Archived classes and courses are ordinary rows with their archive state, so a restore brings them back archived (a class is restorable by the course owners and membership managers who could restore it before, a course by its owners). Results exports (CSV) are temporary files, removed by the daily object sweep (`docs/operations.md`), so a backup may hold one that the sweep has since removed; a student's annotation download is generated on request and is never stored.
+
 ## Handling backups
 
 A backup is as sensitive as the live system: `database.dump` holds all personal data, sessions and grades, and `storage/` holds every uploaded file and dataset.

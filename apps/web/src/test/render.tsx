@@ -64,6 +64,7 @@ export function cardsFor(me: Me) {
         courseTitle: c.courseTitle,
         role: c.role,
         archived: false,
+        courseArchived: false,
         topicCount: 0,
         reviewed: { count: 0, total: 0 },
         resume: null,
