@@ -1,7 +1,7 @@
 import { resolve } from 'node:path';
 import { defineConfig, devices } from '@playwright/test';
 import { e2eDatabaseUrl } from './global-setup';
-import { E2E_PROBE_TOKEN, mailDir } from './paths';
+import { mailDir } from './paths';
 
 const CI = Boolean(process.env.CI);
 
@@ -41,7 +41,6 @@ export default defineConfig({
       STORAGE_DRIVER: 'fs',
       STORAGE_DIR: resolve(import.meta.dirname, '../.local/e2e-storage'),
       NODE_ENV: 'test',
-      READY_PROBE_TOKEN: E2E_PROBE_TOKEN,
       TEST_ROUTES: '1',
       STATIC_DIR: resolve(import.meta.dirname, '../apps/web/dist'),
       DATABASE_URL: e2eDatabaseUrl,

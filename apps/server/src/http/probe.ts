@@ -16,3 +16,25 @@ export function isProbe(req: FastifyRequest, token: string | undefined): boolean
     timingSafeEqual(digest(presented), digest(token))
   );
 }
+
+/**
+ * The `rateLimit` option and the probe test for a route that shows its detail to probes only.
+ * Callers without the token are limited per address; probes are not counted. The limiter decides
+ * once per request and `isProbeRequest` reads that decision, so the limit and the body cannot
+ * disagree: if the limiter never ran, nobody is a probe.
+ */
+export function probeLimit(token: string | undefined, max: number) {
+  const probes = new WeakSet<FastifyRequest>();
+  return {
+    rateLimit: {
+      max,
+      timeWindow: '1 minute',
+      allowList: (req: FastifyRequest) => {
+        const probe = isProbe(req, token);
+        if (probe) probes.add(req);
+        return probe;
+      },
+    },
+    isProbeRequest: (req: FastifyRequest) => probes.has(req),
+  };
+}
