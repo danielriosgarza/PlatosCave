@@ -30,9 +30,10 @@ function refusal(error: unknown, target: Target): string {
   if (error instanceof ApiError) {
     const code = (error.body as { error?: unknown } | null)?.error;
     if (code === 'course_archived') {
-      return target.kind === 'course' || !target.archived
-        ? `${target.name} is archived already.`
-        : 'This course is archived. Restore the course first.';
+      if (target.kind === 'course') return `${target.name} is archived already.`;
+      return target.archived
+        ? `${target.name} was not restored: its course is archived. Restore the course first.`
+        : `${target.name} was not archived: its course is archived already.`;
     }
     if (code === 'class_archived') return `${target.name} is archived already.`;
     if (code === 'not_archived')
@@ -67,9 +68,16 @@ export function ArchiveControl({
       setOpen(false);
       onDone(`${target.name} was ${target.archived ? 'restored' : 'archived'}.`);
     } catch (e) {
-      setError(refusal(e, target));
-      // A 409 means the card is out of date (someone else changed the state): reload it.
-      if (e instanceof ApiError && e.status === 409) void refreshContexts(queryClient);
+      const text = refusal(e, target);
+      if (e instanceof ApiError && e.status === 409) {
+        // The card is out of date (the state changed elsewhere). Closing keeps the dialog from
+        // flipping to the opposite action under the reload; the refusal is said on the page.
+        setOpen(false);
+        void refreshContexts(queryClient);
+        onDone(text);
+      } else {
+        setError(text);
+      }
     } finally {
       setBusy(false);
     }

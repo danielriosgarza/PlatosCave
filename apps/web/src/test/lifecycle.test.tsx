@@ -44,7 +44,7 @@ const emptyReview: ClassReview = {
 
 const exported = {
   url: 'https://content.test/exports/results.csv?token=abc',
-  expiresAt: '2026-10-09T12:30:00.000Z',
+  expiresAt: new Date(Date.now() + 5 * 60_000).toISOString(),
   filename: 'results-autumn-2026-a.csv',
   rows: 4,
 };
@@ -186,24 +186,16 @@ describe('archive and restore', () => {
     ).toBeVisible();
   });
 
-  it('A21 restoring a class of an archived course says to restore the course first and changes nothing', async () => {
-    const user = userEvent.setup();
+  it('A21 a class of an archived course offers no restore of its own, only the course does', async () => {
     const cards: Cards = {
       classes: [{ ...CLASS_CARD, archived: true }],
       courses: [{ ...COURSE_CARD, archived: true }],
       canCreateCourse: true,
     };
-    serveCards(cards, () => ({ status: 409, body: { error: 'course_archived' } }));
+    serveCards(cards, () => undefined);
     renderApp('/courses?view=instructor');
-    await user.click(
-      await screen.findByRole('button', {
-        name: 'Restore class Statistical thinking · Autumn 2026 A',
-      }),
-    );
-    const dialog = await screen.findByRole('dialog', { name: 'Restore class?' });
-    await user.click(within(dialog).getByRole('button', { name: 'Restore class' }));
-    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Restore the course first.');
-    expect(screen.queryByText(/was restored/)).not.toBeInTheDocument();
+    await screen.findByRole('button', { name: 'Restore course Statistical thinking' });
+    expect(screen.queryByRole('button', { name: /^Restore class/ })).not.toBeInTheDocument();
   });
 
   it('A21 a 409 on archive reloads the cards so the stale action is replaced', async () => {
@@ -219,7 +211,8 @@ describe('archive and restore', () => {
     );
     const dialog = await screen.findByRole('dialog', { name: 'Archive course?' });
     await user.click(within(dialog).getByRole('button', { name: 'Archive course' }));
-    expect(await within(dialog).findByRole('alert')).toHaveTextContent('is archived already.');
+    expect(await screen.findByText('Statistical thinking is archived already.')).toBeVisible();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
     expect(
       await screen.findByRole('button', { name: 'Restore course Statistical thinking' }),
     ).toBeInTheDocument();
