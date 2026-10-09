@@ -1,6 +1,7 @@
 import AxeBuilder from '@axe-core/playwright';
 import { type APIRequestContext, expect, type Locator, type Page, test } from '@playwright/test';
 import { small } from '../touch';
+import { joinLabClassAs } from './lab-classmate';
 import {
   exerciseDefinition,
   releaseToClassA,
@@ -34,6 +35,8 @@ interface Fixtures {
   tests: string;
   /** The test Sam's closed attempt belongs to, with an instructor request and kept unsent work. */
   recoveryTitle: string;
+  /** A closed attempt of the recovery test that an instructor asked for; its unsent work is in Sam's browser only. */
+  heldAttempt: string;
   examReviewUrl: (tab: string) => string;
   commentsUrl: string;
 }
@@ -78,7 +81,9 @@ async function draftGrade(priya: APIRequestContext, classId: string, attemptId: 
     },
   });
   expect(saved.ok()).toBe(true);
-  return ((await saved.json()) as { history: { id: string }[] }).history[0]?.id as string;
+  const id = ((await saved.json()) as { history: { id: string }[] }).history[0]?.id;
+  if (!id) throw new Error('the saved draft grade has no history row');
+  return id;
 }
 
 test.beforeAll(async ({ playwright, baseURL }) => {
@@ -143,33 +148,25 @@ test.beforeAll(async ({ playwright, baseURL }) => {
   // A graded test that is not released yet: both release previews open from it.
   const draftAttempt = await submitAs(sam, ids.classA, draftId, answers);
   await draftGrade(priya, ids.classA, draftAttempt);
-  await priya.dispose();
-  await sam.dispose();
   // Exercise review needs a practice attempt.
-  const starter = await signedIn(playwright, baseURL, 'sam@example.test');
   expect(
-    (
-      await starter.post(`/api/classes/${ids.classA}/resources/${exerciseId}/exercise-attempt`)
-    ).ok(),
+    (await sam.post(`/api/classes/${ids.classA}/resources/${exerciseId}/exercise-attempt`)).ok(),
   ).toBe(true);
-  await starter.dispose();
-  // A student of the lab class who shared a question: nobody else's cleanup removes it.
-  const asker = await playwright.request.newContext({ baseURL });
-  const email = `asker-${stamp}@example.test`;
-  expect((await asker.post('/api/test/signin-as', { data: { email } })).ok()).toBe(true);
-  const owner = await signedIn(playwright, baseURL, 'lab-author@example.test');
-  const invite = await owner.post(`/api/classes/${lab.class}/invites`, {
-    data: { kind: 'enrolment' },
-  });
-  expect(invite.ok()).toBe(true);
+  // A second closed attempt that an instructor asked for, with no copy kept on the server: the
+  // student's browser still holds the unsent answers (seeded when the route loads).
+  const heldAttempt = await submitAs(sam, ids.classA, submittedId, [['spread', ['n10']]]);
   expect(
     (
-      await asker.post('/api/join', {
-        data: { code: ((await invite.json()) as { code: string }).code },
+      await priya.post(`/api/classes/${ids.classA}/test-attempts/${heldAttempt}/recovery-request`, {
+        data: { reason: 'Please send what you typed after the last save' },
       })
     ).ok(),
   ).toBe(true);
-  await owner.dispose();
+  await priya.dispose();
+  await sam.dispose();
+  // A student of the lab class who shared a question: nobody else's cleanup removes it.
+  const asker = await playwright.request.newContext({ baseURL });
+  await joinLabClassAs(playwright, baseURL, { request: asker }, `asker-${stamp}@example.test`);
   const askerId = ((await (await asker.get('/api/me')).json()) as { user: { id: string } }).user.id;
   const readings = (await (
     await asker.get(`/api/classes/${lab.class}/topics/${lab.topic}/readings`)
@@ -206,6 +203,7 @@ test.beforeAll(async ({ playwright, baseURL }) => {
     examReviewUrl: (tab) => `${reviewBase}?selected=${ids.sam}&tab=${tab}`,
     tests: `/classes/${ids.classA}/topics/${ids.sampling}/tests`,
     recoveryTitle: submittedTitle,
+    heldAttempt,
     commentsUrl: `/classes/${lab.class}/review?selected=${askerId}&tab=comments`,
   };
 });
@@ -219,6 +217,42 @@ type Route = {
 };
 
 const shown = (locator: Locator) => expect(locator.first()).toBeVisible();
+
+/** Writes the browser-side copy of unsent answers the application keeps for a closed attempt. */
+async function keepUnsentWork(page: Page, f: Fixtures) {
+  const me = (await (await page.request.get('/api/me')).json()) as { user: { id: string } };
+  const copy = {
+    key: `attempt-copy|${me.user.id}|${f.ids.classA}|${f.heldAttempt}`,
+    userId: me.user.id,
+    kind: 'attempt-copy',
+    classId: f.ids.classA,
+    attemptId: f.heldAttempt,
+    answers: [{ questionId: 'why', value: 'Typed after the last save.' }],
+    updatedAt: Date.now(),
+  };
+  await page.goto('/signin');
+  await page.evaluate(
+    (record) =>
+      new Promise<void>((resolve, reject) => {
+        const request = indexedDB.open('parallax-drafts', 1);
+        request.onupgradeneeded = () => {
+          request.result.createObjectStore('drafts', { keyPath: 'key' });
+        };
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => {
+          const tx = request.result.transaction('drafts', 'readwrite');
+          tx.objectStore('drafts').put(record);
+          tx.oncomplete = () => {
+            request.result.close();
+            resolve();
+          };
+          tx.onerror = () => reject(tx.error);
+        };
+      }),
+    copy,
+  );
+  await page.goto(f.tests);
+}
 
 /** From the tests list of a topic, opens the one with this title. */
 async function openTest(page: Page, title: string) {
@@ -346,6 +380,20 @@ const routes: Route[] = [
       await page.getByRole('button', { name: 'Open the receipt of attempt 1' }).click();
       await shown(page.getByRole('heading', { name: 'Test submitted' }));
       await shown(page.getByText('Your instructor asked for your unsent work'));
+    },
+  },
+  {
+    name: 'student receipt with unsent work to send',
+    as: 'sam',
+    path: (f) => f.tests,
+    load: async (page, f) => {
+      // The browser kept the answers (IndexedDB, bound to the person, class and attempt).
+      await keepUnsentWork(page, f);
+      await openTest(page, f.recoveryTitle);
+      await page.getByRole('button', { name: 'Open the receipt of attempt 2' }).click();
+      await shown(page.getByRole('heading', { name: 'Test submitted' }));
+      await shown(page.getByRole('button', { name: 'Send unsent work' }));
+      await shown(page.getByRole('button', { name: 'Download what you wrote' }));
     },
   },
   {
@@ -551,10 +599,11 @@ for (const route of routes) {
   });
 }
 
-/** The Phase 4 screens a person uses by touch: every button, select and text box is at least 44 px. */
+/** The Phase 4 screens a person uses by touch: every button, link, select and text box is at least 44 px. */
 const touched = [
   'student released results',
   'student receipt with an instructor request',
+  'student receipt with unsent work to send',
   'accommodations and recovery',
   'release preview',
   'bulk release preview',
@@ -567,10 +616,11 @@ test.describe('coarse pointer', () => {
   for (const route of routes.filter((r) => touched.includes(r.name))) {
     test(`A20 ${route.name} controls are at least 44 px with a touch screen`, async ({ page }) => {
       await open(page, route);
+      expect(await page.locator('main button').count()).toBeGreaterThan(0);
       expect(
         await small(
           page,
-          'main button, main select, main input:not([type="checkbox"], [type="radio"])',
+          'main button, main select, main textarea, main a, main input:not([type="checkbox"], [type="radio"])',
         ),
       ).toEqual([]);
     });

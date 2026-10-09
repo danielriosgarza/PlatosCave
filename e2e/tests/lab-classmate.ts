@@ -1,16 +1,16 @@
-import { expect, type Page, type PlaywrightWorkerArgs } from '@playwright/test';
+import { type APIRequestContext, expect, type PlaywrightWorkerArgs } from '@playwright/test';
 
 const labClassId = `00000000-0000-4000-8000-${(211).toString().padStart(12, '0')}`;
 
 /**
- * Signs `page` in as a student who has just joined the reading lab class with an enrolment code
+ * Signs `page` (or any holder of a request context) in as a student who has just joined the reading lab class with an enrolment code
  * issued by the course owner, so a test gets a reader with no saved places, notes or questions
  * that no other test file shares.
  */
 export async function joinLabClassAs(
   playwright: PlaywrightWorkerArgs['playwright'],
   baseURL: string | undefined,
-  page: Page,
+  page: { request: APIRequestContext },
   email: string,
 ): Promise<void> {
   const owner = await playwright.request.newContext({ baseURL });

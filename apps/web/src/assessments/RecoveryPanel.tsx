@@ -177,7 +177,9 @@ function RecoveryRow({ classId, attempt }: { classId: string; attempt: Reviewed 
               <p>
                 <strong>{names.get(a.questionId) ?? a.questionId}</strong>
               </p>
-              <pre>{typeof a.value === 'string' ? a.value : JSON.stringify(a.value, null, 2)}</pre>
+              <pre className={styles.answerBox}>
+                {typeof a.value === 'string' ? a.value : JSON.stringify(a.value, null, 2)}
+              </pre>
             </div>
           ))}
         </div>

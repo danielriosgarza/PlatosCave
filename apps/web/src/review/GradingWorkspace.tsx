@@ -411,6 +411,7 @@ function Workspace({
           <label htmlFor="pc-feedback-attempt">Feedback to {grade.student.name}</label>
           <textarea
             id="pc-feedback-attempt"
+            className={styles.feedbackBox}
             rows={4}
             value={form.texts.attempt ?? ''}
             onChange={(e) => edit({ ...form, texts: { ...form.texts, attempt: e.target.value } })}
@@ -777,7 +778,12 @@ function RubricBlock({
       ) : null}
       <label>
         Feedback on question {n}
-        <textarea rows={2} value={text} onChange={(e) => onText(e.target.value)} />
+        <textarea
+          className={styles.feedbackBox}
+          rows={2}
+          value={text}
+          onChange={(e) => onText(e.target.value)}
+        />
       </label>
     </fieldset>
   );

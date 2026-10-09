@@ -166,3 +166,8 @@
   white-space: nowrap;
   border: 0;
 }
+@media (pointer: coarse) {
+  .feedbackBox {
+    min-height: var(--pc-touch-target, 44px);
+  }
+}
