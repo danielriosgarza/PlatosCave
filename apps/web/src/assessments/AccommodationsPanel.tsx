@@ -121,9 +121,7 @@ export function AccommodationsPanel({
   const overrides = assignment.data.overrides;
   return (
     <section aria-label="Extensions and extra attempts">
-      <h2 style={{ font: 'var(--pc-text-subsection)', margin: '24px 0 8px' }}>
-        Extensions and extra attempts
-      </h2>
+      <h2 className={styles.accommodationsHeading}>Extensions and extra attempts</h2>
       <p className={`${styles.small} ${styles.muted}`}>
         A grant replaces the student's earlier one and moves the deadline of an attempt in progress.
         Times are shown in {zone}.
@@ -133,7 +131,7 @@ export function AccommodationsPanel({
           event.preventDefault();
           void grant();
         }}
-        style={{ maxWidth: 520, display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 12 }}
+        className={styles.accommodationsForm}
       >
         {roster.isError ? (
           <RetryNotice

@@ -1,44 +1,44 @@
 /* Ported from the wireframe: .pc-student-work, .pc-review-grid, .pc-rubric, .pc-thread. */
 .work {
-  margin-top: 32px;
-  padding-top: 24px;
+  margin-top: var(--pc-space-32);
+  padding-top: var(--pc-space-24);
   border-top: 1px solid var(--pc-ink);
 }
 .work h2 {
-  margin: 6px 0 0;
+  margin: var(--pc-space-8) 0 0;
 }
 .tabs {
-  margin-top: 16px;
+  margin-top: var(--pc-space-16);
 }
 .panel {
-  margin-top: 24px;
+  margin-top: var(--pc-space-24);
 }
 .panel h3 {
-  margin: 24px 0 8px;
+  margin: var(--pc-space-24) 0 var(--pc-space-8);
 }
 .attemptRow {
   display: flex;
-  gap: 16px;
+  gap: var(--pc-space-16);
   align-items: baseline;
   justify-content: space-between;
   flex-wrap: wrap;
-  padding: 12px 0;
+  padding: var(--pc-space-12) 0;
   border-top: 1px solid var(--pc-rule);
   font-size: var(--pc-size-ui);
 }
 .split {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 310px;
-  gap: 32px;
-  margin-top: 24px;
+  gap: var(--pc-space-32);
+  margin-top: var(--pc-space-24);
 }
 .rubric {
   border-left: 1px solid var(--pc-rule);
-  padding-left: 24px;
+  padding-left: var(--pc-space-24);
 }
 .rubric label {
   display: block;
-  margin: 12px 0 5px;
+  margin: var(--pc-space-12) 0 var(--pc-space-4);
   font-size: var(--pc-size-label);
 }
 .rubric input[type="number"] {
@@ -54,17 +54,17 @@
   display: flex;
   justify-content: space-between;
   align-items: end;
-  gap: 12px;
+  gap: var(--pc-space-12);
 }
 .question {
-  padding: 16px 0;
+  padding: var(--pc-space-16) 0;
   border-top: 1px solid var(--pc-rule);
 }
 .question pre,
 .prose,
 .code {
-  margin: 12px 0;
-  padding: 12px;
+  margin: var(--pc-space-12) 0;
+  padding: var(--pc-space-12);
   background: var(--pc-secondary);
   border: 1px solid var(--pc-rule);
   overflow-x: auto;
@@ -85,24 +85,24 @@
 .lineNo {
   display: inline-block;
   width: 3ch;
-  margin-right: 12px;
+  margin-right: var(--pc-space-12);
   color: var(--pc-muted);
   text-align: right;
   user-select: none;
 }
 .stack {
   display: grid;
-  gap: 8px;
-  margin-top: 16px;
+  gap: var(--pc-space-8);
+  margin-top: var(--pc-space-16);
 }
 .checks {
   list-style: none;
   padding: 0;
-  margin: 8px 0;
+  margin: var(--pc-space-8) 0;
   font-size: var(--pc-size-label);
 }
 .checks li {
-  padding: 2px 0;
+  padding: var(--pc-space-4) 0;
 }
 .error {
   color: var(--pc-ink);
@@ -112,22 +112,22 @@
   color: var(--pc-success);
 }
 .preview {
-  margin-top: 16px;
-  padding: 16px;
+  margin-top: var(--pc-space-16);
+  padding: var(--pc-space-16);
   background: var(--pc-soft);
   border: 1px solid var(--pc-rule);
   border-radius: var(--pc-radius-control);
 }
 .preview ul {
-  padding-left: 20px;
-  margin: 8px 0;
+  padding-left: var(--pc-space-20);
+  margin: var(--pc-space-8) 0;
 }
 .thread {
-  padding: 16px 0;
+  padding: var(--pc-space-16) 0;
   border-top: 1px solid var(--pc-rule);
 }
 .thread p {
-  margin: 9px 0;
+  margin: var(--pc-space-8) 0;
   font-size: var(--pc-size-ui);
   line-height: 1.55;
 }
@@ -135,15 +135,15 @@
   width: 36px;
 }
 .bulk {
-  margin: 0 0 16px;
+  margin: 0 0 var(--pc-space-16);
 }
 .removed {
-  margin-top: 24px;
+  margin-top: var(--pc-space-24);
 }
 .history {
   font-size: var(--pc-size-label);
-  padding-left: 18px;
-  margin: 8px 0;
+  padding-left: var(--pc-space-20);
+  margin: var(--pc-space-8) 0;
 }
 @media (max-width: 720px) {
   .split {
@@ -152,7 +152,7 @@
   .rubric {
     border-left: 0;
     border-top: 1px solid var(--pc-rule);
-    padding: 24px 0 0;
+    padding: var(--pc-space-24) 0 0;
   }
 }
 .srOnly {

@@ -1,19 +1,19 @@
 /* Ported from the wireframe: .pc-review-filters, .pc-table-wrap, .pc-review-table, .pc-selected, .pc-student-nav. */
 .context {
-  margin-top: 12px;
+  margin-top: var(--pc-space-12);
 }
 .filters {
   display: flex;
-  gap: 24px;
+  gap: var(--pc-space-24);
   align-items: end;
   flex-wrap: wrap;
-  margin: 32px 0 24px;
+  margin: var(--pc-space-32) 0 var(--pc-space-24);
 }
 .filters label {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   max-width: 100%;
-  gap: 6px;
+  gap: var(--pc-space-8);
   font-size: var(--pc-size-label);
 }
 .wrap {
@@ -33,12 +33,12 @@
   font-size: var(--pc-size-label);
   color: var(--pc-muted);
   font-weight: 600;
-  padding: 12px;
+  padding: var(--pc-space-12);
   border-bottom: 1px solid var(--pc-rule);
   background: var(--pc-secondary);
 }
 .table td {
-  padding: 14px 12px;
+  padding: var(--pc-space-16) var(--pc-space-12);
   border-bottom: 1px solid var(--pc-rule);
   vertical-align: top;
 }
@@ -60,8 +60,8 @@
   text-align: left;
 }
 .selection {
-  margin-bottom: 24px;
-  padding-top: 24px;
+  margin-bottom: var(--pc-space-24);
+  padding-top: var(--pc-space-24);
   border-top: 1px solid var(--pc-ink);
 }
 /* The student's name is one unbroken word when long: it wraps inside the flex row instead of widening the page. */
@@ -71,7 +71,7 @@
 }
 .nav {
   display: flex;
-  gap: 4px;
+  gap: var(--pc-space-4);
   align-items: center;
 }
 .nav button {
@@ -79,7 +79,7 @@
   color: var(--pc-muted);
   background: none;
   border: 0;
-  padding: 4px 8px;
+  padding: var(--pc-space-4) var(--pc-space-8);
   cursor: pointer;
 }
 .nav button:disabled {
@@ -88,9 +88,9 @@
 }
 .pages {
   display: flex;
-  gap: 16px;
+  gap: var(--pc-space-16);
   align-items: center;
-  margin-top: 16px;
+  margin-top: var(--pc-space-16);
   font-size: var(--pc-size-label);
   color: var(--pc-muted);
 }
@@ -98,7 +98,7 @@
   font-size: var(--pc-size-label);
   background: none;
   border: 0;
-  padding: 4px 0;
+  padding: var(--pc-space-4) 0;
   color: var(--pc-ink);
   text-decoration: underline;
   text-underline-offset: 4px;
@@ -110,15 +110,15 @@
   cursor: default;
 }
 .empty {
-  margin-top: 24px;
+  margin-top: var(--pc-space-24);
 }
 .empty h2 {
   font-size: var(--pc-size-subsection);
-  margin: 0 0 12px;
+  margin: 0 0 var(--pc-space-12);
 }
 @media (max-width: 720px) {
   .filters {
-    gap: 16px;
+    gap: var(--pc-space-16);
   }
 }
 @media (pointer: coarse) {

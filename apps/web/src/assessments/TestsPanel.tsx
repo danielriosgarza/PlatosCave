@@ -238,12 +238,12 @@ function TestEntry({
           </button>
         </p>
       ) : null}
-      <h2 style={{ margin: '0 0 8px', font: 'var(--pc-text-section)' }}>{resource.title}</h2>
+      <h2 className={styles.sectionHeading}>{resource.title}</h2>
       <p className={`${styles.small} ${styles.muted}`}>
         {data.questionCount} {data.questionCount === 1 ? 'question' : 'questions'} · attempts used{' '}
         {data.eligibility.attemptsUsed} of {data.eligibility.attemptsAllowed}
       </p>
-      <div style={{ maxWidth: 640, margin: '20px 0' }}>
+      <div className={styles.termsBlock}>
         <TermsPanel terms={data.terms} />
       </div>
       {problem ? (
