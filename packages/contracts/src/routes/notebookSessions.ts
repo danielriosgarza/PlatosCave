@@ -285,9 +285,10 @@ export const MAX_LIVE_OUTPUT_BYTES = 8 * 1024 * 1024;
  * writes any HTML frame document or image to the session's area of class storage and answers the
  * output with links on the content origin, minted for the caller and valid until `expiresAt`
  * (null when the output has no link). Anyone but the session's owner gets the shared 404.
- * 413 beyond `MAX_LIVE_OUTPUT_BYTES`; 422 `not_rendered` for an output past the time or memory
- * bound; 409 `storage_limit` once a session has stored its share of live outputs; 429 beyond
- * 120 a minute.
+ * 413 once the request body passes `MAX_LIVE_OUTPUT_BYTES` plus 64 KiB (the route's
+ * `bodyLimit`; nothing checks `data` on its own); 422 `not_rendered` for an output past the time
+ * or memory bound; 409 `storage_limit` once a session has stored its share of live outputs, or
+ * `class_archived`; 429 beyond 120 a minute.
  */
 export const renderLiveOutput = defineRoute({
   method: 'POST',
