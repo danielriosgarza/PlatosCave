@@ -7,12 +7,17 @@ import { loadConfig } from '../../src/config';
 import { createDb } from '../../src/db/client';
 import { createTestDatabase, type TestDatabase } from './db';
 
+const TOKEN = 'health-probe-token-0123456789';
+const PROBE = { 'x-ready-token': TOKEN };
+const config = () =>
+  loadConfig({ NODE_ENV: 'test', LOG_LEVEL: 'silent', READY_PROBE_TOKEN: TOKEN });
+
 let testDb: TestDatabase;
 let app: FastifyInstance;
 
 beforeAll(async () => {
   testDb = await createTestDatabase();
-  app = await buildApp(loadConfig({ NODE_ENV: 'test', LOG_LEVEL: 'silent' }), { db: testDb.db });
+  app = await buildApp(config(), { db: testDb.db });
 });
 
 afterAll(async () => {
@@ -20,8 +25,14 @@ afterAll(async () => {
   await testDb?.drop();
 });
 
-test('health reports the database as ok', async () => {
+test('health gives a caller without the probe token no version or database state', async () => {
   const res = await app.inject({ method: 'GET', url: '/api/health' });
+  expect(res.statusCode).toBe(200);
+  expect(res.json()).toEqual({ status: 'ok' });
+});
+
+test('health reports the database as ok', async () => {
+  const res = await app.inject({ method: 'GET', url: '/api/health', headers: PROBE });
   expect(res.statusCode).toBe(200);
   expect(res.json()).toMatchObject({ status: 'ok', db: 'ok' });
 });
@@ -41,7 +52,7 @@ test('openapi lists /api/health', async () => {
 
 test('health survives the server dropping an idle pooled connection', async () => {
   const { db, pool } = createDb(testDb.url);
-  const quiet = await buildApp(loadConfig({ NODE_ENV: 'test', LOG_LEVEL: 'silent' }), { db });
+  const quiet = await buildApp(config(), { db });
   try {
     const pid = (await db.execute(sql`select pg_backend_pid() as pid`)).rows[0]?.pid;
     expect(pid).toBeTypeOf('number');
@@ -49,7 +60,7 @@ test('health survives the server dropping an idle pooled connection', async () =
     const term = await testDb.db.execute(sql`select pg_terminate_backend(${pid}) as ok`);
     expect(term.rows[0]).toEqual({ ok: true });
     await gone;
-    const res = await quiet.inject({ method: 'GET', url: '/api/health' });
+    const res = await quiet.inject({ method: 'GET', url: '/api/health', headers: PROBE });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toMatchObject({ status: 'ok', db: 'ok' });
   } finally {
@@ -78,16 +89,16 @@ test('health reports unavailable when an established connection goes silent', as
   via.port = String((relay.address() as net.AddressInfo).port);
 
   const { db, pool } = createDb(via.toString(), { onError: () => {} });
-  const silent = await buildApp(loadConfig({ NODE_ENV: 'test', LOG_LEVEL: 'silent' }), {
+  const silent = await buildApp(config(), {
     db,
     probeTimeoutMs: 500,
   });
   try {
-    const before = await silent.inject({ method: 'GET', url: '/api/health' });
+    const before = await silent.inject({ method: 'GET', url: '/api/health', headers: PROBE });
     expect(before.json()).toMatchObject({ db: 'ok' });
     muted = true;
     const started = Date.now();
-    const res = await silent.inject({ method: 'GET', url: '/api/health' });
+    const res = await silent.inject({ method: 'GET', url: '/api/health', headers: PROBE });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toMatchObject({ status: 'ok', db: 'unavailable' });
     expect(Date.now() - started).toBeLessThan(5000);

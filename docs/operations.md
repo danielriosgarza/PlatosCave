@@ -48,10 +48,12 @@ Allow WebSocket upgrades and an idle timeout of at least 60 seconds on the relay
 
 | Probe | Path | Answers | Use |
 | --- | --- | --- | --- |
-| Liveness | `GET /api/health` | 200 while the process serves; carries `db: ok | unavailable | skipped` | restart a hung process |
+| Liveness | `GET /api/health` | 200 `{"status": "ok"}` while the process serves; a probe also gets `version` and `db: ok | unavailable | skipped` | restart a hung process |
 | Readiness | `GET /api/ready` | 200 `ready`, or 503 `not_ready`, with the same body | take an instance out of rotation; the compose health check |
 
-**Who sees the detail.** Only a request that sends the header `X-Ready-Token` equal to `READY_PROBE_TOKEN` (at least 16 characters, surrounding whitespace ignored; only `compose.prod.yml` requires it, so a deployment that does not use it must set it and send it from its probes) gets the body below. The compose health check sends it from inside the container. A proxy's or load balancer's probe, and any external monitor, must send it too: without it a caller gets `{"status": "ready"}` or `{"status": "not_ready"}` with the same 200/503, no version, mode or dependency, and is limited to `READY_RATE_LIMIT` requests per address per minute (default 30, then `429`). A probe that polls faster than that and omits the token is answered `429` and a proxy will take a ready instance out of rotation. Requests with the token are never counted. Being on the Docker host or on loopback gives no detail: `curl http://127.0.0.1:3000/api/ready` there reaches the container through the published port and is an ordinary caller, so add `-H "X-Ready-Token: $READY_PROBE_TOKEN"`.
+**Who sees the detail.** The same rule covers `/api/health` and `/api/ready`, each with its own budget. Only a request that sends the header `X-Ready-Token` equal to `READY_PROBE_TOKEN` (at least 16 characters, surrounding whitespace ignored; only `compose.prod.yml` requires it, so a deployment that does not use it must set it and send it from its probes) gets the body below. The compose health check sends it from inside the container. A proxy's or load balancer's probe, and any external monitor, must send it too: without it a caller gets `{"status": "ready"}` or `{"status": "not_ready"}` with the same 200/503, no version, mode or dependency, and is limited to `READY_RATE_LIMIT` requests per address per minute (default 30, then `429`). A probe that polls faster than that and omits the token is answered `429` and a proxy will take a ready instance out of rotation. Requests with the token are never counted. Being on the Docker host or on loopback gives no detail: `curl http://127.0.0.1:3000/api/ready` there reaches the container through the published port and is an ordinary caller, so add `-H "X-Ready-Token: $READY_PROBE_TOKEN"`.
+
+`/api/health` follows the same rule: without the token a caller gets `{"status": "ok"}`, no `version` or `db`, no database query is run, and it is limited to `READY_RATE_LIMIT` requests per address per minute (then `429`). The process answering 200 is still the liveness signal, so a liveness probe that only needs that sends no token and polls slower than the limit; one that needs `db` sends `X-Ready-Token`.
 
 The readiness body, for a probe, lists each dependency with `status` (`ok`, `unavailable`, `skipped`), `required`, and `latencyMs`; it never carries an error message, host or credential (the cause is in the log as `readiness: dependency unavailable`, field `dependency`).
 
@@ -81,7 +83,7 @@ Rules for new log calls: log ids, counts and codes, never a request, a result or
 | Queued or running sample runs per student | 2, across classes | student | fixed (spec §11) |
 | Connector pairing: codes created, failed pairings, polls | 5 / hour per person; 10 failures in 10 min block an address for 10 min; 1 poll / s | person, address, connector | fixed (connector design §3) |
 | Connector link attempts | 30 / min | address | fixed |
-| **Readiness** (`/api/ready`, callers without `X-Ready-Token`) | 30 / min | client address | `READY_RATE_LIMIT` |
+| **Readiness and health** (`/api/ready`, `/api/health`, callers without `X-Ready-Token`) | 30 / min each | client address | `READY_RATE_LIMIT` |
 | Notebook browser channel messages, kernel executes | 60 / s, 30 / s | session | fixed |
 
 Execution limits are counted per session so a class behind one campus network, or the load test's single client, does not share a budget; the sign-in limits are per address because no session exists yet. Over a limit the API answers `429` with `error: "too many requests"` and `Try again in …`. Limits are in memory: they reset when a process restarts and are per process, so a second `api` replica doubles them.
@@ -96,7 +98,7 @@ Defaults an operator may change, all in the environment (`apps/server/src/config
 | `LEASE_IDLE_MINUTES` | 30 (5–240) | an open notebook with no activity stops after this long |
 | `LEASE_GRACE_MINUTES` | 5 (1–60) | closing the tab keeps the kernel this long. Both lease values apply when a request names no lease and the class template sets none; the web Connect panel pre-fills them |
 | `RUN_RATE_LIMIT` | 30 | code-run requests per session per minute |
-| `READY_RATE_LIMIT` | 30 | `/api/ready` requests per address per minute from callers that are not probes |
+| `READY_RATE_LIMIT` | 30 | `/api/ready` and `/api/health` requests (each its own budget) per address per minute from callers that are not probes |
 | `READY_PROBE_TOKEN` | unset (required by `compose.prod.yml`) | secret (16+ characters) the health check, a proxy probe or a monitor sends as `X-Ready-Token` to get the readiness detail and skip `READY_RATE_LIMIT` |
 | `AUTH_LINK_RATE_LIMIT`, `AUTH_VERIFY_RATE_LIMIT` | 120, 240 | sign-in limits per address per 15 minutes |
 | `RUNNER_SLOTS` | 4 (1–32) | concurrent sandbox containers (runner) |

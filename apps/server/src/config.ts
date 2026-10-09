@@ -107,7 +107,9 @@ const Env = z
      * request bearing `X-Ready-Token` equal to READY_PROBE_TOKEN (the compose health check inside
      * the container, a proxy's or monitor's probe). Anyone else gets the status alone, and at
      * most READY_RATE_LIMIT such requests per address per minute, because every answer runs a
-     * database query and a storage call. Requests with the token are never limited.
+     * database query and a storage call. Requests with the token are never limited. `GET
+     * /api/health` follows the same rule (version and database state for a probe, `status` alone
+     * and the same per-address limit, with its own budget, for everyone else).
      */
     READY_PROBE_TOKEN: z.string().trim().min(16).optional(),
     READY_RATE_LIMIT: z.coerce.number().int().positive().default(30),

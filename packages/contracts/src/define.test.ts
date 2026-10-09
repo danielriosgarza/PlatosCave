@@ -19,8 +19,10 @@ describe('defineRoute', () => {
 
   it('health response rejects a wrong shape and accepts a right one', () => {
     expect(() => health.response.parse({ status: 'bad' })).toThrow();
-    expect(health.response.parse({ status: 'ok', version: '0.0.0', db: 'skipped' }).db).toBe(
-      'skipped',
-    );
+    expect(health.response.parse({ status: 'ok', version: '0.0.0', db: 'skipped' })).toMatchObject({
+      db: 'skipped',
+    });
+    expect(health.response.parse({ status: 'ok' })).toEqual({ status: 'ok' });
+    expect(() => health.response.parse({ status: 'ok', version: '0.0.0' })).toThrow();
   });
 });

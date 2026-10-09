@@ -1,26 +1,10 @@
-import { createHash, timingSafeEqual } from 'node:crypto';
 import { ready } from '@parallax/contracts/routes/ready';
 import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { RouteDeps } from '../../app';
 import { PROBE_TIMEOUT_MS, probe } from '../../db/client';
 import { VERSION } from '../../version';
+import { isProbe } from '../probe';
 import { registerRoute } from '../register';
-
-const digest = (value: string) => createHash('sha256').update(value).digest();
-
-/**
- * Whether the caller presents the configured probe token and may see the detail. The token is the
- * only way in: no address or header heuristic, which a same-host proxy or a TCP-level proxy would
- * turn into "everyone is a probe". Compared as digests, in constant time.
- */
-function isProbe(req: FastifyRequest, token: string | undefined): boolean {
-  const presented = req.headers['x-ready-token'];
-  return (
-    token !== undefined &&
-    typeof presented === 'string' &&
-    timingSafeEqual(digest(presented), digest(token))
-  );
-}
 
 type Check = { status: 'ok' | 'unavailable' | 'skipped'; required: boolean; latencyMs: number };
 
