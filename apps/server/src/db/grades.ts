@@ -433,23 +433,131 @@ export async function releaseGrades(
       preview.skipped.length === 0 &&
       preview.recipients.every((r) => wanted.get(r.attemptId) === r.gradeId);
     if (!exact) return { ok: false, reason: 'release_changed', preview };
-    const [release] = await tx
-      .insert(gradeReleases)
-      .values({
-        classId: scope.classId,
-        releasedBy: scope.user.id,
-        releasedAt: now,
-        recipients: preview.recipients.map((r) => ({
-          studentId: r.student.id,
-          attemptId: r.attemptId,
-          gradeId: r.gradeId,
-        })),
-      })
-      .returning();
-    if (!release) throw new Error('release insert returned no row');
-    await tx
-      .update(grades)
-      .set({ state: 'released', releaseId: release.id, releasedAt: now })
+    return { ok: true, value: await recordRelease(tx, scope, preview.recipients, now) };
+  });
+}
+
+/**
+ * The one release path: a `grade_releases` row naming its actor, time and exact recipients,
+ * those grade rows moved to released, their attempts to Released, and the audit event. The
+ * attempts are locked and the recipients previewed under that lock by the caller.
+ */
+async function recordRelease(
+  tx: Tx,
+  scope: ClassScope,
+  recipients: Preview['recipients'],
+  now: Date,
+  scheduled?: { resourceId: string },
+): Promise<Release> {
+  const [release] = await tx
+    .insert(gradeReleases)
+    .values({
+      classId: scope.classId,
+      releasedBy: scope.user.id,
+      releasedAt: now,
+      recipients: recipients.map((r) => ({
+        studentId: r.student.id,
+        attemptId: r.attemptId,
+        gradeId: r.gradeId,
+      })),
+    })
+    .returning();
+  if (!release) throw new Error('release insert returned no row');
+  await tx
+    .update(grades)
+    .set({ state: 'released', releaseId: release.id, releasedAt: now })
+    .where(
+      and(
+        forClass(scope, grades),
+        inArray(
+          grades.id,
+          recipients.map((r) => r.gradeId),
+        ),
+      ),
+    );
+  await tx
+    .update(testAttempts)
+    .set({ state: 'released' })
+    .where(
+      and(
+        forClass(scope, testAttempts),
+        inArray(
+          testAttempts.id,
+          recipients.map((r) => r.attemptId),
+        ),
+        ne(testAttempts.state, 'in_progress'),
+      ),
+    );
+  await audit(tx, {
+    actorId: scope.user.id,
+    action: 'grade.released',
+    scopeKind: 'class',
+    scopeId: scope.classId,
+    targetType: 'grade_release',
+    targetId: release.id,
+    after: { recipients: release.recipients, ...(scheduled && { scheduled }) },
+    createdAt: now,
+  });
+  return {
+    id: release.id,
+    releasedBy: release.releasedBy,
+    releasedAt: release.releasedAt.toISOString(),
+    recipients,
+  };
+}
+
+export type ScheduledSkip = {
+  attemptId: string;
+  reason: 'no_grade' | 'incomplete' | 'saved_after_release_time';
+};
+
+/**
+ * Scheduled release (§11 "Graded → Released: scheduled release"): for every real student's
+ * attempt of the test whose own terms (fixed when it started) schedule results at or before
+ * `now`, releases its current grade when that grade is a complete draft saved no later than the
+ * scheduled time, through the same path as an instructor's release, as `scope`'s instructor.
+ * A grade saved after the scheduled time, or still incomplete, waits for an instructor's release.
+ * A grade already released is passed over, so running it again releases nothing new.
+ */
+export async function releaseScheduled(
+  db: Db,
+  scope: ClassScope,
+  resourceId: string,
+  now: Date,
+): Promise<{ release: Release | null; skipped: ScheduledSkip[] }> {
+  return db.transaction(async (tx) => {
+    const rows = await tx
+      .select({ attempt: testAttempts })
+      .from(testAttempts)
+      .leftJoin(
+        classMemberships,
+        and(
+          eq(classMemberships.classId, testAttempts.classId),
+          eq(classMemberships.userId, testAttempts.userId),
+        ),
+      )
+      .where(
+        and(
+          reviewable(scope),
+          eq(testAttempts.resourceId, resourceId),
+          ne(testAttempts.state, 'in_progress'),
+        ),
+      )
+      .orderBy(testAttempts.id)
+      .for('update', { of: testAttempts });
+    const due = new Map<string, Date>();
+    for (const { attempt } of rows) {
+      const { results, at } = attempt.settings.release;
+      if (results === 'scheduled' && at !== null && Date.parse(at) <= now.getTime()) {
+        due.set(attempt.id, new Date(at));
+      }
+    }
+    const ids = [...due.keys()];
+    if (ids.length === 0) return { release: null, skipped: [] };
+    const preview = await previewOf(tx, scope, ids);
+    const current = await tx
+      .select({ id: grades.id, createdAt: grades.createdAt })
+      .from(grades)
       .where(
         and(
           forClass(scope, grades),
@@ -459,34 +567,25 @@ export async function releaseGrades(
           ),
         ),
       );
-    await tx
-      .update(testAttempts)
-      .set({ state: 'released' })
-      .where(
-        and(
-          forClass(scope, testAttempts),
-          inArray(testAttempts.id, ids),
-          ne(testAttempts.state, 'in_progress'),
-        ),
-      );
-    await audit(tx, {
-      actorId: scope.user.id,
-      action: 'grade.released',
-      scopeKind: 'class',
-      scopeId: scope.classId,
-      targetType: 'grade_release',
-      targetId: release.id,
-      after: { recipients: release.recipients },
-      createdAt: now,
+    const savedAt = new Map(current.map((g) => [g.id, g.createdAt]));
+    const skipped: ScheduledSkip[] = [];
+    for (const s of preview.skipped) {
+      // `already_released` (a newer draft after a release) and `not_found` are not this run's.
+      if (s.reason === 'no_grade' || s.reason === 'incomplete') {
+        skipped.push({ attemptId: s.attemptId, reason: s.reason });
+      }
+    }
+    const recipients = preview.recipients.filter((r) => {
+      const at = due.get(r.attemptId) as Date;
+      const saved = savedAt.get(r.gradeId);
+      if (saved && saved.getTime() <= at.getTime()) return true;
+      skipped.push({ attemptId: r.attemptId, reason: 'saved_after_release_time' });
+      return false;
     });
+    if (recipients.length === 0) return { release: null, skipped };
     return {
-      ok: true,
-      value: {
-        id: release.id,
-        releasedBy: release.releasedBy,
-        releasedAt: release.releasedAt.toISOString(),
-        recipients: preview.recipients,
-      },
+      release: await recordRelease(tx, scope, recipients, now, { resourceId }),
+      skipped,
     };
   });
 }
