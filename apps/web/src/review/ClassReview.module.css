@@ -64,6 +64,11 @@
   padding-top: 24px;
   border-top: 1px solid var(--pc-ink);
 }
+/* A long name is one unbroken word: it wraps inside the flex row instead of widening the page. */
+.selection h2 {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 .nav {
   display: flex;
   gap: 4px;

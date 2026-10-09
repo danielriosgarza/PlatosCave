@@ -333,6 +333,12 @@
 .notice p + p {
   margin-top: 8px;
 }
+/* Unsent answers are what a student typed: they wrap, whatever their length. */
+.notice pre {
+  margin: 4px 0 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 .statusLine {
   font-size: var(--pc-size-label);
   color: var(--pc-muted);

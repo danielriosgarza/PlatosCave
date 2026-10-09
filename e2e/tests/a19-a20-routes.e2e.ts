@@ -1,5 +1,6 @@
 import AxeBuilder from '@axe-core/playwright';
-import { expect, type Locator, type Page, test } from '@playwright/test';
+import { type APIRequestContext, expect, type Locator, type Page, test } from '@playwright/test';
+import { small } from '../touch';
 import {
   exerciseDefinition,
   releaseToClassA,
@@ -23,8 +24,62 @@ interface Fixtures {
   exerciseTitle: string;
   testTitle: string;
   reviewUrl: string;
+  /** Review of a graded, unreleased attempt: the single-release preview opens from it. */
+  draftReviewUrl: string;
+  /** Priya's review of the class with the graded, unreleased test chosen. */
+  bulkReviewUrl: string;
+  /** Everything on this test is released, so "Needs review" has nothing to show. */
+  nothingToReviewUrl: string;
+  releasedTitle: string;
+  tests: string;
+  /** The test Sam's closed attempt belongs to, with an instructor request and kept unsent work. */
+  recoveryTitle: string;
+  examReviewUrl: (tab: string) => string;
+  commentsUrl: string;
 }
 let fixtures: Fixtures;
+
+/** The choice and written-answer questions only: the code question needs the runner (not in e2e). */
+const gradedDefinition = { ...testDefinition, questions: testDefinition.questions.slice(0, 2) };
+
+/** Sam starts, answers and submits a test the way a student would; returns the attempt id. */
+async function submitAs(
+  sam: APIRequestContext,
+  classId: string,
+  resourceId: string,
+  answers: readonly (readonly [string, unknown])[],
+): Promise<string> {
+  const started = await sam.post(`/api/classes/${classId}/resources/${resourceId}/test-attempts`);
+  expect(started.ok()).toBe(true);
+  const attemptId = ((await started.json()) as { id: string }).id;
+  const attempt = `/api/classes/${classId}/test-attempts/${attemptId}`;
+  for (const [question, value] of answers) {
+    expect(
+      (await sam.put(`${attempt}/answers/${question}`, { data: { value, seq: 1 } })).ok(),
+    ).toBe(true);
+  }
+  expect(
+    (
+      await sam.post(`${attempt}/submit`, {
+        data: { submissionKey: `routes-${Date.now()}-${attemptId}` },
+      })
+    ).ok(),
+  ).toBe(true);
+  return attemptId;
+}
+
+/** Priya saves a complete draft grade (full marks on the written answer); returns its row id. */
+async function draftGrade(priya: APIRequestContext, classId: string, attemptId: string) {
+  const saved = await priya.post(`/api/classes/${classId}/test-attempts/${attemptId}/grade`, {
+    data: {
+      expectedGradeId: null,
+      manual: [{ questionId: 'why', criteria: [{ id: 'averaging', points: 3 }] }],
+      feedback: [{ target: { kind: 'attempt' }, text: 'Clear reasoning about averaging out.' }],
+    },
+  });
+  expect(saved.ok()).toBe(true);
+  return ((await saved.json()) as { history: { id: string }[] }).history[0]?.id as string;
+}
 
 test.beforeAll(async ({ playwright, baseURL }) => {
   const ids = await worldIds(playwright, baseURL);
@@ -32,20 +87,27 @@ test.beforeAll(async ({ playwright, baseURL }) => {
   const exerciseTitle = `Routes exercise ${stamp}`;
   const testTitle = `Routes test ${stamp}`;
   const submittedTitle = `Routes submitted ${stamp}`;
-  const [, , submittedId] = await releaseToClassA(playwright, baseURL, ids, [
-    { type: 'exercise', title: exerciseTitle, content: exerciseDefinition },
-    { type: 'test', title: testTitle, content: testDefinition },
-    { type: 'test', title: submittedTitle, content: testDefinition },
-  ]);
-  if (!submittedId) throw new Error('the submitted test was not created');
-  // Sam submits a test, so the class review has a submission to show.
+  const releasedTitle = `Routes released ${stamp}`;
+  const draftTitle = `Routes draft ${stamp}`;
+  const [exerciseId, , submittedId, releasedId, draftId] = await releaseToClassA(
+    playwright,
+    baseURL,
+    ids,
+    [
+      { type: 'exercise', title: exerciseTitle, content: exerciseDefinition },
+      { type: 'test', title: testTitle, content: testDefinition },
+      { type: 'test', title: submittedTitle, content: testDefinition },
+      { type: 'test', title: releasedTitle, content: gradedDefinition },
+      { type: 'test', title: draftTitle, content: gradedDefinition },
+    ],
+  );
+  if (!exerciseId || !submittedId || !releasedId || !draftId) {
+    throw new Error('the fixture resources were not created');
+  }
   const sam = await signedIn(playwright, baseURL, 'sam@example.test');
-  const url = `/api/classes/${ids.classA}/resources/${submittedId}/test-attempts`;
-  const started = await sam.post(url);
-  expect(started.ok()).toBe(true);
-  const attemptId = ((await started.json()) as { id: string }).id;
-  const attempt = `/api/classes/${ids.classA}/test-attempts/${attemptId}`;
-  for (const [question, value] of [
+  const priya = await signedIn(playwright, baseURL, 'priya@example.test');
+  // Sam submits a test, so the class review has a submission to show.
+  const attemptId = await submitAs(sam, ids.classA, submittedId, [
     ['spread', ['n100']],
     ['why', LONG_EXPLANATION],
     [
@@ -54,20 +116,97 @@ test.beforeAll(async ({ playwright, baseURL }) => {
         files: [{ path: 'solution.py', content: 'def mean(xs):\n    return sum(xs) / len(xs)\n' }],
       },
     ],
-  ] as const) {
-    expect(
-      (await sam.put(`${attempt}/answers/${question}`, { data: { value, seq: 1 } })).ok(),
-    ).toBe(true);
-  }
-  expect(
-    (await sam.post(`${attempt}/submit`, { data: { submissionKey: `routes-${Date.now()}` } })).ok(),
-  ).toBe(true);
+  ]);
+  // A closed attempt with an instructor's request for unsent work and the copy Sam's browser kept.
+  const requested = await priya.post(
+    `/api/classes/${ids.classA}/test-attempts/${attemptId}/recovery-request`,
+    { data: { reason: 'The connection dropped before the deadline' } },
+  );
+  expect(requested.ok()).toBe(true);
+  const kept = await sam.post(`/api/classes/${ids.classA}/test-attempts/${attemptId}/local-copy`, {
+    data: {
+      answers: [{ questionId: 'why', value: 'Unsent: a larger sample averages out noise.' }],
+    },
+  });
+  expect(kept.ok()).toBe(true);
+  // A graded and released test: Sam reads the feedback.
+  const answers = [
+    ['spread', ['n100']],
+    ['why', 'Noise averages out in a larger sample.'],
+  ] as const;
+  const releasedAttempt = await submitAs(sam, ids.classA, releasedId, answers);
+  const releasedGrade = await draftGrade(priya, ids.classA, releasedAttempt);
+  const released = await priya.post(`/api/classes/${ids.classA}/grade-releases`, {
+    data: { grades: [{ attemptId: releasedAttempt, gradeId: releasedGrade }] },
+  });
+  expect(released.ok()).toBe(true);
+  // A graded test that is not released yet: both release previews open from it.
+  const draftAttempt = await submitAs(sam, ids.classA, draftId, answers);
+  await draftGrade(priya, ids.classA, draftAttempt);
+  await priya.dispose();
   await sam.dispose();
+  // Exercise review needs a practice attempt.
+  const starter = await signedIn(playwright, baseURL, 'sam@example.test');
+  expect(
+    (
+      await starter.post(`/api/classes/${ids.classA}/resources/${exerciseId}/exercise-attempt`)
+    ).ok(),
+  ).toBe(true);
+  await starter.dispose();
+  // A student of the lab class who shared a question: nobody else's cleanup removes it.
+  const asker = await playwright.request.newContext({ baseURL });
+  const email = `asker-${stamp}@example.test`;
+  expect((await asker.post('/api/test/signin-as', { data: { email } })).ok()).toBe(true);
+  const owner = await signedIn(playwright, baseURL, 'lab-author@example.test');
+  const invite = await owner.post(`/api/classes/${lab.class}/invites`, {
+    data: { kind: 'enrolment' },
+  });
+  expect(invite.ok()).toBe(true);
+  expect(
+    (
+      await asker.post('/api/join', {
+        data: { code: ((await invite.json()) as { code: string }).code },
+      })
+    ).ok(),
+  ).toBe(true);
+  await owner.dispose();
+  const askerId = ((await (await asker.get('/api/me')).json()) as { user: { id: string } }).user.id;
+  const readings = (await (
+    await asker.get(`/api/classes/${lab.class}/topics/${lab.topic}/readings`)
+  ).json()) as { readings: { resourceId: string; revisionId: string }[] };
+  const reading = readings.readings.find((r) => r.revisionId === lab.nativeRevision);
+  if (!reading) throw new Error('the lab reading was not found');
+  const note = await asker.post(
+    `/api/classes/${lab.class}/resources/${reading.resourceId}/annotations`,
+    {
+      data: {
+        kind: 'note',
+        anchor: { kind: 'none' },
+        body: 'Why does the margin of error shrink?',
+      },
+    },
+  );
+  expect(note.ok()).toBe(true);
+  const shared = await asker.post(
+    `/api/classes/${lab.class}/annotations/${((await note.json()) as { id: string }).id}/share`,
+    { data: { audience: 'instructor' } },
+  );
+  expect(shared.ok()).toBe(true);
+  await asker.dispose();
+  const reviewBase = `/classes/${ids.classA}/review`;
   fixtures = {
     ids,
     exerciseTitle,
     testTitle,
-    reviewUrl: `/classes/${ids.classA}/review?assignment=${submittedId}&selected=${ids.sam}&attempt=${attemptId}`,
+    reviewUrl: `${reviewBase}?assignment=${submittedId}&selected=${ids.sam}&attempt=${attemptId}`,
+    draftReviewUrl: `${reviewBase}?assignment=${draftId}&selected=${ids.sam}&attempt=${draftAttempt}`,
+    bulkReviewUrl: `${reviewBase}?assignment=${draftId}`,
+    nothingToReviewUrl: `${reviewBase}?assignment=${releasedId}&needsReview=true`,
+    releasedTitle,
+    examReviewUrl: (tab) => `${reviewBase}?selected=${ids.sam}&tab=${tab}`,
+    tests: `/classes/${ids.classA}/topics/${ids.sampling}/tests`,
+    recoveryTitle: submittedTitle,
+    commentsUrl: `/classes/${lab.class}/review?selected=${askerId}&tab=comments`,
   };
 });
 
@@ -80,6 +219,17 @@ type Route = {
 };
 
 const shown = (locator: Locator) => expect(locator.first()).toBeVisible();
+
+/** From the tests list of a topic, opens the one with this title. */
+async function openTest(page: Page, title: string) {
+  const listed = page
+    .getByRole('listitem')
+    .filter({ hasText: title })
+    .getByRole('button', { name: 'Open' });
+  const heading = page.getByRole('heading', { name: title });
+  await expect(listed.or(heading).first()).toBeVisible();
+  if (await listed.isVisible()) await listed.click();
+}
 
 /** Every screen the application routes to, with real content on it, as the person who sees it. */
 const routes: Route[] = [
@@ -174,6 +324,105 @@ const routes: Route[] = [
       expect(await answer.first().evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(
         true,
       );
+    },
+  },
+  {
+    name: 'student released results',
+    as: 'sam',
+    path: (f) => f.tests,
+    load: async (page, f) => {
+      await openTest(page, f.releasedTitle);
+      await page.getByRole('button', { name: 'View feedback for attempt 1' }).click();
+      await shown(page.getByRole('heading', { name: `${f.releasedTitle} · attempt 1 feedback` }));
+      await shown(page.getByText('Clear reasoning about averaging out.'));
+    },
+  },
+  {
+    name: 'student receipt with an instructor request',
+    as: 'sam',
+    path: (f) => f.tests,
+    load: async (page, f) => {
+      await openTest(page, f.recoveryTitle);
+      await page.getByRole('button', { name: 'Open the receipt of attempt 1' }).click();
+      await shown(page.getByRole('heading', { name: 'Test submitted' }));
+      await shown(page.getByText('Your instructor asked for your unsent work'));
+    },
+  },
+  {
+    name: 'accommodations and recovery',
+    as: 'priya',
+    path: (f) => f.tests,
+    load: async (page, f) => {
+      await openTest(page, f.recoveryTitle);
+      await shown(page.getByRole('region', { name: 'Extensions and extra attempts' }));
+      const list = page.getByRole('list', { name: 'Closed attempts and unsent work' });
+      await page.getByRole('button', { name: 'View unsent work' }).first().click();
+      await shown(list.getByText('Not part of the submission.'));
+      await shown(list.getByText('Unsent: a larger sample averages out noise.'));
+    },
+  },
+  {
+    name: 'release preview',
+    as: 'priya',
+    path: (f) => f.draftReviewUrl,
+    load: async (page) => {
+      await shown(page.getByRole('region', { name: 'Grading workspace' }));
+      await page.getByRole('button', { name: 'Release feedback' }).click();
+      await shown(page.getByRole('region', { name: 'Release preview' }));
+    },
+  },
+  {
+    name: 'bulk release preview',
+    as: 'priya',
+    path: (f) => f.bulkReviewUrl,
+    load: async (page) => {
+      await page
+        .getByRole('checkbox', { name: /^Select .+ for release$/ })
+        .first()
+        .check();
+      await page.getByRole('button', { name: /^Preview release \(\d+\)$/ }).click();
+      await shown(
+        page
+          .getByRole('region', { name: 'Release preview' })
+          .getByRole('list', { name: 'Recipients' }),
+      );
+    },
+  },
+  {
+    name: 'class review with no students needing review',
+    as: 'priya',
+    path: (f) => f.nothingToReviewUrl,
+    load: async (page) => {
+      await shown(page.getByRole('heading', { name: 'No students need review.' }));
+      await shown(page.getByRole('button', { name: 'Show all students' }));
+    },
+  },
+  {
+    name: 'exercise review',
+    as: 'priya',
+    path: (f) => f.examReviewUrl('exercises'),
+    load: async (page, f) => {
+      await shown(page.getByRole('heading', { name: `Exercise · ${f.exerciseTitle}` }));
+      await shown(page.getByRole('list', { name: 'Steps of attempt 1' }));
+    },
+  },
+  {
+    name: 'review submissions tab',
+    as: 'priya',
+    path: (f) => f.examReviewUrl('submissions'),
+    load: async (page) => {
+      await shown(page.getByRole('tab', { name: 'Submissions', selected: true }));
+      await shown(page.getByRole('heading', { name: 'Tests', level: 3 }));
+      await shown(page.getByRole('region', { name: /^Test · / }));
+    },
+  },
+  {
+    name: 'review comments and questions tab',
+    as: 'lab-instructor',
+    path: (f) => f.commentsUrl,
+    load: async (page) => {
+      await shown(page.getByRole('tab', { name: 'Comments & questions', selected: true }));
+      await shown(page.getByText('Why does the margin of error shrink?'));
     },
   },
   {
@@ -301,3 +550,29 @@ for (const route of routes) {
     });
   });
 }
+
+/** The Phase 4 screens a person uses by touch: every button, select and text box is at least 44 px. */
+const touched = [
+  'student released results',
+  'student receipt with an instructor request',
+  'accommodations and recovery',
+  'release preview',
+  'bulk release preview',
+  'class review with no students needing review',
+];
+
+test.describe('coarse pointer', () => {
+  test.use({ hasTouch: true, isMobile: true });
+
+  for (const route of routes.filter((r) => touched.includes(r.name))) {
+    test(`A20 ${route.name} controls are at least 44 px with a touch screen`, async ({ page }) => {
+      await open(page, route);
+      expect(
+        await small(
+          page,
+          'main button, main select, main input:not([type="checkbox"], [type="radio"])',
+        ),
+      ).toEqual([]);
+    });
+  }
+});
