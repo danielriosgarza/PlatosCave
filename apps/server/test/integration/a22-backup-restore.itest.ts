@@ -133,6 +133,44 @@ describe('A22 backup and restore', () => {
     );
   });
 
+  test('A22 the backup is private to its owner: directories 0700, files 0600', async () => {
+    const dir = join(tmp, 'backup');
+    const entries = await readdir(dir, { recursive: true, withFileTypes: true });
+    expect((await stat(dir)).mode & 0o777).toBe(0o700);
+    expect(entries.length).toBeGreaterThan(4);
+    for (const entry of entries) {
+      const mode = (await stat(join(entry.parentPath, entry.name))).mode & 0o777;
+      expect(mode, join(entry.parentPath, entry.name)).toBe(entry.isDirectory() ? 0o700 : 0o600);
+    }
+  });
+
+  test('A22 a backup taken under umask 000 from world-readable objects is still private', async () => {
+    const root = join(tmp, 'open-root');
+    const key = `courses/${ids.statistics}/objects/${sha256(DATASET)}`;
+    await mkdir(join(root, key, '..'), { recursive: true });
+    await writeFile(join(root, key), DATASET);
+    await chmod(join(root, key), 0o666);
+    const dir = join(tmp, 'open-backup');
+    const res = await run(
+      'backup',
+      dir,
+      restored.url,
+      { STORAGE_DRIVER: 'fs', STORAGE_DIR: root },
+      '000',
+    );
+    expect(res, res.stderr).toMatchObject({ code: 0 });
+    expect((await stat(dir)).mode & 0o777).toBe(0o700);
+    expect((await stat(join(dir, 'database.dump'))).mode & 0o777).toBe(0o600);
+    expect((await stat(join(dir, 'storage', key))).mode & 0o777).toBe(0o600);
+    expect((await stat(join(dir, 'storage', 'courses'))).mode & 0o777).toBe(0o700);
+    // The owner can still restore from it, and the restored storage root stays readable by the API.
+    const storageDir = join(tmp, 'open-restored');
+    const restore = await script('restore', dir, await emptyDatabase(), storageDir);
+    expect(restore, restore.stderr).toMatchObject({ code: 0 });
+    expect((await stat(join(storageDir, key))).mode & 0o777).toBe(0o644);
+    expect((await stat(join(storageDir, 'courses'))).mode & 0o777).toBe(0o755);
+  });
+
   test('A22 the backup lists every object with its digest and size', async () => {
     const dir = join(tmp, 'backup');
     expect((await readdir(dir)).sort()).toEqual([
