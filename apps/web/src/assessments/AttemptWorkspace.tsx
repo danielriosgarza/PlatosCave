@@ -535,7 +535,7 @@ export function AttemptWorkspace({
             flush={flush}
             onClosed={onClosed}
           />
-          <div className={`${styles.row} ${styles.between}`} style={{ marginTop: 16 }}>
+          <div className={`${styles.row} ${styles.between} ${styles.rowSpaced}`}>
             <label className={styles.row}>
               <input
                 type="checkbox"
@@ -572,7 +572,7 @@ export function AttemptWorkspace({
               ) : null}
             </span>
           </div>
-          <div className={styles.row} style={{ marginTop: 12 }}>
+          <div className={`${styles.row} ${styles.rowSpacedTight}`}>
             <button
               type="button"
               className={buttons.outline}

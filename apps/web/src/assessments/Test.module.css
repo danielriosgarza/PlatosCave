@@ -8,15 +8,15 @@
   justify-content: space-between;
   align-items: center;
   border-bottom: 1px solid var(--pc-rule);
-  padding-bottom: 18px;
-  margin-bottom: 24px;
-  gap: 16px;
+  padding-bottom: var(--pc-space-20);
+  margin-bottom: var(--pc-space-24);
+  gap: var(--pc-space-16);
   flex-wrap: wrap;
 }
 .row {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--pc-space-12);
   flex-wrap: wrap;
 }
 .between {
@@ -36,17 +36,17 @@
 .grid {
   display: grid;
   grid-template-columns: minmax(0, 0.85fr) minmax(0, 1.15fr);
-  gap: 48px;
+  gap: var(--pc-space-48);
 }
 .grid > div:last-child {
   border-left: 1px solid var(--pc-rule);
-  padding-left: 32px;
+  padding-left: var(--pc-space-32);
   min-width: 0;
 }
 @media (max-width: 900px) {
   .grid {
     grid-template-columns: minmax(0, 1fr);
-    gap: 32px;
+    gap: var(--pc-space-32);
   }
   .grid > div:last-child {
     border: 0;
@@ -55,12 +55,12 @@
 }
 .prompt h3 {
   font: var(--pc-text-section);
-  margin-top: 12px;
+  margin-top: var(--pc-space-12);
 }
 .prompt p {
   font-size: var(--pc-size-body);
   line-height: 1.6;
-  margin: 18px 0;
+  margin: var(--pc-space-20) 0;
   white-space: pre-wrap;
 }
 .prompt code {
@@ -69,12 +69,12 @@
 }
 .rule {
   border-top: 1px solid var(--pc-rule);
-  margin: 20px 0;
+  margin: var(--pc-space-20) 0;
 }
 .terms {
   display: grid;
   grid-template-columns: auto 1fr;
-  gap: 6px 16px;
+  gap: var(--pc-space-8) var(--pc-space-16);
   font-size: var(--pc-size-ui);
   margin: 0;
 }
@@ -86,15 +86,15 @@
 }
 .termsHead {
   font: var(--pc-text-subsection);
-  margin: 0 0 10px;
+  margin: 0 0 var(--pc-space-12);
 }
 .nav {
-  margin-bottom: 20px;
+  margin-bottom: var(--pc-space-20);
 }
 .nav ol {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--pc-space-8);
   list-style: none;
   padding: 0;
   margin: 0;
@@ -105,7 +105,7 @@
   cursor: pointer;
   min-height: 36px;
   text-align: left;
-  padding: 6px 12px;
+  padding: var(--pc-space-8) var(--pc-space-12);
   color: var(--pc-ink);
   background: var(--pc-sheet);
   border: 1px solid var(--pc-rule);
@@ -123,27 +123,27 @@
 }
 .field {
   display: block;
-  margin: 0 0 16px;
+  margin: 0 0 var(--pc-space-16);
 }
 .options {
   border: 0;
   padding: 0;
-  margin: 0 0 16px;
+  margin: 0 0 var(--pc-space-16);
   min-width: 0;
 }
 .options legend {
   font-size: var(--pc-size-ui);
   color: var(--pc-muted);
-  margin-bottom: 8px;
+  margin-bottom: var(--pc-space-8);
 }
 .option {
   display: flex;
-  gap: 10px;
+  gap: var(--pc-space-12);
   align-items: flex-start;
-  padding: 10px 12px;
+  padding: var(--pc-space-12) var(--pc-space-12);
   border: 1px solid var(--pc-rule);
   border-radius: var(--pc-radius-control);
-  margin-bottom: 8px;
+  margin-bottom: var(--pc-space-8);
   background: var(--pc-sheet);
 }
 .numeric {
@@ -155,24 +155,24 @@
   min-height: 180px;
   font: inherit;
   line-height: 1.6;
-  padding: 12px;
+  padding: var(--pc-space-12);
   resize: vertical;
 }
 .error {
   color: var(--pc-ink);
   font-size: var(--pc-size-ui);
-  margin: 6px 0 0;
-  padding-left: 10px;
+  margin: var(--pc-space-8) 0 0;
+  padding-left: var(--pc-space-12);
   border-left: 3px solid var(--pc-ink);
 }
 .editorHead {
   background: var(--pc-soft);
-  padding: 10px 14px;
+  padding: var(--pc-space-12) var(--pc-space-16);
   display: flex;
   align-items: center;
   justify-content: space-between;
   font-size: var(--pc-size-label);
-  gap: 12px;
+  gap: var(--pc-space-12);
   border: 1px solid var(--pc-rule);
   border-bottom: 0;
   flex-wrap: wrap;
@@ -224,19 +224,19 @@
   border-radius: 0;
   border: 1px solid var(--pc-muted);
   resize: vertical;
-  padding: 20px;
+  padding: var(--pc-space-20);
   background: var(--pc-sheet);
   tab-size: 4;
   margin: 0;
 }
 .run {
-  margin-top: 12px;
+  margin-top: var(--pc-space-12);
 }
 .output {
   background: var(--pc-sheet);
-  padding: 16px;
+  padding: var(--pc-space-16);
   border: 1px solid var(--pc-rule);
-  margin-top: 16px;
+  margin-top: var(--pc-space-16);
   border-radius: var(--pc-radius-control);
   /* The pane is adjustable and scrolls: a long log never pushes the prompt out of reach. */
   resize: vertical;
@@ -246,7 +246,7 @@
 }
 .output pre {
   border: 0;
-  padding: 8px 0;
+  padding: var(--pc-space-8) 0;
   margin: 0;
   background: none;
   overflow-x: auto;
@@ -256,7 +256,7 @@
 }
 .check {
   border-top: 1px solid var(--pc-rule);
-  padding: 10px 0;
+  padding: var(--pc-space-12) 0;
 }
 .check:first-of-type {
   border-top: 0;
@@ -270,33 +270,33 @@
 }
 .review {
   border-top: 1px solid var(--pc-rule);
-  padding-top: 24px;
-  margin-top: 24px;
+  padding-top: var(--pc-space-24);
+  margin-top: var(--pc-space-24);
 }
 .review h3 {
   font: var(--pc-text-subsection);
-  margin: 0 0 8px;
+  margin: 0 0 var(--pc-space-8);
 }
 .stack {
   display: grid;
-  gap: 14px;
+  gap: var(--pc-space-16);
 }
 .list {
   margin: 0;
-  padding-left: 20px;
+  padding-left: var(--pc-space-20);
 }
 .attempts {
   list-style: none;
   padding: 0;
-  margin: 24px 0 0;
+  margin: var(--pc-space-24) 0 0;
   border-top: 1px solid var(--pc-rule);
 }
 .attempts li {
-  padding: 12px 0;
+  padding: var(--pc-space-12) 0;
   border-bottom: 1px solid var(--pc-rule);
   display: flex;
   justify-content: space-between;
-  gap: 16px;
+  gap: var(--pc-space-16);
   flex-wrap: wrap;
 }
 .receipt {
@@ -309,9 +309,9 @@
 .receiptList {
   display: grid;
   grid-template-columns: auto 1fr;
-  gap: 6px 16px;
+  gap: var(--pc-space-8) var(--pc-space-16);
   font-size: var(--pc-size-ui);
-  margin: 16px 0;
+  margin: var(--pc-space-16) 0;
 }
 .receiptList dt {
   color: var(--pc-muted);
@@ -321,17 +321,17 @@
   overflow-wrap: anywhere;
 }
 .notice {
-  padding: 14px 16px;
+  padding: var(--pc-space-16) var(--pc-space-16);
   background: var(--pc-soft);
   border: 1px solid var(--pc-rule);
   border-radius: var(--pc-radius-control);
-  margin: 0 0 20px;
+  margin: 0 0 var(--pc-space-20);
 }
 .notice p {
   margin: 0;
 }
 .notice p + p {
-  margin-top: 8px;
+  margin-top: var(--pc-space-8);
 }
 .statusLine {
   font-size: var(--pc-size-label);
@@ -341,45 +341,45 @@
 .files {
   border: 0;
   padding: 0;
-  margin: 0 0 8px;
+  margin: 0 0 var(--pc-space-8);
   min-width: 0;
 }
 
 .title {
   font: var(--pc-text-section);
-  margin: 0 0 12px;
+  margin: 0 0 var(--pc-space-12);
 }
 
 /* Results (§11): ported from .pc-test-grid / .pc-terms; the score line reuses the receipt scale. */
 .score {
   font: var(--pc-text-title);
-  margin: 4px 0 0;
+  margin: var(--pc-space-4) 0 0;
 }
 .question {
   border-top: 1px solid var(--pc-rule);
-  padding: 20px 0;
+  padding: var(--pc-space-20) 0;
 }
 .question h3 {
   font: var(--pc-text-section);
-  margin: 0 0 8px;
+  margin: 0 0 var(--pc-space-8);
 }
 .answerBox {
   border: 1px solid var(--pc-rule);
   background: var(--pc-sheet);
-  padding: 10px 12px;
-  margin: 8px 0;
+  padding: var(--pc-space-12) var(--pc-space-12);
+  margin: var(--pc-space-8) 0;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
 .feedbackNote {
-  margin: 6px 0;
-  padding-left: 10px;
+  margin: var(--pc-space-8) 0;
+  padding-left: var(--pc-space-12);
   border-left: 3px solid var(--pc-ink);
   font: var(--pc-text-ui);
 }
 .codeLines {
   list-style: none;
-  margin: 8px 0;
+  margin: var(--pc-space-8) 0;
   padding: 0;
   border: 1px solid var(--pc-rule);
   font: var(--pc-text-code);
@@ -393,30 +393,60 @@
   background: var(--pc-soft);
   color: var(--pc-muted);
   text-align: right;
-  padding: 0 8px;
+  padding: 0 var(--pc-space-8);
   user-select: none;
 }
 .codeLines pre {
   margin: 0;
-  padding: 0 10px;
+  padding: 0 var(--pc-space-12);
   white-space: pre;
 }
 .codeLines .feedbackNote {
   grid-column: 2;
   font: var(--pc-text-ui);
-  margin: 2px 10px 6px;
+  margin: var(--pc-space-4) var(--pc-space-12) var(--pc-space-8);
 }
 .checks {
   list-style: none;
-  margin: 8px 0;
+  margin: var(--pc-space-8) 0;
   padding: 0;
   font: var(--pc-text-ui);
 }
 .checks li {
-  padding: 6px 0;
+  padding: var(--pc-space-8) 0;
   border-top: 1px solid var(--pc-rule);
 }
 
 .block {
   display: block;
+}
+
+.accommodationsHeading {
+  font: var(--pc-text-subsection);
+  margin: var(--pc-space-24) 0 var(--pc-space-8);
+}
+
+.accommodationsForm {
+  max-width: 520px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: var(--pc-space-12);
+}
+
+.sectionHeading {
+  margin: 0 0 var(--pc-space-8);
+  font: var(--pc-text-section);
+}
+
+.termsBlock {
+  max-width: 640px;
+  margin: var(--pc-space-20) 0;
+}
+
+.rowSpaced {
+  margin-top: var(--pc-space-16);
+}
+
+.rowSpacedTight {
+  margin-top: var(--pc-space-12);
 }

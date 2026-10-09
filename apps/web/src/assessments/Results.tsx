@@ -239,7 +239,7 @@ export function ResultsView({
           Back to attempts
         </button>
       </p>
-      <h2 ref={heading} tabIndex={-1} style={{ margin: '0 0 8px', font: 'var(--pc-text-section)' }}>
+      <h2 ref={heading} tabIndex={-1} className={styles.sectionHeading}>
         {title} · attempt {attempt.number} feedback
       </h2>
       <p className={styles.score}>{pointsOf(grade.points, grade.possible)}</p>
