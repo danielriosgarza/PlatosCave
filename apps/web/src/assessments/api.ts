@@ -24,7 +24,7 @@ export type Receipt = z.output<typeof submitTestAttempt.response>;
 export type Terms = AttemptView['terms'];
 export type Question = AttemptView['questions'][number];
 export type CodeQuestionView = Extract<Question, { kind: 'code' }>;
-export type RunView = z.output<typeof requestRun.response>;
+type RunView = z.output<typeof requestRun.response>;
 export type StudentRunView = Omit<RunView, 'reused'>;
 
 export const useTestOverview = (classId: string, resourceId: string) =>
@@ -103,7 +103,7 @@ export const askForRecovery = (classId: string, attemptId: string, reason: strin
 
 export type MyResults = z.output<typeof readMyResults.response>;
 export type ResultAttempt = MyResults['attempts'][number];
-export type ResultDetail = z.output<typeof readMyResultDetail.response>;
+type ResultDetail = z.output<typeof readMyResultDetail.response>;
 export type ResultQuestion = ResultDetail['questions'][number];
 
 export const useMyResults = (classId: string, resourceId: string) =>

@@ -10,6 +10,7 @@ import type { z } from 'zod';
 import { ApiError, call } from '../../api/client';
 import buttons from '../../components/Buttons.module.css';
 import { RetryNotice } from '../../components/RetryNotice';
+import { formatInstant } from '../../format/format';
 import { type Conflict, ConflictDialog } from './ConflictDialog';
 import styles from './Files.module.css';
 import {
@@ -18,7 +19,6 @@ import {
   outcomeText,
   refusalText,
   size,
-  when,
   where,
 } from './files';
 
@@ -416,7 +416,7 @@ function Workspace({
                     {e.size === null ? '' : size(e.size)}
                     {tooBig ? ` · over ${size(MAX_COPY_OUT_FILE_BYTES)}, cannot be copied` : ''}
                   </td>
-                  <td>{e.modified ? when(e.modified) : ''}</td>
+                  <td>{e.modified ? formatInstant(e.modified) : ''}</td>
                   <td>
                     {e.type === 'notebook' ? (
                       <button

@@ -17,9 +17,6 @@ export function size(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-export const when = (iso: string) =>
-  new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
-
 /** `results.csv` → `results (parallax).csv`, the name "save mine as a copy" writes (design §11). */
 export function copyName(path: string): string {
   const slash = path.lastIndexOf('/');

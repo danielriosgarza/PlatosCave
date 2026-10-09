@@ -2,6 +2,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import buttons from '../components/Buttons.module.css';
 import { OfflineBanner, useOnline } from '../components/OfflineBanner';
+import { downloadText } from '../format/format';
 import {
   attemptCopyKey,
   readAttemptCopy,
@@ -124,17 +125,6 @@ function recoveryFile(question: Question, index: number, value: unknown) {
   };
 }
 
-function saveFile(filename: string, text: string) {
-  const url = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  document.body.append(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
-}
-
 /**
  * One attempt of a test (§11): the question and its answer area, navigation with
  * Answered / Unanswered / Flagged, terms in the prompt column, autosave with acknowledgement,
@@ -248,7 +238,7 @@ export function AttemptWorkspace({
           })
           .join('\n')
       : unsentText(attempt, entries);
-    saveFile('unsent-answers.txt', text);
+    downloadText('unsent-answers.txt', text);
   }, [attempt, classId, entries, userId]);
 
   /** Sends the copy this browser kept (or the page's unsent answers) after an instructor asked (A15). */
@@ -572,7 +562,7 @@ export function AttemptWorkspace({
                       <button
                         type="button"
                         className={buttons.textButton}
-                        onClick={() => saveFile(file.filename, file.text)}
+                        onClick={() => downloadText(file.filename, file.text)}
                       >
                         Download what you wrote
                       </button>

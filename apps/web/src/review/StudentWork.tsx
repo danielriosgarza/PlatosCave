@@ -5,6 +5,7 @@ import { Loading } from '../components/Loading';
 import page from '../components/Page.module.css';
 import { RetryNotice } from '../components/RetryNotice';
 import { type TabDef, TabRow } from '../components/TabRow';
+import { ATTEMPT_STATE_LABEL, formatInstant, points } from '../format/format';
 import { searchFor } from '../reading/place';
 import type { ClassReview, ReviewSearch, ReviewTab } from './classReview';
 import { ExerciseReview } from './ExerciseReview';
@@ -13,8 +14,6 @@ import { GradingWorkspace } from './GradingWorkspace';
 import {
   type Discussions,
   downloadLink,
-  points,
-  stamp,
   useDiscussions,
   useStudentSubmissions,
   useTestGrades,
@@ -26,15 +25,6 @@ const TABS = [
   { id: 'submissions', label: 'Submissions' },
   { id: 'comments', label: 'Comments & questions' },
 ] as const satisfies readonly TabDef<ReviewTab>[];
-
-const STATE: Record<string, string> = {
-  in_progress: 'In progress',
-  submitted: 'Submitted',
-  grading: 'Grading',
-  needs_review: 'Needs review',
-  graded: 'Graded',
-  released: 'Released',
-};
 
 /**
  * The selected student's work (§12): Results (immutable attempts and the grading workspace),
@@ -206,7 +196,7 @@ function Attempts({
           {attempts.map((a) => (
             <div key={a.attemptId} className={styles.attemptRow}>
               <span>
-                Attempt {a.number} · {STATE[a.state] ?? a.state}
+                Attempt {a.number} · {ATTEMPT_STATE_LABEL[a.state] ?? a.state}
                 {a.released
                   ? ` · released ${points(a.released.points)} / ${points(a.released.possible)}`
                   : ''}
@@ -283,7 +273,7 @@ function Snapshot({ classId, submission: s }: { classId: string; submission: Sub
     <div className={styles.question}>
       <div className={page.small}>
         Version {s.version} · {s.filename} · {Math.max(1, Math.round(s.size / 1024))} KiB · received{' '}
-        {stamp(s.receivedAt)}
+        {formatInstant(s.receivedAt)}
         {s.removed ? ' · student removed from the class' : ''}
       </div>
       {environment.length > 0 ? (
@@ -378,7 +368,9 @@ function Comments({ classId, studentId }: { classId: string; studentId: string }
                   : 'Shared with the class'}{' '}
                 · {thread.status === 'open' ? 'Open' : 'Resolved'}
               </span>
-              <span className={`${page.small} ${page.muted}`}>{stamp(thread.createdAt)}</span>
+              <span className={`${page.small} ${page.muted}`}>
+                {formatInstant(thread.createdAt)}
+              </span>
             </div>
             {quoteOf(thread) ? (
               <blockquote className={page.muted}>“{quoteOf(thread)}”</blockquote>

@@ -6,7 +6,7 @@ import { Loading } from '../components/Loading';
 import pageStyles from '../components/Page.module.css';
 import { RetryNotice } from '../components/RetryNotice';
 import { type ReleasedResource, useClassRelease } from '../exercises/attempt';
-import { formatOpens } from '../topics/topics';
+import { ATTEMPT_STATE_LABEL, formatInstant } from '../format/format';
 import { AccommodationsPanel } from './AccommodationsPanel';
 import { AttemptWorkspace } from './AttemptWorkspace';
 import { recoveryAnswered } from './answers';
@@ -22,7 +22,7 @@ import {
 } from './api';
 import { RecoveryPanel } from './RecoveryPanel';
 import { ReportedGrade, ResultsView, resultLine } from './Results';
-import { formatInZone, TermsPanel } from './TermsPanel';
+import { TermsPanel } from './TermsPanel';
 import styles from './Test.module.css';
 
 const INELIGIBLE: Record<string, string> = {
@@ -31,15 +31,6 @@ const INELIGIBLE: Record<string, string> = {
   no_attempts_left: 'You have used every attempt.',
   class_archived: 'This class is archived, so no new attempt can start.',
   in_progress: 'An attempt is already in progress.',
-};
-
-const STATE_LABEL: Record<string, string> = {
-  in_progress: 'In progress',
-  submitted: 'Submitted',
-  grading: 'Submitted · being graded',
-  needs_review: 'Submitted · awaiting instructor review',
-  graded: 'Submitted · graded, not yet released',
-  released: 'Results released',
 };
 
 /** The Tests tab of a topic (§11): the released tests, their terms, and the attempts of the student. */
@@ -115,7 +106,7 @@ function TopicTests({
               <strong>{r.title}</strong>
               <br />
               <span className={`${styles.small} ${styles.muted}`}>
-                {until ? `Opens ${formatOpens(until)}` : 'Open'}
+                {until ? `Opens ${formatInstant(until)}` : 'Open'}
               </span>
             </span>
             {until ? (
@@ -271,9 +262,9 @@ function TestEntry({
             Resume attempt {running.number}
           </button>
           <span className={`${styles.small} ${styles.muted}`}>
-            Started {formatInZone(running.startedAt, data.terms.timeZone)}
+            Started {formatInstant(running.startedAt, data.terms.timeZone)}
             {running.deadlineAt
-              ? ` · closes ${formatInZone(running.deadlineAt, data.terms.timeZone)}`
+              ? ` · closes ${formatInstant(running.deadlineAt, data.terms.timeZone)}`
               : ''}
           </span>
         </div>
@@ -305,7 +296,7 @@ function TestEntry({
                   <strong>Attempt {a.number}</strong>
                   <br />
                   <span className={`${styles.small} ${styles.muted}`}>
-                    {result ? resultLine(result) : (STATE_LABEL[a.state] ?? a.state)}
+                    {result ? resultLine(result) : (ATTEMPT_STATE_LABEL[a.state] ?? a.state)}
                     {a.receipt?.autoSubmitted ? ' · submitted by the server at the deadline' : ''}
                   </span>
                 </span>
@@ -319,7 +310,7 @@ function TestEntry({
                 {a.receipt ? (
                   <span className={`${styles.small} ${styles.muted}`}>
                     Receipt {a.receipt.submissionId.slice(0, 8)} ·{' '}
-                    {formatInZone(a.receipt.submittedAt, data.terms.timeZone)}{' '}
+                    {formatInstant(a.receipt.submittedAt, data.terms.timeZone)}{' '}
                     <button
                       type="button"
                       className={buttons.textButton}

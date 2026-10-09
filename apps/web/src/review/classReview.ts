@@ -2,9 +2,10 @@ import { getClassReview } from '@parallax/contracts/routes/review';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
 import type { z } from 'zod';
 import { call } from '../api/client';
+import { ATTEMPT_STATE_LABEL, formatInstant } from '../format/format';
 
 export type ClassReview = z.output<typeof getClassReview.response>;
-export type ReviewRow = ClassReview['rows'][number];
+type ReviewRow = ClassReview['rows'][number];
 
 /** The review table's state, kept in the address so a reload or a shared link reopens it. */
 export interface ReviewSearch {
@@ -72,15 +73,6 @@ export const useClassReview = (classId: string, search: ReviewSearch) =>
     placeholderData: keepPreviousData,
   });
 
-const ATTEMPT_STATE: Record<NonNullable<ReviewRow['attempt']>['state'], string> = {
-  in_progress: 'In progress',
-  submitted: 'Submitted',
-  grading: 'Grading',
-  needs_review: 'Needs review',
-  graded: 'Graded',
-  released: 'Released',
-};
-
 /** The Test column: the selected assignment's newest attempt and score, else counts in scope. */
 export function testText(row: ReviewRow, assignment: boolean): string {
   if (assignment) {
@@ -90,7 +82,7 @@ export function testText(row: ReviewRow, assignment: boolean): string {
       ? ` · ${a.score.points} / ${a.score.possible} ${a.score.state === 'released' ? 'released' : 'draft'}`
       : '';
     const waiting = a.unreleasedChange ? ' · unreleased change' : '';
-    return `Attempt ${a.number} · ${ATTEMPT_STATE[a.state]}${score}${waiting}`;
+    return `Attempt ${a.number} · ${ATTEMPT_STATE_LABEL[a.state]}${score}${waiting}`;
   }
   if (row.tests.total === 0) return '—';
   return `${row.tests.submitted} of ${row.tests.total} submitted`;
@@ -110,16 +102,7 @@ export const releasable = (row: ReviewRow) =>
 
 /** A submission time in the viewer's own zone, named so it is never implicit (§14). */
 export const submittedText = (row: ReviewRow) =>
-  row.lastSubmission
-    ? new Intl.DateTimeFormat('en-GB', {
-        day: 'numeric',
-        month: 'short',
-        year: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit',
-        timeZoneName: 'short',
-      }).format(new Date(row.lastSubmission.at))
-    : '—';
+  row.lastSubmission ? formatInstant(row.lastSubmission.at) : '—';
 
 /** What the row's attempt shows of its grade: a change after ticking it makes the tick stale. */
 export const gradeSignature = (row: ReviewRow) =>

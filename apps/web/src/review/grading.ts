@@ -26,7 +26,6 @@ import { ApiError, call } from '../api/client';
 
 export type AttemptGrade = z.output<typeof attemptGrade>;
 export type GradeRow = z.output<typeof gradeView>;
-export type TestGrades = z.output<typeof readTestGrades.response>;
 export type ReleasePreview = z.output<typeof previewGradeRelease.response>;
 export type ReviewedAttempt = z.output<typeof reviewTestAttempt.response>;
 export type Discussions = z.output<typeof getStudentDiscussions.response>['discussions'];
@@ -129,18 +128,6 @@ export function conflictGrade(error: unknown): AttemptGrade | 'archived' | 'open
   if (body?.error === 'attempt_open') return 'open';
   return body?.current ?? null;
 }
-
-const STAMP = new Intl.DateTimeFormat('en-GB', {
-  day: 'numeric',
-  month: 'short',
-  year: 'numeric',
-  hour: '2-digit',
-  minute: '2-digit',
-  timeZoneName: 'short',
-});
-export const stamp = (iso: string) => STAMP.format(new Date(iso));
-
-export const points = (n: number) => String(Math.round(n * 100) / 100);
 
 export const SOURCE_LABEL: Record<GradeRow['source'], string> = {
   draft: 'Saved grade',

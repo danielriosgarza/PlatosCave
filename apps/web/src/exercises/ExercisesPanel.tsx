@@ -4,7 +4,7 @@ import buttons from '../components/Buttons.module.css';
 import { Loading } from '../components/Loading';
 import pageStyles from '../components/Page.module.css';
 import { RetryNotice } from '../components/RetryNotice';
-import { formatOpens } from '../topics/topics';
+import { formatInstant } from '../format/format';
 import { type ReleasedResource, useAttempt, useClassRelease } from './attempt';
 import { creditText } from './credit';
 import styles from './Exercise.module.css';
@@ -82,7 +82,7 @@ function TopicExercises({
               <strong>{r.title}</strong>
               <br />
               <span className={`${styles.small} ${styles.muted}`}>
-                {until ? `Opens ${formatOpens(until)}` : practiceLabel(r)}
+                {until ? `Opens ${formatInstant(until)}` : practiceLabel(r)}
               </span>
             </span>
             {until ? (
