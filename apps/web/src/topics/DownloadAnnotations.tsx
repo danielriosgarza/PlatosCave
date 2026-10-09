@@ -54,7 +54,7 @@ export function DownloadAnnotations({ classId, cohort }: { classId: string; coho
           Your notes, highlights, sketches and posts in {cohort}.
         </span>
       </div>
-      <p className={page.small} role="status">
+      <p className={page.small} aria-live="polite">
         {state.kind === 'sending' ? 'Preparing your annotations…' : null}
         {state.kind === 'done'
           ? `Downloaded ${plural(state.annotations, 'annotation', 'annotations')} and ${plural(state.posts, 'post', 'posts')}.`

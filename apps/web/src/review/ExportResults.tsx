@@ -49,7 +49,7 @@ export function ExportResults({ classId, cohort }: { classId: string; cohort: st
           Test attempts of the students in {cohort}.
         </span>
       </div>
-      <p className={page.small} role="status">
+      <p className={page.small} aria-live="polite">
         {state.kind === 'sending' ? 'Preparing the export…' : null}
         {state.kind === 'ready' ? (
           <>

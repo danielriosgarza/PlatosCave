@@ -75,7 +75,7 @@ describe('results export', () => {
     const link = await screen.findByRole('link', { name: 'Download results-autumn-2026-a.csv' });
     expect(link).toHaveAttribute('href', exported.url);
     expect(link).toHaveAttribute('download', exported.filename);
-    expect(screen.getByRole('status')).toHaveTextContent('4 attempts exported');
+    expect(link.closest('p')).toHaveTextContent('4 attempts exported');
     expect(requests).toEqual([`/api/classes/${CLASS_A}/exports/results`]);
   });
 
@@ -271,7 +271,10 @@ describe('annotation export', () => {
   it('A21 Download my annotations saves the caller’s own file and reports it only after the server answered', async () => {
     const user = userEvent.setup();
     const saved: Blob[] = [];
-    URL.createObjectURL = (b: Blob) => (saved.push(b), 'blob:annotations');
+    URL.createObjectURL = (b: Blob) => {
+      saved.push(b);
+      return 'blob:annotations';
+    };
     URL.revokeObjectURL = () => undefined;
     const click = vi
       .spyOn(HTMLAnchorElement.prototype, 'click')
@@ -286,11 +289,11 @@ describe('annotation export', () => {
     button.focus();
     await user.keyboard('{Enter}');
     await waitFor(() =>
-      expect(screen.getByRole('status')).toHaveTextContent('Downloaded 0 annotations and 0 posts.'),
+      expect(screen.getByText('Downloaded 0 annotations and 0 posts.')).toBeVisible(),
     );
     expect(requests).toEqual([`/api/classes/${CLASS_A}/export/annotations`]);
     expect(saved).toHaveLength(1);
-    expect(JSON.parse(await saved[0]?.text())).toMatchObject({ class: { id: CLASS_A } });
+    expect(JSON.parse((await saved[0]?.text()) ?? '')).toMatchObject({ class: { id: CLASS_A } });
     expect(click).toHaveBeenCalled();
     await expectNoAxeViolations(container);
   });
