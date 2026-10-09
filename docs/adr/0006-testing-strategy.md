@@ -1,6 +1,6 @@
 # ADR 0006 — Testing strategy
 
-**Status:** Accepted, 2026-09-30
+**Status:** Accepted, 2026-09-30. Amended 2026-10-09 (P3-AUD13b, records the owner's existing economy, no change of rule): **Actions budget** names wall time and queueing instead of minutes.
 
 ## Context
 
