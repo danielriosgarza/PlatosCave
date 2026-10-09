@@ -37,17 +37,21 @@ export interface Run {
   stderr: string;
 }
 
-/** Runs scripts/<name>.sh on a database, with the storage variables it should act on. */
+/**
+ * Runs scripts/<name>.sh on a database, with the storage variables it should act on, under the
+ * given umask (the usual 022 unless a test says otherwise, so modes never depend on the runner).
+ */
 export function script(
   name: 'backup' | 'restore',
   dir: string,
   databaseUrl: string,
   storageEnv: Record<string, string>,
+  umask = '022',
 ) {
   return new Promise<Run>((resolve) => {
     execFile(
       'bash',
-      [join(ROOT, 'scripts', `${name}.sh`), dir],
+      ['-c', `umask ${umask}; exec bash "$0" "$@"`, join(ROOT, 'scripts', `${name}.sh`), dir],
       {
         cwd: ROOT,
         env: { ...process.env, DATABASE_URL: databaseUrl, ...storageEnv },
