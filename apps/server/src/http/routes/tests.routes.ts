@@ -1,6 +1,7 @@
 import {
   grantOverride,
   keepLocalCopy,
+  listTestStudents,
   readAssignment,
   readTest,
   readTestAttempt,
@@ -149,6 +150,10 @@ export default function testRoutes(app: FastifyInstance, deps: RouteDeps): void 
 
   registerRoute(app, readAssignment, async ({ scope, params }) =>
     settle(await tests.readAssignment(db(), scope, params.resourceId, now())),
+  );
+
+  registerRoute(app, listTestStudents, async ({ scope, params }) =>
+    settle(await tests.listTestStudents(db(), scope, params.resourceId, now())),
   );
 
   registerRoute(app, updateAssignment, async ({ scope, params, body, conflict }) =>

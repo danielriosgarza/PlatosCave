@@ -6,8 +6,7 @@ import { toLocalInput } from '../authoring/testForm';
 import buttons from '../components/Buttons.module.css';
 import { Loading } from '../components/Loading';
 import { RetryNotice } from '../components/RetryNotice';
-import { useClassReview } from '../review/classReview';
-import { grantAccommodation, useAssignment } from './api';
+import { grantAccommodation, useAssignment, useTestStudents } from './api';
 import { formatInZone } from './TermsPanel';
 import styles from './Test.module.css';
 
@@ -42,7 +41,7 @@ export function AccommodationsPanel({
 }) {
   const queryClient = useQueryClient();
   const assignment = useAssignment(classId, resourceId);
-  const roster = useClassReview(classId, {});
+  const roster = useTestStudents(classId, resourceId);
   const [studentId, setStudentId] = useState('');
   const [attempts, setAttempts] = useState('0');
   const [minutes, setMinutes] = useState('0');
@@ -62,7 +61,7 @@ export function AccommodationsPanel({
   }
   if (!assignment.data) return <Loading label="Loading extensions" className={styles.small} />;
   const zone = assignment.data.effective.timeZone;
-  const students = roster.data?.roster ?? [];
+  const students = roster.data?.students ?? [];
 
   const extraAttempts = Number(attempts);
   const extraMinutes = Number(minutes);
@@ -212,7 +211,8 @@ export function AccommodationsPanel({
               <strong>{o.student.name}</strong> · {describe(o, zone)}
               <br />
               <span className={`${styles.small} ${styles.muted}`}>
-                Reason: {o.reason} · granted {formatInZone(o.createdAt, zone)} by an instructor
+                Reason: {o.reason} · granted {formatInZone(o.createdAt, zone)} by{' '}
+                {o.grantedByName ?? 'an instructor no longer in the class'}
               </span>
             </li>
           ))}

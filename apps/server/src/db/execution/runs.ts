@@ -21,6 +21,7 @@ import { classArchived, invalid, notFound, type Outcome } from '../../outcome';
 import { audit } from '../audit';
 import type { Db, Tx } from '../client';
 import {
+  classMemberships,
   executionJobs,
   executionResults,
   resourceRevisions,
@@ -28,6 +29,7 @@ import {
   testSubmissions,
 } from '../schema';
 import { forClass, forOwnRows } from '../scoped';
+import { reviewable } from '../tests';
 import { type RunRow, recordFailure } from './results';
 import { isLive, jobStates, type Queues, readState } from './status';
 
@@ -76,7 +78,29 @@ async function codeQuestionOf(
   return question?.kind === 'code' ? question : undefined;
 }
 
-async function attemptOf(ex: Ex, scope: ClassScope, attemptId: string, mine: boolean) {
+/**
+ * `own`: the caller's attempt. `class`: any attempt of the class, for the grading hook, which
+ * also grades a preview principal's submission. `reviewable`: what instructor review, grading
+ * and export read (`reviewable`, db/tests.ts): a real student's attempt, removed students
+ * included, never a preview or non-student attempt.
+ */
+type AttemptAccess = 'own' | 'class' | 'reviewable';
+
+async function attemptOf(ex: Ex, scope: ClassScope, attemptId: string, access: AttemptAccess) {
+  if (access === 'reviewable') {
+    const [found] = await ex
+      .select({ attempt: testAttempts })
+      .from(testAttempts)
+      .leftJoin(
+        classMemberships,
+        and(
+          eq(classMemberships.classId, testAttempts.classId),
+          eq(classMemberships.userId, testAttempts.userId),
+        ),
+      )
+      .where(and(reviewable(scope), eq(testAttempts.id, attemptId)));
+    return found?.attempt;
+  }
   const [row] = await ex
     .select()
     .from(testAttempts)
@@ -84,15 +108,15 @@ async function attemptOf(ex: Ex, scope: ClassScope, attemptId: string, mine: boo
       and(
         forClass(scope, testAttempts),
         eq(testAttempts.id, attemptId),
-        mine ? eq(testAttempts.userId, scope.user.id) : undefined,
+        access === 'own' ? eq(testAttempts.userId, scope.user.id) : undefined,
       ),
     );
   return row;
 }
 
-/** A student reads only their own attempts; instructors read every attempt of the class. */
+/** A student reads only their own attempts; instructors read the class's reviewable attempts. */
 const attemptFor = (ex: Ex, scope: ClassScope, attemptId: string) =>
-  attemptOf(ex, scope, attemptId, scope.role === 'student');
+  attemptOf(ex, scope, attemptId, scope.role === 'student' ? 'own' : 'reviewable');
 
 /** Runs of an attempt the caller may see: for a student, only their own sample runs. */
 const visibleRuns = (scope: ClassScope, attemptId: string) =>
@@ -248,7 +272,7 @@ export async function requestRun(
   files: Snapshot['files'],
   now: Date,
 ): Promise<Outcome<StudentRun & { reused: boolean }> | RunRefusal> {
-  const attempt = await attemptOf(db, scope, attemptId, true);
+  const attempt = await attemptOf(db, scope, attemptId, 'own');
   if (!attempt) return notFound;
   const question = await codeQuestionOf(db, attempt.resourceRevisionId, questionId);
   if (!question) return notFound;
@@ -378,6 +402,7 @@ export async function readRun(
   runId: string,
   now: Date,
 ): Promise<AnyView | undefined> {
+  if (!(await attemptFor(db, scope, attemptId))) return undefined;
   const [row] = await db
     .select()
     .from(executionJobs)
@@ -586,7 +611,7 @@ export async function enqueueGrading(
   attemptId: string,
   now: Date,
 ): Promise<void> {
-  const attempt = await attemptOf(db, scope, attemptId, false);
+  const attempt = await attemptOf(db, scope, attemptId, 'class');
   if (!attempt || attempt.state === 'in_progress') return;
   await cancelQueuedSamples(db, deps, scope, attempt.id, now);
   const [submission] = await db
@@ -671,7 +696,7 @@ export async function requestReplay(
   input: { reason: 'replay' | 'regrade'; note: string },
   now: Date,
 ): Promise<Outcome<{ runId: string; state: RunRow['state'] }> | ReplayRefusal> {
-  const attempt = await attemptOf(db, scope, attemptId, false);
+  const attempt = await attemptOf(db, scope, attemptId, 'reviewable');
   if (!attempt) return notFound;
   if (attempt.state === 'in_progress') return { ok: false, reason: 'attempt_open' };
   if (scope.archived) return classArchived;
@@ -760,7 +785,7 @@ export async function attemptResults(
   attemptId: string,
   now: Date,
 ): Promise<InstructorRun[] | undefined> {
-  const attempt = await attemptOf(db, scope, attemptId, false);
+  const attempt = await attemptOf(db, scope, attemptId, 'reviewable');
   if (!attempt) return undefined;
   const exec = deps();
   // The grading hook again, in case the process that submitted died before it ran.

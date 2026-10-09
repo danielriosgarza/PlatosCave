@@ -3,6 +3,7 @@ import { cancelRun, latestRun, readRun, requestRun } from '@parallax/contracts/r
 import {
   grantOverride,
   keepLocalCopy,
+  listTestStudents,
   readAssignment,
   readTest,
   readTestAttempt,
@@ -113,6 +114,9 @@ export const useResultDetail = (classId: string, attemptId: string) =>
 
 export const useAssignment = (classId: string, resourceId: string) =>
   useApi(readAssignment, { params: { classId, resourceId } });
+
+export const useTestStudents = (classId: string, resourceId: string) =>
+  useApi(listTestStudents, { params: { classId, resourceId } });
 
 export const grantAccommodation = (
   classId: string,
