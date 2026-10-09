@@ -1308,4 +1308,141 @@ describe('grading workspace', () => {
       expect(screen.queryByRole('region', { name: 'Release preview' })).toBeNull(),
     );
   });
+
+  it('A20 the single release preview takes focus, announces itself, and returns focus on Cancel and Confirm', async () => {
+    const user = userEvent.setup({ delay: null });
+    const draft = gradeRow(1);
+    const preview = {
+      recipients: [
+        {
+          student: { id: PRIYA, name: 'Priya Nair' },
+          attemptId: A_PRIYA,
+          attemptNumber: 1,
+          resourceId: QUIZ,
+          gradeId: draft.id,
+          gradeNumber: 1,
+          points: 5,
+          possible: 5,
+        },
+      ],
+      skipped: [],
+    };
+    serve({
+      history: [draft],
+      extra: (path, method) => {
+        if (path === '/grade-releases/preview') return { status: 200, body: preview };
+        if (path === '/grade-releases' && method === 'POST') {
+          draft.state = 'released';
+          draft.releasedAt = NOW;
+          draft.releaseId = id(7000);
+          return {
+            status: 201,
+            body: {
+              id: id(7000),
+              releasedBy: id(1),
+              releasedAt: NOW,
+              recipients: preview.recipients,
+            },
+          };
+        }
+        return undefined;
+      },
+    });
+    renderApp(`/classes/${CLASS_A}/review?assignment=${QUIZ}&selected=${PRIYA}&attempt=${A_PRIYA}`);
+    await screen.findByRole('region', { name: 'Grading workspace' });
+    const trigger = await screen.findByRole('button', {
+      name: 'Release feedback',
+    });
+    trigger.focus();
+    await user.keyboard('{Enter}');
+    const panel = await screen.findByRole('region', {
+      name: 'Release preview',
+    });
+    expect(within(panel).getByRole('heading', { name: 'Release to Priya Nair' })).toHaveFocus();
+    expect(
+      document.querySelector('[aria-live="polite"]')?.textContent ===
+        'Release preview: Release to Priya Nair.',
+    ).toBe(true);
+    // Keyboard only: Tab to Cancel, press it; focus returns to the control that opened it.
+    await user.tab();
+    await user.tab();
+    expect(within(panel).getByRole('button', { name: 'Cancel' })).toHaveFocus();
+    await user.keyboard('{Enter}');
+    expect(screen.queryByRole('region', { name: 'Release preview' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Release feedback' })).toHaveFocus();
+    // Open again and confirm: focus lands on the result status.
+    await user.keyboard('{Enter}');
+    await screen.findByRole('region', { name: 'Release preview' });
+    await user.tab();
+    expect(screen.getByRole('button', { name: 'Confirm release to 1 student' })).toHaveFocus();
+    await user.keyboard('{Enter}');
+    const status = await screen.findByText(/Released to Priya Nair on/);
+    expect(status).toHaveFocus();
+  });
+
+  it('A20 the bulk release preview takes focus, announces itself, and returns focus on Cancel and Confirm', async () => {
+    const user = userEvent.setup({ delay: null });
+    const preview = {
+      recipients: [
+        {
+          student: { id: PRIYA, name: 'Priya Nair' },
+          attemptId: A_PRIYA,
+          attemptNumber: 1,
+          resourceId: QUIZ,
+          gradeId: id(1001),
+          gradeNumber: 1,
+          points: 5,
+          possible: 5,
+        },
+      ],
+      skipped: [],
+    };
+    serve({
+      extra: (path, method) => {
+        if (path === '/grade-releases/preview') return { status: 200, body: preview };
+        if (path === '/grade-releases' && method === 'POST') {
+          return {
+            status: 201,
+            body: {
+              id: id(7001),
+              releasedBy: id(1),
+              releasedAt: NOW,
+              recipients: preview.recipients,
+            },
+          };
+        }
+        return undefined;
+      },
+    });
+    renderApp(`/classes/${CLASS_A}/review?assignment=${QUIZ}`);
+    await screen.findByRole('table');
+    await user.click(screen.getByRole('checkbox', { name: 'Select Priya Nair for release' }));
+    const trigger = screen.getByRole('button', { name: 'Preview release (1)' });
+    trigger.focus();
+    await user.keyboard('{Enter}');
+    const panel = await screen.findByRole('region', {
+      name: 'Release preview',
+    });
+    expect(
+      within(panel).getByRole('heading', {
+        name: 'Release Spread check to 1 student',
+      }),
+    ).toHaveFocus();
+    expect(
+      document
+        .querySelector('[aria-live="polite"]')
+        ?.textContent?.startsWith('Release preview: Release Spread check to 1 student'),
+    ).toBe(true);
+    await user.tab();
+    await user.tab();
+    expect(within(panel).getByRole('button', { name: 'Cancel' })).toHaveFocus();
+    await user.keyboard('{Enter}');
+    expect(screen.queryByRole('region', { name: 'Release preview' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Preview release (1)' })).toHaveFocus();
+    await user.keyboard('{Enter}');
+    await screen.findByRole('region', { name: 'Release preview' });
+    await user.tab();
+    await user.keyboard('{Enter}');
+    expect(await screen.findByText(/Released to 1 student on/)).toHaveFocus();
+  });
 });

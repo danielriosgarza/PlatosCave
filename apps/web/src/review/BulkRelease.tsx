@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ApiError } from '../api/client';
 import buttons from '../components/Buttons.module.css';
 import page from '../components/Page.module.css';
@@ -27,6 +27,12 @@ const SKIPPED: Record<ReleasePreview['skipped'][number]['reason'], string> = {
   incomplete: 'some questions have no points',
 };
 
+function previewTitle(view: ReleasePreview, testTitle: string): string {
+  return view.recipients.length === 0
+    ? 'Nothing to release'
+    : `Release ${testTitle} to ${view.recipients.length} ${view.recipients.length === 1 ? 'student' : 'students'}`;
+}
+
 /**
  * Bulk release (§12): previews the exact students and results, and releases only after
  * confirmation. Names the students that would be skipped and why.
@@ -45,6 +51,21 @@ export function BulkRelease({
 }) {
   const [state, setState] = useState<State>({ kind: 'idle' });
   const refresh = useRefreshGrades(classId);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const heading = useRef<HTMLHeadingElement>(null);
+  const result = useRef<HTMLParagraphElement>(null);
+  // Focus follows the preview: into it when it opens (or reopens with a note), back to the
+  // invoking control on Cancel, and to the outcome after Confirm.
+  const shown = useRef<State['kind']>('idle');
+  useEffect(() => {
+    const was = shown.current;
+    shown.current = state.kind;
+    if (state.kind === 'preview' && was !== 'preview') heading.current?.focus();
+    else if (state.kind === 'idle' && (was === 'preview' || was === 'sending'))
+      trigger.current?.focus();
+    else if (state.kind === 'done' || (state.kind === 'error' && was === 'sending'))
+      result.current?.focus();
+  }, [state.kind]);
   // A tick the table dropped (its grade changed) is no longer part of what a release sends.
   const current = (preview: ReleasePreview): ReleasePreview => ({
     ...preview,
@@ -91,6 +112,7 @@ export function BulkRelease({
     <div className={styles.bulk}>
       <div className={page.row}>
         <button
+          ref={trigger}
           type="button"
           className={buttons.outline}
           disabled={attemptIds.length === 0 || state.kind === 'loading'}
@@ -104,14 +126,17 @@ export function BulkRelease({
           </span>
         ) : null}
       </div>
+      <p className={styles.srOnly} aria-live="polite">
+        {state.kind === 'preview' && view
+          ? `Release preview: ${previewTitle(view, testTitle)}. ${view.recipients.length} to release, ${view.skipped.length} not released.`
+          : ''}
+      </p>
       {view && (state.kind === 'preview' || state.kind === 'sending') ? (
         <section className={styles.preview} aria-label="Release preview">
           {state.kind === 'preview' && state.note ? <p>{state.note}</p> : null}
-          <strong>
-            {view.recipients.length === 0
-              ? 'Nothing to release'
-              : `Release ${testTitle} to ${view.recipients.length} ${view.recipients.length === 1 ? 'student' : 'students'}`}
-          </strong>
+          <h3 className={styles.previewHeading} tabIndex={-1} ref={heading}>
+            {previewTitle(view, testTitle)}
+          </h3>
           <ul aria-label="Recipients">
             {view.recipients.map((r) => (
               <li key={r.gradeId}>
@@ -155,13 +180,13 @@ export function BulkRelease({
         </section>
       ) : null}
       {state.kind === 'done' ? (
-        <p className={`${page.small} ${styles.success}`} role="status">
+        <p className={`${page.small} ${styles.success}`} role="status" tabIndex={-1} ref={result}>
           Released to {state.count} {state.count === 1 ? 'student' : 'students'} on{' '}
           {stamp(state.at)}.
         </p>
       ) : null}
       {state.kind === 'error' ? (
-        <p className={`${page.small} ${styles.error}`} role="alert">
+        <p className={`${page.small} ${styles.error}`} role="alert" tabIndex={-1} ref={result}>
           {state.message}
         </p>
       ) : null}

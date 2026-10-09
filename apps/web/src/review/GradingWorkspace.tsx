@@ -1,4 +1,4 @@
-import { type FormEvent, useState } from 'react';
+import { type FormEvent, useEffect, useRef, useState } from 'react';
 import { ApiError } from '../api/client';
 import buttons from '../components/Buttons.module.css';
 import { Loading } from '../components/Loading';
@@ -817,6 +817,27 @@ function ReleaseControl({
   onReleased: () => void;
 }) {
   const [state, setState] = useState<Release>({ kind: 'idle' });
+  const trigger = useRef<HTMLButtonElement>(null);
+  const heading = useRef<HTMLHeadingElement>(null);
+  const result = useRef<HTMLSpanElement>(null);
+  // Focus follows the preview: into it when it opens (or reopens with a note), back to the
+  // invoking control on Cancel, and to the outcome after Confirm.
+  const shown = useRef<Release['kind']>('idle');
+  useEffect(() => {
+    const was = shown.current;
+    shown.current = state.kind;
+    if (state.kind === 'preview' && was !== 'preview') heading.current?.focus();
+    else if (state.kind === 'idle' && (was === 'preview' || was === 'sending'))
+      trigger.current?.focus();
+    else if (state.kind === 'done' || (state.kind === 'error' && was === 'sending'))
+      result.current?.focus();
+  }, [state.kind]);
+  const previewTitle =
+    state.kind === 'preview' || state.kind === 'sending'
+      ? state.preview.recipients.length === 0
+        ? 'Nothing to release'
+        : `Release to ${state.preview.recipients.map((r) => r.student.name).join(', ')}`
+      : '';
   const current = grade.history[0];
   const releasable = current !== undefined && current.state === 'draft' && current.complete;
   const why = blocked
@@ -865,6 +886,7 @@ function ReleaseControl({
   return (
     <>
       <button
+        ref={trigger}
         type="button"
         className={buttons.primary}
         disabled={!releasable || blocked || state.kind === 'loading'}
@@ -876,14 +898,15 @@ function ReleaseControl({
       {why && current?.state !== 'released' ? (
         <span className={`${page.small} ${page.muted}`}>{why}</span>
       ) : null}
+      <span className={styles.srOnly} aria-live="polite">
+        {state.kind === 'preview' ? `Release preview: ${previewTitle}.` : ''}
+      </span>
       {state.kind === 'preview' || state.kind === 'sending' ? (
         <section className={styles.preview} aria-label="Release preview">
           {state.kind === 'preview' && state.note ? <p>{state.note}</p> : null}
-          <strong>
-            {state.preview.recipients.length === 0
-              ? 'Nothing to release'
-              : `Release to ${state.preview.recipients.map((r) => r.student.name).join(', ')}`}
-          </strong>
+          <h3 className={styles.previewHeading} tabIndex={-1} ref={heading}>
+            {previewTitle}
+          </h3>
           <ul>
             {state.preview.recipients.map((r) => (
               <li key={r.gradeId}>
@@ -925,12 +948,17 @@ function ReleaseControl({
         </section>
       ) : null}
       {state.kind === 'done' ? (
-        <span className={`${page.small} ${styles.success}`} role="status">
+        <span
+          className={`${page.small} ${styles.success}`}
+          role="status"
+          tabIndex={-1}
+          ref={result}
+        >
           Released to {state.name} on {stamp(state.at)}.
         </span>
       ) : null}
       {state.kind === 'error' ? (
-        <span className={`${page.small} ${styles.error}`} role="alert">
+        <span className={`${page.small} ${styles.error}`} role="alert" tabIndex={-1} ref={result}>
           {state.message}
         </span>
       ) : null}
