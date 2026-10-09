@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { ApiError } from '../api/client';
 import buttons from '../components/Buttons.module.css';
 import page from '../components/Page.module.css';
@@ -11,6 +11,7 @@ import {
   stamp,
   useRefreshGrades,
 } from './grading';
+import { useReleasePreviewFocus } from './useReleasePreviewFocus';
 
 type State =
   | { kind: 'idle' }
@@ -51,21 +52,11 @@ export function BulkRelease({
 }) {
   const [state, setState] = useState<State>({ kind: 'idle' });
   const refresh = useRefreshGrades(classId);
-  const trigger = useRef<HTMLButtonElement>(null);
-  const heading = useRef<HTMLHeadingElement>(null);
-  const result = useRef<HTMLParagraphElement>(null);
-  // Focus follows the preview: into it when it opens (or reopens with a note), back to the
-  // invoking control on Cancel, and to the outcome after Confirm.
-  const shown = useRef<State['kind']>('idle');
-  useEffect(() => {
-    const was = shown.current;
-    shown.current = state.kind;
-    if (state.kind === 'preview' && was !== 'preview') heading.current?.focus();
-    else if (state.kind === 'idle' && (was === 'preview' || was === 'sending'))
-      trigger.current?.focus();
-    else if (state.kind === 'done' || (state.kind === 'error' && was === 'sending'))
-      result.current?.focus();
-  }, [state.kind]);
+  const container = useRef<HTMLDivElement>(null);
+  const { trigger, heading, result } = useReleasePreviewFocus<HTMLParagraphElement>(
+    state.kind,
+    container,
+  );
   // A tick the table dropped (its grade changed) is no longer part of what a release sends.
   const current = (preview: ReleasePreview): ReleasePreview => ({
     ...preview,
@@ -109,7 +100,7 @@ export function BulkRelease({
   };
   const view = state.kind === 'preview' || state.kind === 'sending' ? current(state.preview) : null;
   return (
-    <div className={styles.bulk}>
+    <div className={styles.bulk} tabIndex={-1} ref={container}>
       <div className={page.row}>
         <button
           ref={trigger}
@@ -127,8 +118,8 @@ export function BulkRelease({
         ) : null}
       </div>
       <p className={styles.srOnly} aria-live="polite">
-        {state.kind === 'preview' && view
-          ? `Release preview: ${previewTitle(view, testTitle)}. ${view.recipients.length} to release, ${view.skipped.length} not released.`
+        {state.kind === 'preview'
+          ? `${state.note ? `${state.note} ` : ''}Release preview: ${state.preview.recipients.length} to release, ${state.preview.skipped.length} not released.`
           : ''}
       </p>
       {view && (state.kind === 'preview' || state.kind === 'sending') ? (

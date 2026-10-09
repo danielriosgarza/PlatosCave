@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useRef, useState } from 'react';
+import { type FormEvent, useState } from 'react';
 import { ApiError } from '../api/client';
 import buttons from '../components/Buttons.module.css';
 import { Loading } from '../components/Loading';
@@ -27,6 +27,7 @@ import {
   useRefreshGrades,
   useReviewedAttempt,
 } from './grading';
+import { useReleasePreviewFocus } from './useReleasePreviewFocus';
 
 /** The question as the pinned revision holds it: only what the workspace shows is read. */
 interface TestQuestion {
@@ -817,21 +818,7 @@ function ReleaseControl({
   onReleased: () => void;
 }) {
   const [state, setState] = useState<Release>({ kind: 'idle' });
-  const trigger = useRef<HTMLButtonElement>(null);
-  const heading = useRef<HTMLHeadingElement>(null);
-  const result = useRef<HTMLSpanElement>(null);
-  // Focus follows the preview: into it when it opens (or reopens with a note), back to the
-  // invoking control on Cancel, and to the outcome after Confirm.
-  const shown = useRef<Release['kind']>('idle');
-  useEffect(() => {
-    const was = shown.current;
-    shown.current = state.kind;
-    if (state.kind === 'preview' && was !== 'preview') heading.current?.focus();
-    else if (state.kind === 'idle' && (was === 'preview' || was === 'sending'))
-      trigger.current?.focus();
-    else if (state.kind === 'done' || (state.kind === 'error' && was === 'sending'))
-      result.current?.focus();
-  }, [state.kind]);
+  const { trigger, heading, result } = useReleasePreviewFocus<HTMLSpanElement>(state.kind);
   const previewTitle =
     state.kind === 'preview' || state.kind === 'sending'
       ? state.preview.recipients.length === 0
@@ -899,7 +886,9 @@ function ReleaseControl({
         <span className={`${page.small} ${page.muted}`}>{why}</span>
       ) : null}
       <span className={styles.srOnly} aria-live="polite">
-        {state.kind === 'preview' ? `Release preview: ${previewTitle}.` : ''}
+        {state.kind === 'preview'
+          ? `${state.note ? `${state.note} ` : ''}Release preview: ${state.preview.recipients.length} to release, ${state.preview.skipped.length} not released.`
+          : ''}
       </span>
       {state.kind === 'preview' || state.kind === 'sending' ? (
         <section className={styles.preview} aria-label="Release preview">

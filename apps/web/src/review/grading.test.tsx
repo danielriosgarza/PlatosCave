@@ -1172,7 +1172,7 @@ describe('grading workspace', () => {
     const panel = await screen.findByRole('region', { name: 'Release preview' });
     const before = calls.filter((c) => c.path === '/review').length;
     await user.click(within(panel).getByRole('button', { name: 'Confirm release to 1 student' }));
-    expect(await screen.findByText(/Grades changed while you were reviewing/)).toBeVisible();
+    expect(await within(panel).findByText(/Grades changed while you were reviewing/)).toBeVisible();
     await waitFor(() =>
       expect(calls.filter((c) => c.path === '/review').length).toBeGreaterThan(before),
     );
@@ -1359,10 +1359,10 @@ describe('grading workspace', () => {
       name: 'Release preview',
     });
     expect(within(panel).getByRole('heading', { name: 'Release to Priya Nair' })).toHaveFocus();
-    expect(
-      document.querySelector('[aria-live="polite"]')?.textContent ===
-        'Release preview: Release to Priya Nair.',
-    ).toBe(true);
+    expect(screen.getByText('Release preview: 1 to release, 0 not released.')).toHaveAttribute(
+      'aria-live',
+      'polite',
+    );
     // Keyboard only: Tab to Cancel, press it; focus returns to the control that opened it.
     await user.tab();
     await user.tab();
@@ -1428,11 +1428,10 @@ describe('grading workspace', () => {
         name: 'Release Spread check to 1 student',
       }),
     ).toHaveFocus();
-    expect(
-      document
-        .querySelector('[aria-live="polite"]')
-        ?.textContent?.startsWith('Release preview: Release Spread check to 1 student'),
-    ).toBe(true);
+    expect(screen.getByText('Release preview: 1 to release, 0 not released.')).toHaveAttribute(
+      'aria-live',
+      'polite',
+    );
     await user.tab();
     await user.tab();
     expect(within(panel).getByRole('button', { name: 'Cancel' })).toHaveFocus();
@@ -1444,5 +1443,60 @@ describe('grading workspace', () => {
     await user.tab();
     await user.keyboard('{Enter}');
     expect(await screen.findByText(/Released to 1 student on/)).toHaveFocus();
+  });
+
+  it('A20 a rejected release announces that nothing was released, and a failed preview load moves focus to the error', async () => {
+    const user = userEvent.setup({ delay: null });
+    const draft = gradeRow(1);
+    const preview = {
+      recipients: [
+        {
+          student: { id: PRIYA, name: 'Priya Nair' },
+          attemptId: A_PRIYA,
+          attemptNumber: 1,
+          resourceId: QUIZ,
+          gradeId: draft.id,
+          gradeNumber: 1,
+          points: 5,
+          possible: 5,
+        },
+      ],
+      skipped: [],
+    };
+    let previewFails = true;
+    serve({
+      history: [draft],
+      extra: (path, method) => {
+        if (path === '/grade-releases/preview') {
+          return previewFails
+            ? { status: 500, body: { error: 'server_error' } }
+            : { status: 200, body: preview };
+        }
+        if (path === '/grade-releases' && method === 'POST') {
+          return { status: 409, body: { error: 'release_changed', preview } };
+        }
+        return undefined;
+      },
+    });
+    renderApp(`/classes/${CLASS_A}/review?assignment=${QUIZ}&selected=${PRIYA}&attempt=${A_PRIYA}`);
+    await screen.findByRole('region', { name: 'Grading workspace' });
+    const trigger = await screen.findByRole('button', { name: 'Release feedback' });
+    trigger.focus();
+    await user.keyboard('{Enter}');
+    const alert = await screen.findByText('The release preview could not be loaded.');
+    expect(alert).toHaveFocus();
+    previewFails = false;
+    screen.getByRole('button', { name: 'Release feedback' }).focus();
+    await user.keyboard('{Enter}');
+    const panel = await screen.findByRole('region', { name: 'Release preview' });
+    await user.tab();
+    await user.keyboard('{Enter}');
+    expect(await within(panel).findByText(/nothing was released/)).toBeVisible();
+    expect(within(panel).getByRole('heading', { name: 'Release to Priya Nair' })).toHaveFocus();
+    expect(
+      screen.getByText(
+        /nothing was released\. This is what a release would do now\. Release preview: 1 to release/,
+      ),
+    ).toHaveAttribute('aria-live', 'polite');
   });
 });
