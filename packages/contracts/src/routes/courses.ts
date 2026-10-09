@@ -45,6 +45,8 @@ export const listCourses = defineRoute({
         owner: z.boolean(),
         editor: z.boolean(),
         publisher: z.boolean(),
+        /** The course is archived: its classes are read-only and its draft takes no edits (§13). */
+        archived: z.boolean(),
         topicCount: z.number().int().min(0),
         classCount: z.number().int().min(0),
       }),
