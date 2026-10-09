@@ -131,10 +131,10 @@ describe('registerRoute and the scope guard', () => {
     await app.close();
   });
 
-  it('serves health with db skipped and lists it in openapi', async () => {
+  it('serves health and lists it in openapi', async () => {
     const app = await buildApp(config);
     const health = await app.inject({ method: 'GET', url: '/api/health' });
-    expect(health.json()).toMatchObject({ status: 'ok', db: 'skipped' });
+    expect(health.json()).toEqual({ status: 'ok' });
     const spec = await app.inject({ method: 'GET', url: '/api/openapi.json' });
     expect(Object.keys(spec.json().paths)).toContain('/api/health');
     await app.close();

@@ -38,8 +38,9 @@ export const ReadyBody = z.union([
 
 /**
  * Readiness for a load balancer or an orchestrator: 200 when every required dependency answers,
- * 503 with the same body when one does not. `/api/health` stays the liveness probe: it answers
- * 200 while the process runs, whatever its dependencies do.
+ * 503 with the same body when one does not. `/api/health` stays the liveness probe (same token
+ * rule, `status` alone otherwise): it answers 200 while the process runs, whatever its
+ * dependencies do.
  */
 export const ready = defineRoute({
   method: 'GET',

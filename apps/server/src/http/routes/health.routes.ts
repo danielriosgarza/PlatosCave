@@ -1,22 +1,37 @@
 import { health } from '@parallax/contracts/routes/health';
 import type { FastifyInstance } from 'fastify';
-import type { Deps } from '../../app';
+import type { RouteDeps } from '../../app';
 import { probe } from '../../db/client';
 import { VERSION } from '../../version';
+import { probeLimit } from '../probe';
 import { registerRoute } from '../register';
 
-export default function healthRoutes(app: FastifyInstance, deps: Deps): void {
-  registerRoute(app, health, async () => {
-    let db: 'ok' | 'unavailable' | 'skipped' = 'skipped';
-    if (deps.db) {
-      try {
-        await probe(deps.db, deps.probeTimeoutMs);
-        db = 'ok';
-      } catch (err) {
-        app.log.warn({ err }, 'health: database unavailable');
-        db = 'unavailable';
+export default function healthRoutes(app: FastifyInstance, deps: RouteDeps): void {
+  const { rateLimit, isProbeRequest } = probeLimit(
+    deps.config.READY_PROBE_TOKEN,
+    deps.config.READY_RATE_LIMIT,
+  );
+
+  registerRoute(
+    app,
+    health,
+    async ({ req }) => {
+      // Anyone but a probe learns only that the process answers, and costs no database query.
+      if (!isProbeRequest(req)) return { status: 'ok' as const };
+      let db: 'ok' | 'unavailable' | 'skipped' = 'skipped';
+      if (deps.db) {
+        try {
+          await probe(deps.db, deps.probeTimeoutMs);
+          db = 'ok';
+        } catch (err) {
+          app.log.warn({ err }, 'health: database unavailable');
+          db = 'unavailable';
+        }
       }
-    }
-    return { status: 'ok' as const, version: VERSION, db };
-  });
+      return { status: 'ok' as const, version: VERSION, db };
+    },
+    // Callers without the probe token are limited per address, like /api/ready (its own budget);
+    // probes are not counted, so a liveness check never trips it.
+    { rateLimit },
+  );
 }
