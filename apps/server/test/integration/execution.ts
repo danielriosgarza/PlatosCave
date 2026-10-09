@@ -126,10 +126,12 @@ export interface ExecWorldOptions {
   storage?: Storage;
   /** Files stored in the course and named by the quiz revision's `objectKeys`; needs `storage`. */
   quizObjects?: { bytes: Uint8Array; contentType: string }[];
+  /** The API's queue for scoped jobs (`deps.boss`); none by default. */
+  jobs?: PgBoss;
 }
 
 export async function execWorld(options: ExecWorldOptions = {}): Promise<ExecWorld> {
-  const { storage, quizObjects = [], runRateLimit } = options;
+  const { storage, quizObjects = [], runRateLimit, jobs } = options;
   if (quizObjects.length > 0 && !storage) throw new Error('quizObjects need a storage');
   const testDb = await createTestDatabase();
   const world = await buildWorld(testDb.db, start);
@@ -182,6 +184,7 @@ export async function execWorld(options: ExecWorldOptions = {}): Promise<ExecWor
     now: () => clock.now,
     bossExec: boss,
     ...(storage && { storage }),
+    ...(jobs && { boss: jobs }),
   });
   await app.ready();
   return {
