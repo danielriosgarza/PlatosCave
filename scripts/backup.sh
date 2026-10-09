@@ -4,7 +4,9 @@
 #   DATABASE_URL=… STORAGE_DIR=… scripts/backup.sh <backup-dir>
 #   DATABASE_URL=… STORAGE_DRIVER=s3 S3_BUCKET=… S3_…=… scripts/backup.sh <backup-dir>
 #
-# <backup-dir> must not exist. It holds:
+# <backup-dir> must not exist. The backup holds personal data, sessions and grades, so it is written
+# private to the user running the script: directories 0700, files 0600, whatever the umask. See
+# docs/backup-restore.md. It holds:
 #   database.dump     pg_dump custom format of the whole database (every schema)
 #   storage/<key>     every object of the storage root or bucket, at its content-addressed key
 #   storage.manifest  one line per object: <sha256> TAB <size> TAB <key>, sorted by key
@@ -50,7 +52,11 @@ KEY_PATTERN='^[A-Za-z0-9][A-Za-z0-9_-]*(/[A-Za-z0-9][A-Za-z0-9_-]*)*/objects/[0-
 
 WORK="$OUT.partial"
 rm -rf "$WORK"
-mkdir -p "$WORK/storage"
+mkdir -p "$(dirname "$WORK")"
+# Everything below is created private; the parents of <backup-dir> are left as they were.
+umask 077
+mkdir -m 0700 "$WORK"
+mkdir -m 0700 "$WORK/storage"
 trap 'rm -rf "$WORK"' EXIT
 
 pg_dump --format=custom --file="$WORK/database.dump" "$DATABASE_URL"
@@ -108,6 +114,10 @@ rm "$WORK/keys"
   echo "database_sha256=$(sha256sum "$WORK/database.dump" | cut -d' ' -f1)"
   echo "objects=$(wc -l < "$WORK/storage.manifest" | tr -d ' ')"
 } > "$WORK/backup.info"
+
+# The umask covers what this script and pg_dump create; copied objects keep nothing of their sources.
+find "$WORK" -type d -exec chmod 0700 {} +
+find "$WORK" -type f -exec chmod 0600 {} +
 
 mv "$WORK" "$OUT"
 trap - EXIT

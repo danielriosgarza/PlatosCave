@@ -134,6 +134,8 @@ mkdir -p "$parent"
 STAGE="$(mktemp -d "$parent/.restore-XXXXXX")"
 trap 'rm -rf "$STAGE"' EXIT
 cp -R "$IN/storage/." "$STAGE/"
+# The backup is private (0700/0600); the storage root is read by the API, which may run as another user.
+chmod -R u=rwX,go=rX "$STAGE"
 verify_objects "$STAGE"
 
 # 4. The database, all or nothing.
