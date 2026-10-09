@@ -1,4 +1,4 @@
-import { cp, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -197,6 +197,17 @@ describe.skipIf(!env.S3_ENDPOINT)('A22 backup and restore with the s3 driver', (
     expect(info).toContain('format=parallax-backup/1\n');
     expect(info).toContain('storage_driver=s3\n');
     expect(info).toContain('objects=1\n');
+  });
+
+  test('A22 s3: the backup is private to its owner: directories 0700, files 0600', async () => {
+    const dir = join(tmp, 'backup');
+    const entries = await readdir(dir, { recursive: true, withFileTypes: true });
+    expect((await stat(dir)).mode & 0o777).toBe(0o700);
+    expect(entries.length).toBeGreaterThan(4);
+    for (const entry of entries) {
+      const mode = (await stat(join(entry.parentPath, entry.name))).mode & 0o777;
+      expect(mode, join(entry.parentPath, entry.name)).toBe(entry.isDirectory() ? 0o700 : 0o600);
+    }
   });
 
   test('A22 s3: a bucket that already holds objects is left untouched', async () => {
