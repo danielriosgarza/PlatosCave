@@ -123,23 +123,23 @@ local({
   # the bound existed. A string with a "bytes" encoding is never cut: it deparses linearly.
   REPR_CHARS <- 65536L
 
-  # TRUE if a plain (unclassed) character vector anywhere in the plain list x has a string
-  # over the limit in bytes (a cheap upper bound of its characters) that would be cut
-  # ("bytes"-encoded strings are never cut). rapply walks in C and calls back only for
-  # character leaves, so a list of numbers costs almost nothing; a character matrix or array
-  # has the implicit class "matrix" or "array", so those are listed too.
-  has_long_string <- function(x) {
-    any(rapply(x, function(s) {
-      if (!is.character(s)) return(FALSE)
-      over <- nchar(s, type = "bytes") > REPR_CHARS
-      if (!any(over, na.rm = TRUE)) return(FALSE)
-      !is.object(s) && any(Encoding(s[which(over)]) != "bytes")
-    }, classes = c("character", "matrix", "array"), deflt = FALSE, how = "unlist"))
-  }
-
   # A plain list (pairlists and classed objects excluded: rapply rejects the former and the
   # latter are out of the bound).
   is_plain_list <- function(x) typeof(x) == "list" && !is.object(x)
+
+  # Cheap prefilter: TRUE if a character vector anywhere below the list x has a string over
+  # the limit in bytes (a cheap upper bound of its characters), "bytes"-encoded strings aside.
+  # rapply walks in C and calls back only for character leaves, so a list of numbers costs
+  # almost nothing; a character matrix or array has the implicit class "matrix" or "array",
+  # so those are listed too. rapply also descends into classed lists (a data frame), which are
+  # out of the bound: bound_elements, which runs only when this is TRUE, decides.
+  may_have_long_string <- function(x) {
+    any(rapply(x, function(s) {
+      if (!is.character(s)) return(FALSE)
+      big <- nchar(s, type = "bytes") > REPR_CHARS
+      any(big, na.rm = TRUE) && any(Encoding(s[big]) != "bytes", na.rm = TRUE)
+    }, classes = c("character", "matrix", "array"), deflt = FALSE, how = "unlist"))
+  }
 
   # The cheap byte test runs first, so a short string costs one nchar. A "bytes" string
   # deparses in linear time and nchar(type = "chars") errors on it, so it is skipped;
@@ -157,21 +157,32 @@ local({
     x
   }
 
-  # Every element of a plain list is visited once; the caller has established that a string
-  # to cut exists somewhere below.
-  bound_elements <- function(x) {
-    if (is.character(x) && !is.object(x)) {
-      cut_strings(x)
-    } else if (is_plain_list(x) && length(x)) {
-      x[] <- lapply(x, bound_elements)
-      x
-    } else {
-      x
+  # Cuts the strings of the plain list x, level by level: the plain character vectors among
+  # its elements are tested together (one unlist and one nchar for all of them), and only
+  # plain sub-lists are entered, so a classed container (a data frame) is never walked.
+  bound_list <- function(x) {
+    classed <- vapply(x, is.object, NA)
+    chars <- which(vapply(x, is.character, NA) & !classed)
+    if (length(chars)) {
+      sizes <- lengths(x[chars])
+      owner <- rep.int(chars, sizes)
+      over <- nchar(unlist(x[chars], use.names = FALSE), type = "bytes") > REPR_CHARS
+      for (i in unique(owner[which(over)])) x[[i]] <- cut_strings(x[[i]])
     }
+    for (i in which(vapply(x, is.list, NA) & !classed)) {
+      if (is_plain_list(x[[i]]) && length(x[[i]])) x[[i]] <- bound_list(x[[i]])
+    }
+    x
   }
 
   bound_for_repr <- function(x) {
-    if (is_plain_list(x) && length(x) && !has_long_string(x)) x else bound_elements(x)
+    if (is.character(x) && !is.object(x)) {
+      cut_strings(x)
+    } else if (is_plain_list(x) && length(x) && may_have_long_string(x)) {
+      bound_list(x)
+    } else {
+      x
+    }
   }
 
   repr_text <- function(x) {

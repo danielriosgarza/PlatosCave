@@ -1387,6 +1387,9 @@ class RRuntime(HarnessCase):
         "na_beside_long <- function() list(NA_character_, strrep('a', 65537))\n"
         "numeric_matrix_in_list <- function() list(matrix(1:6, 2), 'x')\n"
         "list_char_matrix <- function() list(matrix(strrep('a', 65537), 1))\n"
+        "classed_beside_long <- function() list(data.frame(s = strrep('a', 65537)), strrep('a', 65537))\n"
+        "deep_long <- function(n) { d <- strrep('a', 65537); for (i in seq_len(n)) d <- list(d); d }\n"
+        "deep_long_low_limit <- function(n) { options(expressions = 100); deep_long(n) }\n"
         "stop_warning <- function() stop(simpleWarning('w'))\n"
         "stop_message <- function() stop(simpleMessage('m'))\n"
         "nested_signal <- function() withCallingHandlers(stop('boom'), error = function(e) signalCondition(structure(class = c('note', 'condition'), list(message = 'fyi', call = NULL))))\n"
@@ -1665,6 +1668,30 @@ class RRuntime(HarnessCase):
             r_call("Cut after short strings", "many_short_then_long", {"value": "list(" + '"ab", ' * 20000 + '"' + cut + '")'}, "repr"),
         )
         self.assertEqual([c["status"] for c in outcome.result["checks"]], ["passed"] * 7, outcome.result["checks"])
+
+    def test_repr_cuts_beside_a_classed_container_and_leaves_the_container_whole(self):
+        cut = "a" * 65536 + "\u2026"
+        frame = 'structure(list(s = "' + "a" * 65537 + '"), class = "data.frame", row.names = c(NA, -1L))'
+        outcome = self.outcome_for(
+            r_call("Cut beside a data frame", "classed_beside_long", {"value": "list(" + frame + ', "' + cut + '")'}, "repr"),
+        )
+        self.assertEqual(outcome.check()["status"], "passed", outcome.check())
+
+    def test_repr_of_a_long_string_nested_beyond_the_recursion_is_the_whole_deparse(self):
+        # Bounding fails when the recursion limit is exceeded (here 100 expressions, so 60 levels
+        # do; the unmodified limit takes about 1000 levels, which deparse wraps over many lines).
+        # The fallback in repr_text then deparses the value whole, as it was before the bound
+        # existed: neither cut nor <unrepresentable>.
+        whole = "list(" * 60 + '"' + "a" * 65537 + '"' + ")" * 60
+        cut = "list(" * 60 + '"' + "a" * 65536 + '\u2026"' + ")" * 60
+        outcome = self.outcome_for(
+            r_call("Deep and long", "deep_long_low_limit", {"value": whole}, "repr", args=[60]),
+            r_call("Deep and long with a cut expected", "deep_long_low_limit", {"value": cut}, "repr", args=[60]),
+        )
+        whole_check, cut_check = outcome.result["checks"]
+        self.assertEqual(whole_check["status"], "passed", whole_check)
+        self.assertEqual(cut_check["status"], "failed", cut_check)
+        self.assertFalse(cut_check["actual"].startswith("<unrepresentable>"), cut_check["actual"][:40])
 
     def test_stop_with_a_warning_or_message_condition_is_an_exception(self):
         outcome = self.outcome_for(
