@@ -2,6 +2,8 @@ import { formatInstant, REPORTED_RULE_LABEL } from '../format/format';
 import type { Terms } from './api';
 import styles from './Test.module.css';
 
+const upperFirst = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
+
 /** The terms shown before and during work: attempts, points, timing, late policy and release (§11). */
 function termsRows(
   terms: Terms,
@@ -54,7 +56,7 @@ function termsRows(
     'Hidden test details',
     terms.release.hiddenTestDetails ? 'Shown with results' : 'Not shown',
   ]);
-  rows.push(['Reported grade', REPORTED_RULE_LABEL[terms.reportedGrade]]);
+  rows.push(['Reported grade', upperFirst(REPORTED_RULE_LABEL[terms.reportedGrade])]);
   return rows;
 }
 

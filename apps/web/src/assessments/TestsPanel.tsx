@@ -6,7 +6,7 @@ import { Loading } from '../components/Loading';
 import pageStyles from '../components/Page.module.css';
 import { RetryNotice } from '../components/RetryNotice';
 import { type ReleasedResource, useClassRelease } from '../exercises/attempt';
-import { ATTEMPT_STATE_LABEL, formatInstant } from '../format/format';
+import { formatInstant, STUDENT_ATTEMPT_STATE_LABEL } from '../format/format';
 import { AccommodationsPanel } from './AccommodationsPanel';
 import { AttemptWorkspace } from './AttemptWorkspace';
 import { recoveryAnswered } from './answers';
@@ -296,7 +296,9 @@ function TestEntry({
                   <strong>Attempt {a.number}</strong>
                   <br />
                   <span className={`${styles.small} ${styles.muted}`}>
-                    {result ? resultLine(result) : (ATTEMPT_STATE_LABEL[a.state] ?? a.state)}
+                    {result
+                      ? resultLine(result)
+                      : (STUDENT_ATTEMPT_STATE_LABEL[a.state] ?? a.state)}
                     {a.receipt?.autoSubmitted ? ' · submitted by the server at the deadline' : ''}
                   </span>
                 </span>

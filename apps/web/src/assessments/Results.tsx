@@ -3,14 +3,12 @@ import { ApiError } from '../api/client';
 import buttons from '../components/Buttons.module.css';
 import { Loading } from '../components/Loading';
 import { RetryNotice } from '../components/RetryNotice';
-import { REPORTED_RULE_LABEL } from '../format/format';
+import { pointsOf, REPORTED_RULE_LABEL } from '../format/format';
 import { type MyResults, type ResultAttempt, type ResultQuestion, useResultDetail } from './api';
 import styles from './Test.module.css';
 
 type Grade = NonNullable<ResultAttempt['grade']>;
 type Feedback = Grade['feedback'][number];
-
-const pointsOf = (earned: number, possible: number) => `${earned} of ${possible} points`;
 
 /**
  * One line of state for an attempt (§11). A score of zero, an attempt not yet submitted and a

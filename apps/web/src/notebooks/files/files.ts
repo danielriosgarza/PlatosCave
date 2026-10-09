@@ -4,6 +4,7 @@ import {
   type TransferView,
 } from '@parallax/contracts/routes/transfers';
 import { ApiError } from '../../api/client';
+import { downloadText } from '../../format/format';
 
 export type { TransferView };
 export { MAX_COPY_OUT_FILE_BYTES, MAX_COPY_OUT_SESSION_BYTES };
@@ -86,14 +87,5 @@ export function outcomeText(t: TransferView, host: string | null): string {
 
 /** Downloads the draft the page holds, for when a save to Parallax did not succeed. */
 export function downloadNotebook(notebook: Record<string, unknown>, filename: string) {
-  const url = URL.createObjectURL(
-    new Blob([JSON.stringify(notebook, null, 1)], { type: 'application/x-ipynb+json' }),
-  );
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.append(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
+  downloadText(filename, JSON.stringify(notebook, null, 1), 'application/x-ipynb+json');
 }
