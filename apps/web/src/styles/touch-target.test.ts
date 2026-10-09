@@ -23,9 +23,10 @@ const coarseBlocks = (css: string) => {
 };
 
 describe('coarse-pointer touch targets', () => {
-  it('A20 global.css gives buttons, selects and text inputs a 44 px minimum that wins over module rules', () => {
+  it('A20 global.css gives buttons, selects, text areas and text inputs a 44 px minimum that wins over module rules', () => {
     const rule = coarseBlocks(readFileSync(join(src, 'styles/global.css'), 'utf8')).join('\n');
-    for (const element of ['button', 'select', 'input']) expect(rule).toContain(element);
+    for (const element of ['button', 'select', 'textarea', 'input'])
+      expect(rule).toContain(element);
     expect(rule).toMatch(/min-height:\s*var\(--pc-touch-target, 44px\)\s*!important/);
     expect(rule).toMatch(/min-width:\s*var\(--pc-touch-target, 44px\)\s*!important/);
   });

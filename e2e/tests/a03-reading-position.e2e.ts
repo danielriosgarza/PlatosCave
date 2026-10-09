@@ -137,7 +137,7 @@ test('A03 one student goes Courses → Topics → Reading → Slides → Reading
   // A student of their own: places and notes are per person, and the other tests of this class
   // reset or delete them on the shared reader.
   const unique = `${Date.now()}-${test.info().workerIndex}-${test.info().retry}`;
-  await joinLabClassAs(playwright, baseURL, page, `walker-${unique}@example.test`);
+  await joinLabClassAs(playwright, baseURL, page.request, `walker-${unique}@example.test`);
 
   await page.goto('/courses');
   await expect(page.getByRole('heading', { name: 'Your courses' })).toBeVisible();

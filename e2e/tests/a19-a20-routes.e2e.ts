@@ -86,9 +86,47 @@ async function draftGrade(priya: APIRequestContext, classId: string, attemptId: 
   return id;
 }
 
+/** A student of the lab class who shared a question: nobody else's cleanup removes it. */
+async function sharedQuestion(
+  playwright: Parameters<typeof worldIds>[0],
+  baseURL: string | undefined,
+  stamp: string,
+): Promise<string> {
+  const asker = await playwright.request.newContext({ baseURL });
+  await joinLabClassAs(playwright, baseURL, asker, `asker-${stamp}@example.test`);
+  const askerId = ((await (await asker.get('/api/me')).json()) as { user: { id: string } }).user.id;
+  const readings = (await (
+    await asker.get(`/api/classes/${lab.class}/topics/${lab.topic}/readings`)
+  ).json()) as { readings: { resourceId: string; revisionId: string }[] };
+  const reading = readings.readings.find((r) => r.revisionId === lab.nativeRevision);
+  if (!reading) throw new Error('the lab reading was not found');
+  const note = await asker.post(
+    `/api/classes/${lab.class}/resources/${reading.resourceId}/annotations`,
+    {
+      data: {
+        kind: 'note',
+        anchor: { kind: 'none' },
+        body: 'Why does the margin of error shrink?',
+      },
+    },
+  );
+  expect(note.ok()).toBe(true);
+  const shared = await asker.post(
+    `/api/classes/${lab.class}/annotations/${((await note.json()) as { id: string }).id}/share`,
+    { data: { audience: 'instructor' } },
+  );
+  expect(shared.ok()).toBe(true);
+  await asker.dispose();
+  return askerId;
+}
+
 test.beforeAll(async ({ playwright, baseURL }) => {
+  // About forty dependent requests: more than the default timeout on a slow runner.
+  test.setTimeout(120_000);
   const ids = await worldIds(playwright, baseURL);
   const stamp = `${Date.now()}-${test.info().workerIndex}`;
+  // The lab class is independent of class A: set it up while the graded fixtures are built.
+  const asking = sharedQuestion(playwright, baseURL, stamp);
   const exerciseTitle = `Routes exercise ${stamp}`;
   const testTitle = `Routes test ${stamp}`;
   const submittedTitle = `Routes submitted ${stamp}`;
@@ -164,32 +202,7 @@ test.beforeAll(async ({ playwright, baseURL }) => {
   ).toBe(true);
   await priya.dispose();
   await sam.dispose();
-  // A student of the lab class who shared a question: nobody else's cleanup removes it.
-  const asker = await playwright.request.newContext({ baseURL });
-  await joinLabClassAs(playwright, baseURL, { request: asker }, `asker-${stamp}@example.test`);
-  const askerId = ((await (await asker.get('/api/me')).json()) as { user: { id: string } }).user.id;
-  const readings = (await (
-    await asker.get(`/api/classes/${lab.class}/topics/${lab.topic}/readings`)
-  ).json()) as { readings: { resourceId: string; revisionId: string }[] };
-  const reading = readings.readings.find((r) => r.revisionId === lab.nativeRevision);
-  if (!reading) throw new Error('the lab reading was not found');
-  const note = await asker.post(
-    `/api/classes/${lab.class}/resources/${reading.resourceId}/annotations`,
-    {
-      data: {
-        kind: 'note',
-        anchor: { kind: 'none' },
-        body: 'Why does the margin of error shrink?',
-      },
-    },
-  );
-  expect(note.ok()).toBe(true);
-  const shared = await asker.post(
-    `/api/classes/${lab.class}/annotations/${((await note.json()) as { id: string }).id}/share`,
-    { data: { audience: 'instructor' } },
-  );
-  expect(shared.ok()).toBe(true);
-  await asker.dispose();
+  const askerId = await asking;
   const reviewBase = `/classes/${ids.classA}/review`;
   fixtures = {
     ids,
@@ -218,7 +231,11 @@ type Route = {
 
 const shown = (locator: Locator) => expect(locator.first()).toBeVisible();
 
-/** Writes the browser-side copy of unsent answers the application keeps for a closed attempt. */
+/**
+ * Writes the browser-side copy of unsent answers the application keeps for a closed attempt, as
+ * `attemptCopyKey` and the drafts store in apps/web/src/reading/margin/drafts.ts define it (keep
+ * the database name, version, store and key format in step with that file).
+ */
 async function keepUnsentWork(page: Page, f: Fixtures) {
   const me = (await (await page.request.get('/api/me')).json()) as { user: { id: string } };
   const copy = {
@@ -230,7 +247,6 @@ async function keepUnsentWork(page: Page, f: Fixtures) {
     answers: [{ questionId: 'why', value: 'Typed after the last save.' }],
     updatedAt: Date.now(),
   };
-  await page.goto('/signin');
   await page.evaluate(
     (record) =>
       new Promise<void>((resolve, reject) => {
@@ -385,7 +401,8 @@ const routes: Route[] = [
   {
     name: 'student receipt with unsent work to send',
     as: 'sam',
-    path: (f) => f.tests,
+    // A page of the application's origin to write IndexedDB on, without loading the tests twice.
+    path: () => '/signin',
     load: async (page, f) => {
       // The browser kept the answers (IndexedDB, bound to the person, class and attempt).
       await keepUnsentWork(page, f);

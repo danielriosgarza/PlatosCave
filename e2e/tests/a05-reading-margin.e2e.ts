@@ -197,7 +197,7 @@ test('A05 the instructor sees only the shared question, answers it and resolves 
   const classmate = await page.context().browser()?.newContext({ baseURL });
   if (!classmate) throw new Error('no browser');
   const other = await classmate.newPage();
-  await joinLabClassAs(playwright, baseURL, other, `classmate-${Date.now()}@example.test`);
+  await joinLabClassAs(playwright, baseURL, other.request, `classmate-${Date.now()}@example.test`);
   const unseen = await other.request.get(
     `/api/classes/${lab.class}/resources/${resourceId}/annotations`,
   );

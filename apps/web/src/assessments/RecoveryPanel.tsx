@@ -22,6 +22,15 @@ type Reviewed = z.output<typeof reviewTestAttempts.response>['attempts'][number]
  * part of the submission and is labelled so.
  */
 export function RecoveryPanel({ classId, resourceId }: { classId: string; resourceId: string }) {
+  return (
+    <section>
+      <h2 style={{ font: 'var(--pc-text-subsection)', margin: '24px 0 8px' }}>Unsent work</h2>
+      <Attempts classId={classId} resourceId={resourceId} />
+    </section>
+  );
+}
+
+function Attempts({ classId, resourceId }: { classId: string; resourceId: string }) {
   const queryClient = useQueryClient();
   const list = useReviewedAttempts(classId, resourceId);
   if (list.isError) {
