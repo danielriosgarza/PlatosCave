@@ -109,7 +109,7 @@ const Env = z
      * most READY_RATE_LIMIT such requests per address per minute, because every answer runs a
      * database query and a storage call. Requests with the token are never limited.
      */
-    READY_PROBE_TOKEN: z.string().min(16).optional(),
+    READY_PROBE_TOKEN: z.string().trim().min(16).optional(),
     READY_RATE_LIMIT: z.coerce.number().int().positive().default(30),
     /** Days a sign-in lasts before the person signs in again (spec §17: session limits). */
     SESSION_TTL_DAYS: z.coerce.number().int().min(1).max(90).default(14),

@@ -172,3 +172,12 @@ test('ready limits callers without the token per address, and never counts one t
   }
   await app.close();
 });
+
+test('ready accepts a probe token that was configured with surrounding whitespace', async () => {
+  const app = await buildApp(configWith({ READY_PROBE_TOKEN: `  ${TOKEN}\n` }), {
+    storage: storage(async () => null),
+  });
+  const res = await app.inject({ method: 'GET', url: '/api/ready', headers: PROBE, ...REMOTE });
+  expect(res.json()).toHaveProperty('checks');
+  await app.close();
+});

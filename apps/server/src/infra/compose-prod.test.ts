@@ -123,6 +123,7 @@ describe('compose.prod.yml', () => {
       'RUNNER_DB_PASSWORD',
       'SESSION_SECRET',
       'CONTENT_TOKEN_SECRET',
+      'READY_PROBE_TOKEN',
       'S3_ACCESS_KEY_ID',
       'S3_SECRET_ACCESS_KEY',
       'SMTP_URL',
