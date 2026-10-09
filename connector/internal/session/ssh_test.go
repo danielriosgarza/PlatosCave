@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
@@ -87,7 +86,7 @@ func newSSHEnv(t *testing.T) *sshEnv {
 	// Before the manager stops its sessions: let bytes pass again, then kill whatever still serves.
 	t.Cleanup(func() {
 		for _, rec := range jupytertest.Records(t, stub) {
-			syscall.Kill(rec.PID, syscall.SIGKILL)
+			killPID(rec.PID)
 		}
 	})
 	t.Cleanup(relay.Thaw)
@@ -144,7 +143,7 @@ func TestA36_SSHLossCausesOverRealTransport(t *testing.T) {
 	t.Run("service_stopped: SSH answers and the server exited", func(t *testing.T) {
 		e := newSSHEnv(t)
 		pid := e.openSSH(e.target())
-		if err := syscall.Kill(pid, syscall.SIGKILL); err != nil {
+		if err := killPID(pid); err != nil {
 			t.Fatal(err)
 		}
 		e.lost(StateStopped, cause.ServiceStopped)
@@ -179,7 +178,7 @@ func TestA36_SSHServerReplacedAfterReconnect(t *testing.T) {
 	listen := jupytertest.Records(t, e.stub)[0].Listen
 	// No keepalive is answered during the swap, so no check can find the port empty meanwhile.
 	e.relay.Freeze()
-	if err := syscall.Kill(pid, syscall.SIGKILL); err != nil {
+	if err := killPID(pid); err != nil {
 		t.Fatal(err)
 	}
 	var ln net.Listener
@@ -218,7 +217,7 @@ func TestSSHReconnectKeepsSession(t *testing.T) {
 	if st.Cause != "" {
 		t.Fatalf("ready with cause %q", st.Cause)
 	}
-	if recs := jupytertest.Records(t, e.stub); len(recs) != 1 || recs[0].PID != pid || syscall.Kill(pid, 0) != nil {
+	if recs := jupytertest.Records(t, e.stub); len(recs) != 1 || recs[0].PID != pid || !pidAlive(pid) {
 		t.Fatal("the server was replaced or ended")
 	}
 	_, body := e.mustCall(sessionA, "session", "GET", "/api/kernels/"+kernel, nil)
@@ -229,7 +228,7 @@ func TestSSHReconnectKeepsSession(t *testing.T) {
 	e.send(&protocol.CloseSession{RequestID: reqB, SessionID: sessionA, Stop: true})
 	e.state(StateStopping)
 	e.lost(StateStopped, cause.UserStop)
-	if syscall.Kill(pid, 0) == nil {
+	if pidAlive(pid) {
 		t.Fatal("stopped while the server runs")
 	}
 }
