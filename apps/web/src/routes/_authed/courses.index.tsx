@@ -448,9 +448,7 @@ function InstructorCards({
 }) {
   // The server accepts the class archive from a course owner and from a membership manager of the
   // class (§3, §13), so the control follows either, and is hidden while the class's course is
-  // archived (the class then shows archived and only the course can be restored). A manager who
-  // holds no card for the course cannot see that state; the server then refuses with 409 and the
-  // page says why.
+  // archived (the class then shows archived and only the course can be restored).
   const session = useSession();
   const managed = new Set(
     session.status === 'signed-in'
@@ -458,9 +456,8 @@ function InstructorCards({
       : [],
   );
   const owned = new Set(courses.filter((c) => c.owner).map((c) => c.courseId));
-  const archivedCourses = new Set(courses.filter((c) => c.archived).map((c) => c.courseId));
   const canArchiveClass = (c: ClassCard) =>
-    (owned.has(c.courseId) || managed.has(c.classId)) && !archivedCourses.has(c.courseId);
+    (owned.has(c.courseId) || managed.has(c.classId)) && !c.courseArchived;
   const visibleClasses = classes.filter(
     (c) => matchesFilter(c, filter) && matchesTitle(c.courseTitle, search),
   );

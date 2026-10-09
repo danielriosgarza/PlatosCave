@@ -31,6 +31,8 @@ export const listCourses = defineRoute({
         courseTitle: z.string(),
         role: z.enum(['student', 'instructor']),
         archived: z.boolean(),
+        /** The class's course is archived, which is why the class shows archived and cannot be restored on its own (§13). */
+        courseArchived: z.boolean(),
         topicCount: z.number().int().min(0),
         reviewed: z.object({ count: z.number().int().min(0), total: z.number().int().min(0) }),
         /** Students only: null before the first saved position. */

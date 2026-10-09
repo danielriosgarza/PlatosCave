@@ -27,6 +27,7 @@ const card = (over: Partial<Cards['classes'][number]> = {}): Cards['classes'][nu
   courseTitle: 'Statistical thinking',
   role: 'student',
   archived: false,
+  courseArchived: false,
   topicCount: 5,
   reviewed: { count: 2, total: 5 },
   resume: null,

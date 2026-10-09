@@ -12,22 +12,23 @@ type State =
   | { kind: 'done'; annotations: number; posts: number }
   | { kind: 'error' };
 
-/** A file name made of the course title and class name, or the class UUID when nothing usable is left. */
+/**
+ * A file name made of the course title and class name, with the characters that are unsafe in
+ * file names removed (as for the results CSV), or the class UUID when nothing usable is left.
+ */
 export function annotationsFileName(data: {
   course: { title: string };
   class: { id: string; name: string };
 }): string {
-  const slug = (text: string) =>
-    text
-      .normalize('NFKD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '')
-      .slice(0, 60)
-      .replace(/-+$/, '');
-  const parts = [slug(data.course.title), slug(data.class.name)].filter(Boolean);
-  return `annotations-${parts.length > 0 ? parts.join('-') : data.class.id}.json`;
+  const clean = (text: string) => text.replace(/[\\/:*?"<>|\p{Cc}]+/gu, ' ').trim();
+  const name = [clean(data.course.title), clean(data.class.name)].filter(Boolean).join(' - ');
+  // Keep well under common file system limits (255 bytes), cutting on a character boundary.
+  let base = '';
+  for (const char of name) {
+    if (new TextEncoder().encode(base + char).length > 120) break;
+    base += char;
+  }
+  return `annotations-${base.trim() || data.class.id}.json`;
 }
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
