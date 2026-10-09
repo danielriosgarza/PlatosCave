@@ -1,9 +1,26 @@
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { ready } from '@parallax/contracts/routes/ready';
-import type { FastifyInstance } from 'fastify';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { RouteDeps } from '../../app';
 import { PROBE_TIMEOUT_MS, probe } from '../../db/client';
 import { VERSION } from '../../version';
 import { registerRoute } from '../register';
+
+const digest = (value: string) => createHash('sha256').update(value).digest();
+
+/**
+ * Whether the caller presents the configured probe token and may see the detail. The token is the
+ * only way in: no address or header heuristic, which a same-host proxy or a TCP-level proxy would
+ * turn into "everyone is a probe". Compared as digests, in constant time.
+ */
+function isProbe(req: FastifyRequest, token: string | undefined): boolean {
+  const presented = req.headers['x-ready-token'];
+  return (
+    token !== undefined &&
+    typeof presented === 'string' &&
+    timingSafeEqual(digest(presented), digest(token))
+  );
+}
 
 type Check = { status: 'ok' | 'unavailable' | 'skipped'; required: boolean; latencyMs: number };
 
@@ -36,41 +53,65 @@ async function timed(
 }
 
 export default function readyRoutes(app: FastifyInstance, deps: RouteDeps): void {
+  const { READY_PROBE_TOKEN: token, READY_RATE_LIMIT: limit } = deps.config;
   const timeoutMs = deps.probeTimeoutMs ?? PROBE_TIMEOUT_MS;
   const { db, storage } = deps;
+  // Decided once per request, by the limiter, so the limit and the body cannot disagree.
+  const probes = new WeakSet<FastifyRequest>();
 
-  registerRoute(app, ready, async ({ fail }) => {
-    const failed = (name: string) => (err: unknown) =>
-      app.log.warn({ err, dependency: name }, 'readiness: dependency unavailable');
-    const [database, store] = await Promise.all([
-      timed(true, timeoutMs, db && (() => probe(db, timeoutMs)), failed('database')),
-      timed(
-        true,
-        timeoutMs,
-        () => (storage.ping ? storage.ping() : storage.head(STORAGE_PROBE_KEY)),
-        failed('storage'),
-      ),
-    ]);
-    // pg-boss runs its statements on the application's pool and exists only when it started
-    // against the database (main.ts), so a queue is as ready as the database plus its presence;
-    // one probe answers for all three rather than a pool connection each.
-    const viaDatabase = (present: boolean, required: boolean): Check =>
-      !present || database.status === 'skipped'
-        ? { status: 'skipped', required, latencyMs: 0 }
-        : { ...database, required };
-    const checks = {
-      database,
-      queue: viaDatabase(deps.boss !== undefined, true),
-      executionQueue: viaDatabase(deps.bossExec !== undefined, false),
-      storage: store,
-    };
-    const isReady = Object.values(checks).every((c) => !c.required || c.status === 'ok');
-    const body = {
-      status: isReady ? ('ready' as const) : ('not_ready' as const),
-      version: VERSION,
-      mode: deps.mode === 'relay' ? ('relay' as const) : ('api' as const),
-      checks,
-    };
-    return isReady ? body : fail(503, body);
-  });
+  registerRoute(
+    app,
+    ready,
+    async ({ fail, req }) => {
+      const failed = (name: string) => (err: unknown) =>
+        app.log.warn({ err, dependency: name }, 'readiness: dependency unavailable');
+      const [database, store] = await Promise.all([
+        timed(true, timeoutMs, db && (() => probe(db, timeoutMs)), failed('database')),
+        timed(
+          true,
+          timeoutMs,
+          () => (storage.ping ? storage.ping() : storage.head(STORAGE_PROBE_KEY)),
+          failed('storage'),
+        ),
+      ]);
+      // pg-boss runs its statements on the application's pool and exists only when it started
+      // against the database (main.ts), so a queue is as ready as the database plus its presence;
+      // one probe answers for all three rather than a pool connection each.
+      const viaDatabase = (present: boolean, required: boolean): Check =>
+        !present || database.status === 'skipped'
+          ? { status: 'skipped', required, latencyMs: 0 }
+          : { ...database, required };
+      const checks = {
+        database,
+        queue: viaDatabase(deps.boss !== undefined, true),
+        executionQueue: viaDatabase(deps.bossExec !== undefined, false),
+        storage: store,
+      };
+      const isReady = Object.values(checks).every((c) => !c.required || c.status === 'ok');
+      const status = isReady ? ('ready' as const) : ('not_ready' as const);
+      // Anyone but a probe learns only whether the instance is ready (ADR-0002).
+      const body = probes.has(req)
+        ? {
+            status,
+            version: VERSION,
+            mode: deps.mode === 'relay' ? ('relay' as const) : ('api' as const),
+            checks,
+          }
+        : { status };
+      return isReady ? body : fail(503, body);
+    },
+    // Every answer runs a database query and a storage call, so callers without the probe
+    // token are limited per address; probes are not counted, so a health check never trips it.
+    {
+      rateLimit: {
+        max: limit,
+        timeWindow: '1 minute',
+        allowList: (req) => {
+          const probe = isProbe(req, token);
+          if (probe) probes.add(req);
+          return probe;
+        },
+      },
+    },
+  );
 }
