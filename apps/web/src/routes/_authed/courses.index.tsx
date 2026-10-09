@@ -446,7 +446,8 @@ function InstructorCards({
   search: string;
   onDone: (text: string) => void;
 }) {
-  // Archiving a class, like archiving its course, is the course owner's to do (§3, §13).
+  // The server also lets a membership manager archive a class, but the cards do not carry that
+  // grant, so the class control is offered to course owners; the server enforces the scope (§3, §13).
   const owned = new Set(courses.filter((c) => c.owner).map((c) => c.courseId));
   const visibleClasses = classes.filter(
     (c) => matchesFilter(c, filter) && matchesTitle(c.courseTitle, search),

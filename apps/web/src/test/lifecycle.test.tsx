@@ -93,6 +93,18 @@ describe('results export', () => {
     expect(requests).toHaveLength(2);
   });
 
+  it('A21 a download link past its expiry is replaced by a prompt to export again', async () => {
+    const user = userEvent.setup();
+    serveReview(() => ({
+      status: 201,
+      body: { ...exported, expiresAt: '2020-01-01T00:00:00.000Z' },
+    }));
+    renderApp(`/classes/${CLASS_A}/review`);
+    await user.click(await screen.findByRole('button', { name: 'Export results (CSV)' }));
+    expect(await screen.findByText('The download link has expired. Export again.')).toBeVisible();
+    expect(screen.queryByRole('link', { name: /Download results/ })).not.toBeInTheDocument();
+  });
+
   it('A21 the export works from the keyboard and the screen has no axe violations', async () => {
     const user = userEvent.setup();
     serveReview(() => ({ status: 201, body: exported }));
@@ -194,6 +206,25 @@ describe('archive and restore', () => {
     expect(screen.queryByText(/was restored/)).not.toBeInTheDocument();
   });
 
+  it('A21 a 409 on archive reloads the cards so the stale action is replaced', async () => {
+    const user = userEvent.setup();
+    const cards: Cards = { classes: [], courses: [COURSE_CARD], canCreateCourse: true };
+    serveCards(cards, () => {
+      cards.courses = [{ ...COURSE_CARD, archived: true }];
+      return { status: 409, body: { error: 'course_archived' } };
+    });
+    renderApp('/courses?view=instructor');
+    await user.click(
+      await screen.findByRole('button', { name: 'Archive course Statistical thinking' }),
+    );
+    const dialog = await screen.findByRole('dialog', { name: 'Archive course?' });
+    await user.click(within(dialog).getByRole('button', { name: 'Archive course' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('is archived already.');
+    expect(
+      await screen.findByRole('button', { name: 'Restore course Statistical thinking' }),
+    ).toBeInTheDocument();
+  });
+
   it('A21 the owner archives and restores the course from its card, by keyboard, without axe violations', async () => {
     const user = userEvent.setup();
     const cards: Cards = { classes: [], courses: [COURSE_CARD], canCreateCourse: true };
@@ -289,7 +320,9 @@ describe('annotation export', () => {
     button.focus();
     await user.keyboard('{Enter}');
     await waitFor(() =>
-      expect(screen.getByText('Downloaded 0 annotations and 0 posts.')).toBeVisible(),
+      expect(
+        screen.getByText('Your file with 0 annotations and 0 posts was handed to the browser.'),
+      ).toBeVisible(),
     );
     expect(requests).toEqual([`/api/classes/${CLASS_A}/export/annotations`]);
     expect(saved).toHaveLength(1);

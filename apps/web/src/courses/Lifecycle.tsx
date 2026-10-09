@@ -29,9 +29,14 @@ function refusal(error: unknown, target: Target): string {
   const verb = target.archived ? 'restored' : 'archived';
   if (error instanceof ApiError) {
     const code = (error.body as { error?: unknown } | null)?.error;
-    if (code === 'course_archived') return 'This course is archived. Restore the course first.';
-    if (code === 'class_archived') return 'This class is archived already.';
-    if (code === 'not_archived') return 'This is not archived, so there is nothing to restore.';
+    if (code === 'course_archived') {
+      return target.kind === 'course' || !target.archived
+        ? `${target.name} is archived already.`
+        : 'This course is archived. Restore the course first.';
+    }
+    if (code === 'class_archived') return `${target.name} is archived already.`;
+    if (code === 'not_archived')
+      return `${target.name} is not archived, so there is nothing to restore.`;
   }
   return `${target.name} was not ${verb}. Try again.`;
 }
@@ -63,6 +68,8 @@ export function ArchiveControl({
       onDone(`${target.name} was ${target.archived ? 'restored' : 'archived'}.`);
     } catch (e) {
       setError(refusal(e, target));
+      // A 409 means the card is out of date (someone else changed the state): reload it.
+      if (e instanceof ApiError && e.status === 409) void refreshContexts(queryClient);
     } finally {
       setBusy(false);
     }

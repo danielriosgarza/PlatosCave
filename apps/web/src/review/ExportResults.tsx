@@ -1,5 +1,5 @@
 import { exportClassResults } from '@parallax/contracts/routes/exports';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { call } from '../api/client';
 import buttons from '../components/Buttons.module.css';
 import page from '../components/Page.module.css';
@@ -26,6 +26,20 @@ const expiry = (at: string) =>
  */
 export function ExportResults({ classId, cohort }: { classId: string; cohort: string }) {
   const [state, setState] = useState<State>({ kind: 'idle' });
+  const [expired, setExpired] = useState(false);
+  const expiresAt = state.kind === 'ready' ? state.file.expiresAt : null;
+  // The link lasts minutes: once it has lapsed the page says to export again, not offers a dead link.
+  useEffect(() => {
+    setExpired(false);
+    if (!expiresAt) return;
+    const left = new Date(expiresAt).getTime() - Date.now();
+    if (left <= 0) {
+      setExpired(true);
+      return;
+    }
+    const timer = setTimeout(() => setExpired(true), left);
+    return () => clearTimeout(timer);
+  }, [expiresAt]);
   const start = async () => {
     setState({ kind: 'sending' });
     try {
@@ -51,7 +65,8 @@ export function ExportResults({ classId, cohort }: { classId: string; cohort: st
       </div>
       <p className={page.small} aria-live="polite">
         {state.kind === 'sending' ? 'Preparing the export…' : null}
-        {state.kind === 'ready' ? (
+        {state.kind === 'ready' && expired ? 'The download link has expired. Export again.' : null}
+        {state.kind === 'ready' && !expired ? (
           <>
             {state.file.rows === 1 ? '1 attempt' : `${state.file.rows} attempts`} exported.{' '}
             <a className={page.link} href={state.file.url} download={state.file.filename}>

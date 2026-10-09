@@ -1,6 +1,7 @@
 import { exportAnnotations } from '@parallax/contracts/routes/lifecycle';
 import { useState } from 'react';
 import { call } from '../api/client';
+import { downloadText } from '../api/downloadText';
 import buttons from '../components/Buttons.module.css';
 import page from '../components/Page.module.css';
 import { RetryNotice } from '../components/RetryNotice';
@@ -13,19 +14,9 @@ type State =
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
-/** Hands the browser a file it builds from text it already holds. */
-function save(text: string, filename: string) {
-  const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }));
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  link.click();
-  URL.revokeObjectURL(url);
-}
-
 /**
  * The person's own annotations and posts in this class (§8, §12), downloaded as JSON. "Downloaded"
- * is said only after the server answered and the file was handed to the browser.
+ * is never claimed: the page says only what is known, that the server answered and the file was handed to the browser.
  */
 export function DownloadAnnotations({ classId, cohort }: { classId: string; cohort: string }) {
   const [state, setState] = useState<State>({ kind: 'idle' });
@@ -33,7 +24,11 @@ export function DownloadAnnotations({ classId, cohort }: { classId: string; coho
     setState({ kind: 'sending' });
     try {
       const data = await call(exportAnnotations, { params: { classId } });
-      save(JSON.stringify(data, null, 2), `annotations-${classId}.json`);
+      downloadText(
+        JSON.stringify(data, null, 2),
+        `annotations-${classId}.json`,
+        'application/json',
+      );
       setState({ kind: 'done', annotations: data.annotations.length, posts: data.posts.length });
     } catch {
       setState({ kind: 'error' });
@@ -57,7 +52,7 @@ export function DownloadAnnotations({ classId, cohort }: { classId: string; coho
       <p className={page.small} aria-live="polite">
         {state.kind === 'sending' ? 'Preparing your annotations…' : null}
         {state.kind === 'done'
-          ? `Downloaded ${plural(state.annotations, 'annotation', 'annotations')} and ${plural(state.posts, 'post', 'posts')}.`
+          ? `Your file with ${plural(state.annotations, 'annotation', 'annotations')} and ${plural(state.posts, 'post', 'posts')} was handed to the browser.`
           : null}
       </p>
       {state.kind === 'error' ? (

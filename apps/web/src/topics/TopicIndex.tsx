@@ -48,7 +48,7 @@ function ClassSyllabus({ classId, context }: { classId: string; context: Session
         </p>
       ) : null}
       {context.role === 'student' ? (
-        <DownloadAnnotations classId={classId} cohort={context.className} />
+        <DownloadAnnotations key={classId} classId={classId} cohort={context.className} />
       ) : null}
       {query.isPending ? (
         <Loading label="Loading topics" className={page.intro} />
