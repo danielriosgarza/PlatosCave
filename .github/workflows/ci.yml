@@ -37,10 +37,11 @@ jobs:
         working-directory: connector
         run: |
           test -z "$(gofmt -l .)"
-          go vet ./...
           go test ./...
           for target in linux/amd64 linux/arm64 darwin/amd64 darwin/arm64 windows/amd64; do
-            GOOS="${target%/*}" GOARCH="${target#*/}" go build -o /dev/null ./cmd/parallax-connector
+            export GOOS="${target%/*}" GOARCH="${target#*/}"
+            go vet ./...
+            go build -o /dev/null ./cmd/parallax-connector
           done
 
   runner:
