@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { constants, createWriteStream } from 'node:fs';
-import { access, mkdir, open, rename, rm, stat } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { access, mkdir, open, readdir, rename, rm, stat } from 'node:fs/promises';
+import { dirname, join, relative, sep } from 'node:path';
 import type { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
 import {
@@ -9,6 +9,7 @@ import {
   type Body,
   type ByteRange,
   hashingMeter,
+  type ListedObject,
   objectKey,
   type Storage,
   StorageNotFoundError,
@@ -80,5 +81,24 @@ export class FsStorage implements Storage {
 
   async delete(key: string): Promise<void> {
     await rm(this.path(key), { force: true });
+  }
+
+  async *list(prefix: string): AsyncIterable<ListedObject> {
+    const dir = this.path(prefix);
+    const entries = await readdir(dir, { recursive: true, withFileTypes: true }).catch((err) => {
+      if (isMissing(err)) return [];
+      throw err;
+    });
+    for (const entry of entries) {
+      if (!entry.isFile()) continue;
+      const file = join(entry.parentPath, entry.name);
+      try {
+        const { mtime } = await stat(file);
+        yield { key: `${prefix}/${relative(dir, file).split(sep).join('/')}`, modifiedAt: mtime };
+      } catch (err) {
+        // Deleted since the directory was read: it is no longer there to list.
+        if (!isMissing(err)) throw err;
+      }
+    }
   }
 }

@@ -14,6 +14,12 @@ export interface StoredObject {
   size: number;
 }
 
+/** One stored object as `list` reports it: its key and when its bytes were last written. */
+export interface ListedObject {
+  key: string;
+  modifiedAt: Date;
+}
+
 export type Body = Readable | AsyncIterable<Uint8Array> | Uint8Array;
 
 /**
@@ -32,6 +38,11 @@ export interface Storage {
   get(key: string, range?: ByteRange): Promise<{ body: Readable; size: number }>;
   head(key: string): Promise<{ size: number } | null>;
   delete(key: string): Promise<void>;
+  /**
+   * Every object whose key starts with `prefix/`, in no particular order, and nothing for an
+   * area that holds none. The sweep of unreferenced objects (P3-AUD10b) uses it.
+   */
+  list(prefix: string): AsyncIterable<ListedObject>;
   /**
    * Resolves when the store itself is usable (the bucket exists and answers, the root can be
    * written), which `head` of a missing key cannot say: a HEAD reports a missing bucket and a

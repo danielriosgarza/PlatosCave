@@ -173,7 +173,13 @@ if (mode === 'api' || mode === 'relay') {
     for (const job of jobs) {
       await workScopedJob(boss, database.db, job, log, {}, { storage, boss, exec });
     }
-    const maintenance = await workMaintenance(boss, database.db, log, retentionPolicy(config));
+    const maintenance = await workMaintenance(
+      boss,
+      database.db,
+      log,
+      storage,
+      retentionPolicy(config),
+    );
     const execution = await workExecution(bossExec, database.db, log);
     log.info(
       { jobs: [...jobs.map((j) => j.name), ...maintenance, ...execution] },

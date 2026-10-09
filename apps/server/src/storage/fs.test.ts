@@ -28,6 +28,25 @@ describe('fs storage', () => {
     await expect(new FsStorage(join(root, 'a-file')).ping()).rejects.toThrow();
   });
 
+  test('lists the objects under a prefix with when they were written, and nothing for an empty area', async () => {
+    const other = courseObjectPrefix('00000000-0000-4000-8000-000000000102');
+    const before = Date.now() - 1000;
+    const a = await storage.put(prefix, Buffer.from('a'));
+    const b = await storage.put(prefix, Buffer.from('b'));
+    await storage.put(other, Buffer.from('c'));
+    const listed = [];
+    for await (const o of storage.list(prefix)) listed.push(o);
+    expect(listed.map((o) => o.key).sort()).toEqual([a.key, b.key].sort());
+    for (const o of listed) expect(o.modifiedAt.getTime()).toBeGreaterThan(before);
+    const empty = [];
+    for await (const o of storage.list(courseObjectPrefix('00000000-0000-4000-8000-000000000103')))
+      empty.push(o);
+    expect(empty).toEqual([]);
+    await expect(storage.list('../escape')[Symbol.asyncIterator]().next()).rejects.toThrow(
+      /unsafe storage key/,
+    );
+  });
+
   test('streams an object in and out under its content-addressed key', async () => {
     async function* chunks() {
       yield Buffer.from('hello ');
