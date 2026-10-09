@@ -27,6 +27,7 @@ import {
   useRefreshGrades,
   useReviewedAttempt,
 } from './grading';
+import { useReleasePreviewFocus } from './useReleasePreviewFocus';
 
 /** The question as the pinned revision holds it: only what the workspace shows is read. */
 interface TestQuestion {
@@ -817,6 +818,13 @@ function ReleaseControl({
   onReleased: () => void;
 }) {
   const [state, setState] = useState<Release>({ kind: 'idle' });
+  const { trigger, heading, result } = useReleasePreviewFocus<HTMLSpanElement>(state.kind);
+  const previewTitle =
+    state.kind === 'preview' || state.kind === 'sending'
+      ? state.preview.recipients.length === 0
+        ? 'Nothing to release'
+        : `Release to ${state.preview.recipients.map((r) => r.student.name).join(', ')}`
+      : '';
   const current = grade.history[0];
   const releasable = current !== undefined && current.state === 'draft' && current.complete;
   const why = blocked
@@ -865,6 +873,7 @@ function ReleaseControl({
   return (
     <>
       <button
+        ref={trigger}
         type="button"
         className={buttons.primary}
         disabled={!releasable || blocked || state.kind === 'loading'}
@@ -876,14 +885,17 @@ function ReleaseControl({
       {why && current?.state !== 'released' ? (
         <span className={`${page.small} ${page.muted}`}>{why}</span>
       ) : null}
+      <span className={styles.srOnly} aria-live="polite">
+        {state.kind === 'preview'
+          ? `${state.note ? `${state.note} ` : ''}Release preview: ${state.preview.recipients.length} to release, ${state.preview.skipped.length} not released.`
+          : ''}
+      </span>
       {state.kind === 'preview' || state.kind === 'sending' ? (
         <section className={styles.preview} aria-label="Release preview">
           {state.kind === 'preview' && state.note ? <p>{state.note}</p> : null}
-          <strong>
-            {state.preview.recipients.length === 0
-              ? 'Nothing to release'
-              : `Release to ${state.preview.recipients.map((r) => r.student.name).join(', ')}`}
-          </strong>
+          <h3 className={styles.previewHeading} tabIndex={-1} ref={heading}>
+            {previewTitle}
+          </h3>
           <ul>
             {state.preview.recipients.map((r) => (
               <li key={r.gradeId}>
@@ -925,12 +937,17 @@ function ReleaseControl({
         </section>
       ) : null}
       {state.kind === 'done' ? (
-        <span className={`${page.small} ${styles.success}`} role="status">
+        <span
+          className={`${page.small} ${styles.success}`}
+          role="status"
+          tabIndex={-1}
+          ref={result}
+        >
           Released to {state.name} on {stamp(state.at)}.
         </span>
       ) : null}
       {state.kind === 'error' ? (
-        <span className={`${page.small} ${styles.error}`} role="alert">
+        <span className={`${page.small} ${styles.error}`} role="alert" tabIndex={-1} ref={result}>
           {state.message}
         </span>
       ) : null}

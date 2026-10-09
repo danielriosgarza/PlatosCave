@@ -166,3 +166,8 @@
   white-space: nowrap;
   border: 0;
 }
+.previewHeading {
+  margin: 0;
+  font-size: inherit;
+  font-weight: 700;
+}
