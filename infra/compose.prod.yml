@@ -65,12 +65,15 @@ x-server-env: &server-env
   AUTH_LINK_RATE_LIMIT: ${AUTH_LINK_RATE_LIMIT:-120}
   AUTH_VERIFY_RATE_LIMIT: ${AUTH_VERIFY_RATE_LIMIT:-240}
   RUN_RATE_LIMIT: ${RUN_RATE_LIMIT:-30}
+  READY_RATE_LIMIT: ${READY_RATE_LIMIT:-30}
+  READY_PROBE_TOKEN: ${READY_PROBE_TOKEN:-}
   SESSION_TTL_DAYS: ${SESSION_TTL_DAYS:-14}
   LEASE_IDLE_MINUTES: ${LEASE_IDLE_MINUTES:-30}
   LEASE_GRACE_MINUTES: ${LEASE_GRACE_MINUTES:-5}
 
 # The app answers by Host (ADR-0002), so the probe names the app host; ready is 503 until the
-# database, the job queue and the object store answer.
+# database, the job queue and the object store answer. The probe connects from inside the
+# container, so it is the host itself: it gets the dependency detail and is not rate limited.
 x-ready: &ready
   test:
     - CMD

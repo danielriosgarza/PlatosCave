@@ -97,3 +97,66 @@ test('ready is in the OpenAPI document and needs no session', async () => {
   expect(Object.keys(spec.json().paths)).toContain('/api/ready');
   await app.close();
 });
+
+const REMOTE = { remoteAddress: '203.0.113.9' };
+const configWith = (env: Record<string, string>) =>
+  loadConfig({ NODE_ENV: 'test', LOG_LEVEL: 'silent', ...env });
+
+test('ready gives a caller that is not a probe the status alone, no version or dependency detail', async () => {
+  const app = await buildApp(config, { storage: storage(async () => null) });
+  const res = await app.inject({ method: 'GET', url: '/api/ready', ...REMOTE });
+  expect(res.statusCode).toBe(503);
+  expect(res.json()).toEqual({ status: 'not_ready' });
+  expect(res.body).not.toMatch(/version|database|storage|queue|latencyMs/);
+  await app.close();
+});
+
+test('ready gives the host itself the detail, but not a request a proxy relayed from loopback', async () => {
+  const app = await buildApp(config, { storage: storage(async () => null) });
+  const direct = await app.inject({ method: 'GET', url: '/api/ready' });
+  expect(direct.json()).toHaveProperty('version');
+  expect(direct.json()).toHaveProperty('checks.database');
+  const relayed = await app.inject({
+    method: 'GET',
+    url: '/api/ready',
+    headers: { 'x-forwarded-for': '203.0.113.9' },
+  });
+  expect(relayed.json()).toEqual({ status: 'not_ready' });
+  await app.close();
+});
+
+test('ready gives the detail to a request with the configured probe token and to no other', async () => {
+  const token = 'probe-token-0123456789';
+  const app = await buildApp(configWith({ READY_PROBE_TOKEN: token }), {
+    storage: storage(async () => null),
+  });
+  const ask = (headers: Record<string, string>) =>
+    app.inject({ method: 'GET', url: '/api/ready', headers, ...REMOTE });
+  expect((await ask({ 'x-ready-token': token })).json()).toHaveProperty('checks');
+  expect((await ask({ 'x-ready-token': 'probe-token-0123456780' })).json()).toEqual({
+    status: 'not_ready',
+  });
+  expect((await ask({})).json()).toEqual({ status: 'not_ready' });
+  await app.close();
+});
+
+test('ready limits callers that are not probes per address and never counts a probe', async () => {
+  const app = await buildApp(configWith({ READY_RATE_LIMIT: '3' }), {
+    storage: storage(async () => null),
+  });
+  const codes: number[] = [];
+  for (let i = 0; i < 5; i++) {
+    codes.push((await app.inject({ method: 'GET', url: '/api/ready', ...REMOTE })).statusCode);
+  }
+  expect(codes).toEqual([503, 503, 503, 429, 429]);
+  const other = await app.inject({
+    method: 'GET',
+    url: '/api/ready',
+    remoteAddress: '203.0.113.10',
+  });
+  expect(other.statusCode).toBe(503);
+  for (let i = 0; i < 10; i++) {
+    expect((await app.inject({ method: 'GET', url: '/api/ready' })).statusCode).toBe(503);
+  }
+  await app.close();
+});

@@ -179,6 +179,7 @@ describe('compose.prod.yml', () => {
       MAIL_TRANSPORT: 'smtp',
       SESSION_TTL_DAYS: 14,
       RUN_RATE_LIMIT: 30,
+      READY_RATE_LIMIT: 30,
       LEASE_IDLE_MINUTES: 30,
       LEASE_GRACE_MINUTES: 5,
     });
