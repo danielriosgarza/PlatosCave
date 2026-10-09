@@ -42,9 +42,23 @@ describe('config', () => {
   test('a server reachable beyond loopback never runs on the public development secret', () => {
     expect(() => loadConfig({ HOST: '0.0.0.0' })).toThrow(/CONTENT_TOKEN_SECRET/);
     expect(loadConfig({ HOST: '0.0.0.0', CONTENT_TOKEN_SECRET: 's'.repeat(40) })).toBeTruthy();
-    expect(loadConfig({ HOST: '0.0.0.0', NODE_ENV: 'test' }).CONTENT_TOKEN_SECRET).toBe(
+    expect(() => loadConfig({ HOST: '0.0.0.0', NODE_ENV: 'test' })).toThrow(/CONTENT_TOKEN_SECRET/);
+    expect(
+      loadConfig({ HOST: '0.0.0.0', NODE_ENV: 'test', CONTENT_TOKEN_SECRET: 's'.repeat(40) }),
+    ).toBeTruthy();
+    expect(loadConfig({ HOST: '127.0.0.1', NODE_ENV: 'test' }).CONTENT_TOKEN_SECRET).toBe(
       DEV_CONTENT_TOKEN_SECRET,
     );
+  });
+
+  test('the e2e fixture routes are refused when HOST is not a loopback address', () => {
+    const secret = { CONTENT_TOKEN_SECRET: 's'.repeat(40) };
+    for (const NODE_ENV of ['test', 'development'] as const) {
+      expect(() => loadConfig({ NODE_ENV, HOST: '0.0.0.0', TEST_ROUTES: '1', ...secret })).toThrow(
+        /TEST_ROUTES/,
+      );
+      expect(loadConfig({ NODE_ENV, HOST: '127.0.0.1', TEST_ROUTES: '1' }).TEST_ROUTES).toBe(true);
+    }
   });
 
   test('smtp needs a sender; the file transport keeps a placeholder', () => {

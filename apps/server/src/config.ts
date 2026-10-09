@@ -269,6 +269,15 @@ const Env = z
     if (env.NODE_ENV === 'production' && env.TEST_ROUTES) {
       ctx.addIssue({ code: 'custom', path: ['TEST_ROUTES'], message: 'not allowed in production' });
     }
+    // The fixture routes only answer loopback peers; a server reachable beyond this machine
+    // must not mount them in any mode.
+    if (env.TEST_ROUTES && !LOOPBACK.has(env.HOST)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['TEST_ROUTES'],
+        message: 'not allowed when HOST is not a loopback address',
+      });
+    }
     if (env.MAIL_TRANSPORT === 'smtp' && !env.SMTP_URL) {
       ctx.addIssue({ code: 'custom', path: ['SMTP_URL'], message: 'required for smtp' });
     }
@@ -283,8 +292,8 @@ const Env = z
       });
     }
     // The development secret is public: anything reachable beyond this machine needs its own,
-    // whatever NODE_ENV says (tests excepted: unit tests build configs for any HOST).
-    if (env.NODE_ENV !== 'test' && !LOOPBACK.has(env.HOST) && !env.CONTENT_TOKEN_SECRET) {
+    // whatever NODE_ENV says.
+    if (!LOOPBACK.has(env.HOST) && !env.CONTENT_TOKEN_SECRET) {
       ctx.addIssue({
         code: 'custom',
         path: ['CONTENT_TOKEN_SECRET'],
