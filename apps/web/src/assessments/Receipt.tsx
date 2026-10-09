@@ -1,7 +1,7 @@
 import buttons from '../components/Buttons.module.css';
+import { formatInstant } from '../format/format';
 import { recoveryAnswered } from './answers';
 import type { AttemptView, Question } from './api';
-import { formatInZone } from './TermsPanel';
 import styles from './Test.module.css';
 
 type Local = 'none' | 'sending' | 'kept' | 'failed';
@@ -69,7 +69,7 @@ export function ReceiptView({
       </p>
       <dl className={styles.receiptList}>
         <dt>Submitted</dt>
-        <dd>{formatInZone(receipt.submittedAt, zone)}</dd>
+        <dd>{formatInstant(receipt.submittedAt, zone)}</dd>
         <dt>Attempt</dt>
         <dd>
           {attempt.number} · ID {receipt.attemptId}
@@ -88,7 +88,7 @@ export function ReceiptView({
             : receipt.answers
                 .map(
                   (a) =>
-                    `${questionName(attempt.questions, a.questionId)} (saved ${formatInZone(
+                    `${questionName(attempt.questions, a.questionId)} (saved ${formatInstant(
                       a.savedAt,
                       zone,
                     )})`,
@@ -116,7 +116,7 @@ export function ReceiptView({
               : local === 'failed'
                 ? 'Your unsent changes could not be sent yet. They are still in this browser.'
                 : attempt.localCopyAt
-                  ? `Your unsent changes were kept for your instructor at ${formatInZone(
+                  ? `Your unsent changes were kept for your instructor at ${formatInstant(
                       attempt.localCopyAt,
                       zone,
                     )}. They are not submitted; your instructor can restore them on request.`
@@ -138,12 +138,12 @@ export function ReceiptView({
         <div className={styles.notice} role="status">
           <p>
             <strong>Your instructor asked for your unsent work</strong> from this attempt on{' '}
-            {formatInZone(requestedAt, zone)}. It is not part of the submission.
+            {formatInstant(requestedAt, zone)}. It is not part of the submission.
           </p>
           {answeredRequest ? (
             <p>
               Sent to your instructor
-              {attempt.localCopyAt ? ` at ${formatInZone(attempt.localCopyAt, zone)}` : ''}.
+              {attempt.localCopyAt ? ` at ${formatInstant(attempt.localCopyAt, zone)}` : ''}.
             </p>
           ) : heldLocally || unsentCount > 0 ? (
             <p className={styles.row}>

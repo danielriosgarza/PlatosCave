@@ -4,6 +4,7 @@ import buttons from '../components/Buttons.module.css';
 import { Loading } from '../components/Loading';
 import page from '../components/Page.module.css';
 import { RetryNotice } from '../components/RetryNotice';
+import { formatInstant, points } from '../format/format';
 import styles from './Grading.module.css';
 import {
   type AttemptGrade,
@@ -13,7 +14,6 @@ import {
   type InstructorRun,
   type ManualMark,
   overridePoints,
-  points,
   previewRelease,
   type ReleasePreview,
   type ReviewedAttempt,
@@ -21,7 +21,6 @@ import {
   release,
   SOURCE_LABEL,
   saveDraft,
-  stamp,
   useAttemptGrade,
   useAttemptRuns,
   useRefreshGrades,
@@ -327,7 +326,7 @@ function Workspace({
           <div className={`${page.small} ${page.muted}`}>
             {cohort} · {testTitle} · Attempt {attempt.number}
             {attempt.submittedAt
-              ? ` · submitted ${stamp(attempt.submittedAt)}`
+              ? ` · submitted ${formatInstant(attempt.submittedAt)}`
               : ' · not submitted'}
             {attempt.receipt?.late ? ' · late' : ''}
           </div>
@@ -351,7 +350,7 @@ function Workspace({
       {released ? (
         <p className={page.small}>
           Released to {grade.student.name}: {points(released.points)} / {points(released.possible)}
-          {released.releasedAt ? ` on ${stamp(released.releasedAt)}` : ''}.
+          {released.releasedAt ? ` on ${formatInstant(released.releasedAt)}` : ''}.
           {newerDraft
             ? ` A newer ${SOURCE_LABEL[current.source].toLowerCase()} (${points(current.points)} / ${points(current.possible)}) is a draft the student does not see until you release it.`
             : ''}
@@ -943,7 +942,7 @@ function ReleaseControl({
           tabIndex={-1}
           ref={result}
         >
-          Released to {state.name} on {stamp(state.at)}.
+          Released to {state.name} on {formatInstant(state.at)}.
         </span>
       ) : null}
       {state.kind === 'error' ? (
@@ -1089,7 +1088,10 @@ function History({ rows }: { rows: GradeRow[] }) {
         {rows.map((r) => (
           <li key={r.id}>
             Grade {r.number} · {SOURCE_LABEL[r.source]} · {points(r.points)} / {points(r.possible)}{' '}
-            · {r.state === 'released' && r.releasedAt ? `released ${stamp(r.releasedAt)}` : 'draft'}
+            ·{' '}
+            {r.state === 'released' && r.releasedAt
+              ? `released ${formatInstant(r.releasedAt)}`
+              : 'draft'}
             {r.reason ? ` · ${r.reason}` : ''}
             {r.override ? ` · override of grade ${points(r.override.points)} points` : ''} ·
             automated {points(r.automatedPoints)} · manual {points(r.manualPoints)}

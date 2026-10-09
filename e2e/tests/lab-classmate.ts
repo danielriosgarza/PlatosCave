@@ -1,16 +1,16 @@
-import { expect, type Page, type PlaywrightWorkerArgs } from '@playwright/test';
+import { type APIRequestContext, expect, type PlaywrightWorkerArgs } from '@playwright/test';
 
 const labClassId = `00000000-0000-4000-8000-${(211).toString().padStart(12, '0')}`;
 
 /**
- * Signs `page` in as a student who has just joined the reading lab class with an enrolment code
- * issued by the course owner, so a test gets a reader with no saved places, notes or questions
- * that no other test file shares.
+ * Signs the person behind `request` in as a student who has just joined the reading lab class
+ * with an enrolment code issued by the course owner, so a test gets a reader with no saved
+ * places, notes or questions that no other test file shares.
  */
 export async function joinLabClassAs(
   playwright: PlaywrightWorkerArgs['playwright'],
   baseURL: string | undefined,
-  page: Page,
+  request: APIRequestContext,
   email: string,
 ): Promise<void> {
   const owner = await playwright.request.newContext({ baseURL });
@@ -24,7 +24,7 @@ export async function joinLabClassAs(
   const { code } = (await issued.json()) as { code: string };
   await owner.dispose();
 
-  expect((await page.request.post('/api/test/signin-as', { data: { email } })).ok()).toBe(true);
-  const joined = await page.request.post('/api/join', { data: { code } });
+  expect((await request.post('/api/test/signin-as', { data: { email } })).ok()).toBe(true);
+  const joined = await request.post('/api/join', { data: { code } });
   expect(await joined.json()).toMatchObject({ classId: labClassId, role: 'student' });
 }

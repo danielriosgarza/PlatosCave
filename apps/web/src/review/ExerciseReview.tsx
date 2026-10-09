@@ -1,9 +1,10 @@
 import { Loading } from '../components/Loading';
 import page from '../components/Page.module.css';
 import { RetryNotice } from '../components/RetryNotice';
+import { formatInstant } from '../format/format';
 import type { ClassReview } from './classReview';
 import styles from './Grading.module.css';
-import { type ExerciseAttempts, stamp, useExerciseAttempts } from './grading';
+import { type ExerciseAttempts, useExerciseAttempts } from './grading';
 
 type Attempt = ExerciseAttempts[number];
 type Step = Attempt['steps'][number];
@@ -102,12 +103,13 @@ function AttemptCard({ attempt: a }: { attempt: Attempt }) {
       <div className={page.small}>
         <strong>Attempt {a.number}</strong> ·{' '}
         {a.completion ? COMPLETION[a.completion] : 'Not completed'}
-        {a.completedAt ? ` · ${stamp(a.completedAt)}` : ''}
+        {a.completedAt ? ` · ${formatInstant(a.completedAt)}` : ''}
         {a.restarted ? ' · started again afterwards' : ''}
         {a.removed ? ' · student removed from the class' : ''}
       </div>
       <p className={`${page.small} ${page.muted}`}>
-        Started {stamp(a.startedAt)} · seed {a.seed} · exercise version {a.resourceRevisionId}
+        Started {formatInstant(a.startedAt)} · seed {a.seed} · exercise version{' '}
+        {a.resourceRevisionId}
       </p>
       <ol className={styles.checks} aria-label={`Steps of attempt ${a.number}`}>
         {a.steps.map((s) => (

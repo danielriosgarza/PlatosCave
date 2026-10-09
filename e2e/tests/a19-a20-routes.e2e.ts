@@ -1,5 +1,7 @@
 import AxeBuilder from '@axe-core/playwright';
-import { expect, type Locator, type Page, test } from '@playwright/test';
+import { type APIRequestContext, expect, type Locator, type Page, test } from '@playwright/test';
+import { small } from '../touch';
+import { joinLabClassAs } from './lab-classmate';
 import {
   exerciseDefinition,
   releaseToClassA,
@@ -23,29 +25,132 @@ interface Fixtures {
   exerciseTitle: string;
   testTitle: string;
   reviewUrl: string;
+  /** Review of a graded, unreleased attempt: the single-release preview opens from it. */
+  draftReviewUrl: string;
+  /** Priya's review of the class with the graded, unreleased test chosen. */
+  bulkReviewUrl: string;
+  /** Everything on this test is released, so "Needs review" has nothing to show. */
+  nothingToReviewUrl: string;
+  releasedTitle: string;
+  tests: string;
+  /** The test Sam's closed attempt belongs to, with an instructor request and kept unsent work. */
+  recoveryTitle: string;
+  /** A closed attempt of the recovery test that an instructor asked for; its unsent work is in Sam's browser only. */
+  heldAttempt: string;
+  examReviewUrl: (tab: string) => string;
+  commentsUrl: string;
 }
 let fixtures: Fixtures;
 
+/** The choice and written-answer questions only: the code question needs the runner (not in e2e). */
+const gradedDefinition = { ...testDefinition, questions: testDefinition.questions.slice(0, 2) };
+
+/** Sam starts, answers and submits a test the way a student would; returns the attempt id. */
+async function submitAs(
+  sam: APIRequestContext,
+  classId: string,
+  resourceId: string,
+  answers: readonly (readonly [string, unknown])[],
+): Promise<string> {
+  const started = await sam.post(`/api/classes/${classId}/resources/${resourceId}/test-attempts`);
+  expect(started.ok()).toBe(true);
+  const attemptId = ((await started.json()) as { id: string }).id;
+  const attempt = `/api/classes/${classId}/test-attempts/${attemptId}`;
+  for (const [question, value] of answers) {
+    expect(
+      (await sam.put(`${attempt}/answers/${question}`, { data: { value, seq: 1 } })).ok(),
+    ).toBe(true);
+  }
+  expect(
+    (
+      await sam.post(`${attempt}/submit`, {
+        data: { submissionKey: `routes-${Date.now()}-${attemptId}` },
+      })
+    ).ok(),
+  ).toBe(true);
+  return attemptId;
+}
+
+/** Priya saves a complete draft grade (full marks on the written answer); returns its row id. */
+async function draftGrade(priya: APIRequestContext, classId: string, attemptId: string) {
+  const saved = await priya.post(`/api/classes/${classId}/test-attempts/${attemptId}/grade`, {
+    data: {
+      expectedGradeId: null,
+      manual: [{ questionId: 'why', criteria: [{ id: 'averaging', points: 3 }] }],
+      feedback: [{ target: { kind: 'attempt' }, text: 'Clear reasoning about averaging out.' }],
+    },
+  });
+  expect(saved.ok()).toBe(true);
+  const id = ((await saved.json()) as { history: { id: string }[] }).history[0]?.id;
+  if (!id) throw new Error('the saved draft grade has no history row');
+  return id;
+}
+
+/** A student of the lab class who shared a question: nobody else's cleanup removes it. */
+async function sharedQuestion(
+  playwright: Parameters<typeof worldIds>[0],
+  baseURL: string | undefined,
+  stamp: string,
+): Promise<string> {
+  const asker = await playwright.request.newContext({ baseURL });
+  await joinLabClassAs(playwright, baseURL, asker, `asker-${stamp}@example.test`);
+  const askerId = ((await (await asker.get('/api/me')).json()) as { user: { id: string } }).user.id;
+  const readings = (await (
+    await asker.get(`/api/classes/${lab.class}/topics/${lab.topic}/readings`)
+  ).json()) as { readings: { resourceId: string; revisionId: string }[] };
+  const reading = readings.readings.find((r) => r.revisionId === lab.nativeRevision);
+  if (!reading) throw new Error('the lab reading was not found');
+  const note = await asker.post(
+    `/api/classes/${lab.class}/resources/${reading.resourceId}/annotations`,
+    {
+      data: {
+        kind: 'note',
+        anchor: { kind: 'none' },
+        body: 'Why does the margin of error shrink?',
+      },
+    },
+  );
+  expect(note.ok()).toBe(true);
+  const shared = await asker.post(
+    `/api/classes/${lab.class}/annotations/${((await note.json()) as { id: string }).id}/share`,
+    { data: { audience: 'instructor' } },
+  );
+  expect(shared.ok()).toBe(true);
+  await asker.dispose();
+  return askerId;
+}
+
 test.beforeAll(async ({ playwright, baseURL }) => {
+  // About forty dependent requests: more than the default timeout on a slow runner.
+  test.setTimeout(120_000);
   const ids = await worldIds(playwright, baseURL);
   const stamp = `${Date.now()}-${test.info().workerIndex}`;
+  // The lab class is independent of class A: set it up while the graded fixtures are built.
+  const asking = sharedQuestion(playwright, baseURL, stamp);
   const exerciseTitle = `Routes exercise ${stamp}`;
   const testTitle = `Routes test ${stamp}`;
   const submittedTitle = `Routes submitted ${stamp}`;
-  const [, , submittedId] = await releaseToClassA(playwright, baseURL, ids, [
-    { type: 'exercise', title: exerciseTitle, content: exerciseDefinition },
-    { type: 'test', title: testTitle, content: testDefinition },
-    { type: 'test', title: submittedTitle, content: testDefinition },
-  ]);
-  if (!submittedId) throw new Error('the submitted test was not created');
-  // Sam submits a test, so the class review has a submission to show.
+  const releasedTitle = `Routes released ${stamp}`;
+  const draftTitle = `Routes draft ${stamp}`;
+  const [exerciseId, , submittedId, releasedId, draftId] = await releaseToClassA(
+    playwright,
+    baseURL,
+    ids,
+    [
+      { type: 'exercise', title: exerciseTitle, content: exerciseDefinition },
+      { type: 'test', title: testTitle, content: testDefinition },
+      { type: 'test', title: submittedTitle, content: testDefinition },
+      { type: 'test', title: releasedTitle, content: gradedDefinition },
+      { type: 'test', title: draftTitle, content: gradedDefinition },
+    ],
+  );
+  if (!exerciseId || !submittedId || !releasedId || !draftId) {
+    throw new Error('the fixture resources were not created');
+  }
   const sam = await signedIn(playwright, baseURL, 'sam@example.test');
-  const url = `/api/classes/${ids.classA}/resources/${submittedId}/test-attempts`;
-  const started = await sam.post(url);
-  expect(started.ok()).toBe(true);
-  const attemptId = ((await started.json()) as { id: string }).id;
-  const attempt = `/api/classes/${ids.classA}/test-attempts/${attemptId}`;
-  for (const [question, value] of [
+  const priya = await signedIn(playwright, baseURL, 'priya@example.test');
+  // Sam submits a test, so the class review has a submission to show.
+  const attemptId = await submitAs(sam, ids.classA, submittedId, [
     ['spread', ['n100']],
     ['why', LONG_EXPLANATION],
     [
@@ -54,20 +159,65 @@ test.beforeAll(async ({ playwright, baseURL }) => {
         files: [{ path: 'solution.py', content: 'def mean(xs):\n    return sum(xs) / len(xs)\n' }],
       },
     ],
-  ] as const) {
-    expect(
-      (await sam.put(`${attempt}/answers/${question}`, { data: { value, seq: 1 } })).ok(),
-    ).toBe(true);
-  }
+  ]);
+  // A closed attempt with an instructor's request for unsent work and the copy Sam's browser kept.
+  const requested = await priya.post(
+    `/api/classes/${ids.classA}/test-attempts/${attemptId}/recovery-request`,
+    { data: { reason: 'The connection dropped before the deadline' } },
+  );
+  expect(requested.ok()).toBe(true);
+  const kept = await sam.post(`/api/classes/${ids.classA}/test-attempts/${attemptId}/local-copy`, {
+    data: {
+      answers: [{ questionId: 'why', value: 'Unsent: a larger sample averages out noise.' }],
+    },
+  });
+  expect(kept.ok()).toBe(true);
+  // A graded and released test: Sam reads the feedback.
+  const answers = [
+    ['spread', ['n100']],
+    ['why', 'Noise averages out in a larger sample.'],
+  ] as const;
+  const releasedAttempt = await submitAs(sam, ids.classA, releasedId, answers);
+  const releasedGrade = await draftGrade(priya, ids.classA, releasedAttempt);
+  const released = await priya.post(`/api/classes/${ids.classA}/grade-releases`, {
+    data: { grades: [{ attemptId: releasedAttempt, gradeId: releasedGrade }] },
+  });
+  expect(released.ok()).toBe(true);
+  // A graded test that is not released yet: both release previews open from it.
+  const draftAttempt = await submitAs(sam, ids.classA, draftId, answers);
+  await draftGrade(priya, ids.classA, draftAttempt);
+  // Exercise review needs a practice attempt.
   expect(
-    (await sam.post(`${attempt}/submit`, { data: { submissionKey: `routes-${Date.now()}` } })).ok(),
+    (await sam.post(`/api/classes/${ids.classA}/resources/${exerciseId}/exercise-attempt`)).ok(),
   ).toBe(true);
+  // A second closed attempt that an instructor asked for, with no copy kept on the server: the
+  // student's browser still holds the unsent answers (seeded when the route loads).
+  const heldAttempt = await submitAs(sam, ids.classA, submittedId, [['spread', ['n10']]]);
+  expect(
+    (
+      await priya.post(`/api/classes/${ids.classA}/test-attempts/${heldAttempt}/recovery-request`, {
+        data: { reason: 'Please send what you typed after the last save' },
+      })
+    ).ok(),
+  ).toBe(true);
+  await priya.dispose();
   await sam.dispose();
+  const askerId = await asking;
+  const reviewBase = `/classes/${ids.classA}/review`;
   fixtures = {
     ids,
     exerciseTitle,
     testTitle,
-    reviewUrl: `/classes/${ids.classA}/review?assignment=${submittedId}&selected=${ids.sam}&attempt=${attemptId}`,
+    reviewUrl: `${reviewBase}?assignment=${submittedId}&selected=${ids.sam}&attempt=${attemptId}`,
+    draftReviewUrl: `${reviewBase}?assignment=${draftId}&selected=${ids.sam}&attempt=${draftAttempt}`,
+    bulkReviewUrl: `${reviewBase}?assignment=${draftId}`,
+    nothingToReviewUrl: `${reviewBase}?assignment=${releasedId}&needsReview=true`,
+    releasedTitle,
+    examReviewUrl: (tab) => `${reviewBase}?selected=${ids.sam}&tab=${tab}`,
+    tests: `/classes/${ids.classA}/topics/${ids.sampling}/tests`,
+    recoveryTitle: submittedTitle,
+    heldAttempt,
+    commentsUrl: `/classes/${lab.class}/review?selected=${askerId}&tab=comments`,
   };
 });
 
@@ -80,6 +230,56 @@ type Route = {
 };
 
 const shown = (locator: Locator) => expect(locator.first()).toBeVisible();
+
+/**
+ * Writes the browser-side copy of unsent answers the application keeps for a closed attempt, as
+ * `attemptCopyKey` and the drafts store in apps/web/src/reading/margin/drafts.ts define it (keep
+ * the database name, version, store and key format in step with that file).
+ */
+async function keepUnsentWork(page: Page, f: Fixtures) {
+  const me = (await (await page.request.get('/api/me')).json()) as { user: { id: string } };
+  const copy = {
+    key: `attempt-copy|${me.user.id}|${f.ids.classA}|${f.heldAttempt}`,
+    userId: me.user.id,
+    kind: 'attempt-copy',
+    classId: f.ids.classA,
+    attemptId: f.heldAttempt,
+    answers: [{ questionId: 'why', value: 'Typed after the last save.' }],
+    updatedAt: Date.now(),
+  };
+  await page.evaluate(
+    (record) =>
+      new Promise<void>((resolve, reject) => {
+        const request = indexedDB.open('parallax-drafts', 1);
+        request.onupgradeneeded = () => {
+          request.result.createObjectStore('drafts', { keyPath: 'key' });
+        };
+        request.onerror = () => reject(request.error);
+        request.onsuccess = () => {
+          const tx = request.result.transaction('drafts', 'readwrite');
+          tx.objectStore('drafts').put(record);
+          tx.oncomplete = () => {
+            request.result.close();
+            resolve();
+          };
+          tx.onerror = () => reject(tx.error);
+        };
+      }),
+    copy,
+  );
+  await page.goto(f.tests);
+}
+
+/** From the tests list of a topic, opens the one with this title. */
+async function openTest(page: Page, title: string) {
+  const listed = page
+    .getByRole('listitem')
+    .filter({ hasText: title })
+    .getByRole('button', { name: 'Open' });
+  const heading = page.getByRole('heading', { name: title });
+  await expect(listed.or(heading).first()).toBeVisible();
+  if (await listed.isVisible()) await listed.click();
+}
 
 /** Every screen the application routes to, with real content on it, as the person who sees it. */
 const routes: Route[] = [
@@ -174,6 +374,120 @@ const routes: Route[] = [
       expect(await answer.first().evaluate((el) => el.scrollWidth <= el.clientWidth + 1)).toBe(
         true,
       );
+    },
+  },
+  {
+    name: 'student released results',
+    as: 'sam',
+    path: (f) => f.tests,
+    load: async (page, f) => {
+      await openTest(page, f.releasedTitle);
+      await page.getByRole('button', { name: 'View feedback for attempt 1' }).click();
+      await shown(page.getByRole('heading', { name: `${f.releasedTitle} · attempt 1 feedback` }));
+      await shown(page.getByText('Clear reasoning about averaging out.'));
+    },
+  },
+  {
+    name: 'student receipt with an instructor request',
+    as: 'sam',
+    path: (f) => f.tests,
+    load: async (page, f) => {
+      await openTest(page, f.recoveryTitle);
+      await page.getByRole('button', { name: 'Open the receipt of attempt 1' }).click();
+      await shown(page.getByRole('heading', { name: 'Test submitted' }));
+      await shown(page.getByText('Your instructor asked for your unsent work'));
+    },
+  },
+  {
+    name: 'student receipt with unsent work to send',
+    as: 'sam',
+    // A page of the application's origin to write IndexedDB on, without loading the tests twice.
+    path: () => '/signin',
+    load: async (page, f) => {
+      // The browser kept the answers (IndexedDB, bound to the person, class and attempt).
+      await keepUnsentWork(page, f);
+      await openTest(page, f.recoveryTitle);
+      await page.getByRole('button', { name: 'Open the receipt of attempt 2' }).click();
+      await shown(page.getByRole('heading', { name: 'Test submitted' }));
+      await shown(page.getByRole('button', { name: 'Send unsent work' }));
+      await shown(page.getByRole('button', { name: 'Download what you wrote' }));
+    },
+  },
+  {
+    name: 'accommodations and recovery',
+    as: 'priya',
+    path: (f) => f.tests,
+    load: async (page, f) => {
+      await openTest(page, f.recoveryTitle);
+      await shown(page.getByRole('region', { name: 'Extensions and extra attempts' }));
+      const list = page.getByRole('list', { name: 'Closed attempts and unsent work' });
+      await page.getByRole('button', { name: 'View unsent work' }).first().click();
+      await shown(list.getByText('Not part of the submission.'));
+      await shown(list.getByText('Unsent: a larger sample averages out noise.'));
+    },
+  },
+  {
+    name: 'release preview',
+    as: 'priya',
+    path: (f) => f.draftReviewUrl,
+    load: async (page) => {
+      await shown(page.getByRole('region', { name: 'Grading workspace' }));
+      await page.getByRole('button', { name: 'Release feedback' }).click();
+      await shown(page.getByRole('region', { name: 'Release preview' }));
+    },
+  },
+  {
+    name: 'bulk release preview',
+    as: 'priya',
+    path: (f) => f.bulkReviewUrl,
+    load: async (page) => {
+      await page
+        .getByRole('checkbox', { name: /^Select .+ for release$/ })
+        .first()
+        .check();
+      await page.getByRole('button', { name: /^Preview release \(\d+\)$/ }).click();
+      await shown(
+        page
+          .getByRole('region', { name: 'Release preview' })
+          .getByRole('list', { name: 'Recipients' }),
+      );
+    },
+  },
+  {
+    name: 'class review with no students needing review',
+    as: 'priya',
+    path: (f) => f.nothingToReviewUrl,
+    load: async (page) => {
+      await shown(page.getByRole('heading', { name: 'No students need review.' }));
+      await shown(page.getByRole('button', { name: 'Show all students' }));
+    },
+  },
+  {
+    name: 'exercise review',
+    as: 'priya',
+    path: (f) => f.examReviewUrl('exercises'),
+    load: async (page, f) => {
+      await shown(page.getByRole('heading', { name: `Exercise · ${f.exerciseTitle}` }));
+      await shown(page.getByRole('list', { name: 'Steps of attempt 1' }));
+    },
+  },
+  {
+    name: 'review submissions tab',
+    as: 'priya',
+    path: (f) => f.examReviewUrl('submissions'),
+    load: async (page) => {
+      await shown(page.getByRole('tab', { name: 'Submissions', selected: true }));
+      await shown(page.getByRole('heading', { name: 'Tests', level: 3 }));
+      await shown(page.getByRole('region', { name: /^Test · / }));
+    },
+  },
+  {
+    name: 'review comments and questions tab',
+    as: 'lab-instructor',
+    path: (f) => f.commentsUrl,
+    load: async (page) => {
+      await shown(page.getByRole('tab', { name: 'Comments & questions', selected: true }));
+      await shown(page.getByText('Why does the margin of error shrink?'));
     },
   },
   {
@@ -301,3 +615,31 @@ for (const route of routes) {
     });
   });
 }
+
+/** The Phase 4 screens a person uses by touch: every button, link, select and text box is at least 44 px. */
+const touched = [
+  'student released results',
+  'student receipt with an instructor request',
+  'student receipt with unsent work to send',
+  'accommodations and recovery',
+  'release preview',
+  'bulk release preview',
+  'class review with no students needing review',
+];
+
+test.describe('coarse pointer', () => {
+  test.use({ hasTouch: true, isMobile: true });
+
+  for (const route of routes.filter((r) => touched.includes(r.name))) {
+    test(`A20 ${route.name} controls are at least 44 px with a touch screen`, async ({ page }) => {
+      await open(page, route);
+      expect(await page.locator('main button').count()).toBeGreaterThan(0);
+      expect(
+        await small(
+          page,
+          'main button, main select, main textarea, main a, main input:not([type="checkbox"], [type="radio"])',
+        ),
+      ).toEqual([]);
+    });
+  }
+});

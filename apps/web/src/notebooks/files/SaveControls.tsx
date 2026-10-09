@@ -3,9 +3,10 @@ import { saveWorkingCopy, type WorkingCopyView } from '@parallax/contracts/route
 import { useEffect, useMemo, useState } from 'react';
 import { ApiError, call } from '../../api/client';
 import buttons from '../../components/Buttons.module.css';
+import { formatInstant } from '../../format/format';
 import { type Choice, type Conflict, ConflictDialog } from './ConflictDialog';
 import styles from './Files.module.css';
-import { downloadNotebook, outcomeText, refusalText, when, where } from './files';
+import { downloadNotebook, outcomeText, refusalText, where } from './files';
 
 interface Props {
   classId: string;
@@ -154,7 +155,7 @@ export function SaveControls({
         <h4>Your copy in Parallax</h4>
         <p>
           Latest revision stored: {workingCopy.revision.revision},{' '}
-          {when(workingCopy.revision.savedAt)}.
+          {formatInstant(workingCopy.revision.savedAt)}.
           {unsaved ? ' The editor has changes that are not saved yet.' : ''} Kernel memory is never
           saved.
         </p>
@@ -178,7 +179,7 @@ export function SaveControls({
         )}
         {save.kind === 'saved' ? (
           <p role="status">
-            Saved to Parallax as revision {save.revision} · {when(save.savedAt)}
+            Saved to Parallax as revision {save.revision} · {formatInstant(save.savedAt)}
           </p>
         ) : null}
         {save.kind === 'failed' ? (

@@ -2,15 +2,9 @@ import { useRef, useState } from 'react';
 import { ApiError } from '../api/client';
 import buttons from '../components/Buttons.module.css';
 import page from '../components/Page.module.css';
+import { formatInstant, points } from '../format/format';
 import styles from './Grading.module.css';
-import {
-  points,
-  previewRelease,
-  type ReleasePreview,
-  release,
-  stamp,
-  useRefreshGrades,
-} from './grading';
+import { previewRelease, type ReleasePreview, release, useRefreshGrades } from './grading';
 import { useReleasePreviewFocus } from './useReleasePreviewFocus';
 
 type State =
@@ -125,9 +119,9 @@ export function BulkRelease({
       {view && (state.kind === 'preview' || state.kind === 'sending') ? (
         <section className={styles.preview} aria-label="Release preview">
           {state.kind === 'preview' && state.note ? <p>{state.note}</p> : null}
-          <h3 className={styles.previewHeading} tabIndex={-1} ref={heading}>
+          <h2 className={styles.previewHeading} tabIndex={-1} ref={heading}>
             {previewTitle(view, testTitle)}
-          </h3>
+          </h2>
           <ul aria-label="Recipients">
             {view.recipients.map((r) => (
               <li key={r.gradeId}>
@@ -173,7 +167,7 @@ export function BulkRelease({
       {state.kind === 'done' ? (
         <p className={`${page.small} ${styles.success}`} role="status" tabIndex={-1} ref={result}>
           Released to {state.count} {state.count === 1 ? 'student' : 'students'} on{' '}
-          {stamp(state.at)}.
+          {formatInstant(state.at)}.
         </p>
       ) : null}
       {state.kind === 'error' ? (

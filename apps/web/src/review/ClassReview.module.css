@@ -64,6 +64,11 @@
   padding-top: 24px;
   border-top: 1px solid var(--pc-ink);
 }
+/* The student's name is one unbroken word when long: it wraps inside the flex row instead of widening the page. */
+.name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 .nav {
   display: flex;
   gap: 4px;

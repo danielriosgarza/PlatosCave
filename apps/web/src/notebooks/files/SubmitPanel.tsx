@@ -7,8 +7,9 @@ import type { z } from 'zod';
 import { ApiError, call } from '../../api/client';
 import buttons from '../../components/Buttons.module.css';
 import { RetryNotice } from '../../components/RetryNotice';
+import { formatInstant } from '../../format/format';
 import styles from './Files.module.css';
-import { refusalText, size, when } from './files';
+import { refusalText, size } from './files';
 
 type Receipt = z.output<typeof submissionReceipt>;
 
@@ -90,7 +91,7 @@ export function SubmitPanel({ classId, sessionId, workingCopy, environment }: Pr
       <ul className={styles.list} aria-label="What will be frozen">
         <li>
           Notebook: revision {workingCopy.currentRevision}, saved{' '}
-          {when(workingCopy.revision.savedAt)} to Parallax
+          {formatInstant(workingCopy.revision.savedAt)} to Parallax
         </li>
         <li>Environment: {environmentLine(environment)}</li>
         <li>
@@ -139,7 +140,7 @@ export function SubmitPanel({ classId, sessionId, workingCopy, environment }: Pr
       {error ? <p role="alert">Not submitted. {error}</p> : null}
       {receipt ? (
         <p role="status">
-          Received {when(receipt.receivedAt)} · version {receipt.version} · revision{' '}
+          Received {formatInstant(receipt.receivedAt)} · version {receipt.version} · revision{' '}
           {receipt.workingCopyRevision ?? workingCopy.currentRevision} ·{' '}
           {receipt.files?.length ?? 0} {(receipt.files?.length ?? 0) === 1 ? 'file' : 'files'} ·
           checksum {receipt.sha256.slice(0, 12)}

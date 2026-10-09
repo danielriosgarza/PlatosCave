@@ -1,6 +1,7 @@
 import { getClassTopics } from '@parallax/contracts/routes/topics';
 import type { z } from 'zod';
 import { useApi } from '../api/client';
+import { formatInstant } from '../format/format';
 
 export type ClassTopics = z.output<typeof getClassTopics.response>;
 export type ClassTopic = ClassTopics['topics'][number];
@@ -26,22 +27,10 @@ export const isOpen = (topic: ClassTopic) =>
 /** Tab a link to this topic opens: its saved tab, else the first-visit rule (§4). */
 export const tabFor = (topic: ClassTopic): TopicTab => topic.savedTab ?? topic.firstTab ?? 'slides';
 
-/** Release time in the viewer's own time zone, named so the zone is never implicit (§14). */
-export function formatOpens(iso: string): string {
-  return new Intl.DateTimeFormat('en-GB', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    timeZoneName: 'short',
-  }).format(new Date(iso));
-}
-
 /** Why a topic is closed: its release time or the topics it waits for; null when it is open. */
 export function lockReason(topic: ClassTopic): string | null {
   if (topic.state === 'scheduled' && topic.availableAt) {
-    return `Opens ${formatOpens(topic.availableAt)}`;
+    return `Opens ${formatInstant(topic.availableAt)}`;
   }
   if (topic.state === 'locked') {
     return `Requires ${topic.requires.map((r) => r.title).join(', ')}`;

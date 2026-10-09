@@ -407,7 +407,7 @@ function Selection({
   return (
     <section className={styles.selection} aria-label="Selected student">
       <div className={page.row}>
-        <h2>{student.name}</h2>
+        <h2 className={styles.name}>{student.name}</h2>
         <div className={styles.nav}>
           <button type="button" disabled={!listed || index <= 0} onClick={() => to(index - 1)}>
             Previous student

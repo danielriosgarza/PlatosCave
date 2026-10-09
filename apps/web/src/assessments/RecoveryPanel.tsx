@@ -6,9 +6,9 @@ import { ApiError } from '../api/client';
 import buttons from '../components/Buttons.module.css';
 import { Loading } from '../components/Loading';
 import { RetryNotice } from '../components/RetryNotice';
+import { formatInstant } from '../format/format';
 import { recoveryAnswered } from './answers';
 import { askForRecovery, useReviewedAttempt, useReviewedAttempts } from './api';
-import { formatInZone } from './TermsPanel';
 import styles from './Test.module.css';
 
 const isStudentRemoved = (error: ApiError) =>
@@ -22,6 +22,15 @@ type Reviewed = z.output<typeof reviewTestAttempts.response>['attempts'][number]
  * part of the submission and is labelled so.
  */
 export function RecoveryPanel({ classId, resourceId }: { classId: string; resourceId: string }) {
+  return (
+    <section>
+      <h2 style={{ font: 'var(--pc-text-subsection)', margin: '24px 0 8px' }}>Unsent work</h2>
+      <Attempts classId={classId} resourceId={resourceId} />
+    </section>
+  );
+}
+
+function Attempts({ classId, resourceId }: { classId: string; resourceId: string }) {
   const queryClient = useQueryClient();
   const list = useReviewedAttempts(classId, resourceId);
   if (list.isError) {
@@ -67,7 +76,7 @@ function RecoveryRow({ classId, attempt }: { classId: string; attempt: Reviewed 
   const requested = attempt.recoveryRequestedAt;
   const received = attempt.localCopyAt;
   const answered = recoveryAnswered(requested, received);
-  const when = (iso: string) => formatInZone(iso, attempt.timeZone);
+  const when = (iso: string) => formatInstant(iso, attempt.timeZone);
 
   async function ask() {
     if (busy || reason.trim() === '') return;
@@ -177,7 +186,9 @@ function RecoveryRow({ classId, attempt }: { classId: string; attempt: Reviewed 
               <p>
                 <strong>{names.get(a.questionId) ?? a.questionId}</strong>
               </p>
-              <pre>{typeof a.value === 'string' ? a.value : JSON.stringify(a.value, null, 2)}</pre>
+              <pre className={styles.answerBox}>
+                {typeof a.value === 'string' ? a.value : JSON.stringify(a.value, null, 2)}
+              </pre>
             </div>
           ))}
         </div>

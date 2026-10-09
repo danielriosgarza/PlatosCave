@@ -4,6 +4,7 @@ import {
   type TransferView,
 } from '@parallax/contracts/routes/transfers';
 import { ApiError } from '../../api/client';
+import { downloadText } from '../../format/format';
 
 export type { TransferView };
 export { MAX_COPY_OUT_FILE_BYTES, MAX_COPY_OUT_SESSION_BYTES };
@@ -16,9 +17,6 @@ export function size(bytes: number): string {
   if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
-
-export const when = (iso: string) =>
-  new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 
 /** `results.csv` → `results (parallax).csv`, the name "save mine as a copy" writes (design §11). */
 export function copyName(path: string): string {
@@ -89,14 +87,5 @@ export function outcomeText(t: TransferView, host: string | null): string {
 
 /** Downloads the draft the page holds, for when a save to Parallax did not succeed. */
 export function downloadNotebook(notebook: Record<string, unknown>, filename: string) {
-  const url = URL.createObjectURL(
-    new Blob([JSON.stringify(notebook, null, 1)], { type: 'application/x-ipynb+json' }),
-  );
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.append(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
+  downloadText(filename, JSON.stringify(notebook, null, 1), 'application/x-ipynb+json');
 }

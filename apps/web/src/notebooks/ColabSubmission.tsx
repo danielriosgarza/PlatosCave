@@ -1,5 +1,6 @@
 import { type ChangeEvent, Fragment, useRef, useState } from 'react';
 import buttons from '../components/Buttons.module.css';
+import { formatInstant } from '../format/format';
 import { SnapshotView, snapshotEnvironment } from './files/SnapshotView';
 import styles from './Notebook.module.css';
 import {
@@ -22,8 +23,6 @@ interface Props {
   instructor: boolean;
 }
 
-const when = (iso: string) =>
-  new Date(iso).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
 const kilobytes = (bytes: number) => `${Math.max(1, Math.round(bytes / 1024))} KB`;
 
 /**
@@ -122,8 +121,8 @@ export function ColabSubmission({ classId, resourceId, instructor }: Props) {
         {problem ? <p role="alert">{problem}</p> : null}
         {receipt ? (
           <p role="status">
-            Received {when(receipt.receivedAt)} · version {receipt.version} · {receipt.filename} ·{' '}
-            {kilobytes(receipt.size)} · checksum {receipt.sha256.slice(0, 12)}
+            Received {formatInstant(receipt.receivedAt)} · version {receipt.version} ·{' '}
+            {receipt.filename} · {kilobytes(receipt.size)} · checksum {receipt.sha256.slice(0, 12)}
           </p>
         ) : null}
       </div>
@@ -202,7 +201,7 @@ function Submissions({
                 <td>
                   {row.filename} · {kilobytes(row.size)}
                 </td>
-                <td>{when(row.receivedAt)}</td>
+                <td>{formatInstant(row.receivedAt)}</td>
                 <td>
                   {row.workingCopyRevision === undefined
                     ? environmentText(row.environment)

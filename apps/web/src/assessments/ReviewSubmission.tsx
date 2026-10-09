@@ -1,8 +1,8 @@
 import { useEffect, useRef } from 'react';
 import buttons from '../components/Buttons.module.css';
+import { formatInstant } from '../format/format';
 import { isAnswered } from './answers';
 import type { AttemptView } from './api';
-import { formatInZone } from './TermsPanel';
 import styles from './Test.module.css';
 import type { Entry } from './useAnswers';
 
@@ -77,7 +77,7 @@ export function ReviewSubmission({
       ) : null}
       <p>
         {attempt.deadlineAt
-          ? `Closes ${formatInZone(attempt.deadlineAt, terms.timeZone)}.`
+          ? `Closes ${formatInstant(attempt.deadlineAt, terms.timeZone)}.`
           : 'This attempt has no deadline.'}{' '}
         You cannot change answers after you submit.
       </p>
