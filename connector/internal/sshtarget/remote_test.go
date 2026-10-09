@@ -15,7 +15,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"syscall"
 	"testing"
 	"time"
 
@@ -94,7 +93,7 @@ func newRemoteHost(t *testing.T, mode string, edit ...func(*sshtest.Options)) *r
 	// Whatever a test leaves serving is killed when it ends.
 	t.Cleanup(func() {
 		for _, rec := range jupytertest.Records(t, stub) {
-			syscall.Kill(rec.PID, syscall.SIGKILL)
+			killPID(rec.PID)
 		}
 	})
 	return h
@@ -169,8 +168,6 @@ func wantCode(t *testing.T, err error, code protocol.Code) {
 		t.Fatalf("got %v, want %s", err, code)
 	}
 }
-
-func alive(pid int) bool { return syscall.Kill(pid, 0) == nil }
 
 func waitGone(t *testing.T, pid int) {
 	t.Helper()
