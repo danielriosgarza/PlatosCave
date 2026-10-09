@@ -97,6 +97,8 @@ Defaults an operator may change, all in the environment (`apps/server/src/config
 | `RUNNER_SLOTS` | 4 (1–32) | concurrent sandbox containers (runner) |
 | `RETENTION_DEACTIVATED_GRACE_DAYS`, `RETENTION_AUDIT_DAYS` | unset (off) | retention policy (spec §13). The audit sweep keeps two kinds of event the product reads as state, whatever their age: the latest `membership.remove` of each person from each class (it keeps a removed student's work in review, grading and the results export) and the latest `test_attempt.recovery_requested` of each attempt (its recovery state). Older events of those kinds are deleted as usual |
 
+**Stored files that name people.** A results export (CSV, `classes/{classId}/exports/`) holds students' names and grades. Its download link lasts five minutes and no row refers to the file, so the daily object sweep (04:13, after retention) removes every export older than 24 hours (`UNREFERENCED_OBJECT_MIN_AGE_MS`). The sweep runs whatever the retention policy, so an export never keeps a deleted or anonymised student's name for more than a day plus the time to the next sweep; an instructor who needs the file again exports again. Files copied out of notebook sessions and working-copy revisions are swept the same way once no row refers to them.
+
 Spec §17 asks the operator to decide session limits, expected concurrent classes and the execution budget before deployment: record the values chosen here, next to the host and region, when they are decided.
 
 ## Upgrades and rollback

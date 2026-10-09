@@ -6,6 +6,7 @@ import type { AnyPgColumn, PgColumn } from 'drizzle-orm/pg-core';
 import type { z } from 'zod';
 import type { ClassManagerScope, ClassScope, CourseScope, UserScope } from '../auth/scope';
 import {
+  classExportPrefix,
   classTransferPrefix,
   classWorkingCopyPrefix,
   objectKey,
@@ -734,8 +735,13 @@ export async function applyRetention(
 /** Objects written this recently are left alone: a put lands before the row that names its key. */
 export const UNREFERENCED_OBJECT_MIN_AGE_MS = 86_400_000;
 
-/** The storage areas whose rows account deletion and retention delete (P3-AUD10b). */
-const SWEPT_AREAS = [classTransferPrefix, classWorkingCopyPrefix];
+/**
+ * The storage areas the sweep clears (P3-AUD10b, P4-AUD2). Transfers and working copies go when
+ * their rows do. A results export (P4-09) has no row: its download link lasts minutes, so the
+ * file is kept for `UNREFERENCED_OBJECT_MIN_AGE_MS` and removed by the next sweep, which keeps a
+ * student's name and grades out of storage after the account is deleted or anonymised.
+ */
+const SWEPT_AREAS = [classTransferPrefix, classWorkingCopyPrefix, classExportPrefix];
 
 /** How many keys one reference check asks about. */
 const SWEEP_BATCH = 500;
