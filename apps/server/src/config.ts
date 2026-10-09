@@ -104,10 +104,10 @@ const Env = z
     RUN_RATE_LIMIT: z.coerce.number().int().positive().default(30),
     /**
      * `GET /api/ready` answers 200/503 with the version, mode and per-dependency detail only to a
-     * probe: a connection from the host itself (the compose health check) that carries no
-     * forwarding header, or a request bearing `X-Ready-Token` equal to READY_PROBE_TOKEN. Anyone
-     * else gets the status alone, and at most READY_RATE_LIMIT such requests per address per
-     * minute, because every answer runs a database query and a storage call.
+     * request bearing `X-Ready-Token` equal to READY_PROBE_TOKEN (the compose health check inside
+     * the container, a proxy's or monitor's probe). Anyone else gets the status alone, and at
+     * most READY_RATE_LIMIT such requests per address per minute, because every answer runs a
+     * database query and a storage call. Requests with the token are never limited.
      */
     READY_PROBE_TOKEN: z.string().min(16).optional(),
     READY_RATE_LIMIT: z.coerce.number().int().positive().default(30),

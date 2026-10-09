@@ -147,6 +147,7 @@ describe('compose.prod.yml', () => {
       CONTENT_HOST: 'content.parallax.example.org',
       SESSION_SECRET: 's'.repeat(40),
       CONTENT_TOKEN_SECRET: 'c'.repeat(40),
+      READY_PROBE_TOKEN: 'r'.repeat(24),
       TRUST_PROXY: '172.16.0.0/12',
       S3_ACCESS_KEY_ID: 'GK0123456789abcdef01234567',
       S3_SECRET_ACCESS_KEY: 'k'.repeat(64),

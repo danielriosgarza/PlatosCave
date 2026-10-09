@@ -66,21 +66,21 @@ x-server-env: &server-env
   AUTH_VERIFY_RATE_LIMIT: ${AUTH_VERIFY_RATE_LIMIT:-240}
   RUN_RATE_LIMIT: ${RUN_RATE_LIMIT:-30}
   READY_RATE_LIMIT: ${READY_RATE_LIMIT:-30}
-  READY_PROBE_TOKEN: ${READY_PROBE_TOKEN:-}
+  READY_PROBE_TOKEN: ${READY_PROBE_TOKEN:?secret, 16+ characters, the health check and any proxy probe send as X-Ready-Token}
   SESSION_TTL_DAYS: ${SESSION_TTL_DAYS:-14}
   LEASE_IDLE_MINUTES: ${LEASE_IDLE_MINUTES:-30}
   LEASE_GRACE_MINUTES: ${LEASE_GRACE_MINUTES:-5}
 
 # The app answers by Host (ADR-0002), so the probe names the app host; ready is 503 until the
-# database, the job queue and the object store answer. The probe connects from inside the
-# container, so it is the host itself: it gets the dependency detail and is not rate limited.
+# database, the job queue and the object store answer. The probe sends READY_PROBE_TOKEN, so it
+# gets the dependency detail and is not rate limited.
 x-ready: &ready
   test:
     - CMD
     - node
     - -e
     - >-
-      require('http').get({host:'127.0.0.1',port:3000,path:'/api/ready',headers:{host:process.env.APP_HOST}},
+      require('http').get({host:'127.0.0.1',port:3000,path:'/api/ready',headers:{host:process.env.APP_HOST,'x-ready-token':process.env.READY_PROBE_TOKEN}},
       (r)=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))
   interval: 15s
   timeout: 10s

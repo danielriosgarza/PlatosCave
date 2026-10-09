@@ -6,25 +6,19 @@ import { PROBE_TIMEOUT_MS, probe } from '../../db/client';
 import { VERSION } from '../../version';
 import { registerRoute } from '../register';
 
-const LOOPBACK = new Set(['127.0.0.1', '::1', '::ffff:127.0.0.1']);
-/** A reverse proxy on the host connects from loopback too; these headers give it away. */
-const FORWARDING_HEADERS = ['x-forwarded-for', 'x-forwarded-host', 'x-real-ip', 'forwarded'];
-
 const digest = (value: string) => createHash('sha256').update(value).digest();
 
 /**
- * Whether the caller is an orchestrator probe and may see the detail: a connection from the host
- * itself that no proxy relayed, or a request bearing the configured token. The socket address is
- * used, not `req.ip`, which a client behind `TRUST_PROXY` can influence.
+ * Whether the caller presents the configured probe token and may see the detail. The token is the
+ * only way in: no address or header heuristic, which a same-host proxy or a TCP-level proxy would
+ * turn into "everyone is a probe". Compared as digests, in constant time.
  */
 function isProbe(req: FastifyRequest, token: string | undefined): boolean {
   const presented = req.headers['x-ready-token'];
-  if (token && typeof presented === 'string') {
-    if (timingSafeEqual(digest(presented), digest(token))) return true;
-  }
   return (
-    LOOPBACK.has(req.socket.remoteAddress ?? '') &&
-    !FORWARDING_HEADERS.some((h) => req.headers[h] !== undefined)
+    token !== undefined &&
+    typeof presented === 'string' &&
+    timingSafeEqual(digest(presented), digest(token))
   );
 }
 
@@ -62,6 +56,8 @@ export default function readyRoutes(app: FastifyInstance, deps: RouteDeps): void
   const { READY_PROBE_TOKEN: token, READY_RATE_LIMIT: limit } = deps.config;
   const timeoutMs = deps.probeTimeoutMs ?? PROBE_TIMEOUT_MS;
   const { db, storage } = deps;
+  // Decided once per request, by the limiter, so the limit and the body cannot disagree.
+  const probes = new WeakSet<FastifyRequest>();
 
   registerRoute(
     app,
@@ -94,7 +90,7 @@ export default function readyRoutes(app: FastifyInstance, deps: RouteDeps): void
       const isReady = Object.values(checks).every((c) => !c.required || c.status === 'ok');
       const status = isReady ? ('ready' as const) : ('not_ready' as const);
       // Anyone but a probe learns only whether the instance is ready (ADR-0002).
-      const body = isProbe(req, token)
+      const body = probes.has(req)
         ? {
             status,
             version: VERSION,
@@ -104,13 +100,17 @@ export default function readyRoutes(app: FastifyInstance, deps: RouteDeps): void
         : { status };
       return isReady ? body : fail(503, body);
     },
-    // Every answer runs a database query and a storage call, so unknown callers are limited per
-    // address; probes are not counted, so a health check never trips it.
+    // Every answer runs a database query and a storage call, so callers without the probe
+    // token are limited per address; probes are not counted, so a health check never trips it.
     {
       rateLimit: {
         max: limit,
         timeWindow: '1 minute',
-        allowList: (req) => isProbe(req, token),
+        allowList: (req) => {
+          const probe = isProbe(req, token);
+          if (probe) probes.add(req);
+          return probe;
+        },
       },
     },
   );

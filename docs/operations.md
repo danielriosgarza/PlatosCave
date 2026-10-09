@@ -51,7 +51,7 @@ Allow WebSocket upgrades and an idle timeout of at least 60 seconds on the relay
 | Liveness | `GET /api/health` | 200 while the process serves; carries `db: ok | unavailable | skipped` | restart a hung process |
 | Readiness | `GET /api/ready` | 200 `ready`, or 503 `not_ready`, with the same body | take an instance out of rotation; the compose health check |
 
-**Who sees the detail.** Only a probe gets the body below: a connection from the host itself (the compose health check runs inside the container) that carries none of `X-Forwarded-For`, `X-Forwarded-Host`, `X-Real-IP` or `Forwarded`, or a request with the header `X-Ready-Token` equal to `READY_PROBE_TOKEN` (at least 16 characters; unset by default). Every other caller, including one a proxy on the same host relays from loopback, gets `{"status": "ready"}` or `{"status": "not_ready"}` with the same 200/503, and no version, mode or dependency. Those callers are limited to `READY_RATE_LIMIT` requests per address per minute (default 30, then `429`); probes are not counted. An external monitor that needs the detail sends the token and is not limited.
+**Who sees the detail.** Only a request that sends the header `X-Ready-Token` equal to `READY_PROBE_TOKEN` (at least 16 characters; `compose.prod.yml` requires it) gets the body below. The compose health check sends it from inside the container. A proxy's or load balancer's probe, and any external monitor, must send it too: without it a caller gets `{"status": "ready"}` or `{"status": "not_ready"}` with the same 200/503, no version, mode or dependency, and is limited to `READY_RATE_LIMIT` requests per address per minute (default 30, then `429`). A probe that polls faster than that and omits the token is answered `429` and a proxy will take a ready instance out of rotation. Requests with the token are never counted. Being on the Docker host or on loopback gives no detail: `curl http://127.0.0.1:3000/api/ready` there reaches the container through the published port and is an ordinary caller, so add `-H "X-Ready-Token: $READY_PROBE_TOKEN"`.
 
 The readiness body, for a probe, lists each dependency with `status` (`ok`, `unavailable`, `skipped`), `required`, and `latencyMs`; it never carries an error message, host or credential (the cause is in the log as `readiness: dependency unavailable`, field `dependency`).
 
@@ -62,7 +62,7 @@ The readiness body, for a probe, lists each dependency with `status` (`ok`, `una
 | `executionQueue` | no | the runner's queue (`pgboss_exec`) did not start: code runs answer 503, everything else works |
 | `storage` | yes | the object store is unusable within 5 s: the bucket does not exist or answers an error (S3 `HeadBucket`, which needs the `s3:ListBucket` permission beside Get, Put and Delete of objects), or the storage directory cannot be written |
 
-`/api/ready` runs a database query and a storage call on every request and names the failing dependency: use it from the compose health check and the proxy's own probe. The app itself withholds the detail and limits unknown callers, so the public host need not answer 404 for it, but a proxy that does is still the stronger setup. The worker and the runner serve no HTTP. The worker logs `worker started` with its job names, and exits non-zero when it cannot start; the runner's health is the queue: see §Incidents. Watch, per design §10.4, the depth of `execution.run` and the age of its oldest `created` job.
+`/api/ready` runs a database query and a storage call on every request and names the failing dependency: use it from the compose health check and the proxy's own probe, both sending `X-Ready-Token`. The app itself withholds the detail and limits unknown callers, so the public host need not answer 404 for it, but a proxy that does is still the stronger setup. The worker and the runner serve no HTTP. The worker logs `worker started` with its job names, and exits non-zero when it cannot start; the runner's health is the queue: see §Incidents. Watch, per design §10.4, the depth of `execution.run` and the age of its oldest `created` job.
 
 ## Logs
 
@@ -81,7 +81,7 @@ Rules for new log calls: log ids, counts and codes, never a request, a result or
 | Queued or running sample runs per student | 2, across classes | student | fixed (spec §11) |
 | Connector pairing: codes created, failed pairings, polls | 5 / hour per person; 10 failures in 10 min block an address for 10 min; 1 poll / s | person, address, connector | fixed (connector design §3) |
 | Connector link attempts | 30 / min | address | fixed |
-| **Readiness** (`/api/ready`, callers that are not probes) | 30 / min | client address | `READY_RATE_LIMIT` |
+| **Readiness** (`/api/ready`, callers without `X-Ready-Token`) | 30 / min | client address | `READY_RATE_LIMIT` |
 | Notebook browser channel messages, kernel executes | 60 / s, 30 / s | session | fixed |
 
 Execution limits are counted per session so a class behind one campus network, or the load test's single client, does not share a budget; the sign-in limits are per address because no session exists yet. Over a limit the API answers `429` with `error: "too many requests"` and `Try again in …`. Limits are in memory: they reset when a process restarts and are per process, so a second `api` replica doubles them.
@@ -97,7 +97,7 @@ Defaults an operator may change, all in the environment (`apps/server/src/config
 | `LEASE_GRACE_MINUTES` | 5 (1–60) | closing the tab keeps the kernel this long. Both lease values apply when a request names no lease and the class template sets none; the web Connect panel pre-fills them |
 | `RUN_RATE_LIMIT` | 30 | code-run requests per session per minute |
 | `READY_RATE_LIMIT` | 30 | `/api/ready` requests per address per minute from callers that are not probes |
-| `READY_PROBE_TOKEN` | unset | secret (16+ characters) an external monitor sends as `X-Ready-Token` to get the readiness detail |
+| `READY_PROBE_TOKEN` | unset (required by `compose.prod.yml`) | secret (16+ characters) the health check, a proxy probe or a monitor sends as `X-Ready-Token` to get the readiness detail and skip `READY_RATE_LIMIT` |
 | `AUTH_LINK_RATE_LIMIT`, `AUTH_VERIFY_RATE_LIMIT` | 120, 240 | sign-in limits per address per 15 minutes |
 | `RUNNER_SLOTS` | 4 (1–32) | concurrent sandbox containers (runner) |
 | `RETENTION_DEACTIVATED_GRACE_DAYS`, `RETENTION_AUDIT_DAYS` | unset (off) | retention policy (spec §13). The audit sweep keeps two kinds of event the product reads as state, whatever their age: the latest `membership.remove` of each person from each class (it keeps a removed student's work in review, grading and the results export) and the latest `test_attempt.recovery_requested` of each attempt (its recovery state). Older events of those kinds are deleted as usual |

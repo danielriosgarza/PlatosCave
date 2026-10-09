@@ -13,24 +13,28 @@ const Check = z.object({
   latencyMs: z.number().int().nonnegative(),
 });
 
-/**
- * `GET /api/ready` (docs/operations.md §Readiness). A probe (the host itself, or a request with
- * the configured token) gets all fields; every other caller gets `status` alone, so the version
- * and which backing service is down are not disclosed (ADR-0002).
- */
-export const ReadyBody = z.object({
+/** What a probe sees: every dependency, the version and the mode. */
+const ReadyDetail = z.object({
   status: z.enum(['ready', 'not_ready']),
-  version: z.string().optional(),
-  mode: z.enum(['api', 'relay']).optional(),
-  checks: z
-    .object({
-      database: Check,
-      queue: Check,
-      executionQueue: Check,
-      storage: Check,
-    })
-    .optional(),
+  version: z.string(),
+  mode: z.enum(['api', 'relay']),
+  checks: z.object({
+    database: Check,
+    queue: Check,
+    executionQueue: Check,
+    storage: Check,
+  }),
 });
+
+/**
+ * `GET /api/ready` (docs/operations.md §Readiness). A caller bearing the probe token gets the
+ * full detail; every other caller gets `status` alone, so the version and which backing service
+ * is down are not disclosed (ADR-0002). A union of the two shapes, so a partial body is rejected.
+ */
+export const ReadyBody = z.union([
+  ReadyDetail,
+  z.object({ status: z.enum(['ready', 'not_ready']) }).strict(),
+]);
 
 /**
  * Readiness for a load balancer or an orchestrator: 200 when every required dependency answers,
