@@ -17,6 +17,7 @@ import type { RouteDeps } from '../../app';
 import type { ClassScope } from '../../auth/scope';
 import { enqueueGrading } from '../../db/execution/runs';
 import * as tests from '../../db/tests';
+import { enqueueScheduledRelease } from '../../jobs/grades-release.job';
 import { enqueueTestsExpire } from '../../jobs/tests-expire.job';
 import { notFound, registerRoute, settle } from '../register';
 
@@ -37,6 +38,28 @@ export default function testRoutes(app: FastifyInstance, deps: RouteDeps): void 
     if (!deps.boss || !deadlineAt) return;
     await enqueueTestsExpire(deps.boss, scope, attemptId, deadlineAt).catch((err) =>
       req.log.error({ err, attemptId }, 'could not queue the test deadline job'),
+    );
+  };
+
+  /**
+   * Queues the scheduled release of results (§11) the attempt's terms promise. Every real
+   * student's start queues one, so a lost send is covered by the next start with the same
+   * schedule, and the job releases each grade once however many run. A schedule already past
+   * when the attempt starts has nothing of it to release: its grades are saved later and wait
+   * for an instructor's release.
+   */
+  const scheduleRelease = async (
+    req: FastifyRequest,
+    scope: ClassScope,
+    resourceId: string,
+    release: { results: 'manual' | 'scheduled'; at: string | null },
+  ) => {
+    if (!deps.boss || scope.membership.isPreview) return;
+    if (release.results !== 'scheduled' || release.at === null) return;
+    const at = new Date(release.at);
+    if (at <= now()) return;
+    await enqueueScheduledRelease(deps.boss, scope, resourceId, at).catch((err) =>
+      req.log.error({ err, resourceId }, 'could not queue the scheduled release of results'),
     );
   };
 
@@ -65,6 +88,7 @@ export default function testRoutes(app: FastifyInstance, deps: RouteDeps): void 
     const { started, ...view } = settle(outcome);
     if (started) {
       await scheduleExpiry(req, scope, view.id, view.deadlineAt ? new Date(view.deadlineAt) : null);
+      await scheduleRelease(req, scope, params.resourceId, view.terms.release);
     }
     return view;
   });
