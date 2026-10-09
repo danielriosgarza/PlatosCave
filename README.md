@@ -11,6 +11,8 @@ The design follows [the supplied layout reference](docs/idea_draft.png). **Layou
 
 All course material and student records are fixtures. Saves remain in memory and reset on reload. No authentication, code execution, external computing session, submission, or grade delivery occurs. The optional inline preview remembers navigation choices only.
 
+Instructors can export a class's results as CSV and archive or restore a class (course owners and class membership managers) or a course (owners); an archived class or course stays readable and takes no changes until restored. Students can download their own annotations and posts for a class as JSON. See [operations](docs/operations.md).
+
 Implementation is delivered autonomously by Claude sessions:
 
 - [Architecture decisions](docs/adr/): technology stack, authorization and class isolation, content releases, code-execution isolation, notebook connector, testing strategy.

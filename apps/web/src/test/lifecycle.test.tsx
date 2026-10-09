@@ -254,6 +254,132 @@ describe('archive and restore', () => {
     );
   });
 
+  it('A21 a membership manager who does not own the course archives the class, by keyboard, without axe violations', async () => {
+    const user = userEvent.setup();
+    const manager = makeMe({
+      classes: [{ ...instructorIn(CLASS_A, 'Autumn 2026 A'), manageMembers: true }],
+    });
+    const cards: Cards = { classes: [CLASS_CARD], courses: [], canCreateCourse: false };
+    const posts: string[] = [];
+    stubApi((url, init) => {
+      if (url === '/api/me') return { status: 200, body: manager };
+      if (url === '/api/courses' && init?.method === 'GET') return { status: 200, body: cards };
+      if (init?.method === 'POST') {
+        posts.push(url);
+        cards.classes = [{ ...CLASS_CARD, archived: true }];
+        return { status: 200, body: { id: CLASS_A, archived: true } };
+      }
+      return { status: 404, body: {} };
+    });
+    const { container } = renderApp('/courses?view=instructor');
+    const archive = await screen.findByRole('button', {
+      name: 'Archive class Statistical thinking · Autumn 2026 A',
+    });
+    archive.focus();
+    await user.keyboard('{Enter}');
+    const dialog = await screen.findByRole('dialog', { name: 'Archive class?' });
+    await expectNoAxeViolations(container);
+    await user.click(within(dialog).getByRole('button', { name: 'Archive class' }));
+    expect(
+      await screen.findByText('Statistical thinking · Autumn 2026 A was archived.'),
+    ).toBeVisible();
+    expect(posts).toEqual([`/api/classes/${CLASS_A}/archive`]);
+  });
+
+  it('A21 an instructor without the membership grant who does not own the course gets no class archive control', async () => {
+    const cards: Cards = { classes: [CLASS_CARD], courses: [], canCreateCourse: false };
+    serveCards(cards, () => undefined);
+    renderApp('/courses?view=instructor');
+    await screen.findByRole('link', { name: 'Class review' });
+    expect(screen.queryByRole('button', { name: /^Archive class/ })).not.toBeInTheDocument();
+  });
+
+  it('A21 a membership manager gets no class control while the class’s course is archived', async () => {
+    const manager = makeMe({
+      classes: [{ ...instructorIn(CLASS_A, 'Autumn 2026 A'), manageMembers: true }],
+    });
+    const cards: Cards = {
+      classes: [{ ...CLASS_CARD, archived: true }],
+      courses: [{ ...COURSE_CARD, owner: false, archived: true }],
+      canCreateCourse: false,
+    };
+    stubApi((url) =>
+      url === '/api/me'
+        ? { status: 200, body: manager }
+        : url === '/api/courses'
+          ? { status: 200, body: cards }
+          : { status: 404, body: {} },
+    );
+    renderApp('/courses?view=instructor');
+    await screen.findByRole('link', { name: 'Class review' });
+    expect(screen.queryByRole('button', { name: /^(Archive|Restore) class/ })).toBeNull();
+  });
+
+  it('A21 cancelling while the request runs reports nothing afterwards and shows no stale error', async () => {
+    const user = userEvent.setup();
+    const cards: Cards = { classes: [], courses: [COURSE_CARD], canCreateCourse: true };
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    stubApi((url, init) => {
+      if (url === '/api/me') return { status: 200, body: instructor };
+      if (url === '/api/courses' && init?.method === 'GET') return { status: 200, body: cards };
+      return { status: 404, body: {} };
+    });
+    const inner = globalThis.fetch;
+    vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === `/api/courses/${COURSE}/archive`) {
+        await gate;
+        return new Response(JSON.stringify({ error: 'boom' }), {
+          status: 500,
+          headers: { 'content-type': 'application/json' },
+        });
+      }
+      return inner(input, init);
+    });
+    renderApp('/courses?view=instructor');
+    await user.click(
+      await screen.findByRole('button', { name: 'Archive course Statistical thinking' }),
+    );
+    const dialog = await screen.findByRole('dialog', { name: 'Archive course?' });
+    await user.click(within(dialog).getByRole('button', { name: 'Archive course' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    release();
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+    await user.click(screen.getByRole('button', { name: 'Archive course Statistical thinking' }));
+    const reopened = await screen.findByRole('dialog', { name: 'Archive course?' });
+    expect(within(reopened).queryByRole('alert')).not.toBeInTheDocument();
+    expect(screen.queryByText(/was archived\./)).not.toBeInTheDocument();
+  });
+
+  it('A21 the dialog closes on success before the cards reload, so its title never flips', async () => {
+    const user = userEvent.setup();
+    const cards: Cards = { classes: [], courses: [COURSE_CARD], canCreateCourse: true };
+    serveCards(cards, (url) => {
+      if (url !== `/api/courses/${COURSE}/archive`) return undefined;
+      cards.courses = [{ ...COURSE_CARD, archived: true }];
+      return { status: 200, body: { id: COURSE, archived: true } };
+    });
+    renderApp('/courses?view=instructor');
+    await user.click(
+      await screen.findByRole('button', { name: 'Archive course Statistical thinking' }),
+    );
+    const dialog = await screen.findByRole('dialog', { name: 'Archive course?' });
+    const titles: string[] = [];
+    const watch = new MutationObserver(() => {
+      for (const d of document.querySelectorAll('[role="dialog"]'))
+        titles.push(d.getAttribute('aria-label') ?? d.textContent ?? '');
+    });
+    watch.observe(document.body, { subtree: true, childList: true, characterData: true });
+    await user.click(within(dialog).getByRole('button', { name: 'Archive course' }));
+    await screen.findByText('Statistical thinking was archived.');
+    watch.disconnect();
+    expect(titles.filter((t) => t.includes('Restore'))).toEqual([]);
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
   it('A21 an editor who does not own the course gets no archive control', async () => {
     const cards: Cards = {
       classes: [CLASS_CARD],
@@ -335,6 +461,43 @@ describe('annotation export', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('could not be downloaded');
     expect(screen.getByRole('button', { name: 'Try again' })).toBeVisible();
     expect(created).not.toHaveBeenCalled();
+  });
+
+  it('A21 the annotation file is named from the course title and class name', async () => {
+    const user = userEvent.setup();
+    URL.createObjectURL = () => 'blob:annotations';
+    URL.revokeObjectURL = () => undefined;
+    const names: string[] = [];
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
+      this: HTMLAnchorElement,
+    ) {
+      names.push(this.download);
+    });
+    serveStudent(() => ({ status: 200, body: data }));
+    renderApp(`/classes/${CLASS_A}/topics`);
+    await user.click(await screen.findByRole('button', { name: 'Download my annotations' }));
+    await screen.findByText(/was handed to the browser/);
+    expect(names).toEqual(['annotations-statistical-thinking-autumn-2026-a.json']);
+  });
+
+  it('A21 the annotation file falls back to the class id when the names have no usable characters', async () => {
+    const user = userEvent.setup();
+    URL.createObjectURL = () => 'blob:annotations';
+    URL.revokeObjectURL = () => undefined;
+    const names: string[] = [];
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
+      this: HTMLAnchorElement,
+    ) {
+      names.push(this.download);
+    });
+    serveStudent(() => ({
+      status: 200,
+      body: { ...data, course: { id: COURSE, title: '数学' }, class: { id: CLASS_A, name: '…' } },
+    }));
+    renderApp(`/classes/${CLASS_A}/topics`);
+    await user.click(await screen.findByRole('button', { name: 'Download my annotations' }));
+    await screen.findByText(/was handed to the browser/);
+    expect(names).toEqual([`annotations-${CLASS_A}.json`]);
   });
 
   it('A21 instructors are not offered the student annotation download', async () => {

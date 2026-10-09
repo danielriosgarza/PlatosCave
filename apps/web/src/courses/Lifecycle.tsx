@@ -5,7 +5,7 @@ import {
   restoreCourse,
 } from '@parallax/contracts/routes/lifecycle';
 import { useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { ApiError, call } from '../api/client';
 import buttons from '../components/Buttons.module.css';
 import styles from './Courses.module.css';
@@ -57,17 +57,31 @@ export function ArchiveControl({
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Bumped on every open and close, so an answer that arrives after the dialog was closed (or
+  // reopened) is ignored: the person cancelled it, and the cards still reload to the real state.
+  const round = useRef(0);
   const noun = target.kind;
   const label = `${target.archived ? 'Restore' : 'Archive'} ${noun}`;
   const confirm = async () => {
+    const mine = ++round.current;
+    const current = () => round.current === mine;
     setBusy(true);
     setError(null);
     try {
       await run(target);
-      await refreshContexts(queryClient);
+      if (!current()) {
+        void refreshContexts(queryClient);
+        return;
+      }
+      // Close first, so the title cannot flip to the opposite action while the cards reload.
       setOpen(false);
+      await refreshContexts(queryClient);
       onDone(`${target.name} was ${target.archived ? 'restored' : 'archived'}.`);
     } catch (e) {
+      if (!current()) {
+        void refreshContexts(queryClient);
+        return;
+      }
       const text = refusal(e, target);
       if (e instanceof ApiError && e.status === 409) {
         // The card is out of date (the state changed elsewhere). Closing keeps the dialog from
@@ -79,10 +93,12 @@ export function ArchiveControl({
         setError(text);
       }
     } finally {
-      setBusy(false);
+      if (current()) setBusy(false);
     }
   };
   const close = () => {
+    round.current++;
+    setBusy(false);
     setOpen(false);
     setError(null);
   };

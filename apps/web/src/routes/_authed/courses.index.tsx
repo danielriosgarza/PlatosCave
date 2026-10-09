@@ -446,10 +446,21 @@ function InstructorCards({
   search: string;
   onDone: (text: string) => void;
 }) {
-  // The server also lets a membership manager archive a class, but the cards do not carry that
-  // grant, so the class control is offered to course owners, and only while the course is active
-  // (a class of an archived course shows archived and cannot be restored on its own); the server enforces the scope (§3, §13).
-  const owned = new Set(courses.filter((c) => c.owner && !c.archived).map((c) => c.courseId));
+  // The server accepts the class archive from a course owner and from a membership manager of the
+  // class (§3, §13), so the control follows either, and is hidden while the class's course is
+  // archived (the class then shows archived and only the course can be restored). A manager who
+  // holds no card for the course cannot see that state; the server then refuses with 409 and the
+  // page says why.
+  const session = useSession();
+  const managed = new Set(
+    session.status === 'signed-in'
+      ? session.me.classes.filter((c) => c.manageMembers).map((c) => c.classId)
+      : [],
+  );
+  const owned = new Set(courses.filter((c) => c.owner).map((c) => c.courseId));
+  const archivedCourses = new Set(courses.filter((c) => c.archived).map((c) => c.courseId));
+  const canArchiveClass = (c: ClassCard) =>
+    (owned.has(c.courseId) || managed.has(c.classId)) && !archivedCourses.has(c.courseId);
   const visibleClasses = classes.filter(
     (c) => matchesFilter(c, filter) && matchesTitle(c.courseTitle, search),
   );
@@ -490,7 +501,7 @@ function InstructorCards({
                 <Link to="/classes/$classId/review" params={{ classId: c.classId }}>
                   Class review
                 </Link>
-                {owned.has(c.courseId) ? (
+                {canArchiveClass(c) ? (
                   <ArchiveControl
                     target={{
                       kind: 'class',

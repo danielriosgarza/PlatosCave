@@ -12,6 +12,24 @@ type State =
   | { kind: 'done'; annotations: number; posts: number }
   | { kind: 'error' };
 
+/** A file name made of the course title and class name, or the class UUID when nothing usable is left. */
+export function annotationsFileName(data: {
+  course: { title: string };
+  class: { id: string; name: string };
+}): string {
+  const slug = (text: string) =>
+    text
+      .normalize('NFKD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 60)
+      .replace(/-+$/, '');
+  const parts = [slug(data.course.title), slug(data.class.name)].filter(Boolean);
+  return `annotations-${parts.length > 0 ? parts.join('-') : data.class.id}.json`;
+}
+
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
 /**
@@ -24,11 +42,7 @@ export function DownloadAnnotations({ classId, cohort }: { classId: string; coho
     setState({ kind: 'sending' });
     try {
       const data = await call(exportAnnotations, { params: { classId } });
-      downloadText(
-        JSON.stringify(data, null, 2),
-        `annotations-${classId}.json`,
-        'application/json',
-      );
+      downloadText(JSON.stringify(data, null, 2), annotationsFileName(data), 'application/json');
       setState({ kind: 'done', annotations: data.annotations.length, posts: data.posts.length });
     } catch {
       setState({ kind: 'error' });
