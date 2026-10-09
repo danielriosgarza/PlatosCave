@@ -27,6 +27,7 @@ import { startRelay } from './relay';
  * an operator sets in the environment.
  */
 
+const READY_TOKEN = 'integration-probe-token-0123';
 const start = new Date('2026-10-01T09:00:00Z');
 
 describe('readiness with a real database, queue and object store', () => {
@@ -51,12 +52,19 @@ describe('readiness with a real database, queue and object store', () => {
     });
     await boss.start();
     await ensureExecQueues(boss);
-    const app = await buildApp(loadConfig({ NODE_ENV: 'test', LOG_LEVEL: 'silent' }), {
-      db: testDb.db,
-      boss,
-      bossExec: boss,
+    const app = await buildApp(
+      loadConfig({ NODE_ENV: 'test', LOG_LEVEL: 'silent', READY_PROBE_TOKEN: READY_TOKEN }),
+      {
+        db: testDb.db,
+        boss,
+        bossExec: boss,
+      },
+    );
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/ready',
+      headers: { 'x-ready-token': READY_TOKEN },
     });
-    const res = await app.inject({ method: 'GET', url: '/api/ready' });
     expect(res.statusCode).toBe(200);
     expect(res.json()).toMatchObject({
       status: 'ready',
@@ -72,10 +80,17 @@ describe('readiness with a real database, queue and object store', () => {
   });
 
   test('ready answers 503 when the job queue did not start, and health still answers 200', async () => {
-    const app = await buildApp(loadConfig({ NODE_ENV: 'test', LOG_LEVEL: 'silent' }), {
-      db: testDb.db,
+    const app = await buildApp(
+      loadConfig({ NODE_ENV: 'test', LOG_LEVEL: 'silent', READY_PROBE_TOKEN: READY_TOKEN }),
+      {
+        db: testDb.db,
+      },
+    );
+    const res = await app.inject({
+      method: 'GET',
+      url: '/api/ready',
+      headers: { 'x-ready-token': READY_TOKEN },
     });
-    const res = await app.inject({ method: 'GET', url: '/api/ready' });
     expect(res.statusCode).toBe(503);
     expect(res.json()).toMatchObject({
       status: 'not_ready',

@@ -20,7 +20,7 @@ For a real deployment give the runner its own host (design §10.1): the socket i
 ## First start
 
 1. **Host.** Docker with Compose v2; for sandboxes, gVisor (`runsc`) registered as a Docker runtime (`RUNNER_DOCKER_RUNTIME`, default `runsc`). Note the group id of `/var/run/docker.sock` (`stat -c %g /var/run/docker.sock`) for `DOCKER_GID`.
-2. **Environment file** `prod.env` (never committed; mode 0600). Required, no defaults: `POSTGRES_PASSWORD` and `RUNNER_DB_PASSWORD` (both go into connection URLs, so generate them URL-safe: `openssl rand -hex 32`; base64 output contains `/`, `+` and `=`), `APP_ORIGIN`, `APP_HOST`, `CONTENT_ORIGIN`, `CONTENT_HOST` (two host names, ADR-0002), `SESSION_SECRET` and `CONTENT_TOKEN_SECRET` (32 or more random characters each: `openssl rand -base64 48`), `TRUST_PROXY`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `SMTP_URL`, `MAIL_FROM`, `GARAGE_CONFIG`, `DOCKER_GID`, `RUNNER_RUNTIMES`, `RUNNER_IMAGES`. `docker compose config` names the first one still missing. Set `INSTRUCTOR_EMAILS`, `RETENTION_DEACTIVATED_GRACE_DAYS` and `RETENTION_AUDIT_DAYS` before the first class (spec §13: retention is decided before production; each rule is off while unset).
+2. **Environment file** `prod.env` (never committed; mode 0600). Required, no defaults: `POSTGRES_PASSWORD` and `RUNNER_DB_PASSWORD` (both go into connection URLs, so generate them URL-safe: `openssl rand -hex 32`; base64 output contains `/`, `+` and `=`), `APP_ORIGIN`, `APP_HOST`, `CONTENT_ORIGIN`, `CONTENT_HOST` (two host names, ADR-0002), `SESSION_SECRET` and `CONTENT_TOKEN_SECRET` (32 or more random characters each: `openssl rand -base64 48`), `READY_PROBE_TOKEN` (16 or more random characters, sent as `X-Ready-Token` by the health check and by any proxy or monitor probe of `/api/ready`: `openssl rand -hex 32`), `TRUST_PROXY`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `SMTP_URL`, `MAIL_FROM`, `GARAGE_CONFIG`, `DOCKER_GID`, `RUNNER_RUNTIMES`, `RUNNER_IMAGES`. `docker compose config` names the first one still missing. Set `INSTRUCTOR_EMAILS`, `RETENTION_DEACTIVATED_GRACE_DAYS` and `RETENTION_AUDIT_DAYS` before the first class (spec §13: retention is decided before production; each rule is off while unset).
 3. **Garage.** Write your own `garage.toml` (the file in `infra/garage` carries a published development secret) and point `GARAGE_CONFIG` at it. Start `garage`, assign its layout, create the bucket `S3_BUCKET` and an access key with read and write on it, as `scripts/garage-init.sh` does for development; put the key in `prod.env`.
 4. **Runtimes and images.** `RUNNER_RUNTIMES` (server) and `RUNNER_IMAGES` (runner) are two views of one decision and change together. Both list **every** runtime the course may select, today `python-3.12` and `r-4.6`, each pinned by digest: a runtime missing from `RUNNER_IMAGES` makes every run of it end `image_not_allowed`, and production refuses a runtime without a digest. Keep the previous digest in `RUNNER_IMAGES` after an update, so replays still find it (design §10.4). Pull the images on the runner's host first: `RUNNER_PULL` is `never`.
    ```
@@ -28,7 +28,7 @@ For a real deployment give the runner its own host (design §10.1): the socket i
    RUNNER_IMAGES={"python-3.12":["registry.example.org/parallax-runner-python@sha256:…"],"r-4.6":["registry.example.org/parallax-runner-r@sha256:…"]}
    ```
 5. **Start.** `docker compose --env-file prod.env -f infra/compose.prod.yml up -d --build postgres garage`, then the rest. `migrate` applies the schema and exits; api, relay and worker wait for it. The first migration creates the role `parallax_runner` when the connecting role may create roles (here it does); give it its password and login once: `ALTER ROLE parallax_runner LOGIN PASSWORD '<RUNNER_DB_PASSWORD>' CONNECTION LIMIT <slots + 4>;`, then `docker compose … restart runner`. A deployment that migrates with a less privileged role runs `scripts/runner-role.sql` first (design §10.3).
-6. **Verify** (§Readiness): `curl -fsS -H "Host: $APP_HOST" http://127.0.0.1:3000/api/ready` answers 200 with every check `ok`. Then run the sample job of design §10.4 through the real path.
+6. **Verify** (§Readiness): `curl -fsS -H "Host: $APP_HOST" -H "X-Ready-Token: $READY_PROBE_TOKEN" http://127.0.0.1:3000/api/ready` answers 200 with every check `ok`. Then run the sample job of design §10.4 through the real path.
 
 ## Routing
 
@@ -51,7 +51,9 @@ Allow WebSocket upgrades and an idle timeout of at least 60 seconds on the relay
 | Liveness | `GET /api/health` | 200 while the process serves; carries `db: ok | unavailable | skipped` | restart a hung process |
 | Readiness | `GET /api/ready` | 200 `ready`, or 503 `not_ready`, with the same body | take an instance out of rotation; the compose health check |
 
-The readiness body lists each dependency with `status` (`ok`, `unavailable`, `skipped`), `required`, and `latencyMs`; it never carries an error message, host or credential (the cause is in the log as `readiness: dependency unavailable`, field `dependency`).
+**Who sees the detail.** Only a request that sends the header `X-Ready-Token` equal to `READY_PROBE_TOKEN` (at least 16 characters, surrounding whitespace ignored; only `compose.prod.yml` requires it, so a deployment that does not use it must set it and send it from its probes) gets the body below. The compose health check sends it from inside the container. A proxy's or load balancer's probe, and any external monitor, must send it too: without it a caller gets `{"status": "ready"}` or `{"status": "not_ready"}` with the same 200/503, no version, mode or dependency, and is limited to `READY_RATE_LIMIT` requests per address per minute (default 30, then `429`). A probe that polls faster than that and omits the token is answered `429` and a proxy will take a ready instance out of rotation. Requests with the token are never counted. Being on the Docker host or on loopback gives no detail: `curl http://127.0.0.1:3000/api/ready` there reaches the container through the published port and is an ordinary caller, so add `-H "X-Ready-Token: $READY_PROBE_TOKEN"`.
+
+The readiness body, for a probe, lists each dependency with `status` (`ok`, `unavailable`, `skipped`), `required`, and `latencyMs`; it never carries an error message, host or credential (the cause is in the log as `readiness: dependency unavailable`, field `dependency`).
 
 | Check | Required | `unavailable` or `skipped` means |
 | --- | --- | --- |
@@ -60,7 +62,7 @@ The readiness body lists each dependency with `status` (`ok`, `unavailable`, `sk
 | `executionQueue` | no | the runner's queue (`pgboss_exec`) did not start: code runs answer 503, everything else works |
 | `storage` | yes | the object store is unusable within 5 s: the bucket does not exist or answers an error (S3 `HeadBucket`, which needs the `s3:ListBucket` permission beside Get, Put and Delete of objects), or the storage directory cannot be written |
 
-`/api/ready` runs a database query and a storage call on every request and names the failing dependency: use it from the compose health check and the proxy's own probe, and do not route it to the public host (answer 404 for it there). The worker and the runner serve no HTTP. The worker logs `worker started` with its job names, and exits non-zero when it cannot start; the runner's health is the queue: see §Incidents. Watch, per design §10.4, the depth of `execution.run` and the age of its oldest `created` job.
+`/api/ready` runs a database query and a storage call on every request and names the failing dependency: use it from the compose health check and the proxy's own probe, both sending `X-Ready-Token`. The app itself withholds the detail and limits unknown callers, so the public host need not answer 404 for it, but a proxy that does is still the stronger setup. The worker and the runner serve no HTTP. The worker logs `worker started` with its job names, and exits non-zero when it cannot start; the runner's health is the queue: see §Incidents. Watch, per design §10.4, the depth of `execution.run` and the age of its oldest `created` job.
 
 ## Logs
 
@@ -79,6 +81,7 @@ Rules for new log calls: log ids, counts and codes, never a request, a result or
 | Queued or running sample runs per student | 2, across classes | student | fixed (spec §11) |
 | Connector pairing: codes created, failed pairings, polls | 5 / hour per person; 10 failures in 10 min block an address for 10 min; 1 poll / s | person, address, connector | fixed (connector design §3) |
 | Connector link attempts | 30 / min | address | fixed |
+| **Readiness** (`/api/ready`, callers without `X-Ready-Token`) | 30 / min | client address | `READY_RATE_LIMIT` |
 | Notebook browser channel messages, kernel executes | 60 / s, 30 / s | session | fixed |
 
 Execution limits are counted per session so a class behind one campus network, or the load test's single client, does not share a budget; the sign-in limits are per address because no session exists yet. Over a limit the API answers `429` with `error: "too many requests"` and `Try again in …`. Limits are in memory: they reset when a process restarts and are per process, so a second `api` replica doubles them.
@@ -93,6 +96,8 @@ Defaults an operator may change, all in the environment (`apps/server/src/config
 | `LEASE_IDLE_MINUTES` | 30 (5–240) | an open notebook with no activity stops after this long |
 | `LEASE_GRACE_MINUTES` | 5 (1–60) | closing the tab keeps the kernel this long. Both lease values apply when a request names no lease and the class template sets none; the web Connect panel pre-fills them |
 | `RUN_RATE_LIMIT` | 30 | code-run requests per session per minute |
+| `READY_RATE_LIMIT` | 30 | `/api/ready` requests per address per minute from callers that are not probes |
+| `READY_PROBE_TOKEN` | unset (required by `compose.prod.yml`) | secret (16+ characters) the health check, a proxy probe or a monitor sends as `X-Ready-Token` to get the readiness detail and skip `READY_RATE_LIMIT` |
 | `AUTH_LINK_RATE_LIMIT`, `AUTH_VERIFY_RATE_LIMIT` | 120, 240 | sign-in limits per address per 15 minutes |
 | `RUNNER_SLOTS` | 4 (1–32) | concurrent sandbox containers (runner) |
 | `RETENTION_DEACTIVATED_GRACE_DAYS`, `RETENTION_AUDIT_DAYS` | unset (off) | retention policy (spec §13). The audit sweep keeps two kinds of event the product reads as state, whatever their age: the latest `membership.remove` of each person from each class (it keeps a removed student's work in review, grading and the results export) and the latest `test_attempt.recovery_requested` of each attempt (its recovery state). Older events of those kinds are deleted as usual |

@@ -123,6 +123,7 @@ describe('compose.prod.yml', () => {
       'RUNNER_DB_PASSWORD',
       'SESSION_SECRET',
       'CONTENT_TOKEN_SECRET',
+      'READY_PROBE_TOKEN',
       'S3_ACCESS_KEY_ID',
       'S3_SECRET_ACCESS_KEY',
       'SMTP_URL',
@@ -147,6 +148,7 @@ describe('compose.prod.yml', () => {
       CONTENT_HOST: 'content.parallax.example.org',
       SESSION_SECRET: 's'.repeat(40),
       CONTENT_TOKEN_SECRET: 'c'.repeat(40),
+      READY_PROBE_TOKEN: 'r'.repeat(24),
       TRUST_PROXY: '172.16.0.0/12',
       S3_ACCESS_KEY_ID: 'GK0123456789abcdef01234567',
       S3_SECRET_ACCESS_KEY: 'k'.repeat(64),
@@ -179,6 +181,7 @@ describe('compose.prod.yml', () => {
       MAIL_TRANSPORT: 'smtp',
       SESSION_TTL_DAYS: 14,
       RUN_RATE_LIMIT: 30,
+      READY_RATE_LIMIT: 30,
       LEASE_IDLE_MINUTES: 30,
       LEASE_GRACE_MINUTES: 5,
     });
