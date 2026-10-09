@@ -95,7 +95,7 @@ Defaults an operator may change, all in the environment (`apps/server/src/config
 | `RUN_RATE_LIMIT` | 30 | code-run requests per session per minute |
 | `AUTH_LINK_RATE_LIMIT`, `AUTH_VERIFY_RATE_LIMIT` | 120, 240 | sign-in limits per address per 15 minutes |
 | `RUNNER_SLOTS` | 4 (1–32) | concurrent sandbox containers (runner) |
-| `RETENTION_DEACTIVATED_GRACE_DAYS`, `RETENTION_AUDIT_DAYS` | unset (off) | retention policy (spec §13) |
+| `RETENTION_DEACTIVATED_GRACE_DAYS`, `RETENTION_AUDIT_DAYS` | unset (off) | retention policy (spec §13). The audit sweep keeps two kinds of event the product reads as state, whatever their age: the latest `membership.remove` of each person from each class (it keeps a removed student's work in review, grading and the results export) and the latest `test_attempt.recovery_requested` of each attempt (its recovery state). Older events of those kinds are deleted as usual |
 
 Spec §17 asks the operator to decide session limits, expected concurrent classes and the execution budget before deployment: record the values chosen here, next to the host and region, when they are decided.
 
