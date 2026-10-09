@@ -125,9 +125,9 @@ export function BulkRelease({
       {view && (state.kind === 'preview' || state.kind === 'sending') ? (
         <section className={styles.preview} aria-label="Release preview">
           {state.kind === 'preview' && state.note ? <p>{state.note}</p> : null}
-          <h3 className={styles.previewHeading} tabIndex={-1} ref={heading}>
+          <h2 className={styles.previewHeading} tabIndex={-1} ref={heading}>
             {previewTitle(view, testTitle)}
-          </h3>
+          </h2>
           <ul aria-label="Recipients">
             {view.recipients.map((r) => (
               <li key={r.gradeId}>
