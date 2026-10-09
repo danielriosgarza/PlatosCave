@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { strokesToSvg } from '@parallax/contracts';
 import type * as contracts from '@parallax/contracts/routes/lifecycle';
-import { and, asc, eq, inArray, isNull, lt, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, lt, not, type SQL, sql } from 'drizzle-orm';
 import type { AnyPgColumn, PgColumn } from 'drizzle-orm/pg-core';
 import type { z } from 'zod';
 import type { ClassManagerScope, ClassScope, CourseScope, UserScope } from '../auth/scope';
@@ -664,9 +664,28 @@ export interface RetentionResult {
 }
 
 /**
+ * Audit events the product reads as state (P4-AUD1): the latest `membership.remove` of a person
+ * from a class is what keeps a removed student's work in review, grading and the results export
+ * (`removedStudents.ts`), and the latest `test_attempt.recovery_requested` of an attempt is its
+ * recovery state (`db/tests.ts`). The audit sweep keeps the latest event of each kind per class
+ * and target; older ones are superseded and are swept like any other event.
+ */
+const STATE_ACTIONS = ['membership.remove', 'test_attempt.recovery_requested'];
+
+const readAsState = and(
+  inArray(auditEvents.action, STATE_ACTIONS),
+  eq(auditEvents.scopeKind, 'class'),
+  sql`not exists (select 1 from audit_events later
+    where later.action = ${auditEvents.action} and later.scope_kind = 'class'
+      and later.scope_id = ${auditEvents.scopeId} and later.target_id = ${auditEvents.targetId}
+      and later.created_at > ${auditEvents.createdAt})`,
+) as SQL;
+
+/**
  * Applies the retention policy (§13) as a system action: accounts deactivated for longer than
  * the grace period are anonymised, and audit events older than their retention period are
- * deleted. A rule whose period is null is off, so the default policy removes nothing.
+ * deleted, except those the product still reads as state (`readAsState`). A rule whose period is
+ * null is off, so the default policy removes nothing.
  */
 export async function applyRetention(
   db: Db,
@@ -705,7 +724,7 @@ export async function applyRetention(
   if (policy.auditEventDays !== null) {
     const gone = await db
       .delete(auditEvents)
-      .where(lt(auditEvents.createdAt, daysAgo(policy.auditEventDays)))
+      .where(and(lt(auditEvents.createdAt, daysAgo(policy.auditEventDays)), not(readAsState)))
       .returning({ id: auditEvents.id });
     auditEventsDeleted = gone.length;
   }
