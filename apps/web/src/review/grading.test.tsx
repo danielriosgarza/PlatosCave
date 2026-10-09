@@ -1172,7 +1172,7 @@ describe('grading workspace', () => {
     const panel = await screen.findByRole('region', { name: 'Release preview' });
     const before = calls.filter((c) => c.path === '/review').length;
     await user.click(within(panel).getByRole('button', { name: 'Confirm release to 1 student' }));
-    expect(await screen.findByText(/Grades changed while you were reviewing/)).toBeVisible();
+    expect(await within(panel).findByText(/Grades changed while you were reviewing/)).toBeVisible();
     await waitFor(() =>
       expect(calls.filter((c) => c.path === '/review').length).toBeGreaterThan(before),
     );
@@ -1307,5 +1307,196 @@ describe('grading workspace', () => {
     await waitFor(() =>
       expect(screen.queryByRole('region', { name: 'Release preview' })).toBeNull(),
     );
+  });
+
+  it('A20 the single release preview takes focus, announces itself, and returns focus on Cancel and Confirm', async () => {
+    const user = userEvent.setup({ delay: null });
+    const draft = gradeRow(1);
+    const preview = {
+      recipients: [
+        {
+          student: { id: PRIYA, name: 'Priya Nair' },
+          attemptId: A_PRIYA,
+          attemptNumber: 1,
+          resourceId: QUIZ,
+          gradeId: draft.id,
+          gradeNumber: 1,
+          points: 5,
+          possible: 5,
+        },
+      ],
+      skipped: [],
+    };
+    serve({
+      history: [draft],
+      extra: (path, method) => {
+        if (path === '/grade-releases/preview') return { status: 200, body: preview };
+        if (path === '/grade-releases' && method === 'POST') {
+          draft.state = 'released';
+          draft.releasedAt = NOW;
+          draft.releaseId = id(7000);
+          return {
+            status: 201,
+            body: {
+              id: id(7000),
+              releasedBy: id(1),
+              releasedAt: NOW,
+              recipients: preview.recipients,
+            },
+          };
+        }
+        return undefined;
+      },
+    });
+    renderApp(`/classes/${CLASS_A}/review?assignment=${QUIZ}&selected=${PRIYA}&attempt=${A_PRIYA}`);
+    await screen.findByRole('region', { name: 'Grading workspace' });
+    const trigger = await screen.findByRole('button', {
+      name: 'Release feedback',
+    });
+    trigger.focus();
+    await user.keyboard('{Enter}');
+    const panel = await screen.findByRole('region', {
+      name: 'Release preview',
+    });
+    expect(within(panel).getByRole('heading', { name: 'Release to Priya Nair' })).toHaveFocus();
+    expect(screen.getByText('Release preview: 1 to release, 0 not released.')).toHaveAttribute(
+      'aria-live',
+      'polite',
+    );
+    // Keyboard only: Tab to Cancel, press it; focus returns to the control that opened it.
+    await user.tab();
+    await user.tab();
+    expect(within(panel).getByRole('button', { name: 'Cancel' })).toHaveFocus();
+    await user.keyboard('{Enter}');
+    expect(screen.queryByRole('region', { name: 'Release preview' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Release feedback' })).toHaveFocus();
+    // Open again and confirm: focus lands on the result status.
+    await user.keyboard('{Enter}');
+    await screen.findByRole('region', { name: 'Release preview' });
+    await user.tab();
+    expect(screen.getByRole('button', { name: 'Confirm release to 1 student' })).toHaveFocus();
+    await user.keyboard('{Enter}');
+    const status = await screen.findByText(/Released to Priya Nair on/);
+    expect(status).toHaveFocus();
+  });
+
+  it('A20 the bulk release preview takes focus, announces itself, and returns focus on Cancel and Confirm', async () => {
+    const user = userEvent.setup({ delay: null });
+    const preview = {
+      recipients: [
+        {
+          student: { id: PRIYA, name: 'Priya Nair' },
+          attemptId: A_PRIYA,
+          attemptNumber: 1,
+          resourceId: QUIZ,
+          gradeId: id(1001),
+          gradeNumber: 1,
+          points: 5,
+          possible: 5,
+        },
+      ],
+      skipped: [],
+    };
+    serve({
+      extra: (path, method) => {
+        if (path === '/grade-releases/preview') return { status: 200, body: preview };
+        if (path === '/grade-releases' && method === 'POST') {
+          return {
+            status: 201,
+            body: {
+              id: id(7001),
+              releasedBy: id(1),
+              releasedAt: NOW,
+              recipients: preview.recipients,
+            },
+          };
+        }
+        return undefined;
+      },
+    });
+    renderApp(`/classes/${CLASS_A}/review?assignment=${QUIZ}`);
+    await screen.findByRole('table');
+    await user.click(screen.getByRole('checkbox', { name: 'Select Priya Nair for release' }));
+    const trigger = screen.getByRole('button', { name: 'Preview release (1)' });
+    trigger.focus();
+    await user.keyboard('{Enter}');
+    const panel = await screen.findByRole('region', {
+      name: 'Release preview',
+    });
+    expect(
+      within(panel).getByRole('heading', {
+        name: 'Release Spread check to 1 student',
+      }),
+    ).toHaveFocus();
+    expect(screen.getByText('Release preview: 1 to release, 0 not released.')).toHaveAttribute(
+      'aria-live',
+      'polite',
+    );
+    await user.tab();
+    await user.tab();
+    expect(within(panel).getByRole('button', { name: 'Cancel' })).toHaveFocus();
+    await user.keyboard('{Enter}');
+    expect(screen.queryByRole('region', { name: 'Release preview' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Preview release (1)' })).toHaveFocus();
+    await user.keyboard('{Enter}');
+    await screen.findByRole('region', { name: 'Release preview' });
+    await user.tab();
+    await user.keyboard('{Enter}');
+    expect(await screen.findByText(/Released to 1 student on/)).toHaveFocus();
+  });
+
+  it('A20 a rejected release announces that nothing was released, and a failed preview load moves focus to the error', async () => {
+    const user = userEvent.setup({ delay: null });
+    const draft = gradeRow(1);
+    const preview = {
+      recipients: [
+        {
+          student: { id: PRIYA, name: 'Priya Nair' },
+          attemptId: A_PRIYA,
+          attemptNumber: 1,
+          resourceId: QUIZ,
+          gradeId: draft.id,
+          gradeNumber: 1,
+          points: 5,
+          possible: 5,
+        },
+      ],
+      skipped: [],
+    };
+    let previewFails = true;
+    serve({
+      history: [draft],
+      extra: (path, method) => {
+        if (path === '/grade-releases/preview') {
+          return previewFails
+            ? { status: 500, body: { error: 'server_error' } }
+            : { status: 200, body: preview };
+        }
+        if (path === '/grade-releases' && method === 'POST') {
+          return { status: 409, body: { error: 'release_changed', preview } };
+        }
+        return undefined;
+      },
+    });
+    renderApp(`/classes/${CLASS_A}/review?assignment=${QUIZ}&selected=${PRIYA}&attempt=${A_PRIYA}`);
+    await screen.findByRole('region', { name: 'Grading workspace' });
+    const trigger = await screen.findByRole('button', { name: 'Release feedback' });
+    trigger.focus();
+    await user.keyboard('{Enter}');
+    const alert = await screen.findByText('The release preview could not be loaded.');
+    expect(alert).toHaveFocus();
+    previewFails = false;
+    screen.getByRole('button', { name: 'Release feedback' }).focus();
+    await user.keyboard('{Enter}');
+    const panel = await screen.findByRole('region', { name: 'Release preview' });
+    await user.tab();
+    await user.keyboard('{Enter}');
+    expect(await within(panel).findByText(/nothing was released/)).toBeVisible();
+    expect(within(panel).getByRole('heading', { name: 'Release to Priya Nair' })).toHaveFocus();
+    expect(
+      screen.getByText(
+        /nothing was released\. This is what a release would do now\. Release preview: 1 to release/,
+      ),
+    ).toHaveAttribute('aria-live', 'polite');
   });
 });

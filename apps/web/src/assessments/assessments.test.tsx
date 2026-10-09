@@ -102,6 +102,8 @@ interface Options {
   instructor?: boolean;
   /** Every attempt read fails once the server has stored a local copy. */
   failReadsAfterLocalCopy?: boolean;
+  /** The granting instructor's name on every grant; null for one who has left the class. */
+  grantor?: string | null;
 }
 
 /** An in-memory stand-in for the P3-15 and P3-16 routes: it keeps answers, receipts and runs. */
@@ -123,6 +125,8 @@ function testApi(options: Options = {}) {
     submits: [] as { key: string }[],
     recoveryRequests: [] as { reason: string }[],
     grants: [] as Record<string, unknown>[],
+    rosterCalls: 0,
+    reviewCalls: 0,
     localCopies: [] as { answers: { questionId: string; value: unknown }[] }[],
     runs: [] as { files: { path: string; content: string }[] }[],
     order: [] as string[],
@@ -389,6 +393,7 @@ function testApi(options: Options = {}) {
             closesAt: g.closesAt,
             reason: g.reason,
             grantedBy: uuid(0xf1),
+            grantedByName: options.grantor === undefined ? 'Ines' : options.grantor,
             createdAt: '2026-10-05T10:00:00Z',
           })),
         },
@@ -406,11 +411,17 @@ function testApi(options: Options = {}) {
           closesAt: body.closesAt,
           reason: body.reason,
           grantedBy: uuid(0xf1),
+          grantedByName: 'Ines',
           createdAt: '2026-10-05T10:00:00Z',
         },
       };
     }
+    if (url === `${base}/resources/${RESOURCE}/assignment/students`) {
+      log.rosterCalls += 1;
+      return { status: 200, body: { students: [{ id: uuid(0xd1), name: 'Bea' }] } };
+    }
     if (url.startsWith(`${base}/review`)) {
+      log.reviewCalls += 1;
       return {
         status: 200,
         body: {
@@ -1110,6 +1121,23 @@ describe('test UI: expiry', () => {
     const list = await screen.findByRole('list', { name: 'Grants in force' });
     expect(within(list).getByText(/Reason: Medical note/)).toBeVisible();
     expect(within(list).getByText(/05 Oct 2026, 12:00/)).toBeVisible();
+    expect(within(list).getByText(/by Ines$/)).toBeVisible();
+    expect(api.log.rosterCalls).toBeGreaterThan(0);
+    expect(api.log.reviewCalls).toBe(0);
+  });
+
+  it('a grant by an instructor who has since left the class says so instead of naming anyone', async () => {
+    const api = testApi({ instructor: true, grantor: null });
+    api.log.grants.push({
+      studentId: uuid(0xd1),
+      extraAttempts: 1,
+      extraMinutes: 0,
+      closesAt: null,
+      reason: 'Medical note',
+    });
+    open();
+    const list = await screen.findByRole('list', { name: 'Grants in force' });
+    expect(within(list).getByText(/by an instructor no longer in the class$/)).toBeVisible();
   });
 
   it('granting more to a student who already has a grant starts from that grant and keeps it', async () => {

@@ -687,6 +687,23 @@ async function grantedOf(ex: Ex, scope: ClassScope, assignmentId: string): Promi
       desc(assignmentOverrides.createdAt),
       desc(assignmentOverrides.id),
     );
+  // Only people still in the class are named; a grantor who has since been removed is null.
+  const grantorIds = [...new Set(rows.map(({ override }) => override.grantedBy))];
+  const grantors =
+    grantorIds.length === 0
+      ? []
+      : await ex
+          .select({ id: users.id, name: users.name })
+          .from(classMemberships)
+          .innerJoin(users, eq(users.id, classMemberships.userId))
+          .where(
+            and(
+              forClass(scope, classMemberships),
+              eq(classMemberships.isPreview, false),
+              inArray(classMemberships.userId, grantorIds),
+            ),
+          );
+  const grantorName = new Map(grantors.map((g) => [g.id, g.name]));
   return rows.map(({ override: o, name }) => ({
     id: o.id,
     student: { id: o.userId, name },
@@ -695,6 +712,7 @@ async function grantedOf(ex: Ex, scope: ClassScope, assignmentId: string): Promi
     closesAt: iso(o.closesAt),
     reason: o.reason,
     grantedBy: o.grantedBy,
+    grantedByName: grantorName.get(o.grantedBy) ?? null,
     createdAt: o.createdAt.toISOString(),
   }));
 }
@@ -713,6 +731,25 @@ async function assignmentViewOf(
     revision: row?.updatedBy ? row.revision : null,
     overrides: row ? await grantedOf(ex, scope, row.id) : [],
   };
+}
+
+/** Instructor: the class's students, for choosing who to grant an override to. */
+export async function listTestStudents(db: Db, scope: ClassScope, resourceId: string, now: Date) {
+  const found = await studyableTest(db, scope, resourceId, now);
+  if (!found.ok) return found;
+  const students = await db
+    .select({ id: users.id, name: users.name })
+    .from(classMemberships)
+    .innerJoin(users, eq(users.id, classMemberships.userId))
+    .where(
+      and(
+        forClass(scope, classMemberships),
+        eq(classMemberships.role, 'student'),
+        eq(classMemberships.isPreview, false),
+      ),
+    )
+    .orderBy(asc(users.name), asc(users.id));
+  return { ok: true as const, value: { students } };
 }
 
 /** Instructor: the class's terms for a test and the overrides in force. */
