@@ -60,7 +60,7 @@ export function mapFailure(output: unknown): RunFailure {
 
 /**
  * NeedsReview for a grading run that ended without an outcome (§8.7): the attempt waits for an
- * instructor, who can replay it. Its student sees nothing about it and loses no attempt.
+ * instructor, who can replay it. Its student sees the distinct state (§11) and loses no attempt.
  */
 async function needsReview(tx: Tx, row: RunRow): Promise<void> {
   if (row.reason !== 'grading' || !row.attemptId) return;

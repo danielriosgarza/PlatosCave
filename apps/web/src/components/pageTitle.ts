@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 
-export const APP_NAME = 'Parallax';
+const APP_NAME = 'Parallax';
 
 /**
  * Sets `document.title` to "<title> · Parallax" while the page is mounted and restores the bare

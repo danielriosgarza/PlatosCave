@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import buttons from '../components/Buttons.module.css';
+import { downloadText } from '../format/format';
 import { type CodeFile, codeFilesOf } from './answers';
 import type { CodeQuestionView, Question } from './api';
 import { CodeEditor } from './CodeEditor';
@@ -76,7 +77,7 @@ function ChoiceInput({
  * number. `ambiguous` is set only for text that would be a number under either reading of its
  * comma ("1,000", "1,000.5", "1,2,3"): the saved number would depend on a guess, so none is read.
  */
-export function readNumeric(text: string): { value: number | null; ambiguous: boolean } {
+function readNumeric(text: string): { value: number | null; ambiguous: boolean } {
   const t = text.trim();
   if (t === '') return { value: null, ambiguous: false };
   const comma = t.includes(',');
@@ -94,7 +95,7 @@ export function readNumeric(text: string): { value: number | null; ambiguous: bo
 }
 
 /** Accepts what a person types for a number; null when the field is empty, NaN when it is not one. */
-export const parseNumeric = (text: string): number | null => readNumeric(text).value;
+const parseNumeric = (text: string): number | null => readNumeric(text).value;
 
 function NumericInput({
   question,
@@ -178,17 +179,6 @@ function ExplanationInput({
   );
 }
 
-function download(filename: string, text: string) {
-  const url = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
-  const link = document.createElement('a');
-  link.href = url;
-  link.download = filename;
-  document.body.append(link);
-  link.click();
-  link.remove();
-  URL.revokeObjectURL(url);
-}
-
 function CodeInput({
   question,
   value,
@@ -254,7 +244,7 @@ function CodeInput({
           <button
             type="button"
             className={buttons.textButton}
-            onClick={() => download(file.path, file.content)}
+            onClick={() => downloadText(file.path, file.content)}
           >
             Download draft
           </button>

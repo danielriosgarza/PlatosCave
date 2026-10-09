@@ -10,7 +10,7 @@ export interface CodeAnswer {
   files: CodeFile[];
 }
 
-export const editableFiles = (question: Extract<Question, { kind: 'code' }>): CodeFile[] =>
+const editableFiles = (question: Extract<Question, { kind: 'code' }>): CodeFile[] =>
   question.files.filter((f) => f.editable).map((f) => ({ path: f.path, content: f.content }));
 
 /** Whether a stored value answers its question; a cleared or empty answer does not (§11). */
@@ -60,10 +60,6 @@ export function navLabel(answered: boolean, flagged: boolean): string {
   const base = answered ? 'Answered' : 'Unanswered';
   return flagged ? `${base} · Flagged` : base;
 }
-
-/** The file offered when saving a draft: the code, or the written answer as text. */
-export const draftFilename = (question: Question, path?: string) =>
-  question.kind === 'code' ? (path ?? 'solution.txt') : `${question.id}.txt`;
 
 /**
  * Whether an instructor's request for unsent work has been answered: the server holds a copy

@@ -6,9 +6,9 @@ import { ApiError } from '../api/client';
 import buttons from '../components/Buttons.module.css';
 import { Loading } from '../components/Loading';
 import { RetryNotice } from '../components/RetryNotice';
+import { formatInstant } from '../format/format';
 import { recoveryAnswered } from './answers';
 import { askForRecovery, useReviewedAttempt, useReviewedAttempts } from './api';
-import { formatInZone } from './TermsPanel';
 import styles from './Test.module.css';
 
 const isStudentRemoved = (error: ApiError) =>
@@ -76,7 +76,7 @@ function RecoveryRow({ classId, attempt }: { classId: string; attempt: Reviewed 
   const requested = attempt.recoveryRequestedAt;
   const received = attempt.localCopyAt;
   const answered = recoveryAnswered(requested, received);
-  const when = (iso: string) => formatInZone(iso, attempt.timeZone);
+  const when = (iso: string) => formatInstant(iso, attempt.timeZone);
 
   async function ask() {
     if (busy || reason.trim() === '') return;

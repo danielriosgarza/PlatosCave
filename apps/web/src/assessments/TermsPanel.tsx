@@ -1,27 +1,11 @@
+import { formatInstant, REPORTED_RULE_LABEL } from '../format/format';
 import type { Terms } from './api';
 import styles from './Test.module.css';
 
-/** A time in the assignment's own zone, with the zone named (§11). */
-export function formatInZone(iso: string, timeZone: string): string {
-  return new Intl.DateTimeFormat('en-GB', {
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    timeZone,
-    timeZoneName: 'short',
-  }).format(new Date(iso));
-}
-
-const REPORTED = {
-  latest: 'Your latest attempt',
-  highest: 'Your highest attempt',
-  instructor_selected: 'The attempt your instructor selects',
-} as const;
+const upperFirst = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
 
 /** The terms shown before and during work: attempts, points, timing, late policy and release (§11). */
-export function termsRows(
+function termsRows(
   terms: Terms,
   options: { attemptNumber?: number; deadlineAt?: string | null } = {},
 ): [string, string][] {
@@ -38,22 +22,22 @@ export function termsRows(
     terms.durationMinutes === null ? 'Untimed' : `${terms.durationMinutes} minutes from the start`,
   ]);
   rows.push(['Points', String(terms.totalPoints)]);
-  if (terms.opensAt) rows.push(['Opens', formatInZone(terms.opensAt, zone)]);
+  if (terms.opensAt) rows.push(['Opens', formatInstant(terms.opensAt, zone)]);
   const closes = terms.override?.closesAt ?? terms.closesAt;
   rows.push([
     'Closes',
     closes
-      ? `${formatInZone(closes, zone)}${terms.override?.closesAt ? ' · extended for you' : ''}`
+      ? `${formatInstant(closes, zone)}${terms.override?.closesAt ? ' · extended for you' : ''}`
       : 'No closing time',
   ]);
   if (options.deadlineAt) {
-    rows.push(['Your deadline', formatInZone(options.deadlineAt, zone)]);
+    rows.push(['Your deadline', formatInstant(options.deadlineAt, zone)]);
   }
   rows.push([
     'Late work',
     terms.late.policy === 'none'
       ? 'Not accepted'
-      : `Accepted until ${formatInZone(terms.late.until, zone)} and marked late`,
+      : `Accepted until ${formatInstant(terms.late.until, zone)} and marked late`,
   ]);
   rows.push(['Allowed materials', terms.allowedMaterials.trim() || 'None stated']);
   rows.push([
@@ -61,7 +45,7 @@ export function termsRows(
     terms.release.results === 'manual'
       ? 'Released by your instructor'
       : terms.release.at
-        ? `Released ${formatInZone(terms.release.at, zone)}`
+        ? `Released ${formatInstant(terms.release.at, zone)}`
         : 'Released on a schedule',
   ]);
   rows.push([
@@ -72,7 +56,7 @@ export function termsRows(
     'Hidden test details',
     terms.release.hiddenTestDetails ? 'Shown with results' : 'Not shown',
   ]);
-  rows.push(['Reported grade', REPORTED[terms.reportedGrade]]);
+  rows.push(['Reported grade', upperFirst(REPORTED_RULE_LABEL[terms.reportedGrade])]);
   return rows;
 }
 

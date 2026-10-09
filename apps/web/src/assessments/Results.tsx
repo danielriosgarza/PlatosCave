@@ -3,19 +3,12 @@ import { ApiError } from '../api/client';
 import buttons from '../components/Buttons.module.css';
 import { Loading } from '../components/Loading';
 import { RetryNotice } from '../components/RetryNotice';
+import { pointsOf, REPORTED_RULE_LABEL } from '../format/format';
 import { type MyResults, type ResultAttempt, type ResultQuestion, useResultDetail } from './api';
 import styles from './Test.module.css';
 
 type Grade = NonNullable<ResultAttempt['grade']>;
 type Feedback = Grade['feedback'][number];
-
-const points = (earned: number, possible: number) => `${earned} of ${possible} points`;
-
-const RULE: Record<MyResults['rule'], string> = {
-  latest: 'latest attempt',
-  highest: 'highest-scoring attempt',
-  instructor_selected: 'attempt your instructor chose',
-};
 
 /**
  * One line of state for an attempt (§11). A score of zero, an attempt not yet submitted and a
@@ -23,7 +16,7 @@ const RULE: Record<MyResults['rule'], string> = {
  */
 export function resultLine(a: ResultAttempt): string {
   if (a.status === 'released' && a.grade)
-    return `Result: ${points(a.grade.points, a.grade.possible)}`;
+    return `Result: ${pointsOf(a.grade.points, a.grade.possible)}`;
   if (a.status === 'in_progress') return 'Not submitted yet';
   switch (a.state) {
     case 'needs_review':
@@ -42,8 +35,8 @@ export function ReportedGrade({ results }: { results: MyResults }) {
   if (!results.reported) return null;
   return (
     <p role="status" className={styles.statusLine}>
-      Reported grade: {points(results.reported.points, results.reported.possible)} (
-      {RULE[results.rule]})
+      Reported grade: {pointsOf(results.reported.points, results.reported.possible)} (
+      {REPORTED_RULE_LABEL[results.rule]})
     </p>
   );
 }
@@ -186,7 +179,7 @@ function QuestionResult({ index, q, grade }: { index: number; q: ResultQuestion;
         Question {index + 1} ·{' '}
         {score?.points === null || score === undefined
           ? `of ${q.possible} points`
-          : points(score.points, q.possible)}
+          : pointsOf(score.points, q.possible)}
       </h3>
       <p>{q.prompt}</p>
       <h4>Your answer</h4>
@@ -249,7 +242,7 @@ export function ResultsView({
       <h2 ref={heading} tabIndex={-1} style={{ margin: '0 0 8px', font: 'var(--pc-text-section)' }}>
         {title} · attempt {attempt.number} feedback
       </h2>
-      <p className={styles.score}>{points(grade.points, grade.possible)}</p>
+      <p className={styles.score}>{pointsOf(grade.points, grade.possible)}</p>
       {grade.overridden ? (
         <p className={`${styles.small} ${styles.muted}`}>
           Your instructor adjusted this score after grading.
