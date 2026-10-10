@@ -137,23 +137,24 @@ Notes:
 
 Code questions and notebooks need something that runs the code.
 
-With no runner process, the rest of the app works. In development the API accepts a sample run or an instructor's preview run and leaves it waiting until a runner takes it: students see **Queued**, an instructor's preview shows **Waiting for a runner** (`RUNNER_RUNTIMES` defaults to the development runtimes, and the API's `pgboss_exec` queue channel starts whenever Postgres is up). If that channel fails to start, the API answers 503 and the run panel shows **Run unavailable**.
+With no runner process, the rest of the app works. In development the API accepts a sample run or an instructor's preview run and leaves it waiting until a runner takes it (a student's waiting runs count toward the limit of two live runs, so after two sample runs they must cancel one to start another): students see **Queued**, an instructor's preview shows **Waiting for a runner** (`RUNNER_RUNTIMES` defaults to the development runtimes, and the API's `pgboss_exec` queue channel starts whenever Postgres is up). If that channel fails to start, the API answers 503: a student's run panel shows **Run unavailable**, and an instructor's preview shows **The run could not be started.**
 
 - **Code questions (sample runs, tests)** run in sandbox containers started by the runner through Docker. Design: [runner](design/runner.md). This cannot run in a cloud session.
 
-  **Docker.** Build the images, then start the runner in a third shell. Keep `pnpm dev` and the job worker running too: the API and the worker create the `pgboss_exec` schema (until then the runner logs `pgboss_exec is not ready` and retries every 10 seconds), and only the worker reads a run's result, so without it a run finishes in the sandbox but never settles in the app:
+  **Docker.** Build the images, then start the runner in a third shell. Keep `pnpm dev` running: it creates the `pgboss_exec` schema (the worker does too), and until then the runner logs `pgboss_exec is not ready` and retries every 10 seconds. Keep the job worker running as well: it expires the job of a runner that died, handles failed runs and grades submissions.
+
+  In the third shell, export `DATABASE_URL` as in the Run section first:
 
   ```
   scripts/runner-image.sh build python        # and: r
   export RUNNER_DATABASE_URL=$DATABASE_URL     # the application's own role; development only
   export RUNNER_IMAGES='{"python-3.12":["parallax-runner-python:dev"],"r-4.6":["parallax-runner-r:dev"]}'
-  export RUNNER_PULL=missing                  # optional: pull an image that is not built locally; local :dev tags are used either way
   pnpm --filter @parallax/runner start
   ```
 
-  `RUNNER_DATABASE_URL` and `RUNNER_IMAGES` are required. `RUNNER_IMAGES` is JSON mapping a runtime id to the image references it may run, newest first; it must cover the runtimes the API offers. Optional: `RUNNER_SLOTS` (concurrent containers, default 4), `RUNNER_PULL` (default `never`), `RUNNER_DOCKER_RUNTIME` (`runsc` in production) and `DOCKER_HOST`. The URL above reuses the application's own role, which is fine on a development machine. In production the runner connects as the role `parallax_runner`, which can reach schema `pgboss_exec` only ([runner design](design/runner.md) §8.4 and §10.3, [operations](operations.md)).
+  `RUNNER_DATABASE_URL` and `RUNNER_IMAGES` are required. `RUNNER_IMAGES` is JSON mapping a runtime id to the image references it may run, newest first; it must cover the runtimes the API offers. Optional: `RUNNER_SLOTS` (concurrent containers, default 4), `RUNNER_PULL` (default `never`; `missing` pulls an image that is absent, which helps only with registry references, since the `:dev` images exist only where you built them), `RUNNER_DOCKER_RUNTIME` (`runsc` in production) and `DOCKER_HOST`. The URL above reuses the application's own role, which is fine on a development machine. In production the runner connects as the role `parallax_runner`, which can reach schema `pgboss_exec` only ([runner design](design/runner.md) §8.4 and §10.3, [operations](operations.md)).
 
-  Not run in a cloud session: building the images and everything that needs a Docker daemon. What was run there: with only `RUNNER_DATABASE_URL` and `RUNNER_IMAGES` set and no Docker, the process starts and, while neither the API nor the worker has created `pgboss_exec`, logs `pgboss_exec is not ready; retrying in 10 s`. Without `RUNNER_DATABASE_URL` it exits with `Invalid runner configuration`.
+  Without Docker the runner does not get as far as running code. If the API and worker have not created `pgboss_exec`, it logs `pgboss_exec is not ready` and retries; without `RUNNER_DATABASE_URL` it exits with `Invalid runner configuration`.
 - **Notebooks** run on a computer the student or class connects through the Go connector (`connector/`, command `parallax-connector`), or on a managed connector. Design: [connector](design/connector.md). The local connector needs Jupyter and no Docker. Its Docker fixtures (`pnpm compose --profile connector …`) are used by the SSH tests and need **Docker**.
 - **Object storage.** The default is the local folder. For S3-style storage run Garage with `pnpm compose --profile s3 up -d garage && bash scripts/garage-init.sh` (**Docker**) and set `STORAGE_DRIVER=s3` and the `S3_*` variables.
 - **Real mail.** Set `MAIL_TRANSPORT=smtp`, `SMTP_URL` and `MAIL_FROM`. `pnpm compose --profile mail up -d mailpit` gives a local inbox at `http://localhost:8025` (**Docker**).
