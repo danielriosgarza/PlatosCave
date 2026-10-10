@@ -6,7 +6,7 @@ The repository directory is PlatosCave; the product is Parallax.
 
 ## Current state
 
-The application described in the [product specification](docs/product-spec.md) is implemented, with one gap: some instructor tasks (creating a class, issuing enrolment codes, managing members) have API routes but no screen yet. The [instructor guide](docs/guide/instructors.md) lists them. The application was built autonomously by Claude sessions; see [the delivery process](docs/delivery/README.md).
+The application described in the [product specification](docs/product-spec.md) is implemented, except that some tasks have API routes but no screen yet, such as creating a class, issuing enrolment codes, managing members and adopting a release (a class shows no material until it adopts one). The [instructor guide](docs/guide/instructors.md) lists them. The application was built autonomously by Claude sessions; see [the delivery process](docs/delivery/README.md).
 
 ## Run it locally
 
@@ -17,6 +17,7 @@ corepack enable && pnpm install --frozen-lockfile
 pnpm db:local start        # prints DATABASE_URL; export it
 pnpm db:migrate
 pnpm dev                   # open http://localhost:5173
+pnpm --filter @parallax/server worker   # in a second shell: background jobs
 ```
 
 [Getting started](docs/getting-started.md) has the full steps: signing in, becoming an instructor, creating a first course and class, running the checks, and which parts need Docker.

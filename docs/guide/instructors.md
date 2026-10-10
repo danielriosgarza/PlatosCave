@@ -65,6 +65,8 @@ A class is one cohort of a course. It has its own members, release and results.
 
 There is no screen for this yet. Send `POST /api/courses/{courseId}/classes` with the body `{ "name": "Spring 2027" }`. Only a course owner may do this. The new class has not adopted a release (see [Releases](#publishing-and-releases)).
 
+**The creator is not an instructor of the new class.** Creating a class adds no membership. Until you join it, the class has no card under **Courses you teach**, and class review, export, preview, adoption and per-class test terms answer 404 for you. As course owner you can still manage its members. To become an instructor of it, issue an instructor invitation to your own email (`POST /api/classes/{classId}/invites` with `{ "kind": "instructor", "email": "you@example.org" }`) and accept it with `POST /api/invitations/accept` (the invitation's `code` is the `token`).
+
 ## Inviting people and managing members
 
 There is no screen for any of this yet. Unless a row says otherwise, these routes are for the course owner or an instructor with the membership-management grant.
@@ -252,7 +254,7 @@ A screen can set these only as defaults for a test, in the test editor:
 - **Test results.** Set **Results released** to **At a set time**, then enter **Results released at**.
 - **Test availability.** **Opens**, **Closes** and **Late submissions accepted until** control when students can work.
 
-A class can override these defaults before it uses a release. That is done with `PUT /api/classes/{classId}/resources/{resourceId}/assignment`, for which there is no screen. Other release times have no screen either.
+A class can override these defaults at any time; attempts already started keep the terms they began with. That is done with `PUT /api/classes/{classId}/resources/{resourceId}/assignment`, for which there is no screen. The body is `{ "settings": { … }, "expectedRevision": null }`; `expectedRevision` is `null` for the first save. Other release times have no screen either.
 
 ## Previewing as a student
 
@@ -262,7 +264,7 @@ Preview shows the draft with a class's student rules, using a separate preview i
 2. If you teach more than one class of the course, pick one under **Preview as a student of**.
 3. Choose **Preview student view**.
 
-If you teach no class of the course, the page says **You teach no class of this course.** You need a class first.
+If you teach no class of the course, the page says **You teach no class of this course.** You need to teach a class of the course; see [Creating a class](#creating-a-class).
 
 A **Draft preview** banner stays at the top of the page. Choose **Exit draft preview** to return to the editor.
 

@@ -6,7 +6,7 @@ This guide covers what a student can do in Parallax today. It names the buttons 
 
 1. Open the app. If you are not signed in, you land on **Sign in**.
 2. Choose **Student sign in**.
-3. Enter your **Email address**. Use the address on your invitation.
+3. Enter your **Email address**. Use the address your instructor or institution expects.
 4. Select **Send sign-in link**.
 5. Open the link in the email.
 
