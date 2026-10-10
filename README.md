@@ -6,7 +6,7 @@ The repository directory is PlatosCave; the product is Parallax.
 
 ## Current state
 
-The application described in the [product specification](docs/product-spec.md) is implemented. It was built autonomously by Claude sessions; see [the delivery process](docs/delivery/README.md).
+The application described in the [product specification](docs/product-spec.md) is implemented, with one gap: some instructor tasks (creating a class, issuing enrolment codes, managing members) have API routes but no screen yet. The [instructor guide](docs/guide/instructors.md) lists them. The application was built autonomously by Claude sessions; see [the delivery process](docs/delivery/README.md).
 
 ## Run it locally
 

@@ -50,7 +50,7 @@ export DATABASE_URL=postgres://parallax:parallax@127.0.0.1:54329/parallax
 pnpm db:migrate
 ```
 
-`pnpm db:reset` drops and recreates schema `public` and migrates again. Use it only on a database you can lose.
+`pnpm db:reset` creates the database if it is missing, drops the schemas `public`, `drizzle`, `pgboss` and `pgboss_exec` (all data and queued jobs), recreates `public` and migrates again. It refuses to run with `NODE_ENV=production`. Use it only on a database you can lose.
 
 ## Run
 

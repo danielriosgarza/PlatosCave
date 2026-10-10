@@ -46,22 +46,22 @@ Details: [spec section 4](../product-spec.md#4-course-and-topic-selection).
 **Your courses** shows one card per course. Each card shows the topic count, your class name and how many topics you have reviewed, such as "2 of 5 reviewed".
 
 - Select the card to open the topic list.
-- Select **Resume** on a card to go back to the resource you were last using. A card with no saved place says **Not started**.
-- If you are in several classes of one course, the card shows **Choose class**.
+- Select the **Resume** link on a card to go back to the resource you were last using. A card with no saved place says **Not started**.
+- If you are in several classes of one course, the card shows **Choose class** instead. Select it to list the classes, each with its own count and **Resume** link.
 - Use the filters **All**, **In progress** and **Archived**, or **Search** by course title.
 - Archived classes stay readable.
 
 ### Topic list
 
-The topic list is a table with the columns **No.**, **Topic**, one column each for Slides, Reading, Exercises, Notebooks and Tests, **Time** and **Status**.
+The topic list is a table with the columns **No.**, **Topic**, one column each for Slides, Reading, Exercises, Notebooks and Tests (headed S, R, E, N and T, with a legend under the table), **Time** and **Status**.
 
 - A filled dot means that material exists for the topic. An empty dot means none has been added.
 - The current topic has a **Resume** link in its status cell, or **Start** if you have no saved place.
 - A topic that is not open yet shows why: **Opens** with a date, or **Requires** with the topics you must finish first. You cannot open it.
-- A finished topic shows **Reviewed**.
-- The footer shows the count of reviewed topics.
+- A topic you have finished shows **Reviewed**. Any other open topic shows **Available**.
+- Under the table, a line shows the count, such as "2 of 5 topics reviewed".
 
-Select a topic title to open it. Use **Topics** in the top bar to come back to the list. In a topic, the top bar also has links to the previous and next topic.
+Select a topic title to open it. Use **Topics** in the top bar to come back to the list. In a topic, the top bar also has links to the previous and next topic. A neighbour that is not open shows why instead of a link.
 
 ### Download my annotations
 
@@ -71,7 +71,7 @@ See [Download your own data](#download-your-own-data).
 
 A topic page shows the title, the learning objective, and a line with the course, the topic position, study time, your class and the instructors.
 
-Under it, the tab row **Topic materials** has five tabs: **Slides**, **Reading**, **Exercises**, **Notebooks** and **Tests**. The page remembers your place in each tab. If a tab has nothing, it says so, for example **No reading has been added**.
+Under it, a row of five tabs: **Slides**, **Reading**, **Exercises**, **Notebooks** and **Tests**. The app remembers the tab you used last and your place in slides and readings. If a tab has nothing, it says so, for example **No reading has been added**.
 
 Two buttons sit in the toolbar above the material:
 
@@ -90,16 +90,16 @@ Slides can be a PDF deck or web slides.
 
 - **Previous** and **Next** move one slide. The count shows `page / total`. The left and right arrow keys also work when the viewer has focus.
 - **Slide index** opens a list of numbered buttons to jump to a slide.
-- **Zoom in**, **Zoom out** and **Fit** change the size. When zoomed, the arrow keys pan the slide.
+- **Zoom in**, **Zoom out** and **Fit** change the size. When zoomed, the arrow keys pan the slide while the zoomed slide has focus.
 - **Notes** opens the slide margin. **Hide notes** closes it.
-- If the deck has an original file, a download button is next to **Next**.
+- If a PDF deck has an original file, a **Download** button is next to **Next**. Web slides have none.
 
 The viewer remembers your last slide.
 
-The slide margin has two tabs, **My notes** and **Discussion**. They work like the reading margin below, tied to the current slide:
+The slide margin has two tabs, **My notes** and **Discussion**, tied to the current slide:
 
-- Write a private note for the slide. It shows **Private**.
-- Ask a question or comment. See [Posts and questions](#posts-and-questions).
+- In **My notes**, write a private note for the slide. It shows **Private**. Select **Delete note** to remove it.
+- In **Discussion**, pick who can see your post in **Visible to**, type in **Comment or question** and select **Post**. Threads on a slide are read-only here: you can read them and see **Open** or **Resolved**, but there is no reply, edit, delete or reopen. Those are in the reading margin.
 
 Details: [spec section 7](../product-spec.md#7-slides).
 
@@ -109,25 +109,25 @@ A reading is either text or a PDF. If a topic has several readings, pick one in 
 
 For a PDF, **Previous page** and **Next page** move between pages. The reader shows **Page N of M**.
 
-**Notes** opens the margin. **Hide notes** closes it. The margin is named **Notes and discussion** and has two tabs: **My notes** and **Discussion**.
+The margin is open when you arrive, and the button reads **Hide notes**. Select it to close the margin. The button then reads **Notes**. The margin has two tabs: **My notes** and **Discussion**.
 
-If a reading has a source file, you can download it with the button in its toolbar.
+For a PDF reading, a download button for the source file sits next to **Next page**. For a text reading, the source file is offered only if the reading could not be processed.
 
 ### Highlights and notes
 
-Select text in the reading. A small toolbar named **Selected passage** appears with three buttons: **Highlight**, **Note** and **Ask**.
+Select text in the reading. A small toolbar appears with three buttons: **Highlight**, **Note** and **Ask**.
 
-- **Highlight** marks the passage. In **My notes** it appears as **Highlight**. Select **Remove highlight** to take it off.
-- **Note** adds a private note on the passage. Type in the note field. Select **Delete note** to remove it. Notes are private to you.
+- **Highlight** marks the passage. In **My notes** it appears as **Highlight**. Select that entry, then select **Remove highlight** to take it off.
+- **Note** adds a private note on the passage. Select the entry and type in **Your note**. Select **Delete note** to remove it. Notes are private to you.
 - **Ask** starts a question. See [Posts and questions](#posts-and-questions).
 
-You can also add a topic note with no passage. It appears as **Topic note · no anchor**.
+You can also add a topic note with no passage: select **Add a topic note** in **My notes**. It appears as **Topic note · no anchor**.
 
 Select an entry in the margin to jump to its passage. Select a mark in the text to open its entry.
 
 A save line shows **Saving**, **Saved**, **Offline · changes on this device** or **Could not save** with a **Retry** button. Notes autosave after a short pause and when you leave the field. If the browser is offline, your text stays on this device until you can save.
 
-If the same note changed elsewhere, a dialog titled **This note changed somewhere else** shows **Your text on this device** and **Saved version**. Choose **Keep my text** or **Use the saved version**.
+If the same note changed elsewhere, a message titled **This note changed somewhere else** shows **Your text on this device** and **Saved version**. Choose **Keep my text** or **Use the saved version**.
 
 If a newer version of the reading cannot be matched to your mark, the entry shows **Waiting to be placed** or **Needs reattachment**. Your original quote is kept.
 
@@ -135,7 +135,11 @@ If a newer version of the reading cannot be matched to your mark, the entry show
 
 A **Sketch** button appears on figures and on PDF pages. It is not on the text toolbar. If you already drew there, it says **Edit sketch**.
 
-The sketch panel has **Pen**, **Eraser**, colours, **Width**, **Undo** and **Redo**. Select **Done** to save the drawing. A description field lets you explain the drawing in words. **Save description** saves a description without a drawing. Drawings are private to you.
+Next to **Sketch** is **Describe in text**, for explaining the figure or page in words without drawing.
+
+The sketch panel has **Pen**, **Eraser**, colours, **Width**, **Undo** and **Redo**. The field **Text description (required)** must be filled in. **Done** refuses to save until you have written a description and drawn at least one pen stroke. **Discard** closes the panel without saving.
+
+After **Describe in text**, the panel has only the description field. Select **Save description** to save it. Drawings and descriptions are private to you.
 
 ### Posts and questions
 
@@ -158,7 +162,7 @@ Details: [spec section 8](../product-spec.md#8-reading-notes-highlights-drawings
 
 ## Exercises
 
-The **Exercises** tab lists the exercises for the topic. Each shows whether it is **Practice · ungraded** or **For credit** with its points and hint rule. Select **Start** to open one. An exercise that has not opened shows **Opens** with a date and **Locked**.
+The **Exercises** tab lists the exercises for the topic. Each shows whether it is **Practice · ungraded** or **For credit** with its points and hint rule. Select **Start** to open one. If the topic has only one exercise, it opens at once with no list. With several, **All exercises** returns to the list. An exercise that has not opened shows **Opens** with a date and **Locked**.
 
 An exercise is a short list of steps. A step can ask for a number, a choice, an ordering or matching, a short explanation, code, or a value recorded from a simulation.
 
@@ -168,7 +172,7 @@ On each step:
 - For a written explanation, **Done** saves it. For code, **Save code** saves it. These save your work. They do not grade it.
 - For a simulation step, **Record this value** records the value for comparison.
 - **Show a hint** and **Show next hint** reveal hints one at a time. **Hide hints** and **Show hints** fold them. The page shows "Hints used: N of M". Hint use is recorded for review.
-- **Show solution** reveals the answer. This is recorded. The step is only completed with help; some steps still need your own answer afterwards.
+- **Show solution** reveals the answer. It appears only on steps that have a solution. This is recorded. The step is only completed with help; some steps still need your own answer afterwards.
 - **Continue** moves to the next step. After the last step, **See summary**.
 
 The summary says **Exercise complete.** It shows how each step was done: independently, with hints, or with the solution shown. Select **Start again** for a new attempt. Earlier attempts are kept.
@@ -179,29 +183,28 @@ Details: [spec section 9](../product-spec.md#9-interactive-exercises).
 
 ## Tests
 
-The **Tests** tab lists the tests for the topic. Select a test to open it.
+The **Tests** tab lists the tests for the topic. If the topic has several tests, select **Open** next to one. A single test opens at once, and **All tests** returns to the list. A test that is not released yet shows **Opens** with a date and **Locked**.
 
 ### Before you start
 
-The **Terms** panel shows the rules for the test:
+The page shows the number of questions and "attempts used N of M". The **Terms** panel shows the rules for the test:
 
-- number of attempts and which attempt you are on
+- number of attempts
 - duration (**Untimed** or minutes from the start)
 - points
 - when it opens and closes
-- **Your deadline**, if you have one
 - late-work rule
 - allowed materials
 - when results and solutions are released
 - which attempt is the **Reported grade**
 
-Terms stay visible while you work. The server decides the deadline. Your browser clock does not.
+Terms stay visible while you work. Inside an attempt, **Terms** also shows **Attempt N of M** and **Your deadline**. The server decides the deadline. Your browser clock does not.
 
 Select **Start attempt N** to begin. If you cannot start, the page says why. Reasons include that the test has not opened, it has closed, you have used every attempt, or the class is archived. An attempt in progress shows **Resume attempt N** with its start time and deadline.
 
 ### Working on a test
 
-- The **Questions** list shows each question as **Answered** or **Unanswered**, with **Flagged** if you ticked **Flag for review**.
+- The question list shows each question as **Answered** or **Unanswered**, with **Flagged** if you ticked **Flag for review**.
 - Question types are **Multiple choice**, **Numeric answer**, **Explanation** and **Code implementation**.
 - Answers save automatically. A status line shows **Saving…**, **Unsaved changes**, **Saved** with a time, or an error. If saving fails, use **Retry save**. For a long answer or code, **Download what you wrote** keeps a copy on your computer.
 - For timed tests, the page shows about how many minutes are left.
@@ -232,13 +235,13 @@ After the server confirms, the page shows **Test submitted** with:
 
 If time runs out, the server submits the last saved answers. The page says **Time ran out · your saved answers were submitted**.
 
-You can open a past receipt from **Your attempts** with **Open receipt**.
+You can open a past receipt from the list of attempts under the test's terms, with **Open receipt**.
 
 ### Unsent work
 
 Changes made after your last successful save are not part of the submission. The receipt says so and tries to send a copy of them to your instructor. If that fails, the copy stays in this browser.
 
-If your instructor asks for your unsent work, **Your attempts** shows a note, and the receipt offers **Send unsent work**.
+If your instructor asks for your unsent work, the attempt's entry in that list shows a note, and the receipt offers **Send unsent work** while this browser still holds that work.
 
 ### Extensions and extra attempts
 
@@ -246,16 +249,17 @@ Your instructor can give you an extension or an extra attempt. Your **Terms** an
 
 ### Results and grades
 
-**Your attempts** shows the state of each attempt:
+The list of attempts shows **Attempt N** with one line of state:
 
-- **In progress**
-- **Submitted**
-- **Submitted · being graded**
-- **Submitted · awaiting instructor review**
-- **Submitted · graded, not yet released**
-- **Results released**
+- **Not submitted yet**
+- **Submitted · not graded yet**
+- **Graded · your instructor has not released the result yet**
+- **Grading could not finish. Your instructor will review it; no score has been recorded.**
+- **Result:** followed by your points, once your instructor has released it
 
-A **Reported grade** line shows your points and the rule used (for example, latest or highest attempt). When an attempt is released, select **View feedback for attempt N**. It shows your score, instructor feedback, your answers, correct answers and checks where the release rules allow them. If the instructor adjusted a score, the page says so. Select **Back to attempts** to return.
+An attempt submitted by the server at the deadline adds "submitted by the server at the deadline". Before the attempt list has loaded, plain labels such as **In progress** and **Submitted** can show instead.
+
+A **Reported grade** line shows your points and the rule used (for example, latest or highest attempt). When an attempt is released, select **View feedback for attempt N** in that list. It shows your score, instructor feedback, your answers, correct answers and checks where the release rules allow them. If the instructor adjusted a score, the page says so. Select **Back to attempts** to return.
 
 A test that is graded but not released shows no score. A grading failure and an unsubmitted test have their own messages.
 
@@ -269,7 +273,7 @@ The **Notebooks** tab shows the notebooks for the topic. If there are several, p
 
 By default you see **Saved outputs**: the notebook as saved, with its stored outputs. Nothing runs.
 
-- **Outline** shows a list of sections.
+- **Outline** shows a list of sections. It appears only if the notebook has headings.
 - **Hide code** and **Show code**, **Hide outputs** and **Show outputs** fold cells.
 - A download button gives you the original notebook file.
 - Scripts in outputs are removed and never run.
@@ -295,14 +299,14 @@ The toolbar button that says **Saved outputs** opens **Connect a computer**. Thi
 **Target.** Under **Where should the notebook run?** choose:
 
 - **This computer**: the computer running the connector.
-- **SSH host**: another computer reached over SSH. You give a host, port, account, working directory and a key. A jump host is optional.
+- **SSH host**: another computer reached over SSH. You give a host, port, account and working directory, and choose a key file path or the SSH agent on the connector's computer. A jump host is optional. You never type a password or passphrase here.
 - **Class computers**: shown when your instructor published a computer for the class.
 
 You also give a **Connection name**, the **Computer running the connector** and the working directory. You can reuse a **Saved connection**.
 
-Select **Save and test connection**. The **Test** section shows each stage as **Passed**, **Failed**, **Waiting**, or **Checked when you connect**. A first-time host asks you to confirm its key fingerprint. If a host key changed, the connection is stopped until you check it and replace the key. Replacing a key needs a sign-in within the last 15 minutes. Select **Test again** to retest.
+Select **Save and test connection**. The **Test** section lists each stage with a state such as **Passed**, **Failed**, **Waiting**, **Not run**, **Waiting for you**, **Needs your confirmation** or **Checked when you connect**. A first-time host shows its key fingerprint and a **Trust this key** button. If a host key changed, the connection is stopped until you check it and select **Replace trusted key…**. Replacing a key needs a sign-in within the last 15 minutes. After a failed test, select **Test again**.
 
-**Connect.** The **Connect** section shows the computer, account, working directory and whether Parallax starts a Jupyter server or attaches to one. You can set how long an idle notebook runs and how long the kernel is kept after you close the tab. Select **Connect**. Connecting does not run any cell. This connection can read and change the files that account can.
+**Connect.** After a passing test, the **Connect** section appears. It shows the computer, account, working directory and whether Parallax starts a Jupyter server or attaches to one. You can set how long an idle notebook runs and how long the kernel is kept after you close the tab. Select **Connect**. Connecting does not run any cell. This connection can read and change the files that account can.
 
 Details: [spec section 10.3](../product-spec.md#103-set-up-and-connect).
 
@@ -312,23 +316,28 @@ In a connected notebook:
 
 - Each code cell has a **Run** button. The toolbar has **Run all** and **Interrupt**.
 - **Run all** stops at the first error.
-- The **Session** menu has **Restart kernel**, **Disconnect** and **Stop session**. **Restart kernel** and **Stop session** ask you to confirm. Restarting loses your variables. **Stop session** appears only for a session Parallax started.
+- The **Session** menu has **Restart kernel**, **Disconnect** and **Stop session**. All three ask you to confirm. Restarting loses your variables. **Stop session** appears only for a session Parallax started.
 - The toolbar shows the computer, language and state, such as "Lab server · Python · Ready". It shows Ready only when the kernel is confirmed.
 - You can edit cell code in place. Edits stay if the connection drops, but cells cannot run until you connect again. Parallax does not rerun cells for you.
-- If the connection is lost, the page says why and offers **Reconnect to this session** or **Connect a computer**. If the kernel is gone, choose **Start a new kernel**.
+- After you choose **Disconnect** and confirm, a notice says **You disconnected from this session.** It offers **Reconnect to this session** and **Connect a computer**. Parallax did not stop the kernel.
+- If the session is lost, stopped, or Parallax cannot confirm it, a notice gives the cause. It offers some of **Reconnect**, **Forget this session**, **Start a new session** and **Choose another target**, depending on the cause.
+- If only the browser's link to the session drops, the page says **The connection to this session was lost.** (or **This browser is offline.**) and that Parallax is trying again. It has no buttons. Edits are kept.
+- If the kernel is gone, choose **Start a new kernel**.
 
 Details: [spec section 10.4](../product-spec.md#104-running-cells-and-controlling-a-session).
 
 ### Files, save and submit
 
-A connected notebook has a panel named **Files, save and submit**.
+A connected notebook has three sections under the notebook: **Files**, **Save** and **Submit notebook**.
 
-**Files.** Browse the working directory on the computer. Select files and choose **Copy selected files to Parallax**. Only files you copy can be submitted. If a file already exists with different content, a dialog asks you to choose **Keep theirs** or **Replace with mine**.
+**Files.** Browse the working directory on the computer. Select files and choose **Copy selected files to Parallax**. Only files you copy can be submitted.
+
+When the notebook declares files, a section **Files for this notebook** offers a button to copy them into the working directory on the computer. When Parallax writes a file to the computer, whether in that copy or with **Save to computer**, and a different file is already there, a dialog titled "<file> already exists" asks you to choose **Keep theirs**, **Replace with mine** or **Save mine as** a new name. **Cancel** leaves the file as it is. Nothing is overwritten without your choice.
 
 **Save.**
 
 - **Save to Parallax** stores your working copy in Parallax.
-- **Download .ipynb** gives you the notebook file.
+- **Download .ipynb** appears only after a save to Parallax fails or finds a newer revision. It gives you your current draft as a file.
 - **Save to computer** writes the notebook into the working directory. Enter a **File name in the workspace**, ending in `.ipynb`.
 
 **Submit.** **Submit notebook** freezes the notebook and the files you tick under **Files copied to Parallax to include**. Later changes are not part of it. Your instructor sees the frozen copy, not your computer.
@@ -337,7 +346,7 @@ Details: [spec section 10.5](../product-spec.md#105-files-saving-and-submission)
 
 ### Shiny apps
 
-A Shiny app opens in a frame in the Notebooks tab. The frame shows **Loading app**, **App reported ready** or **No ready message from the app**. Use **Restart** to reload it and **Open externally** to open it in its own tab. Without a live session, it shows **Preview · no session**. An app shown here does not by itself record a grade.
+A Shiny app opens in a frame in the Notebooks tab. The frame shows **Loading app**, **App reported ready** or **No ready message from the app**. Use **Restart** to reload it and **Open externally** to open it in its own tab. If the app's address is not on an approved origin, the app is neither shown nor linked. The header shows **Preview · no session** and a notice says to ask the instructor. An app shown here does not by itself record a grade.
 
 ## Download your own data
 
