@@ -1,20 +1,45 @@
 # Parallax
 
-Specification, interactive design study and (in progress) implementation of a course and class application.
+Parallax is a course and class web application. Instructors author courses made of topics. Each topic holds five kinds of material: **Slides**, **Reading**, **Exercises**, **Notebooks** and **Tests**. Students study that material in a class, annotate readings, ask questions, work exercises, run notebooks and take tests. Instructors review student work, grade it and export results. There are two roles, student and instructor, and every class is isolated from every other.
 
-- [Product specification](docs/product-spec.md): the unified requirements and acceptance scenarios.
-- [Interactive wireframe](docs/wireframe.html): course selection, topics, five material tabs, annotations, exercises, assessment, and instructor review. Open it in a browser.
-- [Design decisions](docs/design-reconciliation.md): how Fable’s review and counterproposal were reconciled with the original brief.
-- [Visual system](DESIGN.md): palette, typography, dimensions, and controls.
+The repository directory is PlatosCave; the product is Parallax.
 
-The design follows [the supplied layout reference](docs/idea_draft.png). **Layout notes** exposes the dimensions and palette; **Preview role** switches the sample student and instructor views. Both controls live in the demonstration footer.
+## Current state
 
-All course material and student records are fixtures. Saves remain in memory and reset on reload. No authentication, code execution, external computing session, submission, or grade delivery occurs. The optional inline preview remembers navigation choices only.
+The application described in the [product specification](docs/product-spec.md) is implemented. It was built autonomously by Claude sessions; see [the delivery process](docs/delivery/README.md).
 
-Implementation is delivered autonomously by Claude sessions. The application lets instructors export a class's results as CSV and archive or restore a class (course owners and class membership managers) or a course (owners); an archived class or course stays readable and takes no changes until restored. Students can download their own annotations and posts for a class as JSON. See [operations](docs/operations.md). The delivery documents:
+## Run it locally
 
+You need Node 22 and pnpm; Postgres runs locally without Docker. In short:
+
+```
+corepack enable && pnpm install --frozen-lockfile
+pnpm db:local start        # prints DATABASE_URL; export it
+pnpm db:migrate
+pnpm dev                   # open http://localhost:5173
+```
+
+[Getting started](docs/getting-started.md) has the full steps: signing in, becoming an instructor, creating a first course and class, running the checks, and which parts need Docker.
+
+## Documentation
+
+For people using Parallax:
+
+- [Getting started](docs/getting-started.md): run it locally and set up a first course.
+- [Instructor guide](docs/guide/instructors.md) and [student guide](docs/guide/students.md): what each role can do.
+
+For people running it:
+
+- [Operations](docs/operations.md): deployment, health, logs, limits, incidents.
+- [Backup and restore](docs/backup-restore.md).
+
+For people changing it:
+
+- [Product specification](docs/product-spec.md): the requirements and acceptance scenarios. [PRODUCT.md](PRODUCT.md) lists the owner's commitments.
 - [Architecture decisions](docs/adr/): technology stack, authorization and class isolation, content releases, code-execution isolation, notebook connector, testing strategy.
-- [Delivery plan](docs/delivery/plan.md): phases, work items and acceptance-scenario coverage.
-- [Delivery process](docs/delivery/README.md): how issues, implementer and reviewer sessions, merging and escalation work, and when a human is needed.
+- [Designs](docs/design/): the [runner](docs/design/runner.md) and the [connector](docs/design/connector.md).
+- [Visual system](DESIGN.md): palette, typography, dimensions and controls.
+- [Delivery plan](docs/delivery/plan.md) and [delivery process](docs/delivery/README.md).
+- [Design decisions](docs/design-reconciliation.md) and [Fable's review comments](docs/reviews/fable-2026-09-28.md): how the review was reconciled with the original brief.
 
-[Fable’s review comments](docs/reviews/fable-2026-09-28.md) and the design decisions remain in Markdown. `docs/wireframe.html` is the sole HTML wireframe. The product name is **Parallax**; the repository directory remains **PlatosCave**.
+The [interactive wireframe](docs/wireframe.html) is a design demonstration, not the application. Open it in a browser. Its course material and student records are fixtures; saves stay in memory and reset on reload. It follows [the supplied layout reference](docs/idea_draft.png).
