@@ -10,7 +10,7 @@ The application described in the [product specification](docs/product-spec.md) i
 
 ## Run it locally
 
-You need Node 22 and pnpm; Postgres runs locally without Docker. In short:
+You need Node 22.12 or newer, pnpm (through corepack) and the PostgreSQL 16 server binaries (`initdb`, `pg_ctl`); `pnpm db:local start` runs them without Docker and stops with "Postgres binaries not found" if they are missing. The [prerequisites table](docs/getting-started.md#prerequisites) lists everything. In short:
 
 ```
 corepack enable && pnpm install --frozen-lockfile
