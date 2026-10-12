@@ -1,7 +1,10 @@
 import { configDefaults, defineConfig } from 'vitest/config';
 
-// A cold start on Windows takes longer than Vitest's defaults allow; Linux and CI keep them.
-const coldStart = process.platform === 'win32' ? { testTimeout: 30000, hookTimeout: 60000 } : {};
+// A cold start on Windows takes longer than the limits below allow, and a busy machine can still
+// outlast a limit a test sets for itself, so a failed test gets one more try there. Linux and CI
+// keep the limits and get no second try.
+const windows = process.platform === 'win32';
+const coldStart = windows ? { testTimeout: 30000, hookTimeout: 60000, retry: 1 } : {};
 
 export default defineConfig({
   test: {
@@ -38,8 +41,10 @@ export default defineConfig({
           // The runner's Docker suites need the runner image, which only the `runner` job builds.
           exclude: [...configDefaults.exclude, 'apps/runner/test/**/*.docker.itest.ts'],
           globalSetup: ['apps/server/test/integration/global-setup.ts'],
-          testTimeout: 15000,
+          testTimeout: windows ? 60000 : 15000,
           hookTimeout: 60000,
+          // With every file at once the content jobs outlast their waits on Windows.
+          ...(windows ? { maxWorkers: 5 } : {}),
         },
       },
       {

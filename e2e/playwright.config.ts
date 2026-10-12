@@ -4,6 +4,9 @@ import { e2eDatabaseUrl } from './global-setup';
 import { mailDir } from './paths';
 
 const CI = Boolean(process.env.CI);
+// Windows runs as CI does. With more workers the pages outlast the test and expect limits, and
+// two sign-ins of one person at once can pick up each other's mailed link.
+const LIKE_CI = CI || process.platform === 'win32';
 
 export default defineConfig({
   testDir: 'tests',
@@ -11,9 +14,9 @@ export default defineConfig({
   // The connector flows need the fixtures and a Go toolchain: CI's connector-e2e workflow sets this.
   testIgnore: process.env.CONNECTOR_E2E ? [] : ['**/connector/**'],
   timeout: 30_000,
-  retries: CI ? 1 : 0,
+  retries: LIKE_CI ? 1 : 0,
   // The connector flows share limits.ts counts and endSessions: one worker keeps them from racing.
-  workers: process.env.CONNECTOR_E2E ? 1 : CI ? 2 : undefined,
+  workers: process.env.CONNECTOR_E2E ? 1 : LIKE_CI ? 2 : undefined,
   reporter: CI ? [['list'], ['html', { open: 'never' }]] : [['list']],
   globalSetup: './global-setup.ts',
   use: {

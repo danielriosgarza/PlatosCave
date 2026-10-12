@@ -25,7 +25,9 @@ afterAll(async () => {
   await testDb?.drop();
 });
 
-test('a worker whose startup hangs still exits within the stop budget on SIGTERM', async () => {
+test('a worker whose startup hangs still exits within the stop budget on SIGTERM', async (ctx) => {
+  // Windows has no SIGTERM: `kill` ends the process at once, so there is no stop budget to test.
+  ctx.skip(process.platform === 'win32');
   // Holding the version table makes boss.start() wait on the database indefinitely.
   const blocker = new pg.Client({ connectionString: testDb.url });
   await blocker.connect();

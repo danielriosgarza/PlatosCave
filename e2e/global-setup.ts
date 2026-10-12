@@ -8,5 +8,7 @@ export default function globalSetup(): void {
   execFileSync('pnpm', ['--filter', '@parallax/server', 'db:reset'], {
     stdio: 'inherit',
     env: { ...process.env, DATABASE_URL: e2eDatabaseUrl },
+    // On Windows pnpm is a command script, which only a shell can start.
+    shell: process.platform === 'win32',
   });
 }
