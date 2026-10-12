@@ -10,7 +10,9 @@ A course and class web application: students study five kinds of material per to
 
 ## How work happens here
 
-Work is delivered autonomously: one GitHub issue per plan item, one PR per issue, reviewed by a different model, merged by the orchestrator. Read `docs/delivery/README.md` before any delivery work. Role procedures are skills in `.claude/skills/`: `implement-issue`, `review-pr`, `orchestrate`, `phase-audit`, `steward`.
+Work is delivered autonomously: one GitHub issue per plan item, one PR per issue, reviewed by a different model, merged by the orchestrator (Phase 5 pull requests: merged by the package session, see below). Read `docs/delivery/README.md` before any delivery work. Role procedures are skills in `.claude/skills/`: `implement-issue`, `review-pr`, `orchestrate`, `phase-audit`, `steward`, `package-development`.
+
+**Package development (Phase 5, label `phase:5`).** When the owner types "continue package development", follow `.claude/skills/package-development/SKILL.md`: you are then a package session. Package sessions are local, on the owner's machine: no cloud session is launched, and the hourly orchestrator is stopped for the whole of package development. A package session works one fixed list of units, with Opus implementing and Fable reviewing every pull request, merges Phase 5 pull requests itself under the merge rule of `docs/delivery/README.md`, and ends by reporting "x of y done".
 
 ## Stack
 

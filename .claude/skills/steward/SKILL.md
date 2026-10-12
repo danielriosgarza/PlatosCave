@@ -9,6 +9,6 @@ Follow step 5 of `.claude/skills/implement-issue/SKILL.md`. In short:
 
 - Bring `main` in with `git merge origin/main`; never rebase, amend pushed commits, or force-push.
 - After pushing fixes for a `review:changes-requested` round, reply on each thread and replace the label with `review:pending`.
-- The orchestrator merges pull requests that satisfy the merge rule in `docs/delivery/README.md`. Sessions never merge or approve.
+- The orchestrator merges pull requests that satisfy the merge rule in `docs/delivery/README.md`. Sessions never merge or approve. Phase 5 (issue labelled `phase:5`): the package session merges, under the same merge rule (`.claude/skills/package-development/SKILL.md`); the Opus and Fable helpers it launches never merge or approve.
 - Optional review findings (marked "optional") do not start a push on their own; include clearly correct ones in the next push that already changes the PR.
 - A failing test is never "flaky" without evidence; never skip, disable or weaken a test to get green.

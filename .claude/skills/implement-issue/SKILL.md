@@ -9,7 +9,7 @@ Argument: `<issue number>` or `<issue number> continue PR #<pr>`. Repository `da
 
 **Labels** on issues and PRs are written with `issue_write` `method: update` (`issue_number` = issue or PR number), whose `labels` **replaces the whole set**: read the current labels first, change only the `status:*` or `review:*` label named below, and write every other label back unchanged.
 
-**Ownership.** Find your own session id with `get_session` (no arguments). Before every push, read the latest comment on the issue starting with `<!-- orchestrator launch role=implementer`. If its `session=` is not yours, another session now owns this work: stop without pushing.
+**Ownership.** Find your own session id with `get_session` (no arguments). Before every push, read the latest comment on the issue starting with `<!-- orchestrator launch role=implementer`. If its `session=` is not yours, another session now owns this work: stop without pushing. **Phase 5** (issue labelled `phase:5`): this check does not apply, because there is no orchestrator launch comment and no session id. The package session owns the unit (`.claude/skills/package-development/SKILL.md`): you are that session or the local Opus helper it launched, you push only to the unit's branch, and you read the tool names in this skill as the `gh` commands that skill lists.
 
 ## 1. Understand the task
 
@@ -49,7 +49,7 @@ Read, in order:
 - **`review:changes-requested`:** address every blocking finding. Reply on each thread saying what changed (or why the finding does not apply, citing spec or ADR). Push once, then replace the label with `review:pending`.
 - **Merge conflict:** merge `origin/main` into the branch, resolve, re-run checks, push.
 - Non-blocking suggestions: apply the ones that are clearly correct in your next push; otherwise reply once and leave them.
-- When the PR is labelled `review:approved` and CI is green, stop. The orchestrator merges it; you never merge, approve, or edit labels other than the ones named above.
+- When the PR is labelled `review:approved` and CI is green, stop. The orchestrator merges it; you never merge, approve, or edit labels other than the ones named above. **Phase 5** (issue labelled `phase:5`): the package session owns the unit and merges it under the merge rule. It launches the Fable reviewer once CI is green on the head, reads the verdict and has Opus fix the findings. An Opus helper it launched stops when CI is green on its head and reports back; the helper never merges, reviews or approves.
 
 ## Design items (`model:fable`, run by Opus 5.5 at maximum effort; deliverable is a document)
 
