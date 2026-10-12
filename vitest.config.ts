@@ -1,5 +1,9 @@
 import { configDefaults, defineConfig } from 'vitest/config';
 
+// A cold start on Windows takes longer than the limits below allow; Linux and CI keep them.
+const windows = process.platform === 'win32';
+const coldStart = windows ? { testTimeout: 30000, hookTimeout: 60000 } : {};
+
 export default defineConfig({
   test: {
     projects: [
@@ -13,6 +17,7 @@ export default defineConfig({
             'apps/runner/src/**/*.test.ts',
             'scripts/**/*.test.ts',
           ],
+          ...coldStart,
         },
       },
       {
@@ -23,6 +28,7 @@ export default defineConfig({
           environment: 'jsdom',
           include: ['src/**/*.test.tsx'],
           setupFiles: ['src/test/setup.ts'],
+          ...coldStart,
         },
       },
       {
@@ -33,8 +39,10 @@ export default defineConfig({
           // The runner's Docker suites need the runner image, which only the `runner` job builds.
           exclude: [...configDefaults.exclude, 'apps/runner/test/**/*.docker.itest.ts'],
           globalSetup: ['apps/server/test/integration/global-setup.ts'],
-          testTimeout: 15000,
+          testTimeout: windows ? 60000 : 15000,
           hookTimeout: 60000,
+          // With every file at once the content jobs outlast their waits on Windows.
+          ...(windows ? { maxWorkers: 5 } : {}),
         },
       },
       {

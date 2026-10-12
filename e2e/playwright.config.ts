@@ -4,6 +4,8 @@ import { e2eDatabaseUrl } from './global-setup';
 import { mailDir } from './paths';
 
 const CI = Boolean(process.env.CI);
+// With the default worker count the pages outlast the test and expect limits on Windows.
+const WINDOWS = process.platform === 'win32';
 
 export default defineConfig({
   testDir: 'tests',
@@ -13,7 +15,7 @@ export default defineConfig({
   timeout: 30_000,
   retries: CI ? 1 : 0,
   // The connector flows share limits.ts counts and endSessions: one worker keeps them from racing.
-  workers: process.env.CONNECTOR_E2E ? 1 : CI ? 2 : undefined,
+  workers: process.env.CONNECTOR_E2E ? 1 : CI || WINDOWS ? 2 : undefined,
   reporter: CI ? [['list'], ['html', { open: 'never' }]] : [['list']],
   globalSetup: './global-setup.ts',
   use: {

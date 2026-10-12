@@ -9,6 +9,7 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join, posix, resolve } from 'node:path';
 import { afterAll, beforeAll, expect, test } from 'vitest';
@@ -18,7 +19,9 @@ import { afterAll, beforeAll, expect, test } from 'vitest';
 // The fixture is linted with the repository's biome.json at several paths in a scratch copy.
 
 const root = resolve(import.meta.dirname, '../../../..');
-const biome = join(root, 'node_modules/.bin/biome');
+const require = createRequire(import.meta.url);
+const biomeManifest = require.resolve('@biomejs/biome/package.json');
+const biome = join(dirname(biomeManifest), require(biomeManifest).bin.biome);
 const config = JSON.parse(readFileSync(join(root, 'biome.json'), 'utf8')) as {
   overrides?: {
     includes?: string[];
@@ -94,14 +97,20 @@ beforeAll(() => {
     mkdirSync(dirname(join(scratch, path)), { recursive: true });
     writeFileSync(join(scratch, path), fixture);
   }
-  const run = spawnSync(biome, ['lint', '--vcs-enabled=false', '--reporter=json', 'apps'], {
-    cwd: scratch,
-    encoding: 'utf8',
-  });
+  // Through node, not the `.bin` shim: Windows cannot spawn the shim directly.
+  const run = spawnSync(
+    process.execPath,
+    [biome, 'lint', '--vcs-enabled=false', '--reporter=json', 'apps'],
+    { cwd: scratch, encoding: 'utf8' },
+  );
   if (run.error || !run.stdout) {
     throw new Error(`biome did not run: ${run.error?.message ?? run.stderr}`);
   }
-  diagnostics = (JSON.parse(run.stdout) as { diagnostics: Diagnostic[] }).diagnostics;
+  // biome reports each path with the platform's separator.
+  diagnostics = (JSON.parse(run.stdout) as { diagnostics: Diagnostic[] }).diagnostics.map((d) => ({
+    ...d,
+    location: { ...d.location, path: d.location.path?.replaceAll('\\', '/') },
+  }));
 });
 
 afterAll(() => {
@@ -178,6 +187,7 @@ test('only auth/scope.ts imports db/auth/scope', () => {
   const serverSrc = join(root, 'apps/server/src');
   const sources = Object.fromEntries(
     readdirSync(serverSrc, { recursive: true, encoding: 'utf8' })
+      .map((f) => f.replaceAll('\\', '/'))
       .filter((f) => f.endsWith('.ts') && f !== 'db/raw-access-lint.test.ts')
       .map((f) => [f, readFileSync(join(serverSrc, f), 'utf8')]),
   );

@@ -47,6 +47,10 @@ import { config, type ExecWorld, execWorld } from './execution';
  * a22-backup-restore-s3.itest.ts does the same with STORAGE_DRIVER=s3.
  */
 
+// The scripts serve the Linux hosts Parallax is deployed on: they need bash, pg_dump and POSIX
+// file modes, so nothing in this file runs on Windows.
+const windows = process.platform === 'win32';
+
 /** Runs scripts/<name>.sh with the database and storage root it should act on. */
 const script = (name: 'backup' | 'restore', dir: string, databaseUrl: string, storageDir: string) =>
   run(name, dir, databaseUrl, { STORAGE_DRIVER: 'fs', STORAGE_DIR: storageDir });
@@ -68,6 +72,7 @@ async function restoredCall(who: PersonName, url: string) {
 }
 
 beforeAll(async () => {
+  if (windows) return;
   tmp = await mkdtemp(join(tmpdir(), 'parallax-backup-'));
   const source = join(tmp, 'source-storage');
   w = await execWorld({
@@ -97,13 +102,14 @@ beforeAll(async () => {
 }, 120_000);
 
 afterAll(async () => {
+  if (windows) return;
   await restored?.app.close();
   await restored?.end();
   await dropDatabases();
   if (tmp) await rm(tmp, { recursive: true, force: true });
 });
 
-describe('A22 backup and restore', () => {
+describe.skipIf(windows)('A22 backup and restore', () => {
   test('A22 the restored attempt keeps its resource revision, code, grader version and grades', async () => {
     expectRestoredRecords(await records(restored.db), g);
   });
@@ -190,7 +196,7 @@ describe('A22 backup and restore', () => {
   });
 });
 
-describe('A22 restore refuses what it cannot restore faithfully', () => {
+describe.skipIf(windows)('A22 restore refuses what it cannot restore faithfully', () => {
   test('A22 a database that already holds data is left untouched', async () => {
     const storageDir = join(tmp, 'refused-storage');
     const res = await script('restore', join(tmp, 'backup'), restored.url, storageDir);

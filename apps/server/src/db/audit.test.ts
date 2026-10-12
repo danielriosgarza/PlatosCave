@@ -1,5 +1,5 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
-import { join, relative } from 'node:path';
+import { join, relative, sep } from 'node:path';
 import { expect, test } from 'vitest';
 
 const root = join(__dirname, '..');
@@ -15,6 +15,6 @@ function sources(dir: string): string[] {
 test('audit_events rows are appended only by db/audit.ts', () => {
   const writers = sources(root)
     .filter((file) => /insert\(\s*auditEvents\s*\)/.test(readFileSync(file, 'utf8')))
-    .map((file) => relative(root, file));
+    .map((file) => relative(root, file).split(sep).join('/'));
   expect(writers).toEqual(['db/audit.ts']);
 });

@@ -581,6 +581,10 @@ describe('sketch on a figure', () => {
     expect(svg).toContain('<svg');
     expect(svg).toContain('<desc>A diagonal.</desc>');
     expect(svg).toContain('points="0,0 900,450"');
+    // The file is released a second later. Left pending, that timer fires in the next test.
+    await waitFor(() => expect(URL.revokeObjectURL).toHaveBeenCalledWith('blob:sketch'), {
+      timeout: 3000,
+    });
   });
 
   it('A07 Download SVG clicks a link in the document and releases the file only after the click', async () => {

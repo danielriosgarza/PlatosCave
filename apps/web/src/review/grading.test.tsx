@@ -2,7 +2,7 @@ import { act, cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CLASS_A, instructorIn, makeMe, renderApp, signedIn, stubApi } from '../test/render';
-import type { ClassReview } from './classReview';
+import type { ClassReview } from './classReviewData';
 import type { AttemptGrade, GradeRow } from './grading';
 
 afterEach(() => {

@@ -1,7 +1,9 @@
 import { expect, test } from '@playwright/test';
 
 const app = 'http://127.0.0.1:3100';
-const content = 'http://localhost:3100';
+// Node on Windows resolves `localhost` to ::1 alone, and the server listens on 127.0.0.1: the
+// content origin is reached at that address, under its own Host header.
+const contentHost = { host: 'localhost:3100' };
 
 test('P1-06 the content origin serves only token URLs; the app origin serves no content URLs', async ({
   request,
@@ -17,7 +19,7 @@ test('P1-06 the content origin serves only token URLs; the app origin serves no 
     '//x/content/abc',
     '/content/not-a-token',
   ]) {
-    const res = await request.get(`${content}${path}`);
+    const res = await request.get(`${app}${path}`, { headers: contentHost });
     expect(res.status(), path).toBe(404);
     expect(await res.json()).toEqual({ error: 'not found' });
   }

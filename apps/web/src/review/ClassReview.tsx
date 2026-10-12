@@ -22,7 +22,7 @@ import {
   submittedText,
   testText,
   useClassReview,
-} from './classReview';
+} from './classReviewData';
 import { ExportResults } from './ExportResults';
 import grading from './Grading.module.css';
 import { useTestGrades } from './grading';

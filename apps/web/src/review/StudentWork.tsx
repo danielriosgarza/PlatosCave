@@ -7,7 +7,7 @@ import { RetryNotice } from '../components/RetryNotice';
 import { type TabDef, TabRow } from '../components/TabRow';
 import { ATTEMPT_STATE_LABEL, formatInstant, points } from '../format/format';
 import { searchFor } from '../reading/place';
-import type { ClassReview, ReviewSearch, ReviewTab } from './classReview';
+import type { ClassReview, ReviewSearch, ReviewTab } from './classReviewData';
 import { ExerciseReview } from './ExerciseReview';
 import styles from './Grading.module.css';
 import { GradingWorkspace } from './GradingWorkspace';

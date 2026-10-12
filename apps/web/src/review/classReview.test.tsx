@@ -11,7 +11,7 @@ import {
   stubApi,
   studentIn,
 } from '../test/render';
-import type { ClassReview } from './classReview';
+import type { ClassReview } from './classReviewData';
 
 afterEach(() => {
   cleanup();

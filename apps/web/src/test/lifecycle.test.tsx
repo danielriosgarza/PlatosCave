@@ -2,7 +2,7 @@ import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Cards } from '../courses/queries';
-import type { ClassReview } from '../review/classReview';
+import type { ClassReview } from '../review/classReviewData';
 import { expectNoAxeViolations } from './axe';
 import {
   CLASS_A,
