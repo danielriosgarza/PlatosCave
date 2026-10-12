@@ -34,6 +34,21 @@ The repository owner authorised this process on 2026-09-30, including fully auto
 - **Issue-less PR** = an open PR whose body says `Closes: none` (a process change the owner asked for). It has no linked issue, attempts or implementer model.
 - **In flight** = an implementer, reviewer or auditor session launched this run or still `working`, a PR branch this run updated from `main`, a PR labelled `review:pending` that was updated in the last 60 minutes, or an open PR whose head has check runs queued or running, the oldest created less than 30 minutes ago. Older ones are not in flight.
 - **Pending check-in** = the `Next check-in: <ISO> <trigger id>` line on the dashboard. It only ever holds a `send_later` trigger id, never the hourly routine's; never `delete_trigger` `trig_01GLrhXFVWKkrjAb4DNu7LBX`. It is consumed when the message that woke this run ends `(follow-up check-in)`, or when its time is more than 30 minutes past (lost delivery; `delete_trigger` it in case it still fires). A check-in whose time has passed but is not consumed is still pending: its message is queued behind this run.
+- **Phase 5 work** = an issue labelled `phase:5`, and its pull request: the PR of such an issue, or an open PR whose title starts with `[P5-`.
+
+## Phase 5 is skipped in every step
+
+Package development (Phase 5) is run by package sessions on the owner's machine (`.claude/skills/package-development/SKILL.md`), not by this routine. The owner keeps `paused` on the dashboard issue for the whole of it, so Step 0 stops the run. If a run ever gets past Step 0 while Phase 5 work exists, every step skips that work: read nothing from it into your decisions and write nothing to it (no label, comment, launch, branch update or merge).
+
+- **Step 0:** Phase 5 work does not count for the fast path: not as an update since `Last run`, a live issue, a review label or work in flight.
+- **Step 1:** leave `phase:5` issues and their pull requests out of the state you act on.
+- **Step 2:** never merge, update or relabel a Phase 5 pull request. The package session merges it.
+- **Step 3:** never set `status:ready` on a `phase:5` issue, and never escalate it for a missing ID. Its `Depends on:` line holds no `P[0-4]` ID, so the rule would otherwise pass it at once.
+- **Step 4:** do not supervise it: no `review:pending` on a green Phase 5 pull request, no continuation, no escalation.
+- **Step 5:** launch no reviewer for a Phase 5 pull request. Its only reviewer is Fable, launched by the package session.
+- **Step 6:** launch no implementer for a `phase:5` issue. Such issues count neither as live issues nor toward the `needs-human` limit.
+- **Step 7:** launch no audit for phase 5 (the package session launches it), and leave `phase:5` issues out of "Delivery plan complete".
+- **Steps 8 and 9:** Phase 5 work is not in flight and has no row on the dashboard. Under Notes, say that Phase 5 is run by package sessions.
 
 ## Step 0 — Lock, pause, fast path
 
@@ -58,7 +73,7 @@ Walk the open PRs labelled `review:approved`, lowest number first (issue-less PR
 
 Merge with `merge_pull_request`, `merge_method: squash`, `expectedHeadSha`, and title `<PR title> (#<PR>)`. Confirm the linked issue closed; close it (`state_reason: completed`) if GitHub did not. Continue with the next PR.
 
-**Issue-less PRs** are evaluated for conditions 1 and 3 only, never updated from `main` and never merged: the orchestrator cannot verify the owner's approval. When one passes both, label the dashboard issue `needs-human` (once per head, with an escalate record): "PR #<n> (no linked issue) is approved and green; merge it or close it."
+**Issue-less PRs** are evaluated for conditions 1 and 3 only, never updated from `main` and never merged: the orchestrator cannot verify the owner's approval. When one passes both, label the dashboard issue `needs-human` (once per head, with an escalate record): "PR #<n> (no linked issue) is approved and green; merge it or close it." A Phase 5 pull request is not evaluated or merged here at all: the package session merges it under the same merge rule.
 
 ## Step 3 — Unblock
 
@@ -164,3 +179,4 @@ End with a message that starts `NEEDS HUMAN:` if anything was escalated in this 
 - Merge outside Step 2, push commits, edit code, or close issues other than in Step 2.
 - Remove `needs-human` (only the owner does).
 - Launch more sessions than the limits allow, or a second session for work that has a live one.
+- Act on Phase 5 work (issues labelled `phase:5` and their pull requests): no label, comment, launch, branch update or merge.
