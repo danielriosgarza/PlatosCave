@@ -67,7 +67,7 @@ func DirFor(goos string, getenv func(string) string, home string) (string, error
 		}
 		return filepath.Join(home, "Library", "Application Support", appDir), nil
 	default:
-		if xdg := getenv("XDG_CONFIG_HOME"); xdg != "" && filepath.IsAbs(xdg) {
+		if xdg := getenv("XDG_CONFIG_HOME"); xdg != "" && isAbs(goos, xdg) {
 			return filepath.Join(xdg, appDir), nil
 		}
 		if home == "" {
@@ -135,7 +135,7 @@ func (s *Store) ReadFile(name string) ([]byte, error) {
 	if !info.Mode().IsRegular() {
 		return nil, fmt.Errorf("%s is not a regular file", p)
 	}
-	f, err := os.Open(p)
+	f, err := openFile(p)
 	if err != nil {
 		return nil, err
 	}
@@ -184,7 +184,7 @@ func (s *Store) WritePrivate(name string, data []byte) error {
 	if err := tmp.Close(); err != nil {
 		return fmt.Errorf("write %s: %w", name, err)
 	}
-	if err := os.Rename(tmpName, s.Path(name)); err != nil {
+	if err := replaceFile(tmpName, s.Path(name)); err != nil {
 		return fmt.Errorf("write %s: %w", name, err)
 	}
 	done = true

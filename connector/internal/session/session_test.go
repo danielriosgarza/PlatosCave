@@ -440,6 +440,9 @@ func parseProcAddr(t *testing.T, s string) netip.AddrPort {
 }
 
 func processAlive(pid int) bool {
+	if runtime.GOOS == "windows" {
+		return pidAlive(pid)
+	}
 	if runtime.GOOS != "linux" {
 		return false
 	}

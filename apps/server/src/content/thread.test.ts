@@ -37,9 +37,10 @@ describe('runInThread', () => {
     // In a child process without NODE_OPTIONS: a process-wide --max-old-space-size (set in some
     // shells) overrides every thread's heap cap.
     const serverDir = resolve(import.meta.dirname, '../..');
+    // Through node, not the `.bin` shim: Windows cannot spawn the shim directly.
     const { stdout } = await promisify(execFile)(
-      resolve(serverDir, 'node_modules/.bin/tsx'),
-      ['test/fixtures/threads/oom-probe.ts'],
+      process.execPath,
+      [resolve(serverDir, 'node_modules/tsx/dist/cli.mjs'), 'test/fixtures/threads/oom-probe.ts'],
       { cwd: serverDir, env: { ...process.env, NODE_OPTIONS: '' }, timeout: 30_000 },
     );
     expect(stdout.trim()).toBe('final: too big');

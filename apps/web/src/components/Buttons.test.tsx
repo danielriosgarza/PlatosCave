@@ -55,7 +55,7 @@ describe('shared buttons', () => {
           .split('\n')
           .some((l) => BUTTON_CLASS.test(l)),
       );
-    expect(definers.map((f) => f.slice(root.length + 1))).toEqual([
+    expect(definers.map((f) => f.slice(root.length + 1).replaceAll('\\', '/'))).toEqual([
       'components/Buttons.module.css',
     ]);
     const offenders = files

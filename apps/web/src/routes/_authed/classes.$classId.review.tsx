@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { ClassReview } from '../../review/ClassReview';
-import { parseReviewSearch } from '../../review/classReview';
+import { parseReviewSearch } from '../../review/classReviewData';
 
 export const Route = createFileRoute('/_authed/classes/$classId/review')({
   validateSearch: parseReviewSearch,

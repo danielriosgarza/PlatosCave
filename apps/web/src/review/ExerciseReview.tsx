@@ -2,7 +2,7 @@ import { Loading } from '../components/Loading';
 import page from '../components/Page.module.css';
 import { RetryNotice } from '../components/RetryNotice';
 import { formatInstant } from '../format/format';
-import type { ClassReview } from './classReview';
+import type { ClassReview } from './classReviewData';
 import styles from './Grading.module.css';
 import { type ExerciseAttempts, useExerciseAttempts } from './grading';
 

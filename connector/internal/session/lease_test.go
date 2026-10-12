@@ -259,7 +259,12 @@ func TestA32_StopConfirmsTermination(t *testing.T) {
 	if processAlive(pid) {
 		t.Fatal("stopped was sent while the process still runs")
 	}
-	if took := time.Since(began); took < 600*time.Millisecond {
+	// Windows has no SIGTERM: once the shutdown wait runs out the process is ended at once.
+	least := 600 * time.Millisecond
+	if runtime.GOOS == "windows" {
+		least = 300 * time.Millisecond
+	}
+	if took := time.Since(began); took < least {
 		t.Errorf("stopped after %s, before the shutdown and SIGTERM waits ran out", took)
 	}
 	if st.Cause != "user_stop" || st.RequestID != reqB || !st.Owned {

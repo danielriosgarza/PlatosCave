@@ -1,5 +1,8 @@
 import { configDefaults, defineConfig } from 'vitest/config';
 
+// A cold start on Windows takes longer than Vitest's defaults allow; Linux and CI keep them.
+const coldStart = process.platform === 'win32' ? { testTimeout: 30000, hookTimeout: 60000 } : {};
+
 export default defineConfig({
   test: {
     projects: [
@@ -13,6 +16,7 @@ export default defineConfig({
             'apps/runner/src/**/*.test.ts',
             'scripts/**/*.test.ts',
           ],
+          ...coldStart,
         },
       },
       {
@@ -23,6 +27,7 @@ export default defineConfig({
           environment: 'jsdom',
           include: ['src/**/*.test.tsx'],
           setupFiles: ['src/test/setup.ts'],
+          ...coldStart,
         },
       },
       {
