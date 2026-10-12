@@ -45,7 +45,7 @@ Package development (Phase 5) is run by package sessions on the owner's machine 
 - **Step 2:** never merge, update or relabel a Phase 5 pull request. The package session merges it.
 - **Step 3:** never set `status:ready` on a `phase:5` issue, and never escalate it for a missing ID. Its `Depends on:` line holds no `P[0-4]` ID, so the rule would otherwise pass it at once.
 - **Step 4:** do not supervise it: no `review:pending` on a green Phase 5 pull request, no continuation, no escalation.
-- **Step 5:** launch no reviewer for a Phase 5 pull request. Its only reviewer is Fable, launched by the package session.
+- **Step 5:** launch no reviewer for a Phase 5 pull request. Its only reviewer is Sonnet 5.5 at extra high effort, launched by the package session.
 - **Step 6:** launch no implementer for a `phase:5` issue. Such issues count neither as live issues nor toward the `needs-human` limit.
 - **Step 7:** launch no audit for phase 5 (the package session launches it), and leave `phase:5` issues out of "Delivery plan complete".
 - **Steps 8 and 9:** Phase 5 work is not in flight and has no row on the dashboard. Under Notes, say that Phase 5 is run by package sessions.

@@ -49,7 +49,7 @@ Read, in order:
 - **`review:changes-requested`:** address every blocking finding. Reply on each thread saying what changed (or why the finding does not apply, citing spec or ADR). Push once, then replace the label with `review:pending`.
 - **Merge conflict:** merge `origin/main` into the branch, resolve, re-run checks, push.
 - Non-blocking suggestions: apply the ones that are clearly correct in your next push; otherwise reply once and leave them.
-- When the PR is labelled `review:approved` and CI is green, stop. The orchestrator merges it; you never merge, approve, or edit labels other than the ones named above. **Phase 5** (issue labelled `phase:5`): the package session owns the unit and merges it under the merge rule. It launches the Fable reviewer once CI is green on the head, reads the verdict and has Opus fix the findings. An Opus helper it launched stops when CI is green on its head and reports back; the helper never merges, reviews or approves.
+- When the PR is labelled `review:approved` and CI is green, stop. The orchestrator merges it; you never merge, approve, or edit labels other than the ones named above. **Phase 5** (issue labelled `phase:5`): the package session owns the unit and merges it under the merge rule. It launches the Sonnet reviewer once CI is green on the head, reads the verdict and has Opus fix the findings. An Opus helper it launched stops when CI is green on its head and reports back; the helper never merges, reviews or approves.
 
 ## Design items (`model:fable`, run by Opus 5.5 at maximum effort; deliverable is a document)
 
