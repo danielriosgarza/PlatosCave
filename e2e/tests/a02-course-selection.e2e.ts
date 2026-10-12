@@ -8,9 +8,11 @@ async function signIn(page: Page, email: string, entrance: 'Student' | 'Instruct
   await page.goto('/signin');
   await page.getByRole('button', { name: `${entrance} sign in` }).click();
   await page.getByLabel('Email address').fill(email);
+  // Sam and Priya sign in here in every run, so mail from their earlier sign-ins is on disk.
+  const requested = Date.now();
   await page.getByRole('button', { name: 'Send sign-in link' }).click();
   await expect(page.getByText('Sign-in link requested')).toBeVisible();
-  await page.goto(await latestSignInLink(email));
+  await page.goto(await latestSignInLink(email, requested));
 }
 
 test.beforeAll(async ({ playwright, baseURL }) => {

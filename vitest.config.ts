@@ -1,10 +1,8 @@
 import { configDefaults, defineConfig } from 'vitest/config';
 
-// A cold start on Windows takes longer than the limits below allow, and a busy machine can still
-// outlast a limit a test sets for itself, so a failed test gets one more try there. Linux and CI
-// keep the limits and get no second try.
+// A cold start on Windows takes longer than the limits below allow; Linux and CI keep them.
 const windows = process.platform === 'win32';
-const coldStart = windows ? { testTimeout: 30000, hookTimeout: 60000, retry: 1 } : {};
+const coldStart = windows ? { testTimeout: 30000, hookTimeout: 60000 } : {};
 
 export default defineConfig({
   test: {

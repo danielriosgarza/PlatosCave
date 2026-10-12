@@ -9,6 +9,7 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs';
+import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
 import { dirname, join, posix, resolve } from 'node:path';
 import { afterAll, beforeAll, expect, test } from 'vitest';
@@ -18,7 +19,9 @@ import { afterAll, beforeAll, expect, test } from 'vitest';
 // The fixture is linted with the repository's biome.json at several paths in a scratch copy.
 
 const root = resolve(import.meta.dirname, '../../../..');
-const biome = join(root, 'node_modules/@biomejs/biome/bin/biome');
+const require = createRequire(import.meta.url);
+const biomeManifest = require.resolve('@biomejs/biome/package.json');
+const biome = join(dirname(biomeManifest), require(biomeManifest).bin.biome);
 const config = JSON.parse(readFileSync(join(root, 'biome.json'), 'utf8')) as {
   overrides?: {
     includes?: string[];
@@ -106,7 +109,7 @@ beforeAll(() => {
   // biome reports each path with the platform's separator.
   diagnostics = (JSON.parse(run.stdout) as { diagnostics: Diagnostic[] }).diagnostics.map((d) => ({
     ...d,
-    location: { ...d.location, path: d.location.path.replaceAll('\\', '/') },
+    location: { ...d.location, path: d.location.path?.replaceAll('\\', '/') },
   }));
 });
 

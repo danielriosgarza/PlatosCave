@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process';
+import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { describe, expect, test } from 'vitest';
@@ -40,7 +41,7 @@ describe('runInThread', () => {
     // Through node, not the `.bin` shim: Windows cannot spawn the shim directly.
     const { stdout } = await promisify(execFile)(
       process.execPath,
-      [resolve(serverDir, 'node_modules/tsx/dist/cli.mjs'), 'test/fixtures/threads/oom-probe.ts'],
+      [createRequire(import.meta.url).resolve('tsx/cli'), 'test/fixtures/threads/oom-probe.ts'],
       { cwd: serverDir, env: { ...process.env, NODE_OPTIONS: '' }, timeout: 30_000 },
     );
     expect(stdout.trim()).toBe('final: too big');

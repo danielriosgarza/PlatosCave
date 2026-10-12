@@ -100,21 +100,29 @@ function serve(sessions: () => unknown[]) {
   });
 }
 
+// The first test of this file pays the file's cold start. On Windows that has taken more than
+// the 15 s that are enough elsewhere (vitest.config.ts gives tests without a limit 30 s there).
+const FIRST_TEST_MS = process.platform === 'win32' ? 30000 : 15000;
+
 describe('Notebooks tab live mode', () => {
-  it('A27 a session that becomes ready turns the saved notebook into the live one without a reload', async () => {
-    let state: 'starting' | 'ready' = 'starting';
-    serve(() => [session({ state, resourceRevisionId: REV })]);
-    renderApp(NOTEBOOKS);
-    const panel = await screen.findByRole('tabpanel');
-    // While the session starts, the notebook shows its saved outputs.
-    await within(panel).findByText('Stored output · Python 3');
-    expect(screen.queryByRole('article', { name: 'Live notebook' })).not.toBeInTheDocument();
-    state = 'ready';
-    // The list is read again by itself; no remount or focus change is needed.
-    await screen.findByRole('article', { name: 'Live notebook' }, { timeout: 8000 });
-    expect(IdleSocket.all).toHaveLength(1);
-    expect(IdleSocket.all[0]?.url).toContain('/notebook-sessions/');
-  }, 15000);
+  it(
+    'A27 a session that becomes ready turns the saved notebook into the live one without a reload',
+    async () => {
+      let state: 'starting' | 'ready' = 'starting';
+      serve(() => [session({ state, resourceRevisionId: REV })]);
+      renderApp(NOTEBOOKS);
+      const panel = await screen.findByRole('tabpanel');
+      // While the session starts, the notebook shows its saved outputs.
+      await within(panel).findByText('Stored output · Python 3');
+      expect(screen.queryByRole('article', { name: 'Live notebook' })).not.toBeInTheDocument();
+      state = 'ready';
+      // The list is read again by itself; no remount or focus change is needed.
+      await screen.findByRole('article', { name: 'Live notebook' }, { timeout: 8000 });
+      expect(IdleSocket.all).toHaveLength(1);
+      expect(IdleSocket.all[0]?.url).toContain('/notebook-sessions/');
+    },
+    FIRST_TEST_MS,
+  );
 
   it('A36 edits are kept when the session is forgotten and when a new one is opened', async () => {
     let list: unknown[] = [session({ state: 'ready', resourceRevisionId: REV })];

@@ -358,6 +358,7 @@ func TestA27_LocalRunsCellThroughProxy(t *testing.T) {
 	if len(recs) != 1 {
 		t.Fatalf("%d servers started", len(recs))
 	}
+	watchPID(t, recs[0].PID)
 	if host, _, _ := net.SplitHostPort(recs[0].Listen); host != "127.0.0.1" {
 		t.Errorf("Jupyter listens on %s", recs[0].Listen)
 	}

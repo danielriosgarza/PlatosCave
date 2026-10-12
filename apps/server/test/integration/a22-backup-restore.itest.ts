@@ -102,6 +102,7 @@ beforeAll(async () => {
 }, 120_000);
 
 afterAll(async () => {
+  if (windows) return;
   await restored?.app.close();
   await restored?.end();
   await dropDatabases();

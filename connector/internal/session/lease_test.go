@@ -191,6 +191,7 @@ func onlyPID(t *testing.T, dir string) int {
 	if len(recs) != 1 {
 		t.Fatalf("%d servers started", len(recs))
 	}
+	watchPID(t, recs[0].PID)
 	return recs[0].PID
 }
 
@@ -274,6 +275,7 @@ func TestA32_StopConfirmsTermination(t *testing.T) {
 	e.openLocal(sessionB, reqA, t.TempDir(), protocol.Runtime{Mode: "start"})
 	recs := jupytertest.Records(t, dir)
 	pidB := recs[len(recs)-1].PID
+	watchPID(t, pidB)
 	e.presence(sessionB, false)
 	e.advance(5 * time.Minute)
 	e.state(StateStopping)
