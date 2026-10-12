@@ -5,8 +5,9 @@ import ts from 'typescript';
 
 const root = join(import.meta.dirname, '..');
 const SKIP_DIRS = new Set(['node_modules', 'dist', '.git', '.local', 'coverage']);
-const ID = /\bA(0[1-9]|[12][0-9]|3[0-6])\b/g;
-const GO_TEST = /^func Test(A(?:0[1-9]|[12][0-9]|3[0-6]))(?![0-9A-Za-z])/gm;
+// Scenario IDs A01 to A52 (spec §16). The TypeScript and the Go pattern carry the same range.
+const ID = /\bA(0[1-9]|[1-4][0-9]|5[0-2])\b/g;
+const GO_TEST = /^func Test(A(?:0[1-9]|[1-4][0-9]|5[0-2]))(?![0-9A-Za-z])/gm;
 const TEST_FNS = new Set(['test', 'it', 'describe']);
 // Modifiers that still name a test or group; others (`step`, `use`, `beforeEach`, …) are not titles.
 const MODIFIERS = new Set([

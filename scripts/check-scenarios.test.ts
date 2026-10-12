@@ -236,6 +236,28 @@ func TestA34_AfterComment(t *testing.T) {}
     expect(idsInTsTitles(src)).toEqual(['A05', 'A06', 'A07']);
   });
 
+  // The title names no ID: this file is scanned too, and an ID here would count as a scenario test.
+  it('P5-02 the range ends at the last scenario of spec §16, in TS titles and Go names', () => {
+    const src = `
+      it('A36 last of the first release', () => {});
+      it('A37 first of package development', () => {});
+      it('A40 a middle one', () => {});
+      it('A52 last of package development', () => {});
+      it('A53 past the range', () => {});
+      it('A60 past the range', () => {});
+      it('A520 not an ID', () => {});`;
+    expect(idsInTsTitles(src)).toEqual(['A36', 'A37', 'A40', 'A52']);
+    const go = `
+func TestA36_LastOfTheFirstRelease(t *testing.T) {}
+func TestA37_FirstOfPackageDevelopment(t *testing.T) {}
+func TestA48_ColabProxyCommand(t *testing.T) {}
+func TestA52_LastOfPackageDevelopment(t *testing.T) {}
+func TestA53_PastTheRange(t *testing.T) {}
+func TestA520_NotAnID(t *testing.T) {}
+`;
+    expect(idsInGoTests(go)).toEqual(['A36', 'A37', 'A48', 'A52']);
+  });
+
   it('AUD8 maps IDs to files across TS and Go', () => {
     const files: Record<string, string> = {
       'a/x.test.ts': "it('A01 one', () => {});",

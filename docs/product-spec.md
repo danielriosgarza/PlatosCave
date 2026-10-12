@@ -23,6 +23,15 @@ The following decisions are assumptions to review, not unresolved requirements h
 | Assessment | Untimed by default. Timers, retakes, release dates, and late policies are explicit class settings. |
 | First deployment | One teaching organisation. Class isolation is required from the start. Billing and institution-wide administration are outside this brief. |
 
+On 12 October 2026 the owner added requirements N1 to N10 (`docs/needed_specs.md`) and answered their open questions (issue #559; `docs/delivery/plan.md` §8 has each answer). They make Parallax installable and pluggable. They change nothing that is built: the screens, the content model, the permission model and where code runs stay as they are. The rows below add to the table above; §3, §13, §16 and §17 carry the detail.
+
+| Decision | Owner commitment |
+| --- | --- |
+| Installation | Parallax is installed per project, the way a documentation site is. One command creates a site from a template; the site folder holds only the site's own files and pages; Parallax arrives as versioned pieces. Each project is its own installation. |
+| Modes | Instructor mode holds the courses of one instructor. School mode holds several instructors, each with their courses, in one installation. The mode is set in the site's configuration and adds no role. |
+| Access | Chosen per site and per class. A level 0 site is open to everyone, without sign-in, and is read-only. An open class at level 1 is joined through a link by anyone who signs in. Every other class keeps invitation or enrolment code. |
+| First deployment | A level 1 installation runs on one host from the template, with two host names (application and content). Class isolation holds in every installation. A shared installation for many projects, billing and institution-wide administration stay outside. |
+
 ## 2. Information structure
 
 ```mermaid
@@ -64,6 +73,8 @@ Browser Back restores the previous resource, position, and open margin. A copied
 The entry page offers **Student sign in** and **Instructor sign in**. Both use the same identity service and accept the same account. The student entrance opens **Your courses**, scoped to enrolled classes, with a saved-resource Resume action. The instructor entrance opens **Courses you teach**, scoped to teaching memberships, with Class review and permitted authoring actions. A person holding both roles can switch between those authorised contexts. Both can use `/courses` with an explicit view; the distinction is its content and actions, not a second account. A student who chooses the instructor entry sees an access explanation and their enrolled classes, without gaining instructor privileges.
 
 Email sign-in links are the proposed initial method. Preserve the intended destination through authentication, use expiring single-use links, support sign-out, and require authentication again for sensitive membership changes. Institutional sign-in is a later provider decision.
+
+Decided on 12 October 2026 (N7): the way people sign in is a plug behind one identity interface. A site offers email links, "sign in with" providers, or both. The first provider kind is generic OpenID Connect (a university issuer, Google); GitHub and ORCID are later items. Signing in with a provider reaches the account of the same verified address, so accounts stay keyed by a verified address, and the instructor allow-list and invitations work unchanged. A provider that asserts no verified address is refused with an explanation. A mail sender is needed for email links only: a site without one offers no email link, and a provider button appears only when that provider is configured. A level 0 site (§13) has no sign-in. In an open class (§13) a signed-in visitor joins through a link and holds the student permissions of the table below, except that posting to the class or to instructors is off.
 
 | Capability | Student | Class instructor | Course owner / delegated publisher |
 | --- | --- | --- | --- |
@@ -429,6 +440,32 @@ Use optimistic revision checks for editing, idempotent mutation identifiers for 
 
 Keep audit events for publication, permissions, assignment changes, submissions, grade overrides, exports, and result release. Set explicit retention and backup policies before production. Support student export and authorised deletion while retaining only records the organisation has decided it must keep. Test restoration, including attachment/version references, before relying on backups.
 
+### Installation, levels and boundaries
+
+Owner commitments of 12 October 2026 (N1 to N10). They add ways to install, fill and open a site; the records and boundaries above do not change. File and command names (`parallax.config.ts`, `topic.yaml`, `parallax sync`) are working names until the design items of the delivery plan (P5-03 to P5-05) fix them.
+
+**Published pieces (N1).** Parallax is published as versioned pieces under one version number: two npm packages that a site compiles against, and container images for what a host runs (server, runner). The packages are `parallax-site`, the command-line tool, which carries the web application and the conversion, and `create-parallax-site`, the scaffolder, run as `npm create parallax-site`. The command inside a site is `parallax`. An upgrade changes the version and no other file of the site. Migrations run before the services start and refuse a database newer than the package; rollback is the backup taken before the upgrade. At level 0 an upgrade is a new version and a rebuild.
+
+**Site folder and modes (N2, N3).** A site folder holds its configuration (mode, name, logo, level, sign-in, origins, and the classes with their access and instructors), its own pages and its course folders. Instructor mode keeps `courses/` at the top. School mode keeps the same layout under `instructors/<name>/courses/`, so a `courses/` folder moves between the modes unchanged. In school mode the configuration names the instructors; the address in an instructor folder's metadata identifies the account that owns the folder's courses, and the site's catalogue page lists instructors, then their courses. Setup from the configuration creates instructor access, classes and enrolment with no API call, and a second run changes nothing. A site's own pages are JSX and are added pages only: a page at the address of a Parallax screen stops the build, and `/` is free for a front page. Pages receive catalogue data at build time (titles from the folder); there is no supported runtime API for them. A site's name and logo appear on its own pages only; the tokens and Parallax's screens do not change.
+
+**Course folder (N4, N5).** A course folder has one folder per topic, with five folders for the five tabs and one metadata file for what the editor records beside a file (topic title, objective, estimated time, prerequisites, completion rule; resource title, visibility, accessible alternative). Files carry no front matter, so their bytes equal an editor upload. Conversion yields resources of the same types and derived output as the editor produces for the same files, and stops on a problem that blocks publication, with the same report (§12). Each topic and resource has an `id` in the metadata file, written once by the tool and kept through a rename or a move. Converting a changed folder therefore creates new revisions of the same resources and a new release, and annotations follow the rules of §8. Exercises and tests are YAML files holding the definition the editor saves, checked by the same schemas; code files sit beside the definition; no field, question kind or stored format is added. At level 1 conversion runs on the server's host: it writes drafts under the owning account's course permissions and publishes through the existing validation. The folder wins for what it declares, and a resource whose latest revision came from the editor is not overwritten unless the command is told to. In a tree declared public, exercise and test definitions are read from a private overlay directory outside that tree, with the same layout, and the check refuses an answer-bearing definition in the public tree.
+
+**Levels (N6, N9).** Adding a plug unlocks functions:
+
+| Level | Plugged in | Unlocks |
+| --- | --- | --- |
+| 0. Open site | Nothing: no server, no database, no sign-in | Anyone reads slides, readings and rendered notebooks, from plain files on any static host |
+| 1. Class | The Parallax server, PostgreSQL 16, and a way to sign in (§3) | Accounts, classes, private notes and highlights, exercise attempts, tests, review and grading, comments and questions, notebook execution through the connector |
+| 2. Code checks | The runner, on a separate host the operator controls | Sample runs and automatic grading of code questions (§11) |
+
+A site moves between levels by changing the level in its configuration. To level 0 it is rebuilt from the folder, never from the database: the database is kept as a backup and never published, and results and annotations are exported first. To level 1 it is installed, set up from the configuration and converted. The database stays PostgreSQL 16; the plug is where it lives (brought by the template, or an existing one named by `DATABASE_URL`). A level 1 installation on one host is the template's compose file: migration, one server, the worker, PostgreSQL, a proxy for TLS on both host names, and file storage. The operator types two host names and the sign-in settings; secrets are generated into a git-ignored file. It holds no runner: level 2 adds the runner on its own host, with the existing restricted database role and the sandbox policy of §11.
+
+**Level 0 boundaries.** A level 0 build reads only the folder and holds no account, attempt or grade. It leaves out every test definition, every exercise's answers, feedback, hints and solutions, and every resource that is not visible to students or whose release date is in the future. The Exercises tab lists exercise titles and says they are done in a class; the Tests tab lists titles and says tests are taken in a class; notes and highlights are off. A Shiny app is embedded only from an origin listed in the configuration and always keeps its external link. Colab offers open or download, with no upload. Untrusted content keeps its separation: the build writes the site and the content for two host names; notebook HTML outputs, images, SVG, uploads and PDFs are served only from the content host; JavaScript outputs are never served; a build without a distinct content origin stops.
+
+**Open class (N10).** Open enrolment is a per-class `open` setting at level 1, off unless set, and distinct from level 0. Anyone who signs in joins an open class through its link and uses exercises, private notes, tests and notebooks. The server refuses a post to the class or to instructors and the composer is absent, so nobody has to moderate or answer. Nobody grades: a test scored automatically is released without an instructor, and a release with manually graded test parts cannot be adopted by an open class.
+
+**Compute (N8).** Notebook code never runs on the server that serves the site (§10). Colab over SSH is a connection option for paid Colab only, and the interface says so. The connector reaches the runtime through a fixed built-in proxy command (`colab ssh --proxy-mode`), never a command sent by the server, on Linux and macOS and under WSL on Windows. Opening in Colab and uploading (§10.7) stays the route for free Colab.
+
 ## 14. Loading, failure, accessibility, and performance
 
 | State | Required behaviour |
@@ -508,9 +545,40 @@ Production behaviours specified but not simulated include real authentication, p
 | A34 | A notebook creates a remote output file. Saving to Parallax does not claim to have uploaded that file or saved kernel memory. Explicit transfer detects conflicting revisions; submission includes only acknowledged, selected files. |
 | A35 | An instructor receives a submitted notebook from a personal computer. They can inspect the snapshot without connecting to that computer; trusted grading runs separately and no hidden tests were sent to it. |
 | A36 | A machine sleeps, its VPN disconnects, or its allocation expires. The UI preserves edits, reports the cause, and offers reconnection or a different target without promising that the old process or filesystem survived. |
+| A37 | A site created from a template with one command builds; its front page is at `/` and links to the Parallax interface; changing the Parallax version changes no other file of the site |
+| A38 | A `courses/` folder placed unchanged under `instructors/<name>/` of a school site yields the same topics and resources |
+| A39 | A site page at the address of a Parallax screen stops the build, which names both |
+| A40 | A course folder becomes resources of the same types and derived output as the editor produces for the same files; a problem that blocks publication stops conversion with the same report |
+| A41 | Converting a changed folder creates new revisions of the same resources and a new release; a note on the earlier release stays attached or shows Needs reattachment |
+| A42 | A YAML exercise or test is accepted exactly when the editor's schema accepts the same definition; a rejected file names the field |
+| A43 | Hidden checks, solutions and correct answers are in no file of a level 0 build, and a public tree that holds a test definition is refused |
+| A44 | A level 0 site shows slides, readings and rendered notebooks with no request to `/api` and no sign-in |
+| A45 | On a level 0 site a notebook's HTML output and an SVG load only from the content origin and cannot run script against the site; no JavaScript output is served; a build without a distinct content origin stops |
+| A46 | The same folder builds at level 0 and at level 1; the level 0 build reads no database and holds no account, attempt or grade |
+| A47 | Signing in with a configured provider reaches the account of the same verified address; an unverified address is refused; with no mail sender the page offers no email link |
+| A48 | A Colab target is reached through the fixed proxy command and a cell runs on that runtime; open-in-Colab-and-upload behaves as in A10 |
+| A49 | In an open class a visitor joins by the link; a post to the class or to instructors is refused by the server and its composer is absent; private notes work |
+| A50 | In an open class a test scored automatically is released without an instructor; a release with manually graded test parts cannot be adopted |
+| A51 | Setup from the configuration creates instructor access, classes and enrolment with no API call; a second run changes nothing |
+| A52 | The template's one-host installation answers on both host names; an upgrade migrates forward; a database newer than the package is refused |
+
+A01 to A36 are the scenarios of the application as first built. A37 to A52 were added on 12 October 2026 for the installable site (N1 to N10; §13, "Installation, levels and boundaries"). Each is realised by an automated test that carries its ID, as the earlier ones are.
 
 ## 17. Implementation sequence and decisions before deployment
 
 Build identity, course/class membership, immutable releases, and the reading shell first. Add slides and annotation persistence, then exercises and static notebook rendering. Build connector pairing, SSH routing, authenticated notebook sessions, file transfer, and reconnect/stop handling as one complete workflow; verify it against a personal computer and a separately administered SSH server. Add the external Colab and Shiny routes. Build isolated assessment execution and submission before opening graded code tasks to students. Finish instructor authoring, grading, exports, recovery, and accessibility validation before the pilot. Every requested tab and the SSH-backed notebook connection belong in the first complete release; the sequence is dependency order.
 
 Before implementation, confirm whether instructors should see any personal study annotations beyond explicitly shared work; the default here is private. Define the tested connector/target OS matrix (including the supported Windows/OpenSSH or WSL route), Python/R and Jupyter versions, environment setup, credential/MFA methods, and institution-specific SSH/VPN rules. Decide who operates managed connectors and which hosts need scheduler adapters; personal/local and SSH execution itself is already required. Configure the actual Colab/Shiny hosts. Before deployment, choose identity provider, hosting region, connector signing/update and revocation procedures, operational retention/backup policy, session grace/idle limits, expected concurrent classes, and execution budget. Keep those decisions in this document as they are made.
+
+**Decisions of 12 October 2026 (installable site, N1 to N10).** The owner answered the 27 open questions of `docs/needed_specs.md` §6 in issue #559; `docs/delivery/plan.md` §8 has one row per question, and §1, §3 and §13 state the resulting commitments. In short:
+
+- Identity provider: generic OpenID Connect first, beside email links; accounts stay keyed by a verified address (§3).
+- Distribution and upgrade: the npm packages `parallax-site` and `create-parallax-site` and the server and runner images, under one version number; an upgrade changes the version, and migrations only move forward (§13).
+- Modes and own pages: the configuration names instructors and classes and adds no role; own pages are added JSX pages only, with build-time catalogue data and no change of look (§13).
+- Conversion: one metadata file per topic, a stable `id` for each topic and resource, YAML exercises and tests on the editor's schemas, a private overlay for answer-bearing definitions, and the folder wins for what it declares (§13).
+- Levels: level 0 is read-only with a separate content origin and without exercise checking, notes, test definitions or accounts; open enrolment is a per-class setting at level 1; the runner has its own host (§13).
+- Compute: Colab over SSH through a fixed proxy command in the connector, for paid Colab only (§13).
+
+The build order is Phase 5 of the delivery plan: decisions and designs first, then the foundations (web application as a dependency, site configuration and command-line tool, course folder reader, conversion without a database, open class, sign-in providers), then the open site, level 1 conversion, templates and Colab over SSH, and last the release workflow, the one-host installation, documentation and an audit.
+
+Still needed from the owner, and waited for by no item: the registry accounts and the first release tag; real provider credentials at deployment; one check of Colab over SSH on a paid plan before the option is announced. Left out on purpose, each a later owner decision: a level 0 site on a single host name; exercises checked in the browser; notes kept in the browser; Markdown pages; a site theme; GitHub and ORCID sign-in; pushing a course from a laptop to a remote server; export of a course from the database to a folder; a level 1 installation without containers; a template profile with the runner on the site's host. The managed connector still awaits the owner (issue #460).

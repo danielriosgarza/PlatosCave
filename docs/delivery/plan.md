@@ -1,6 +1,6 @@
 # Parallax — delivery plan
 
-Companion to the ADRs in `docs/adr/`. The product specification (`docs/product-spec.md`) is canonical; this plan only orders and sizes the work. Phase 0 is specified exactly because the next session builds it from this text. Phases 1–4 are work items, one PR each.
+Companion to the ADRs in `docs/adr/`. The product specification (`docs/product-spec.md`) is canonical; this plan only orders and sizes the work. Phase 0 is specified exactly because the next session builds it from this text. Phases 1–4 are work items, one PR each. Phase 5 (package development) is §9, placed after §8 so that §6, §7 and §8 keep their numbers.
 
 ## 0. Conventions for every item
 
@@ -9,7 +9,7 @@ Companion to the ADRs in `docs/adr/`. The product specification (`docs/product-s
 - **Definition of done** (ADR-0006): tests titled with the scenario IDs (`test('A05 …')`), `pnpm check` green locally, CI green, the PR's **Scenarios** section lists IDs and test names, `docs/delivery/done/<ID>.txt` lists the IDs whose tests landed (§6), and this plan is edited if the item changed scope.
 - **Model rules**: sonnet for well-specified low-risk work (UI from the wireframe, CRUD, tests, docs, config); opus for data model, permissions, anchoring, state machines, notebook protocol; fable (label name kept; implemented by Opus 5.5 at maximum effort) only for design documents and decisions whose error is very costly. `Security: yes` items get a security-focused review pass.
 - **Hot spots and how they are serialised**:
-  - *Migration chain*: drizzle-kit's `drizzle/meta/_journal.json` conflicts when two PRs add migrations. Only these items add migrations, in this order, each depending on the previous: **P0-02 → P1-01 → P1-04 → P2-04 → P2-10 → P2-14 → P2-16 → P3-02 → P3-15 → P3-06 → P3-16 → P4-01 → P4-09**. Other items must not add migrations; if one needs a column, it is added to the next chain item. Migration files are named `NNNN_<item-id>_<slug>.sql`.
+  - *Migration chain*: drizzle-kit's `drizzle/meta/_journal.json` conflicts when two PRs add migrations. Only these items add migrations, in this order, each depending on the previous: **P0-02 → P1-01 → P1-04 → P2-04 → P2-10 → P2-14 → P2-16 → P3-02 → P3-15 → P3-06 → P3-16 → P4-01 → P4-09 → P5-10 → P5-12 → P5-18**. Other items must not add migrations; if one needs a column, it is added to the next chain item. Migration files are named `NNNN_<item-id>_<slug>.sql`. In Phase 5 (§9), P5-10 adds `0013_p5-10_open_class.sql`; P5-12 adds a migration only if its design needs a table for provider identities; P5-18 adds one only if the designs need stored source identity or stored state for setup (P5-19 follows the chain and adds none itself). A chain item that needs none adds none, and each migration takes the next free number. A schema need that appears after P5-18 has merged requires a new named chain item: it is appended to this chain (`… → P5-18 → P5-nna`) as an added item (§9) before any pull request adds the migration.
   - *Schema barrel* `apps/server/src/db/schema/index.ts`: one `export *` line per domain file; only chain items touch it.
   - *Route registration*: no barrel. Server route modules are auto-discovered (`http/routes/*.routes.ts`); web routes are file-based; contracts live in `packages/contracts/src/routes/<domain>.ts`. New features add files, not lines in shared lists.
   - *Scope resolver* (`apps/server/src/auth/scope.ts`), *content origin* (`http/content.ts`), *global CSS* (`apps/web/src/styles/global.css`), *CI workflow*: owned by the items that introduce them; later items extend via new files where possible.
@@ -212,7 +212,7 @@ Copied from DESIGN.md frontmatter; `tokens.test.ts` parses the frontmatter with 
 
 `scripts/pg-local.sh` (validated in this container): data dir `${PARALLAX_PG_DIR:-/tmp/parallax-pg}`, port 54329, user `parallax`, `--auth=trust`. When running as root (cloud sessions), the script `chown`s the directory to `postgres` and runs `initdb`/`pg_ctl`/`createdb` via `runuser -u postgres --`; otherwise it runs them directly. `start` prints `DATABASE_URL=postgres://parallax:parallax@127.0.0.1:54329/parallax` (same URL as compose, so `.env.example` works with both). `initdb` refuses to run as root; the script must not try.
 
-`scripts/check-scenarios.ts`: greps `**/*.{test,itest,e2e}.{ts,tsx}` and `connector/**/*_test.go` for `\bA(0[1-9]|[12][0-9]|3[0-6])\b` in test titles, prints a table scenario → files; exits non-zero only for IDs listed in `docs/delivery/done/*.txt` (§6) that have no test.
+`scripts/check-scenarios.ts`: greps `**/*.{test,itest,e2e}.{ts,tsx}` and `connector/**/*_test.go` for `\bA(0[1-9]|[1-4][0-9]|5[0-2])\b` in test titles (A01 to A52 since P5-02; A01 to A36 before), prints a table scenario → files; exits non-zero only for IDs listed in `docs/delivery/done/*.txt` (§6) that have no test.
 
 ### 1.8 Compose and container image
 
@@ -718,7 +718,20 @@ Tracks: **connector** (P3-01 → server P3-02 → P3-02a → P3-06 → P3-06a �
 | A17 | P4-01, P4-03 | | A35 | P3-09, P3-09a, P4-03 |
 | A18 | P3-16, P4-01, P4-06 | | A36 | P3-04a, P3-05a, P3-06, P3-07, P3-08 |
 
-Every scenario A01–A36 is owned by at least one item. Each item's PR adds a file `docs/delivery/done/<ID>.txt` listing, one per line, the scenario IDs whose tests it adds (an empty file if none). A new file per item means parallel PRs never conflict here. `pnpm scenarios` fails if an ID listed in any of those files has no test, so scenario tests cannot silently disappear.
+Phase 5 (§9) owns the scenarios added on 2026-10-12:
+
+| Scenario | Items (owner first) | | Scenario | Items (owner first) |
+| --- | --- | --- | --- | --- |
+| A37 | P5-07, P5-17 | | A45 | P5-14, P5-15 |
+| A38 | P5-08 | | A46 | P5-14 |
+| A39 | P5-07 | | A47 | P5-12, P5-13 |
+| A40 | P5-08, P5-09, P5-18 | | A48 | P5-20, P5-21 |
+| A41 | P5-18 | | A49 | P5-10, P5-11 |
+| A42 | P5-08 | | A50 | P5-11 |
+| A43 | P5-08, P5-14 | | A51 | P5-19 |
+| A44 | P5-15, P5-16 | | A52 | P5-23 |
+
+Every scenario A01–A52 is owned by at least one item; no done file lists one of A37–A52 before the item that tests it merges, and none does before session 2 of §9. Each item's PR adds a file `docs/delivery/done/<ID>.txt` listing, one per line, the scenario IDs whose tests it adds (an empty file if none). A new file per item means parallel PRs never conflict here. `pnpm scenarios` fails if an ID listed in any of those files has no test, so scenario tests cannot silently disappear.
 
 ## 7. Deferred until a human provides accounts, secrets or decisions
 
@@ -735,6 +748,12 @@ None of these blocks Phases 1–4, which run entirely locally and in GitHub Acti
 - Backup destination, retention policy, and legal sign-off for deletion behaviour.
 - Monitoring/alerting stack and log retention.
 - Repository settings: branch protection, required checks, Dependabot for `github-actions`, npm, Go and Docker.
+
+Phase 5 (§9) adds three owner inputs. No Phase 5 item waits for them:
+
+- Registry accounts (npm for `parallax-site` and `create-parallax-site`, GHCR for the server and runner images) and the first release tag `parallax-v<version>`. Sessions publish nothing; P5-22 verifies by a dry run and its workflow reads registry tokens from repository secrets only.
+- Real identity-provider credentials (issuer, client id and secret) at deployment. The tests use an in-process issuer (P5-12).
+- One check of Colab over SSH on a paid Colab plan before the option is announced. It gates neither P5-20 nor P5-21. The owner records the outcome here (works or not, date, platform), with no account data. Outcome: not checked yet.
 
 ## 8. Open questions and defaults chosen
 
@@ -774,3 +793,207 @@ None of these blocks Phases 1–4, which run entirely locally and in GitHub Acti
 | 32 | Number of relay processes | One `relay` process in production and the pilot; the live-link registry is in memory (`docs/design/connector.md` §10.1) |
 | 33 | Connector URLs | `/api/connector/v1/…` so the structural scope guard applies (`docs/design/connector.md` §17) |
 | 34 | Who operates managed connectors (spec §17) | Not decided. The mode is specified and its connector side is built (P3-05b, registered by an operator script because no instance-administrator role exists; item 29's allow-list only decides who creates courses). It stays connector side only: templates and connections accept `local` and `ssh` targets, and managed targets get an item only after the owner decides (2026-10-08, issue #460) |
+
+Package development (Phase 5, §9): the owner answered the 27 open questions of `docs/needed_specs.md` §6 on 2026-10-12 in issue #559 (`[P5-OD1]`), each "yes, as written". These rows are owner decisions, not defaults.
+
+| # | Question | Recorded answer |
+| --- | --- | --- |
+| Q1 | In what form is Parallax delivered, and where is it published? | Both forms, one version number: npm packages for what a site compiles against (CLI with the web application and conversion; the scaffolder), images on GHCR for what a host runs (server, runner). A tag workflow publishes them, as `connector-release.yml` does for the connector |
+| Q2 | What does an easy level 1 installation on one host look like? | A compose file in the template: `migrate`, one server in relay mode, `worker`, Postgres (bundled, or `DATABASE_URL`), Caddy for TLS on both host names, `fs` storage. It holds no runner: level 2 adds the runner on its own host (Q27). The operator types two host names and the sign-in settings; secrets are generated into a git-ignored file |
+| Q3 | How does a site upgrade Parallax, given that migrations only move forward? | Change the version; `migrate` runs before the services and refuses a database newer than the package; rollback is the backup taken before the upgrade. Level 0: change the version and rebuild |
+| Q4 | In school mode, who administers the installation and adds instructors? | The configuration; no new role |
+| Q5 | How does an instructor folder map to the account that owns its courses? | The address in the instructor folder's metadata; the account with that verified address owns the folder's courses |
+| Q6 | What does "one level higher" mean for a visitor? | The site's catalogue page lists instructors, then their courses; `/courses` does not change |
+| Q7 | Does the configuration declare classes, access and enrolment, and replace the API-only steps? | Yes: classes, access (code or open) and instructors; `parallax apply` replaces the API-only steps for setup, and the routes stay |
+| Q8 | Do own pages stop at added pages, or may a site replace Parallax's screens? | Added pages only. A page at the address of a Parallax screen stops the build. `/` is free because it has no page today |
+| Q9 | May own pages read Parallax data? | Build-time catalogue data only (titles from the folder); no supported runtime API for pages |
+| Q10 | May a site change the look (the `--pc-*` tokens)? | No. Name and logo appear on the site's own pages only; tokens and Parallax's screens do not change |
+| Q11 | Are Markdown pages wanted beside JSX pages? | No, JSX only |
+| Q12 | Where does conversion run at level 1, and how does its result reach the server? | On the server's host: `parallax sync` reads the folder and writes drafts through the draft services under the owning account's `CourseScope`; the existing jobs convert; the existing publication validates and snapshots |
+| Q13 | Can a course that comes from a folder also be edited in the web editor, and which side wins? | The folder wins for what it declares. Sync refuses to overwrite a resource whose head revision came from the editor unless told to; the editor does not change |
+| Q14 | How are topics and resources identified across conversions, also after a rename or a move? | An `id` for each topic and resource in the topic's metadata file, written once by the tool; database ids follow from it; a rename or move keeps the id |
+| Q15 | Where do topic and resource metadata live? | One `topic.yaml` per topic folder; no front matter, so source bytes equal an editor upload |
+| Q16 | How are hidden checks and solutions kept out of a public course repository? | A private overlay directory outside the public tree with the same layout; `parallax check` refuses answer-bearing definitions in a tree declared public |
+| Q17 | At level 0, are exercises checked in the browser or switched off? | Off. The tab lists exercise titles and says they are done in a class |
+| Q18 | At level 0, are notes and highlights off or kept in the visitor's browser? | Off |
+| Q19 | At level 0, what is shown for tests, for Shiny apps and for the Colab route? | Tests: titles only and "taken in a class". Shiny: embedded only from origins listed in the configuration, the external link always. Colab: open or download only, no upload |
+| Q20 | How is untrusted notebook output isolated on a level 0 site? | A separate content origin: the build writes `site/` and `content/` for two host names and stops when the hosts are equal |
+| Q21 | When a site moves from level 1 to level 0, what happens to accounts, attempts and grades? | The database is kept as a backup and never published; results and annotations are exported first; a level 0 build reads only the folder |
+| Q22 | Do the open-enrolment rules of N10 still hold now that level 0 exists? | Both exist: level 0 is the read-only open site, an open class is level 1 |
+| Q23 | Is "posting off" a per-class setting, and is automatic release enforced for an open class? | A per-class `open` setting. The server refuses posts; automatic release is enforced; a release with manually graded test parts cannot be adopted by an open class |
+| Q24 | Which "sign in with" providers come first? | Generic OpenID Connect first (a university issuer, Google); GitHub and ORCID are later items |
+| Q25 | How do `INSTRUCTOR_EMAILS` and invitations work with a provider that releases no verified address? | Refused with an explanation; accounts stay keyed by a verified address, so `INSTRUCTOR_EMAILS` and invitations work unchanged |
+| Q26 | How does Colab over SSH connect? | A fixed built-in proxy command in the connector (`colab ssh --proxy-mode`), never a command sent by the server; Linux and macOS, WSL on Windows |
+| Q27 | Does the runner share the site's host or have its own? | A separate runner host that the operator controls, with the existing restricted database role and sandbox policy. Level 1 needs no runner; level 2 adds it. The template offers no profile with the runner on the site's host; ADR-0004 does not change |
+
+The process rows of the same issue: **P-a** the hourly orchestrator is stopped for the whole of package development, and issue #3 carries `paused`; **P-b** package sessions merge Phase 5 pull requests under the merge rule of [README.md](README.md); **P-c** the published names are `parallax-site` (the command-line tool) and `create-parallax-site` (the scaffolder, run as `npm create parallax-site`), the command inside a site stays `parallax`, and the npm and GHCR accounts stay an owner input (§7); **P-d** every session runs locally on the owner's Windows machine, and a suite whose local tool is missing runs in CI only. Directory names such as `packages/cli` and `packages/create-parallax` are working names until P5-03 fixes them.
+
+## 9. Phase 5 — package development
+
+Goal: Parallax becomes installable and pluggable as `docs/needed_specs.md` states it (N1 to N10; spec §1, §3, §13, §16, §17). One command creates a site from a template; the site folder holds only its own files and its own JSX pages; a course folder becomes the same material the editor produces; a site runs at level 0 (plain files), level 1 (server, PostgreSQL 16, a way to sign in) or level 2 (runner). Parallax as built does not change. The source is `docs/plans/2026-10-12-package-development.md`: its section 3 is the process (the phrase "continue package development", package sessions on the owner's machine, Opus implements, Fable reviews; P5-01 makes it official) and its section 6 holds the rules that bind every unit.
+
+The work is 25 units in 4 sessions. A session is one fixed list of units, and nothing joins a list once its session has started:
+
+| Session | Fixed list | Runs | Longest chain | End condition |
+| --- | --- | --- | --- | --- |
+| 1. Decisions and designs | OD-1, then P5-01 to P5-05 | R1, R2, R3 | (01 ∥ 02) → 03 → 04 → 05 | Done files P5-01 to P5-05 on `main` |
+| 2. Foundations | P5-06 to P5-13 | R4 | 06 → 07 → 08; 10 → 12 → 13 | Done files P5-06 to P5-13 on `main` |
+| 3. Open site, sync, templates, Colab | P5-14 to P5-21 | R5 | 14 → 15 → 16 → 17 | Done files P5-14 to P5-21 on `main` |
+| 4. Release, installation, documentation, audit | P5-22 to P5-25 | none | 22 → 23 → 24 → 25 | Done files P5-22 to P5-25 on `main` and the issue `Phase 5 summary` exists |
+
+OD-1 is the owner's decision stop: issue #559, closed on 2026-10-12 with every row answered (§8). A unit labelled `needs-human` also satisfies the end condition. Every session ends by reporting "x of y done": y is the number of `### P5-` headings in this section (`grep -c '^### P5-' docs/delivery/plan.md`), and x is the number of those units whose `docs/delivery/done/<ID>.txt` is on `origin/main`.
+
+Entries use the fields of §0 and add `Class` and `Verify`. A simple unit is implemented directly. A complex unit is planned first by a run of `/collab-independent-plan`, in its default mode judged by Jev and with no flags: R1 (owned by P5-03; plans 03, 06, 07, 17, 19, 22, 23), R2 (P5-04; 04, 08, 09, 18), R3 (P5-05; 05, 14, 15, 16), R4 (P5-12; 12, 13), R5 (P5-20; 20, 21). The unit that owns a run executes it and commits the landed plan; the other units of the run implement that plan. `Model: fable` keeps the meaning of §0: a design item, implemented by Opus at maximum effort. `Verify` lists a unit's own checks. Every unit also needs `pnpm check` green locally, CI green on the head, tests titled with its scenario IDs that fail without the change, a done file listing exactly those IDs, and no test deleted, skipped or weakened. File, package and command names below are working names until the design units fix them; the published names are in §8 (row P-c).
+
+A unit whose diff passes 600 changed lines is split, never enlarged. Work found outside a unit becomes an added item (`P5-nna`, or `P5-AUDn` from the audit) with its own issue and, before work on it starts, its own `### P5-` heading here with its class, `Depends on:`, a `Session:` line and a `Boundary:` line. `Session:` names a session that has not started, after every unit the item depends on and no later than the first unit that needs it: the earliest session of the table that still holds at most 8 units, 4 units in one dependency chain and 3 runs, or else a further session (`2a` after session 2; 5, then 6, after session 4). `Boundary:` names the dependency or size limit that puts the item there. The heading is committed in the pull request of the unit that found the work.
+
+### P5-01 · Process for package development
+- Scope: the process of package development becomes official. New skill `.claude/skills/package-development/SKILL.md` (the phrase, progress as "x of y done", sessions, the unit procedure); the `orchestrate` skill skips `phase:5` issues and their pull requests in every step; `steward`, `implement-issue` and `review-pr` say that for Phase 5 the package session owns and merges a unit, Fable is the only reviewer and there is no arbiter round; `docs/delivery/README.md` (the package session in the roles table and the merge-rule paragraph, a Phase 5 row of the model table with Opus as implementer and Fable as reviewer, the sentence "Fable is no longer used", label `phase:5`, attempts all by Opus, the Phase 5 audit by Fable, plan headings for added items, the phrase as a human touchpoint, the orchestrator stopped during package development); `CLAUDE.md` §How work happens here; `docs/needed_specs.md` and the plan document added as they are.
+- Verify: `grep -l "continue package development" CLAUDE.md .claude/skills/package-development/SKILL.md` lists both; `grep -c "phase:5" docs/delivery/README.md .claude/skills/orchestrate/SKILL.md` is above 0 for each; the Phase 5 rule stands beside every hit of `grep -nE "orchestrator (squash-)?merges|merged by the orchestrator|Only the orchestrator|never merge|arbiter|no longer used" docs/delivery/README.md CLAUDE.md .claude/skills/*/SKILL.md`; `git ls-files docs/needed_specs.md docs/plans` lists both files; label `phase:5` exists. The label `paused` stays on issue #3 after the merge.
+- Spec: none (process). Class: simple. Scenarios: none. Depends on: — (after the owner decisions, issue #559). Model: opus. Security: no. Size: M.
+- Touches: `.claude/skills/{package-development,orchestrate,steward,implement-issue,review-pr}/SKILL.md`, `docs/delivery/README.md`, `CLAUDE.md`, `docs/needed_specs.md`, `docs/plans/2026-10-12-package-development.md`.
+
+### P5-02 · Record N1 to N10 and add Phase 5
+- Scope: N1 to N10 and the owner's answers recorded as commitments in `PRODUCT.md` (purpose, capabilities, open decisions) and `docs/product-spec.md` (§1 access and first deployment, §3 sign-in, §13 levels and boundaries, §16 A37 to A52, §17 decisions); in this plan the §0 chain with the rule for a later schema need, this section, the §6 coverage rows, the §7 owner inputs and one §8 row per Q1 to Q27; the scenario checker and ADR-0006 accept IDs to A52, in TypeScript titles and Go test names. Nothing built changes.
+- Verify: `grep -c '^### P5-' docs/delivery/plan.md` prints 25, plus one for each added item; `grep -cE '^\| A(3[7-9]|4[0-9]|5[0-2]) ' docs/product-spec.md` prints 16; the script's unit test accepts `A37` and `A52` and rejects `A53`; §8 has 27 new rows; `pnpm scenarios` passes while no done file lists a new ID.
+- As built: this section is §9, after §8, so that §6, §7 and §8 keep the numbers other documents cite. The diff stayed under 600 changed lines, so the checker part was not split off and there is no P5-02a.
+- Spec: §1, §3, §13, §16, §17. ADR-0006. Class: simple. Scenarios: none. Depends on: — (after the owner decisions, issue #559; beside P5-01). Model: opus. Security: no. Size: M.
+- Touches: `PRODUCT.md`, `docs/product-spec.md`, `docs/delivery/plan.md`, `docs/adr/0006-testing-strategy.md`, `scripts/check-scenarios.ts`, `scripts/check-scenarios.test.ts`.
+
+### P5-03 · Design: site toolkit and distribution
+- Scope: run R1, with the task: design how a Parallax site is created, configured, built, installed on one host and upgraded (N1 to N3 and the level 2 runner profile of N9; answers Q1 to Q11 and Q27): published pieces, site folder, `parallax.config.ts`, CLI, how `src/pages` compiles with `apps/web` without changing an existing route, both modes, setup from configuration. The landed plan `docs/plans/<date>-<slug>.md`; ADR-0001 amendment "Distribution" (published pieces, versioning, release); `docs/design/site.md` (new); **rewrites P5-06, P5-07, P5-17, P5-19, P5-22 and P5-23 in this plan** and fixes the working names.
+- Verify: the landed file ends with the command's line `_Hybrid by /collab-independent-plan --judge jev after N round(s)._`; ADR-0001's status line names P5-03; each rewritten entry has Scope, Scenarios, Depends on, Touches and a size of S or M.
+- Spec: §13, §17 (N1, N2, N3). ADR-0001. Class: complex, owns run R1. Scenarios: none. Depends on: P5-02. Model: fable. Security: no. Size: M.
+- Touches: `docs/plans/<date>-<slug>.md`, `docs/adr/0001-technology-stack.md`, `docs/design/site.md`, `docs/delivery/plan.md`.
+
+### P5-04 · Design: course folder conversion
+- Scope: run R2, with the task: design conversion of a course folder (N4, N5; answers Q12 to Q16): layout, `topic.yaml`, identity of topics and resources across conversions, YAML exercises and tests on the existing schemas, the private overlay, `parallax sync`, publication checks. The landed plan; ADR-0003 amendment "Conversion from a folder" (identity, provenance, which side wins); `docs/design/course-folder.md` (new); **rewrites P5-08, P5-09 and P5-18 in this plan** (P5-18 says whether it adds a migration).
+- Verify: as P5-03, for ADR-0003.
+- Spec: §13 (N4, N5). ADR-0003. Class: complex, owns run R2. Scenarios: none. Depends on: P5-03. Model: fable. Security: no. Size: M.
+- Touches: `docs/plans/<date>-<slug>.md`, `docs/adr/0003-content-releases-and-revisions.md`, `docs/design/course-folder.md`, `docs/delivery/plan.md`.
+
+### P5-05 · Design: open site (level 0)
+- Scope: run R3, with the task: design the open site (N6 level 0; answers Q17 to Q21): static data shaped by the student-view schemas, the viewer shell, the equivalent of the content origin, what a build leaves out. The landed plan; ADR-0002 amendment "Open site (level 0)" (no server and no scope to resolve, the content-origin equivalent, the hosting requirements, what a build leaves out); `docs/design/open-site.md` (new); **rewrites P5-14, P5-15 and P5-16 in this plan**. This unit decides how untrusted content is isolated at level 0; nothing can serve a level 0 site before P5-15.
+- Verify: as P5-03, for ADR-0002; the amendment states the rule that stops a build, the hosting requirements and the list of omitted material.
+- Spec: §13 (N6). ADR-0002. Class: complex, owns run R3. Scenarios: none. Depends on: P5-04. Model: fable. Security: no. Size: M.
+- Touches: `docs/plans/<date>-<slug>.md`, `docs/adr/0002-authorization-and-class-isolation.md`, `docs/design/open-site.md`, `docs/delivery/plan.md`.
+
+### P5-06 · Web application as a dependency
+- Scope: `apps/web` exports its entry so that a site can compile against it: `apps/web/src/app.tsx` (new: the mount function that `main.tsx` calls, with a place for site pages) and `exports` in `apps/web/package.json`. No existing route or component changes, and `/` still redirects when no site page is given.
+- Verify: `pnpm build && pnpm test:e2e` passes with no existing test file in the diff; `/` still redirects when no site page is given (component test).
+- Spec: §13 (N3). Class: complex, planned by run R1. Scenarios: none. Depends on: P5-03. Model: opus. Security: no. Size: S.
+- Touches: `apps/web/src/app.tsx`, `apps/web/src/main.tsx`, `apps/web/package.json`, `apps/web/src/app.test.tsx`.
+
+### P5-07 · Site configuration, CLI and site pages
+- Scope: the CLI package (`packages/cli`, new, one file per command; command `parallax`); the `parallax.config.ts` schema in `packages/contracts/src/site.ts` (mode, name, logo, level, sign-in, origins); a site's `src/pages` compiled with the web application into one site; a fixture site. A page at the address of a Parallax screen stops the build, which names both.
+- Verify: the test builds the fixture site and finds its front page at `/` in the output; a page at `/courses` stops the build and names both.
+- Spec: §13 (N1, N2, N3). Class: complex, planned by run R1. Scenarios: A37 (build part), A39. Depends on: P5-06. Model: opus. Security: no. Size: M.
+- Touches: `packages/cli/**`, `packages/contracts/src/site.ts` and its test, `packages/cli/fixtures/site/**`, `packages/cli/src/a39-site-pages.test.ts`.
+
+### P5-08 · Course folder reader and YAML forms
+- Scope: the folder reader (five tab folders per topic, one `topic.yaml` per topic, both mode layouts, the private overlay); the `topic.yaml` schema in `packages/contracts/src/courseFolder.ts`; YAML exercises and tests parsed and then checked by `exerciseV1` or `testV1`, the loader filling a code file's `content` from the file beside the definition and adding nothing else; a fixture course; the `check` command, which refuses an answer-bearing definition in a tree declared public.
+- Verify: every fixture definition that `exerciseV1` or `testV1` accepts as JSON is accepted as YAML and the reverse; the same `courses/` fixture read from both mode layouts gives equal manifests; a test definition in a tree declared public is refused.
+- Spec: §13 (N2, N4, N5). Class: complex, planned by run R2. Scenarios: A38, A40 (mapping), A42, A43 (refusal). Depends on: P5-04, P5-07. Model: opus. Security: no. Size: M.
+- Touches: `packages/cli/src/folder/**`, `packages/contracts/src/courseFolder.ts` and its test, `packages/cli/fixtures/course/**`, the `check` command.
+
+### P5-09 · Conversion without a database
+- Scope: a conversion entry that needs no database, `apps/server/src/content/convert.ts`, over the existing renderers; `ingestRevision` in `reading-ingest.job.ts` calls it, and objects are still stored by `storeCourseObject`; `exports` in `apps/server/package.json`.
+- Verify: `pnpm test:integration` passes with `reading-ingest.job.test.ts`, `notebook.test.ts` and `reading.test.ts` unmodified; the new test runs with `DATABASE_URL` unset and equals the ingestion output for the same source.
+- Spec: §13 (N4, N6). Class: complex, planned by run R2. Scenarios: A40 (output). Depends on: P5-04 (runs beside P5-06 to P5-08). Model: opus. Security: no. Size: M.
+- Touches: `apps/server/src/content/convert.ts` and its test, `apps/server/src/jobs/reading-ingest.job.ts`, `apps/server/package.json`.
+
+### P5-10 · Open class setting
+- Scope: migration `0013_p5-10_open_class.sql` (first Phase 5 item of the chain): a per-class `open` setting, false unless set; the class contract and route; `createThread`, `shareAnnotation` and `replyToThread` refuse in an open class, and private notes still save.
+- Verify: `pnpm db:migrate` then `pnpm test:integration`; the isolation matrix passes with the new contract; private notes still save in an open class.
+- Spec: §3, §13 (N10). ADR-0002. Class: simple. Scenarios: A49 (server). Depends on: P5-02 (migration chain: follows P4-09). Model: opus. Security: yes. Size: M.
+- Touches: `apps/server/drizzle/0013_p5-10_open_class.sql`, `drizzle/meta`, `apps/server/src/db/schema/memberships.ts`, `packages/contracts/src/routes/classes.ts`, `apps/server/src/http/routes/classes.routes.ts`, `apps/server/src/db/annotations/annotations.ts`, `apps/server/test/integration/a49-open-class.itest.ts`.
+
+### P5-11 · Open class: join link, composer, automatic release
+- Scope: a join page under `apps/web/src/routes/` that calls the existing `POST /api/join`; no composer in an open class (`apps/web/src/reading/margin/`, `apps/web/src/slides/SlideNotes.tsx`); a scoped job beside `grades-release.job.ts` that releases automatically scored tests without an instructor; adoption refuses a release with manually graded test parts for an open class, with a declared 409.
+- Verify: e2e for A49; a class that is not open shows the composer and releases as before (existing tests unmodified).
+- Spec: §13 (N10). Class: simple. Scenarios: A49 (web), A50. Depends on: P5-10. Model: opus. Security: no. Size: M.
+- Touches: `apps/web/src/routes/` (join page), `apps/web/src/reading/margin/`, `apps/web/src/slides/SlideNotes.tsx`, a job beside `apps/server/src/jobs/grades-release.job.ts`, `apps/server/src/db/content/adoption.ts`, `a50-open-release.itest.ts`, `e2e/tests/a49-open-class.e2e.ts`.
+
+### P5-12 · Sign-in providers, server
+- Scope: run R4, with the task: design "sign in with…" behind `IdentityProvider` with mail optional (N7; answers Q24, Q25). The landed plan; ADR-0002 amendment "Identity providers" (first commit of the pull request); an OpenID Connect provider behind `IdentityProvider`; the provider start and callback routes and the list of sign-in methods (public scope, through `registerRoute`); configuration for providers and a mail transport that sends nothing; an in-process issuer for the tests; a migration with the next free number (`0014_p5-12_…`) only if the design needs a table for provider identities. A provider assertion without a verified address is refused.
+- Verify: `/security-review` by Fable; a provider assertion without a verified address is refused; the existing sign-in tests are unmodified.
+- Spec: §3 (N7). ADR-0002. Class: complex, owns run R4. Scenarios: A47 (server). Depends on: P5-10 (migration chain). Model: opus. Security: yes. Size: M.
+- Touches: `docs/plans/<date>-<slug>.md`, `docs/adr/0002-authorization-and-class-isolation.md`, `apps/server/src/auth/oidc-provider.ts`, `apps/server/src/auth/identity-provider.ts`, `packages/contracts/src/routes/auth.ts`, `apps/server/src/http/routes/auth.routes.ts`, `apps/server/src/config.ts` and its test, `apps/server/test/fixtures/oidc-issuer.ts`, `a47-provider-signin.itest.ts`.
+
+### P5-13 · Sign-in page and optional mail
+- Scope: the sign-in page shows a button for each configured provider and offers no email link when no mail sender is configured, on the `--pc-*` tokens; `.env.example`. With no provider configured the page is unchanged.
+- Verify: with no provider configured the page is unchanged (existing e2e unmodified); axe passes.
+- Spec: §3 (N7). Class: complex, planned by run R4. Scenarios: A47 (web). Depends on: P5-12. Model: opus. Security: no. Size: M.
+- Touches: `apps/web/src/routes/signin.tsx` and its CSS module, a component test, `e2e/tests/a47-signin-providers.e2e.ts`, `.env.example`.
+
+### P5-14 · Level 0 build
+- Scope: `parallax build` at level 0 (`packages/cli/src/open/**`): `site/` and `content/` output for two host names, and the rule that stops a build (equal hosts, or an untrusted object under `site/`); static data schemas built from the student-view schemas (`packages/contracts/src/openSite.ts`), which have no field for answers. The build leaves out every test definition, every exercise's answers, feedback, hints and solutions, and every resource that is not student-visible or whose release date is in the future; it writes no JavaScript output and reads no database.
+- Verify: the build of the fixture course runs with `DATABASE_URL` unset; no sentinel string and no JavaScript output is in the output; equal hosts stop the build.
+- Spec: §13 (N6). ADR-0002. Class: complex, planned by run R3. Scenarios: A43 (leak), A45 (build), A46. Depends on: P5-05, P5-07, P5-08, P5-09. Model: opus. Security: yes. Size: M.
+- Touches: `packages/cli/src/open/**`, `packages/contracts/src/openSite.ts` and its test, `a43-open-build-omits.test.ts`, `a45-open-build-origins.test.ts`, `a46-open-build-no-database.test.ts`.
+
+### P5-15 · Level 0 viewer shell
+- Scope: `apps/web/src/open/**`: catalogue, topic index and topic with five tabs, composed from the existing viewers, which take content as props and call no API; two static origins in e2e for the built fixture; the hostile notebook fixture.
+- Verify: `pnpm build && pnpm test:e2e a44 a45` in a session without Docker; no request to `/api`; axe passes; the existing e2e suite is unmodified and green.
+- Spec: §13 (N6). ADR-0002. Class: complex, planned by run R3. Scenarios: A44, A45 (browser). Depends on: P5-06, P5-14. Model: opus. Security: no. Size: M.
+- Touches: `apps/web/src/open/**`, `e2e/static-server.ts`, `e2e/playwright.config.ts`, `e2e/tests/a44-open-site.e2e.ts`, `e2e/tests/a45-open-site-isolation.e2e.ts`.
+
+### P5-16 · Level 0: remaining tabs and school catalogue
+- Scope: at level 0 the Exercises tab lists exercise titles and says they are done in a class, the Tests tab lists titles and says tests are taken in a class, and neither holds a definition (Q17, Q19); a Shiny app is framed only from a configured origin and always keeps its external link; Colab offers open or download, no upload; a school site's catalogue lists instructors, then their courses (Q6).
+- Verify: Exercises and Tests show what the owner decided and no definition; a Shiny app is framed only from a configured origin; a school fixture lists instructors, then courses.
+- Spec: §13 (N2, N6). Class: complex, planned by run R3. Scenarios: A44 (tabs). Depends on: P5-15. Model: opus. Security: no. Size: M.
+- Touches: `apps/web/src/open/**`, `e2e/tests/a44-open-site-tabs.e2e.ts`.
+
+### P5-17 · Templates and the create command
+- Scope: the scaffolder (`packages/create-parallax`) with the templates `instructor` and `school`: a front page on the `--pc-*` tokens, `.gitignore` for the secrets file and the private overlay, `example.org` addresses and fictional courses only; a test that scaffolds into a temporary folder outside the workspace, installs the packed packages with no workspace link and builds.
+- Verify: the scaffold test runs in the CI `check` job; every line that `grep -rniE "(password|secret|token)\s*[:=]" packages/create-parallax/templates` prints holds a `${VAR}` reference to the generated file, never a literal value.
+- Spec: §13 (N1, N2, N3). Class: complex, planned by run R1. Scenarios: A37. Depends on: P5-07, P5-16. Model: opus. Security: no. Size: M.
+- Touches: `packages/create-parallax/**` with `templates/instructor/**` and `templates/school/**`, the scaffold test, `e2e/tests/a37-template-site.e2e.ts`.
+
+### P5-18 · Level 1 sync
+- Scope: `parallax sync` at level 1, run on the server's host by the operator: it reads the folder and writes drafts through the draft services under the owning account's `CourseScope` (from `resolveActorScope`, through `forCourse`; no route and no new credential); the existing jobs convert, and the existing publication validates and snapshots. A migration with the next free number only if run R2 needs stored source identity or run R1 needs stored state for setup.
+- Verify: `pnpm test:integration`; a second sync of an unchanged folder creates no revision; a changed file creates a new revision of the same `resource_id` and a new release; a renamed or moved file keeps its `resource_id`; a resource whose head revision came from the editor is not overwritten unless the command is told to; a blocked publication leaves no release.
+- Spec: §13 (N4). ADR-0003. Class: complex, planned by run R2. Scenarios: A40 (level 1), A41. Depends on: P5-08, P5-09, P5-12 (migration chain). Model: opus. Security: yes. Size: M.
+- Touches: `apps/server/src/db/content/sync.ts`, `apps/server/src/scripts/sync-course.ts`, `packages/cli/src/commands/sync.ts`, `a40-folder-conversion.itest.ts`, `a41-folder-resync.itest.ts`.
+
+### P5-19 · Setup from configuration
+- Scope: `parallax apply`, run on the server's host by the operator: from the site's configuration it creates instructor access, classes, an enrolment code or open join link and an adopted release, with no HTTP call, through a data-access module under `apps/server/src/db/` and scopes from `resolveActorScope` (Q4, Q5, Q7). It adds no migration: a schema need goes into P5-18.
+- Verify: from a fixture configuration the test gets instructor access, a class, an enrolment code or open join link and an adopted release with no HTTP call; a second run changes no row.
+- Spec: §13 (N1, N2, N10). ADR-0002. Class: complex, planned by run R1. Scenarios: A51. Depends on: P5-07, P5-10, P5-18. Model: opus. Security: yes. Size: M.
+- Touches: `apps/server/src/scripts/apply-site.ts`, a data-access module under `apps/server/src/db/`, `packages/cli/src/commands/apply.ts`, `a51-setup-from-config.itest.ts`.
+
+### P5-20 · Colab over SSH, connector
+- Scope: run R5, with the task: design Colab over SSH in the connector for paid Colab only (N8; answer Q26). The landed plan; ADR-0005 amendment (first commit of the pull request); `docs/design/connector.md` (transport, error codes, the paid-plan condition); a connector transport that reaches a paid Colab runtime through the fixed built-in proxy command `colab ssh --proxy-mode` and reuses the host identity, authentication, forwarding and leases of `sshtarget`.
+- Verify: `cd connector && gofmt -l . && go vet ./... && go test ./...`; a test shows that no message from the server can name the command to run.
+- Spec: §10, §13 (N8). ADR-0005. Class: complex, owns run R5. Scenarios: A48 (connector). Depends on: P5-02. Model: opus. Security: yes. Size: M.
+- Touches: `docs/plans/<date>-<slug>.md`, `docs/adr/0005-notebook-compute-connector.md`, `docs/design/connector.md`, `connector/internal/sshtarget/**`, `connector/internal/target/**`, `connector/protocol/v1/**`, Go tests including `TestA48_…` with a fake `colab` program and the in-process SSH server.
+
+### P5-21 · Colab over SSH, server and web
+- Scope: the Colab target in `packages/contracts/src/connector.ts`, the server's target check under `apps/server/src/relay/`, and the option in the Connect panel's `TargetForm.tsx`, whose text names paid Colab. Opening in Colab and uploading stays as it is.
+- Verify: the option's text names paid Colab; `e2e/tests` for A10 are unmodified and green.
+- Spec: §10, §13 (N8). Class: complex, planned by run R5. Scenarios: A48 (web). Depends on: P5-20. Model: opus. Security: no. Size: S.
+- Touches: `packages/contracts/src/connector.ts` and its test, the target check under `apps/server/src/relay/`, `apps/web/src/notebooks/connect/TargetForm.tsx` and its test.
+
+### P5-22 · Published pieces and release workflow
+- Scope: the manifests of the CLI and the scaffolder (version, `files`, `private` removed; published as `parallax-site` and `create-parallax-site`); `.github/workflows/package-release.yml` (tag `parallax-v<version>`; dry run by default; npm packages, and server and runner images to GHCR; registry tokens from repository secrets only); a version label in `infra/docker/server.Dockerfile`; a pack check with its test. Nothing is published by a session: the first tag is the owner's.
+- Verify: the workflow's dry run is green in CI and its link is in the pull request.
+- Spec: §13 (N1, N9). ADR-0001. Class: complex, planned by run R1. Scenarios: none. Depends on: P5-17, P5-19. Model: opus. Security: no. Size: M.
+- Touches: the manifests of `packages/cli` and `packages/create-parallax`, `.github/workflows/package-release.yml`, `infra/docker/server.Dockerfile`, the pack check and its test.
+
+### P5-23 · One-host installation, levels and upgrade
+- Scope: `compose.yml` and `Caddyfile` in both templates (`migrate`, one server in relay mode, `worker`, Postgres bundled or `DATABASE_URL`, Caddy for TLS on both host names, `fs` storage; no runner service and no Docker socket); the level 2 runner profile exactly as the answer to Q27 allows (`compose.runner.yml` for a separate runner host, with the restricted `parallax_runner` role and the existing sandbox policy); the commands `env`, `start` and `upgrade`; `apps/server/src/db/migrate.ts` refuses a database newer than the package.
+- Verify: the compose test runs in `pnpm check` and asserts exactly the profiles of the Q27 answer (`compose.yml` has no runner service and no Docker socket, and `compose.runner.yml` reaches PostgreSQL only as `parallax_runner`); the migrate guard runs in `pnpm test:integration`; the Docker start of both host names runs in CI only.
+- Spec: §13 (N1, N6, N9). ADR-0004. Class: complex, planned by run R1. Scenarios: A52. Depends on: P5-22. Model: opus. Security: no. Size: M.
+- Touches: `compose.yml`, `Caddyfile` and `compose.runner.yml` in both templates, `packages/cli/src/commands/{env,start,upgrade}.ts`, `apps/server/src/db/migrate.ts`, `apps/server/src/infra/compose-site.test.ts`, `apps/server/test/integration/a52-one-host.docker.itest.ts`, `.github/workflows/image.yml`.
+
+### P5-24 · Documentation
+- Scope: the user documentation gets a section each for installation, the three levels, moving between them, both modes, conversion, sign-in and Colab over SSH; the level 0 section states the hosting requirements (two host names, and cross-origin range requests from the content host for PDFs); `CLAUDE.md` gets Stack and Commands rows for the new packages and commands.
+- Verify: every command shown that needs no Docker was run in the session and its result line is in the pull request, and Docker steps are marked as such (the rule of `docs/getting-started.md`); each subject above has its section.
+- Spec: §13, §17. Class: simple. Scenarios: none. Depends on: P5-13, P5-21, P5-23. Model: opus. Security: no. Size: M.
+- Touches: `README.md`, `docs/getting-started.md`, `docs/operations.md`, `docs/guide/instructors.md`, `docs/guide/students.md`, `CLAUDE.md`, `.env.example`.
+
+### P5-25 · Audit fix-ups
+- Scope: the close of session 4. The package session first launches Fable with `.claude/skills/phase-audit/SKILL.md` for phase 5 on `main`: Fable verifies A37 to A52 and the binding rules across the merged units, writes the issue `Phase 5 summary` and files `[P5-AUDn]` issues, each marked blocking or not; it fixes nothing. P5-25 then fixes the findings that fit one pull request of at most 600 changed lines. Every blocking finding it does not fix becomes a counted item: this unit's pull request adds a heading for it in this section, with `Session:` (5, then 6) and `Boundary:` lines. Findings that are not blocking stay as `[P5-AUDn]` issues labelled `needs-human` and are not counted.
+- Verify: `pnpm check`, `pnpm test:integration` and `pnpm build && pnpm test:e2e` green on `main`; the summary issue lists every scenario A37 to A52 with its test; every open blocking `[P5-AUDn]` issue has its heading on `main`.
+- Spec: §16. Class: simple. Scenarios: none. Depends on: P5-01 to P5-24. Model: opus. Security: no. Size: M.
+- Touches: the files the audit names, `docs/delivery/plan.md` ("As built" notes and the headings of counted findings).
