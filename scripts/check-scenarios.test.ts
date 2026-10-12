@@ -258,6 +258,21 @@ func TestA520_NotAnID(t *testing.T) {}
     expect(idsInGoTests(go)).toEqual(['A36', 'A37', 'A48', 'A52']);
   });
 
+  it('P5-02 paths with backslashes, as Windows gives them, are scanned like POSIX paths', () => {
+    const files: Record<string, string> = {
+      'connector\\internal\\x\\y_test.go': 'func TestA28_Y(t *testing.T) {}',
+      'e2e\\fixtures.ts': 'export const authed = test.extend({});\nexport { authed as again };',
+      'e2e\\tests\\a01.e2e.ts': `
+        import { authed, again } from '../fixtures.js';
+        authed('A01 imported fixture', async () => {});
+        again('A02 renamed fixture', async () => {});`,
+    };
+    const found = findTests(Object.keys(files), (f) => files[f] ?? '');
+    expect([...found.keys()].sort()).toEqual(['A01', 'A02', 'A28']);
+    expect([...(found.get('A28') ?? [])]).toEqual(['connector/internal/x/y_test.go']);
+    expect([...(found.get('A01') ?? [])]).toEqual(['e2e/tests/a01.e2e.ts']);
+  });
+
   it('AUD8 maps IDs to files across TS and Go', () => {
     const files: Record<string, string> = {
       'a/x.test.ts': "it('A01 one', () => {});",

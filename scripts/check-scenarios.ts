@@ -5,9 +5,10 @@ import ts from 'typescript';
 
 const root = join(import.meta.dirname, '..');
 const SKIP_DIRS = new Set(['node_modules', 'dist', '.git', '.local', 'coverage']);
-// Scenario IDs A01 to A52 (spec §16). The TypeScript and the Go pattern carry the same range.
-const ID = /\bA(0[1-9]|[1-4][0-9]|5[0-2])\b/g;
-const GO_TEST = /^func Test(A(?:0[1-9]|[1-4][0-9]|5[0-2]))(?![0-9A-Za-z])/gm;
+// Scenario IDs A01 to A52 (spec §16): one range for TypeScript titles and Go test names.
+const RANGE = '0[1-9]|[1-4][0-9]|5[0-2]';
+const ID = new RegExp(`\\bA(${RANGE})\\b`, 'g');
+const GO_TEST = new RegExp(`^func Test(A(?:${RANGE}))(?![0-9A-Za-z])`, 'gm');
 const TEST_FNS = new Set(['test', 'it', 'describe']);
 // Modifiers that still name a test or group; others (`step`, `use`, `beforeEach`, …) are not titles.
 const MODIFIERS = new Set([
@@ -385,13 +386,17 @@ export function findTests(
   read: (file: string) => string = (f) => readFileSync(join(root, f), 'utf8'),
 ): Map<string, Set<string>> {
   const found = new Map<string, Set<string>>();
-  const fileSet = new Set(files);
+  // Paths are matched and reported with forward slashes and read under the name they came with.
+  // On Windows `relative()` gives backslashes, which match neither `isTestFile`'s Go pattern nor
+  // the names TypeScript's resolution asks for, so Go tests and imported fixtures went unseen.
+  const given = new Map(files.map((f) => [f.replaceAll('\\', '/'), f]));
+  const readFile = (file: string): string => read(given.get(file) ?? file);
   // TypeScript's own resolution over the repository's file list (relative paths, `.js` → `.ts`,
   // `index` files, `.mts`). tsconfig `paths` and workspace packages are not followed.
   const VROOT = '/repo/';
   const host: ts.ModuleResolutionHost = {
-    fileExists: (f) => f.startsWith(VROOT) && fileSet.has(f.slice(VROOT.length)),
-    readFile: (f) => (f.startsWith(VROOT) ? read(f.slice(VROOT.length)) : undefined),
+    fileExists: (f) => f.startsWith(VROOT) && given.has(f.slice(VROOT.length)),
+    readFile: (f) => (f.startsWith(VROOT) ? readFile(f.slice(VROOT.length)) : undefined),
     directoryExists: (d) => d.startsWith(VROOT) || `${d}/` === VROOT,
   };
   const options: ts.CompilerOptions = {
@@ -419,7 +424,7 @@ export function findTests(
     inProgress.add(file);
     const result = new Set<string>();
     if (/\.tsx?$/.test(file)) {
-      const sf = parse(read(file), file);
+      const sf = parse(readFile(file), file);
       for (const name of exportedTests(sf, testNames(sf, resolve, exportsOf), resolve, exportsOf)) {
         result.add(name);
       }
@@ -433,8 +438,8 @@ export function findTests(
     }
     return result;
   };
-  for (const file of files.filter(isTestFile)) {
-    const text = read(file);
+  for (const file of [...given.keys()].filter(isTestFile)) {
+    const text = readFile(file);
     const ids = file.endsWith('.go')
       ? idsInGoTests(text)
       : idsInTsTitles(text, file, resolve, exportsOf);
