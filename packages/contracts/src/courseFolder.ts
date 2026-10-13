@@ -110,7 +110,7 @@ export type TopicMeta = z.output<typeof topicMeta>;
 /** A `*.shiny.yaml` file (§2): `url` and nothing else. */
 export const shinyFile = z.strictObject({ url: z.string().trim() });
 const fileSource = z.strictObject({ file: z.string() });
-/** A notebook's data files, sorted by `path` (the workspace path); `file` is the path in the tree. */
+/** A notebook's data files by workspace `path`, sorted; `file` is each one's path in the tree. */
 const data = z.array(z.strictObject({ path: z.string(), file: z.string() }));
 
 const entry = <T extends ResourceType, S extends z.ZodType, X extends z.ZodRawShape>(
@@ -196,7 +196,7 @@ export const syncHeader = z.strictObject({
 });
 export type SyncHeader = z.output<typeof syncHeader>;
 
-/** What the caller stored for a file: its key and, for a notebook's data file, its object id and size. */
+/** What the caller stored for a file: its key and, for a data file, the object's id and size. */
 export type StoredFile = { key: string; id?: string; size?: number };
 type Json = Record<string, unknown>;
 /** What `revisionPayload` reads of a resource: an entry of either manifest that has a source. */
@@ -229,8 +229,9 @@ export function revisionPayload(resource: Sourced, stored: (file: string) => Sto
   if (type === 'notebook') {
     const objects = source.data.map(({ path, file }) => {
       const { key: dataKey, id, size } = stored(file);
-      if (id === undefined || size === undefined)
+      if (id === undefined || size === undefined) {
         throw new Error(`no object id or size for ${file}`);
+      }
       return { key: dataKey, declared: { path, resourceId: id, size } };
     });
     const workspaceFiles = objects.map((object) => object.declared);
