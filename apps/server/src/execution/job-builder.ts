@@ -8,7 +8,7 @@ import {
 } from '@parallax/contracts';
 import type { z } from 'zod';
 import type { RunnerRuntime } from '../config';
-import { canonical } from '../db/content/drafts';
+import { canonical } from '../content/canonical';
 
 /**
  * The job the runner receives and the hashes that name a run (docs/design/runner.md §8.2). Pure,
