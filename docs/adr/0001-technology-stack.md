@@ -1,6 +1,6 @@
 # ADR 0001 — Technology stack
 
-**Status:** Accepted, 2026-09-30
+**Status:** Accepted, 2026-09-30. Amended 2026-10-13 (P5-03, owner decisions in issue #559): published pieces, versioning and release; see **Amendment: Distribution** below, which [docs/design/site.md](../design/site.md) refines.
 
 ## Context
 
@@ -49,3 +49,19 @@ Session environment (checked 2026-09-30): Node 22.22.2, pnpm 10.33.0 (corepack 0
 - **Tailwind / a component library**: would re-express DESIGN.md tokens twice; the wireframe's CSS is small and already correct.
 - **Connector in TypeScript (Node SEA) or Python (PyInstaller)**: awkward single-binary distribution; Go cross-compiles static binaries and ships a mature SSH client.
 - **Postgres row-level security** as the primary isolation mechanism: see ADR-0002 (kept as optional hardening).
+
+## Amendment: Distribution (P5-03, 2026-10-13)
+
+**Context.** Until Phase 5 Parallax could only be run from a copy of this repository: every workspace package is private and `infra/compose.prod.yml` builds its images from the source tree. N1 and N3 (spec §13) ask for a site folder that holds only its own files and compiles its own JSX pages against Parallax, and N9 for a runner on the operator's side. The owner's answer Q1 (plan §8) fixes the form of delivery.
+
+**Published pieces.** A release is two npm packages and two container images on the GitHub Container Registry (GHCR), under one version number. `parallax-site` (`packages/cli`, command `parallax`) is the command-line tool; it carries the sources of the web application (`apps/web`, `packages/ui`, `packages/contracts`) and of the conversion entry (`apps/server/src/content`), copied in at pack time with their `@parallax/…` imports rewritten to relative paths. `create-parallax-site` (`packages/create-parallax-site`, run as `npm create parallax-site`) is the scaffolder with the templates `instructor` and `school`. `ghcr.io/<owner>/parallax-server` is `apps/server`, and `ghcr.io/<owner>/parallax-runner` is `apps/runner`, the runner service. The sandbox runtime images that the runner starts are not part of a release: they stay with `scripts/runner-image.sh` and the digest allow-lists. The `@parallax/*` workspace packages are not published.
+
+**Execution.** The published tool runs its TypeScript sources with `tsx`, as the server image does; there is no bundling step. A site's build compiles the web application with Vite from the sources the package carries, in a work tree inside the site, with the plugins of `apps/web/vite.config.ts`. The server image serves the result through `STATIC_DIR`.
+
+**Versioning.** One semantic version for all pieces, set by the release tag; manifests in the repository carry `0.0.0`. A site names the version once, as the exact version of `parallax-site` in its `package.json`, and keeps no lock file; the tool starts the images tagged with that same version. Migrations only move forward: `migrate` runs before the services and stops when the database holds a migration newer than the package's newest. The upgrade command first stops the services that write and takes a backup; rollback is restoring that backup and installing the earlier version. The connector keeps its own version and workflow.
+
+**Release.** `.github/workflows/package-release.yml`, modelled on `connector-release.yml`. A tag `parallax-v<version>` on `main` publishes. A pull request that changes the workflow or what it packs, and `workflow_dispatch` with `dry_run` (the default), build, pack and check everything and publish nothing. Building and publishing are separate jobs; only the publishing job may write packages and read the npm token, from repository secrets, and it publishes the tarballs that the build job packed and checked, unchanged. Images are pushed first, then `parallax-site`, then `create-parallax-site`. No session pushes a tag; the first release tag is the owner's.
+
+**Consequences.** `infra/compose.prod.yml` stays the from-source deployment. `tsx` and Vite become run-time dependencies of `parallax-site`. Its third-party versions are the pins of this ADR, and a pack check fails when they differ from the source manifests. The site's build, not Parallax's, compiles the web application, so a pull request that changes `apps/web/vite.config.ts` must keep the tool's build configuration in step; a test compares the two.
+
+**Alternatives considered.** *Images only:* N3 needs an npm dependency to compile pages. *Publishing each `@parallax/*` package:* more names and versions to keep in step, for no consumer. *A prebuilt web library:* Vite's library mode inlines assets, which the app origin's `script-src 'self'` forbids for the PDF worker, and a second bundling pass breaks the first pass's chunk and style references. *Bundling the tool to JavaScript:* a build step the server does not have, while the renderers already load TypeScript through `tsx` in worker threads.
