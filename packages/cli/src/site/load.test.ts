@@ -27,11 +27,6 @@ function site(fixture: string, files: Record<string, string> = {}, edit = ['', '
   write(root, file, config.replace(edit[0] ?? '', edit[1] ?? ''));
   return root;
 }
-const problems = (root: string): Promise<string[]> =>
-  loadSite(root).then(
-    () => [],
-    (error) => (error instanceof SiteProblems ? error.lines : Promise.reject(error)),
-  );
 
 describe('loadSite', () => {
   test('the fixture configurations load with DATABASE_URL deleted from the environment', async () => {
@@ -54,14 +49,14 @@ describe('loadSite', () => {
   });
 
   test('a configuration that cannot be used stops the load, one line for each problem', async () => {
+    const lines = (root: string) => loadSite(root).catch((error: SiteProblems) => error.lines);
     const refused = site('school', {}, ['level: 2,', "level: 3, theme: 'dark',"]);
-    const [level, ...rest] = await problems(refused);
-    expect(level).toMatch(/^parallax\.config\.ts: level: /);
-    expect(rest).toEqual([`${file}: theme: unknown key`]);
-    const [broken, ...none] = await problems(site('instructor', { [file]: 'export default {' }));
-    expect(broken).toMatch(/^parallax\.config\.ts: \S/);
-    expect(none).toEqual([]);
-    expect(await problems(temp)).toEqual([`${file}: not found in ${temp}`]);
+    const level = expect.stringMatching(/^parallax\.config\.ts: level: /);
+    expect(await lines(refused)).toEqual([level, `${file}: theme: unknown key`]);
+    const broken = site('instructor', { [file]: 'export default {' });
+    expect(await lines(broken)).toEqual([expect.stringMatching(/^parallax\.config\.ts: \S/)]);
+    expect(await lines(temp)).toEqual([`${file}: not found in ${temp}`]);
+    await expect(loadSite(temp)).rejects.toBeInstanceOf(SiteProblems);
   });
 });
 

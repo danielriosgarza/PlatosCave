@@ -1,11 +1,6 @@
 import { describe, expect, test } from 'vitest';
-import {
-  instructorMeta,
-  type SiteConfigInput,
-  siteCatalogue,
-  siteConfig,
-  siteIssueLines,
-} from './site';
+import type { SiteConfigInput } from './site';
+import { instructorMeta, siteCatalogue, siteConfig, siteIssueLines } from './site';
 
 const runtime = {
   id: 'python-3.12',
@@ -76,12 +71,10 @@ describe('siteConfig', () => {
   });
 
   test('a refused configuration names the field, one line for each problem', () => {
-    const both = spring(origins({ content: 'https://stats.example.org:8443' }), {
-      course: 'statistics',
-      instructors: ['ana'],
-    });
+    const cls = { course: 'statistics', instructors: ['ana'] };
+    const both = spring(origins({ content: 'https://stats.example.org:8443' }), cls);
     expect(lines(both)).toEqual([
-      'origins.content: has the host name of origins.app (stats.example.org); the two must differ',
+      'origins.content: must not have the host name of origins.app, stats.example.org',
       'classes[0].instructors[0]: ana is not in instructors',
     ]);
     const refused: [string, unknown][] = [
@@ -108,10 +101,8 @@ describe('siteConfig', () => {
       ['origins.content', origins({ content: 'https://content.stats.example.org/files' })],
       ['origins.content', origins({ app: 'http://localhost:1', content: 'http://localhost:2' })],
       ['origins.shiny[0]', origins({ shiny: ['https://stats.example.org:3838'] })],
-      [
-        'origins.shiny[1]',
-        origins({ shiny: ['https://r.example.org', instructor.origins.content] }),
-      ],
+      ['origins.shiny[0]', origins({ shiny: [instructor.origins.content] })],
+      ['origins.shiny[1]', origins({ shiny: ['https://r.example.org', instructor.origins.app] })],
       ['signIn', one({ signIn: {} })],
       ['level', one({ level: 3 })],
       ['mode', one({ mode: undefined })],

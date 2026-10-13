@@ -1,11 +1,7 @@
 import { z } from 'zod';
 import { RunnerRuntimeId } from './runner';
 
-/**
- * A site's configuration (`parallax.config.ts`), `instructor.yaml` and the catalogue its pages
- * receive: docs/design/site.md §4, §7 and §6.6. The tool `parallax-site` reads all three.
- */
-
+// docs/design/site.md: `parallax.config.ts` (§4), `instructor.yaml` (§7), the catalogue (§6.6).
 const LOOPBACK = new Set(['localhost', '127.0.0.1', '[::1]']);
 const NO_CONTROL = /^\P{Cc}*$/u;
 /** A folder's name as a directory listing gives it; one that starts with a dot is none. */
@@ -62,9 +58,8 @@ function rules(config: z.output<typeof fields>, ctx: z.RefinementCtx): void {
   const { level, origins, classes, runner } = config;
   const school = config.mode === 'school';
   const app = hostOf(origins.app);
-  if (app === hostOf(origins.content)) {
-    refuse(`has the host name of origins.app (${app}); the two must differ`, 'origins', 'content');
-  }
+  const shared = app === hostOf(origins.content);
+  if (shared) refuse(`must not have the host name of origins.app, ${app}`, 'origins', 'content');
   // Cookies ignore ports, so the app's host on any port is refused, as the server refuses it.
   origins.shiny.forEach((shiny, i) => {
     const own = shiny === origins.content || hostOf(shiny) === app;
@@ -75,15 +70,14 @@ function rules(config: z.output<typeof fields>, ctx: z.RefinementCtx): void {
   const ids = runner?.runtimes.map((entry) => entry.id) ?? [];
   if (new Set(ids).size < ids.length) refuse('runtime ids must be unique', 'runner', 'runtimes');
 
-  const listed = school ? (config.instructors ?? []) : ['.'];
-  if (school && !config.instructors) {
-    refuse('school mode names the folders under instructors/', 'instructors');
-  } else if (!school && config.instructors && config.instructors.join() !== '.') {
-    refuse("instructor mode has one instructor folder, '.' (the site folder)", 'instructors');
-  }
+  const given = config.instructors;
+  const listed = school ? (given ?? []) : ['.'];
+  const unlisted = (ref: string) => `${ref} is not in instructors`;
+  if (school && !given) refuse('school mode names the folders under instructors/', 'instructors');
+  const other = !school && given && given.join() !== '.';
+  if (other) refuse("instructor mode has one instructor folder, '.'", 'instructors');
   (school ? listed : []).forEach((ref, i) => {
-    if (ref.includes('@'))
-      refuse('a folder under instructors/, never an address', 'instructors', i);
+    if (ref.includes('@')) refuse('a folder name, never an address', 'instructors', i);
     else if (!FOLDER.test(ref)) refuse('the name of a folder under instructors/', 'instructors', i);
     else if (listed.indexOf(ref) < i) refuse('listed twice', 'instructors', i);
   });
@@ -91,17 +85,13 @@ function rules(config: z.output<typeof fields>, ctx: z.RefinementCtx): void {
     const parts = cls.course.split('/');
     const holder = school ? (parts[0] ?? '') : '.';
     const form = school ? '<instructor folder>/<course folder>' : 'a folder in courses/';
-    if (parts.length !== (school ? 2 : 1) || !parts.every((part) => FOLDER.test(part))) {
-      refuse(`a course is written as ${form}`, 'classes', i, 'course');
-    } else if (!listed.includes(holder)) {
-      refuse(`${holder} is not in instructors`, 'classes', i, 'course');
-    }
-    if (classes.findIndex((o) => o.course === cls.course && o.name === cls.name) < i) {
-      refuse(`a second class of ${cls.course} with this name`, 'classes', i, 'name');
-    }
+    const formed = parts.length === (school ? 2 : 1) && parts.every((part) => FOLDER.test(part));
+    if (!formed) refuse(`a course is written as ${form}`, 'classes', i, 'course');
+    else if (!listed.includes(holder)) refuse(unlisted(holder), 'classes', i, 'course');
+    const twin = classes.findIndex((o) => o.course === cls.course && o.name === cls.name) < i;
+    if (twin) refuse(`a second class of ${cls.course} with this name`, 'classes', i, 'name');
     cls.instructors?.forEach((ref, j) => {
-      const known = listed.includes(ref);
-      if (!known) refuse(`${ref} is not in instructors`, 'classes', i, 'instructors', j);
+      if (!listed.includes(ref)) refuse(unlisted(ref), 'classes', i, 'instructors', j);
     });
   });
 }

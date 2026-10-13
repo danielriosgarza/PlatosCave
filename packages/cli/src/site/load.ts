@@ -8,11 +8,8 @@ import { loadSource, packageRoot } from '../paths';
 
 export const CONFIG = 'parallax.config.ts';
 
-export interface Site {
-  /** The site folder. */
-  root: string;
-  config: SiteConfig;
-}
+/** A loaded site: its folder and its configuration. */
+export type Site = { root: string; config: SiteConfig };
 
 /** What stops every command (docs/design/site.md §4): one line for each problem. */
 export class SiteProblems extends Error {
