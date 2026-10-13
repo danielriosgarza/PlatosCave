@@ -42,7 +42,8 @@ export const resolve = (specifier, context, next) =>
  */
 export async function loadSite(root: string): Promise<Site> {
   const file = join(root, CONFIG);
-  if (!existsSync(file)) throw new SiteProblems([`${CONFIG}: not found in ${root}`]);
+  const stop = (lines: string[]) => new SiteProblems(lines.map((line) => `${CONFIG}: ${line}`));
+  if (!existsSync(file)) throw stop([`not found in ${root}`]);
   type Contracts = typeof import('@parallax/contracts');
   const { siteConfig, siteIssueLines } = await loadSource<Contracts>('contracts', 'src/index.ts');
   answerOwnName();
@@ -52,11 +53,13 @@ export async function loadSite(root: string): Promise<Site> {
     // In a CommonJS site the default export lies one level deeper.
     exported = loaded.default?.__esModule ? loaded.default.default : loaded.default;
   } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    throw new SiteProblems([`${CONFIG}: ${message.split('\n')[0]}`]);
+    const lines = (error instanceof Error ? error.message : String(error)).split('\n');
+    // A file that does not compile gives a header, then one line for each error with its place.
+    const errors = lines.filter((line) => line.includes(': ERROR: '));
+    throw stop(errors.length > 0 ? errors : lines.slice(0, 1));
   }
+  if (exported === undefined) throw stop(['the configuration is not the default export']);
   const parsed = siteConfig.safeParse(exported);
   if (parsed.success) return { root, config: parsed.data };
-  const lines = siteIssueLines(parsed.error.issues);
-  throw new SiteProblems(lines.map((line) => `${CONFIG}: ${line}`));
+  throw stop(siteIssueLines(parsed.error.issues));
 }

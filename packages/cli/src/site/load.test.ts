@@ -53,8 +53,12 @@ describe('loadSite', () => {
     const refused = site('school', {}, ['level: 2,', "level: 3, theme: 'dark',"]);
     const level = expect.stringMatching(/^parallax\.config\.ts: level: /);
     expect(await lines(refused)).toEqual([level, `${file}: theme: unknown key`]);
+    // A file that does not compile is reported with the place and the reason of each error.
     const broken = site('instructor', { [file]: 'export default {' });
-    expect(await lines(broken)).toEqual([expect.stringMatching(/^parallax\.config\.ts: \S/)]);
+    const reason = /^parallax\.config\.ts: .+:1:16: ERROR: Expected .+ but found end of file$/;
+    expect(await lines(broken)).toEqual([expect.stringMatching(reason)]);
+    const named = site('instructor', {}, ['export default', 'export const config =']);
+    expect(await lines(named)).toEqual([`${file}: the configuration is not the default export`]);
     expect(await lines(temp)).toEqual([`${file}: not found in ${temp}`]);
     await expect(loadSite(temp)).rejects.toBeInstanceOf(SiteProblems);
   });
@@ -67,7 +71,7 @@ describe('parallax', () => {
   write(commands, 'package.json', '{ "type": "module" }');
   for (const name of ['build', 'dev', 'dev.test', 'types.d']) write(commands, `${name}.ts`, run);
   const node = (...args: string[]) =>
-    spawnSync(process.execPath, args, { cwd: pkg, encoding: 'utf8' });
+    spawnSync(process.execPath, args, { cwd: pkg, encoding: 'utf8', timeout: 20000 });
 
   test('an unknown command lists the commands', async () => {
     const printed: string[] = [];
