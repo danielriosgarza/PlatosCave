@@ -1,29 +1,14 @@
 import type { ResourceType } from '@parallax/contracts';
 import { and, asc, eq, inArray, isNull, sql } from 'drizzle-orm';
-import { z } from 'zod';
 import type { CourseScope } from '../../auth/scope';
+import { DerivedStatus, derivedReady } from '../../content/derived-status';
 import type { Db } from '../client';
 import { resourceRevisions, resources, topics } from '../schema';
 import { forCourse } from '../scoped';
 import { BOSS_SCHEMA } from './boss';
 
-/**
- * State of the job deriving outputs (conversions, page text, block maps) from one resource
- * revision, kept in `resource_revisions.derived.status`: the only column a revision may change
- * after insert (ADR-0003).
- */
-export const DerivedStatus = z.object({
-  state: z.enum(['queued', 'running', 'ready', 'failed']),
-  job: z.string(),
-  jobId: z.string().nullable(),
-  error: z.string().optional(),
-  updatedAt: z.iso.datetime(),
-});
-export type DerivedStatus = z.infer<typeof DerivedStatus>;
-
-/** Whether the job deriving a revision's outputs has finished (gates publishing slide decks). */
-export const derivedReady = (derived: Record<string, unknown>): boolean =>
-  DerivedStatus.safeParse(derived.status).data?.state === 'ready';
+// The status and its reader are in a module without database imports (P5-09a).
+export { DerivedStatus, derivedReady };
 
 export interface ResourceJobStatus {
   resourceId: string;
