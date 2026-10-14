@@ -112,6 +112,10 @@ const publicAllowlist = new Set([
   'POST /api/auth/link',
   'GET /api/auth/verify',
   'POST /api/auth/signout',
+  // Provider sign-in (ADR-0002, Amendment: Identity providers): no principal, no one's records.
+  'GET /api/auth/methods',
+  'GET /api/auth/oidc/:provider/start',
+  'GET /api/auth/oidc/:provider/callback',
   'POST /api/preview/exit',
   // Connector pairing (docs/design/connector.md §3): a single-use pairing code or an Ed25519
   // signature of the connector's stored key is the credential; connectors.itest.ts covers them.

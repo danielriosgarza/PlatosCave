@@ -12,8 +12,16 @@ export interface Mailer {
   send(message: MailMessage): Promise<void>;
 }
 
-/** `file` in development and tests (read by Playwright), `smtp` in production (ADR-0001). */
+/**
+ * `file` in development and tests (read by Playwright), `smtp` in production (ADR-0001), `none`
+ * where people sign in only with a provider: then nothing may send, and a send fails.
+ */
 export function createMailer(config: Config, now: () => Date = () => new Date()): Mailer {
+  if (config.MAIL_TRANSPORT === 'none') {
+    return {
+      send: () => Promise.reject(new Error('MAIL_TRANSPORT=none: no mail sender is configured')),
+    };
+  }
   if (config.MAIL_TRANSPORT === 'smtp') {
     if (!config.SMTP_URL) throw new Error('SMTP_URL is required for MAIL_TRANSPORT=smtp');
     return new SmtpMailer(config.SMTP_URL, config.MAIL_FROM);

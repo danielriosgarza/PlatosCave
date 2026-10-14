@@ -1,3 +1,3 @@
-/** Sign-in link tokens must never reach the logs, even single-use ones. */
+/** Sign-in link tokens and a provider's `code` and `state` must never reach the logs. */
 export const redactUrl = (url: string): string =>
-  url.replace(/([?&]token=)[^&#]*/g, '$1[redacted]');
+  url.replace(/([?&](?:token|code|state)=)[^&#]*/g, '$1[redacted]');
