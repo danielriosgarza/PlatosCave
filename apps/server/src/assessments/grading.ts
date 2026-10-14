@@ -38,6 +38,13 @@ export function shares(q: TestQuestion): { automated: number; manual: number } {
   return { automated: q.points - manual, manual };
 }
 
+/**
+ * Whether an instructor marks part of the question by hand: it has rubric criteria, or manual
+ * points (an explanation). An open class adopts no test with such a question (§13, N10).
+ */
+export const hasManualPart = (q: TestQuestion): boolean =>
+  q.rubric.length > 0 || shares(q).manual > 0;
+
 function sameSet(a: unknown, b: string[]) {
   if (!Array.isArray(a) || a.length !== b.length) return false;
   const want = new Set(b);
@@ -88,7 +95,7 @@ export function manualFor(
 ): Checked<ManualScore | null> {
   const possible = shares(q).manual;
   const refuse = (message: string) => ({ ok: false as const, message });
-  if (possible === 0 && q.rubric.length === 0) {
+  if (!hasManualPart(q)) {
     return mark ? refuse(`Question ${q.id} takes no manual points`) : { ok: true, value: null };
   }
   if (!mark) return { ok: true, value: { possible, points: null, criteria: [] } };
