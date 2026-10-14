@@ -102,6 +102,19 @@ describe('loadSite', () => {
     const place =
       /^parallax\.config\.ts: TypeError: Cannot read .+, at parallax\.config\.ts:\d+:\d+$/;
     expect(await problems(site('instructor', {}, threw))).toEqual([expect.stringMatching(place)]);
+    // A throw inside an installed package names the configuration's line that called it.
+    const foo = {
+      'node_modules/foo/index.js': "exports.f = () => { throw new TypeError('in foo') };",
+    };
+    const call = site('instructor', foo, [
+      'export default',
+      "import { f } from 'foo';\nf();\nexport default",
+    ]);
+    const called = /^parallax\.config\.ts: TypeError: in foo, at parallax\.config\.ts:\d+:\d+$/;
+    expect(await problems(call)).toEqual([expect.stringMatching(called)]);
+    const empty = site('instructor', { [file]: 'throw new Error();' });
+    const bare = /^parallax\.config\.ts: Error, at parallax\.config\.ts:\d+:\d+$/;
+    expect(await problems(empty)).toEqual([expect.stringMatching(bare)]);
     const object = `${file}: the default export must be the object that defineConfig returns`;
     for (const value of ['() => ({})', 'Promise.resolve({})', "'instructor'"]) {
       const root = site('instructor', { [file]: `export default ${value};` });
@@ -152,6 +165,8 @@ describe('loadSite', () => {
           `${file}: instructors[1]: no folder ${ben}`,
         ],
       ],
+      // An entry that cannot be read, here a link to itself, is a line and not an exception.
+      [changed(site('instructor'), link('loop', 'loop')), ['loop: cannot be read (ELOOP)']],
     ];
     for (const [root, lines] of cases) expect(await problems(root), lines[0]).toEqual(lines);
   });
@@ -168,11 +183,24 @@ describe('loadSite', () => {
     // One name in two Unicode forms: e followed by a combining accent, and the one letter.
     const formed = site('school', {}, ['ana/reef-ecology', 'ana/caf\u00e9']);
     changed(formed, move(reef, 'instructors/ana/courses/cafe\u0301'));
-    const escaped = disk('cafe\\u{301}', 'caf\\u{e9}');
+    // A name not in NFC is written with code points, so that the two forms read apart.
+    const escaped = disk('cafe\\u{301}', 'caf\u00e9');
     expect(await problems(formed)).toEqual([`${file}: classes[0].course: ${escaped}`]);
     // The class of the refused folder adds no line, and the folder on disk is not called unlisted.
     const named = changed(site('school'), move('instructors/ana', 'instructors/Ana'));
     expect(await problems(named)).toEqual([`${file}: instructors[0]: ${disk('Ana', 'ana')}`]);
+    // A listed folder whose twin in the other form lies beside it: the twin is not listed.
+    const twin = (name: string, email: string) => ({
+      [`instructors/${name}/instructor.yaml`]: `name: Caf\nemail: ${email}\n`,
+      [`instructors/${name}/courses/.gitkeep`]: '',
+    });
+    const twins = site(
+      'school',
+      { ...twin('caf\u00e9', 'nfc@example.org'), ...twin('cafe\u0301', 'nfd@example.org') },
+      ["instructors: ['ana', 'ben'],", "instructors: ['ana', 'ben', 'caf\u00e9'],"],
+    );
+    const unlisted = `instructors/cafe\\u{301}: the folder is not in instructors of ${file}`;
+    expect(await problems(twins)).toEqual([unlisted]);
   });
 
   test('two instructor folders with one address are refused, naming both files and no address', async () => {
@@ -182,6 +210,13 @@ describe('loadSite', () => {
       `${ben}/instructor.yaml: email: the same address as instructors/ana/instructor.yaml`,
     ]);
     expect(lines.join('\n')).not.toMatch(/@|example\.org/i);
+    // A valid address counts although another key of its file is wrong: both lines in one run.
+    const ana = 'instructors/ana/instructor.yaml';
+    const both = { ...yaml, [ana]: 'name: Ana Example\nemail: ana@example.org\nrole: admin\n' };
+    expect(await problems(site('school', both))).toEqual([
+      `${ana}: role: unknown key`,
+      `${ben}/instructor.yaml: email: the same address as ${ana}`,
+    ]);
   });
 
   test('the logo is checked by its real path: inside the site, outside course folders and private/', async () => {
@@ -190,7 +225,7 @@ describe('loadSite', () => {
     const logo = (path: string, files: Record<string, string> = {}, ...changes: Change[]) =>
       problems(
         changed(
-          site('instructor', files, ['src/logo.png', path.replace('\\', '\\\\')]),
+          site('instructor', files, ['src/logo.png', JSON.stringify(path).slice(1, -1)]),
           ...changes,
         ),
       );
@@ -206,6 +241,11 @@ describe('loadSite', () => {
       expect(await logo(path), path).toEqual(at(path, shape));
     }
     expect(await logo('https://example.org/x.png')).toEqual(at('https://example.org/x.png', shape));
+    // A control character is refused with the others, and printed as its code point.
+    expect(await logo('src/a\u0000.png')).toEqual(at('src/a\\u{0}.png', shape));
+    // Decided from the listing, as a course's name: a host that tells case apart would not open it.
+    const cased = 'SRC/logo.png: the name on disk is src, not SRC (case or Unicode form)';
+    expect(await logo('SRC/logo.png')).toEqual([`${file}: logo.file: ${cased}`]);
     const out = link(join(temp, 'elsewhere'), 'src/out');
     expect(await logo('src/out/logo.png', {}, out)).toEqual(
       at('src/out/logo.png', 'lies outside the site folder'),
