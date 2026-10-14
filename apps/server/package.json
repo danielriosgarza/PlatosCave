@@ -2,6 +2,9 @@
   "name": "@parallax/server",
   "private": true,
   "type": "module",
+  "exports": {
+    "./convert": "./src/content/convert.ts"
+  },
   "scripts": {
     "dev": "tsx watch src/main.ts relay",
     "start": "tsx src/main.ts relay",
