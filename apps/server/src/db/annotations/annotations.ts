@@ -20,7 +20,7 @@ import type { z } from 'zod';
 import { excerpt } from '../../annotations/excerpt';
 import { layoutOf, mapAnchor } from '../../annotations/mapping';
 import { type ClassScope, isDraftPreview } from '../../auth/scope';
-import { classArchived, invalid, notFound, type Outcome } from '../../outcome';
+import { classArchived, classOpen, invalid, notFound, type Outcome } from '../../outcome';
 import { audit } from '../audit';
 import { openReleaseTopicIds } from '../classTopics';
 import type { Db } from '../client';
@@ -46,7 +46,9 @@ import { visiblePost, visibleTo } from './visibility';
  * require its author, so a non-author learns only "not found". Students reach a resource only
  * while `studyableResource` allows it (hidden or not yet released resources, and resources of a
  * topic that is not open to them, are "not found"), and
- * an archived class refuses every write but keeps its reads (§4).
+ * an archived class refuses every write but keeps its reads (§4). An open class (§13, N10) takes
+ * no new post to the class or to instructors, and no edit of one, from anyone; private
+ * annotations still save.
  */
 
 type Body<C extends { body?: z.ZodType }> = z.output<NonNullable<C['body']>>;
@@ -231,7 +233,7 @@ async function loadThreads(db: Db, scope: ClassScope, where: SQL, now: Date, pin
       placement: placements.get(thread.id) ?? null,
       createdAt: thread.createdAt.toISOString(),
       can: {
-        reply: !scope.archived,
+        reply: !scope.archived && !scope.open,
         resolve: !scope.archived && instructor && thread.status === 'open',
         reopen:
           !scope.archived &&
@@ -252,7 +254,7 @@ async function loadThreads(db: Db, scope: ClassScope, where: SQL, now: Date, pin
           deleted: post.deletedAt !== null,
           moderated: post.moderatedAt !== null,
           can: {
-            edit: live && own && (instructor || (policy?.edit ?? true)),
+            edit: live && own && !scope.open && (instructor || (policy?.edit ?? true)),
             delete: live && own && (instructor || (policy?.delete ?? true)),
             moderate: live && instructor && !own,
           },
@@ -461,6 +463,7 @@ export async function createThread(
   now: Date,
 ): Promise<Outcome<Thread>> {
   if (scope.archived) return classArchived;
+  if (scope.open) return classOpen;
   const placed = await placeOn(db, scope, resourceId, input.anchor, now);
   if (!placed.ok) return placed;
   const resourceRevisionId = placed.value;
@@ -482,6 +485,7 @@ export async function shareAnnotation(
   now: Date,
 ): Promise<Outcome<Thread>> {
   if (scope.archived) return classArchived;
+  if (scope.open) return classOpen;
   const note = await ownAnnotation(db, scope, annotationId);
   if (!note || !(await studyableResource(db, scope, note.resourceId, now))) return notFound;
   const body = input.body ?? note.body?.trim();
@@ -530,6 +534,7 @@ export async function replyToThread(
   now: Date,
 ): Promise<Outcome<Thread>> {
   if (scope.archived) return classArchived;
+  if (scope.open) return classOpen;
   const thread = await readableThread(db, scope, threadId);
   if (!thread || !(await studyableResource(db, scope, thread.resourceId, now))) return notFound;
   const author = {
@@ -602,6 +607,7 @@ export async function editPost(
   now: Date,
 ): Promise<Outcome<Thread>> {
   if (scope.archived) return classArchived;
+  if (scope.open) return classOpen;
   const found = await readablePost(db, scope, postId, now);
   if (!found || found.post.authorId !== scope.user.id) return notFound;
   const { post } = found;

@@ -4,6 +4,7 @@ import { describe, expect, test } from 'vitest';
 import {
   type CodeResult,
   feedbackProblem,
+  hasManualPart,
   manualFor,
   markOf,
   reportedOf,
@@ -112,6 +113,15 @@ describe('grade scoring', () => {
       automated: 0,
       manual: 2,
     });
+  });
+
+  test('a question has a manual part when it has rubric criteria or manual points', () => {
+    expect(quiz.questions.map(hasManualPart)).toEqual([false, false, true, true, true]);
+    const unscored = testV1.parse({
+      questions: [{ id: 'notes', kind: 'explanation', prompt: 'Notes?', points: 0 }],
+    }).questions[0] as TestQuestion;
+    expect(hasManualPart(unscored)).toBe(false);
+    expect(manualFor(unscored, undefined)).toEqual({ ok: true, value: null });
   });
 
   test('automated and manual components stay separate and add up', () => {

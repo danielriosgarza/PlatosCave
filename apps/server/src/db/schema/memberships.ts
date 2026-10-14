@@ -64,6 +64,8 @@ export const classes = pgTable(
     /** Declared discussion policy (§8): whether students may edit or delete their own posts. */
     studentsEditPosts: boolean().notNull().default(true),
     studentsDeletePosts: boolean().notNull().default(true),
+    /** Open class (§13, N10): nobody posts to the class or to instructors, and nobody grades. */
+    open: boolean().notNull().default(false),
     createdAt: timestamp({ withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [index().on(t.courseId)],

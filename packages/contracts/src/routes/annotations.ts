@@ -8,7 +8,9 @@ import { exampleIds } from '../examples';
  * return only what the audience rule permits the caller (ADR-0002). `resourceId` is the
  * draft resource id, stable across revisions; the server pins the class's adopted revision.
  * Students reach a resource only once it is visible and its release time has passed. Writes
- * to an archived class answer 409 `{ error: 'class_archived' }`; reads keep working (§4).
+ * to an archived class answer 409 `{ error: 'class_archived' }`; reads keep working (§4). In an
+ * open class (§13, N10) a new post to the class or to instructors, or an edit of one, answers
+ * 409 `{ error: 'class_open' }` whoever sends it; private annotations still save.
  */
 
 const exampleClass = exampleIds.zero;
@@ -22,6 +24,9 @@ const person = z.object({ id: z.uuid(), name: z.string() });
 const sharedAudience = z.enum(['instructor', 'class']);
 
 export { classArchived };
+/** 409 for a post in an open class, where nobody posts to the class or to instructors. */
+export const classOpen = z.object({ error: z.literal('class_open') });
+const postRefusal = z.union([classArchived, classOpen]);
 
 const classParams = z.object({ classId: z.uuid() });
 const resourceParams = classParams.extend({ resourceId: z.uuid() });
@@ -187,7 +192,7 @@ export const createThread = defineRoute({
   params: resourceParams,
   body: z.object({ audience: sharedAudience, anchor, body: text.trim().min(1) }),
   response: threadView,
-  errors: { 400: invalidBody, 409: classArchived },
+  errors: { 400: invalidBody, 409: postRefusal },
   examples: {
     params: { classId: exampleClass, resourceId: exampleResource },
     body: { audience: 'instructor', anchor: { kind: 'none' }, body: 'Why n − 1?' },
@@ -206,7 +211,7 @@ export const shareAnnotation = defineRoute({
   params: annotationParams,
   body: z.object({ audience: sharedAudience, body: text.trim().min(1).optional() }),
   response: threadView,
-  errors: { 400: invalidBody, 409: classArchived },
+  errors: { 400: invalidBody, 409: postRefusal },
   examples: {
     params: { classId: exampleClass, annotationId: exampleAnnotation },
     body: { audience: 'instructor' },
@@ -246,7 +251,7 @@ export const replyToThread = defineRoute({
   params: threadParams,
   body: z.object({ body: text.trim().min(1), parentId: z.uuid().optional() }),
   response: threadView,
-  errors: { 400: invalidBody, 409: classArchived },
+  errors: { 400: invalidBody, 409: postRefusal },
   examples: {
     params: { classId: exampleClass, threadId: exampleIds.dd },
     body: { body: 'Because the sample mean uses one estimated centre.' },
@@ -262,7 +267,7 @@ export const editPost = defineRoute({
   params: postParams,
   body: z.object({ body: text.trim().min(1) }),
   response: threadView,
-  errors: { 400: invalidBody, 409: classArchived },
+  errors: { 400: invalidBody, 409: postRefusal },
   examples: {
     params: { classId: exampleClass, postId: exampleIds.ee },
     body: { body: 'Why n − 1 rather than n?' },
