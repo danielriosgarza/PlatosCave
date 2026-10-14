@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import { join } from 'node:path';
 import type { ExerciseV1, TestV1 } from '@parallax/contracts';
 import { loadSource } from '../paths';
+import { sameButCase } from './listing';
 import { type Field, type Parsed, type Problem, parseYaml, refusal } from './yaml';
 
 type Contracts = typeof import('@parallax/contracts');
@@ -66,14 +67,17 @@ export async function loadTest(
 ): Promise<Loaded<TestV1>> {
   const { testV1, codeQuestion, codeFile } = await contracts();
   const parsed = parse(root, file);
-  if (!isMap(parsed.value)) return { problems: checked(parsed, testV1).problems };
+  // A file the parser refuses has no value: its problems are the result, and no schema runs.
+  if (parsed.problems.length > 0) return { problems: parsed.problems };
+  // Written out: an alias gives the object of its anchor, and each place gets its own file here.
+  const value: unknown = JSON.parse(JSON.stringify(parsed.value));
   const problems: Problem[] = [];
   const refuse = (at: PropertyKey[], message: string) =>
     problems.push(problemAt(parsed, at, message, 'code_file'));
   const folder = `${file.replace(/\.yaml$/i, '')}/`;
   const beside = listed.filter((path) => path.startsWith(folder));
   const named = new Set<string>();
-  for (const [q, question] of items(parsed.value.questions)) {
+  for (const [q, question] of items(isMap(value) ? value.questions : undefined)) {
     if (!isMap(question) || question.kind !== 'code') continue;
     const id = codeQuestion.shape.id.safeParse(question.id);
     if (!id.success) {
@@ -81,18 +85,25 @@ export async function loadTest(
       continue;
     }
     for (const [f, entry] of items(question.files)) {
+      // An entry that is no map is the schema's to refuse.
+      if (!isMap(entry)) continue;
       const at = ['questions', q, 'files', f];
-      const path = codeFile.shape.path.safeParse(isMap(entry) ? entry.path : undefined);
-      if (!isMap(entry) || !path.success) {
+      const path = codeFile.shape.path.safeParse(entry.path);
+      if (!path.success) {
         refuse([...at, 'path'], 'expected a path inside the question’s folder, so no file is read');
         continue;
       }
       const code = `${folder}${id.data}/${path.data}`;
-      named.add(code);
-      if ('content' in entry) {
+      // Decided from the listing: a file system that ignores case opens either spelling.
+      const twin = beside.find((other) => sameButCase(other, code));
+      named.add(twin ?? code);
+      if (twin) {
+        refuse([...at, 'path'], `${code} differs only in case from ${twin}, the name on disk`);
+      } else if ('content' in entry) {
         if (beside.includes(code)) refuse([...at, 'content'], `${code} holds it as well`);
-      } else if (!beside.includes(code)) refuse([...at, 'path'], `no file ${code}`);
-      else {
+      } else if (!beside.includes(code)) {
+        refuse([...at, 'path'], `no file ${code}`);
+      } else {
         const bytes = fs.readFileSync(join(root, code));
         try {
           entry.content =
@@ -107,6 +118,6 @@ export async function loadTest(
     if (!named.has(path)) problems.push(refusal('code_file', path, 'no entry names it'));
   }
   if (problems.length > 0) return { problems };
-  const { value, problems: refused } = checked(parsed, testV1);
-  return { definition: value, problems: refused };
+  const { value: definition, problems: refused } = checked({ ...parsed, value }, testV1);
+  return { definition, problems: refused };
 }

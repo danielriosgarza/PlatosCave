@@ -25,6 +25,8 @@ test.each<[file: string, fields: string[], lines: number[]]>([
   ['exercises/estimate.yaml', [], []],
   ['exercises/no-answer.yaml', unanswered, [5, 17, 18]],
   [quiz, [], []],
+  // Two code questions share one `files` list through an alias, and each gets its own main.py.
+  ['tests/aliased.yaml', [], []],
   ['tests/two-answers.yaml', ['questions[0]'], [3]],
 ])(
   '%s gives the schema’s result for its JSON twin, or names each refused field',
@@ -43,10 +45,29 @@ test.each<[file: string, fields: string[], lines: number[]]>([
   },
 );
 
+test('a file the parser refuses gives the parser’s problems, and no schema runs', async () => {
+  const file = 'refused/duplicate-key.yaml';
+  const { problems } = parseYaml(bytes(file).toString(), file);
+  expect(problems).toMatchObject([{ code: 'yaml', path: file }]);
+  for (const loaded of [await loadExercise(fixtures, file), await loadTest(fixtures, file, [])]) {
+    expect(loaded).toEqual({ problems });
+  }
+});
+
 test('an unknown key of a strict schema is named as a field, with its line', () => {
   const file = parseYaml('title: Reef ecology\npublic: true\nid: 7\n', 'course.yaml');
   const unknown = { severity: 'error', code: 'schema', path: 'course.yaml', field: 'id', line: 3 };
   expect(checked(file, courseMeta).problems).toEqual([{ ...unknown, message: 'unknown key' }]);
+});
+
+test('a refused field below an alias is named, with the line of the alias', () => {
+  const q = '{ id: q1, kind: numeric, prompt: Density?, points: 2, answer: 1.5, tolerance: -1 }';
+  const file = parseYaml(`questions:\n  - &q ${q}\n  - *q\n`, 'tests/q.yaml');
+  expect(checked(file, testV1).problems).toMatchObject([
+    { path: 'tests/q.yaml', field: 'questions[0].tolerance', line: 2 },
+    { path: 'tests/q.yaml', field: 'questions[1].tolerance', line: 3 },
+    { path: 'tests/q.yaml', field: 'questions[1]', line: 3, message: 'duplicate question id' },
+  ]);
 });
 
 test('a code file is filled from the file beside the definition, as text and as base64', async () => {
@@ -70,11 +91,11 @@ test('a code file is filled from the file beside the definition, as text and as 
 
 type Change = { write?: Record<string, string | Buffer>; remove?: string };
 let copies = 0;
-/** The fixtures in a temporary folder, with one file removed and others written. */
+/** The fixtures in a temporary folder, with one file or folder removed and files written. */
 function copy({ write = {}, remove }: Change): string {
   const root = join(temp, `copy-${copies++}`);
   fs.cpSync(fixtures, root, { recursive: true });
-  if (remove) fs.rmSync(join(root, remove));
+  if (remove) fs.rmSync(join(root, remove), { recursive: true });
   for (const [path, content] of Object.entries(write)) {
     fs.mkdirSync(join(root, path, '..'), { recursive: true });
     fs.writeFileSync(join(root, path), content);
@@ -103,27 +124,38 @@ test.each<[label: string, change: Change, problems: string[]]>([
     { write: { [main]: Buffer.from([0x70, 0xff, 0xfe]) } },
     [`${entry}: ${main} is not valid UTF-8`],
   ],
+  // Decided from the listing: a file system that ignores case would open either spelling.
   [
     'a file whose name on disk differs in case',
     { remove: main, write: { 'tests/quiz/q3/Main.py': '' } },
-    [`${entry}: no file ${main}`, 'tests/quiz/q3/Main.py: no entry names it'],
+    [`${entry}: ${main} differs only in case from tests/quiz/q3/Main.py, the name on disk`],
+  ],
+  [
+    'a question folder whose name on disk differs in case',
+    { remove: 'tests/quiz/q3', write: { 'tests/quiz/Q3/main.py': '' } },
+    [`${entry}: ${main} differs only in case from tests/quiz/Q3/main.py, the name on disk`],
   ],
 ])('%s is named', async (_, change, problems) => {
   const loaded = await load(copy(change));
   expect([loaded.definition, lines(loaded.problems)]).toEqual([undefined, problems]);
 });
 
+/** The schema's own patterns refuse these, so no Windows form is left to a list of refusals. */
 test.each<[label: string, key: 'path' | 'id', value: (outside: string) => string]>([
   ['a path that climbs out', 'path', () => '../../outside'],
   ['a path with backslashes', 'path', () => '..\\..\\outside'],
-  ['an absolute path', 'path', (outside) => JSON.stringify(outside)],
+  ['an absolute path', 'path', (outside) => outside],
+  ['a path from a Windows drive', 'path', () => 'C:\\outside\\main.py'],
+  ['a path relative to a Windows drive', 'path', () => 'C:main.py'],
   ['a question id that climbs out', 'id', () => '../outside'],
-  ['an absolute question id', 'id', (outside) => JSON.stringify(outside)],
+  ['a question id with backslashes', 'id', () => '..\\outside'],
+  ['an absolute question id', 'id', (outside) => outside],
+  ['a question id from a Windows drive', 'id', () => 'C:'],
 ])('%s is refused, and no file outside the test’s folder is opened', async (_, key, value) => {
   // Where each of these would lead lies a folder: opening it as a file would throw.
   const root = copy({ write: { 'tests/outside/main.py/keep': '' } });
   const [written, field] = key === 'path' ? ['path: main.py', 'files[0].path'] : ['id: q3', 'id'];
-  const unsafe = `${key}: ${value(join(root, 'tests/outside'))}`;
+  const unsafe = `${key}: ${JSON.stringify(value(join(root, 'tests/outside')))}`;
   fs.writeFileSync(join(root, quiz), bytes(quiz).toString().replace(written, unsafe));
   const loaded = await load(root);
   const refusal = expect.stringContaining(`${quiz}: questions[2].${field}: expected a `);
