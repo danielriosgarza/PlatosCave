@@ -1,0 +1,15 @@
+# Refused as YAML: the key on line 12 is a number, and a JSON value has string keys only.
+schema: exercise.v1
+steps:
+  - id: match
+    title: Match
+    kind: matching
+    prompt: Match each method with what it counts.
+    prompts: [{ id: p1, label: Transect }, { id: p2, label: Quadrat }]
+    choices: [{ id: c1, label: Fish along a line }, { id: c2, label: Cover in a square }]
+    pairs:
+      p1: c1
+      2: c2
+    feedback:
+      correct: Yes.
+      incorrect: Read the methods again.
