@@ -1,15 +1,48 @@
-import { requestSignInLink, signOut, verifySignInLink } from '@parallax/contracts/routes/auth';
-import type { FastifyInstance } from 'fastify';
+import {
+  finishProviderSignIn,
+  listSignInMethods,
+  requestSignInLink,
+  signOut,
+  startProviderSignIn,
+  verifySignInLink,
+} from '@parallax/contracts/routes/auth';
+import type { FastifyInstance, FastifyRequest } from 'fastify';
 import type { RouteDeps } from '../../app';
 import { defaultDestination, safeDestination } from '../../auth/destination';
 import { EmailLinkProvider } from '../../auth/email-provider';
+import { OidcProvider, PendingSignIn } from '../../auth/oidc-provider';
 import { clearPreviewReturn, PREVIEW_RETURN_COOKIE, revokePreviewReturn } from '../../auth/preview';
 import { readSessionToken, SESSION_COOKIE, sessionCookieOptions } from '../../auth/sessions';
 import { TOKEN_SHAPE } from '../../auth/tokens';
 import { revokeSession, signInWithProof } from '../../db/auth/sessions';
-import { registerRoute } from '../register';
+import { notFound, registerRoute } from '../register';
 
 const EXPIRED = '/signin?link=expired';
+/** A provider sign-in waiting for the issuer, kept by the browser ten minutes at most. */
+const PENDING_COOKIE = 'pc_oidc';
+const PENDING_MS = 10 * 60_000;
+
+/** The sign-in page explaining a refused provider sign-in, keeping a same-origin `next`. */
+function refusedAt(id: string, reason: 'unverified' | 'failed', destination?: string | null) {
+  const search = new URLSearchParams({ provider: id, refused: reason });
+  const keep = safeDestination(destination);
+  if (keep) search.set('next', keep);
+  return `/signin?${search}`;
+}
+
+/** This browser's pending sign-in, or undefined when absent, forged, malformed or too old. */
+function readPending(req: FastifyRequest, at: Date): PendingSignIn | undefined {
+  const raw = req.cookies?.[PENDING_COOKIE];
+  const unsigned = raw ? req.unsignCookie(raw) : undefined;
+  if (!unsigned?.valid || !unsigned.value) return undefined;
+  try {
+    const value = JSON.parse(Buffer.from(unsigned.value, 'base64url').toString('utf8'));
+    const pending = PendingSignIn.parse(value);
+    return at.getTime() - pending.startedAt <= PENDING_MS ? pending : undefined;
+  } catch {
+    return undefined;
+  }
+}
 
 export default function authRoutes(app: FastifyInstance, deps: RouteDeps): void {
   const { config, mailer, background } = deps;
@@ -27,12 +60,25 @@ export default function authRoutes(app: FastifyInstance, deps: RouteDeps): void 
         log: app.log,
       })
     : undefined;
+  const callbackOf = (id: string) => new URL(`/api/auth/oidc/${id}/callback`, config.APP_ORIGIN);
+  const oidc = { fetch: deps.identityFetch, now, log: app.log };
+  const providers = new Map(
+    config.OIDC_PROVIDERS.map((settings) => {
+      const redirectUri = callbackOf(settings.id);
+      return [settings.id, new OidcProvider({ ...oidc, settings, redirectUri })];
+    }),
+  );
+  // Sent only to the provider routes; HttpOnly, SameSite=Lax, signed and Secure like the session.
+  const pendingOptions = {
+    ...sessionCookieOptions(config.APP_ORIGIN, PENDING_MS),
+    path: '/api/auth/oidc',
+  };
 
   registerRoute(
     app,
     requestSignInLink,
     async ({ body }) => {
-      if (!provider) throw app.httpErrors.serviceUnavailable();
+      if (!provider || config.MAIL_TRANSPORT === 'none') throw app.httpErrors.serviceUnavailable();
       const destination = safeDestination(body.next) ?? defaultDestination(body.entrance);
       await provider.begin({ email: body.email, destination });
       return { accepted: true as const };
@@ -93,4 +139,62 @@ export default function authRoutes(app: FastifyInstance, deps: RouteDeps): void 
     clearPreviewReturn(req, reply, config.APP_ORIGIN);
     return { signedOut: true as const };
   });
+
+  registerRoute(app, listSignInMethods, () => ({
+    email: config.MAIL_TRANSPORT !== 'none',
+    providers: config.OIDC_PROVIDERS.map(({ id, name }) => ({ id, name })),
+  }));
+
+  registerRoute(
+    app,
+    startProviderSignIn,
+    async ({ params, query, reply }) => {
+      const provider = providers.get(params.provider) ?? notFound();
+      const next = safeDestination(query.next);
+      const destination = next ?? defaultDestination(query.entrance);
+      const started = await provider.begin({ destination }).catch(() => undefined);
+      // Discovery failed (the issuer cannot be reached or answers wrongly); nothing is kept.
+      if (!started) return reply.redirect(refusedAt(provider.id, 'failed', next)) as never;
+      const record = Buffer.from(JSON.stringify(started.pending)).toString('base64url');
+      reply.setCookie(PENDING_COOKIE, record, pendingOptions);
+      return reply.redirect(started.url.href) as never;
+    },
+    { rateLimit: { max: config.AUTH_LINK_RATE_LIMIT, timeWindow: '15 minutes' } },
+  );
+
+  registerRoute(
+    app,
+    finishProviderSignIn,
+    async ({ params, query, req, reply }) => {
+      const provider = providers.get(params.provider) ?? notFound();
+      if (!db) throw app.httpErrors.serviceUnavailable();
+      const backToSignIn = (reason: 'unverified' | 'failed', destination?: string | null) =>
+        reply.redirect(refusedAt(provider.id, reason, destination)) as never;
+      const at = now();
+      const pending = readPending(req, at);
+      reply.clearCookie(PENDING_COOKIE, pendingOptions);
+      // A browser that did not start this sign-in (login CSRF), or a forged or old record.
+      if (!pending) return backToSignIn('failed');
+      const callback = callbackOf(provider.id);
+      for (const [key, value] of Object.entries(query)) {
+        if (value !== undefined) callback.searchParams.set(key, value);
+      }
+      // The issuer is asked outside any transaction, so no pool connection waits for it.
+      const result = await provider.complete({ callback, pending });
+      if (!result.ok) return backToSignIn(result.reason ?? 'failed', result.destination);
+      const signedIn = await signInWithProof(db, {
+        consume: async () => result,
+        previous: readSessionToken(req),
+        alsoEnd: (tx) => revokePreviewReturn(tx, req, at),
+        now: at,
+        ttlMs: sessionTtlMs,
+      });
+      // A deactivated account answers like a sign-in that did not finish.
+      if (!signedIn.token) return backToSignIn('failed', signedIn.destination);
+      reply.setCookie(SESSION_COOKIE, signedIn.token, cookieOptions);
+      clearPreviewReturn(req, reply, config.APP_ORIGIN);
+      return reply.redirect(safeDestination(signedIn.destination) ?? '/courses') as never;
+    },
+    { rateLimit: { max: config.AUTH_VERIFY_RATE_LIMIT, timeWindow: '15 minutes' } },
+  );
 }
