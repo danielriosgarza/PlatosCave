@@ -1,0 +1,12 @@
+# Refused as YAML: `.inf` on line 9 is a number that is not finite, which JSON cannot hold.
+schema: exercise.v1
+steps:
+  - id: predict
+    title: Predict
+    kind: numeric
+    prompt: How many fish does an endless transect count?
+    answer: 0
+    tolerance: .inf
+    feedback:
+      correct: Yes.
+      incorrect: Count again.

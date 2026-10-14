@@ -1,0 +1,32 @@
+# A practice exercise of the fictional course "Reef ecology". estimate.json is the same definition.
+schema: exercise.v1
+steps:
+  - id: predict
+    title: Predict
+    kind: numeric
+    prompt: A transect crosses 4 quadrats of 1 m² each. How many square metres are sampled?
+    answer: 4
+    tolerance: 0
+    unit: m²
+    hints:
+      - Each quadrat covers one square metre.
+    solution: Four quadrats of one square metre each give 4 m².
+    feedback: &feedback
+      correct: Yes.
+      incorrect: Count the quadrats again.
+  - id: choose
+    title: Choose
+    kind: single_choice
+    prompt: Which count is a density?
+    options:
+      - { id: a, label: 12 fish }
+      - { id: b, label: 3 fish per square metre }
+    correct: b
+    # The alias gives this step the feedback written out above.
+    feedback: *feedback
+  - id: explain
+    title: Explain
+    kind: text
+    prompt: Say in one sentence why the quadrats are placed at random.
+    feedback:
+      saved: Compare your sentence with the reading.

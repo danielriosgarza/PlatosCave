@@ -1,0 +1,12 @@
+# Refused as YAML: a second document starts on line 10, and a definition is one document.
+schema: exercise.v1
+steps:
+  - id: explain
+    title: Explain
+    kind: text
+    prompt: Say why the quadrats are placed at random.
+    feedback:
+      saved: Compare your sentence with the reading.
+---
+schema: exercise.v1
+steps: []

@@ -1,0 +1,10 @@
+# Refused as YAML: the key `prompt` stands twice in one map (line 8).
+schema: exercise.v1
+steps:
+  - id: explain
+    title: Explain
+    kind: text
+    prompt: Say why the quadrats are placed at random.
+    prompt: Say why the quadrats are placed in a row.
+    feedback:
+      saved: Compare your sentence with the reading.
