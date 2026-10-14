@@ -25,6 +25,8 @@ type TopicRow = typeof topics.$inferSelect;
 type ResourceRow = typeof resources.$inferSelect;
 type RevisionRow = typeof resourceRevisions.$inferSelect;
 type Json = Record<string, unknown>;
+/** A row id that `parallax sync` derives (docs/design/course-folder.md §4.3); no route passes one. */
+type RowId = { id?: string };
 
 const toTopic = (row: TopicRow): Topic => ({
   id: row.id,
@@ -191,12 +193,13 @@ export async function listDrafts(db: Db, scope: CourseScope) {
 export async function createTopic(
   db: Db,
   scope: CourseScope,
-  input: z.output<NonNullable<(typeof contracts.createTopic)['body']>>,
+  input: z.output<NonNullable<(typeof contracts.createTopic)['body']>> & RowId,
   now: Date,
 ): Promise<Topic> {
   const [row] = await db
     .insert(topics)
     .values({
+      id: input.id,
       courseId: scope.courseId,
       position:
         input.position ??
@@ -247,7 +250,7 @@ export async function createResource(
   db: Db,
   scope: CourseScope,
   topicId: string,
-  input: z.output<NonNullable<(typeof contracts.createResource)['body']>>,
+  input: z.output<NonNullable<(typeof contracts.createResource)['body']>> & RowId,
   now: Date,
 ): Promise<Outcome<Resource>> {
   return db.transaction(async (tx) => {
@@ -264,6 +267,7 @@ export async function createResource(
     const [row] = await tx
       .insert(resources)
       .values({
+        id: input.id,
         courseId: scope.courseId,
         topicId,
         type: input.type,
