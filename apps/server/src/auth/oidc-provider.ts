@@ -55,7 +55,8 @@ export class OidcProvider implements IdentityProvider<{ destination: string }, S
         client.enableNonRepudiationChecks(c);
         return c;
       });
-      this.discovered.catch(() => {
+      this.discovered.catch((err: { code?: unknown } | undefined) => {
+        this.deps.log.warn({ provider: this.id, code: err?.code }, 'provider discovery failed');
         this.discovered = undefined;
       });
     }
@@ -106,7 +107,8 @@ export class OidcProvider implements IdentityProvider<{ destination: string }, S
 
   /** Logs no claim and no address; openid-client's error code helps the operator. */
   private refused({ destination }: PendingSignIn, reason: 'unverified' | 'failed', code?: unknown) {
-    this.deps.log.info({ provider: this.id, reason, code }, 'provider sign-in refused');
+    const level = reason === 'failed' ? 'warn' : 'info';
+    this.deps.log[level]({ provider: this.id, reason, code }, 'provider sign-in refused');
     return reason === 'unverified'
       ? { ok: false as const, destination, reason }
       : { ok: false as const, destination };

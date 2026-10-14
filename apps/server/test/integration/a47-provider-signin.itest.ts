@@ -182,9 +182,14 @@ describe('provider sign-in refusals', () => {
     [
       'a pc_oidc cookie set by a start at another provider',
       async () => {
-        const other = await startAt({ provider: 'hospital' }, twoProviders);
-        const back = new URL(String(other.back).replace('/hospital/', '/university/'));
-        return replay(twoProviders, { back }, [other.pending]);
+        // The issuer accepts this code at the university callback: only the provider check refuses.
+        const { start, pending } = await startAt({ provider: 'hospital' }, twoProviders);
+        const authorize = new URL(String(start.headers.location));
+        authorize.searchParams.set(
+          'redirect_uri',
+          `${APP_ORIGIN}/api/auth/oidc/university/callback`,
+        );
+        return replay(twoProviders, { back: issuer.approve(authorize.href) }, [pending]);
       },
     ],
     [
@@ -221,6 +226,7 @@ describe('provider sign-in refusals', () => {
       ['https://evil.example.org/x'],
       ['//evil.example.org'],
       ['/api/me'],
+      [`/a?${'€'.repeat(1000)}`],
       ['/classes/x?tab=1#a', '/classes/x?tab=1#a'],
     ]) {
       const { callback } = await signIn({ next, entrance: 'instructor' });

@@ -141,7 +141,8 @@ export default function authRoutes(app: FastifyInstance, deps: RouteDeps): void 
   });
 
   registerRoute(app, listSignInMethods, () => ({
-    email: config.MAIL_TRANSPORT !== 'none',
+    // As the link route decides: a link is offered with a database and a mail sender.
+    email: !!provider && config.MAIL_TRANSPORT !== 'none',
     providers: config.OIDC_PROVIDERS.map(({ id, name }) => ({ id, name })),
   }));
 
@@ -149,12 +150,14 @@ export default function authRoutes(app: FastifyInstance, deps: RouteDeps): void 
     app,
     startProviderSignIn,
     async ({ params, query, reply }) => {
-      const provider = providers.get(params.provider) ?? notFound();
-      const next = safeDestination(query.next);
+      const idp = providers.get(params.provider) ?? notFound();
+      const safe = safeDestination(query.next);
+      // The cookie carries it, and a path encodes longer than it reads: a long one is dropped.
+      const next = safe && safe.length <= 1000 ? safe : null;
       const destination = next ?? defaultDestination(query.entrance);
-      const started = await provider.begin({ destination }).catch(() => undefined);
+      const started = await idp.begin({ destination }).catch(() => undefined);
       // Discovery failed (the issuer cannot be reached or answers wrongly); nothing is kept.
-      if (!started) return reply.redirect(refusedAt(provider.id, 'failed', next)) as never;
+      if (!started) return reply.redirect(refusedAt(idp.id, 'failed', next)) as never;
       const record = Buffer.from(JSON.stringify(started.pending)).toString('base64url');
       reply.setCookie(PENDING_COOKIE, record, pendingOptions);
       return reply.redirect(started.url.href) as never;
@@ -166,21 +169,21 @@ export default function authRoutes(app: FastifyInstance, deps: RouteDeps): void 
     app,
     finishProviderSignIn,
     async ({ params, query, req, reply }) => {
-      const provider = providers.get(params.provider) ?? notFound();
+      const idp = providers.get(params.provider) ?? notFound();
       if (!db) throw app.httpErrors.serviceUnavailable();
       const backToSignIn = (reason: 'unverified' | 'failed', destination?: string | null) =>
-        reply.redirect(refusedAt(provider.id, reason, destination)) as never;
+        reply.redirect(refusedAt(idp.id, reason, destination)) as never;
       const at = now();
       const pending = readPending(req, at);
       reply.clearCookie(PENDING_COOKIE, pendingOptions);
       // A browser that did not start this sign-in (login CSRF), or a forged or old record.
       if (!pending) return backToSignIn('failed');
-      const callback = callbackOf(provider.id);
+      const callback = callbackOf(idp.id);
       for (const [key, value] of Object.entries(query)) {
         if (value !== undefined) callback.searchParams.set(key, value);
       }
       // The issuer is asked outside any transaction, so no pool connection waits for it.
-      const result = await provider.complete({ callback, pending });
+      const result = await idp.complete({ callback, pending });
       if (!result.ok) return backToSignIn(result.reason ?? 'failed', result.destination);
       const signedIn = await signInWithProof(db, {
         consume: async () => result,
@@ -188,6 +191,10 @@ export default function authRoutes(app: FastifyInstance, deps: RouteDeps): void 
         alsoEnd: (tx) => revokePreviewReturn(tx, req, at),
         now: at,
         ttlMs: sessionTtlMs,
+      }).catch((err: unknown) => {
+        // The code is spent, so the person starts again from the sign-in page, not a JSON 500.
+        req.log.error({ err }, 'provider sign-in could not be stored');
+        return { token: undefined, destination: result.destination };
       });
       // A deactivated account answers like a sign-in that did not finish.
       if (!signedIn.token) return backToSignIn('failed', signedIn.destination);
