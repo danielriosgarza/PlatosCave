@@ -244,7 +244,7 @@ function TestEntry({
         {data.eligibility.attemptsUsed} of {data.eligibility.attemptsAllowed}
       </p>
       <div className={styles.termsBlock}>
-        <TermsPanel terms={data.terms} />
+        <TermsPanel classId={classId} terms={data.terms} />
       </div>
       {problem ? (
         <p className={styles.error} role="alert">

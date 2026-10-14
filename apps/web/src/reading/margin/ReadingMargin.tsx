@@ -14,6 +14,7 @@ import { type Audience, DiscussionComposer } from '../../components/DiscussionCo
 import { type MarginTab, MarginTabs } from '../../components/MarginTabs';
 import { RetryNotice } from '../../components/RetryNotice';
 import { SaveLine, type SaveLineStatus } from '../../components/SaveLine';
+import { useClassContext } from '../../session/classContext';
 import { useSession } from '../../session/useSession';
 import { downloadSvg, FIGURE_ASPECT, PAGE_ASPECT, sketchSvg } from '../sketch/exportSvg';
 import { FigureSketches, figureLabel } from '../sketch/FigureSketches';
@@ -58,7 +59,7 @@ interface Ask {
   body: string;
   audience: Audience;
   /** What the last attempt to post said; the text is kept either way. */
-  problem: 'offline' | 'failed' | null;
+  problem: 'offline' | 'failed' | 'open' | null;
   posting: boolean;
 }
 
@@ -103,10 +104,12 @@ interface Props {
  * The reading with its margin (§8): the selection toolbar (Highlight, Note, Ask), marks on
  * annotated passages, and the margin's My notes and Discussion lists. Text anchors apply to
  * native readings; a PDF reading takes topic notes and questions without a passage. Figures and
- * PDF pages take Sketch (§8), whose saved drawings are listed under My notes.
+ * PDF pages take Sketch (§8), whose saved drawings are listed under My notes. An open class
+ * (§13, N10) has no Ask and no composer: nobody posts there.
  */
 export function ReadingMargin({ classId, resourceId, html, open, onOpen, children }: Props) {
   const session = useSession();
+  const canPost = useClassContext(classId)?.open !== true;
   const userId = session.status === 'signed-in' ? session.me.user.id : null;
   const list = useMarginList(classId, resourceId);
   const actions = useMarginActions(classId, resourceId);
@@ -600,7 +603,7 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
     setAsk((a) => ({
       ...a,
       posting: false,
-      problem: result.kind === 'offline' ? 'offline' : 'failed',
+      problem: result.kind === 'offline' || result.kind === 'open' ? result.kind : 'failed',
     }));
   };
 
@@ -693,7 +696,7 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
             busy={highlighting}
             onHighlight={() => void highlight()}
             onNote={note}
-            onAsk={askAbout}
+            onAsk={canPost ? askAbout : null}
           />,
           host,
         )
@@ -706,7 +709,7 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
         {toolbar}
         {/* The toolbar appears after the passage's block, away from the reader's place: say so. */}
         <div className={styles.srOnly} role="status" aria-live="polite">
-          {toolbar ? 'Highlight, Note, Ask available' : ''}
+          {toolbar ? `Highlight, Note${canPost ? ', Ask' : ''} available` : ''}
         </div>
         <FigureSketches root={root} html={html} api={sketches} />
       </div>
@@ -803,6 +806,7 @@ export function ReadingMargin({ classId, resourceId, html, open, onOpen, childre
                 activeId={activeId}
                 onSelect={(id) => select(id, true)}
                 ask={ask}
+                off={!canPost}
                 onAsk={setAskDraft}
                 onPost={() => void post()}
               />
@@ -825,7 +829,7 @@ function Tools({
   busy: boolean;
   onHighlight: () => void;
   onNote: () => void;
-  onAsk: () => void;
+  onAsk: (() => void) | null;
 }) {
   // A press on the toolbar keeps the passage selected.
   const keep = (e: { preventDefault: () => void }) => e.preventDefault();
@@ -837,9 +841,11 @@ function Tools({
       <button type="button" onClick={onNote}>
         Note
       </button>
-      <button type="button" onClick={onAsk}>
-        Ask
-      </button>
+      {onAsk ? (
+        <button type="button" onClick={onAsk}>
+          Ask
+        </button>
+      ) : null}
       {problem ? <span role="status">{problem}</span> : null}
     </div>
   );
@@ -1010,6 +1016,7 @@ function Discussion({
   activeId,
   onSelect,
   ask,
+  off,
   onAsk,
   onPost,
 }: {
@@ -1019,6 +1026,8 @@ function Discussion({
   activeId: string | null;
   onSelect: (id: string) => void;
   ask: Ask;
+  /** An open class: no composer. */
+  off: boolean;
   onAsk: (patch: Partial<Ask>) => void;
   onPost: () => void;
 }) {
@@ -1052,6 +1061,7 @@ function Discussion({
         );
       })}
       <DiscussionComposer
+        off={off}
         audience={ask.audience}
         onAudience={(audience) => onAsk({ audience })}
         body={ask.body}
