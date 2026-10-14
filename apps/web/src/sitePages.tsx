@@ -7,6 +7,7 @@ import {
 } from '@tanstack/react-router';
 import type { AnchorHTMLAttributes, ComponentType } from 'react';
 import { usePageTitle } from './components/pageTitle';
+import { RouteFailed } from './components/RouteFailed';
 
 /**
  * A site's own pages (docs/design/site.md §6): what the application and the level 0 shell share.
@@ -37,12 +38,16 @@ export interface Site {
   props: PageProps;
 }
 
-/** One route per page under `parent`, each loading its page when first shown. */
+/**
+ * One route per page under `parent`, each loading its page when first shown. A page that cannot
+ * be loaded or fails to render shows `RouteFailed` in its place, below the global bar.
+ */
 export function siteRoutes(parent: AnyRoute, site: Site): AnyRoute[] {
   return site.pages.map((page) =>
     createRoute({
       getParentRoute: () => parent,
       path: page.path,
+      errorComponent: RouteFailed,
       component: lazyRouteComponent(async () => {
         const { default: Page, title } = await page.load();
         return { default: () => <Shown Page={Page} title={title} props={site.props} /> };
@@ -66,12 +71,19 @@ function Shown({
 
 export type PageLinkProps = Omit<AnchorHTMLAttributes<HTMLAnchorElement>, 'href'> & { to: string };
 
-/** A link from a page to another page or to a Parallax screen (`site.entry`), by its address. */
+/**
+ * A link from a page to another page or to a Parallax screen (`site.entry`), by its address. It
+ * takes an address only: a link with a query or a fragment is a plain `<a>`.
+ */
 export function Link({ to, ...rest }: PageLinkProps) {
   return <RouterLink {...rest} to={to as never} />;
 }
 
 const SEGMENT = /^[a-z0-9-]+$/;
+
+/** True for an address as `pageAddress` gives one: `/`, or segments of `[a-z0-9-]`. */
+export const isPageAddress = (address: string) =>
+  address === '/' || /^(\/[a-z0-9-]+)+$/.test(address);
 
 /**
  * The address of a file under `src/pages`, given relative to that folder (§6.2): `index.tsx` is
@@ -115,15 +127,25 @@ export function normalise(address: string): string {
 
 /**
  * The first of `patterns` (screen addresses, where `$name` stands for any one segment) at which
- * `address` lies, both compared after `normalise`; `undefined` when there is none.
+ * `address` lies, both compared after `normalise`; `undefined` when there is none. Throws for a
+ * pattern with any other kind of parameter (`$`, `{-$lang}`, `doc-{$id}`), which it cannot compare.
  */
 export function screenAt(address: string, patterns: readonly string[]): string | undefined {
   const parts = normalise(address).split('/');
-  return patterns.find((pattern) => {
-    const want = normalise(pattern).split('/');
-    return (
-      want.length === parts.length &&
-      want.every((segment, i) => segment.startsWith('$') || segment === parts[i])
-    );
+  const parsed = patterns.map((pattern) => {
+    const odd = cleanPath(pattern)
+      .split('/')
+      .find((segment) => /[$*{}]/.test(segment) && !/^\$[A-Za-z_]\w*$/.test(segment));
+    if (odd !== undefined) {
+      throw new Error(
+        `The screen address ${pattern} has a segment that cannot be compared: ${odd}`,
+      );
+    }
+    return { pattern, want: normalise(pattern).split('/') };
   });
+  return parsed.find(
+    ({ want }) =>
+      want.length === parts.length &&
+      want.every((segment, i) => segment.startsWith('$') || segment === parts[i]),
+  )?.pattern;
 }

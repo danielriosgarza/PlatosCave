@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { normalise, pageAddress, screenAt } from './sitePages';
+import { isPageAddress, normalise, pageAddress, screenAt } from './sitePages';
 
 describe('pageAddress', () => {
   it('gives a file under src/pages its address', () => {
@@ -22,6 +22,17 @@ describe('pageAddress', () => {
   it('refuses a segment other than lower-case letters, digits and hyphens, naming the file', () => {
     for (const file of ['About.tsx', 'team/$id.tsx', 'my page.tsx', 'Team/index.tsx', '.tsx']) {
       expect(() => pageAddress(file)).toThrow(file);
+    }
+  });
+});
+
+describe('isPageAddress', () => {
+  it('accepts / and segments of lower-case letters, digits and hyphens only', () => {
+    for (const address of ['/', '/about', '/team/open-days-2027']) {
+      expect(isPageAddress(address)).toBe(true);
+    }
+    for (const address of ['', 'about', '/About', '/about/', '//about', '/team/$id', '/a%62']) {
+      expect(isPageAddress(address)).toBe(false);
     }
   });
 });
@@ -61,5 +72,11 @@ describe('screenAt', () => {
     expect(screenAt('/classes/demo', screens)).toBeUndefined();
     expect(screenAt('/classes/demo/review/notes', screens)).toBeUndefined();
     expect(screenAt('/courses-old', screens)).toBeUndefined();
+  });
+
+  it('throws for a screen address with a kind of parameter it cannot compare', () => {
+    for (const pattern of ['/docs/$', '/{-$lang}/courses', '/files/doc-{$id}']) {
+      expect(() => screenAt('/about', [...screens, pattern])).toThrow(pattern);
+    }
   });
 });

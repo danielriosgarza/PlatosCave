@@ -4,7 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createApp } from './app';
 import { routeTree } from './routeTree.gen';
-import { Link, type PageProps, type Site } from './sitePages';
+import { Link, type PageProps, type Site, type SitePage } from './sitePages';
 import { CLASS_A, makeMe, signedIn, stubApi, studentIn } from './test/render';
 
 /** The root's children as generated, before any `createApp` of this file. */
@@ -19,7 +19,11 @@ const holds = (routes: AnyRoute[]) =>
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
   window.history.replaceState(null, '', '/');
+  document.title = 'Parallax';
+  // Each test starts from the generated tree, whatever the one before added to it.
+  routeTree.addChildren([...generated]);
 });
 
 const signedOut = () => ({ status: 401, body: { error: 'unauthenticated' } });
@@ -28,24 +32,34 @@ const props: PageProps = {
   catalogue: { instructors: [] },
 };
 
-/** A site with one page per address, each showing its heading, the site's name and a link. */
-function site(pages: Record<string, string>, title?: string): Site {
+/** A site with one page per address, each showing its heading, the site's name and two links. */
+function site(pages: Record<string, string>, titles: Record<string, string> = {}): Site {
   return {
     props,
     pages: Object.entries(pages).map(([path, heading]) => ({
       path,
       load: async () => ({
-        title,
-        default: ({ site: { name } }: PageProps) => (
+        title: titles[path],
+        default: ({ site: { name, entry } }: PageProps) => (
           <main id="main">
             <h1>{heading}</h1>
             <p>{name}</p>
             <Link to="/about">About the school</Link>
+            <Link to={entry}>Open the courses</Link>
           </main>
         ),
       }),
     })),
   };
+}
+
+const aboutPage = (load: SitePage['load']): Site => ({ props, pages: [{ path: '/about', load }] });
+
+async function expectRouteFailed() {
+  expect(await screen.findByText('This page could not be shown.')).toBeInTheDocument();
+  expect(screen.getByRole('banner')).toContainElement(
+    screen.getByRole('link', { name: 'Parallax' }),
+  );
 }
 
 function open(url: string, withSite?: Site) {
@@ -77,8 +91,8 @@ describe('createApp', () => {
     expect(router.state.location.pathname).toBe('/signin');
   });
 
-  it('shows a page at / with no redirect, and its link opens another page', async () => {
-    stubApi(signedOut);
+  it('shows a page at / with no redirect, and its links open another page and a Parallax screen', async () => {
+    stubApi(signedIn(makeMe({ classes: [studentIn(CLASS_A, 'Class A')] })));
     const { router } = open('/', site({ '/': 'Welcome', '/about': 'About' }));
     expect(await screen.findByRole('heading', { name: 'Welcome' })).toBeInTheDocument();
     expect(screen.getByText('Riverside School')).toBeInTheDocument();
@@ -86,6 +100,9 @@ describe('createApp', () => {
     await userEvent.click(screen.getByRole('link', { name: 'About the school' }));
     expect(await screen.findByRole('heading', { name: 'About' })).toBeInTheDocument();
     expect(router.state.location.pathname).toBe('/about');
+    await userEvent.click(screen.getByRole('link', { name: 'Open the courses' }));
+    expect(await screen.findByRole('heading', { name: 'Your courses' })).toBeInTheDocument();
+    expect(router.state.location.pathname).toBe('/courses');
   });
 
   it('shows a page at /about inside the root layout, and /signin still shows the sign-in screen', async () => {
@@ -100,12 +117,39 @@ describe('createApp', () => {
     expect(screen.queryByRole('heading', { name: 'About' })).not.toBeInTheDocument();
   });
 
-  it('sets the title a page exports while the page is shown', async () => {
+  it('sets the title a page exports while the page is shown, and restores it when it is left', async () => {
     stubApi(signedOut);
-    const { router } = open('/about', site({ '/about': 'About' }, 'About the school'));
+    const pages = site({ '/': 'Welcome', '/about': 'About' }, { '/about': 'About the school' });
+    open('/about', pages);
     await waitFor(() => expect(document.title).toBe('About the school · Parallax'));
-    await router.navigate({ to: '/signin' });
-    await waitFor(() => expect(document.title).toBe('Sign in · Parallax'));
+    await userEvent.click(screen.getByRole('link', { name: 'Parallax' }));
+    expect(await screen.findByRole('heading', { name: 'Welcome' })).toBeInTheDocument();
+    expect(document.title).toBe('Parallax');
+  });
+
+  it('keeps the global bar and offers Try again when a page cannot be loaded', async () => {
+    stubApi(signedOut);
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const page = site({ '/about': 'About' }).pages[0] as SitePage;
+    const load = vi.fn(page.load).mockRejectedValueOnce(new Error('chunk gone'));
+    open('/about', aboutPage(load));
+    await expectRouteFailed();
+    await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(await screen.findByRole('heading', { name: 'About' })).toBeInTheDocument();
+  });
+
+  it('keeps the global bar and offers Try again when a page fails to render', async () => {
+    stubApi(signedOut);
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const broken = () => {
+      throw new Error('broken page');
+    };
+    open(
+      '/about',
+      aboutPage(async () => ({ default: broken })),
+    );
+    await expectRouteFailed();
+    expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
   });
 
   it('refuses a page at the address of a Parallax screen, naming both', () => {
@@ -123,6 +167,18 @@ describe('createApp', () => {
       );
     }
     expect(holds(before)).toBe(true);
+  });
+
+  it('refuses a path that is not a page address and two pages at one address, naming them', () => {
+    for (const path of ['', 'about', '/About', '/team/$id', '/about/']) {
+      expect(() => createApp(site({ [path]: 'Odd' }))).toThrow(
+        `The site page "${path}" has no page address`,
+      );
+    }
+    const twice = site({ '/about': 'About' });
+    twice.pages.push(...site({ '/about': 'About again' }).pages);
+    expect(() => createApp(twice)).toThrow('Two site pages are at /about.');
+    expect(holds(generated)).toBe(true);
   });
 
   it('holds each page once after a second call, and gives the generated tree again without pages', async () => {
