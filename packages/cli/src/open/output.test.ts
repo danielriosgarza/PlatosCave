@@ -21,7 +21,8 @@ const IPYNB_TYPE = 'application/x-ipynb+json';
 /** The three objects of `build`, as the writer names them under `content/`. */
 const at = { pdf: `o/${sha(PDF)}.pdf`, png: `o/${sha(PNG)}.png`, ipynb: `o/${sha(IPYNB)}.ipynb` };
 const GOOD = `${CONTENT}/${at.png}`;
-const T1 = 'site/courses/reef/t1';
+// Folders as a listing spells them (`FOLDER`): a last dot or space, and a colon but on Windows.
+const T1 = `site/courses/Ana Lima./Reef${sep === '/' ? ':' : ''} ecology /t1`;
 const [DECK, LAB, APP] = [`${T1}/deck.json`, `${T1}/lab.json`, `${T1}/app.json`];
 const NOT_AUDITED = 'has not passed its audit';
 
@@ -70,39 +71,28 @@ const reading = (html: string) => ({ ...native, html });
 const image = (url: string) => ({ ...none, type: 'image', url, alt: 'Histogram' });
 const markdown = (html: string) => ({ ...none, type: 'markdown', html });
 /** A notebook with a Markdown cell and a code cell, whose source only looks like an image. */
-const lab = (file: string, html: string, outputs: object[] = []) => ({
-  type: 'notebook',
-  title: 'Counts',
-  file,
-  notebook: {
-    kernel: null,
-    language: 'r',
-    cells: [
-      { id: 'intro', type: 'markdown', html },
-      { id: 'draw', type: 'code', source: 'img(src = "plot.png")', ...hidden, outputs },
-    ],
-    outline: [],
-  },
-});
+const lab = (file: string, html: string, outputs: object[] = []) => {
+  const intro = { id: 'intro', type: 'markdown', html };
+  const draw = { id: 'draw', type: 'code', source: 'img(src = "plot.png")', ...hidden, outputs };
+  const notebook = { kernel: null, language: 'r', cells: [intro, draw], outline: [] };
+  return { type: 'notebook', title: 'Counts', file, notebook };
+};
 const H1 = '<h1>Counts</h1>';
-/** Prose that only looks like an image, then one: its `alt` and `title` hold `>` and `src=`. */
-const FIGURE = `<p><code>&#x3C;img src="cat.png"></code></p><img alt="A > B" title="src=x" src="${GOOD}">`;
+/** Prose that only looks like an image, a formula as conversion writes it, and an odd image. */
+const FIGURE = `<p data-block-id="b1"><code>&#x3C;img src="cat.png"></code> <span class="katex"><math display="block"><mi>x</mi></math></span></p><img alt="A > B" title="src=x" src="${GOOD}">`;
 
 /** A small whole output. A run that is not `whole` writes one shell file, data file and object fewer. */
 function build({ out }: Site, whole = true): void {
-  out.shell('index.html', bytes(INDEX));
+  const index = bytes(INDEX);
+  out.shell('index.html', index);
+  index.fill(0); // A caller may reuse its buffer: no copy of the shell's index.html changes with it.
   if (whole) out.shell('assets/app.js', bytes('mount();'));
   out.address('courses');
   if (whole) out.data(DECK.slice(5), openResource, deck(out.object(bytes(PDF), 'application/pdf')));
   const [file, png] = [out.object(bytes(IPYNB), IPYNB_TYPE), out.object(bytes(PNG), 'image/png')];
   out.data(LAB.slice(5), openResource, lab(file, FIGURE, [image(png)]));
   // A Shiny app's `url` is the app's own address and no object: the audit lets it be.
-  const app = {
-    type: 'shiny',
-    title: 'Tide',
-    url: 'https://shiny.example.org/tide/',
-    origin: null,
-  };
+  const app = { type: 'shiny', title: 'Tide', url: 'https://shiny.example.org/', origin: null };
   out.data(APP.slice(5), openResource, app);
 }
 const ONLY_WHOLE = [`content/${at.pdf}`, 'site/assets/app.js', DECK];
@@ -133,11 +123,10 @@ test('a data file is the parse result of its schema, at a .json path under site/
   const refused = stopOf(() => out.data('courses/x.json', openResource, strict));
   expect(refused).toMatch(/courses\/x\.json.*email/s);
   const outside = [join(work, 'site/a.json'), '/a.json', '../a.json', 'b/../../content/a.json'];
-  // On every system, also a name that only Windows reads otherwise: `\`, `:`, a dot or space last.
-  const odd = ['a\\b.json', 'C:a.json', 'a:b.json', 'reef./a.json', 'reef /a.json', 'a\u0007.json'];
-  for (const path of [...outside, ...odd, './a.json', 'a//a.json', 'courses/a.txt', 'courses/a']) {
+  // On every system a name with `\` or a control character, which no listing gives (`FOLDER`).
+  const odd = ['a\\b.json', 'a\u0007.json'];
+  for (const path of [...outside, ...odd, './a.json', 'a//a.json', 'courses/a.txt', 'courses/a'])
     expect(stopOf(() => out.data(path, openResource, good))).toContain(path);
-  }
   expect(stopOf(() => out.shell('../content/o/a.js', bytes('a()')))).toContain('../content/o/a.js');
   expect(paths(work)).toEqual([`content/${at.ipynb}`, LAB]);
 });
@@ -149,9 +138,8 @@ test('two outputs at one path stop and name both, also across case and where a f
   const data = (path: string) => () => out.data(path, openResource, reading('<p>Tides</p>'));
   const both = (path: string) => `site/courses/catalogue.json and site/${path}`;
   data('courses/catalogue.json')();
-  for (const path of ['courses/catalogue.json', 'Courses/Catalogue.json']) {
+  for (const path of ['courses/catalogue.json', 'Courses/Catalogue.json'])
     expect(stopOf(data(path))).toContain(both(path));
-  }
   // A course folder called catalogue.json: its files would lie below the catalogue's file.
   const below = 'courses/CATALOGUE.json/course.json';
   expect(stopOf(data(below))).toContain(both(below));
@@ -163,6 +151,9 @@ test('two outputs at one path stop and name both, also across case and where a f
   // One folder spelled in two ways: two folders where case counts, one where it does not.
   expect(stopOf(data('courses/Reef/topic.json'))).toContain('site/courses/reef/course.json and');
   expect(stopOf(() => out.shell('Courses/app.js', bytes('a()')))).toContain(both('Courses/app.js'));
+  // U+0130 is two code units in lower case: still one folder, which another spelling cannot share.
+  for (const name of ['course', 'topic']) data(`courses/\u0130\u0130/${name}.json`)();
+  expect(stopOf(data('courses/i\u0307i\u0307/x.json'))).toContain('\u0130/course.json and site');
   expect(stopOf(() => out.address('index.html/..'))).toContain('index.html/..');
 });
 
@@ -200,19 +191,40 @@ const places: Record<string, (address: string) => object> = {
   // A sanitiser in a browser parses without scripting, so it reads what `noscript` holds.
   'a src inside noscript': (address) => reading(`<noscript><img src="${address}"></noscript>`),
   'a src inside a template': (address) => reading(`<template><img src="${address}"></template>`),
+  // A page's body ignores a stray `col`; as a template's content the image after it would go.
+  'a src after a stray col': (address) => reading(`<col><img src="${address}">`),
 };
+const NAMED = `${T1}/named.json`;
 const named = Object.entries(places).flatMap(([place, resource]) =>
   Object.entries({ ...elsewhere, ...(place === 'an output url' ? scripts : {}) }).map(
     ([where, address]): [string, Change] => [
       `a data file with ${place} ${where}`,
       ({ out }) => {
-        out.data('courses/reef/t1/named.json', openResource, resource(address));
+        out.data(NAMED.slice(5), openResource, resource(address));
         const fault = where.startsWith('at a path') ? 'did not write' : 'not on the content origin';
-        return [`${T1}/named.json`, address, fault];
+        return [NAMED, address, fault];
       },
     ],
   ),
 );
+// HTML a browser may build otherwise than the audit reads it, or that loads by more than `src`.
+const unread = [
+  '<svg><template><foreignObject><img src="@"></foreignObject></template></svg>',
+  '<math><template><mi><img src="@"></mi></template></math>',
+  '<svg><g><template><foreignObject><img src="@"></foreignObject></template></g></svg>',
+  '<select><img src="@"></select>',
+  '<noscript><p title="</noscript><img src=@>"></noscript>',
+  // parse5 reads two comments; a parser that reads CDATA inside `mi` builds the image.
+  '<math><mi><![CDATA[x><!--]]><img src="@">--></mi></math>',
+  '<img alt="Reef" srcset="@ 2x">',
+];
+const odd = unread.map((html): [string, Change] => [
+  `a reading whose HTML is ${html}`,
+  ({ out }) => {
+    out.data(NAMED.slice(5), openResource, reading(html.replace('@', 'https://evil.example.org')));
+    return [NAMED, 'outside the reading allow-list'];
+  },
+]);
 const COURSE_FILE = 'courses/reef/topic-1/notebooks/counts.ipynb';
 /** The text of the deck's data file, as `build` writes it. */
 const written = JSON.stringify(openResource.parse(deck(`${CONTENT}/${at.pdf}`)));
@@ -246,6 +258,7 @@ const stops: Record<string, Change> = {
     return ['site/courses/count.json'];
   },
   ...Object.fromEntries(named),
+  ...Object.fromEntries(odd),
   'a file under content/ whose name is not its digest': behind(`content/${at.pdf}`, 'other'),
   'a file under content/ named by another digest': behind(`content/o/${'a'.repeat(64)}.png`, PNG),
   'a .js file under content/, a type outside the table': behind(`content/o/${sha('x')}.js`, 'x'),
@@ -283,6 +296,7 @@ test('after a good audit dist/ holds exactly site/ and content/, and a level 1 i
   expect(stopOf(() => placeOutput(made.work, made.dist))).toContain(NOT_AUDITED);
   made.out.finish();
   made.out.untrusted(sha('late();'), COURSE_FILE);
+  expect(stopOf(() => made.out.untrusted('A'.repeat(64), COURSE_FILE))).toContain(COURSE_FILE);
   expect(stopOf(() => placeOutput(made.work, made.dist))).toContain(NOT_AUDITED);
   const twin = stopOf(() => made.out.finish());
   expect(twin).toContain(`site/assets/late.js has the bytes of ${COURSE_FILE}`);
@@ -318,8 +332,9 @@ test('only a .parallax/open folder is emptied, and a file changed after its audi
   await expect(refused).rejects.toThrow(BuildStop);
   expect(files(join(temp, 'kept'))).toEqual({ 'notes.txt': 'not a work folder' });
   const made = await site();
-  const hostless = createOutput({ workDir: made.work, contentOrigin: 'content.example.org' });
-  await expect(hostless).rejects.toThrow(BuildStop);
+  const origins = ['content.example.org', `${CONTENT}/o/`, 'https://a:b@content.example.org'];
+  for (const contentOrigin of origins)
+    await expect(createOutput({ workDir: made.work, contentOrigin })).rejects.toThrow(BuildStop);
   // Without the shell's index.html there is no site: an empty output must not empty dist/.
   expect(stopOf(() => made.out.finish())).toContain('site/index.html is missing');
   expect(stopOf(() => placeOutput(made.work, made.dist))).toContain(NOT_AUDITED);
