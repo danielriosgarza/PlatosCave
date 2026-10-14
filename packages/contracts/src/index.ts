@@ -11,6 +11,7 @@ export * from './readingHtml';
 export * from './resources';
 export * from './runner';
 export * from './shiny';
+export * from './site';
 export * from './sketch';
 export * from './test';
 export * from './wellFormed';

@@ -1,0 +1,24 @@
+{
+  "name": "parallax-site",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "parallax": "./bin/parallax.mjs"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "parallax": {
+    "registry": "ghcr.io/danielriosgarza"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "tsx": "4.23.15"
+  },
+  "devDependencies": {
+    "@parallax/contracts": "workspace:*"
+  }
+}

@@ -1,0 +1,8 @@
+{
+  "name": "statistics-for-biologists",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "parallax-site": "0.0.0"
+  }
+}
