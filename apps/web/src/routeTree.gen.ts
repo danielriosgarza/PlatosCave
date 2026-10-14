@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AuthedRouteImport } from './routes/_authed'
 import { Route as SigninRouteImport } from './routes/signin'
 import { Route as AuthedCoursesIndexRouteImport } from './routes/_authed/courses.index'
+import { Route as AuthedJoinCodeRouteImport } from './routes/_authed/join.$code'
 import { Route as AuthedClassesClassIdReviewRouteImport } from './routes/_authed/classes.$classId.review'
 import { Route as AuthedClassesClassIdTopicsIndexRouteImport } from './routes/_authed/classes.$classId.topics.index'
 import { Route as AuthedCoursesCourseIdEditIndexRouteImport } from './routes/_authed/courses.$courseId.edit.index'
@@ -36,6 +37,11 @@ const SigninRoute = SigninRouteImport.update({
 const AuthedCoursesIndexRoute = AuthedCoursesIndexRouteImport.update({
   id: '/courses/',
   path: '/courses/',
+  getParentRoute: () => AuthedRoute,
+} as any)
+const AuthedJoinCodeRoute = AuthedJoinCodeRouteImport.update({
+  id: '/join/$code',
+  path: '/join/$code',
   getParentRoute: () => AuthedRoute,
 } as any)
 const AuthedClassesClassIdReviewRoute =
@@ -72,6 +78,7 @@ const AuthedClassesClassIdTopicsTopicIdTabRoute =
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/signin': typeof SigninRoute
+  '/join/$code': typeof AuthedJoinCodeRoute
   '/courses/': typeof AuthedCoursesIndexRoute
   '/classes/$classId/review': typeof AuthedClassesClassIdReviewRoute
   '/courses/$courseId/edit/$topicId': typeof AuthedCoursesCourseIdEditTopicIdRoute
@@ -82,6 +89,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/signin': typeof SigninRoute
+  '/join/$code': typeof AuthedJoinCodeRoute
   '/courses': typeof AuthedCoursesIndexRoute
   '/classes/$classId/review': typeof AuthedClassesClassIdReviewRoute
   '/courses/$courseId/edit/$topicId': typeof AuthedCoursesCourseIdEditTopicIdRoute
@@ -94,6 +102,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/_authed': typeof AuthedRouteWithChildren
   '/signin': typeof SigninRoute
+  '/_authed/join/$code': typeof AuthedJoinCodeRoute
   '/_authed/courses/': typeof AuthedCoursesIndexRoute
   '/_authed/classes/$classId/review': typeof AuthedClassesClassIdReviewRoute
   '/_authed/courses/$courseId/edit/$topicId': typeof AuthedCoursesCourseIdEditTopicIdRoute
@@ -106,6 +115,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/signin'
+    | '/join/$code'
     | '/courses/'
     | '/classes/$classId/review'
     | '/courses/$courseId/edit/$topicId'
@@ -116,6 +126,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/signin'
+    | '/join/$code'
     | '/courses'
     | '/classes/$classId/review'
     | '/courses/$courseId/edit/$topicId'
@@ -127,6 +138,7 @@ export interface FileRouteTypes {
     | '/'
     | '/_authed'
     | '/signin'
+    | '/_authed/join/$code'
     | '/_authed/courses/'
     | '/_authed/classes/$classId/review'
     | '/_authed/courses/$courseId/edit/$topicId'
@@ -171,6 +183,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuthedCoursesIndexRouteImport
       parentRoute: typeof AuthedRoute
     }
+    '/_authed/join/$code': {
+      id: '/_authed/join/$code'
+      path: '/join/$code'
+      fullPath: '/join/$code'
+      preLoaderRoute: typeof AuthedJoinCodeRouteImport
+      parentRoute: typeof AuthedRoute
+    }
     '/_authed/classes/$classId/review': {
       id: '/_authed/classes/$classId/review'
       path: '/classes/$classId/review'
@@ -210,6 +229,7 @@ declare module '@tanstack/react-router' {
 }
 
 interface AuthedRouteChildren {
+  AuthedJoinCodeRoute: typeof AuthedJoinCodeRoute
   AuthedCoursesIndexRoute: typeof AuthedCoursesIndexRoute
   AuthedClassesClassIdReviewRoute: typeof AuthedClassesClassIdReviewRoute
   AuthedCoursesCourseIdEditTopicIdRoute: typeof AuthedCoursesCourseIdEditTopicIdRoute
@@ -219,6 +239,7 @@ interface AuthedRouteChildren {
 }
 
 const AuthedRouteChildren: AuthedRouteChildren = {
+  AuthedJoinCodeRoute: AuthedJoinCodeRoute,
   AuthedCoursesIndexRoute: AuthedCoursesIndexRoute,
   AuthedClassesClassIdReviewRoute: AuthedClassesClassIdReviewRoute,
   AuthedCoursesCourseIdEditTopicIdRoute: AuthedCoursesCourseIdEditTopicIdRoute,

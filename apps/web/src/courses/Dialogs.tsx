@@ -31,16 +31,18 @@ function failureText(error: unknown, causes: Record<string, string>, fallback: s
   return fallback;
 }
 
-/** The enrolment-code form, used in the dialog and as the empty-account state. */
+/** The enrolment-code form, used in the dialog, as the empty-account state and by a join link. */
 export function JoinForm({
+  initialCode = '',
   onJoined,
   onDone,
 }: {
+  initialCode?: string;
   onJoined: (joined: Joined) => void;
   onDone?: () => void;
 }) {
   const queryClient = useQueryClient();
-  const [code, setCode] = useState('');
+  const [code, setCode] = useState(initialCode);
   const join = useMutation({
     mutationFn: (value: string) => call(joinClass, { body: { code: value } }),
     onSuccess: async (joined) => {
