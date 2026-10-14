@@ -44,9 +44,9 @@ export function notFound(): never {
 
 /**
  * Maps a service outcome to the response: the value, a 404 (same body as the resolver), a 400
- * `{ error: 'invalid', message }`, a 409 `class_archived`, or a 409 with the server copy through
- * the route's declared `conflict`. The route's contract declares whichever of these it can reach;
- * registerRoute answers 500 for any it does not.
+ * `{ error: 'invalid', message }`, a 409 `class_archived` or `class_open`, or a 409 with the
+ * server copy through the route's declared `conflict`. The route's contract declares whichever
+ * of these it can reach; registerRoute answers 500 for any it does not.
  */
 export function settle<T>(
   outcome: Outcome<T>,
@@ -57,7 +57,9 @@ export function settle<T>(
   if (outcome.reason === 'invalid') {
     throw new RouteFailure(400, { error: 'invalid', message: outcome.message });
   }
-  if (outcome.reason === 'class_archived') throw new RouteFailure(409, { error: 'class_archived' });
+  if (outcome.reason === 'class_archived' || outcome.reason === 'class_open') {
+    throw new RouteFailure(409, { error: outcome.reason });
+  }
   if (!conflict) throw new Error('unexpected revision conflict');
   return conflict({ error: 'revision_conflict', current: outcome.current });
 }

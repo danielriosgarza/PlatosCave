@@ -1,0 +1,1 @@
+ALTER TABLE "classes" ADD COLUMN "open" boolean DEFAULT false NOT NULL;

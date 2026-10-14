@@ -44,6 +44,8 @@ export interface ClassContext extends ScopeBase {
   readonly archived: boolean;
   /** Whether the course is the one archived, so restoring the class alone would not reopen it. */
   readonly courseArchived: boolean;
+  /** An open class (§13, N10): its members post nothing to the class or to instructors. */
+  readonly open: boolean;
 }
 
 export interface ClassScope extends ClassContext {
@@ -230,6 +232,7 @@ async function resolveClass(
     releaseId: row.releaseId,
     archived: row.archivedAt !== null || row.courseArchivedAt !== null,
     courseArchived: row.courseArchivedAt !== null,
+    open: row.open,
   };
   // §3: the course owner manages membership of every class of the course, member or not.
   const owner = row.ownsCourse === true && user.kind === 'user';

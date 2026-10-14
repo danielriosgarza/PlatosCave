@@ -20,7 +20,7 @@ type Nullable<T> = { [K in keyof T]: T[K] | null };
  * membership (null when they hold none) and the course grants of `courseUserId` (`ownsCourse`,
  * `editsCourse`; null when they hold none).
  */
-export type ClassAccess = Pick<ClassRow, 'courseId' | 'releaseId' | 'archivedAt'> & {
+export type ClassAccess = Pick<ClassRow, 'courseId' | 'releaseId' | 'archivedAt' | 'open'> & {
   className: ClassRow['name'];
   courseTitle: CourseRow['title'];
   courseArchivedAt: CourseRow['archivedAt'];
@@ -63,6 +63,7 @@ export async function findClassAccess(
       courseArchivedAt: courses.archivedAt,
       releaseId: classes.releaseId,
       archivedAt: classes.archivedAt,
+      open: classes.open,
       id: classMemberships.id,
       role: classMemberships.role,
       manageMembers: classMemberships.manageMembers,
