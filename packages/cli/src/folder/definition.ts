@@ -49,9 +49,10 @@ const loaded = <T>({ value, problems }: Checked<T>): Loaded<T> =>
 const utf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
 /** `root` is the folder a definition is read from, `file` its path there, as a listing gave it. */
 function parse(root: string, file: string): Parsed {
+  const bytes = fs.readFileSync(join(root, file));
   let text: string;
   try {
-    text = utf8.decode(fs.readFileSync(join(root, file)));
+    text = utf8.decode(bytes);
   } catch {
     // Read leniently, an invalid byte would become U+FFFD in what is stored, and nobody told.
     const problems = [refusal('yaml', file, 'this file is not valid UTF-8')];
