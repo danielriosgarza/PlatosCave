@@ -1,10 +1,10 @@
-import { and, eq, isNull } from 'drizzle-orm';
+import { and, eq, inArray, isNull } from 'drizzle-orm';
 import { type CourseScope, resolveActorScope } from '../../auth/scope';
 import { folderCourseId } from '../../content/folder-ids';
 import type { SyncState } from '../../content/folder-plan';
 import type { Db } from '../client';
 import { createCourse } from '../identity';
-import { courses, resourceRevisions, resources, users } from '../schema';
+import { courses, resourceRevisions, users } from '../schema';
 import { forCourse } from '../scoped';
 import { uniqueViolation } from '../unique';
 import { listDrafts } from './drafts';
@@ -75,6 +75,10 @@ export async function loadSyncState(
   scope: CourseScope,
   folder: string,
 ): Promise<SyncState> {
+  const drafts = (await listDrafts(db, scope)).topics;
+  // The heads the drafts name, read after them: a revision never changes, so a save in between
+  // cannot pair a draft with a head other than its own.
+  const headIds = drafts.flatMap((t) => t.resources.flatMap((r) => r.headRevisionId ?? []));
   const heads = await db
     .select({
       id: resourceRevisions.id,
@@ -84,10 +88,8 @@ export async function loadSyncState(
       provenance: resourceRevisions.provenance,
     })
     .from(resourceRevisions)
-    .innerJoin(resources, eq(resources.headRevisionId, resourceRevisions.id))
-    .where(and(forCourse(scope, resourceRevisions), forCourse(scope, resources)));
+    .where(and(forCourse(scope, resourceRevisions), inArray(resourceRevisions.id, headIds)));
   const headOf = new Map(heads.map(({ id, ...head }) => [id, head]));
-  const drafts = (await listDrafts(db, scope)).topics;
   return {
     courseId: scope.courseId,
     folder,
