@@ -12,6 +12,7 @@ import {
   serializerCompiler,
   validatorCompiler,
 } from 'fastify-type-provider-zod';
+import type { CustomFetch } from 'openid-client';
 import type { PgBoss } from 'pg-boss';
 import type { DestinationStream } from 'pino';
 import { BackgroundTasks } from './background';
@@ -42,6 +43,8 @@ export interface Deps {
   logStream?: DestinationStream;
   /** Mail transport; defaults to the one MAIL_TRANSPORT selects. */
   mailer?: Mailer;
+  /** The fetch of OpenID Connect discovery, keys and tokens; tests pass an in-process issuer. */
+  identityFetch?: CustomFetch;
   /** Object store; defaults to the one STORAGE_DRIVER selects. */
   storage?: Storage;
   /** Job queue for routes that start background work; absent, such work is not queued. */

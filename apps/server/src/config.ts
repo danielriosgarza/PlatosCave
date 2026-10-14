@@ -1,4 +1,5 @@
 import { isIP } from 'node:net';
+import { providerSettings } from '@parallax/contracts/routes/auth';
 import { z } from 'zod';
 
 /** Used outside production only, so a fresh checkout runs without configuration. */
@@ -40,6 +41,20 @@ const RunnerRuntime = z.strictObject({
 });
 export type RunnerRuntime = z.infer<typeof RunnerRuntime>;
 
+/** A JSON variable; a value that does not parse is named by `shape`, never quoted. */
+const json = (shape: string, unset: string) =>
+  z
+    .string()
+    .default(unset)
+    .transform((v, ctx): unknown => {
+      try {
+        return JSON.parse(v);
+      } catch {
+        ctx.addIssue({ code: 'custom', message: shape });
+        return z.NEVER;
+      }
+    });
+
 /** Development and CI: the images `scripts/runner-image.sh build python|r` tag `:dev`. */
 export const DEV_RUNNER_RUNTIMES: RunnerRuntime[] = [
   {
@@ -77,7 +92,16 @@ const Env = z
       .url()
       .transform((u) => new URL(u).origin)
       .optional(),
-    MAIL_TRANSPORT: z.enum(['file', 'smtp']).default('file'),
+    /** `none`: no email link is offered, so people sign in only with a provider. */
+    MAIL_TRANSPORT: z.enum(['file', 'smtp', 'none']).default('file'),
+    /** OpenID Connect issuers, a JSON array of `{ id, name, issuer, clientId }` (no secret). */
+    OIDC_PROVIDERS: json('a JSON array of providers', '[]')
+      .pipe(z.array(providerSettings))
+      .refine((list) => new Set(list.map((p) => p.id)).size === list.length, 'ids must be unique'),
+    /** Each provider's client secret, as a JSON object from provider id to secret. */
+    OIDC_CLIENT_SECRETS: json('a JSON object of secrets', '{}').pipe(
+      z.record(z.string(), z.string().min(1)),
+    ),
     /** `file` transport: one JSON file per message (ADR-0001). */
     MAIL_DIR: z.string().default('.local/mail'),
     /** Sender of sign-in mail. Required for `smtp` (relays reject the placeholder). */
@@ -295,6 +319,17 @@ const Env = z
     if (env.MAIL_TRANSPORT === 'smtp' && !env.MAIL_FROM) {
       ctx.addIssue({ code: 'custom', path: ['MAIL_FROM'], message: 'required for smtp' });
     }
+    if (env.MAIL_TRANSPORT === 'none' && env.OIDC_PROVIDERS.length === 0) {
+      ctx.addIssue({ code: 'custom', path: ['MAIL_TRANSPORT'], message: 'none needs a provider' });
+    }
+    // A provider and its secret come as a pair. Messages name the id, never the secret.
+    const listed = env.OIDC_PROVIDERS.map((p) => p.id);
+    const secrets = Object.keys(env.OIDC_CLIENT_SECRETS);
+    for (const id of [...listed, ...secrets]) {
+      if (listed.includes(id) && secrets.includes(id)) continue;
+      const message = `provider ${id} needs both a listing and a secret`;
+      ctx.addIssue({ code: 'custom', path: ['OIDC_CLIENT_SECRETS'], message });
+    }
     if (env.APP_HOST === env.CONTENT_HOST) {
       ctx.addIssue({
         code: 'custom',
@@ -357,6 +392,11 @@ const Env = z
     // Production approves only what it lists; elsewhere the locally built image is the default.
     RUNNER_RUNTIMES:
       env.RUNNER_RUNTIMES ?? (env.NODE_ENV === 'production' ? [] : DEV_RUNNER_RUNTIMES),
+    /** Each provider with its client secret, which the rules above require. */
+    OIDC_PROVIDERS: env.OIDC_PROVIDERS.map((p) => ({
+      ...p,
+      clientSecret: env.OIDC_CLIENT_SECRETS[p.id] as string,
+    })),
   }));
 
 export type Config = z.infer<typeof Env>;
