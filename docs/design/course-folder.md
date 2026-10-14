@@ -338,11 +338,12 @@ The `Verify` line of each entry in plan §9 is the full list; this table names t
 | P5-08d | `packages/contracts/src/courseFiles.test.ts` |
 | P5-08b | `yaml.test.ts`, `definition.test.ts`, `overlay.test.ts` and `listing.test.ts` in `packages/cli/src/folder/` |
 | P5-09a | `apps/server/src/content/validation.test.ts`; the existing unit and integration tests of publication, unmodified |
-| P5-18a | `folder-ids.test.ts`, `folder-plan.test.ts` and `folder-input.test.ts` in `apps/server/src/content/` |
+| P5-18a | `folder-ids.test.ts` and `folder-plan.test.ts` in `apps/server/src/content/` |
 | P5-18b | `apps/server/test/integration/folder-courses.itest.ts` |
 | P5-09 | `apps/server/src/content/convert.test.ts`: `A40 conversion runs with DATABASE_URL unset and imports no database module` and `A40 conversion preserves bounded rendering and omits JavaScript outputs`. `apps/server/test/integration/a40-conversion-output.itest.ts`: `A40 the database-free conversion entry equals ingestion output for the same sources` |
 | P5-08 | In `packages/cli/src/`: `a38-course-folder-modes.test.ts`: `A38 a courses/ folder placed unchanged under instructors/<name>/ yields the same topics and resources`. `a40-folder-mapping.test.ts`: `A40 each file of a course folder maps to the type, order, title and stored content the editor records`. `a42-yaml-definitions.test.ts`: `A42 a YAML exercise or test is accepted exactly when the schema accepts the same definition, and a rejected file names the field`. `a43-public-tree.test.ts`: `A43 a public tree that holds a test or exercise definition is refused and the file is named`. `folder/read.test.ts`, `folder/imports.test.ts` |
 | P5-08c | `ids.test.ts`, `publication.test.ts` and `packed-check.test.ts` in `packages/cli/src/folder/` |
+| P5-18d | `apps/server/src/content/folder-input.test.ts` |
 | P5-18 | `apps/server/test/integration/a40-folder-conversion.itest.ts`: `A40 a synced course folder holds the types, stored content and derived output the editor produces for the same files` and `A40 a problem that blocks publication stops sync with the report of the existing validation and leaves no release`. `a41-folder-resync.itest.ts`: `A41 a changed folder gives new revisions of the same resources and a new release, and a note stays attached or shows Needs reattachment`, `A41 a second sync of an unchanged folder creates no revision and no release` and `A41 a head revision that came from the editor is not overwritten unless sync is told to` |
 | P5-18c | `packages/cli/src/folder/bundle.test.ts`, `packages/cli/src/commands/sync.test.ts`, `apps/server/src/scripts/sync-course.test.ts` |
 
