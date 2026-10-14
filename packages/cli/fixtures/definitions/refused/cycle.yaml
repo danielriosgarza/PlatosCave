@@ -1,0 +1,11 @@
+# Refused as YAML: the alias on line 9 points into its own node, so the value has no end.
+schema: exercise.v1
+steps:
+  - &step
+    id: explain
+    title: Explain
+    kind: text
+    prompt: Say why the quadrats are placed at random.
+    next: *step
+    feedback:
+      saved: Compare your sentence with the reading.

@@ -1,0 +1,22 @@
+{
+  "schema": "exercise.v1",
+  "steps": [
+    {
+      "id": "predict",
+      "title": "Predict",
+      "kind": "numeric",
+      "prompt": "How many square metres are sampled?",
+      "tolerance": 0,
+      "feedback": { "correct": "Yes.", "incorrect": "Count the quadrats again." }
+    },
+    {
+      "id": "when",
+      "title": "When",
+      "kind": "numeric",
+      "prompt": "In which year was the survey made?",
+      "answer": "2026-10-14",
+      "tolerance": "0",
+      "feedback": { "correct": "Yes.", "incorrect": "Read the survey's first page again." }
+    }
+  ]
+}

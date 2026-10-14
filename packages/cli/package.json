@@ -16,7 +16,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "tsx": "4.23.15"
+    "tsx": "4.23.15",
+    "yaml": "2.9.1"
   },
   "devDependencies": {
     "@parallax/contracts": "workspace:*"
