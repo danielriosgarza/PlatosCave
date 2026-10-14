@@ -23,8 +23,11 @@ export function problemAt(file: Parsed, at: Field, message: string, code = 'sche
   return { ...refusal(code, file.path, message), ...field, line: file.lineOf(at) };
 }
 
+/** A value as its schema gives it and no problem, or the problems that refuse it and no value. */
+export type Checked<T> = { value: T; problems: [] } | { value?: undefined; problems: Problem[] };
+
 /** A parsed file's value as its schema gives it, or one problem for each field it refuses. */
-export function checked<T>(file: Parsed, schema: Schema<T>): { value?: T; problems: Problem[] } {
+export function checked<T>(file: Parsed, schema: Schema<T>): Checked<T> {
   if (file.problems.length > 0) return { problems: file.problems };
   const result = schema.safeParse(file.value);
   if (result.success) return { value: result.data, problems: [] };
@@ -37,19 +40,38 @@ export function checked<T>(file: Parsed, schema: Schema<T>): { value?: T; proble
 }
 
 /** A definition as its schema gives it, which is what is stored, or the problems that refuse it. */
-export type Loaded<T> = { definition?: T; problems: Problem[] };
+export type Loaded<T> =
+  | { definition: T; problems: [] }
+  | { definition?: undefined; problems: Problem[] };
+const loaded = <T>({ value, problems }: Checked<T>): Loaded<T> =>
+  value === undefined ? { problems } : { definition: value, problems: [] };
+
+const utf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
 /** `root` is the folder a definition is read from, `file` its path there, as a listing gave it. */
-const parse = (root: string, file: string) =>
-  parseYaml(fs.readFileSync(join(root, file), 'utf8'), file);
+function parse(root: string, file: string): Parsed {
+  let text: string;
+  try {
+    text = utf8.decode(fs.readFileSync(join(root, file)));
+  } catch {
+    // Read leniently, an invalid byte would become U+FFFD in what is stored, and nobody told.
+    const problems = [refusal('yaml', file, 'this file is not valid UTF-8')];
+    return { path: file, value: undefined, problems, lineOf: () => undefined };
+  }
+  return parseYaml(text, file);
+}
 const isMap = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 const items = (value: unknown) => (Array.isArray(value) ? [...value.entries()] : []);
-const utf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
+/** The value written out: in `parseYaml`'s value an alias is the object of its anchor. */
+const writtenOut = (value: unknown): unknown => {
+  if (Array.isArray(value)) return value.map(writtenOut);
+  if (!isMap(value)) return value;
+  return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, writtenOut(item)]));
+};
 
 /** An exercise (docs/design/course-folder.md §5): the file's value goes unchanged to `exerciseV1`. */
 export async function loadExercise(root: string, file: string): Promise<Loaded<ExerciseV1>> {
-  const { value, problems } = checked(parse(root, file), (await contracts()).exerciseV1);
-  return { definition: value, problems };
+  return loaded(checked(parse(root, file), (await contracts()).exerciseV1));
 }
 
 /**
@@ -69,13 +91,15 @@ export async function loadTest(
   const parsed = parse(root, file);
   // A file the parser refuses has no value: its problems are the result, and no schema runs.
   if (parsed.problems.length > 0) return { problems: parsed.problems };
-  // Written out: an alias gives the object of its anchor, and each place gets its own file here.
-  const value: unknown = JSON.parse(JSON.stringify(parsed.value));
+  // Written out, so that each place an alias stands gets its own file.
+  const value = writtenOut(parsed.value);
   const problems: Problem[] = [];
   const refuse = (at: PropertyKey[], message: string) =>
     problems.push(problemAt(parsed, at, message, 'code_file'));
   const folder = `${file.replace(/\.yaml$/i, '')}/`;
-  const beside = listed.filter((path) => path.startsWith(folder));
+  const beside = new Set(listed.filter((path) => path.startsWith(folder)));
+  // Every listed spelling, so that a case difference anywhere in the path is found.
+  const spelled = new Map(listed.map((path) => [path.toLowerCase(), path]));
   const named = new Set<string>();
   for (const [q, question] of items(isMap(value) ? value.questions : undefined)) {
     if (!isMap(question) || question.kind !== 'code') continue;
@@ -84,7 +108,12 @@ export async function loadTest(
       refuse(['questions', q, 'id'], 'expected a question id, so none of its files is read');
       continue;
     }
-    for (const [f, entry] of items(question.files)) {
+    if (!Array.isArray(question.files)) {
+      // The schema names a `files` that is no list; the files of the question wait for that.
+      for (const path of beside) if (path.startsWith(`${folder}${id.data}/`)) named.add(path);
+      continue;
+    }
+    for (const [f, entry] of question.files.entries()) {
       // An entry that is no map is the schema's to refuse.
       if (!isMap(entry)) continue;
       const at = ['questions', q, 'files', f];
@@ -94,14 +123,18 @@ export async function loadTest(
         continue;
       }
       const code = `${folder}${id.data}/${path.data}`;
+      if ('content' in entry) {
+        named.add(code);
+        if (beside.has(code)) refuse([...at, 'content'], `${code} holds it as well`);
+        continue;
+      }
       // Decided from the listing: a file system that ignores case opens either spelling.
-      const twin = beside.find((other) => sameButCase(other, code));
+      const disk = spelled.get(code.toLowerCase());
+      const twin = disk && sameButCase(disk, code) ? disk : undefined;
       named.add(twin ?? code);
       if (twin) {
         refuse([...at, 'path'], `${code} differs only in case from ${twin}, the name on disk`);
-      } else if ('content' in entry) {
-        if (beside.includes(code)) refuse([...at, 'content'], `${code} holds it as well`);
-      } else if (!beside.includes(code)) {
+      } else if (!beside.has(code)) {
         refuse([...at, 'path'], `no file ${code}`);
       } else {
         const bytes = fs.readFileSync(join(root, code));
@@ -118,6 +151,5 @@ export async function loadTest(
     if (!named.has(path)) problems.push(refusal('code_file', path, 'no entry names it'));
   }
   if (problems.length > 0) return { problems };
-  const { value: definition, problems: refused } = checked({ ...parsed, value }, testV1);
-  return { definition, problems: refused };
+  return loaded(checked({ ...parsed, value }, testV1));
 }

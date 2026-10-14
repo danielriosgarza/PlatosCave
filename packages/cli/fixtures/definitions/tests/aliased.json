@@ -53,6 +53,14 @@
           "compare": { "mode": "numeric" }
         }
       ]
+    },
+    {
+      "id": "q3",
+      "kind": "numeric",
+      "prompt": "Six fish are counted on each transect. What is the second count minus the first?",
+      "points": 1,
+      "answer": -0,
+      "tolerance": 0.5
     }
   ]
 }

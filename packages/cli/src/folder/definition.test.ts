@@ -107,6 +107,18 @@ const entry = `${quiz}: questions[2].files[0].path`;
 const check = 'tests/quiz/q3/tests/check.py';
 /** In a question's folder, outside one, and under an id that is no code question's. */
 const unused = ['tests/quiz/notes.txt', 'tests/quiz/q1/main.py', 'tests/quiz/q3/old.py'];
+/** The code files of the quiz: question, entry and path in the test's folder. */
+const inQuiz = [
+  [2, 0, 'q3/main.py'],
+  [3, 0, 'q4/main.py'],
+  [3, 1, 'q4/data/counts.bin'],
+] as const;
+const differs = (path: string, disk: string) =>
+  `${path} differs only in case from ${disk}, the name on disk`;
+/** The quiz with the `files` of q3 a string, and its list under a key the schema drops. */
+const noList = bytes(quiz)
+  .toString()
+  .replace('    files:\n', () => '    files: main.py\n    starter:\n');
 test.each<[label: string, change: Change, problems: string[]]>([
   ['a missing file', { remove: main }, [`${entry}: no file ${main}`]],
   [
@@ -128,16 +140,60 @@ test.each<[label: string, change: Change, problems: string[]]>([
   [
     'a file whose name on disk differs in case',
     { remove: main, write: { 'tests/quiz/q3/Main.py': '' } },
-    [`${entry}: ${main} differs only in case from tests/quiz/q3/Main.py, the name on disk`],
+    [`${entry}: ${differs(main, 'tests/quiz/q3/Main.py')}`],
   ],
   [
     'a question folder whose name on disk differs in case',
     { remove: 'tests/quiz/q3', write: { 'tests/quiz/Q3/main.py': '' } },
-    [`${entry}: ${main} differs only in case from tests/quiz/Q3/main.py, the name on disk`],
+    [`${entry}: ${differs(main, 'tests/quiz/Q3/main.py')}`],
+  ],
+  [
+    'a test folder whose name on disk differs in case',
+    {
+      remove: 'tests/quiz',
+      write: Object.fromEntries(inQuiz.map(([, , p]) => [`tests/Quiz/${p}`, ''])),
+    },
+    inQuiz.map(
+      ([q, f, p]) =>
+        `${quiz}: questions[${q}].files[${f}].path: ${differs(`tests/quiz/${p}`, `tests/Quiz/${p}`)}`,
+    ),
+  ],
+  [
+    'a definition that is not valid UTF-8',
+    { write: { [quiz]: Buffer.concat([bytes(quiz), Buffer.from([0xff])]) } },
+    [`${quiz}: this file is not valid UTF-8`],
+  ],
+  // The schema names it, and the files of that question are not reported as unused meanwhile.
+  [
+    'a `files` that is no list',
+    { write: { [quiz]: noList } },
+    [expect.stringMatching(/^tests\/quiz\.yaml: questions\[2\]\.files: .*expected array/)],
   ],
 ])('%s is named', async (_, change, problems) => {
   const loaded = await load(copy(change));
   expect([loaded.definition, lines(loaded.problems)]).toEqual([undefined, problems]);
+});
+
+/** What a listing refuses, such as a link out of the folder, it leaves out of the list it gives. */
+const notOpened = [undefined, [`${entry}: no file ${main}`]];
+test('a code file that the list leaves out is not opened, though it lies beside the definition', async () => {
+  const listed = walk(fixtures, 'tests').files.filter((path) => path !== main);
+  const loaded = await loadTest(fixtures, quiz, listed);
+  expect([loaded.definition, lines(loaded.problems)]).toEqual(notOpened);
+});
+
+test('a question folder linked out of the root is refused by the listing and not opened', async () => {
+  const outside = join(temp, 'outside');
+  fs.mkdirSync(outside);
+  fs.writeFileSync(join(outside, 'main.py'), bytes(main));
+  const root = copy({ remove: 'tests/quiz/q3' });
+  // A junction on Windows and a symbolic link elsewhere, as listing.test.ts makes them.
+  fs.symlinkSync(outside, join(root, 'tests/quiz/q3'), 'junction');
+  const { files, problems } = walk(root, 'tests');
+  const link = 'tests/quiz/q3: a link that leads out of the folder being read, or nowhere';
+  expect(lines(problems)).toEqual([link]);
+  const loaded = await loadTest(root, quiz, files);
+  expect([loaded.definition, lines(loaded.problems)]).toEqual(notOpened);
 });
 
 /** The schema's own patterns refuse these, so no Windows form is left to a list of refusals. */
@@ -156,7 +212,12 @@ test.each<[label: string, key: 'path' | 'id', value: (outside: string) => string
   const root = copy({ write: { 'tests/outside/main.py/keep': '' } });
   const [written, field] = key === 'path' ? ['path: main.py', 'files[0].path'] : ['id: q3', 'id'];
   const unsafe = `${key}: ${JSON.stringify(value(join(root, 'tests/outside')))}`;
-  fs.writeFileSync(join(root, quiz), bytes(quiz).toString().replace(written, unsafe));
+  fs.writeFileSync(
+    join(root, quiz),
+    bytes(quiz)
+      .toString()
+      .replace(written, () => unsafe),
+  );
   const loaded = await load(root);
   const refusal = expect.stringContaining(`${quiz}: questions[2].${field}: expected a `);
   // The file of the entry that was changed is then one that no entry names.
