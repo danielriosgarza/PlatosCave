@@ -16,7 +16,10 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@tanstack/router-plugin": "1.168.41",
+    "@vitejs/plugin-react": "6.1.1",
     "tsx": "4.23.15",
+    "vite": "8.3.1",
     "yaml": "2.9.1"
   },
   "devDependencies": {
