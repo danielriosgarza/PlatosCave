@@ -133,14 +133,18 @@ test('a data file is the parse result of its schema, at a .json path under site/
   const refused = stopOf(() => out.data('courses/x.json', openResource, strict));
   expect(refused).toMatch(/courses\/x\.json.*email/s);
   const outside = [join(work, 'site/a.json'), '/a.json', '../a.json', 'b/../../content/a.json'];
-  for (const path of [...outside, './a.json', 'courses//a.json', 'courses/a.txt', 'courses/a']) {
+  // On every system, also a name that only Windows reads otherwise: `\`, `:`, a dot or space last.
+  const odd = ['a\\b.json', 'C:a.json', 'a:b.json', 'reef./a.json', 'reef /a.json', 'a\u0007.json'];
+  for (const path of [...outside, ...odd, './a.json', 'a//a.json', 'courses/a.txt', 'courses/a']) {
     expect(stopOf(() => out.data(path, openResource, good))).toContain(path);
   }
+  expect(stopOf(() => out.shell('../content/o/a.js', bytes('a()')))).toContain('../content/o/a.js');
   expect(paths(work)).toEqual([`content/${at.ipynb}`, LAB]);
 });
 
 test('two outputs at one path stop and name both, also across case and where a folder would stand on a file', async () => {
   const { out } = await site();
+  expect(stopOf(() => out.address('courses'))).toContain('courses has no index.html to copy');
   out.shell('index.html', bytes(INDEX));
   const data = (path: string) => () => out.data(path, openResource, reading('<p>Tides</p>'));
   const both = (path: string) => `site/courses/catalogue.json and site/${path}`;
@@ -156,6 +160,9 @@ test('two outputs at one path stop and name both, also across case and where a f
   data('courses/reef/course.json')();
   const folder = stopOf(() => out.shell('courses/Reef', bytes('a file')));
   expect(folder).toContain('site/courses/reef/course.json and site/courses/Reef');
+  // One folder spelled in two ways: two folders where case counts, one where it does not.
+  expect(stopOf(data('courses/Reef/topic.json'))).toContain('site/courses/reef/course.json and');
+  expect(stopOf(() => out.shell('Courses/app.js', bytes('a()')))).toContain(both('Courses/app.js'));
   expect(stopOf(() => out.address('index.html/..'))).toContain('index.html/..');
 });
 
@@ -186,6 +193,13 @@ const places: Record<string, (address: string) => object> = {
   'an image src in a slide of a web deck': (address) => web(`<img src='${address}'>`),
   'an image src in a Markdown output': (address) =>
     lab(GOOD, H1, [markdown(`<img src="${address}">`)]),
+  // As a browser reads these two, `a` is `b"c="` (or `b'c='`) and the tag has the `src`.
+  'a src after a value that holds "': (address) => reading(`<img a=b"c=" src=${address} x=" ">`),
+  "a src after a value that holds '": (address) => reading(`<img a=b'c=' src=${address} x=' '>`),
+  'a src after a stray < and a stray quote': (address) => reading(`a < b <img " src=${address}>`),
+  // A sanitiser in a browser parses without scripting, so it reads what `noscript` holds.
+  'a src inside noscript': (address) => reading(`<noscript><img src="${address}"></noscript>`),
+  'a src inside a template': (address) => reading(`<template><img src="${address}"></template>`),
 };
 const named = Object.entries(places).flatMap(([place, resource]) =>
   Object.entries({ ...elsewhere, ...(place === 'an output url' ? scripts : {}) }).map(
@@ -231,10 +245,6 @@ const stops: Record<string, Change> = {
     out.data('courses/count.json', { parse: () => ({ parses: ++parses }) }, null);
     return ['site/courses/count.json'];
   },
-  'a data file whose HTML cannot be read tag by tag': ({ out }) => {
-    out.data('courses/odd.json', openResource, reading(`<p>a < b <img " src=${SITE}/x.png></p>`));
-    return ['site/courses/odd.json'];
-  },
   ...Object.fromEntries(named),
   'a file under content/ whose name is not its digest': behind(`content/${at.pdf}`, 'other'),
   'a file under content/ named by another digest': behind(`content/o/${'a'.repeat(64)}.png`, PNG),
@@ -246,6 +256,8 @@ test.each(Object.entries(stops))(
   async (_name, change) => {
     const made = await site();
     build(made);
+    // The output first passes an audit, so that only the audit after the change can stop it.
+    made.out.finish();
     const names = change(made);
     const message = stopOf(() => made.out.finish());
     for (const name of names) expect(message).toContain(name);
@@ -266,9 +278,14 @@ test('after a good audit dist/ holds exactly site/ and content/, and a level 1 i
   const placed = files(made.dist);
   expect(placed).toEqual(files(made.work));
   expect([placed['site/courses/index.html'], placed[`content/${at.pdf}`]]).toEqual([INDEX, PDF]);
-  // A file written after the audit is not placed without another audit.
+  // An audit is spent by what follows it: a write, and a course file that is named late.
   made.out.shell('assets/late.js', bytes('late();'));
   expect(stopOf(() => placeOutput(made.work, made.dist))).toContain(NOT_AUDITED);
+  made.out.finish();
+  made.out.untrusted(sha('late();'), COURSE_FILE);
+  expect(stopOf(() => placeOutput(made.work, made.dist))).toContain(NOT_AUDITED);
+  const twin = stopOf(() => made.out.finish());
+  expect(twin).toContain(`site/assets/late.js has the bytes of ${COURSE_FILE}`);
 });
 
 test('a second run over a used work folder and a used dist/ leaves nothing of what only the first wrote', async () => {
@@ -295,15 +312,23 @@ test('a second run over a used work folder and a used dist/ leaves nothing of wh
   }
 });
 
-test('only a .parallax/open folder is emptied, and a placing that fails leaves no file of the earlier build', async () => {
+test('only a .parallax/open folder is emptied, and a file changed after its audit is not placed', async () => {
   put(temp, 'kept/notes.txt', 'not a work folder');
   const refused = createOutput({ workDir: join(temp, 'kept'), contentOrigin: CONTENT });
   await expect(refused).rejects.toThrow(BuildStop);
   expect(files(join(temp, 'kept'))).toEqual({ 'notes.txt': 'not a work folder' });
   const made = await site();
+  const hostless = createOutput({ workDir: made.work, contentOrigin: 'content.example.org' });
+  await expect(hostless).rejects.toThrow(BuildStop);
+  // Without the shell's index.html there is no site: an empty output must not empty dist/.
+  expect(stopOf(() => made.out.finish())).toContain('site/index.html is missing');
+  expect(stopOf(() => placeOutput(made.work, made.dist))).toContain(NOT_AUDITED);
   build(made);
   made.out.finish();
-  fs.rmSync(join(made.work, 'site/assets/app.js'));
-  expect(() => placeOutput(made.work, made.dist)).toThrow();
+  put(made.work, 'site/assets/app.js', 'changed after the audit');
+  const changed = stopOf(() => placeOutput(made.work, made.dist));
+  expect(changed).toContain('site/assets/app.js was changed');
+  // The placing stopped part-way: dist/ holds no file of the earlier build, and not the changed one.
   expect(paths(made.dist).filter((path) => !WHOLE.includes(path))).toEqual([]);
+  expect(paths(made.dist)).not.toContain('site/assets/app.js');
 });
