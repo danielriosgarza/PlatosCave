@@ -1,10 +1,7 @@
 import type { PgBoss } from 'pg-boss';
 import { z } from 'zod';
 import type { CourseScope } from '../auth/scope';
-import { renderNotebookInThread } from '../content/notebook-render';
-import { extractPdfText } from '../content/pdf-text';
-import { renderReadingInThread, renderSlidesInThread } from '../content/reading-render';
-import { ThreadInputError } from '../content/thread';
+import { convertRevision, IngestError, megabytes } from '../content/convert';
 import type { Db } from '../db/client';
 import {
   type DerivationSource,
@@ -22,41 +19,15 @@ import { defineScopedJob, sendScopedJob } from './scoped';
 
 export const READING_INGEST = 'reading.ingest';
 
-/** Largest PDF the job reads into memory; P1-14 limits uploads below this. */
-export const MAX_PDF_BYTES = 50 * 1024 * 1024;
-/** Largest Markdown or HTML source: far more text than any reading, far less than a PDF. */
-export const MAX_NATIVE_BYTES = 5 * 1024 * 1024;
-/** Largest `.ipynb` file: uploads stop at 25 MB; images inside make notebooks large. */
-export const MAX_NOTEBOOK_BYTES = 50 * 1024 * 1024;
-
-/**
- * `content` of a `reading_native` revision: inline `markdown` or `html`, or an uploaded file
- * (`sourceKey` + `format`); `assets` maps image names in the source to the revision's objects.
- * `reading_pdf` names its file with `objectKey` (default: the revision's only object).
- */
-const NativeContent = z.object({
-  markdown: z.string().optional(),
-  html: z.string().optional(),
-  sourceKey: z.string().optional(),
-  format: z.enum(['markdown', 'html']).optional(),
-  assets: z.record(z.string(), z.string()).default({}),
-});
-/** `content` of a `slides_web` revision: the Markdown deck, slides separated by `---`. */
-const WebSlidesContent = z.object({ markdown: z.string() });
-/** Most slides one deck may have: far beyond a lecture, and the viewer's index lists every one. */
-export const MAX_SLIDES = 500;
-const PdfContent = z.object({ objectKey: z.string().optional() });
-/** `content` of a `notebook` revision: its uploaded `.ipynb` file. */
-const NotebookContent = z.object({ sourceKey: z.string() });
-
-/**
- * A deck is raster-only when fewer than half of its pages carry any text: its slides are
- * images a screen reader cannot read, so publication requires a text alternative (spec §7).
- */
-export function isRasterOnly(pages: readonly { text: string }[]): boolean {
-  const withText = pages.filter((page) => page.text.trim() !== '').length;
-  return withText * 2 < pages.length;
-}
+// The conversion is content/convert.ts (P5-09); the names it took from here are exported again.
+export {
+  IngestError,
+  isRasterOnly,
+  MAX_NATIVE_BYTES,
+  MAX_NOTEBOOK_BYTES,
+  MAX_PDF_BYTES,
+  MAX_SLIDES,
+} from '../content/convert';
 
 /**
  * The revision types this job derives outputs for (readings, PDF decks and notebooks); it reads
@@ -72,20 +43,7 @@ const PROCESSED_TYPES = [
 export const isProcessed = (type: string): boolean =>
   (PROCESSED_TYPES as readonly string[]).includes(type);
 
-/** A problem with the reading itself: retrying cannot help, so the job ends failed at once. */
-export class IngestError extends Error {}
-
 type Revision = DerivationSource;
-
-/** What editors call the revision's resource in job messages. */
-const noun = (revision: Revision) =>
-  revision.type === 'slides_pdf' || revision.type === 'slides_web'
-    ? 'deck'
-    : revision.type === 'notebook'
-      ? 'notebook'
-      : 'reading';
-
-const megabytes = (bytes: number) => `${bytes / (1024 * 1024)} MB`;
 
 /**
  * Reads one object of the revision into a single unpooled buffer of its stored size, so a large
@@ -93,13 +51,9 @@ const megabytes = (bytes: number) => `${bytes / (1024 * 1024)} MB`;
  */
 async function readObject(
   storage: Storage | undefined,
-  revision: Revision,
   key: string,
   maxBytes: number,
 ): Promise<Uint8Array> {
-  if (!revision.objectKeys.includes(key)) {
-    throw new IngestError(`The file is not part of this ${noun(revision)}`);
-  }
   if (!storage) throw new IngestError('This server cannot process uploaded files');
   let object: Awaited<ReturnType<Storage['get']>>;
   try {
@@ -148,26 +102,13 @@ export async function ingestRevision(
   signal?: AbortSignal,
   store?: ObjectStore,
 ): Promise<Record<string, unknown>> {
-  if (revision.type === 'notebook') {
-    const content = NotebookContent.safeParse(revision.content);
-    if (!content.success) throw new IngestError('The notebook has no .ipynb file');
-    const bytes = await readObject(storage, revision, content.data.sourceKey, MAX_NOTEBOOK_BYTES);
-    let text: string;
-    try {
-      text = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-    } catch {
-      throw new IngestError('The notebook is not valid UTF-8 text');
-    }
+  const read = (key: string, maxBytes: number) => readObject(storage, key, maxBytes);
+  const prefix = store && courseObjectPrefix(store.scope.courseId);
+  const { derived, objects } = await convertRevision(revision, { read, prefix, signal });
+  if (objects.length > 0) {
+    // Only a notebook has objects: it was read from storage and converted with the prefix.
     if (!storage || !store) throw new IngestError('This server cannot process uploaded files');
-    const prefix = courseObjectPrefix(store.scope.courseId);
-    let rendered: Awaited<ReturnType<typeof renderNotebookInThread>>;
-    try {
-      rendered = await renderNotebookInThread(text, prefix, { signal });
-    } catch (err) {
-      if (err instanceof ThreadInputError) throw new IngestError(err.message);
-      throw err;
-    }
-    for (const object of rendered.objects) {
+    for (const object of objects) {
       const stored = await storeCourseObject(
         store.db,
         storage,
@@ -178,93 +119,8 @@ export async function ingestRevision(
       // The thread named each object by its bytes, as storage does; a mismatch is a bug here.
       if (stored.key !== object.key) throw new Error(`Output object stored as ${stored.key}`);
     }
-    return {
-      notebook: rendered.notebook,
-      objects: Object.fromEntries(rendered.objects.map((o) => [o.key, o.contentType])),
-      warnings: rendered.warnings,
-    };
   }
-  if (revision.type === 'reading_native') {
-    const content = NativeContent.safeParse(revision.content);
-    if (!content.success) throw new IngestError('The reading content is not valid');
-    const { markdown, html, sourceKey, format, assets } = content.data;
-    for (const key of Object.values(assets)) {
-      if (!revision.objectKeys.includes(key)) {
-        throw new IngestError('An image is not an uploaded file of this reading');
-      }
-    }
-    let source: string;
-    let as: 'markdown' | 'html';
-    if (markdown !== undefined) [source, as] = [markdown, 'markdown'];
-    else if (html !== undefined) [source, as] = [html, 'html'];
-    else if (sourceKey && format) {
-      const bytes = await readObject(storage, revision, sourceKey, MAX_NATIVE_BYTES);
-      source = new TextDecoder().decode(bytes);
-      as = format;
-    } else throw new IngestError('The reading has no Markdown or HTML source');
-    if (Buffer.byteLength(source) > MAX_NATIVE_BYTES) {
-      throw new IngestError(`The reading is larger than ${megabytes(MAX_NATIVE_BYTES)}`);
-    }
-    let rendered: Awaited<ReturnType<typeof renderReadingInThread>>;
-    try {
-      rendered = await renderReadingInThread(source, as, assets, { signal });
-    } catch (err) {
-      if (err instanceof ThreadInputError) throw new IngestError(err.message);
-      throw err;
-    }
-    return {
-      html: rendered.html,
-      blockMap: rendered.blockMap,
-      figures: rendered.figures,
-      warnings: rendered.warnings,
-    };
-  }
-  if (revision.type === 'slides_web') {
-    const content = WebSlidesContent.safeParse(revision.content);
-    if (!content.success) throw new IngestError('The deck has no Markdown source');
-    if (Buffer.byteLength(content.data.markdown) > MAX_NATIVE_BYTES) {
-      throw new IngestError(`The deck is larger than ${megabytes(MAX_NATIVE_BYTES)}`);
-    }
-    let rendered: Awaited<ReturnType<typeof renderSlidesInThread>>;
-    try {
-      rendered = await renderSlidesInThread(content.data.markdown, { signal });
-    } catch (err) {
-      if (err instanceof ThreadInputError) throw new IngestError(err.message);
-      throw err;
-    }
-    if (rendered.slides.length === 0) throw new IngestError('The deck has no slides');
-    if (rendered.slides.length > MAX_SLIDES) {
-      throw new IngestError(`The deck has more than ${MAX_SLIDES} slides`);
-    }
-    return {
-      slides: rendered.slides,
-      // The slide count, as a PDF deck has: positions are validated against it.
-      pageCount: rendered.slides.length,
-      blockMap: rendered.blockMap,
-      figures: rendered.figures,
-      warnings: rendered.warnings,
-    };
-  }
-  if (revision.type === 'reading_pdf' || revision.type === 'slides_pdf') {
-    const content = PdfContent.safeParse(revision.content);
-    if (!content.success) throw new IngestError(`The ${noun(revision)} content is not valid`);
-    const key =
-      content.data.objectKey ??
-      (revision.objectKeys.length === 1 ? revision.objectKeys[0] : undefined);
-    if (!key) throw new IngestError(`The ${noun(revision)} has no PDF file`);
-    const bytes = await readObject(storage, revision, key, MAX_PDF_BYTES);
-    let text: Awaited<ReturnType<typeof extractPdfText>>;
-    try {
-      text = await extractPdfText(bytes, { signal, transfer: true });
-    } catch (err) {
-      if (err instanceof ThreadInputError) throw new IngestError(err.message);
-      throw err;
-    }
-    if (revision.type === 'reading_pdf') return { ...text };
-    // The original stays downloadable through content tokens; the viewer renders it in the browser.
-    return { ...text, rasterOnly: isRasterOnly(text.pages) };
-  }
-  throw new IngestError(`A ${revision.type} resource has nothing to process`);
+  return derived;
 }
 
 const status = (
