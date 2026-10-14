@@ -285,3 +285,33 @@ describe('config: session, lease and run-limit defaults', () => {
     }
   });
 });
+
+describe('config: sign-in providers and optional mail', () => {
+  const SECRET = 'SECRET-VALUE-never-in-a-message';
+  const university = {
+    id: 'university',
+    name: 'Example University',
+    issuer: 'https://login.example.org',
+    clientId: 'parallax',
+  };
+  const hospital = { ...university, id: 'hospital', name: 'Example Hospital' };
+  const env = (list: object[], secrets: object = { university: SECRET }) => ({
+    OIDC_PROVIDERS: JSON.stringify(list),
+    OIDC_CLIENT_SECRETS: JSON.stringify(secrets),
+  });
+
+  test('provider settings parse with their secrets; mail stays file and providers none by default', () => {
+    const [parsed] = loadConfig(env([university])).OIDC_PROVIDERS;
+    expect(parsed).toEqual({ ...university, clientSecret: SECRET });
+    expect(loadConfig({})).toMatchObject({ MAIL_TRANSPORT: 'file', OIDC_PROVIDERS: [] });
+    const noMail = loadConfig({ MAIL_TRANSPORT: 'none', ...env([university]) });
+    expect(noMail.MAIL_TRANSPORT).toBe('none');
+  });
+
+  test('no mail sender needs a provider, and a listed provider without a secret is refused', () => {
+    expect(() => loadConfig({ MAIL_TRANSPORT: 'none' })).toThrow(/MAIL_TRANSPORT/);
+    const unpaired = env([university, hospital]);
+    expect(() => loadConfig(unpaired)).toThrow(/provider hospital needs both/);
+    expect(() => loadConfig(unpaired)).not.toThrow(SECRET);
+  });
+});

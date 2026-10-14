@@ -35,6 +35,9 @@ const PRIVATE_KEYS = [
   'nonce',
   'databaseUrl',
   'smtpUrl',
+  'clientSecret',
+  'OIDC_CLIENT_SECRETS',
+  'verifier',
 ] as const;
 
 /** A pino redact path for `key` below `prefix` (`a.b` or `a["b-c"]`); `prefix` may be empty. */
