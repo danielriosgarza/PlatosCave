@@ -108,6 +108,8 @@ function refusal(error: unknown): string {
     : 'Could not save. Try again.';
 }
 
+type Asked = Thread | SendResult | { kind: 'open' };
+
 export interface MarginActions {
   /** Runs one discussion action; the cached thread is replaced by what the server answered. */
   thread(action: ThreadAction): Promise<ThreadResult>;
@@ -123,11 +125,8 @@ export interface MarginActions {
     body: string,
   ): Promise<SendResult>;
   remove(id: string): Promise<boolean>;
-  ask(
-    audience: 'instructor' | 'class',
-    anchor: Anchor,
-    body: string,
-  ): Promise<Thread | SendResult | { kind: 'open' }>;
+  /** `open`: refused because the class is open (§13, N10). */
+  ask(audience: 'instructor' | 'class', anchor: Anchor, body: string): Promise<Asked>;
   acknowledged(a: Annotation): void;
   /** Stops listing an annotation without asking the server (it is already gone there). */
   forget(id: string): void;

@@ -4,10 +4,7 @@ import styles from './DiscussionComposer.module.css';
 
 export type Audience = 'instructor' | 'class';
 
-/**
- * What the last attempt to post said; the text is kept either way. `open`: the server refused it
- * because the class is open (§13, N10), which no retry changes.
- */
+/** What the last attempt to post said (`open`: refused in an open class); the text is kept. */
 export type PostProblem = 'offline' | 'failed' | 'open' | null;
 
 /** Shown where the composer would be in an open class, where nobody posts (§13, N10). */

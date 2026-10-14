@@ -593,13 +593,12 @@ export async function releaseScheduled(
 }
 
 /**
- * Automatic release in an open class (§13, N10), where nobody grades: a submitted attempt whose
- * automated score is complete gets that score as its grade, saved and released through the
- * instructor's paths as `scope`'s instructor, the release marked `open` in its audit event. The
- * attempt's own terms still hold: results scheduled for later are saved now and released by the
- * scheduled release. An attempt that has a grade is left as it is, so a repeated run releases
- * nothing twice, and a class that is not open is left to its instructors. `pending` while a
- * code question's grading run is queued or running.
+ * Automatic release in an open class (§13, N10), where nobody grades: a complete automated score
+ * is saved as the attempt's grade and released through the instructor's paths as `scope`'s
+ * instructor, marked `open` in the release's audit event; results the terms schedule for later
+ * wait for the scheduled release. A complete grade not yet released (a run stopped between the
+ * steps) is released; a released or incomplete one is left. `pending` while a code question is
+ * being graded. Throws when a step is refused, so the job is retried.
  */
 export async function releaseOpen(
   db: Db,
@@ -615,21 +614,26 @@ export async function releaseOpen(
     const grade = await attemptGradeOf(tx, scope, locked.attempt, locked.student);
     return { attempt: locked.attempt, grade };
   });
-  if (!found || found.attempt.state === 'in_progress' || found.grade.history.length > 0) {
-    return none;
+  if (!found || found.attempt.state === 'in_progress') return none;
+  const refused = (step: string, reason: string) =>
+    new Error(`attempt ${attemptId}: the automatic ${step} was refused (${reason})`);
+  let grade = found.grade.history[0];
+  if (!grade) {
+    const parts = found.grade.automated;
+    if (parts.some((q) => q.automated?.status === 'pending')) return { ...none, pending: true };
+    if (parts.some((q) => q.points === null)) return none;
+    const draft: GradeChange = { expectedGradeId: null, source: 'draft', manual: [], feedback: [] };
+    const saved = await changeGrade(db, scope, attemptId, draft, now);
+    if (!saved.ok) throw refused('grade', saved.reason);
+    grade = saved.value.history[0];
   }
-  const parts = found.grade.automated;
-  if (parts.some((q) => q.automated?.status === 'pending')) return { release: null, pending: true };
-  if (parts.some((q) => q.points === null)) return none;
-  const draft: GradeChange = { expectedGradeId: null, source: 'draft', manual: [], feedback: [] };
-  const saved = await changeGrade(db, scope, attemptId, draft, now);
-  const grade = saved.ok ? saved.value.history[0] : undefined;
   const { results, at } = found.attempt.settings.release;
   const later = results === 'scheduled' && at !== null && Date.parse(at) > now.getTime();
-  if (!grade?.complete || later) return none;
+  if (!grade?.complete || grade.state === 'released' || later) return none;
   const entry = { attemptId, gradeId: grade.id };
   const released = await releaseGrades(db, scope, [entry], now, { open: true });
-  return { release: released.ok ? released.value : null, pending: false };
+  if (!released.ok) throw refused('release', released.reason);
+  return { release: released.value, pending: false };
 }
 
 /** The assignment's reported-grade rule: the class's current terms, else the newest attempt's. */

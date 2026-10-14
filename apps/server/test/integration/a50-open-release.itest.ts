@@ -10,10 +10,9 @@ import { runScopedJob } from '../../src/jobs/scoped';
 import { buildWorld, ids, type PersonName, type World } from '../fixtures/world';
 import { createTestDatabase, type TestDatabase } from './db';
 
-// Open class (§13, N10; A50): nobody grades in an open class. A test scored automatically is
-// released without an instructor, and the class never holds a release with manually graded test
-// parts: it is not opened while its release has them, and it does not adopt one. Class B: Marcus
-// teaches Bea and Priya; Elena owns the course.
+// Open class (§13, N10; A50): a test scored automatically is released without an instructor, and
+// a release with manually graded test parts is neither held when opening nor adopted. Class B:
+// Marcus teaches Bea and Priya; Elena owns the course.
 
 const now = new Date('2026-10-01T09:00:00Z');
 let ticks = 0;
@@ -47,12 +46,8 @@ afterAll(async () => {
 });
 
 async function call(who: PersonName, method: string, url: string, payload?: object) {
-  const res = await app.inject({
-    method: method as 'GET',
-    url,
-    headers: { cookie: world.cookie[who] },
-    ...(payload && { payload }),
-  });
+  const headers = { cookie: world.cookie[who] };
+  const res = await app.inject({ method: method as 'GET', url, headers, payload });
   return { status: res.statusCode, body: res.json() };
 }
 
@@ -85,18 +80,15 @@ async function takeCheck(who: PersonName) {
   const answered = await call(who, 'PUT', `${attempt}/answers/spread`, { value: ['n100'], seq: 1 });
   expect(answered.status).toBe(200);
   const submitted = await call(who, 'POST', `${attempt}/submit`, {
-    submissionKey: `a50-submit-${who}`,
+    submissionKey: `a50-${started.body.id}`,
   });
   expect(submitted.status).toBe(200);
   return started.body.id as string;
 }
 
+const job = { id: '00000000-0000-4000-8000-0000000a50ff', name: GRADES_OPEN_RELEASE };
 const jobFor = (data: unknown) =>
-  runScopedJob(testDb.db, openRelease, {
-    id: '00000000-0000-4000-8000-0000000a50ff',
-    name: GRADES_OPEN_RELEASE,
-    data,
-  } as unknown as Job<unknown>);
+  runScopedJob(testDb.db, openRelease, { ...job, data } as unknown as Job<unknown>);
 const openSends = () => sent.filter((s) => s.name === GRADES_OPEN_RELEASE);
 const results = async (who: PersonName) =>
   (await call(who, 'GET', `${classB}/resources/${checkId}/results`)).body.attempts;
@@ -106,13 +98,11 @@ const releasesOfB = () =>
 describe('automatic release in an open class (§13, N10)', () => {
   test('A50 a class is not opened while its release has manually graded test parts, and an open class does not adopt one', async () => {
     // Release v1's quiz has an explanation question, which an instructor marks by hand.
-    expect(await setOpen(true)).toEqual({ status: 409, body: { error: 'manual_grading' } });
-    const created = await call(
-      'elena',
-      'POST',
-      `/api/courses/${ids.statistics}/topics/${ids.sampling}/resources`,
-      { type: 'test', title: 'Sampling check', content: checkTest },
-    );
+    const manualGrading = { status: 409, body: { error: 'manual_grading' } };
+    expect(await setOpen(true)).toEqual(manualGrading);
+    const topic = `/api/courses/${ids.statistics}/topics/${ids.sampling}`;
+    const resource = { type: 'test', title: 'Sampling check', content: checkTest };
+    const created = await call('elena', 'POST', `${topic}/resources`, resource);
     expect(created.status).toBe(200);
     checkId = created.body.id;
     await archiveQuiz(now);
@@ -123,10 +113,7 @@ describe('automatic release in an open class (§13, N10)', () => {
     // The quiz is back in the next release, which the open class refuses.
     await archiveQuiz(null);
     const v3 = await publish();
-    expect(await adopt('marcus', ids.classB, v3, v2)).toEqual({
-      status: 409,
-      body: { error: 'manual_grading' },
-    });
+    expect(await adopt('marcus', ids.classB, v3, v2)).toEqual(manualGrading);
     expect((await call('bea', 'GET', classB)).body).toMatchObject({ releaseId: v2, open: true });
     // A class that is not open adopts it as before.
     expect((await adopt('priya', ids.classA, v3, ids.releaseV1)).status).toBe(200);
@@ -142,8 +129,7 @@ describe('automatic release in an open class (§13, N10)', () => {
     const outcome = await jobFor(openSends()[0]?.data);
     expect(outcome).toMatchObject({ status: 'completed', output: { released: 1, pending: false } });
 
-    const [release, ...more] = await releasesOfB();
-    expect(more).toEqual([]);
+    const [release] = await releasesOfB();
     expect(release).toMatchObject({ releasedBy: ids.marcus, recipients: [{ attemptId }] });
     const [event] = await testDb.db
       .select()
@@ -158,16 +144,29 @@ describe('automatic release in an open class (§13, N10)', () => {
     expect(await releasesOfB()).toHaveLength(1);
   });
 
+  test('A50 a grade an earlier run saved but did not release is released by the next run, once', async () => {
+    // What a run stopped between saving the grade and releasing it leaves: a complete draft.
+    const attemptId = await takeCheck('bea');
+    const draft = { expectedGradeId: null, manual: [], feedback: [] };
+    const grade = `${classB}/test-attempts/${attemptId}/grade`;
+    const graded = await call('marcus', 'POST', grade, draft);
+    expect(graded.body.history[0]).toMatchObject({ state: 'draft', complete: true });
+    const data = openSends()[1]?.data;
+    expect(await jobFor(data)).toMatchObject({ output: { released: 1 } });
+    expect(await jobFor(data)).toMatchObject({ output: { released: 0 } });
+    expect(await releasesOfB()).toHaveLength(2);
+  });
+
   test('A50 a class that is not open waits for its instructor, as before', async () => {
     expect(await setOpen(false)).toMatchObject({ status: 200, body: { open: false } });
     const attemptId = await takeCheck('priya');
-    expect(openSends()).toHaveLength(1);
+    expect(openSends()).toHaveLength(2);
     // A release queued while the class was open does nothing once it is closed.
     const data = { actorId: ids.priya, scope: { kind: 'class', classId: ids.classB } };
     expect(await jobFor({ ...data, input: { attemptId } })).toMatchObject({
       output: { released: 0 },
     });
     expect(await results('priya')).toEqual([expect.objectContaining({ status: 'pending' })]);
-    expect(await releasesOfB()).toHaveLength(1);
+    expect(await releasesOfB()).toHaveLength(2);
   });
 });

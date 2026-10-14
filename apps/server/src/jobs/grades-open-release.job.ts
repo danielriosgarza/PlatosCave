@@ -6,17 +6,17 @@ import { defineScopedJob, sendScopedJob } from './scoped';
 
 export const GRADES_OPEN_RELEASE = 'grades.open-release';
 
-/** While a code question's grading run is queued or running, the job looks again this much later. */
+/** While a code question is still being graded, the job looks again: a minute, doubling to a day. */
 const PENDING_RETRY_MS = 60_000;
-/** How many times it looks again: half an hour, then the attempt waits as any ungraded one does. */
-const PENDING_ROUNDS = 30;
+const PENDING_RETRY_MAX_MS = 24 * 60 * 60_000;
+/** How many times it looks again: for ten days, then the attempt waits as any ungraded one does. */
+const PENDING_ROUNDS = 20;
 
 /**
  * Releases a submitted attempt's automated score in an open class (§13, N10), where nobody
- * grades. Sent when the attempt is submitted, by its student or at its deadline. Releasing grades
- * is an instructor's action, so the job runs as the class's stand-in instructor; no instructor
- * acts. `releaseOpen` does nothing in a class that is not open, so a class closed again since the
- * send is left to its instructors, and nothing is released twice.
+ * grades (`releaseOpen`). Sent as the student on submit and at the deadline; releasing is an
+ * instructor's action, so it runs as the class's stand-in instructor. A refused step throws: the
+ * worker logs it and the queue runs the job again, which finishes a grade saved but not released.
  */
 const gradesOpenRelease = defineScopedJob({
   name: GRADES_OPEN_RELEASE,
@@ -41,6 +41,7 @@ export function enqueueOpenRelease(
   attemptId: string,
   round = 0,
 ): Promise<string | null> {
-  const later = round > 0 ? { startAfter: new Date(Date.now() + PENDING_RETRY_MS) } : {};
+  const wait = Math.min(PENDING_RETRY_MS * 2 ** (round - 1), PENDING_RETRY_MAX_MS);
+  const later = round > 0 ? { startAfter: new Date(Date.now() + wait) } : {};
   return sendScopedJob(boss, gradesOpenRelease, scope, { attemptId, round }, later);
 }
