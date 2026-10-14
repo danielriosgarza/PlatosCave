@@ -1,5 +1,6 @@
 export * from './anchors';
 export * from './connector';
+export * from './courseFiles';
 export * from './courseFolder';
 export * from './define';
 export * from './examples';
