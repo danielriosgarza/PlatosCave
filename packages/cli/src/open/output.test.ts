@@ -218,7 +218,7 @@ const unread = [
   '<math><mi><![CDATA[x><!--]]><img src="@">--></mi></math>',
   '<img alt="Reef" srcset="@ 2x">',
 ];
-const odd = unread.map((html): [string, Change] => [
+const unreadable = unread.map((html): [string, Change] => [
   `a reading whose HTML is ${html}`,
   ({ out }) => {
     out.data(NAMED.slice(5), openResource, reading(html.replace('@', 'https://evil.example.org')));
@@ -258,7 +258,7 @@ const stops: Record<string, Change> = {
     return ['site/courses/count.json'];
   },
   ...Object.fromEntries(named),
-  ...Object.fromEntries(odd),
+  ...Object.fromEntries(unreadable),
   'a file under content/ whose name is not its digest': behind(`content/${at.pdf}`, 'other'),
   'a file under content/ named by another digest': behind(`content/o/${'a'.repeat(64)}.png`, PNG),
   'a .js file under content/, a type outside the table': behind(`content/o/${sha('x')}.js`, 'x'),
