@@ -13,10 +13,17 @@ const EARLIER = 'the earlier build';
 const page = 'export default () => <p>A page</p>;\n';
 
 let copies = 0;
-/** The instructor fixture outside the repository, an earlier build in dist/, files written over it. */
-function site(files: Record<string, string>): string {
+/**
+ * The instructor fixture outside the repository, an earlier build in dist/, files written over it;
+ * the folder `linked` moved out of the site, a link (a junction on Windows) in its place.
+ */
+function site(files: Record<string, string>, linked?: string): string {
   const root = join(temp, `site-${copies++}`);
   fs.cpSync(join(pkg, 'fixtures/site/instructor'), root, { recursive: true });
+  if (linked) {
+    fs.renameSync(join(root, linked), `${root}-outside`);
+    fs.symlinkSync(`${root}-outside`, join(root, linked), 'junction');
+  }
   for (const [path, text] of Object.entries({ 'dist/index.html': EARLIER, ...files })) {
     fs.mkdirSync(dirname(join(root, path)), { recursive: true });
     fs.writeFileSync(join(root, path), text);
@@ -57,8 +64,11 @@ test('A39 a site page at the address of a Parallax screen stops the build and na
   expect(fs.readdirSync(join(root, 'dist/assets')).some((file) => /^about-/.test(file))).toBe(true);
 
   // Each of these stops the build as well, before dist/ changes, and names the file.
-  const notes = "import '../../courses/statistics/means/reading/means.md?raw';\n";
-  const refused: [Record<string, string>, string][] = [
+  const raw = (path: string) => ({ 'src/pages/index.tsx': `import '../../${path}?raw';\n${page}` });
+  const notes = 'courses/statistics/means/reading/means.md';
+  const lies = 'which lies in a course folder or the private overlay';
+  const glob = `import.meta.glob('../../courses/**/*.md', { eager: true });\n${page}`;
+  const refused: [Record<string, string>, string, string?][] = [
     [
       { 'src/pages/about.tsx': page, 'src/pages/about/index.tsx': page },
       'about.tsx and src/pages/about/index.tsx are both at /about',
@@ -67,15 +77,20 @@ test('A39 a site page at the address of a Parallax screen stops the build and na
     [{ 'src/pages/assets.tsx': page }, 'src/pages/assets.tsx would be at /assets, under /assets'],
     [{ 'src/pages/content/x.tsx': page }, 'src/pages/content/x.tsx would be at /content/x'],
     [{ 'src/pages/notes.mdx': '# Notes\n' }, 'src/pages/notes.mdx: a page is a .tsx or .jsx'],
-    [
-      { 'src/pages/index.tsx': notes + page },
-      'src/pages/index.tsx imports courses/statistics/means/reading/means.md, which lies in a course folder',
-    ],
+    [raw(notes), `src/pages/index.tsx imports ${notes}, ${lies}`],
+    [{ 'src/pages/index.tsx': glob }, `src/pages/index.tsx imports ${notes}, ${lies}`],
+    // A course folder or an overlay that is a link counts where it leads.
+    [raw(notes), 'src/pages/index.tsx imports ', 'courses/statistics'],
+    [raw('private/courses/statistics/means/exercises/mean.yaml'), 'index.tsx imports ', 'private'],
   ];
-  for (const [files, named] of refused) {
-    const stopped = await build(site(files));
+  for (const [files, named, linked] of refused) {
+    const stopped = await build(site(files, linked));
     expect(stopped).toMatchObject({ code: 1, kept: true });
     expect(stopped.said).toContain(named);
+    if (linked) expect(stopped.said).toContain(lies);
+    // One line for each problem: no error of the bundler, no stack and no colour around it.
+    expect(stopped.said).not.toMatch(/Error:|\n\s+at /);
+    expect(stopped.said).not.toContain('\u001b');
   }
 });
 
@@ -90,4 +105,8 @@ test('A39 the addresses read from routeTree.gen.ts cover every route file with a
   });
   expect(addresses.length).toBeGreaterThan(5);
   expect(screenAddresses().sort()).toEqual([...new Set(addresses)].sort());
+  // A tree whose form the reader does not know stops the build instead of passing every page.
+  const unknown = join(temp, 'routeTree.gen.ts');
+  fs.writeFileSync(unknown, 'export interface FileRoutesByTo {\n  "/courses": typeof X\n}\n');
+  expect(() => screenAddresses(unknown)).toThrow('no address in FileRoutesByTo');
 });

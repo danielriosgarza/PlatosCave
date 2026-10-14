@@ -2,9 +2,9 @@ import * as fs from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { tanstackRouter } from '@tanstack/router-plugin/vite';
 import react from '@vitejs/plugin-react';
-import { build, type InlineConfig, type Plugin } from 'vite';
+import { build, createLogger, type InlineConfig, type Plugin } from 'vite';
 import { packageRoot, sourceRoot } from '../paths';
-import type { Site } from '../site/load';
+import { type Site, SiteProblems } from '../site/load';
 import { findPages, type Page } from '../site/pages';
 
 /** The sources copied into the work tree, under these names (docs/design/site.md §2, §6.4). */
@@ -15,6 +15,8 @@ const slash = (path: string) => path.replaceAll('\\', '/');
 /** A module id without its query, written with `/`. */
 const file = (id: string) => slash(id.replace(/\?.*$/, ''));
 const MAIN = 'src="/src/main.tsx"';
+/** The course folders of both modes, which move between the modes unchanged, and the overlay. */
+const HIDDEN = /^(courses|private|instructors\/[^/]+\/courses)(\/|$)/i;
 
 /** Where a site's build lives (§3), absolute and from the site folder's real path. */
 export function buildPaths(site: string) {
@@ -82,11 +84,37 @@ mount(document.getElementById('root') as HTMLElement, { pages, props });\n`;
 }
 
 /**
+ * Where the course folders of both modes and the overlay really lie, in lower case: each one and
+ * the target of every link in it, so a link counts where it leads. Only listings are read.
+ */
+function hiddenTrees(root: string): string[] {
+  const real = new Set<string>();
+  const below = (dir: string): void => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (entry.isSymbolicLink()) visit(join(dir, entry.name));
+      else if (entry.isDirectory()) below(join(dir, entry.name));
+    }
+  };
+  const visit = (path: string): void => {
+    const at = fs.existsSync(path) ? fs.realpathSync.native(path) : undefined;
+    if (at === undefined || real.has(at)) return;
+    real.add(at);
+    if (fs.statSync(at).isDirectory()) below(at);
+  };
+  const instructors = join(root, 'instructors');
+  const listed = fs.existsSync(instructors) ? fs.readdirSync(instructors) : [];
+  const tops = ['courses', 'private', ...listed.map((name) => `instructors/${name}/courses`)];
+  for (const top of tops) visit(join(root, top));
+  return [...real].map((path) => slash(path).toLowerCase());
+}
+
+/**
  * The resolver of §6.4: a bare import of the work tree as from the file's original place, taken
  * from the copy; the shared packages from the web sources; `parallax-site/pages` as the copy of
- * `sitePages.tsx`. Whatever lies in a course folder or the private overlay stops the build.
+ * `sitePages.tsx`. Whatever lies in a course folder or the private overlay, by its path in the
+ * site or where it really lies, stops the build; each refusal is also put into `refused`.
  */
-function sitePlugin(paths: Paths): Plugin {
+function sitePlugin(paths: Paths, refused: string[]): Plugin {
   const root = slash(paths.root);
   const sources = COPIED.map((name) => ({
     from: slash(fs.realpathSync.native(sourceRoot(name))),
@@ -102,14 +130,19 @@ function sitePlugin(paths: Paths): Plugin {
     const ours = path.startsWith(`${root}/`) && !path.startsWith(`${root}/.parallax/`);
     return ours && !path.includes('/node_modules/') ? path.slice(root.length + 1) : undefined;
   };
-  /** In a course folder of either mode, which moves between the modes unchanged, or the overlay. */
+  const trees = hiddenTrees(paths.root);
+  /** In a course folder or the overlay, by its path in the site or where it really lies. */
   const hidden = (id: string) => {
-    const [top, , third] = (own(id) ?? '').toLowerCase().split('/');
-    return top === 'courses' || top === 'private' || (top === 'instructors' && third === 'courses');
+    const path = slash(resolve(paths.web, file(id))).toLowerCase();
+    const inTree = trees.some((tree) => path === tree || path.startsWith(`${tree}/`));
+    return inTree || HIDDEN.test(own(id) ?? '');
   };
   const named = (id: string) => own(id) ?? file(id);
-  const refuse = (what: string) =>
-    `${what}, which lies in a course folder or the private overlay: a site's pages cannot use course material.`;
+  const refuse = (what: string) => {
+    const line = `${what}, which lies in a course folder or the private overlay: a site's pages cannot use course material.`;
+    refused.push(line);
+    return line;
+  };
   return {
     name: 'parallax:site',
     enforce: 'pre',
@@ -138,7 +171,7 @@ function sitePlugin(paths: Paths): Plugin {
 }
 
 /** The Vite configuration of the site, its pages found and the work tree prepared (§6.4). */
-export function viteConfig(site: Site): InlineConfig {
+export function viteConfig(site: Site, refused: string[] = []): InlineConfig {
   const paths = buildPaths(site.root);
   prepare(site, paths, findPages(paths.root));
   const cacheDir = join(paths.root, '.parallax/vite');
@@ -148,18 +181,30 @@ export function viteConfig(site: Site): InlineConfig {
     root: paths.web,
     publicDir: false,
     cacheDir,
+    // Warnings only; the command prints each error once, so Vite's own error line is dropped.
     logLevel: 'warn',
-    plugins: [sitePlugin(paths), ...webPlugins(join(cacheDir, 'tanstack'))],
+    customLogger: { ...createLogger('warn'), error: () => {} },
+    plugins: [sitePlugin(paths, refused), ...webPlugins(join(cacheDir, 'tanstack'))],
     // No source maps: they would publish the sources of the site's pages beside the bundle.
     build: { outDir: paths.out, emptyOutDir: true, sourcemap: false, reportCompressedSize: false },
   };
 }
 
-/** Steps 1 to 3 of §6.4, the compile: the site and the application built into `.parallax/dist`. */
+/** Steps 1 to 3 of §6.4, the compile into `.parallax/dist`; a refusal stops it as one line. */
 export async function compile(site: Site): Promise<void> {
+  const refused: string[] = [];
+  const config = viteConfig(site, refused);
   // A site is always built for production; Vite sets this only where it is unset.
+  const before = process.env.NODE_ENV;
   process.env.NODE_ENV = 'production';
-  await build(viteConfig(site));
+  try {
+    await build(config);
+  } catch (error) {
+    throw refused.length > 0 ? new SiteProblems(refused) : error;
+  } finally {
+    if (before === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = before;
+  }
 }
 
 /**

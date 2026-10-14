@@ -26,8 +26,8 @@ export const run: Command['run'] = async ({ site }) => {
     place(site.root);
   } catch (error) {
     const why = `dist/ was not completed: ${(error as Error).message}`;
-    const left = 'index.html is put in last, so until it is, dist/ serves the earlier build';
-    return stop(`parallax build: ${why}\n${left}. Run parallax build again.`);
+    const which = 'index.html is put in last: until it is, dist/ serves the earlier build';
+    return stop(`parallax build: ${why}\n${which}. Run parallax build again.`);
   }
   console.error('parallax build: the site is in dist/.');
   return 0;

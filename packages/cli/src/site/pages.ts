@@ -12,12 +12,14 @@ const segments = (address: string) => address.split('/').filter(Boolean);
 
 /**
  * The address of every Parallax screen (docs/design/site.md §6.3): the keys of `FileRoutesByTo` in
- * the route tree that the router generates, where `$name` stands for any one segment.
+ * the route tree that the router generates, where `$name` stands for any one segment. Throws when
+ * none can be read, so that a change of the generator's form cannot switch the rule off.
  */
 export function screenAddresses(tree = join(sourceRoot('web'), 'src/routeTree.gen.ts')): string[] {
-  const block = /export interface FileRoutesByTo \{([^}]*)\}/.exec(readFileSync(tree, 'utf8'));
-  if (!block?.[1]) throw new Error(`${tree} has no FileRoutesByTo: the screens cannot be read`);
-  const keys = [...block[1].matchAll(/^\s*'([^']+)':/gm)].map((match) => match[1] ?? '');
+  const text = readFileSync(tree, 'utf8');
+  const block = /export interface FileRoutesByTo \{([\s\S]*?)\n\}/.exec(text)?.[1] ?? '';
+  const keys = [...block.matchAll(/^\s*'([^']+)':/gm)].map((match) => match[1] ?? '');
+  if (keys.length === 0) throw new Error(`${tree}: no address in FileRoutesByTo, so no screen`);
   const odd = keys.flatMap(segments).find((part) => /[$*{}]/.test(part) && !/^\$\w+$/.test(part));
   if (odd !== undefined) throw new Error(`${tree}: the screen segment ${odd} cannot be compared`);
   return keys;
