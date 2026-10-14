@@ -1,0 +1,66 @@
+{
+  "questions": [
+    {
+      "id": "q1",
+      "kind": "code",
+      "prompt": "Write total(counts) for the counts of one transect.",
+      "points": 2,
+      "runtime": "python-3.12",
+      "files": [
+        {
+          "path": "main.py",
+          "content": "def total(counts):\n    \"\"\"The fish of one transect.\"\"\"\n    pass\n",
+          "editable": true,
+          "hidden": false
+        }
+      ],
+      "checks": [
+        {
+          "name": "sample",
+          "kind": "call",
+          "visibility": "public",
+          "file": "main.py",
+          "function": "total",
+          "args": [[1, 2, 3]],
+          "expected": { "value": 6 },
+          "compare": { "mode": "numeric" }
+        }
+      ]
+    },
+    {
+      "id": "q2",
+      "kind": "code",
+      "prompt": "Write total(counts) for the counts of two transects.",
+      "points": 2,
+      "runtime": "python-3.12",
+      "files": [
+        {
+          "path": "main.py",
+          "content": "def total(counts):\n    \"\"\"The fish of two transects.\"\"\"\n    pass\n",
+          "editable": true,
+          "hidden": false
+        }
+      ],
+      "checks": [
+        {
+          "name": "sample",
+          "kind": "call",
+          "visibility": "public",
+          "file": "main.py",
+          "function": "total",
+          "args": [[1, 2, 3]],
+          "expected": { "value": 6 },
+          "compare": { "mode": "numeric" }
+        }
+      ]
+    },
+    {
+      "id": "q3",
+      "kind": "numeric",
+      "prompt": "Six fish are counted on each transect. What is the second count minus the first?",
+      "points": 1,
+      "answer": -0,
+      "tolerance": 0.5
+    }
+  ]
+}

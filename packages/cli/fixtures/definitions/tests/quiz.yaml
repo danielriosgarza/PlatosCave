@@ -1,0 +1,55 @@
+# The quiz of the fictional course "Reef ecology". A file entry without `content` has its code
+# file beside this definition, at quiz/<question id>/<path>; quiz.json is the same definition
+# with every content written out.
+questions:
+  - id: q1
+    kind: choice
+    prompt: Which survey counts fish along a line?
+    points: 1
+    options:
+      - { id: a, label: A transect }
+      - { id: b, label: A quadrat }
+    correct: [a]
+  - id: q2
+    kind: numeric
+    prompt: Six fish are counted in 4 m². What is the density per square metre?
+    points: 2
+    answer: 1.5
+    tolerance: 0.01
+    unit: fish/m²
+  - id: q3
+    kind: code
+    prompt: Write density(count, area).
+    points: 4
+    runtime: python-3.12
+    files:
+      - { path: main.py, editable: true, hidden: false }
+      - { path: tests/check.py, content: "print(1)\n", editable: false, hidden: true }
+    checks:
+      - name: sample
+        kind: call
+        visibility: public
+        file: main.py
+        function: density
+        args: [6, 4]
+        expected: { value: 1.5 }
+        compare: { mode: numeric }
+  - id: q4
+    kind: code
+    prompt: Write mean(counts).
+    points: 4
+    runtime: python-3.12
+    files:
+      - { path: main.py, editable: true, hidden: false }
+      - { path: data/counts.bin, encoding: base64, editable: false, hidden: false }
+    checks:
+      - name: sample
+        kind: call
+        visibility: public
+        file: main.py
+        function: mean
+        args: [[1, 2, 3]]
+        expected: { value: 2 }
+        compare: { mode: numeric }
+settings:
+  attempts: 2
