@@ -1,0 +1,14 @@
+# Refused by testV1, as two-answers.json is: a single choice has one answer.
+questions:
+  - id: q1
+    kind: choice
+    prompt: Which survey counts fish along a line?
+    points: 1
+    options:
+      - { id: a, label: A transect }
+      - { id: b, label: A quadrat }
+    correct: [a, b]
+  - id: q2
+    kind: explanation
+    prompt: Say why a transect is laid along the reef and not across it.
+    points: 3
