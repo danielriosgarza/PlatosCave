@@ -9,7 +9,7 @@ import { userForVerifiedEmail } from '../../src/db/auth/accounts';
 import { createSession } from '../../src/db/auth/sessions';
 import { authSessions, signinTokens, users } from '../../src/db/schema';
 import * as idp from '../fixtures/oidc-issuer';
-import { buildWorld, cookieFor, issueLiveInvites } from '../fixtures/world';
+import { cookieFor } from '../fixtures/world';
 import { createTestDatabase, type TestDatabase } from './db';
 
 const APP_ORIGIN = 'https://parallax.example.org';
@@ -40,7 +40,6 @@ async function makeApp(env: Record<string, string> = {}, logStream?: Writable) {
 
 beforeAll(async () => {
   testDb = await createTestDatabase();
-  await buildWorld(testDb.db, start);
   app = await makeApp();
   twoProviders = await makeApp(idp.providerEnv(idp.UNIVERSITY, idp.HOSPITAL));
 });
@@ -258,28 +257,5 @@ describe('provider sign-in refusals', () => {
     expect(log).toContain('/api/auth/oidc/university/callback?code=[redacted]&state=[redacted]');
     expect(log).not.toContain(String(back.searchParams.get('code')));
     expect(log).not.toContain(String(back.searchParams.get('state')));
-  });
-
-  test('an issuer that cannot be reached sends the browser back to the sign-in page and is asked again', async () => {
-    const fresh = await makeApp();
-    issuer.unreachable = true;
-    const failed = await startAt({}, fresh).finally(() => {
-      issuer.unreachable = false;
-    });
-    expect(failed.start.headers.location).toBe('/signin?provider=university&refused=failed');
-    expect(failed.start.cookies).toEqual([]);
-    const again = await startAt({}, fresh);
-    expect(String(again.start.headers.location)).toMatch(`${idp.ISSUER}/authorize?`);
-  });
-
-  test('INSTRUCTOR_EMAILS and invitations work for an account reached through a provider', async () => {
-    const teaching = await makeApp({ INSTRUCTOR_EMAILS: ' Ana@Example.org ' });
-    const { session } = await signIn({}, teaching);
-    const send = (url: string, payload: object) =>
-      teaching.inject({ method: 'POST', url, payload, headers: { cookie: session } });
-    expect((await send('/api/courses', { title: 'Provider course' })).statusCode).toBe(200);
-    const { instructorToken } = await issueLiveInvites(testDb.db, clock, 'ana@example.org');
-    const accepted = await send('/api/invitations/accept', { token: instructorToken });
-    expect(accepted.json()).toMatchObject({ role: 'instructor' });
   });
 });

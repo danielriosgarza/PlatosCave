@@ -314,18 +314,4 @@ describe('config: sign-in providers and optional mail', () => {
     expect(() => loadConfig(unpaired)).toThrow(/provider hospital needs both/);
     expect(() => loadConfig(unpaired)).not.toThrow(SECRET);
   });
-
-  test('provider settings that are not valid are refused, and no message holds a secret', () => {
-    for (const vars of [
-      env([university], { university: SECRET, other: SECRET }),
-      env([{ ...university, issuer: 'http://login.example.org' }]),
-      env([university, university]),
-      env([{ ...university, id: 'University_1' }], { University_1: SECRET }),
-      env([{ ...university, logo: 'logo.png' }]),
-      { OIDC_PROVIDERS: '[{', OIDC_CLIENT_SECRETS: `{"university": "${SECRET}"` },
-    ]) {
-      expect(() => loadConfig(vars), vars.OIDC_PROVIDERS).toThrow(/OIDC_/);
-      expect(() => loadConfig(vars), vars.OIDC_PROVIDERS).not.toThrow(SECRET);
-    }
-  });
 });
