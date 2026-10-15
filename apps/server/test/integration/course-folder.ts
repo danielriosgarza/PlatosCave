@@ -25,12 +25,6 @@ import { createTestDatabase } from './db';
 
 const fixtures = resolve(import.meta.dirname, '../../../../packages/cli/fixtures');
 const ANA = 'ana.lima@example.org';
-/** Folder ids of the fixture course. */
-export const ids = {
-  tides: '0b2f4a6c-8d1e-4f3a-b5c7-9e0a1b2c3d4e',
-  sampling: '5f0c1d8e-3b7a-4c2e-9a41-7d2f6b0e1c33',
-  quiz: '8a7b6c5d-4e3f-4a2b-9c1d-0e9f8a7b6c5d',
-};
 /** The fixture's PDFs are stand-ins that no PDF reader opens; these are read as the deck and paper. */
 const pdfs = {
   deck: makePdf(['Reef zones from the shore outward', 'The reef crest'], [960, 540]),
@@ -59,12 +53,17 @@ export function folder(name: string): Folder {
 export const entry = ({ manifest }: Folder, id: string) =>
   manifest.topics.flatMap((topic) => topic.resources).find((r) => r.id === id) as Entry;
 
-const sha256 = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
+export const sha256 = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
+const bytesOf = (f: Folder, path: string) => {
+  const bytes = f.bytes.get(path);
+  if (!bytes) throw new Error(`no bytes for ${path}`);
+  return bytes;
+};
 
 /** The bundle's header for a folder, its files' sizes and hashes taken from their bytes. */
 function header(f: Folder): SyncHeader {
   const files = f.manifest.files.map((file) => {
-    const bytes = f.bytes.get(file.path) ?? new Uint8Array();
+    const bytes = bytesOf(f, file.path);
     return { ...file, size: bytes.length, sha256: sha256(bytes) };
   });
   return {
@@ -94,19 +93,21 @@ export async function syncWorld() {
   await workScopedJob(boss, db, readingIngest, app.log, worker, { storage, boss });
   const shiny = ['https://shiny.example.org'];
   const validate = { approvedShinyOrigins: shiny, runtimes: DEV_RUNNER_RUNTIMES };
-  const wait = { pollMs: 200 };
+  // A busy machine may start the first conversion late; that is no idle worker here.
+  const wait = { idleMs: 180_000, pollMs: 200 };
   const deps: SyncDeps = { db, boss, storage, validate, instructorEmails: [ANA], wait };
   /** The rows of one of the four tables sync writes, for one course. */
   const of = async (table: string, id: string) => {
     const query = sql`select * from ${sql.identifier(table)} where course_id = ${id} order by id`;
     return (await db.execute(query)).rows;
   };
+  const world = { db, app, storage, ana, cookie, errors };
   return {
-    ...{ db, app, storage, ana, cookie, errors },
+    ...world,
     /** One run of sync on the folder's files, read from their bytes. */
     sync: (f: Folder) =>
       syncCourse(deps, header(f), async function* (file) {
-        yield f.bytes.get(file.path) ?? new Uint8Array();
+        yield bytesOf(f, file.path);
       }),
     rows: async (courseId: string) => ({
       topics: await of('topics', courseId),

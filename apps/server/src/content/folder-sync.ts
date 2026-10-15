@@ -28,14 +28,14 @@ import { convertAndPublish, type PublishDeps } from './publish-drafts';
  * data access is the draft services' and `db/content/sync.ts`'s. It writes no audit event of its
  * own, as `apply` does: `createCourse` and `publishRelease` write theirs, naming the owner, and
  * each revision's provenance says that it came from a folder. An error it throws (the database,
- * the queue or storage unavailable) leaves what a stop after step 6 leaves: run it again.
+ * the queue or storage unavailable) ends the run with what it wrote by then and never a release:
+ * the course and some objects in step 3, some drafts in step 6, queued jobs after it. Run again.
  */
 
 export interface SyncDeps extends PublishDeps {
   storage: Storage;
   /** The server's `INSTRUCTOR_EMAILS`: a course is created only for these addresses. */
   instructorEmails: readonly string[];
-  now?: () => Date;
 }
 
 /** The bytes of one file of `manifest.files`; each is asked for once, in the manifest's order. */
@@ -58,12 +58,22 @@ const REFUSED_COURSE = {
 const AGAIN = 'run sync again';
 const NO_ACCOUNT = 'no active account has this address; that person signs in once first';
 
-/** The format of each file the entries name, by its type and extension (§2). */
-function formatsOf(topics: CourseManifest['topics']) {
+/**
+ * Why the bundle's files are not the ones its entries name, from the manifest alone: each file
+ * one an entry names, with the format the entry's type and extension give (§2), and a
+ * notebook's data files before it.
+ */
+function bundleProblem({ files, topics }: CourseManifest): string | undefined {
   const formats = new Map<string, CourseFileFormat>();
+  const at = new Map(files.map((file, i) => [file.path, i]));
+  let late: string | undefined;
   for (const entry of topics.flatMap((topic) => topic.resources)) {
     if (entry.type === 'notebook') {
-      for (const data of entry.source.data) formats.set(data.file, 'data');
+      for (const { file } of entry.source.data) {
+        formats.set(file, 'data');
+        const before = (at.get(file) ?? -1) < (at.get(entry.source.file) ?? -1);
+        if (!before) late ??= `${file}: stands after its notebook`;
+      }
       formats.set(entry.source.file, 'notebook');
     } else if (entry.type === 'reading_native') {
       formats.set(entry.source.file, /\.html$/i.test(entry.source.file) ? 'html' : 'markdown');
@@ -71,7 +81,11 @@ function formatsOf(topics: CourseManifest['topics']) {
       formats.set(entry.source.file, 'pdf');
     }
   }
-  return formats;
+  if (at.size !== files.length || files.length !== formats.size) {
+    return 'the bundle holds other files than its entries name';
+  }
+  const wrong = files.find((file) => formats.get(file.path) !== file.format);
+  return wrong ? `${wrong.path}: no ${wrong.format} file of its entry` : late;
 }
 
 /** Step 3: each file through the upload rules into storage; a notebook after its data files. */
@@ -83,35 +97,21 @@ async function storeFiles(
 ) {
   const { db, storage } = deps;
   const stored = new Map<string, StoredFile>();
-  const formats = formatsOf(topics);
-  if (
-    new Set(files.map((file) => file.path)).size !== formats.size ||
-    files.length !== formats.size
-  ) {
-    throw new BundleMismatch('the bundle holds other files than its entries name');
-  }
   const notebooks = topics.flatMap((t) =>
     t.resources.flatMap((r) => (r.type === 'notebook' ? [r.source] : [])),
   );
   for (const file of files) {
-    if (formats.get(file.path) !== file.format) {
-      throw new BundleMismatch(`${file.path}: no ${file.format} file of its entry`);
-    }
     const checked = checkedFile(file, bytes(file));
     const data = notebooks.find((source) => source.file === file.path)?.data ?? [];
     try {
       let body: Body = checked;
       if (data.length > 0) {
-        // The notebook that is stored names its data files' objects, as the editor's does.
-        const ids = data.map(({ path, file: dataFile }) => {
-          const resourceId = stored.get(dataFile)?.id;
-          if (!resourceId) throw new BundleMismatch(`${dataFile}: stands after its notebook`);
-          return { path, resourceId };
-        });
-        const chunks: Uint8Array[] = [];
-        for await (const chunk of checked) chunks.push(chunk);
-        const text = new TextDecoder().decode(Buffer.concat(chunks));
-        body = new TextEncoder().encode(notebookWithData(text, ids));
+        // The stored notebook names its data files' objects, stored before it, as the editor's does.
+        const ids = data.map((d) => ({ path: d.path, resourceId: stored.get(d.file)?.id ?? '' }));
+        const decoder = new TextDecoder();
+        let text = '';
+        for await (const chunk of checked) text += decoder.decode(chunk, { stream: true });
+        body = new TextEncoder().encode(notebookWithData(text + decoder.decode(), ids));
         // The editor uploads the declared notebook, so the upload rules hold for it too.
         checkCourseFile('notebook', body);
       }
@@ -151,6 +151,8 @@ export async function syncCourse(
   const { db, instructorEmails } = deps;
   const { manifest, course: folder, instructor } = header;
   const stop = (code: SyncResult['code'], ...report: string[]): SyncResult => ({ code, report });
+  const malformed = bundleProblem(manifest);
+  if (malformed) return stop(2, malformed);
 
   // 1 and 2. The owner's account, which is never created here, and its course.
   const owner = await sync.findFolderOwner(db, instructor.email);
@@ -183,7 +185,7 @@ export async function syncCourse(
   const pathOf = new Map(
     entries.map((e) => [folderRowId(scope.courseId, 'resource', e.id), e.path]),
   );
-  const at = deps.now?.() ?? new Date();
+  const at = new Date();
   for (const step of plan.steps) {
     const outcome = await write(db, scope, step, at);
     if (outcome.ok) continue;

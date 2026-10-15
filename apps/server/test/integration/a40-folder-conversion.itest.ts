@@ -6,7 +6,7 @@ import { folderCourseId, folderRowId } from '../../src/content/folder-ids';
 import { listResourceJobStatus } from '../../src/db/jobs/derived';
 import { isProcessed } from '../../src/jobs/reading-ingest.job';
 import { asCourseScope } from '../fixtures/world';
-import { entry, type Folder, folder, ids, type SyncWorld, syncWorld } from './course-folder';
+import { entry, type Folder, folder, type SyncWorld, sha256, syncWorld } from './course-folder';
 
 // A40 at level 1 (§13, N4): `syncCourse` stores what the editor's forms store for the same files.
 
@@ -101,9 +101,22 @@ test('A40 a synced course folder holds the types, stored content and derived out
   });
   const scope = asCourseScope(folderCourseId(w.ana, 'reef-ecology'), w.ana);
   const { courseId } = scope;
-  const objects = sql`select key, content_type from storage_objects where course_id = ${courseId}`;
+  const objects = sql`select key, sha256, content_type from storage_objects where course_id = ${courseId}`;
   const types = async () => (await w.db.execute(sql`${objects} order by key`)).rows;
   const stored = await types();
+  // Each file has the type the upload routes give its kind; the declared notebook, whose bytes are
+  // no fixture file's, is the one row left.
+  const kinds: Record<string, string> = {
+    html: 'text/html',
+    md: 'text/markdown',
+    pdf: 'application/pdf',
+  };
+  const kindOf = (path: string) => kinds[path.split('.')[1] ?? ''] ?? 'application/octet-stream';
+  const want = new Map([...f.bytes].map(([path, b]) => [sha256(b), kindOf(path)]));
+  const kind = (r: Record<string, unknown>) =>
+    want.get(String(r.sha256)) ?? 'application/x-ipynb+json';
+  expect(stored.map((r) => r.content_type)).toEqual(stored.map(kind));
+  expect(stored).toHaveLength(7);
 
   // The same files through the upload, workspace-file and resource routes, into a second topic.
   const post = async (url: string, payload: object) =>
@@ -115,40 +128,41 @@ test('A40 a synced course folder holds the types, stored content and derived out
     const body = await editorBody(f, courseId, r);
     made.push((await post(`/api/courses/${courseId}/topics/${topic.id}/resources`, body)).id);
   }
-  for (let i = 0; i < 240; i++) {
-    const heads = (await listResourceJobStatus(w.db, scope)).filter((h) => isProcessed(h.type));
-    if (heads.every((h) => h.status?.state === 'ready' || h.status?.state === 'failed')) break;
-    await new Promise((resolve) => setTimeout(resolve, 250));
-  }
-  const mine = await heads(
-    courseId,
-    entries.map((r) => folderRowId(courseId, 'resource', r.id)),
-  );
+  const converted = async () =>
+    (await listResourceJobStatus(w.db, scope))
+      .filter((h) => isProcessed(h.type))
+      .every((h) => h.status?.state === 'ready' || h.status?.state === 'failed');
+  await expect.poll(converted, { timeout: 90_000, interval: 250 }).toBe(true);
+  const synced = entries.map((r) => folderRowId(courseId, 'resource', r.id));
+  const mine = await heads(courseId, synced);
   expect(new Set(mine.map((head) => head.type)).size).toBe(8);
-  expect(await heads(courseId, made)).toEqual(mine);
+  const theirs = await heads(courseId, made);
+  expect(theirs).toEqual(mine);
   // The editor's uploads found every object stored as sync stored it, with its type.
   expect(await types()).toEqual(stored);
+  // The notebook sync stored names the ids the workspace-file route gave the editor.
   type Declared = { sourceKey: string; workspaceFiles: { path: string; resourceId: string }[] };
-  const notebook = mine.find((h) => h.type === 'notebook')?.content;
-  const { sourceKey, workspaceFiles } = (notebook ?? {}) as Declared;
-  expect(workspaceFiles.map((file) => file.path)).toEqual([
-    'data/quadrats.csv',
-    'data/transects.csv',
-  ]);
+  const declared = (list: typeof mine) =>
+    (list.find((h) => h.type === 'notebook')?.content ?? {}) as Declared;
+  const { sourceKey } = declared(mine);
+  const { workspaceFiles } = declared(theirs);
+  expect(workspaceFiles.map((d) => d.path)).toEqual(['data/quadrats.csv', 'data/transects.csv']);
   const { body } = await w.storage.get(sourceKey);
   expect(JSON.parse(await text(body)).metadata.parallax.files).toEqual(
     workspaceFiles.map(({ path, resourceId }) => ({ path, resourceId })),
   );
 
-  // References by folder id are stored as row ids, as the topic form stores them.
-  const sampling = (await w.rows(courseId)).topics.find(
-    (t) => t.id === folderRowId(courseId, 'topic', ids.sampling),
+  // References by folder id hold the ids of the rows they name, as the topic form stores them.
+  const rows = await w.rows(courseId);
+  const [tides, sampling] = ['Tides and zones', 'Sampling a reef'].map((title) =>
+    rows.topics.find((t) => t.title === title),
+  );
+  const quiz = rows.resources.find(
+    (r) => r.title === 'Sampling quiz' && r.topic_id === sampling?.id,
   );
   expect(sampling).toMatchObject({
-    prerequisites: [folderRowId(courseId, 'topic', ids.tides)],
-    completion_rule: {
-      requires: ['reviewed:*', `submitted:${folderRowId(courseId, 'resource', ids.quiz)}`],
-    },
+    prerequisites: [tides?.id],
+    completion_rule: { requires: ['reviewed:*', `submitted:${quiz?.id}`] },
   });
 
   // A file the upload route refuses: sync refuses it with the route's message, and writes no draft.
