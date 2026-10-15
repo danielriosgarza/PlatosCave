@@ -94,12 +94,12 @@ test('parallax dev serves the pages and the logo, and no file of a course folder
   // A link in src/, a folder the server serves, to a course folder.
   fs.symlinkSync(join(root, 'courses/statistics'), join(root, 'src/linked'), 'junction');
   const server = await devServer(await loadSite(root), 0);
-  // The build's check of Node's reads is armed by `compile` alone, so the server leaves it off.
-  expect(() =>
-    fs.readFileSync(join(root, 'courses/statistics/means/reading/means.md')),
-  ).not.toThrow();
-  await server.listen();
   try {
+    // The build's check of Node's reads is armed by `compile` alone, so the server leaves it off.
+    expect(() =>
+      fs.readFileSync(join(root, 'courses/statistics/means/reading/means.md')),
+    ).not.toThrow();
+    await server.listen();
     const base = server.resolvedUrls?.local[0] ?? '';
     const real = fs.realpathSync.native(root).replaceAll('\\', '/');
     const status = async (path: string) => (await fetch(new URL(path, base))).status;
@@ -124,10 +124,15 @@ test('parallax --help lists the commands, and a command module without run is na
   expect(lines[0]).toBe('usage: parallax <command>');
   const listed = lines[1]?.replace(/^Commands: /, '').split(', ');
   expect(listed).toEqual(expect.arrayContaining(['build', 'check', 'dev']));
+  // On the standard output, and after a command too, which then does not run.
+  const cwd = join(pkg, 'fixtures/site/instructor');
+  const out = vi.spyOn(console, 'log').mockImplementation(() => {});
+  expect(await main(['dev', '--help'], { cwd })).toBe(0);
+  expect(out.mock.calls.map(([line]) => line)).toEqual(lines.slice(0, 2));
+  out.mockRestore();
   const commands = join(temp, 'commands');
   fs.mkdirSync(commands);
   fs.writeFileSync(join(commands, 'broken.ts'), 'export const value = 1;\n');
-  const cwd = join(pkg, 'fixtures/site/instructor');
   expect(await main(['broken'], { cwd, commands, print })).toBe(1);
   expect(lines.at(-1)).toBe('parallax: the module of the command broken exports no run function');
 });

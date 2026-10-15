@@ -14,17 +14,21 @@ const contracts = await loadSource<typeof import('@parallax/contracts')>(
 /** The slug of the site root, the one instructor folder of instructor mode, whose reference `.` is no folder's name. */
 export const ROOT_SLUG = 'instructor';
 
+/** The catalogue's rule for a title, stricter than `course.yaml`'s: no control character. */
+const TITLE = contracts.siteCatalogue.shape.instructors.element.shape.courses.element.shape.title;
+
 /**
  * A course's title in the catalogue: the title of its `course.yaml` (`readCourseHeader`), and its
- * folder's name where the file is absent or gives no valid title. The title is read only where the
- * course folder really lies at its path in the site, with no link on the way from the site folder,
- * so that no title is read from outside the site: a linked folder keeps its name.
+ * folder's name where the file is absent or gives no title the catalogue takes. The title is read
+ * only where the course folder really lies at its path in the site, with no link on the way from
+ * the site folder, so that no title is read from outside the site: a linked folder keeps its name.
  */
 function titleOf(root: string, path: string, name: string): string {
   try {
     const dir = join(root, path, 'courses', name);
     const real = join(realpathSync.native(root), path, 'courses', name);
-    return (realpathSync.native(dir) === real && readCourseHeader(dir)?.title) || name;
+    const title = realpathSync.native(dir) === real ? readCourseHeader(dir)?.title : undefined;
+    return (title !== undefined && TITLE.safeParse(title).data) || name;
   } catch {
     return name;
   }

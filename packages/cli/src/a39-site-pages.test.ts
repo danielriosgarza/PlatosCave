@@ -58,10 +58,18 @@ test('A39 a site page at the address of a Parallax screen stops the build and na
     expect(stopped.said).toContain(`the address of the Parallax screen ${screen}.`);
   }
 
-  // A front page at / and a page at /about build, and replace the earlier build.
-  const root = site({ 'src/pages/about.tsx': page });
+  // A front page at / and a page at /about build, and replace the earlier build; so does the
+  // page's CSS module, whose every selector carries a class.
+  const root = site({
+    'src/pages/about.tsx': `import styles from './about.module.css';\nexport default () => <p className={styles.card}>About</p>;\n`,
+    'src/pages/about.module.css': `.card :is(h1, h2) { margin: 0 }\n.card { --about-gap: 7px; span { color: red } }\n.x:not(.a, b) { color: blue }\n`,
+  });
   expect(await build(root)).toMatchObject({ code: 0, kept: false });
-  expect(fs.readdirSync(join(root, 'dist/assets')).some((file) => /^about-/.test(file))).toBe(true);
+  const assets = fs.readdirSync(join(root, 'dist/assets'));
+  expect(assets.some((file) => /^about-/.test(file))).toBe(true);
+  const sheets = assets.filter((file) => file.endsWith('.css'));
+  const built = sheets.map((file) => fs.readFileSync(join(root, 'dist/assets', file), 'utf8'));
+  expect(built.join('\n')).toContain('--about-gap');
 
   // Each of these stops the build as well, before dist/ changes, and names the file.
   const front = (line: string) => ({ 'src/pages/index.tsx': `${line}\n${page}` });

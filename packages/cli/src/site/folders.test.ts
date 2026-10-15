@@ -31,7 +31,7 @@ test('the catalogue lists the instructors in the order of the configuration, wit
   });
 });
 
-test('the catalogue reads no title from outside the site: a course folder behind a link keeps its name', async () => {
+test('a course folder behind a link, or whose title the catalogue refuses, keeps its name', async () => {
   const root = join(temp, 'school');
   fs.cpSync(join(fixtures, 'school'), root, { recursive: true });
   const outside = join(temp, 'outside');
@@ -41,6 +41,9 @@ test('the catalogue reads no title from outside the site: a course folder behind
   // A link on the way counts as well: Ana's courses/ moved out of the site, a link in its place.
   fs.renameSync(join(root, 'instructors/ana/courses'), join(temp, 'ana-courses'));
   fs.symlinkSync(join(temp, 'ana-courses'), join(root, 'instructors/ana/courses'), 'junction');
+  // A title that course.yaml takes and the catalogue does not (a control character) keeps it too.
+  const yaml = join(root, 'instructors/ben/courses/statistics/course.yaml');
+  fs.writeFileSync(yaml, 'title: "Means\\tand more"\npublic: true\n');
   const linked = { slug: 'linked', title: 'linked' };
   expect(catalogue(await loadSite(root))).toEqual({
     instructors: [

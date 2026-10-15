@@ -329,6 +329,9 @@ importers:
       pdfjs-dist:
         specifier: 6.3.289
         version: 6.3.289
+      postcss:
+        specifier: 8.5.28
+        version: 8.5.28
       react:
         specifier: 19.3.0
         version: 19.3.0

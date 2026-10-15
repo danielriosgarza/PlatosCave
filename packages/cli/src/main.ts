@@ -24,10 +24,12 @@ export async function main(argv: string[], options: Options = {}): Promise<numbe
     .flatMap((file) => /^([a-z][a-z0-9-]*)\.ts$/.exec(file)?.[1] ?? [])
     .sort();
   const [name, ...args] = argv;
-  const help = name === '--help' || name === '-h';
+  // `--help` anywhere asks for the list, on the standard output, and runs no command.
+  const help = argv.some((arg) => arg === '--help' || arg === '-h');
   if (!name || help || !names.includes(name)) {
-    print(name && !help ? `parallax: unknown command ${name}` : 'usage: parallax <command>');
-    print(`Commands: ${names.join(', ') || 'none'}`);
+    const say = help ? (options.print ?? console.log) : print;
+    say(name && !help ? `parallax: unknown command ${name}` : 'usage: parallax <command>');
+    say(`Commands: ${names.join(', ') || 'none'}`);
     return help ? 0 : 1;
   }
   try {

@@ -170,7 +170,8 @@ function sitePlugin(paths: Paths, refused: string[]): Plugin {
       return copy ? { ...resolved, id: copy + query } : resolved;
     },
     transform(css, id) {
-      // Not a `?raw` or `?url` import, which loads as a string and is not applied.
+      // Not a `?raw` or `?url` import: it gives a string, not a stylesheet, and a page that applies
+      // one does so on purpose; the rule guards against accidents and is not a boundary (§6.7).
       const sheet = STYLESHEET.test(file(id)) && !/[?&](raw|url)\b/.test(id);
       if (!sheet || (!own(id) && !styles.has(file(id)))) return null;
       const problems = stylesheetProblems(own(id) ?? slash(relative(root, file(id))), css);
