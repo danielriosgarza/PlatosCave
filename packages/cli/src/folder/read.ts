@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
-import { basename, dirname, join, resolve } from 'node:path';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import type { Readable } from 'node:stream';
 import type { CourseManifest, SiteManifest } from '@parallax/contracts';
 import { loadSource } from '../paths';
@@ -18,7 +18,13 @@ const { courseMeta, topicMeta, resourceKindOf, shinyFile, shinyAddressProblem } 
 type Resource = CourseManifest['topics'][number]['resources'][number];
 type Stored = CourseManifest['files'][number];
 type Built = { resource: Resource; files: Stored[] };
-type Read<M> = { manifest: M | null; problems: Problem[]; open(file: string): Readable };
+/** `folders`: each topic's folder by its folder id; empty while `manifest` is null. */
+type Read<M> = {
+  manifest: M | null;
+  problems: Problem[];
+  folders: Map<string, string>;
+  open(file: string): Readable;
+};
 
 /** The tab folders the reader lists itself, and what each takes; exercises/ and tests/ are §6's. */
 const TAKES: Record<string, string> = {
@@ -34,9 +40,11 @@ const UNLISTED = 'no entry of topic.yaml lists it';
 const utf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
 const has = (entries: Entry[], name: string) => entries.some((e) => !e.folder && e.name === name);
 const answer = (file: string) => /^(exercise|test)$/.test(resourceKindOf(file) ?? '');
-const keep = (problem: Problem) => problem;
+type Mark = (problem: Problem, error?: unknown) => Problem;
+const keep: Mark = (problem) => problem;
 const inOverlay = (problem: Problem): Problem => ({ ...problem, overlay: true });
-type Mark = typeof keep;
+const cannot = (error: unknown) =>
+  `cannot be read (${(error as NodeJS.ErrnoException).code ?? error})`;
 type Attempt = <T>(path: string, run: () => T | Promise<T>, mark?: Mark) => Promise<T | undefined>;
 type Loaded = { definition?: unknown; problems: Problem[] };
 type Load = (root: string, path: string, type: unknown, files: string[]) => Promise<Loaded>;
@@ -52,6 +60,20 @@ type Definitions = (
   problems: Problem[],
 ) => Promise<{ source?: Source; mark: Mark; fromOverlay: boolean; load?: Load }>;
 
+/** A listing that `definitionSource` could not make: the problem at its folder, tree or overlay. */
+const failedAt =
+  (tree: string, overlay?: string, mark = keep): Mark =>
+  (problem, error) => {
+    const failed = (error as NodeJS.ErrnoException | undefined)?.path;
+    const under = (root?: string) => {
+      const from = root && failed ? relative(root, failed) : '..';
+      const out = from === '..' || from.startsWith(`..${sep}`) || isAbsolute(from);
+      return out ? undefined : from.split(sep).join('/');
+    };
+    const [inTree, held] = [under(tree), under(overlay)];
+    if (inTree !== undefined) return { ...problem, path: inTree };
+    return held === undefined ? mark(problem) : inOverlay({ ...problem, path: held });
+  };
 const isMap = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value);
 /** The fields of a parsed definition that the schema's value does not hold: keys it dropped. */
@@ -67,23 +89,34 @@ const dropped = (input: unknown, output: unknown, at: Field = []): Field[] => {
 
 /**
  * Reads one course folder (docs/design/course-folder.md §2 to §7): its topics in `position` order,
- * or its problems. A file-system error is a problem too, so it throws for none. Paths are from the
- * course folder, with `/`; a problem of the overlay is marked `overlay`.
+ * or its problems. A file-system error is a problem too, and so is any other throw: it rejects for
+ * none. Paths are from the course folder, with `/`; a problem of the overlay is marked `overlay`.
  */
 async function readCourse(dir: string, definitions: Definitions) {
   const problems: Problem[] = [];
+  const read = await readTree(dir, definitions, problems).catch((error: unknown) => {
+    problems.push(refusal('read', '', cannot(error)));
+  });
+  // One cause is named once: a folder whose listing failed for two readers is one problem.
+  const once = new Map(problems.map((problem) => [JSON.stringify(problem), problem]));
+  return { course: read?.course, problems: [...once.values()] };
+}
+
+async function readTree(dir: string, definitions: Definitions, problems: Problem[]) {
   const refuse = (path: string, message: string, code = 'layout') =>
     problems.push(refusal(code, path, message));
-  const attempt = async <T>(path: string, run: () => T | Promise<T>, mark = keep) => {
+  const attempt: Attempt = async (path, run, mark = keep) => {
     try {
       return await run();
     } catch (error) {
-      const why = `cannot be read (${(error as NodeJS.ErrnoException).code ?? error})`;
-      problems.push(mark(refusal('read', path, why)));
+      problems.push(mark(refusal('read', path, cannot(error)), error));
     }
   };
+  // A folder whose listing failed: nothing further is said of what it would have held.
+  const unread = new Set<string>();
   const listed = async (path: string) => {
     const listing = await attempt(path, () => listFolder(dir, path));
+    if (!listing) unread.add(path);
     problems.push(...(listing?.problems ?? []));
     return listing?.entries ?? [];
   };
@@ -110,6 +143,7 @@ async function readCourse(dir: string, definitions: Definitions) {
   else if (stat && !stat.isDirectory()) refuse('', 'a course folder is a folder, and not a link');
   if (problems.length > 0) return { problems };
   const top = await listed('');
+  if (unread.has('')) return { problems };
   let complete = problems.length === 0;
   for (const e of top) if (!e.folder && e.name !== 'course.yaml') refuse(e.path, IN_COURSE);
   const course = has(top, 'course.yaml')
@@ -122,9 +156,10 @@ async function readCourse(dir: string, definitions: Definitions) {
     const entries = await listed(folder.path);
     for (const e of entries)
       if (e.folder ? !TABS.includes(e.name) : e.name !== 'topic.yaml') refuse(e.path, IN_TOPIC);
+    const why = 'no topic.yaml: each folder of a course folder is a topic folder';
     const topic = has(entries, 'topic.yaml')
       ? await yaml(`${folder.path}/topic.yaml`, topicMeta)
-      : void refuse(folder.path, 'no topic.yaml: each folder of a course folder is a topic folder');
+      : void (unread.has(folder.path) || refuse(folder.path, why));
     const disk = new Map<string, Entry>();
     for (const tab of entries.filter((e) => e.folder && Object.hasOwn(TAKES, e.name))) {
       const files = await listed(tab.path);
@@ -137,6 +172,8 @@ async function readCourse(dir: string, definitions: Definitions) {
       }
     }
     if (topic) topics.push({ folder: folder.path, ...topic, disk });
+    // Of a topic whose topic.yaml is refused, the definitions are not said to be unlisted.
+    else unread.add(folder.path);
     complete &&= topic !== undefined;
   }
 
@@ -155,7 +192,9 @@ async function readCourse(dir: string, definitions: Definitions) {
     if (answers.includes(file) || (deeper.length > 0 && tab === 'tests' && own)) continue;
     const why =
       deeper.length > 0 ? NO_FOLDER : answer(`${tab}/${name}`) ? UNLISTED : `${tab}/ takes .yaml`;
-    problems.push(mark(refusal('layout', file, why)));
+    // Where a topic's folder or topic.yaml could not be read, nothing its entries decide is said.
+    const decided = why === UNLISTED || (deeper.length > 0 && tab === 'tests');
+    if (!(decided && unread.has(topic ?? ''))) problems.push(mark(refusal('layout', file, why)));
   }
 
   // Ids, positions and prerequisites across the course; each entry becomes a resource.
@@ -198,7 +237,7 @@ async function readCourse(dir: string, definitions: Definitions) {
         if (!load) add(undefined);
         else if (root && source.files.includes(path)) {
           const loaded = await attempt(path, () => load(root, path, type, source.files), mark);
-          problems.push(...(loaded?.problems ?? []).map(mark));
+          problems.push(...(loaded?.problems ?? []).map((problem) => mark(problem)));
           add({ definition: loaded?.definition });
         }
         continue;
@@ -208,7 +247,9 @@ async function readCourse(dir: string, definitions: Definitions) {
       used.add(spelled ?? file);
       if (!disk.has(file)) {
         const why = spelled ? `differs only in case from ${spelled}, the name on disk` : '';
-        at(['resources', i, 'file'], why || `no file ${path}`, 'layout');
+        // Of a tab folder whose listing failed, that problem is the one said.
+        const tab = `${folder}/${file.split('/')[0]}`;
+        if (!unread.has(tab)) at(['resources', i, 'file'], why || `no file ${path}`, 'layout');
       } else if (type === 'slides_web') {
         const bytes = await attempt(path, () => fs.readFileSync(join(dir, path)));
         try {
@@ -236,7 +277,7 @@ async function readCourse(dir: string, definitions: Definitions) {
       } else add({ file: path }, await stored(path, contracts.uploadFormatOf(file)));
     }
     for (const [key, e] of disk) if (!used.has(key) && !e.folder) refuse(e.path, UNLISTED);
-    built.push({ meta, resources });
+    built.push({ folder, meta, resources });
   }
   if (!course || problems.some((p) => p.severity === 'error')) return { problems };
   built.sort((a, b) => a.meta.position - b.meta.position);
@@ -260,7 +301,8 @@ const fromSource =
     const into = held?.isDirectory() ? overlay : undefined;
     const mark = declared ? inOverlay : keep;
     const look = () => definitionSource({ tree: dir, public: !!declared, overlay: into }, listed);
-    const source = declared === undefined ? undefined : await attempt('', look, mark);
+    const where = failedAt(dir, into, mark);
+    const source = declared === undefined ? undefined : await attempt('', look, where);
     const load: Load = async (root, path, type, files) => {
       const loaded = await (type === 'test'
         ? loadTest(root, path, files)
@@ -285,14 +327,14 @@ const listedOnly =
   (dir: string): Definitions =>
   async (declared, listed, attempt) => {
     const look = () => definitionSource({ tree: dir, public: !!declared }, declared ? [] : listed);
-    const source = declared === undefined ? undefined : await attempt('', look);
+    const source = declared === undefined ? undefined : await attempt('', look, failedAt(dir));
     return { source, mark: keep, fromOverlay: false };
   };
 
 /** A manifest as its schema gives it, or a problem; `open(file)` opens only a file it lists. */
 function manifestOf<M extends { files: Stored[] }>(
   dir: string,
-  problems: Problem[],
+  { course, problems }: Awaited<ReturnType<typeof readCourse>>,
   read: { data?: M; error?: unknown } | undefined,
 ): Read<M> {
   if (read?.error) problems.push(refusal('manifest', '', `not a valid manifest: ${read.error}`));
@@ -301,7 +343,10 @@ function manifestOf<M extends { files: Stored[] }>(
     if (!manifest?.files.some((s) => s.path === file)) throw new Error(`${file} is not listed`);
     return fs.createReadStream(join(dir, file));
   };
-  return { manifest, problems, open };
+  // A course the reader passed has an id for each topic (`no id` is an error).
+  const passed = (manifest && course?.topics) || [];
+  const folders = new Map(passed.map((t): [string, string] => [t.meta.id ?? '', t.folder]));
+  return { manifest, problems, folders, open };
 }
 
 /**
@@ -314,16 +359,14 @@ export async function readCourseForSync(
 ): Promise<Read<CourseManifest>> {
   // Resolved: with a trailing separator `lstat` would follow a link to the folder (design §7).
   const tree = resolve(dir);
-  const { course, problems } = await readCourse(
-    tree,
-    fromSource(tree, overlay && resolve(overlay)),
-  );
+  const read = await readCourse(tree, fromSource(tree, overlay && resolve(overlay)));
+  const { course } = read;
   const topics = course?.topics.map(({ meta, resources }) => {
     return { ...meta, resources: resources.map((r) => r.resource) };
   });
   const files = course?.topics.flatMap((topic) => topic.resources.flatMap((r) => r.files));
   const value = { ...course?.meta, topics, files };
-  return manifestOf(tree, problems, course && contracts.courseManifest.safeParse(value));
+  return manifestOf(tree, read, course && contracts.courseManifest.safeParse(value));
 }
 
 /**
@@ -332,7 +375,8 @@ export async function readCourseForSync(
  */
 export async function readCourseForSite(dir: string): Promise<Read<SiteManifest>> {
   const tree = resolve(dir);
-  const { course, problems } = await readCourse(tree, listedOnly(tree));
+  const read = await readCourse(tree, listedOnly(tree));
+  const { course } = read;
   const shown = (list: Built[]) => list.filter((r) => r.resource.visibility === 'visible');
   const topics = course?.topics.map(({ meta: { completionRule: _, ...topic }, resources }) => ({
     ...topic,
@@ -343,7 +387,7 @@ export async function readCourseForSite(dir: string): Promise<Read<SiteManifest>
   }));
   const files = course?.topics.flatMap((topic) => shown(topic.resources).flatMap((r) => r.files));
   const value = { title: course?.meta.title, topics, files };
-  return manifestOf(tree, problems, course && contracts.siteManifest.safeParse(value));
+  return manifestOf(tree, read, course && contracts.siteManifest.safeParse(value));
 }
 
 /**
