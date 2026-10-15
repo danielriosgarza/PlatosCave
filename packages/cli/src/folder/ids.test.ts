@@ -18,12 +18,12 @@ const removed = [
   '6a5b4c3d-2e1f-4a0b-9c8d-7e6f5a4b3c2d',
 ];
 let sites = 0;
-function site() {
+function site(change = (text: string) => text) {
   const dir = join(temp, `site-${sites++}`);
   fs.cpSync(fixture, dir, { recursive: true });
   const text = fs.readFileSync(join(dir, sampling), 'utf8');
   const without = removed.reduce((t, id) => t.replace(new RegExp(`id: ${id}\\n *`), ''), text);
-  fs.writeFileSync(join(dir, sampling), without);
+  fs.writeFileSync(join(dir, sampling), change(without));
   return dir;
 }
 /** Every file under a folder, by its path with `/`, with its bytes. */
@@ -61,6 +61,32 @@ test('--write-ids adds exactly the missing ids and prints each; the rest stays b
   expect(snapshot(dir)).toEqual(after);
 });
 
+const unread = `${sampling}: no id written: with them it would not read the same`;
+const bom = String.fromCharCode(0xfeff);
+test.each([
+  ['a byte-order mark before its first key', (t: string) => bom + t.replace(/^#.*\n/gm, ''), []],
+  ['an anchored, tagged first key', (t: string) => t.replace('- file', '- &d !!str file'), []],
+  [
+    'an explicit key, which no edit keeps',
+    (t: string) => t.replace('- file:', '- ? file\n    :'),
+    [unread],
+  ],
+])(
+  '--write-ids on a topic.yaml with %s writes the ids and no other byte, or nothing',
+  async (_, change, refused) => {
+    const dir = site(change);
+    const text = fs.readFileSync(join(dir, sampling), 'utf8');
+    const { code, lines } = await check(dir);
+    expect(code, lines.join(' | ')).toBe(refused.length);
+    expect(lines).toEqual(expect.arrayContaining(refused));
+    const ids = lines.flatMap((line) => line.split(': set to ')[1] ?? []);
+    expect(ids).toHaveLength(refused.length ? 0 : 3);
+    // With each new line taken out again, the file is as it was.
+    const written = fs.readFileSync(join(dir, sampling), 'utf8');
+    expect(ids.reduce((t, id) => t.replace(new RegExp(`id: ${id}\n *`), ''), written)).toBe(text);
+  },
+);
+
 test('--write-ids writes nothing in the course while an entry’s file is gone and a file is unlisted, and names both', async () => {
   const dir = site();
   // methods.md renamed, in another Unicode form: the entry's file is gone, and this file unlisted.
@@ -84,11 +110,14 @@ test('--write-ids writes nothing in the course while an entry’s file is gone a
 test('a topic.yaml that changed between the read and the write is not replaced', async () => {
   const dir = join(site(), course);
   const plan = await planIds(dir);
-  expect(plan?.map((edit) => edit.path)).toEqual(['sampling/topic.yaml']);
+  expect(plan?.edits.map((edit) => edit.path)).toEqual(['sampling/topic.yaml']);
   const file = join(dir, 'sampling/topic.yaml');
   fs.appendFileSync(file, '# Edited meanwhile.\n');
   const edited = fs.readFileSync(file);
-  expect(applyIds(dir, plan ?? [])).toEqual({ written: [], changed: ['sampling/topic.yaml'] });
+  expect(applyIds(dir, plan?.edits ?? [])).toEqual({
+    written: [],
+    changed: ['sampling/topic.yaml'],
+  });
   expect(fs.readFileSync(file)).toEqual(edited);
   expect(fs.readdirSync(join(dir, 'sampling'))).toEqual(
     fs.readdirSync(join(fixture, course, 'sampling')),

@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import type { CourseManifest } from '@parallax/contracts';
 import { afterAll, expect, test, vi } from 'vitest';
+import { LEFT_OUT } from '../commands/check';
 import { main } from '../main';
 import { loadSource } from '../paths';
 import { type Conversion, publicationReport, uploadProblems } from './publication';
@@ -121,6 +122,9 @@ test('check refuses a 26 MiB PDF, a file with a NUL byte, an invalid notebook an
       `${course}/sampling/notebooks/counts.ipynb: The file is not a Jupyter notebook: it is not valid JSON`,
       `private/${course}/sampling/tests/quiz.yaml: ${unstorable}`,
       `private/${course}/sampling/exercises/estimate.yaml: ${unstorable}`,
+      // Publication's report and the note on what check leaves out are printed as well.
+      `warning: ${course}/sampling/notebooks/tide.shiny.yaml: “Tide explorer” has no accessible alternative`,
+      LEFT_OUT,
     ]),
   );
 });

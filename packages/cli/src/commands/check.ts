@@ -2,7 +2,7 @@ import { join, posix } from 'node:path';
 import { applyIds, planIds, topicFolders } from '../folder/ids';
 import { type Located, publicationReport, uploadProblems } from '../folder/publication';
 import { readCourseForSite, readCourseForSync } from '../folder/read';
-import type { Problem } from '../folder/yaml';
+import { type Problem, refusal } from '../folder/yaml';
 import type { Command } from '../main';
 
 /** What `check` says at level 0, which reads a course folder as a level 0 build does (§6). */
@@ -43,16 +43,17 @@ export const run: Command['run'] = async ({ site, args }) => {
       const from = posix.join(path, 'courses', name);
       const overlay = join(site.root, 'private', from);
       const dir = join(site.root, from);
+      const problems: Problem[] = [];
       if (writeIds) {
         const plan = await planIds(dir);
         if (!plan) print(`${from}: no id written while the errors below stand`);
-        const { written, changed } = applyIds(dir, plan ?? []);
+        const { written, changed } = applyIds(dir, plan?.edits ?? []);
         for (const w of written) print(`${from}/${w.path}: ${w.field}: set to ${w.id}`);
-        for (const at of changed) print(`${from}/${at}: changed meanwhile, so no id was written`);
-        errors += changed.length;
+        const meanwhile = (at: string) => refusal('id', at, 'changed meanwhile: no id written');
+        problems.push(...(plan?.problems ?? []), ...changed.map(meanwhile));
       }
       const read = await (level0 ? readCourseForSite(dir) : readCourseForSync(dir, { overlay }));
-      const problems: Problem[] = [...read.problems];
+      problems.push(...read.problems);
       if (read.manifest) {
         const folders = topicFolders(dir);
         const options = { approvedShinyOrigins: site.config.origins.shiny, folders };
