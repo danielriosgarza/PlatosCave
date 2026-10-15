@@ -5,9 +5,10 @@ import { join, resolve, sep } from 'node:path';
 import type { StoredNotebook } from '@parallax/contracts';
 import { afterAll, beforeAll, expect, test } from 'vitest';
 import { vendor } from '../../scripts/vendor';
+import { readCourseForSite } from '../folder/read';
 import type { Problem } from '../folder/yaml';
 import { loadSource } from '../paths';
-import { buildCourse } from './course';
+import { buildCourse, conversionIo } from './course';
 import { notebookDownload } from './download';
 import { createOutput } from './output';
 import { moduleUrl, underGuard } from './testing';
@@ -35,6 +36,7 @@ const yaml = fs.readFileSync(join(sampling, 'topic.yaml'), 'utf8');
 /** The folder id of an entry of the topic "Sampling a reef", by its file. */
 const idOf = (file: string) => RegExp(`id: (\\S+)\\s+file: ${file}\\s`).exec(yaml)?.[1] ?? '';
 const sha = (bytes: Uint8Array) => createHash('sha256').update(bytes).digest('hex');
+const errors = (problems: Problem[]) => problems.filter((p) => p.severity === 'error');
 const lines = (problems: Problem[]) => problems.map((p) => `${p.severity} ${p.code} ${p.path}`);
 const ids = (list: { resourceId: string }[]) => list.map((r) => r.resourceId);
 /** The path under the work folder of what an address names: an object, or a data file. */
@@ -55,6 +57,10 @@ function copy(site: string): string {
   fs.cpSync(join(fixtures, site), root, { recursive: true });
   return root;
 }
+/** Writes a file of the topic "Sampling a reef" in a copy of the instructor site. */
+const into = (root: string, file: string, bytes: string | Buffer) =>
+  fs.writeFileSync(join(root, 'courses/reef-ecology/sampling', file), bytes);
+const said = (problems: Problem[]) => problems.map((p) => `${p.code} ${p.path}: ${p.message}`);
 /** Builds one course of a site into its work folder: the problems, and every file written. */
 async function build(root: string, course = 'courses/reef-ecology', ref = 'reef-ecology') {
   const work = join(root, '.parallax/open');
@@ -259,6 +265,86 @@ test('a reading, a deck and a notebook Markdown cell with a script, a handler an
   const data = [...main.files].filter(([path]) => path.startsWith('site/'));
   const hostile = data.filter(([, bytes]) => /<script|onerror|javascript:/i.test(String(bytes)));
   expect([data.length, hostile.map(([path]) => path)]).toEqual([11, []]);
+});
+
+test('buildCourse refuses what the reader and the upload rules refuse, and a PDF it cannot read, with the path and the message, and writes nothing', async () => {
+  const [missing, refused, unread] = [copy('instructor'), copy('instructor'), copy('instructor')];
+  // The reader's error stops the course before the upload rules see the empty data file.
+  fs.rmSync(join(missing, 'courses/reef-ecology/sampling/slides/zones.pdf'));
+  into(missing, 'notebooks/counts/data/empty.csv', '');
+  const read = await build(missing);
+  expect(said(errors(read.problems))).toEqual([
+    'layout sampling/topic.yaml: no file sampling/slides/zones.pdf',
+  ]);
+  // The upload rules' errors stop it before conversion, which would refuse the PDF that is not.
+  into(refused, 'reading/paper.pdf', Buffer.alloc(26 * 2 ** 20, '%PDF-'));
+  into(refused, 'slides/zones.pdf', 'PK\u0003\u0004 a zip archive');
+  into(refused, 'notebooks/counts.ipynb', '{"cells": [');
+  into(refused, 'notebooks/counts/data/empty.csv', '');
+  const upload = await build(refused);
+  expect(said(errors(upload.problems))).toEqual([
+    'upload sampling/notebooks/counts/data/empty.csv: The file is empty',
+    'upload sampling/notebooks/counts.ipynb: The file is not a Jupyter notebook: it is not valid JSON',
+    'upload sampling/slides/zones.pdf: The file is not a PDF',
+    'upload sampling/reading/paper.pdf: The file is larger than 25 MB',
+  ]);
+  into(unread, 'reading/paper.pdf', '%PDF-1.4 and nothing a reader can parse');
+  const pdf = await build(unread);
+  const paper = 'sampling/reading/paper.pdf';
+  expect(said(errors(pdf.problems))).toEqual([
+    `unprocessed_reading ${paper}: “Counting fish along a transect” could not be processed; upload it again or retry`,
+  ]);
+  expect([read.files.size, upload.files.size, pdf.files.size]).toEqual([0, 0, 0]);
+}, 300_000);
+
+test('buildCourse refuses a notebook whose file for download would not pass openNotebookFile, naming the file, and writes nothing', async () => {
+  const root = copy('instructor');
+  // Unique ids that leave the renderer only an id past 64 characters for the last cell.
+  const id = (n: number) => (n < 20 ? `cell-40${'-40'.repeat(n)}` : `f${n}`);
+  const raw = { cell_type: 'raw', metadata: {}, source: '' };
+  const cells = Array.from({ length: 41 }, (_, n) => (n < 40 ? { ...raw, id: id(n) } : raw));
+  const notebook = { cells, metadata: {}, nbformat: 4, nbformat_minor: 4 };
+  into(root, 'notebooks/counts.ipynb', JSON.stringify(notebook));
+  const { problems, files } = await build(root);
+  const why = 'The notebook file for download cannot be composed: Invalid string: must match';
+  expect(said(errors(problems))).toEqual([
+    `notebook sampling/notebooks/counts.ipynb: ${why} pattern /^[a-zA-Z0-9_-]{1,64}$/ (cells.40.id)`,
+  ]);
+  expect(files.size).toBe(0);
+}, 120_000);
+
+test('a conversion that fails gives a note with its own message, beside an error of the report, and writes nothing', async () => {
+  const root = copy('instructor');
+  // Over the 5 MB conversion reads of a native reading, under the 25 MB of the upload rules.
+  into(root, 'reading/methods.md', `# Methods\n\n${'a'.repeat(6 * 2 ** 20)}\n`);
+  const { problems, files } = await build(root);
+  const methods = 'sampling/reading/methods.md';
+  const own = problems.filter((p) => p.path === methods).map((p) => `${p.severity} ${p.message}`);
+  // The note is conversion's own sentence, as the job records it, without the error's name.
+  expect(own).toEqual([
+    'note The file is larger than 5 MB',
+    'error “Survey methods” could not be processed; upload it again or retry',
+  ]);
+  expect(files.size).toBe(0);
+}, 120_000);
+
+test('conversionIo refuses a file over its limit, a file changed since the reader read it, and a key that no file has', async () => {
+  const root = copy('instructor');
+  const methods = join(root, 'courses/reef-ecology/sampling/reading/methods.md');
+  fs.writeFileSync(methods, `# Methods\n\n${'a'.repeat(2 ** 20)}\n`);
+  const { manifest, open } = await readCourseForSite(join(root, 'courses/reef-ecology'));
+  const { keys, bytes, io } = conversionIo(manifest?.files ?? [], open);
+  const key = keys.get('sampling/reading/methods.md') ?? '';
+  const whole = sha(fs.readFileSync(methods));
+  expect([sha(await io.read(key, 2 * 2 ** 20)), sha(bytes.get(key) ?? Buffer.of())]).toEqual([
+    whole,
+    whole,
+  ]);
+  await expect(io.read(key, 2 ** 20)).rejects.toThrow('The file is larger than 1 MB');
+  fs.appendFileSync(methods, 'changed');
+  await expect(io.read(key, 2 * 2 ** 20)).rejects.toThrow('The file changed');
+  const none = `open/objects/${'0'.repeat(64)}`;
+  await expect(io.read(none, 2 ** 20)).rejects.toThrow('No file of the course has this key');
 });
 
 test('a topic with only an exercise and a test is built without empty_topic, and one with no shown resource keeps it', async () => {
