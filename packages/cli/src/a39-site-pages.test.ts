@@ -64,24 +64,34 @@ test('A39 a site page at the address of a Parallax screen stops the build and na
   expect(fs.readdirSync(join(root, 'dist/assets')).some((file) => /^about-/.test(file))).toBe(true);
 
   // Each of these stops the build as well, before dist/ changes, and names the file.
-  const raw = (path: string) => ({ 'src/pages/index.tsx': `import '../../${path}?raw';\n${page}` });
+  const front = (line: string) => ({ 'src/pages/index.tsx': `${line}\n${page}` });
+  const raw = (path: string) => front(`import '../../${path}?raw';`);
+  const url = (path: string) => front(`new URL('../../${path}', import.meta.url);`);
   const notes = 'courses/statistics/means/reading/means.md';
+  const yaml = 'private/courses/statistics/means/exercises/mean.yaml';
   const lies = 'which lies in a course folder or the private overlay';
-  const glob = `import.meta.glob('../../courses/**/*.md', { eager: true });\n${page}`;
+  const glob = front("import.meta.glob('../../courses/**/*.md', { eager: true });");
+  const twins = { 'src/pages/about.tsx': page, 'src/pages/about/index.tsx': page };
+  const worker = front("new Worker(new URL('./_worker.ts', import.meta.url));");
   const refused: [Record<string, string>, string, string?][] = [
-    [
-      { 'src/pages/about.tsx': page, 'src/pages/about/index.tsx': page },
-      'about.tsx and src/pages/about/index.tsx are both at /about',
-    ],
+    [twins, 'about.tsx and src/pages/about/index.tsx are both at /about'],
     [{ 'src/pages/api/v2.tsx': page }, 'src/pages/api/v2.tsx would be at /api/v2, under /api'],
     [{ 'src/pages/assets.tsx': page }, 'src/pages/assets.tsx would be at /assets, under /assets'],
     [{ 'src/pages/content/x.tsx': page }, 'src/pages/content/x.tsx would be at /content/x'],
     [{ 'src/pages/notes.mdx': '# Notes\n' }, 'src/pages/notes.mdx: a page is a .tsx or .jsx'],
     [raw(notes), `src/pages/index.tsx imports ${notes}, ${lies}`],
-    [{ 'src/pages/index.tsx': glob }, `src/pages/index.tsx imports ${notes}, ${lies}`],
+    [glob, `src/pages/index.tsx imports ${notes}, ${lies}`],
+    // A file that Vite reads itself, `?inline` or not, and a worker, which is a build of its own.
+    [url(notes), `The build would read ${notes}, ${lies}`],
+    [url(`${notes}?inline`), `The build would read ${notes}, ${lies}`],
+    [url(yaml), `The build would read ${yaml}, ${lies}`],
+    [front("import './_composes.module.css';"), `reading/means.module.css, ${lies}`],
+    [worker, `src/pages/_worker.ts imports ${notes}, ${lies}`],
     // A course folder or an overlay that is a link counts where it leads.
     [raw(notes), 'src/pages/index.tsx imports ', 'courses/statistics'],
-    [raw('private/courses/statistics/means/exercises/mean.yaml'), 'index.tsx imports ', 'private'],
+    [raw(yaml), 'src/pages/index.tsx imports ', 'private'],
+    [url(notes), 'The build would read ', 'courses/statistics'],
+    [url(yaml), 'The build would read ', 'private'],
   ];
   for (const [files, named, linked] of refused) {
     const stopped = await build(site(files, linked));

@@ -24,9 +24,7 @@ const hash = (file: string) => createHash('sha256').update(fs.readFileSync(file)
 const web = join(repo, 'apps/web/src');
 /** The hashes of the repository's route files and of its generated route tree. */
 const routes = () =>
-  [...files(join(web, 'routes')), '../routeTree.gen.ts'].map((file) =>
-    hash(join(web, 'routes', file)),
-  );
+  [...files(join(web, 'routes')), '../routeTree.gen.ts'].map((f) => hash(join(web, 'routes', f)));
 /** The names of a list of Vite plugins, nested lists flattened in order. */
 const names = async (plugins: PluginOption[]): Promise<string[]> => {
   const all = (await Promise.all(plugins)).flat(9) as (Plugin | false | null | undefined)[];

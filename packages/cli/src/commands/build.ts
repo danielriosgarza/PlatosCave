@@ -10,9 +10,8 @@ const stop = (line: string) => {
 };
 
 /**
- * `parallax build` (docs/design/site.md §5, §6.4) at levels 1 and 2: the compile, then `dist/`.
- * A build that stops leaves `dist/` as it was. It opens no file of a course folder, so it needs
- * no private overlay.
+ * `parallax build` (docs/design/site.md §5, §6.4) at levels 1 and 2: the compile, then `dist/`. A
+ * build that stops leaves `dist/` as it was. It opens no course file, so it needs no overlay.
  */
 export const run: Command['run'] = async ({ site }) => {
   if (site.config.level === 0) return stop(LEVEL_0);

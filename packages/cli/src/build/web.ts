@@ -1,4 +1,4 @@
-import * as fs from 'node:fs';
+import fs from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { tanstackRouter } from '@tanstack/router-plugin/vite';
 import react from '@vitejs/plugin-react';
@@ -15,8 +15,23 @@ const slash = (path: string) => path.replaceAll('\\', '/');
 /** A module id without its query, written with `/`. */
 const file = (id: string) => slash(id.replace(/\?.*$/, ''));
 const MAIN = 'src="/src/main.tsx"';
+const ENTRY = 'src="/src/site-entry.gen.tsx"';
 /** The course folders of both modes, which move between the modes unchanged, and the overlay. */
 const HIDDEN = /^(courses|private|instructors\/[^/]+\/courses)(\/|$)/i;
+
+// Vite reads some files without asking a plugin: the asset of a `new URL(…, import.meta.url)` or
+// of a stylesheet's `url()`, and the stylesheet of an `@import` or a `composes`. So Node's reads
+// ask `reading` while a site builds; they are wrapped once, as postcss-modules keeps what it found.
+let reading: ((path: string) => void) | undefined;
+for (const at of [fs, fs.promises]) {
+  for (const name of ['readFile', 'readFileSync'].filter((name) => name in at)) {
+    const read = Reflect.get(at, name);
+    Reflect.set(at, name, (...args: unknown[]) => {
+      reading?.(String(args[0]));
+      return Reflect.apply(read, at, args);
+    });
+  }
+}
 
 /** Where a site's build lives (§3), absolute and from the site folder's real path. */
 export function buildPaths(site: string) {
@@ -26,19 +41,15 @@ export function buildPaths(site: string) {
 }
 type Paths = ReturnType<typeof buildPaths>;
 
-/**
- * The plugins of `apps/web/vite.config.ts`, in its order. The router keeps its temporary files in
- * `tmpDir`, which would otherwise be `.tanstack/` in the working directory.
- */
+/** The plugins of `apps/web/vite.config.ts`, in order; the router's temporary files in `tmpDir`. */
 export const webPlugins = (tmpDir: string) => [
   tanstackRouter({ target: 'react', autoCodeSplitting: true, tmpDir }),
   react(),
 ];
 
 /**
- * Steps 1 and 2 of §6.4: the sources copied into `.parallax/app/` (in a packed tool only when the
- * copy is of another version; in the repository they change under one version), then the page
- * list with the props of §6.6, the entry that mounts the application with them, and `index.html`.
+ * Steps 1 and 2 of §6.4: the sources copied into `.parallax/app/` (in a packed tool only for a new
+ * version), the page list with the props of §6.6, the entry that mounts the app, and `index.html`.
  */
 function prepare(site: Site, paths: Paths, pages: Page[]): void {
   const { version } = JSON.parse(fs.readFileSync(join(packageRoot, 'package.json'), 'utf8'));
@@ -58,9 +69,7 @@ function prepare(site: Site, paths: Paths, pages: Page[]): void {
   const src = join(paths.web, 'src');
   const from = (path: string) => JSON.stringify(slash(relative(src, join(paths.root, path))));
   const { name, logo } = site.config;
-  const list = pages.map(
-    (page) => `\n  { path: '${page.path}', load: () => import(${from(page.file)}) },`,
-  );
+  const list = pages.map((p) => `\n  { path: '${p.path}', load: () => import(${from(p.file)}) },`);
   const shown = logo ? `logo: { src: logo, alt: ${JSON.stringify(logo.alt)} }, ` : '';
   // The catalogue of §6.6 stays empty until `src/site/folders.ts` builds it.
   const props = `{ site: { name: ${JSON.stringify(name)}, ${shown}entry: '/courses' }, catalogue };`;
@@ -77,16 +86,10 @@ mount(document.getElementById('root') as HTMLElement, { pages, props });\n`;
   fs.writeFileSync(join(src, 'site-entry.gen.tsx'), entry);
   const html = fs.readFileSync(join(sourceRoot('web'), 'index.html'), 'utf8');
   if (!html.includes(MAIN)) throw new Error(`index.html of the web sources has no ${MAIN}`);
-  fs.writeFileSync(
-    join(paths.web, 'index.html'),
-    html.replace(MAIN, 'src="/src/site-entry.gen.tsx"'),
-  );
+  fs.writeFileSync(join(paths.web, 'index.html'), html.replace(MAIN, ENTRY));
 }
 
-/**
- * Where the course folders of both modes and the overlay really lie, in lower case: each one and
- * the target of every link in it, so a link counts where it leads. Only listings are read.
- */
+/** The real paths of the course folders, the overlay and each link in them, in lower case. */
 function hiddenTrees(root: string): string[] {
   const real = new Set<string>();
   const below = (dir: string): void => {
@@ -111,8 +114,9 @@ function hiddenTrees(root: string): string[] {
 /**
  * The resolver of §6.4: a bare import of the work tree as from the file's original place, taken
  * from the copy; the shared packages from the web sources; `parallax-site/pages` as the copy of
- * `sitePages.tsx`. Whatever lies in a course folder or the private overlay, by its path in the
- * site or where it really lies, stops the build; each refusal is also put into `refused`.
+ * `sitePages.tsx`. A file in a course folder or the private overlay, by its path in the site or
+ * where it really lies, stops the build when a module imports it, the bundle holds it or Node reads
+ * it while the build runs (`reading`, until `compile` ends); each refusal is put into `refused`.
  */
 function sitePlugin(paths: Paths, refused: string[]): Plugin {
   const root = slash(paths.root);
@@ -130,19 +134,17 @@ function sitePlugin(paths: Paths, refused: string[]): Plugin {
     const ours = path.startsWith(`${root}/`) && !path.startsWith(`${root}/.parallax/`);
     return ours && !path.includes('/node_modules/') ? path.slice(root.length + 1) : undefined;
   };
-  const trees = hiddenTrees(paths.root);
-  /** In a course folder or the overlay, by its path in the site or where it really lies. */
-  const hidden = (id: string) => {
-    const path = slash(resolve(paths.web, file(id))).toLowerCase();
-    const inTree = trees.some((tree) => path === tree || path.startsWith(`${tree}/`));
-    return inTree || HIDDEN.test(own(id) ?? '');
-  };
   const named = (id: string) => own(id) ?? file(id);
-  const refuse = (what: string) => {
-    const line = `${what}, which lies in a course folder or the private overlay: a site's pages cannot use course material.`;
+  const trees = hiddenTrees(paths.root);
+  /** Stops the build with `<what> <file>, which lies …` when `id` lies in one of them. */
+  const check = (what: string, id: string) => {
+    const path = `${slash(resolve(paths.web, file(id))).toLowerCase()}/`;
+    if (!trees.some((tree) => path.startsWith(`${tree}/`)) && !HIDDEN.test(own(id) ?? '')) return;
+    const line = `${what} ${named(id)}, which lies in a course folder or the private overlay: a site's pages cannot use course material.`;
     refused.push(line);
-    return line;
+    throw new Error(line);
   };
+  reading = (path) => check('The build would read', path);
   return {
     name: 'parallax:site',
     enforce: 'pre',
@@ -154,17 +156,17 @@ function sitePlugin(paths: Paths, refused: string[]): Plugin {
       const at = shared || (bare && swap(file(importer), 'copy', 'from')) || importer;
       const resolved = await this.resolve(source, at, { ...options, skipSelf: true });
       if (!resolved || resolved.external) return resolved;
-      if (hidden(resolved.id))
-        this.error(refuse(`${named(importer)} imports ${named(resolved.id)}`));
+      check(`${named(importer)} imports`, resolved.id);
       const query = resolved.id.slice(file(resolved.id).length);
       const copy = swap(file(resolved.id), 'from', 'copy');
       return copy ? { ...resolved, id: copy + query } : resolved;
     },
     generateBundle(_, bundle) {
+      // A refused read that Vite went on after (the asset of a `new URL`) stops the build here.
+      if (refused[0]) throw new Error(refused[0]);
       for (const output of Object.values(bundle)) {
         const ids = output.type === 'chunk' ? output.moduleIds : output.originalFileNames;
-        const found = ids.find(hidden);
-        if (found) this.error(refuse(`The build would hold ${named(found)}`));
+        for (const id of ids) check('The build would hold', id);
       }
     },
   };
@@ -175,18 +177,20 @@ export function viteConfig(site: Site, refused: string[] = []): InlineConfig {
   const paths = buildPaths(site.root);
   prepare(site, paths, findPages(paths.root));
   const cacheDir = join(paths.root, '.parallax/vite');
+  const log = createLogger('warn');
   return {
     configFile: false,
     envDir: false,
     root: paths.web,
     publicDir: false,
     cacheDir,
-    // Warnings only; the command prints each error once, so Vite's own error line is dropped.
+    // Warnings only, none after a refusal; the command prints each error once, so not Vite's.
     logLevel: 'warn',
-    customLogger: { ...createLogger('warn'), error: () => {} },
+    customLogger: { ...log, error: () => {}, warnOnce: (m) => refused.length || log.warnOnce(m) },
     plugins: [sitePlugin(paths, refused), ...webPlugins(join(cacheDir, 'tanstack'))],
-    // No source maps: they would publish the sources of the site's pages beside the bundle.
-    build: { outDir: paths.out, emptyOutDir: true, sourcemap: false, reportCompressedSize: false },
+    worker: { plugins: () => [sitePlugin(paths, refused)] },
+    // Each file emitted, none inlined, so the final check sees it; no maps, which publish sources.
+    build: { outDir: paths.out, emptyOutDir: true, sourcemap: false, assetsInlineLimit: 0 },
   };
 }
 
@@ -202,6 +206,7 @@ export async function compile(site: Site): Promise<void> {
   } catch (error) {
     throw refused.length > 0 ? new SiteProblems(refused) : error;
   } finally {
+    reading = undefined;
     if (before === undefined) delete process.env.NODE_ENV;
     else process.env.NODE_ENV = before;
   }
