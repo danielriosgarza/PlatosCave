@@ -69,8 +69,8 @@ export const STAND_IN = `async (site, out) => {
 /**
  * Builds the site at `root` at level 0 under the file-read guard, which guards its course folders
  * in either mode: `buildOpenSite` with `shell`, a `ShellCompiler`'s code that may use `fs`, `join`
- * and `root`, or with `command` the command `parallax build`. It gives what `underGuard` gives, the
- * database variables the child had, and every file of `.parallax/open/` and `dist/`, by its path.
+ * and `root`, or with `command` the command `parallax build`. It gives what `underGuard` gives and
+ * every file of `.parallax/open/` and `dist/`, by its path from the site.
  */
 export function buildUnderGuard(root: string, shell: string = STAND_IN) {
   const listed = (dir: string) =>
@@ -82,25 +82,18 @@ export function buildUnderGuard(root: string, shell: string = STAND_IN) {
       ? `main(['build'], { cwd: root })`
       : `buildOpenSite(await loadSite(root), { shell: ${shell} })`;
   const at = (file: string) => JSON.stringify(moduleUrl(file));
-  const { stdout, ...run } = underGuard(
+  const run = underGuard(
     { site: root, courses },
     `const [fs, { join }] = [await import('node:fs'), await import('node:path')];
     const { main } = await import(${at('main.ts')});
     const { loadSite } = await import(${at('site/load.ts')});
     const { buildOpenSite } = await import(${at('open/build.ts')});
     const root = ${JSON.stringify(root)};
-    console.log(JSON.stringify(Object.keys(process.env).filter((name) => /^(DATABASE_URL$|PG)/.test(name))));
     process.exitCode = await ${build};`,
   );
-  const [names, ...lines] = stdout.split('\n');
   const files = new Map([
     ...filesOf(join(root, '.parallax/open'), '.parallax/open/'),
     ...filesOf(join(root, 'dist'), 'dist/'),
   ]);
-  return {
-    ...run,
-    stdout: lines.join('\n'),
-    database: JSON.parse(names || '[]') as string[],
-    files,
-  };
+  return { ...run, files };
 }
