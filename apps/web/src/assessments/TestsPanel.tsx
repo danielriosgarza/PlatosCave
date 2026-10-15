@@ -7,6 +7,7 @@ import pageStyles from '../components/Page.module.css';
 import { RetryNotice } from '../components/RetryNotice';
 import { type ReleasedResource, useClassRelease } from '../exercises/attempt';
 import { formatInstant, STUDENT_ATTEMPT_STATE_LABEL } from '../format/format';
+import { useClassContext } from '../session/classContext';
 import { AccommodationsPanel } from './AccommodationsPanel';
 import { AttemptWorkspace } from './AttemptWorkspace';
 import { recoveryAnswered } from './answers';
@@ -139,6 +140,7 @@ function TestEntry({
 }) {
   const overview = useTestOverview(classId, resource.resourceId);
   const results = useMyResults(classId, resource.resourceId);
+  const openClass = useClassContext(classId)?.open === true;
   const [viewing, setViewing] = useState<ResultAttempt | null>(null);
   const [open, setOpen] = useState<AttemptView | null>(null);
   const queryClient = useQueryClient();
@@ -244,7 +246,7 @@ function TestEntry({
         {data.eligibility.attemptsUsed} of {data.eligibility.attemptsAllowed}
       </p>
       <div className={styles.termsBlock}>
-        <TermsPanel terms={data.terms} />
+        <TermsPanel classId={classId} terms={data.terms} />
       </div>
       {problem ? (
         <p className={styles.error} role="alert">
@@ -297,7 +299,7 @@ function TestEntry({
                   <br />
                   <span className={`${styles.small} ${styles.muted}`}>
                     {result
-                      ? resultLine(result)
+                      ? resultLine(result, openClass)
                       : (STUDENT_ATTEMPT_STATE_LABEL[a.state] ?? a.state)}
                     {a.receipt?.autoSubmitted ? ' · submitted by the server at the deadline' : ''}
                   </span>

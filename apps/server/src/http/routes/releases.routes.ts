@@ -94,7 +94,9 @@ export default function releaseRoutes(app: FastifyInstance, deps: RouteDeps): vo
       return { releaseId: result.releaseId, diff: result.diff };
     }
     if (result.reason === 'not_found') notFound();
-    if (result.reason === 'class_archived') return fail(409, { error: 'class_archived' });
+    if (result.reason === 'class_archived' || result.reason === 'manual_grading') {
+      return fail(409, { error: result.reason });
+    }
     return fail(409, {
       error: 'release_conflict',
       currentReleaseId: result.currentReleaseId,

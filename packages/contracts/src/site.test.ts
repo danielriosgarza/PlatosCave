@@ -115,6 +115,32 @@ describe('siteConfig', () => {
       expect(named, JSON.stringify(config)).toEqual([field]);
     }
   });
+
+  test('signIn.providers is a way to sign in: level 1 needs email, providers or both', () => {
+    const university = {
+      id: 'university',
+      name: 'Example University',
+      issuer: 'https://login.example.org',
+      clientId: 'parallax',
+    };
+    const withProviders = (...providers: object[]) => one({ signIn: { providers } });
+    expect(lines(withProviders(university))).toEqual([]);
+    expect(siteConfig.parse(withProviders(university)).signIn?.providers).toEqual([university]);
+    const both = { signIn: { ...instructor.signIn, providers: [university] } };
+    expect(lines(one(both))).toEqual([]);
+    const neither =
+      'level 1 and above need a way to sign in: signIn.email, signIn.providers or both';
+    expect(lines(withProviders())).toEqual([`signIn: ${neither}`]);
+    expect(lines(one({ signIn: undefined }))).toEqual([`signIn: ${neither}`]);
+    const hospital = { ...university, name: 'Example Hospital' };
+    expect(lines(withProviders(university, hospital))).toEqual([
+      'signIn.providers: provider ids must be unique',
+    ]);
+    // A provider has no look of its own (ADR-0002, Identity providers).
+    expect(lines(withProviders({ ...university, logo: 'src/university.png' }))).toEqual([
+      'signIn.providers[0].logo: unknown key',
+    ]);
+  });
 });
 
 test('instructor.yaml and the catalogue take no field beyond their own', () => {

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import type { ClassScope } from '../auth/scope';
 import { enqueueGrading } from '../db/execution/runs';
 import { expireAttempt } from '../db/tests';
+import { enqueueOpenRelease } from './grades-open-release.job';
 import { defineScopedJob, sendScopedJob } from './scoped';
 
 export const TESTS_EXPIRE = 'tests.expire-attempt';
@@ -32,6 +33,10 @@ const testsExpire = defineScopedJob({
     // runs are queued now; the hook is idempotent (docs/design/runner.md §8.7).
     if (exec && result.state !== 'in_progress' && result.state !== 'missing') {
       await enqueueGrading(db, exec, scope, input.attemptId, now);
+    }
+    // In an open class nobody grades: its automated score is released (§13, N10).
+    if (boss && scope.open && result.state !== 'in_progress' && result.state !== 'missing') {
+      await enqueueOpenRelease(boss, scope, input.attemptId);
     }
     return { state: result.state, deadlineAt: result.deadlineAt?.toISOString() ?? null };
   },

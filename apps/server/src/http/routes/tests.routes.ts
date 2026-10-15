@@ -18,6 +18,7 @@ import type { RouteDeps } from '../../app';
 import type { ClassScope } from '../../auth/scope';
 import { enqueueGrading } from '../../db/execution/runs';
 import * as tests from '../../db/tests';
+import { enqueueOpenRelease } from '../../jobs/grades-open-release.job';
 import { enqueueScheduledRelease } from '../../jobs/grades-release.job';
 import { enqueueTestsExpire } from '../../jobs/tests-expire.job';
 import { notFound, registerRoute, settle } from '../register';
@@ -77,6 +78,14 @@ export default function testRoutes(app: FastifyInstance, deps: RouteDeps): void 
     );
   };
 
+  /** Nobody grades in an open class (§13, N10): a job releases the attempt's automated score. */
+  const queueOpenRelease = async (req: FastifyRequest, scope: ClassScope, attemptId: string) => {
+    if (!deps.boss || !scope.open || scope.membership.isPreview) return;
+    await enqueueOpenRelease(deps.boss, scope, attemptId).catch((err) =>
+      req.log.error({ err, attemptId }, 'could not queue the automatic release of results'),
+    );
+  };
+
   registerRoute(app, readTest, async ({ scope, params }) =>
     settle(await tests.readTest(db(), scope, params.resourceId, now())),
   );
@@ -126,6 +135,7 @@ export default function testRoutes(app: FastifyInstance, deps: RouteDeps): void 
     }
     const receipt = settle(outcome);
     await queueGrading(req, scope, params.attemptId);
+    await queueOpenRelease(req, scope, params.attemptId);
     return receipt;
   });
 

@@ -164,7 +164,9 @@ export const previewAdoption = defineRoute({
 /**
  * `expectedReleaseId` is the release the instructor saw the diff against; 409
  * `{ error: 'release_conflict', currentReleaseId }` when another adoption happened since.
- * 404 when the release is not one of the class's course; 409 `class_archived`.
+ * 404 when the release is not one of the class's course; 409 `class_archived`. Nobody grades in
+ * an open class (§13, N10): 409 `manual_grading` when it would adopt a release with manually
+ * graded test parts.
  */
 export const adoptRelease = defineRoute({
   method: 'POST',
@@ -177,6 +179,7 @@ export const adoptRelease = defineRoute({
   errors: {
     409: z.union([
       classArchived,
+      z.object({ error: z.literal('manual_grading') }),
       z.object({ error: z.literal('release_conflict'), currentReleaseId: z.uuid().nullable() }),
     ]),
   },
