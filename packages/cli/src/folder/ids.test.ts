@@ -44,7 +44,7 @@ test('--write-ids adds exactly the missing ids and prints each; the rest stays b
   const dir = site();
   const before = snapshot(dir);
   const { code, lines } = await check(dir);
-  expect(code).toBe(0);
+  expect(code, lines.join(' | ')).toBe(0);
   const printed = lines.filter((line) => line.includes(': set to '));
   const ids = printed.map((line) => line.split(': set to ')[1] ?? '');
   const fields = ['id', 'resources[0].id', 'resources[4].id'];

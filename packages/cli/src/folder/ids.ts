@@ -48,7 +48,7 @@ export async function planIds(dir: string): Promise<IdEdit[] | null> {
     let edited = text;
     // From the last map to the topic's, whose first key stands before all of theirs: an offset
     // holds while the text before it is unchanged.
-    for (const [i, map] of [...items, [-1, doc.contents] as const].reverse()) {
+    for (const [i, map] of [[-1, doc.contents] as const, ...items].reverse()) {
       const key = isMap(map) && !map.has('id') ? map.items[0]?.key : undefined;
       const at = isNode(key) ? key.range?.[0] : undefined;
       if (!isMap(map) || at === undefined) continue;
