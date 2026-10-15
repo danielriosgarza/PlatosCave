@@ -1,12 +1,14 @@
 import { createHash } from 'node:crypto';
-import * as fs from 'node:fs';
+import fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { Plugin, PluginOption } from 'vite';
 import { afterAll, expect, test, vi } from 'vitest';
 import { webPlugins } from './build/web';
+import { devServer } from './commands/dev';
 import { main } from './main';
+import { loadSite } from './site/load';
 
 const pkg = resolve(import.meta.dirname, '..');
 const repo = resolve(pkg, '../..');
@@ -58,6 +60,17 @@ test('A37 a site builds with its front page at / beside the Parallax screens', {
     const content = fs.readFileSync(join(dist, output), 'latin1');
     expect(content).not.toMatch(/sentinel-(course-file|hidden-definition|address)/);
   }
+  // The catalogue lists the instructors, then their courses, with names and titles only; a course
+  // without a course.yaml has its folder's name as its title.
+  const gen = fs.readFileSync(join(site, '.parallax/app/web/src/site-pages.gen.ts'), 'utf8');
+  const reef = { slug: 'reef-ecology', title: 'Reef ecology' };
+  const statistics = { slug: 'statistics', title: 'statistics' };
+  expect(JSON.parse(/^const catalogue = (.*);$/m.exec(gen)?.[1] ?? '')).toEqual({
+    instructors: [
+      { slug: 'ana', name: 'Ana Example', courses: [reef] },
+      { slug: 'ben', name: 'Ben Example', courses: [statistics] },
+    ],
+  });
   // The build used the plugins of the web application and wrote only into .parallax/ and dist/.
   const config = await import(pathToFileURL(join(repo, 'apps/web/vite.config.ts')).href);
   expect(await names(webPlugins(temp))).toEqual(await names(config.default.plugins));
@@ -71,4 +84,50 @@ test('A37 a site builds with its front page at / beside the Parallax screens', {
   expect(second).toEqual(files(join(site, '.parallax/dist')));
   expect(first.filter((file) => file.startsWith('assets/about-'))).toHaveLength(1);
   expect(second.filter((file) => file.startsWith('assets/about-'))).toEqual([]);
+});
+
+test('parallax dev serves the pages and the logo, and no file of a course folder or the overlay', {
+  timeout: 300_000,
+}, async () => {
+  const root = join(temp, 'dev');
+  fs.cpSync(join(pkg, 'fixtures/site/instructor'), root, { recursive: true });
+  // A link in src/, a folder the server serves, to a course folder.
+  fs.symlinkSync(join(root, 'courses/statistics'), join(root, 'src/linked'), 'junction');
+  const server = await devServer(await loadSite(root), 0);
+  // The build's check of Node's reads is armed by `compile` alone, so the server leaves it off.
+  expect(() =>
+    fs.readFileSync(join(root, 'courses/statistics/means/reading/means.md')),
+  ).not.toThrow();
+  await server.listen();
+  try {
+    const base = server.resolvedUrls?.local[0] ?? '';
+    const real = fs.realpathSync.native(root).replaceAll('\\', '/');
+    const status = async (path: string) => (await fetch(new URL(path, base))).status;
+    expect(await status('/')).toBe(200);
+    expect(await status(`/@fs/${real}/src/pages/index.tsx`)).toBe(200);
+    expect(await status(`/@fs/${real}/src/logo.png`)).toBe(200);
+    expect(await status(`/@fs/${real}/courses/statistics/means/reading/means.md`)).toBe(403);
+    expect(await status(`/@fs/${real}/private/courses/statistics/means/exercises/mean.yaml`)).toBe(
+      403,
+    );
+    expect(await status(`/@fs/${real}/src/linked/means/reading/means.md`)).toBe(403);
+  } finally {
+    await server.close();
+  }
+});
+
+test('parallax --help lists the commands, and a command module without run is named', async () => {
+  const lines: string[] = [];
+  const print = (line: string) => void lines.push(line);
+  expect(await main(['--help'], { print })).toBe(0);
+  expect(lines).toHaveLength(2);
+  expect(lines[0]).toBe('usage: parallax <command>');
+  const listed = lines[1]?.replace(/^Commands: /, '').split(', ');
+  expect(listed).toEqual(expect.arrayContaining(['build', 'check', 'dev']));
+  const commands = join(temp, 'commands');
+  fs.mkdirSync(commands);
+  fs.writeFileSync(join(commands, 'broken.ts'), 'export const value = 1;\n');
+  const cwd = join(pkg, 'fixtures/site/instructor');
+  expect(await main(['broken'], { cwd, commands, print })).toBe(1);
+  expect(lines.at(-1)).toBe('parallax: the module of the command broken exports no run function');
 });

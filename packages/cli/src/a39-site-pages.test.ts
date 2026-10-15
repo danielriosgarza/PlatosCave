@@ -73,8 +73,30 @@ test('A39 a site page at the address of a Parallax screen stops the build and na
   const glob = front("import.meta.glob('../../courses/**/*.md', { eager: true });");
   const twins = { 'src/pages/about.tsx': page, 'src/pages/about/index.tsx': page };
   const worker = front("new Worker(new URL('./_worker.ts', import.meta.url));");
+  const entry = 'courses/statistics/means/w.js';
+  const course = front(
+    `new Worker(new URL('../../${entry}', import.meta.url), { type: 'module' });`,
+  );
+  const sheet = (css: string) => ({
+    ...front("import './front.module.css';"),
+    'src/pages/front.module.css': css,
+  });
+  const plain = { ...front("import './site.css';"), 'src/pages/site.css': '.site {}' };
+  const look = {
+    ...front("import 'look/look.css';"),
+    'node_modules/look/package.json': '{ "name": "look", "version": "1.0.0" }',
+    'node_modules/look/look.css': 'p { color: red; }',
+  };
+  const css = 'src/pages/front.module.css';
   const refused: [Record<string, string>, string, string?][] = [
+    // A stylesheet that could reach a Parallax screen or token (docs/design/site.md §6.7).
+    [plain, 'src/pages/site.css: a site stylesheet is a *.module.css file'],
+    [look, 'node_modules/look/look.css: a site stylesheet is a *.module.css file'],
+    [sheet('.front { --pc-accent: red; }'), `${css}: declares a --pc-* property of Parallax`],
+    [sheet(`@import '../../${notes.replace('.md', '.module.css')}';`), `${css}: uses @import`],
+    [sheet(':not(.front) { color: red; }'), `${css}: the selector :not(.front) has no class`],
     [twins, 'about.tsx and src/pages/about/index.tsx are both at /about'],
+    [{ 'src/pages/About.tsx': page }, 'src/pages/About.tsx: "About" cannot be part of an address'],
     [{ 'src/pages/api/v2.tsx': page }, 'src/pages/api/v2.tsx would be at /api/v2, under /api'],
     [{ 'src/pages/assets.tsx': page }, 'src/pages/assets.tsx would be at /assets, under /assets'],
     [{ 'src/pages/content/x.tsx': page }, 'src/pages/content/x.tsx would be at /content/x'],
@@ -87,6 +109,7 @@ test('A39 a site page at the address of a Parallax screen stops the build and na
     [url(yaml), `The build would read ${yaml}, ${lies}`],
     [front("import './_composes.module.css';"), `reading/means.module.css, ${lies}`],
     [worker, `src/pages/_worker.ts imports ${notes}, ${lies}`],
+    [course, `The build would hold ${entry}, ${lies}`],
     // A course folder or an overlay that is a link counts where it leads.
     [raw(notes), 'src/pages/index.tsx imports ', 'courses/statistics'],
     [raw(yaml), 'src/pages/index.tsx imports ', 'private'],

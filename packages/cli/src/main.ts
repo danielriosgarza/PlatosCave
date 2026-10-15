@@ -24,15 +24,22 @@ export async function main(argv: string[], options: Options = {}): Promise<numbe
     .flatMap((file) => /^([a-z][a-z0-9-]*)\.ts$/.exec(file)?.[1] ?? [])
     .sort();
   const [name, ...args] = argv;
-  if (!name || !names.includes(name)) {
-    print(name ? `parallax: unknown command ${name}` : 'usage: parallax <command>');
+  const help = name === '--help' || name === '-h';
+  if (!name || help || !names.includes(name)) {
+    print(name && !help ? `parallax: unknown command ${name}` : 'usage: parallax <command>');
     print(`Commands: ${names.join(', ') || 'none'}`);
-    return 1;
+    return help ? 0 : 1;
   }
   try {
     // Every command first loads the site, so a problem stops it before it writes anything.
     const site = await loadSite(cwd);
-    const command: Command = await import(pathToFileURL(join(commands, `${name}.ts`)).href);
+    const command: Partial<Command> = await import(
+      pathToFileURL(join(commands, `${name}.ts`)).href
+    );
+    if (typeof command.run !== 'function') {
+      print(`parallax: the module of the command ${name} exports no run function`);
+      return 1;
+    }
     return await command.run({ site, args });
   } catch (error) {
     if (!(error instanceof SiteProblems)) throw error;

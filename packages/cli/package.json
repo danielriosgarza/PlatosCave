@@ -7,10 +7,14 @@
     "parallax": "./bin/parallax.mjs"
   },
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./pages": {
+      "types": "./pages.d.ts"
+    }
   },
   "files": [
     "bin",
+    "pages.d.ts",
     "src",
     "!src/**/*.test.ts",
     "vendor",

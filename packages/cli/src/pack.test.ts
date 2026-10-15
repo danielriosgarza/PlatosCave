@@ -160,7 +160,7 @@ test('no test, fixture or .env file is packed; tsconfig.base.json and the backup
   for (const [name, dir] of Object.entries(SOURCES)) {
     expect(sourceRoot(name as Source)).toBe(join(repo, dir));
   }
-  expect(paths).toEqual(expect.arrayContaining(['bin/parallax.mjs', 'src/main.ts']));
+  expect(paths).toEqual(expect.arrayContaining(['bin/parallax.mjs', 'pages.d.ts', 'src/main.ts']));
   expect(paths).toContain('vendor/web/src/routeTree.gen.ts');
 });
 
