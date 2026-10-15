@@ -4,8 +4,10 @@ import { tanstackRouter } from '@tanstack/router-plugin/vite';
 import react from '@vitejs/plugin-react';
 import { build, createLogger, type InlineConfig, type Plugin } from 'vite';
 import { packageRoot, sourceRoot } from '../paths';
+import { catalogue } from '../site/folders';
 import { type Site, SiteProblems } from '../site/load';
 import { findPages, type Page } from '../site/pages';
+import { STYLESHEET, stylesheetProblems } from './styles';
 
 /** The sources copied into the work tree, under these names (docs/design/site.md §2, §6.4). */
 const COPIED = ['web', 'ui', 'contracts'] as const;
@@ -21,13 +23,16 @@ const HIDDEN = /^(courses|private|instructors\/[^/]+\/courses)(\/|$)/i;
 
 // Vite reads some files without asking a plugin: the asset of a `new URL(…, import.meta.url)` or
 // of a stylesheet's `url()`, and the stylesheet of an `@import` or a `composes`. So Node's reads
-// ask `reading` while a site builds; they are wrapped once, as postcss-modules keeps what it found.
+// ask `reading` while `compile` runs Vite's build, and at no other time: not in `parallax dev`, and
+// not while the catalogue reads `course.yaml`. They are wrapped once, as postcss-modules keeps what
+// it found.
 let reading: ((path: string) => void) | undefined;
+let building = false;
 for (const at of [fs, fs.promises]) {
   for (const name of ['readFile', 'readFileSync'].filter((name) => name in at)) {
     const read = Reflect.get(at, name);
     Reflect.set(at, name, (...args: unknown[]) => {
-      reading?.(String(args[0]));
+      if (building) reading?.(String(args[0]));
       return Reflect.apply(read, at, args);
     });
   }
@@ -71,13 +76,12 @@ function prepare(site: Site, paths: Paths, pages: Page[]): void {
   const { name, logo } = site.config;
   const list = pages.map((p) => `\n  { path: '${p.path}', load: () => import(${from(p.file)}) },`);
   const shown = logo ? `logo: { src: logo, alt: ${JSON.stringify(logo.alt)} }, ` : '';
-  // The catalogue of §6.6 stays empty until `src/site/folders.ts` builds it.
   const props = `{ site: { name: ${JSON.stringify(name)}, ${shown}entry: '/courses' }, catalogue };`;
   const lines = [
     '// Written by parallax build from the site; do not edit.',
     logo ? `import logo from ${from(logo.file)};` : '',
     `export const pages = [${list.join('')}\n];`,
-    `const catalogue = ${JSON.stringify({ instructors: [] })};`,
+    `const catalogue = ${JSON.stringify(catalogue(site))};`,
     `export const props = ${props}`,
   ];
   fs.writeFileSync(join(src, 'site-pages.gen.ts'), `${lines.join('\n')}\n`);
@@ -90,7 +94,7 @@ mount(document.getElementById('root') as HTMLElement, { pages, props });\n`;
 }
 
 /** The real paths of the course folders, the overlay and each link in them, in lower case. */
-function hiddenTrees(root: string): string[] {
+export function hiddenTrees(root: string): string[] {
   const real = new Set<string>();
   const below = (dir: string): void => {
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -116,7 +120,8 @@ function hiddenTrees(root: string): string[] {
  * from the copy; the shared packages from the web sources; `parallax-site/pages` as the copy of
  * `sitePages.tsx`. A file in a course folder or the private overlay, by its path in the site or
  * where it really lies, stops the build when a module imports it, the bundle holds it or Node reads
- * it while the build runs (`reading`, until `compile` ends); each refusal is put into `refused`.
+ * it while the build runs (`reading`, while `compile` builds). So does a stylesheet that breaks the
+ * rule of §6.7, the site's own or one a file of the site imports. Each refusal goes into `refused`.
  */
 function sitePlugin(paths: Paths, refused: string[]): Plugin {
   const root = slash(paths.root);
@@ -145,6 +150,8 @@ function sitePlugin(paths: Paths, refused: string[]): Plugin {
     throw new Error(line);
   };
   reading = (path) => check('The build would read', path);
+  /** The stylesheets that files of the site import, a package's included. */
+  const styles = new Set<string>();
   return {
     name: 'parallax:site',
     enforce: 'pre',
@@ -157,9 +164,20 @@ function sitePlugin(paths: Paths, refused: string[]): Plugin {
       const resolved = await this.resolve(source, at, { ...options, skipSelf: true });
       if (!resolved || resolved.external) return resolved;
       check(`${named(importer)} imports`, resolved.id);
+      if (own(importer) && STYLESHEET.test(file(resolved.id))) styles.add(file(resolved.id));
       const query = resolved.id.slice(file(resolved.id).length);
       const copy = swap(file(resolved.id), 'from', 'copy');
       return copy ? { ...resolved, id: copy + query } : resolved;
+    },
+    transform(css, id) {
+      // Not a `?raw` or `?url` import: it gives a string, not a stylesheet, and a page that applies
+      // one does so on purpose; the rule guards against accidents and is not a boundary (§6.7).
+      const sheet = STYLESHEET.test(file(id)) && !/[?&](raw|url)\b/.test(id);
+      if (!sheet || (!own(id) && !styles.has(file(id)))) return null;
+      const problems = stylesheetProblems(own(id) ?? slash(relative(root, file(id))), css);
+      refused.push(...problems);
+      if (problems[0]) throw new Error(problems[0]);
+      return null;
     },
     generateBundle(_, bundle) {
       // A refused read that Vite went on after (the asset of a `new URL`) stops the build here.
@@ -202,10 +220,12 @@ export async function compile(site: Site): Promise<void> {
   const before = process.env.NODE_ENV;
   process.env.NODE_ENV = 'production';
   try {
+    building = true;
     await build(config);
   } catch (error) {
     throw refused.length > 0 ? new SiteProblems(refused) : error;
   } finally {
+    building = false;
     reading = undefined;
     if (before === undefined) delete process.env.NODE_ENV;
     else process.env.NODE_ENV = before;
