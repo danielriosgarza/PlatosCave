@@ -1,0 +1,28 @@
+# The practice exercise of the fixture course. Each word that starts with sentinel- stands in an
+# answer, a hint, a solution or feedback: a site manifest must hold none of them.
+schema: exercise.v1
+steps:
+  - id: predict
+    title: Predict
+    kind: numeric
+    prompt: A transect crosses 4 quadrats of 1 m² each. How many square metres are sampled?
+    answer: 4
+    tolerance: 0
+    unit: m²
+    hints:
+      - Each quadrat covers one square metre (sentinel-hint).
+    solution: Four quadrats of one square metre each give 4 m² (sentinel-solution).
+    feedback:
+      correct: Yes, 4 m² (sentinel-feedback).
+      incorrect: Count the quadrats again.
+  - id: choose
+    title: Choose
+    kind: single_choice
+    prompt: Which count is a density?
+    options:
+      - { id: a, label: 12 fish }
+      - { id: sentinel-answer, label: 3 fish per square metre }
+    correct: sentinel-answer
+    feedback:
+      correct: Yes.
+      incorrect: A density divides a count by an area.
