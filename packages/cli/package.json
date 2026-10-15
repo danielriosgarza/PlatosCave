@@ -7,10 +7,14 @@
     "parallax": "./bin/parallax.mjs"
   },
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./pages": {
+      "types": "./pages.d.ts"
+    }
   },
   "files": [
     "bin",
+    "pages.d.ts",
     "src",
     "!src/**/*.test.ts",
     "vendor",
@@ -38,6 +42,7 @@
     "hast-util-to-string": "3.0.1",
     "parse5": "7.3.0",
     "pdfjs-dist": "6.3.289",
+    "postcss": "8.5.28",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "rehype-highlight": "7.0.2",
