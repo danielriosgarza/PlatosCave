@@ -1,0 +1,8 @@
+# The first topic by position, although its folder's name sorts after sampling/.
+id: 0b2f4a6c-8d1e-4f3a-b5c7-9e0a1b2c3d4e
+position: 0
+title: Tides and zones
+resources:
+  - id: 3c4d5e6f-7a8b-4c9d-8e0f-1a2b3c4d5e6f
+    file: reading/tides.html
+    title: How the tide shapes a reef

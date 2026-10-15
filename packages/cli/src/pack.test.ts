@@ -148,7 +148,9 @@ test('the conversion closure holds no file under db/ and runs from the packed co
 test('no test, fixture or .env file is packed; tsconfig.base.json and the backup scripts are', () => {
   const paths = [...files.keys()];
   const kept = paths.filter((path) =>
-    /(^|\/)(\.|test\/|fixtures\b)|\.(test|itest|e2e)\./.test(path),
+    /(^|\/)(\.|test\/|fixtures\b)|\.(test|itest|e2e)\.|^src\/open\/(testing\.ts|read-guard)/.test(
+      path,
+    ),
   );
   expect(kept).toEqual([]);
   const same = (packed: string, file: string) =>
