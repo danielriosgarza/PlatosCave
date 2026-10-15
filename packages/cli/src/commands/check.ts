@@ -1,22 +1,39 @@
 import { join, posix } from 'node:path';
+import { applyIds, planIds, topicFolders } from '../folder/ids';
+import { type Located, publicationReport, uploadProblems } from '../folder/publication';
 import { readCourseForSite, readCourseForSync } from '../folder/read';
+import type { Problem } from '../folder/yaml';
 import type { Command } from '../main';
 
 /** What `check` says at level 0, which reads a course folder as a level 0 build does (§6). */
 export const LEVEL_0 =
   'note: at level 0 no exercise or test definition is read, as a level 0 build reads none';
-/** A line as it is printed: control, format and separator characters as code points. */
+/** What `check` leaves out of publication's checks (§9), which only `sync` or a build checks. */
+export const LEFT_OUT =
+  "note: check leaves out the publication rules of tests, conversions, the course's other drafts, and a server whose settings differ from parallax.config.ts";
+/**
+ * A line as it is printed: control, format and separator characters as code points, and, in a line
+ * not in NFC, every character outside ASCII, so that two Unicode forms of a name read apart.
+ */
 const shown = (line: string) =>
-  line.replace(/[\p{C}\p{Zl}\p{Zp}]/gu, (char) => `\\u{${char.codePointAt(0)?.toString(16)}}`);
+  line.replace(
+    line === line.normalize('NFC') ? /[\p{C}\p{Zl}\p{Zp}]/gu : /[^\x20-\x7e]/gu,
+    (char) => `\\u{${char.codePointAt(0)?.toString(16)}}`,
+  );
+const print = (line: string) => console.log(shown(line));
+const many = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`;
 
 /**
- * `parallax check` (docs/design/course-folder.md §9): the reader's problems for every course folder
- * of the site, read as the site's level reads it, one line each, with its path from the site
- * folder. It needs no server and writes nothing. Errors exit 1, warnings and notes 0, usage 2.
+ * `parallax check [--write-ids]` (docs/design/course-folder.md §9): for each course folder, read as
+ * the site's level reads it, the reader's problems, the upload rules and publication's report, one
+ * line each. It needs no server, and writes only the missing ids that `--write-ids` asks for
+ * (§4.1). Errors exit 1, warnings and notes 0, usage 2.
  */
 export const run: Command['run'] = async ({ site, args }) => {
-  if (args.length > 0) {
-    console.error(shown(`parallax check: unknown argument ${args[0]}; it takes none`));
+  const writeIds = args[0] === '--write-ids';
+  const other = args[writeIds ? 1 : 0];
+  if (other !== undefined) {
+    console.error(shown(`parallax check: unknown argument ${other}; it takes --write-ids or none`));
     return 2;
   }
   const level0 = site.config.level === 0;
@@ -26,19 +43,36 @@ export const run: Command['run'] = async ({ site, args }) => {
       const from = posix.join(path, 'courses', name);
       const overlay = join(site.root, 'private', from);
       const dir = join(site.root, from);
-      const read = level0 ? readCourseForSite(dir) : readCourseForSync(dir, { overlay });
-      for (const { severity, path: at, overlay: hidden, field, line, message } of (await read)
-        .problems) {
+      if (writeIds) {
+        const plan = await planIds(dir);
+        if (!plan) print(`${from}: no id written while the errors below stand`);
+        const { written, changed } = applyIds(dir, plan ?? []);
+        for (const w of written) print(`${from}/${w.path}: ${w.field}: set to ${w.id}`);
+        for (const at of changed) print(`${from}/${at}: changed meanwhile, so no id was written`);
+        errors += changed.length;
+      }
+      const read = await (level0 ? readCourseForSite(dir) : readCourseForSync(dir, { overlay }));
+      const problems: Problem[] = [...read.problems];
+      if (read.manifest) {
+        const folders = topicFolders(dir);
+        const options = { approvedShinyOrigins: site.config.origins.shiny, folders };
+        const { errors: blocking, warnings } = publicationReport(read.manifest, undefined, options);
+        const as = (severity: Problem['severity']) => (issue: Located) => ({ ...issue, severity });
+        problems.push(...(await uploadProblems(read.manifest, read.open, folders)));
+        problems.push(...blocking.map(as('error')), ...warnings.map(as('warning')));
+      }
+      for (const { severity, path: at, overlay: hidden, field, line, message } of problems) {
         const where = [hidden ? `private/${from}` : from, at].filter(Boolean).join('/');
         const kind = severity === 'error' ? '' : `${severity}: `;
         const lineNumber = line ? ` (line ${line})` : '';
-        console.log(shown(`${kind}${where}: ${field ? `${field}: ` : ''}${message}${lineNumber}`));
+        print(`${kind}${where}: ${field ? `${field}: ` : ''}${message}${lineNumber}`);
         if (severity === 'error') errors++;
       }
       courses++;
     }
   }
   if (level0) console.log(LEVEL_0);
-  console.log(`parallax check: ${courses} course folders read, ${errors} errors.`);
+  console.log(LEFT_OUT);
+  console.log(`parallax check: ${many(courses, 'course folder')} read, ${many(errors, 'error')}.`);
   return errors > 0 ? 1 : 0;
 };
