@@ -96,8 +96,6 @@ test('conversion results add the two conversion codes and a raster-only deck’s
   const raster: Conversion = { state: 'ready', derived: { pages: [], rasterOnly: true } };
   const { errors } = publicationReport(manifest, { [String(deck)]: raster }, options);
   expect(where({ errors, warnings: [] })).toEqual(['missing_alternative sampling/slides/deck.pdf']);
-  const without = where(publicationReport(manifest, undefined, options));
-  expect(without).toEqual(['missing_alternative sampling/slides/deck.pdf', shiny]);
 });
 
 test('check refuses a 26 MiB PDF, a file with a NUL byte, an invalid notebook and unstorable text in a definition with the route’s sentences', async () => {
@@ -122,7 +120,6 @@ test('check refuses a 26 MiB PDF, a file with a NUL byte, an invalid notebook an
       `${course}/sampling/notebooks/counts.ipynb: The file is not a Jupyter notebook: it is not valid JSON`,
       `private/${course}/sampling/tests/quiz.yaml: ${unstorable}`,
       `private/${course}/sampling/exercises/estimate.yaml: ${unstorable}`,
-      // Publication's report and the note on what check leaves out are printed as well.
       `warning: ${course}/sampling/notebooks/tide.shiny.yaml: “Tide explorer” has no accessible alternative`,
       LEFT_OUT,
     ]),

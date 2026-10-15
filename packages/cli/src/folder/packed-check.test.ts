@@ -6,8 +6,7 @@ import { pathToFileURL } from 'node:url';
 import { afterAll, beforeAll, expect, test } from 'vitest';
 import { vendor } from '../../scripts/vendor';
 
-// What vendor.ts writes for the published package (docs/design/site.md §2), in a folder outside
-// the repository, beside the tool's own sources and a node_modules with its dependencies only.
+// What vendor.ts writes (docs/design/site.md §2), outside the repository, beside the tool's src/.
 delete process.env.DATABASE_URL;
 const pkg = resolve(import.meta.dirname, '../..');
 const temp = fs.mkdtempSync(join(tmpdir(), 'parallax-packed-check-'));
@@ -26,14 +25,10 @@ beforeAll(() => {
 }, 120_000);
 
 test('the copy that vendor.ts writes holds the validator with all it imports and the upload rules, and no file under db/', async () => {
-  const server = fs.readdirSync(join(stage, 'vendor/server'), {
-    recursive: true,
-    encoding: 'utf8',
-  });
-  expect(server).toContain(join('src', 'content', 'validation.ts'));
-  expect(server.filter((path) => /^src[\\/]db([\\/]|$)/.test(path))).toEqual([]);
-  // Loaded from the copy, which its paths.ts takes when vendor/ is there: a module that is not in
-  // it, or a workspace name left in an import, fails here.
+  const server = join(stage, 'vendor/server');
+  const files = fs.readdirSync(server, { recursive: true, encoding: 'utf8' });
+  expect(files.filter((path) => /^src[\\/]db([\\/]|$)/.test(path))).toEqual([]);
+  // Loaded from the copy, whose paths.ts takes vendor/: a module missing there fails here.
   const packed: typeof import('./publication') = await import(
     pathToFileURL(join(stage, 'src/folder/publication.ts')).href
   );

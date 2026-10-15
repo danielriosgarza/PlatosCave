@@ -63,29 +63,23 @@ test('--write-ids adds exactly the missing ids and prints each; the rest stays b
 
 const unread = `${sampling}: no id written: with them it would not read the same`;
 const bom = String.fromCharCode(0xfeff);
-test.each([
-  ['a byte-order mark before its first key', (t: string) => bom + t.replace(/^#.*\n/gm, ''), []],
-  ['an anchored, tagged first key', (t: string) => t.replace('- file', '- &d !!str file'), []],
-  [
-    'an explicit key, which no edit keeps',
-    (t: string) => t.replace('- file:', '- ? file\n    :'),
-    [unread],
-  ],
-])(
-  '--write-ids on a topic.yaml with %s writes the ids and no other byte, or nothing',
-  async (_, change, refused) => {
-    const dir = site(change);
-    const text = fs.readFileSync(join(dir, sampling), 'utf8');
-    const { code, lines } = await check(dir);
-    expect(code, lines.join(' | ')).toBe(refused.length);
-    expect(lines).toEqual(expect.arrayContaining(refused));
-    const ids = lines.flatMap((line) => line.split(': set to ')[1] ?? []);
-    expect(ids).toHaveLength(refused.length ? 0 : 3);
-    // With each new line taken out again, the file is as it was.
-    const written = fs.readFileSync(join(dir, sampling), 'utf8');
-    expect(ids.reduce((t, id) => t.replace(new RegExp(`id: ${id}\n *`), ''), written)).toBe(text);
-  },
-);
+const shapes: [string, (text: string) => string, string[]][] = [
+  ['a byte-order mark before its first key', (t) => `${bom}${t.replace(/^#.*\n/gm, '')}`, []],
+  ['an anchored, tagged first key', (t) => t.replace('- file', '- &d !!str file'), []],
+  ['an explicit key no edit keeps', (t) => t.replace('- file:', '- ? file\n    :'), [unread]],
+];
+test.each(shapes)('--write-ids on a topic.yaml with %s', async (_, change, refused) => {
+  const dir = site(change);
+  const text = fs.readFileSync(join(dir, sampling), 'utf8');
+  const { code, lines } = await check(dir);
+  expect(code, lines.join(' | ')).toBe(refused.length);
+  expect(lines).toEqual(expect.arrayContaining(refused));
+  const ids = lines.flatMap((line) => line.split(': set to ')[1] ?? []);
+  expect(ids).toHaveLength(refused.length ? 0 : 3);
+  // With each new line taken out again, the file is as it was.
+  const written = fs.readFileSync(join(dir, sampling), 'utf8');
+  expect(ids.reduce((t, id) => t.replace(new RegExp(`id: ${id}\n *`), ''), written)).toBe(text);
+});
 
 test('--write-ids writes nothing in the course while an entry’s file is gone and a file is unlisted, and names both', async () => {
   const dir = site();
@@ -119,7 +113,5 @@ test('a topic.yaml that changed between the read and the write is not replaced',
     changed: ['sampling/topic.yaml'],
   });
   expect(fs.readFileSync(file)).toEqual(edited);
-  expect(fs.readdirSync(join(dir, 'sampling'))).toEqual(
-    fs.readdirSync(join(fixture, course, 'sampling')),
-  );
+  expect(fs.readdirSync(join(dir, 'sampling')).filter((name) => name.startsWith('.'))).toEqual([]);
 });

@@ -24,10 +24,9 @@ const print = (line: string) => console.log(shown(line));
 const many = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`;
 
 /**
- * `parallax check [--write-ids]` (docs/design/course-folder.md §9): for each course folder, read as
- * the site's level reads it, the reader's problems, the upload rules and publication's report, one
- * line each. It needs no server, and writes only the missing ids that `--write-ids` asks for
- * (§4.1). Errors exit 1, warnings and notes 0, usage 2.
+ * `parallax check [--write-ids]` (docs/design/course-folder.md §9): the reader's problems, the
+ * upload rules and publication's report of each course folder; with `--write-ids` the missing ids
+ * first (§4.1). It needs no server. Errors exit 1, warnings and notes 0, usage 2.
  */
 export const run: Command['run'] = async ({ site, args }) => {
   const writeIds = args[0] === '--write-ids';

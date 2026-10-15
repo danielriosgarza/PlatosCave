@@ -15,6 +15,7 @@ export type IdEdit = { path: string; read: Buffer; text: string; set: Written[] 
 export type IdPlan = { edits: IdEdit[]; problems: Problem[] };
 type Entry = { id?: string; resources?: Entry[] };
 
+const UNREAD = 'no id written: with them it would not read the same';
 const utf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
 
 /** The `topic.yaml` of each topic folder, as the reader reads it: its bytes, text and document. */
@@ -38,8 +39,8 @@ export function topicFolders(dir: string): Map<string, string> {
 /**
  * The ids `check --write-ids` writes (docs/design/course-folder.md §4.1): a random UUID as the
  * first key of each topic and entry without one, and no other byte. Null while the folder, read as
- * the site entry reads it, has another error: a renamed file's entry then gets no new id. A file
- * is replaced only if its new text reads back, as the reader reads it, as its value with the ids.
+ * the site entry reads it, has another error. A file is replaced only if its text reads back, as
+ * the reader reads it, as its value with the ids.
  */
 export async function planIds(dir: string): Promise<IdPlan | null> {
   const errors = (await readCourseForSite(dir)).problems.filter((p) => p.severity === 'error');
@@ -53,14 +54,12 @@ export async function planIds(dir: string): Promise<IdPlan | null> {
     const want = parseYaml(text, path).value as Entry;
     const set: Written[] = [];
     let edited = text;
-    // From the last map to the topic's, whose first key stands before all of theirs: an offset
-    // holds while the text before it is unchanged.
+    // From the last map to the topic's, whose first key stands first, so that offsets hold.
     for (const [i, map] of [[-1, doc.contents] as const, ...items].reverse()) {
       const key = isMap(map) && !map.has('id') ? map.items[0]?.key : undefined;
       const end = isNode(key) ? key.range?.[0] : undefined;
       if (!isMap(map) || end === undefined) continue;
-      // What stands before the key on its line, without a byte-order mark. The key's anchor or
-      // tag stays with it, so the id goes in front of them.
+      // What stands before the key on its line, without a byte-order mark; its anchor or tag too.
       const start = Math.max(text.lastIndexOf('\n', end - 1), text.lastIndexOf('\r', end - 1)) + 1;
       const mark = start === 0 && text.charCodeAt(0) === 0xfeff ? 1 : 0;
       const before = text.slice(start + mark, end);
@@ -77,9 +76,7 @@ export async function planIds(dir: string): Promise<IdPlan | null> {
     }
     const back = parseYaml(edited, path);
     if (back.problems.length > 0 || !isDeepStrictEqual(back.value, want)) {
-      plan.problems.push(
-        refusal('id', path, 'no id written: with them it would not read the same'),
-      );
+      plan.problems.push(refusal('id', path, UNREAD));
     } else if (set.length > 0) plan.edits.push({ path, read, text: edited, set });
   }
   // An id that stands twice is an error of the same code, and no place without an id explains it.
