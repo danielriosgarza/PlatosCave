@@ -1,9 +1,10 @@
 import { compile, place } from '../build/web';
 import type { Command } from '../main';
+import { noViewerYet } from '../open/shell';
 import { SiteProblems } from '../site/load';
 
-/** Until the level 0 build of run R3 is on main, a level 0 site is not built (site.md §5). */
-export const LEVEL_0 = 'parallax: a level 0 site cannot be built or served by this version yet.';
+export { LEVEL_0 } from '../open/shell';
+
 const stop = (line: string) => {
   console.error(line);
   return 1;
@@ -11,10 +12,16 @@ const stop = (line: string) => {
 
 /**
  * `parallax build` (docs/design/site.md §5, §6.4) at levels 1 and 2: the compile, then `dist/`. A
- * build that stops leaves `dist/` as it was. It opens no course file, so it needs no overlay.
+ * build that stops leaves `dist/` as it was. It opens no course file, so it needs no overlay. At
+ * level 0 the build of docs/design/open-site.md §4, which has no viewer to compile yet: it checks
+ * and converts every course, then stops with the level 0 message (P5-16a opens it).
  */
 export const run: Command['run'] = async ({ site }) => {
-  if (site.config.level === 0) return stop(LEVEL_0);
+  if (site.config.level === 0) {
+    // Loaded here, so that levels 1 and 2 do not load conversion.
+    const { buildOpenSite } = await import('../open/build');
+    return buildOpenSite(site, { shell: noViewerYet });
+  }
   try {
     await compile(site);
   } catch (error) {
