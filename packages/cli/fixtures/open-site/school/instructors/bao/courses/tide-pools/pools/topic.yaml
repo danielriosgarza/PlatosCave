@@ -1,0 +1,17 @@
+id: 6d1e2f3a-4b5c-4d6e-8f7a-9b0c1d2e3f4a
+position: 0
+title: Life in a rock pool
+objective: Name what lives in a pool and how the tide changes it.
+resources:
+  - id: 7e2f3a4b-5c6d-4e7f-9a8b-0c1d2e3f4a5b
+    file: reading/pools.md
+    title: Rock pools at low tide
+  - id: 8f3a4b5c-6d7e-4f8a-8b9c-1d2e3f4a5b6c
+    file: notebooks/survey.ipynb
+    title: A pool survey
+  - id: 9a4b5c6d-7e8f-4a9b-9c0d-2e3f4a5b6c7d
+    file: exercises/identify.yaml
+    title: Identify a pool's dwellers
+  - id: 0b5c6d7e-8f9a-4b0c-8d1e-3f4a5b6c7d8e
+    file: tests/check.yaml
+    title: Pools check

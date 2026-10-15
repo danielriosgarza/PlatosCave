@@ -1,0 +1,11 @@
+# A topic with only an exercise and a test: it is built, and Exercises is its first tab.
+id: 1c6d7e8f-9a0b-4c1d-9e2f-4a5b6c7d8e9f
+position: 1
+title: Practice
+resources:
+  - id: 2d7e8f9a-0b1c-4d2e-8f3a-5b6c7d8e9f0a
+    file: tests/final.yaml
+    title: Final check
+  - id: 3e8f9a0b-1c2d-4e3f-9a4b-6c7d8e9f0a1b
+    file: exercises/sort.yaml
+    title: Sort the dwellers

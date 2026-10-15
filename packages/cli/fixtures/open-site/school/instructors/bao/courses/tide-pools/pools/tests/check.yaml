@@ -1,0 +1,39 @@
+# The check of the pools. Its answer, its hidden check and its hidden file hold words that
+# start with sentinel-: a site manifest must hold none of them. The two code files without
+# `content` lie beside this definition, in check/q3/.
+questions:
+  - id: q1
+    kind: choice
+    prompt: Which survey counts fish along a line?
+    points: 1
+    options:
+      - { id: sentinel-answer, label: A transect }
+      - { id: b, label: A quadrat }
+    correct: [sentinel-answer]
+  - id: q3
+    kind: code
+    prompt: Write density(count, area).
+    points: 4
+    runtime: python-3.12
+    files:
+      - { path: main.py, editable: true, hidden: false }
+      - { path: tests/check.py, editable: false, hidden: true }
+    checks:
+      - name: sample
+        kind: call
+        visibility: public
+        file: main.py
+        function: density
+        args: [6, 4]
+        expected: { value: 1.5 }
+        compare: { mode: numeric }
+      - name: sentinel-hidden-check
+        kind: call
+        visibility: hidden
+        file: main.py
+        function: density
+        args: [9, 3]
+        expected: { value: 3 }
+        compare: { mode: numeric }
+settings:
+  attempts: 2

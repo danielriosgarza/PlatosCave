@@ -1,0 +1,9 @@
+# A topic whose only resource is hidden: it is built with no tab present, and keeps empty_topic.
+id: 4f9a0b1c-2d3e-4f4a-8b5c-7d8e9f0a1b2c
+position: 2
+title: Archive
+resources:
+  - id: 5a0b1c2d-3e4f-4a5b-9c6d-8e9f0a1b2c3d
+    file: reading/old.md
+    title: Last year's notes
+    visibility: hidden
