@@ -53,10 +53,8 @@ test('A40 each file of a course folder maps to the type, order, title and stored
   quizYaml.questions[1].files[0].content = hidden('tests/quiz/q3/main.py');
   quizYaml.questions[1].files[1].content = hidden('tests/quiz/q3/tests/check.py');
   const [html, methods] = ['tides/reading/tides.html', s('reading/methods.md')] as const;
-  const [counts, csv] = [
-    s('notebooks/counts.ipynb'),
-    s('notebooks/counts/data/quadrats.csv'),
-  ] as const;
+  const counts = s('notebooks/counts.ipynb');
+  const csv = s('notebooks/counts/data/quadrats.csv');
   const workspaceFiles = [{ path: 'data/quadrats.csv', resourceId: `object of ${csv}`, size: 21 }];
   const reading = (path: string, format: string) => ({ sourceKey: key(path), format });
   const pdf = (path: string) => ({ objectKey: key(path) });

@@ -27,13 +27,15 @@ const TAKES: Record<string, string> = {
   notebooks: '.ipynb, .shiny.yaml',
 };
 const TABS = ['slides', 'reading', 'notebooks', 'exercises', 'tests'];
-const IN_TOPIC =
-  'a topic folder holds topic.yaml, slides/, reading/, notebooks/, exercises/, tests/';
+const IN_COURSE = 'a course folder holds course.yaml and topic folders';
+const IN_TOPIC = 'topic folders hold topic.yaml, slides/, reading/, notebooks/, exercises/, tests/';
 const NO_FOLDER = 'a folder of a tab folder is the folder of a notebook or a test there, no other';
 const UNLISTED = 'no entry of topic.yaml lists it';
 const utf8 = new TextDecoder('utf-8', { fatal: true, ignoreBOM: true });
 const has = (entries: Entry[], name: string) => entries.some((e) => !e.folder && e.name === name);
 const answer = (file: string) => /^(exercise|test)$/.test(resourceKindOf(file) ?? '');
+const keep = (problem: Problem) => problem;
+const inOverlay = (problem: Problem): Problem => ({ ...problem, overlay: true });
 
 /**
  * Reads one course folder (docs/design/course-folder.md §2 to §7): its topics in `position` order,
@@ -44,11 +46,12 @@ async function readCourse(dir: string, overlay: string | undefined) {
   const problems: Problem[] = [];
   const refuse = (path: string, message: string, code = 'layout') =>
     problems.push(refusal(code, path, message));
-  const attempt = async <T>(path: string, run: () => T | Promise<T>) => {
+  const attempt = async <T>(path: string, run: () => T | Promise<T>, mark = keep) => {
     try {
       return await run();
     } catch (error) {
-      refuse(path, `cannot be read (${(error as NodeJS.ErrnoException).code ?? error})`, 'read');
+      const why = `cannot be read (${(error as NodeJS.ErrnoException).code ?? error})`;
+      problems.push(mark(refusal('read', path, why)));
     }
   };
   const listed = async (path: string) => {
@@ -74,32 +77,28 @@ async function readCourse(dir: string, overlay: string | undefined) {
   const twin = await attempt('', () =>
     fs.readdirSync(dirname(dir)).find((n) => sameButCase(n, name)),
   );
-  if (!fs.lstatSync(dir, { throwIfNoEntry: false })?.isDirectory()) {
-    refuse('', 'not a folder: a course folder is a folder, and not a link');
-  } else if (twin) refuse('', `differs only in case from ${twin}, the name on disk`);
+  const stat = !twin && (await attempt('', () => fs.lstatSync(dir)));
+  if (twin) refuse('', `differs only in case from ${twin}, the name on disk`);
+  else if (stat && !stat.isDirectory()) refuse('', 'a course folder is a folder, and not a link');
   if (problems.length > 0) return { problems };
   const top = await listed('');
-  for (const e of top) {
-    if (e.folder || e.name === 'course.yaml') continue;
-    refuse(e.path, 'a course folder holds course.yaml and topic folders');
-  }
+  let complete = problems.length === 0;
+  for (const e of top) if (!e.folder && e.name !== 'course.yaml') refuse(e.path, IN_COURSE);
   const course = has(top, 'course.yaml')
     ? await yaml('course.yaml', courseMeta)
     : void refuse('course.yaml', 'not found: it states the title and public');
 
   // Each topic folder, and the files in its tab folders but exercises/ and tests/.
   const topics = [];
-  let complete = true;
   for (const folder of top.filter((e) => e.folder)) {
     const entries = await listed(folder.path);
-    for (const e of entries) {
+    for (const e of entries)
       if (e.folder ? !TABS.includes(e.name) : e.name !== 'topic.yaml') refuse(e.path, IN_TOPIC);
-    }
     const topic = has(entries, 'topic.yaml')
       ? await yaml(`${folder.path}/topic.yaml`, topicMeta)
       : void refuse(folder.path, 'no topic.yaml: each folder of a course folder is a topic folder');
     const disk = new Map<string, Entry>();
-    for (const tab of entries.filter((e) => e.folder && TAKES[e.name])) {
+    for (const tab of entries.filter((e) => e.folder && Object.hasOwn(TAKES, e.name))) {
       const files = await listed(tab.path);
       for (const e of files) {
         const ipynb = (f: Entry) => f.name.slice(0, -6) === e.name && /\.ipynb$/i.test(f.name);
@@ -118,17 +117,18 @@ async function readCourse(dir: string, overlay: string | undefined) {
     value.resources.flatMap(({ file }) => (answer(file) ? [`${folder}/${file}`] : [])),
   );
   // The course's folder in the overlay, checked here: `definitionSource` would throw for a file.
-  const held = overlay ? fs.lstatSync(overlay, { throwIfNoEntry: false }) : undefined;
+  const lstat = () => (overlay ? fs.lstatSync(overlay, { throwIfNoEntry: false }) : undefined);
+  const held = await attempt('', lstat, inOverlay);
   if (held && !held.isDirectory()) {
     const why = 'not a folder: the overlay of a course is a folder, and not a link';
-    problems.push({ ...refusal('overlay', '', why), overlay: true });
+    problems.push(inOverlay(refusal('overlay', '', why)));
   }
   const declared = course?.value.public;
   const fromOverlay = declared === true;
-  const mark = (p: Problem): Problem => (fromOverlay ? { ...p, overlay: true } : p);
+  const mark = fromOverlay ? inOverlay : keep;
   const at = { tree: dir, public: fromOverlay, overlay: held?.isDirectory() ? overlay : undefined };
   const look = () => definitionSource(at, answers);
-  const source = declared === undefined ? undefined : await attempt('', look);
+  const source = declared === undefined ? undefined : await attempt('', look, mark);
   problems.push(...(source?.problems ?? []));
   for (const file of source?.files ?? []) {
     const [topic, tab, name, ...deeper] = file.split('/');
@@ -149,10 +149,9 @@ async function readCourse(dir: string, overlay: string | undefined) {
     const at = (field: PropertyKey[], message: string, code = 'topic') =>
       problems.push(problemAt(parsed, field, message, code));
     const identify = (id: string | undefined, field: PropertyKey[]) => {
-      const place = problemAt(parsed, field, `this id stands at ${ids.get(id ?? '')} too`, 'id');
-      if (!id) at(field, 'no id: run parallax check --write-ids to give it one', 'id');
-      else if (ids.has(id)) problems.push(place);
-      else ids.set(id, `${parsed.path} (${place.field})`);
+      if (!id) return at(field, 'no id: run parallax check --write-ids to give it one', 'id');
+      if (ids.has(id)) return at(field, `this id stands at ${ids.get(id)} too`, 'id');
+      ids.set(id, `${parsed.path} (${problemAt(parsed, field, '').field})`);
     };
     identify(meta.id, ['id']);
     const first = positions.get(meta.position);
@@ -160,7 +159,7 @@ async function readCourse(dir: string, overlay: string | undefined) {
     else positions.set(meta.position, parsed.path);
     meta.prerequisites?.forEach((id, i) => {
       if (id === meta.id) at(['prerequisites', i], 'a topic is not its own prerequisite');
-      // While a topic.yaml is refused, the ids of the course are not all known.
+      // While a topic folder or a topic.yaml is refused, the ids of the course are not all known.
       else if (complete && !topicIds.includes(id)) at(['prerequisites', i], 'no topic has this id');
     });
     const resources: Built[] = [];
@@ -180,7 +179,7 @@ async function readCourse(dir: string, overlay: string | undefined) {
         if (root && source.files.includes(path)) {
           const load = (): Promise<{ definition?: unknown; problems: Problem[] }> =>
             type === 'test' ? loadTest(root, path, source.files) : loadExercise(root, path);
-          const loaded = await attempt(path, load);
+          const loaded = await attempt(path, load, mark);
           problems.push(...(loaded?.problems ?? []).map(mark));
           add({ definition: loaded?.definition });
         }
@@ -216,10 +215,7 @@ async function readCourse(dir: string, overlay: string | undefined) {
         const data = (walked?.files ?? []).map((f) => ({ path: f.slice(named + 1), file: f }));
         const files = await Promise.all(data.map((d) => stored(d.file, 'data')));
         add({ file: path, data }, [...files.flat(), ...(await stored(path, 'notebook'))]);
-      } else {
-        const format = /\.pdf$/i.test(file) ? 'pdf' : /\.html$/i.test(file) ? 'html' : 'markdown';
-        add({ file: path }, await stored(path, format));
-      }
+      } else add({ file: path }, await stored(path, contracts.uploadFormatOf(file)));
     }
     for (const [key, e] of disk) if (!used.has(key) && !e.folder) refuse(e.path, UNLISTED);
     built.push({ meta, resources });
@@ -229,15 +225,10 @@ async function readCourse(dir: string, overlay: string | undefined) {
   return { course: { meta: course.value, topics: built }, problems };
 }
 
-/** `open(file)` of a manifest: only a file it lists, from the course folder. */
-const opener =
-  (dir: string, files: Stored[] = []) =>
-  (file: string) => {
-    if (!files.some((s) => s.path === file)) throw new Error(`${file} is not in the manifest`);
-    return fs.createReadStream(join(dir, file));
-  };
-
-/** The course and its overlay, for `sync` and for `check` at level 1 and above (design §7). */
+/**
+ * The course and its overlay, for `sync` and for `check` at level 1 and above (design §7).
+ * `open(file)` opens only a file the manifest lists, from the course folder.
+ */
 export async function readCourseForSync(
   dir: string,
   { overlay }: { overlay?: string },
@@ -247,6 +238,12 @@ export async function readCourseForSync(
     return { ...meta, resources: resources.map((r) => r.resource) };
   });
   const files = course?.topics.flatMap((topic) => topic.resources.flatMap((r) => r.files));
-  const manifest = course && contracts.courseManifest.parse({ ...course.meta, topics, files });
-  return { manifest: manifest ?? null, problems, open: opener(dir, manifest?.files) };
+  const read = course && contracts.courseManifest.safeParse({ ...course.meta, topics, files });
+  if (read?.error) problems.push(refusal('manifest', '', `not a valid manifest: ${read.error}`));
+  const manifest = read?.data ?? null;
+  const open = (file: string) => {
+    if (!manifest?.files.some((s) => s.path === file)) throw new Error(`${file} is not listed`);
+    return fs.createReadStream(join(dir, file));
+  };
+  return { manifest, problems, open };
 }
