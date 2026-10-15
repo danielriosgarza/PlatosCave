@@ -8,7 +8,7 @@ import { findPages } from '../site/pages';
 import { buildCourse } from './course';
 import { assertSeparateHosts } from './origins';
 import { BuildStop, createOutput, type Output, placeOutput } from './output';
-import type { ShellCompiler } from './shell';
+import { LEVEL_0, type ShellCompiler } from './shell';
 
 const contracts = await loadSource<typeof import('@parallax/contracts')>(
   'contracts',
@@ -18,10 +18,14 @@ const { courseRef, openCatalogue, openCourse, openPaths, tabs } = contracts;
 
 /** The path below `site/` of the file at an address: the address decoded, without its first `/`. */
 const fileOf = (address: string) => address.split('/').map(decodeURIComponent).join('/').slice(1);
-/** A stop: its message, with control characters as escapes, since it may name course text. */
+/** Prints each line of a message, control characters as escapes: it may name course text. */
+const say = (message: string) => {
+  for (const line of message.split('\n')) console.error(shown(line));
+};
+/** A stop, and that `dist/` is as it was; P5-07's level 0 message stands alone, as it did. */
 function stopped(message: string): number {
-  console.error(shown(message));
-  console.error('parallax build: dist/ is as it was.');
+  say(message);
+  if (message !== LEVEL_0) console.error('parallax build: dist/ is as it was.');
   return 1;
 }
 
@@ -85,8 +89,9 @@ export async function buildOpenSite(site: Site, { shell }: { shell: ShellCompile
   try {
     placeOutput(work, join(root, 'dist'));
   } catch (error) {
-    const why = `dist/ was not completed: ${(error as Error).message}`;
-    console.error(shown(`parallax build: ${why}. Run parallax build again.`));
+    // Before dist/ is emptied, or after: it may hold nothing of this build, or a part of it.
+    say(`parallax build: the output was not placed in full: ${(error as Error).message}`);
+    console.error('parallax build: dist/ may hold a part of this build; run parallax build again.');
     return 1;
   }
   const { app, content } = config.origins;

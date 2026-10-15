@@ -30,7 +30,7 @@ export function underGuard(places: { site: string; courses: string[] }, code: st
     env[name] = undefined;
   env.PARALLAX_READ_GUARD = JSON.stringify({ ...places, log });
   const guard = pathToFileURL(join(import.meta.dirname, 'read-guard.mjs')).href;
-  const options = { cwd: packageRoot, env, encoding: 'utf8', timeout: 600_000 } as const;
+  const options = { cwd: packageRoot, env, encoding: 'utf8', timeout: 240_000 } as const;
   const run = spawnSync(process.execPath, ['--import', guard, script], options);
   const lines = fs.existsSync(log) ? fs.readFileSync(log, 'utf8').split('\n') : [];
   fs.rmSync(folder, { recursive: true, force: true });
@@ -69,18 +69,17 @@ export const STAND_IN = `async (site, out) => {
 /**
  * Builds the site at `root` at level 0 under the file-read guard, which guards its course folders
  * in either mode: `buildOpenSite` with `shell`, a `ShellCompiler`'s code that may use `fs`, `join`
- * and `root`, or with `command` the command `parallax build`. It gives what `underGuard` gives and
- * every file of `.parallax/open/` and `dist/`, by its path from the site.
+ * and `root`, or with `command: true` the command `parallax build`. It gives what `underGuard` gives,
+ * and every file of `.parallax/open/` and `dist/`, by its path from the site.
  */
-export function buildUnderGuard(root: string, shell: string = STAND_IN) {
+export function buildUnderGuard(root: string, { shell = STAND_IN, command = false } = {}) {
   const listed = (dir: string) =>
     (fs.existsSync(dir) ? fs.readdirSync(dir) : []).map((name) => join(dir, name));
   const instructors = listed(join(root, 'instructors')).map((dir) => join(dir, 'courses'));
   const courses = [join(root, 'courses'), ...instructors].flatMap(listed);
-  const build =
-    shell === 'command'
-      ? `main(['build'], { cwd: root })`
-      : `buildOpenSite(await loadSite(root), { shell: ${shell} })`;
+  const build = command
+    ? `main(['build'], { cwd: root })`
+    : `buildOpenSite(await loadSite(root), { shell: ${shell} })`;
   const at = (file: string) => JSON.stringify(moduleUrl(file));
   const run = underGuard(
     { site: root, courses },

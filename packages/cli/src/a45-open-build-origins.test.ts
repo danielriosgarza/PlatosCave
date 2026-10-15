@@ -5,7 +5,7 @@ import { join, resolve } from 'node:path';
 import { afterAll, beforeAll, expect, test } from 'vitest';
 import { main } from './main';
 import { buildOpenSite } from './open/build';
-import { noViewerYet } from './open/shell';
+import { LEVEL_0, noViewerYet } from './open/shell';
 import { buildUnderGuard, printing, STAND_IN } from './open/testing';
 import { loadSite } from './site/load';
 
@@ -69,11 +69,20 @@ test('A45 a level 0 build without a distinct content origin stops', async () => 
     );
     expect([command.result, direct.result, both.length], content).toEqual([1, 1, 2]);
     expect(lines.filter((line) => line.includes('topic.yaml'))).toEqual([]);
+    // Nothing written: the stop came before the work folder, so not from noViewerYet, after it.
     expect([fs.existsSync(join(root, '.parallax')), fs.readdirSync(join(root, 'dist'))]).toEqual([
       false,
       ['index.html'],
     ]);
   }
+  // With the origins as given and no course, the command passes the host rule and stops with
+  // P5-07's level 0 message alone, as no viewer is compiled yet; dist/ is as it was.
+  fs.writeFileSync(file, config);
+  fs.rmSync(join(root, 'courses'), { recursive: true });
+  fs.mkdirSync(join(root, 'courses'));
+  const level0 = await printing(() => main(['build'], { cwd: root }));
+  const placed = fs.readdirSync(join(root, 'dist'));
+  expect([level0.result, level0.lines, placed]).toEqual([1, [LEVEL_0], ['index.html']]);
 }, 120_000);
 
 test('A45 untrusted objects are written only under content/, and a build stops when one would land under site/', () => {
@@ -99,7 +108,9 @@ test('A45 untrusted objects are written only under content/, and a build stops w
   const shell = new Set(copied.map(([path]) => path));
   const other = site.filter(([path]) => !shell.has(path) && !/(\/open\.js|\.json)$/.test(path));
   const twins = site.filter(([, bytes]) => objects.has(sha(bytes)));
-  expect([copied.length, other, twins]).toEqual([2 * (1 + 1 + 1 + 2 * 5 + 1 + 3 * 5), [], []]);
+  const catalogue = files.has('dist/site/courses/catalogue.json');
+  const counts = [copied.length, other, twins, catalogue];
+  expect(counts).toEqual([2 * (1 + 1 + 1 + 2 * 5 + 1 + 3 * 5), [], [], true]);
 
   // A stand-in with a copy of an emitted SVG, one with a copy of the course's PDF deck, and one
   // that puts a file into the staged site/ behind the writer: each stop names the file.
@@ -116,7 +127,10 @@ test('A45 untrusted objects are written only under content/, and a build stops w
     ],
     ['site/figure.svg', `fs.writeFileSync(join(${work}, 'site/figure.svg'), '<svg/>');`],
   ]) {
-    const run = buildUnderGuard(copy(), STAND_IN.replace(/\}$/, `${plant}\n}`));
+    // One course is enough to reach the audit.
+    const root = copy();
+    fs.rmSync(join(root, 'courses/tide-pools'), { recursive: true });
+    const run = buildUnderGuard(root, { shell: STAND_IN.replace(/\}$/, `${plant}\n}`) });
     const dist = [...run.files].filter(([path]) => path.startsWith('dist/'));
     expect([run.status, run.stderr.split(' ')[0], dist]).toEqual([1, named, [earlier]]);
   }

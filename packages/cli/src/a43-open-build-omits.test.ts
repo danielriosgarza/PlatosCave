@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterAll, beforeAll, expect, test } from 'vitest';
 import { main } from './main';
+import { LEVEL_0 } from './open/shell';
 import { buildUnderGuard, filesOf, printing, STAND_IN } from './open/testing';
 
 delete process.env.DATABASE_URL;
@@ -57,7 +58,7 @@ beforeAll(() => {
   const root = copy();
   // A link in a notebook's data folder to the folder of the hidden reading, as in course.test.ts.
   fs.symlinkSync(join(root, reef, 'reading'), join(root, reef, 'notebooks/counts/r'), 'junction');
-  first = { ...buildUnderGuard(root, planting), root };
+  first = { ...buildUnderGuard(root, { shell: planting }), root };
 }, 300_000);
 
 test('A43 no file of a level 0 build holds a hidden check, a solution or a correct answer', () => {
@@ -100,13 +101,13 @@ test('A43 a level 0 build opens no file under exercises/, tests/ or private/', (
 
 test('A43 parallax build at level 0 refuses a public tree that holds a definition, as parallax check does', async () => {
   const root = copy();
+  const earlier = ['dist/index.html', Buffer.from('an earlier build')] as const;
   fs.mkdirSync(join(root, 'dist'));
-  fs.writeFileSync(join(root, 'dist/index.html'), 'an earlier build');
-  // The overlay's definitions moved into the tree of the course declared public.
+  fs.writeFileSync(join(root, earlier[0]), earlier[1]);
+  // The overlay's definitions moved into the tree of the course declared public, the only course.
   fs.cpSync(join(root, 'private', reef), join(root, reef), { recursive: true });
-  fs.rmSync(join(root, 'private'), { recursive: true });
+  for (const dir of ['private', pools]) fs.rmSync(join(root, dir), { recursive: true });
   const check = await printing(() => main(['check'], { cwd: root }));
-  const run = buildUnderGuard(root, 'command');
   const errors = (lines: string[]) =>
     lines.filter((line) => line && !/^(warning|note): |^parallax /.test(line));
   const held = 'a tree declared public holds no exercise or test: it belongs in the overlay';
@@ -120,13 +121,19 @@ test('A43 parallax build at level 0 refuses a public tree that holds a definitio
     1,
     leaked.map((file) => `${reef}/${file}: ${held}`),
   ]);
-  expect([run.status, errors(run.stdout.split('\n')), run.refused]).toEqual([
-    1,
-    errors(check.lines),
-    [],
-  ]);
-  const dist = [...run.files].filter(([path]) => path.startsWith('dist/'));
-  expect(dist).toEqual([['dist/index.html', Buffer.from('an earlier build')]]);
+  // The command, which at level 0 would stop at noViewerYet, and the build with the stand-in,
+  // which would place the site: both stop at the refusal, before either.
+  for (const run of [buildUnderGuard(root, { command: true }), buildUnderGuard(root)]) {
+    const dist = [...run.files].filter(([path]) => path.startsWith('dist/'));
+    const stop = [run.status, errors(run.stdout.split('\n')), run.refused, dist];
+    expect([...stop, run.stderr.includes(LEVEL_0)]).toEqual([
+      1,
+      errors(check.lines),
+      [],
+      [earlier],
+      false,
+    ]);
+  }
 }, 300_000);
 
 test('a second build into a used site folder leaves nothing of a resource that was hidden or removed since', () => {
