@@ -4,6 +4,7 @@ import type { z } from 'zod';
 import type { ClassScope, CourseScope } from '../../auth/scope';
 import { audit } from '../audit';
 import type { Db } from '../client';
+import { releaseNeedsGrader } from '../openClass';
 import {
   classes,
   classReleaseHistory,
@@ -161,12 +162,15 @@ export type AdoptResult =
   | { ok: true; releaseId: string; diff: AdoptionDiff }
   | { ok: false; reason: 'not_found' }
   | { ok: false; reason: 'class_archived' }
+  | { ok: false; reason: 'manual_grading' }
   | { ok: false; reason: 'release_conflict'; currentReleaseId: string | null };
 
 /**
  * Moves the class to another release of its course (§12). The class row is locked and must
  * still be on `expectedReleaseId`, so two instructors cannot adopt over each other silently.
- * Adopting the current release again changes nothing and records nothing.
+ * Adopting the current release again changes nothing and records nothing. Nobody grades in an
+ * open class (§13, N10), so it adopts no release with manually graded test parts; `open` is read
+ * from the locked row, so it cannot change between the check and the adoption.
  */
 export function adoptRelease(
   db: Db,
@@ -175,7 +179,7 @@ export function adoptRelease(
 ): Promise<AdoptResult> {
   return db.transaction(async (tx) => {
     const [cls] = await tx
-      .select({ releaseId: classes.releaseId, archivedAt: classes.archivedAt })
+      .select({ releaseId: classes.releaseId, archivedAt: classes.archivedAt, open: classes.open })
       .from(classes)
       .where(eq(classes.id, scope.classId))
       .for('update');
@@ -185,6 +189,9 @@ export function adoptRelease(
     if (!to) return { ok: false, reason: 'not_found' };
     if (cls.releaseId !== input.expectedReleaseId) {
       return { ok: false, reason: 'release_conflict', currentReleaseId: cls.releaseId };
+    }
+    if (cls.open && (await releaseNeedsGrader(tx, scope, to.id))) {
+      return { ok: false, reason: 'manual_grading' };
     }
     const from = cls.releaseId ? ((await findRelease(tx, scope, cls.releaseId)) ?? null) : null;
     const diff = await diffReleases(tx, scope, from, to);

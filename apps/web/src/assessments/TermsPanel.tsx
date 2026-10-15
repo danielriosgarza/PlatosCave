@@ -1,4 +1,5 @@
 import { formatInstant, REPORTED_RULE_LABEL } from '../format/format';
+import { useClassContext } from '../session/classContext';
 import type { Terms } from './api';
 import styles from './Test.module.css';
 
@@ -7,7 +8,7 @@ const upperFirst = (text: string) => text.charAt(0).toUpperCase() + text.slice(1
 /** The terms shown before and during work: attempts, points, timing, late policy and release (§11). */
 function termsRows(
   terms: Terms,
-  options: { attemptNumber?: number; deadlineAt?: string | null } = {},
+  options: { attemptNumber?: number; deadlineAt?: string | null; open?: boolean } = {},
 ): [string, string][] {
   const zone = terms.timeZone;
   // `terms` is already the student's effective terms: the server has added any override.
@@ -42,8 +43,9 @@ function termsRows(
   rows.push(['Allowed materials', terms.allowedMaterials.trim() || 'None stated']);
   rows.push([
     'Results',
+    // Nobody grades in an open class (§13, N10): results are released once scored.
     terms.release.results === 'manual'
-      ? 'Released by your instructor'
+      ? `Released ${options.open ? 'once scored' : 'by your instructor'}`
       : terms.release.at
         ? `Released ${formatInstant(terms.release.at, zone)}`
         : 'Released on a schedule',
@@ -62,19 +64,22 @@ function termsRows(
 
 /** Effective assignment terms, kept in view for the whole attempt (§11). */
 export function TermsPanel({
+  classId,
   terms,
   attemptNumber,
   deadlineAt,
 }: {
+  classId: string;
   terms: Terms;
   attemptNumber?: number;
   deadlineAt?: string | null;
 }) {
+  const open = useClassContext(classId)?.open === true;
   return (
     <section aria-label="Assignment terms">
       <h4 className={styles.termsHead}>Terms</h4>
       <dl className={styles.terms}>
-        {termsRows(terms, { attemptNumber, deadlineAt }).map(([term, value]) => (
+        {termsRows(terms, { attemptNumber, deadlineAt, open }).map(([term, value]) => (
           <div key={term} style={{ display: 'contents' }}>
             <dt>{term}</dt>
             <dd>{value}</dd>

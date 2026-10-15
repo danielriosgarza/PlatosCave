@@ -22,6 +22,8 @@ export const me = defineRoute({
         role: z.enum(['student', 'instructor']),
         manageMembers: z.boolean(),
         isPreview: z.boolean(),
+        /** An open class (§13, N10): nobody posts to the class or to instructors. */
+        open: z.boolean().optional(),
       }),
     ),
     courses: z.array(

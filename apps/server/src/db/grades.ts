@@ -409,13 +409,15 @@ export const previewRelease = (db: Db, scope: ClassScope, attemptIds: string[]) 
 /**
  * Release feedback (§12, A17): makes exactly the named grade rows visible to their students and
  * records who released them, when, and to whom. If the set differs from what a preview shows now
- * (a newer draft, an attempt already released, an incomplete grade), nothing is released.
+ * (a newer draft, an attempt already released, an incomplete grade), nothing is released. `via`
+ * is added to the audit event of a release no instructor asked for.
  */
 export async function releaseGrades(
   db: Db,
   scope: ClassScope,
   entries: { attemptId: string; gradeId: string }[],
   now: Date,
+  via?: { open: true },
 ): Promise<Outcome<Release> | ReleaseChanged> {
   if (scope.archived) return classArchived;
   return db.transaction(async (tx) => {
@@ -433,7 +435,7 @@ export async function releaseGrades(
       preview.skipped.length === 0 &&
       preview.recipients.every((r) => wanted.get(r.attemptId) === r.gradeId);
     if (!exact) return { ok: false, reason: 'release_changed', preview };
-    return { ok: true, value: await recordRelease(tx, scope, preview.recipients, now) };
+    return { ok: true, value: await recordRelease(tx, scope, preview.recipients, now, via) };
   });
 }
 
@@ -447,7 +449,7 @@ async function recordRelease(
   scope: ClassScope,
   recipients: Preview['recipients'],
   now: Date,
-  scheduled?: { resourceId: string },
+  via?: { scheduled: { resourceId: string } } | { open: true },
 ): Promise<Release> {
   const [release] = await tx
     .insert(gradeReleases)
@@ -495,7 +497,7 @@ async function recordRelease(
     scopeId: scope.classId,
     targetType: 'grade_release',
     targetId: release.id,
-    after: { recipients: release.recipients, ...(scheduled && { scheduled }) },
+    after: { recipients: release.recipients, ...via },
     createdAt: now,
   });
   return {
@@ -584,10 +586,54 @@ export async function releaseScheduled(
     });
     if (recipients.length === 0) return { release: null, skipped };
     return {
-      release: await recordRelease(tx, scope, recipients, now, { resourceId }),
+      release: await recordRelease(tx, scope, recipients, now, { scheduled: { resourceId } }),
       skipped,
     };
   });
+}
+
+/**
+ * Automatic release in an open class (§13, N10), where nobody grades: a complete automated score
+ * is saved as the attempt's grade and released through the instructor's paths as `scope`'s
+ * instructor, marked `open` in the release's audit event; results the terms schedule for later
+ * wait for the scheduled release. A complete grade not yet released (a run stopped between the
+ * steps) is released; a released or incomplete one is left. `pending` while a code question is
+ * being graded. Throws when a step is refused, so the job is retried.
+ */
+export async function releaseOpen(
+  db: Db,
+  scope: ClassScope,
+  attemptId: string,
+  now: Date,
+): Promise<{ release: Release | null; pending: boolean }> {
+  const none = { release: null, pending: false };
+  if (!scope.open || scope.archived) return none;
+  const found = await db.transaction(async (tx) => {
+    const locked = await lockReviewable(tx, scope, attemptId, now);
+    if (!locked) return undefined;
+    const grade = await attemptGradeOf(tx, scope, locked.attempt, locked.student);
+    return { attempt: locked.attempt, grade };
+  });
+  if (!found || found.attempt.state === 'in_progress') return none;
+  const refused = (step: string, reason: string) =>
+    new Error(`attempt ${attemptId}: the automatic ${step} was refused (${reason})`);
+  let grade = found.grade.history[0];
+  if (!grade) {
+    const parts = found.grade.automated;
+    if (parts.some((q) => q.automated?.status === 'pending')) return { ...none, pending: true };
+    if (parts.some((q) => q.points === null)) return none;
+    const draft: GradeChange = { expectedGradeId: null, source: 'draft', manual: [], feedback: [] };
+    const saved = await changeGrade(db, scope, attemptId, draft, now);
+    if (!saved.ok) throw refused('grade', saved.reason);
+    grade = saved.value.history[0];
+  }
+  const { results, at } = found.attempt.settings.release;
+  const later = results === 'scheduled' && at !== null && Date.parse(at) > now.getTime();
+  if (!grade?.complete || grade.state === 'released' || later) return none;
+  const entry = { attemptId, gradeId: grade.id };
+  const released = await releaseGrades(db, scope, [entry], now, { open: true });
+  if (!released.ok) throw refused('release', released.reason);
+  return { release: released.value, pending: false };
 }
 
 /** The assignment's reported-grade rule: the class's current terms, else the newest attempt's. */

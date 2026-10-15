@@ -17,6 +17,7 @@ export async function listContexts(db: Db, scope: UserScope) {
       role: classMemberships.role,
       manageMembers: classMemberships.manageMembers,
       isPreview: classMemberships.isPreview,
+      open: classes.open,
     })
     .from(classMemberships)
     .innerJoin(classes, eq(classes.id, classMemberships.classId))

@@ -22,13 +22,14 @@ import margin from '../reading/margin/Margin.module.css';
 import { NoteConflict } from '../reading/margin/NoteConflict';
 import { NoteController, type NoteState } from '../reading/margin/notes';
 import { audienceLabel, NoteSaveLine } from '../reading/margin/ReadingMargin';
+import { useClassContext } from '../session/classContext';
 import { useSession } from '../session/useSession';
 
 interface Ask {
   body: string;
   audience: Audience;
   /** What the last attempt to post said; the text is kept either way. */
-  problem: 'offline' | 'failed' | null;
+  problem: 'offline' | 'failed' | 'open' | null;
   posting: boolean;
 }
 
@@ -67,10 +68,11 @@ interface Props {
 /**
  * The margin of the slide viewer (§7): private notes and discussion for the slide shown. Each
  * slide keeps its own note and unsent question, so moving on neither saves into the wrong slide
- * nor overwrites the draft of the one left behind.
+ * nor overwrites the draft of the one left behind. An open class (§13, N10) has no composer.
  */
 export function SlideNotes({ classId, resourceId, page }: Props) {
   const session = useSession();
+  const canPost = useClassContext(classId)?.open !== true;
   const userId = session.status === 'signed-in' ? session.me.user.id : null;
   const list = useMarginList(classId, resourceId);
   const actions = useMarginActions(classId, resourceId);
@@ -333,7 +335,7 @@ export function SlideNotes({ classId, resourceId, page }: Props) {
       [slide]: {
         ...latest,
         posting: false,
-        problem: result.kind === 'offline' ? 'offline' : 'failed',
+        problem: result.kind === 'offline' || result.kind === 'open' ? result.kind : 'failed',
       },
     }));
   };
@@ -414,6 +416,7 @@ export function SlideNotes({ classId, resourceId, page }: Props) {
               </section>
             ) : null}
             <DiscussionComposer
+              off={!canPost}
               audience={ask.audience}
               onAudience={(audience) => setAsk(page, { audience })}
               body={ask.body}

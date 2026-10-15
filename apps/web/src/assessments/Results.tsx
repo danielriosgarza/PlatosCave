@@ -12,17 +12,22 @@ type Feedback = Grade['feedback'][number];
 
 /**
  * One line of state for an attempt (§11). A score of zero, an attempt not yet submitted and a
- * grading failure each have their own wording: none of them reads as another.
+ * grading failure each have their own wording: none of them reads as another. In an open class
+ * (§13, N10) nobody grades or releases: results are released as the terms say.
  */
-export function resultLine(a: ResultAttempt): string {
+export function resultLine(a: ResultAttempt, open = false): string {
   if (a.status === 'released' && a.grade)
     return `Result: ${pointsOf(a.grade.points, a.grade.possible)}`;
   if (a.status === 'in_progress') return 'Not submitted yet';
   switch (a.state) {
     case 'needs_review':
-      return 'Grading could not finish. Your instructor will review it; no score has been recorded.';
+      return open
+        ? 'Grading could not finish. No score has been recorded.'
+        : 'Grading could not finish. Your instructor will review it; no score has been recorded.';
     case 'graded':
-      return 'Graded · your instructor has not released the result yet';
+      return open
+        ? 'Graded · the result is released when the terms say'
+        : 'Graded · your instructor has not released the result yet';
     case 'released':
       return 'Result released';
     default:

@@ -519,6 +519,7 @@ export function AttemptWorkspace({
           ) : null}
           <div className={styles.rule} />
           <TermsPanel
+            classId={classId}
             terms={attempt.terms}
             attemptNumber={attempt.number}
             deadlineAt={attempt.deadlineAt}

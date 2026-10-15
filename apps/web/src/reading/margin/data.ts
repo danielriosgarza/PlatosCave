@@ -16,6 +16,7 @@ import { type QueryClient, useQueryClient } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import type { z } from 'zod';
 import { ApiError, call, useApi } from '../../api/client';
+import { POSTING_OFF } from '../../components/DiscussionComposer';
 import type { Annotation, SendResult } from './notes';
 
 export type Thread = z.output<typeof threadView>;
@@ -55,6 +56,12 @@ const KEEPALIVE_MAX_CHARS = 16_000;
 
 const offline = () => typeof navigator !== 'undefined' && navigator.onLine === false;
 
+/** The server refused a post because the class is open (§13, N10). */
+const classOpen = (error: unknown) =>
+  error instanceof ApiError &&
+  error.status === 409 &&
+  (error.body as { error?: string } | null)?.error === 'class_open';
+
 /** Updates one annotation (or adds it) in the cached list a successful call just changed. */
 function putAnnotation(client: QueryClient, classId: string, resourceId: string, a: Annotation) {
   client.setQueryData<MarginList>(listKey(classId, resourceId), (list) => {
@@ -92,6 +99,7 @@ function refusal(error: unknown): string {
     if (error.status === 409 && body?.error === 'class_archived') {
       return 'This class is archived, so discussions can no longer change.';
     }
+    if (classOpen(error)) return POSTING_OFF;
     if (error.status === 400 && body?.message) return body.message;
     if (error.status === 404) return 'This discussion is no longer available.';
   }
@@ -99,6 +107,8 @@ function refusal(error: unknown): string {
     ? 'You are offline. Try again when you are back online.'
     : 'Could not save. Try again.';
 }
+
+type Asked = Thread | SendResult | { kind: 'open' };
 
 export interface MarginActions {
   /** Runs one discussion action; the cached thread is replaced by what the server answered. */
@@ -115,7 +125,8 @@ export interface MarginActions {
     body: string,
   ): Promise<SendResult>;
   remove(id: string): Promise<boolean>;
-  ask(audience: 'instructor' | 'class', anchor: Anchor, body: string): Promise<Thread | SendResult>;
+  /** `open`: refused because the class is open (§13, N10). */
+  ask(audience: 'instructor' | 'class', anchor: Anchor, body: string): Promise<Asked>;
   acknowledged(a: Annotation): void;
   /** Stops listing an annotation without asking the server (it is already gone there). */
   forget(id: string): void;
@@ -253,7 +264,7 @@ export function useMarginActions(classId: string, resourceId: string): MarginAct
           );
           return thread;
         } catch (error) {
-          return classify(error);
+          return classOpen(error) ? { kind: 'open' as const } : classify(error);
         }
       },
     };
