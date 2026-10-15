@@ -200,7 +200,7 @@ A definition that is listed and found in neither place stops `sync` with exit co
 readCourseForSync(dir, { overlay?: string }): Promise<{ manifest: CourseManifest | null; problems: Problem[]; open(file): Readable }>
 readCourseForSite(dir): Promise<{ manifest: SiteManifest | null; problems: Problem[]; open(file): Readable }>
 readCourseHeader(dir): { title: string } | undefined          // course.yaml's title and nothing else
-type Problem = { severity: 'error' | 'warning' | 'note'; code: string; path: string; field?: string; line?: number; message: string }
+type Problem = { severity: 'error' | 'warning' | 'note'; code: string; path: string; overlay?: true; field?: string; line?: number; message: string }   // overlay: the path is from the course's folder in private/
 ```
 
 `manifest` is null while an error stands, so no caller can convert a refused tree. Paths in a manifest are relative to the course folder, with `/`; the commands print them from the site root. Topics and resources carry their folder ids, never row ids: the reader knows no owner. The schemas in contracts (P5-08a) are the exact statement of both manifests; this is what they carry.

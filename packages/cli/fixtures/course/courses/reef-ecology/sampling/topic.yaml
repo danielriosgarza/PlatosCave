@@ -1,0 +1,39 @@
+# One resource of each of the eight types, listed out of tab order: the list gives the order.
+# The topic has a prerequisite and a completion rule that names the quiz.
+id: 5f0c1d8e-3b7a-4c2e-9a41-7d2f6b0e1c33
+position: 1
+title: Sampling a reef
+objective: Plan a transect survey and say what its counts can show.
+estimatedMinutes: 90
+prerequisites:
+  - 0b2f4a6c-8d1e-4f3a-b5c7-9e0a1b2c3d4e
+completionRule:
+  requires: ['reviewed:*', 'submitted:8a7b6c5d-4e3f-4a2b-9c1d-0e9f8a7b6c5d']
+resources:
+  - id: c1d2e3f4-a5b6-4c7d-8e9f-0a1b2c3d4e5f
+    file: slides/transects.md
+    title: Transect surveys
+  - id: 2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e
+    file: reading/methods.md
+    title: Survey methods
+  - id: 9d8c7b6a-5f4e-4d3c-a2b1-0f9e8d7c6b5a
+    file: notebooks/counts.ipynb
+    title: Counting quadrats
+  - id: 4e5f6a7b-8c9d-4e0f-a1b2-c3d4e5f6a7b8
+    file: exercises/estimate.yaml
+    title: Estimate a density
+  - id: 6a5b4c3d-2e1f-4a0b-9c8d-7e6f5a4b3c2d
+    file: slides/deck.pdf
+    title: Reef zones
+    alternative: Four slides that name the reef zones from the shore outward.
+  - id: 1f2e3d4c-5b6a-4978-8a9b-0c1d2e3f4a5b
+    file: notebooks/tide.shiny.yaml
+    title: Tide explorer
+  - id: 7e6d5c4b-3a29-4f18-8e07-6d5c4b3a2918
+    file: reading/paper.pdf
+    title: Counting fish along a transect
+    alternative: The paper's sections as plain text, with each table written out.
+    visibility: hidden
+  - id: 8a7b6c5d-4e3f-4a2b-9c1d-0e9f8a7b6c5d
+    file: tests/quiz.yaml
+    title: Sampling quiz
