@@ -22,6 +22,12 @@ const read = (site: string, dir = course) =>
   readCourseForSync(join(site, dir), { overlay: join(site, 'private', course) });
 const edit = (file: string, change: (text: string) => string) =>
   fs.writeFileSync(file, change(fs.readFileSync(file, 'utf8')));
+/** The fixture's tree declared private, holding the definitions its overlay held. */
+const declaredPrivate = (dir: string) => {
+  fs.cpSync(join(dir, 'private', course), join(dir, course), { recursive: true });
+  fs.rmSync(join(dir, 'private'), { recursive: true });
+  edit(join(dir, course, 'course.yaml'), (text) => text.replace('public: true', 'public: false'));
+};
 type Call = (path: unknown, ...rest: unknown[]) => unknown;
 const writable = fs as unknown as Record<string, Call>;
 /** What `run` gives, and each path it asks node:fs to read or list, as `<function> <path>`. */
@@ -59,7 +65,8 @@ test('links out of the course folder, names in another case and file-system erro
   const real = { ...writable };
   const deny = (name: string, ...path: string[]) => {
     writable[name] = (at, ...rest) => {
-      if (resolve(String(at)) === join(...path)) throw Object.assign(Error(), { code: 'EACCES' });
+      const error = Object.assign(Error(), { code: 'EACCES', path: at });
+      if (resolve(String(at)) === join(...path)) throw error;
       return real[name]?.(at, ...rest);
     };
     syncBuiltinESMExports();
@@ -68,7 +75,9 @@ test('links out of the course folder, names in another case and file-system erro
     try {
       return await read(copy(change));
     } finally {
-      for (const name of ['lstatSync', 'readFileSync']) writable[name] = real[name] as Call;
+      for (const name of ['lstatSync', 'readFileSync', 'readdirSync']) {
+        writable[name] = real[name] as Call;
+      }
       syncBuiltinESMExports();
     }
   };
@@ -95,6 +104,17 @@ test('links out of the course folder, names in another case and file-system erro
     expect(manifest).toBeNull();
     const named = { severity: 'error', path, ...(overlay && { overlay }) };
     expect(problems).toContainEqual(expect.objectContaining(named));
+  }
+  // A listing that fails is named once, at its folder, and nothing further is said of it.
+  const lists: [path: string, root: string, overlay?: true][] = [
+    ['sampling', course],
+    ['sampling/notebooks', course],
+    ['sampling/tests', `private/${course}`, true],
+  ];
+  for (const [path, root, overlay] of lists) {
+    const { problems } = await denied((site) => deny('readdirSync', site, root, path));
+    const named = { code: 'read', path, ...(overlay && { overlay }) };
+    expect(problems).toEqual([expect.objectContaining(named)]);
   }
   // The course folder itself: a link to it, also written with a separator at its end, and a
   // spelling the listing does not have.
@@ -142,17 +162,41 @@ test('the site entry opens no file under exercises/, tests/ or private/, and lis
 });
 
 test('a tree declared private that holds its definitions gives the manifests of the public form', async () => {
-  const site = copy((dir) => {
-    fs.cpSync(join(dir, 'private', course), join(dir, course), { recursive: true });
-    fs.rmSync(join(dir, 'private'), { recursive: true });
-    edit(join(dir, course, 'course.yaml'), (text) => text.replace('public: true', 'public: false'));
-  });
+  const site = copy(declaredPrivate);
   const [open, closed] = [await read(fixture), await read(site)];
   expect(closed.problems).toEqual([]);
   const unmarked = JSON.stringify(open.manifest).replaceAll('"overlay":true', '"overlay":false');
   expect(closed.manifest).toEqual(JSON.parse(unmarked.replace('"public":true', '"public":false')));
   const [served, kept] = [fixture, site].map((dir) => readCourseForSite(join(dir, course)));
   expect((await kept)?.manifest).toEqual((await served)?.manifest);
+});
+
+test('one unknown key in a topic.yaml is one problem, at that file, for the operator and for the site', async () => {
+  const typo = (dir: string) =>
+    edit(join(dir, course, 'sampling/topic.yaml'), (text) => `${text}colour: blue\n`);
+  // In the tree declared public its definitions lie in the overlay; in the other, in the tree.
+  const closed = (dir: string) => {
+    declaredPrivate(dir);
+    typo(dir);
+  };
+  const trees = [copy(typo), copy(closed)];
+  const named = { severity: 'error', path: 'sampling/topic.yaml', field: 'colour' };
+  for (const site of trees) {
+    for (const { problems } of [await read(site), await readCourseForSite(join(site, course))]) {
+      expect(problems).toEqual([expect.objectContaining(named)]);
+    }
+  }
+});
+
+test('each entry gives the folder of each topic by its folder id, and none for a refused tree', async () => {
+  const folders = new Map([
+    ['0b2f4a6c-8d1e-4f3a-b5c7-9e0a1b2c3d4e', 'tides'],
+    ['5f0c1d8e-3b7a-4c2e-9a41-7d2f6b0e1c33', 'sampling'],
+  ]);
+  expect((await read(fixture)).folders).toEqual(folders);
+  expect((await readCourseForSite(join(fixture, course))).folders).toEqual(folders);
+  const refused = copy((dir) => fs.rmSync(join(dir, 'private'), { recursive: true }));
+  expect((await read(refused)).folders).toEqual(new Map());
 });
 
 test('without private/, a course declared public stops the reader with the paths it expected', async () => {
