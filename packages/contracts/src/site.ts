@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { providerSettings } from './routes/auth';
 import { RunnerRuntimeId } from './runner';
 
 // docs/design/site.md: `parallax.config.ts` (§4), `instructor.yaml` (§7), the catalogue (§6.6).
@@ -43,7 +44,13 @@ const fields = z.strictObject({
   logo: z.strictObject({ file: logoFile, alt: text(120) }).optional(),
   level: z.literal([0, 1, 2]),
   origins: z.strictObject({ app: origin, content: origin, shiny: z.array(origin).default([]) }),
-  signIn: z.strictObject({ email: z.strictObject({ from: text(200) }).optional() }).optional(),
+  signIn: z
+    .strictObject({
+      email: z.strictObject({ from: text(200) }).optional(),
+      // The server's `OIDC_PROVIDERS` entries; the client secrets are typed into `.env` (§9).
+      providers: z.array(providerSettings).optional(),
+    })
+    .optional(),
   instructors: z.array(z.string()).min(1).optional(),
   classes: z.array(classEntry).default([]),
   runner: z
@@ -65,7 +72,12 @@ function rules(config: z.output<typeof fields>, ctx: z.RefinementCtx): void {
     const own = shiny === origins.content || hostOf(shiny) === app;
     if (own) refuse('is the content origin or on the host of origins.app', 'origins', 'shiny', i);
   });
-  if (level >= 1 && !config.signIn?.email) refuse('level 1 and above need signIn.email', 'signIn');
+  const { email, providers = [] } = config.signIn ?? {};
+  const way = 'level 1 and above need a way to sign in: signIn.email, signIn.providers or both';
+  if (level >= 1 && !email && providers.length === 0) refuse(way, 'signIn');
+  const providerIds = providers.map((provider) => provider.id);
+  const twice = new Set(providerIds).size < providerIds.length;
+  if (twice) refuse('provider ids must be unique', 'signIn', 'providers');
   if (level === 2 && !runner) refuse('required at level 2', 'runner');
   const ids = runner?.runtimes.map((entry) => entry.id) ?? [];
   if (new Set(ids).size < ids.length) refuse('runtime ids must be unique', 'runner', 'runtimes');
