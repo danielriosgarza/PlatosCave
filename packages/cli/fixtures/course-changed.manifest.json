@@ -1,0 +1,293 @@
+{
+  "title": "Reef ecology",
+  "public": true,
+  "topics": [
+    {
+      "id": "5f0c1d8e-3b7a-4c2e-9a41-7d2f6b0e1c33",
+      "position": 0,
+      "title": "Sampling a reef",
+      "objective": "Plan a transect survey and say what its counts can show.",
+      "estimatedMinutes": 90,
+      "prerequisites": ["0b2f4a6c-8d1e-4f3a-b5c7-9e0a1b2c3d4e"],
+      "completionRule": {
+        "requires": ["reviewed:*", "submitted:8a7b6c5d-4e3f-4a2b-9c1d-0e9f8a7b6c5d"]
+      },
+      "resources": [
+        {
+          "id": "c1d2e3f4-a5b6-4c7d-8e9f-0a1b2c3d4e5f",
+          "title": "Transect surveys",
+          "visibility": "visible",
+          "overlay": false,
+          "type": "slides_web",
+          "path": "surveys/slides/transects.md",
+          "source": {
+            "markdown": "# Transects\n\nA line laid across the reef.\n\n---\n\n# Counts\n\nEvery fish within a metre of the line.\n"
+          }
+        },
+        {
+          "id": "2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e",
+          "title": "Survey methods",
+          "visibility": "visible",
+          "overlay": false,
+          "type": "reading_native",
+          "path": "surveys/reading/survey-methods.md",
+          "source": {
+            "file": "surveys/reading/survey-methods.md"
+          }
+        },
+        {
+          "id": "9d8c7b6a-5f4e-4d3c-a2b1-0f9e8d7c6b5a",
+          "title": "Counting quadrats",
+          "visibility": "visible",
+          "overlay": false,
+          "type": "notebook",
+          "path": "surveys/notebooks/counts.ipynb",
+          "source": {
+            "file": "surveys/notebooks/counts.ipynb",
+            "data": [
+              {
+                "path": "data/quadrats.csv",
+                "file": "surveys/notebooks/counts/data/quadrats.csv"
+              }
+            ]
+          }
+        },
+        {
+          "id": "4e5f6a7b-8c9d-4e0f-a1b2-c3d4e5f6a7b8",
+          "title": "Estimate a density",
+          "visibility": "visible",
+          "overlay": true,
+          "type": "exercise",
+          "path": "surveys/exercises/estimate.yaml",
+          "source": {
+            "definition": {
+              "schema": "exercise.v1",
+              "steps": [
+                {
+                  "id": "predict",
+                  "title": "Predict",
+                  "prompt": "A transect crosses 4 quadrats of 1 m² each. How many square metres are sampled?",
+                  "hints": ["Each quadrat covers one square metre (sentinel-hint)."],
+                  "solution": "Four quadrats of one square metre each give 4 m² (sentinel-solution).",
+                  "kind": "numeric",
+                  "answer": 4,
+                  "tolerance": 0,
+                  "unit": "m²",
+                  "feedback": {
+                    "correct": "Yes, 4 m² (sentinel-feedback).",
+                    "incorrect": "Count the quadrats again."
+                  }
+                },
+                {
+                  "id": "choose",
+                  "title": "Choose",
+                  "prompt": "Which count is a density?",
+                  "hints": [],
+                  "kind": "single_choice",
+                  "options": [
+                    {
+                      "id": "a",
+                      "label": "12 fish"
+                    },
+                    {
+                      "id": "sentinel-answer",
+                      "label": "3 fish per square metre"
+                    }
+                  ],
+                  "shuffle": false,
+                  "feedback": {
+                    "correct": "Yes.",
+                    "incorrect": "A density divides a count by an area."
+                  },
+                  "correct": "sentinel-answer"
+                }
+              ]
+            }
+          }
+        },
+        {
+          "id": "1f2e3d4c-5b6a-4978-8a9b-0c1d2e3f4a5b",
+          "title": "Tide explorer",
+          "visibility": "visible",
+          "overlay": false,
+          "type": "shiny",
+          "path": "surveys/notebooks/tide.shiny.yaml",
+          "source": {
+            "url": "https://shiny.example.org/tide/"
+          }
+        },
+        {
+          "id": "7e6d5c4b-3a29-4f18-8e07-6d5c4b3a2918",
+          "title": "Counting fish along a transect",
+          "alternative": "The paper's sections as plain text, with each table written out.",
+          "visibility": "hidden",
+          "overlay": false,
+          "type": "reading_pdf",
+          "path": "surveys/reading/paper.pdf",
+          "source": {
+            "file": "surveys/reading/paper.pdf"
+          }
+        },
+        {
+          "id": "8a7b6c5d-4e3f-4a2b-9c1d-0e9f8a7b6c5d",
+          "title": "Sampling quiz",
+          "visibility": "visible",
+          "overlay": true,
+          "type": "test",
+          "path": "surveys/tests/quiz.yaml",
+          "source": {
+            "definition": {
+              "questions": [
+                {
+                  "id": "q1",
+                  "prompt": "Which survey counts fish along a line?",
+                  "points": 1,
+                  "rubric": [],
+                  "kind": "choice",
+                  "options": [
+                    {
+                      "id": "sentinel-answer",
+                      "label": "A transect"
+                    },
+                    {
+                      "id": "b",
+                      "label": "A quadrat"
+                    }
+                  ],
+                  "multiple": false,
+                  "correct": ["sentinel-answer"]
+                },
+                {
+                  "id": "q3",
+                  "prompt": "Write density(count, area).",
+                  "points": 4,
+                  "rubric": [],
+                  "kind": "code",
+                  "runtime": "python-3.12",
+                  "files": [
+                    {
+                      "path": "main.py",
+                      "content": "def density(count, area):\n    \"\"\"Fish per square metre.\"\"\"\n    pass\n",
+                      "editable": true,
+                      "hidden": false
+                    },
+                    {
+                      "path": "tests/check.py",
+                      "content": "# sentinel-hidden-file: a hidden file of the quiz's code question.\nfrom main import density\n\nassert density(9, 3) == 3\n",
+                      "editable": false,
+                      "hidden": true
+                    }
+                  ],
+                  "allowedPackages": [],
+                  "checks": [
+                    {
+                      "name": "sample",
+                      "visibility": "public",
+                      "file": "main.py",
+                      "kind": "call",
+                      "function": "density",
+                      "args": [6, 4],
+                      "expected": {
+                        "value": 1.5
+                      },
+                      "compare": {
+                        "mode": "numeric"
+                      },
+                      "points": 1
+                    },
+                    {
+                      "name": "sentinel-hidden-check",
+                      "visibility": "hidden",
+                      "file": "main.py",
+                      "kind": "call",
+                      "function": "density",
+                      "args": [9, 3],
+                      "expected": {
+                        "value": 3
+                      },
+                      "compare": {
+                        "mode": "numeric"
+                      },
+                      "points": 1
+                    }
+                  ]
+                }
+              ],
+              "settings": {
+                "attempts": 2
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": "0b2f4a6c-8d1e-4f3a-b5c7-9e0a1b2c3d4e",
+      "position": 1,
+      "title": "Tides and zones",
+      "resources": [
+        {
+          "id": "3c4d5e6f-7a8b-4c9d-8e0f-1a2b3c4d5e6f",
+          "title": "How the tide shapes a reef",
+          "visibility": "visible",
+          "overlay": false,
+          "type": "reading_native",
+          "path": "tides/reading/tides.html",
+          "source": {
+            "file": "tides/reading/tides.html"
+          }
+        },
+        {
+          "id": "6a5b4c3d-2e1f-4a0b-9c8d-7e6f5a4b3c2d",
+          "title": "Reef zones",
+          "alternative": "Four slides that name the reef zones from the shore outward.",
+          "visibility": "visible",
+          "overlay": false,
+          "type": "slides_pdf",
+          "path": "tides/slides/zones.pdf",
+          "source": {
+            "file": "tides/slides/zones.pdf"
+          }
+        }
+      ]
+    }
+  ],
+  "files": [
+    {
+      "path": "surveys/reading/survey-methods.md",
+      "sha256": "fab379b6edc16b12216cea98de753f17ae12448e9d6d167894b2ad2bb3d46a3d",
+      "size": 176,
+      "format": "markdown"
+    },
+    {
+      "path": "surveys/notebooks/counts/data/quadrats.csv",
+      "sha256": "b7bfb67af900e730fd521dddd92befe310573b33a867890953a7554445758807",
+      "size": 21,
+      "format": "data"
+    },
+    {
+      "path": "surveys/notebooks/counts.ipynb",
+      "sha256": "f53307641cc07be88f78e1521efd7ab07b78c419176ea6ea8c1785d98ab16132",
+      "size": 376,
+      "format": "notebook"
+    },
+    {
+      "path": "surveys/reading/paper.pdf",
+      "sha256": "77e249d2676ca1dcc9b7f5ad81d7039bac9638d7744a6bf4c3425d0165545825",
+      "size": 86,
+      "format": "pdf"
+    },
+    {
+      "path": "tides/reading/tides.html",
+      "sha256": "e14516d58f0cf4c1cae214c301ddceecb81a020f5b98e43e97a5882266094a0a",
+      "size": 168,
+      "format": "html"
+    },
+    {
+      "path": "tides/slides/zones.pdf",
+      "sha256": "8d43f831d0648d2f0cc51ef4166a34f9acc9be44bda5f9df5c67a2d2fbf5c7c8",
+      "size": 80,
+      "format": "pdf"
+    }
+  ]
+}

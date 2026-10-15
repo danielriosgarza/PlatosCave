@@ -1,0 +1,13 @@
+# The changed copy: this topic now comes second, and the deck of the other topic moved here with
+# its entry, renamed and with the same bytes.
+id: 0b2f4a6c-8d1e-4f3a-b5c7-9e0a1b2c3d4e
+position: 1
+title: Tides and zones
+resources:
+  - id: 3c4d5e6f-7a8b-4c9d-8e0f-1a2b3c4d5e6f
+    file: reading/tides.html
+    title: How the tide shapes a reef
+  - id: 6a5b4c3d-2e1f-4a0b-9c8d-7e6f5a4b3c2d
+    file: slides/zones.pdf
+    title: Reef zones
+    alternative: Four slides that name the reef zones from the shore outward.
