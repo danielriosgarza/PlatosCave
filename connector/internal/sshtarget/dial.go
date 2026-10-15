@@ -35,6 +35,8 @@ type hop struct {
 	port int
 	user string
 	auth protocol.AuthRef
+	// viaColab: the hop is reached through the colab program, under the trust name (§5.7).
+	viaColab bool
 }
 
 // route returns the hops of a target, jump host first. The jump host uses the target's auth
@@ -43,6 +45,9 @@ func route(t protocol.Target) []hop {
 	var auth protocol.AuthRef
 	if t.Auth != nil {
 		auth = *t.Auth
+	}
+	if t.Kind == protocol.TargetColab {
+		return []hop{{name: hopTarget, host: protocol.ColabHost, port: protocol.ColabPort, user: t.User, auth: auth, viaColab: true}}
 	}
 	var hops []hop
 	if j := t.Jump; j != nil {
@@ -209,11 +214,18 @@ func readBanner(ctx context.Context, conn net.Conn) (net.Conn, string, error) {
 // dialHop opens the TCP connection of a hop and reads its banner: directly through the network
 // scope for the first hop, or as a direct-tcpip channel of the jump host's connection for the
 // target. It returns the address dialled when the connector knows it.
+// A colab hop is a run of the colab program instead, which dials nothing (design §5.7).
 func (c *checker) dialHop(ctx context.Context, h hop, via *ssh.Client) (net.Conn, string, error) {
 	var conn net.Conn
 	var address string
 	dest := endpointName(h.host, h.port)
-	if via == nil {
+	if h.viaColab {
+		nc, err := c.t.Colab.dial(ctx)
+		if err != nil {
+			return nil, "", err
+		}
+		conn = nc
+	} else if via == nil {
 		nc, err := c.t.Dialer.DialContext(ctx, h.host, h.port)
 		if err != nil {
 			return nil, "", reachFailure(err)
