@@ -123,6 +123,8 @@ var rejectedRules = map[string]int{
 	"s2c-test_connection-hostkeys-duplicate":            6,
 	"s2c-test_connection-confirmation-replacing-itself": 7,
 	"s2c-test_connection-jump-is-target":                8,
+	"s2c-test_connection-colab-hostkey-other-host":      6,
+	"s2c-test_connection-colab-confirmation-other-host": 7,
 }
 
 // TestSchemaFixtures validates every example against the schema its prefix selects: examples/
