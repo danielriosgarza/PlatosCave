@@ -340,6 +340,7 @@ The `Verify` line of each entry in plan §9 is the full list; this table names t
 | P5-09a | `apps/server/src/content/validation.test.ts`; the existing unit and integration tests of publication, unmodified |
 | P5-18a | `folder-ids.test.ts` and `folder-plan.test.ts` in `apps/server/src/content/` |
 | P5-18b | `apps/server/test/integration/folder-courses.itest.ts` |
+| P5-18e | `apps/server/test/integration/folder-publication.itest.ts` |
 | P5-09 | `apps/server/src/content/convert.test.ts`: `A40 conversion runs with DATABASE_URL unset and imports no database module` and `A40 conversion preserves bounded rendering and omits JavaScript outputs`. `apps/server/test/integration/a40-conversion-output.itest.ts`: `A40 the database-free conversion entry equals ingestion output for the same sources` |
 | P5-08 | In `packages/cli/src/`: `a38-course-folder-modes.test.ts`: `A38 a courses/ folder placed unchanged under instructors/<name>/ yields the same topics and resources`. `a40-folder-mapping.test.ts`: `A40 each file of a course folder maps to the type, order, title and stored content the editor records`. `a42-yaml-definitions.test.ts`: `A42 a YAML exercise or test is accepted exactly when the schema accepts the same definition, and a rejected file names the field`. `folder/read.test.ts` |
 | P5-08f | In `packages/cli/src/`: `a43-public-tree.test.ts`: `A43 a public tree that holds a test or exercise definition is refused and the file is named`. `commands/check.test.ts`, `folder/read.test.ts`, `folder/imports.test.ts` |
