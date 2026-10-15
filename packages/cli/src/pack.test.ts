@@ -15,8 +15,9 @@ const pkg = resolve(import.meta.dirname, '..');
 const repo = resolve(pkg, '../..');
 const temp = fs.mkdtempSync(join(tmpdir(), 'parallax-pack-'));
 const version = '1.4.0-pack.1';
+/** The tracked files that differ from the index or from `HEAD`. */
 const status = () =>
-  execFileSync('git', ['status', '--porcelain'], { cwd: repo, encoding: 'utf8' });
+  execFileSync('git', ['status', '--porcelain', '-uno'], { cwd: repo, encoding: 'utf8' });
 const read = (file: string) => JSON.parse(fs.readFileSync(file, 'utf8'));
 type Pins = Record<string, string>;
 type Manifest = { name: string; version: string; dependencies: Pins; devDependencies?: Pins };
