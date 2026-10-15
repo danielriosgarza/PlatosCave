@@ -1,7 +1,9 @@
-import * as fs from 'node:fs';
+import fs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterAll, expect, test, vi } from 'vitest';
+import { readCourseForSync } from '../folder/read';
 import { main } from '../main';
 import { LEVEL_0 } from './check';
 
@@ -21,7 +23,7 @@ async function check(change: (site: string) => void, args: string[] = []) {
   const log = vi.spyOn(console, 'log').mockImplementation(print);
   const error = vi.spyOn(console, 'error').mockImplementation(print);
   try {
-    return { code: await main(['check', ...args], { cwd: site }), lines };
+    return { code: await main(['check', ...args], { cwd: site }), lines, site };
   } finally {
     log.mockRestore();
     error.mockRestore();
@@ -30,6 +32,22 @@ async function check(change: (site: string) => void, args: string[] = []) {
 const edit = (site: string, file: string, change: (text: string) => string) =>
   fs.writeFileSync(join(site, file), change(fs.readFileSync(join(site, file), 'utf8')));
 const noOverlay = (site: string) => fs.rmSync(join(site, 'private'), { recursive: true });
+/** What `run` gives, and each folder it lists through node:fs, resolved. */
+async function listing<T>(run: () => Promise<T>) {
+  const [listed, real] = [[] as string[], fs.readdirSync as (...args: unknown[]) => unknown];
+  const list = (path: unknown, ...rest: unknown[]) => {
+    listed.push(resolve(String(path)));
+    return real(path, ...rest);
+  };
+  Object.assign(fs, { readdirSync: list });
+  syncBuiltinESMExports();
+  try {
+    return { ...(await run()), listed };
+  } finally {
+    Object.assign(fs, { readdirSync: real });
+    syncBuiltinESMExports();
+  }
+}
 
 test('without private/, check at level 1 names the paths in private/, and at level 0 passes with its note', async () => {
   const level1 = await check(noOverlay);
@@ -76,4 +94,27 @@ test('check takes no argument, and prints a format character in a name as its co
   const shown = planted.lines.join('\n');
   expect(shown).toContain(`${course}/course.yaml: \\u{1b}[2Jboom: unknown key`);
   expect(shown).toContain('resources[1].file: no file sampling/reading/\\u{1b}[2Jm.md');
+});
+
+test('a topic whose id is an alias is named at its own topic.yaml, and the course folder is listed only by the reader', async () => {
+  // A topic that lists nothing, which publication's report names by its folder.
+  const aliased = (site: string) => {
+    const id = (text: string) => text.replace(/^id: (\S+)$/m, 'objective: &topic $1\nid: *topic');
+    const empty = (text: string) => id(text).replace(/resources:[\s\S]*/, 'resources: []\n');
+    edit(site, `${course}/tides/topic.yaml`, empty);
+    fs.rmSync(join(site, course, 'tides/reading/tides.html'));
+  };
+  const { code, lines, site, listed } = await listing(() => check(aliased));
+  expect(code).toBe(0);
+  expect(lines).toContain(
+    `warning: ${course}/tides/topic.yaml: “Tides and zones” has no resources`,
+  );
+  // After the reader has returned, check lists the course folder no second time.
+  const dir = join(site, course);
+  const reader = await listing(() =>
+    readCourseForSync(dir, { overlay: join(site, 'private', course) }),
+  );
+  const own = (paths: string[]) => paths.filter((path) => path === dir);
+  expect(own(reader.listed).length).toBeGreaterThan(0);
+  expect(own(listed)).toEqual(own(reader.listed));
 });

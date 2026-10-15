@@ -44,7 +44,25 @@ type Mark = (problem: Problem, error?: unknown) => Problem;
 const keep: Mark = (problem) => problem;
 const inOverlay = (problem: Problem): Problem => ({ ...problem, overlay: true });
 const cannot = (error: unknown) =>
-  `cannot be read (${(error as NodeJS.ErrnoException).code ?? error})`;
+  `cannot be read (${(error as NodeJS.ErrnoException | null | undefined)?.code ?? error})`;
+/** A stored file is read in parts of this size, in turn: the reader never holds a whole one. */
+const PART = 2 ** 20;
+/** A file's `sha256` and size, hashed part by part. */
+function digest(file: string) {
+  const [hash, part] = [createHash('sha256'), Buffer.allocUnsafe(PART)];
+  const descriptor = fs.openSync(file, 'r');
+  let [size, length] = [0, PART];
+  try {
+    while (length > 0) {
+      length = fs.readSync(descriptor, part, 0, PART, size);
+      hash.update(part.subarray(0, length));
+      size += length;
+    }
+  } finally {
+    fs.closeSync(descriptor);
+  }
+  return { sha256: hash.digest('hex'), size };
+}
 type Attempt = <T>(path: string, run: () => T | Promise<T>, mark?: Mark) => Promise<T | undefined>;
 type Loaded = { definition?: unknown; problems: Problem[] };
 type Load = (root: string, path: string, type: unknown, files: string[]) => Promise<Loaded>;
@@ -128,9 +146,8 @@ async function readTree(dir: string, definitions: Definitions, problems: Problem
     return parsed && value !== undefined ? { parsed, value } : undefined;
   };
   const stored = async (path: string, format: Stored['format']): Promise<Stored[]> => {
-    const bytes = await attempt(path, () => fs.readFileSync(join(dir, path)));
-    const sha256 = bytes && createHash('sha256').update(bytes).digest('hex');
-    return bytes && sha256 ? [{ path, sha256, size: bytes.length, format }] : [];
+    const read = await attempt(path, () => digest(join(dir, path)));
+    return read ? [{ path, ...read, format }] : [];
   };
 
   // The course folder itself: a folder and not a link, and the one spelling of its name.
@@ -143,7 +160,11 @@ async function readTree(dir: string, definitions: Definitions, problems: Problem
   else if (stat && !stat.isDirectory()) refuse('', 'a course folder is a folder, and not a link');
   if (problems.length > 0) return { problems };
   const top = await listed('');
-  if (unread.has('')) return { problems };
+  if (unread.has('')) {
+    // Of the course folder nothing further is said, but the overlay's own problems are named.
+    await definitions(undefined, [], attempt, problems);
+    return { problems };
+  }
   let complete = problems.length === 0;
   for (const e of top) if (!e.folder && e.name !== 'course.yaml') refuse(e.path, IN_COURSE);
   const course = has(top, 'course.yaml')
@@ -272,8 +293,9 @@ async function readTree(dir: string, definitions: Definitions, problems: Problem
         const walked = beside && (await attempt(beside.path, () => walk(dir, beside.path)));
         problems.push(...(walked?.problems ?? []));
         const data = (walked?.files ?? []).map((f) => ({ path: f.slice(named + 1), file: f }));
-        const files = await Promise.all(data.map((d) => stored(d.file, 'data')));
-        add({ file: path, data }, [...files.flat(), ...(await stored(path, 'notebook'))]);
+        const files: Stored[] = [];
+        for (const d of data) files.push(...(await stored(d.file, 'data')));
+        add({ file: path, data }, [...files, ...(await stored(path, 'notebook'))]);
       } else add({ file: path }, await stored(path, contracts.uploadFormatOf(file)));
     }
     for (const [key, e] of disk) if (!used.has(key) && !e.folder) refuse(e.path, UNLISTED);
@@ -292,15 +314,20 @@ const fromSource =
   (dir: string, overlay: string | undefined): Definitions =>
   async (declared, listed, attempt, problems) => {
     // The course's folder in the overlay, checked here: `definitionSource` would throw for a file.
-    const lstat = () => (overlay ? fs.lstatSync(overlay, { throwIfNoEntry: false }) : undefined);
+    // Null where there is none, undefined where `lstat` failed.
+    const lstat = () =>
+      overlay ? (fs.lstatSync(overlay, { throwIfNoEntry: false }) ?? null) : null;
     const held = await attempt('', lstat, inOverlay);
     if (held && !held.isDirectory()) {
       const why = 'not a folder: the overlay of a course is a folder, and not a link';
       problems.push(inOverlay(refusal('overlay', '', why)));
     }
     const into = held?.isDirectory() ? overlay : undefined;
+    // An overlay whose lstat failed, or that is a file, is that one problem: none of the
+    // definitions is said to be absent from it. A link is refused and not read through.
+    const sought = declared && (held === undefined || held?.isFile()) ? [] : listed;
     const mark = declared ? inOverlay : keep;
-    const look = () => definitionSource({ tree: dir, public: !!declared, overlay: into }, listed);
+    const look = () => definitionSource({ tree: dir, public: !!declared, overlay: into }, sought);
     const where = failedAt(dir, into, mark);
     const source = declared === undefined ? undefined : await attempt('', look, where);
     const load: Load = async (root, path, type, files) => {

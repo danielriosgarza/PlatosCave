@@ -1,5 +1,5 @@
 import { join, posix } from 'node:path';
-import { applyIds, planIds, topicFolders } from '../folder/ids';
+import { applyIds, planIds } from '../folder/ids';
 import { type Located, publicationReport, uploadProblems } from '../folder/publication';
 import { readCourseForSite, readCourseForSync } from '../folder/read';
 import { type Problem, refusal } from '../folder/yaml';
@@ -54,7 +54,7 @@ export const run: Command['run'] = async ({ site, args }) => {
       const read = await (level0 ? readCourseForSite(dir) : readCourseForSync(dir, { overlay }));
       problems.push(...read.problems);
       if (read.manifest) {
-        const folders = topicFolders(dir);
+        const { folders } = read;
         const options = { approvedShinyOrigins: site.config.origins.shiny, folders };
         const { errors: blocking, warnings } = publicationReport(read.manifest, undefined, options);
         const as = (severity: Problem['severity']) => (issue: Located) => ({ ...issue, severity });
