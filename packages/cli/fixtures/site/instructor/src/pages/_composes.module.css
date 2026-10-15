@@ -1,0 +1,4 @@
+/* A39: a class composed from a course stylesheet, which stops the build. */
+.front {
+  composes: sum from "../../courses/statistics/means/reading/means.module.css";
+}
