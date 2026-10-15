@@ -48,11 +48,13 @@ test('without private/, check at level 1 names the paths in private/, and at lev
 test('a key that a definition’s schema drops is a note with its line, and check exits 0', async () => {
   const exercise = `private/${course}/sampling/exercises/estimate.yaml`;
   const misspelt = (text: string) =>
-    text.replace('    hints:', '    hnts: [Typed wrong]\n    hints:');
+    text.replace('    hints:', '    hnts: [Typed wrong]\n    toString: Inherited\n    hints:');
   const { code, lines } = await check((site) => edit(site, exercise, misspelt));
   expect(code).toBe(0);
   const note = 'no field of its schema, so it is not stored';
   expect(lines).toContain(`note: ${exercise}: steps[0].hnts: ${note} (line 12)`);
+  // A name that every object inherits is dropped all the same.
+  expect(lines).toContain(`note: ${exercise}: steps[0].toString: ${note} (line 13)`);
 });
 
 test('check takes no argument, and prints a format character in a name as its code point', async () => {

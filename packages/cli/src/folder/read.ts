@@ -61,7 +61,7 @@ const dropped = (input: unknown, output: unknown, at: Field = []): Field[] => {
   }
   if (!isMap(input) || !isMap(output)) return [];
   return Object.entries(input).flatMap(([key, item]) =>
-    key in output ? dropped(item, output[key], [...at, key]) : [[...at, key]],
+    Object.hasOwn(output, key) ? dropped(item, output[key], [...at, key]) : [[...at, key]],
   );
 };
 
