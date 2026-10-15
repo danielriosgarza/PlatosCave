@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
-import * as fs from 'node:fs';
+import fs from 'node:fs';
+import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join, resolve, sep } from 'node:path';
 import type { StoredNotebook } from '@parallax/contracts';
@@ -68,6 +69,22 @@ async function build(root: string, course = 'courses/reef-ecology', ref = 'reef-
   const options = { dir: join(root, course), ref, instructors: ['Ana Lima'], shinyOrigins: SHINY };
   const { problems } = await buildCourse(options, out);
   return { out, problems, files: filesOf(work) };
+}
+/** What `run` gives, and each folder it lists through node:fs, resolved. */
+async function listing<T>(run: () => Promise<T>) {
+  const [listed, real] = [[] as string[], fs.readdirSync as (...args: unknown[]) => unknown];
+  const list = (path: unknown, ...rest: unknown[]) => {
+    listed.push(resolve(String(path)));
+    return real(path, ...rest);
+  };
+  Object.assign(fs, { readdirSync: list });
+  syncBuiltinESMExports();
+  try {
+    return { ...(await run()), listed };
+  } finally {
+    Object.assign(fs, { readdirSync: real });
+    syncBuiltinESMExports();
+  }
 }
 
 let main: Awaited<ReturnType<typeof build>>;
@@ -247,7 +264,7 @@ test('buildCourse opens no file under exercises/, tests/ or private/', () => {
     const real = (paths: string[]) => paths.map((path) => fs.realpathSync.native(path)).sort();
     expect(real(run.refused.map((r) => r.real))).toEqual(real([...planted, ...tests]));
     const through = run.refused.filter((r) => r.path.includes(`${sep}x${sep}`));
-    expect(through.map((r) => r.call)).toEqual(['readFileSync', 'readFileSync', 'readFileSync']);
+    expect(through.map((r) => r.call)).toEqual(['openSync', 'openSync', 'openSync']);
     // No file written has the bytes of a file of private/, of tests/ or of the hidden reading.
     const kept = [join(root, 'private'), join(root, closed, 'pools/tests')].map(filesOf);
     const bytes = kept.flatMap((files) => [...files.values()]);
@@ -361,6 +378,21 @@ test('a topic with only an exercise and a test is built without empty_topic, and
   const archive = '4f9a0b1c-2d3e-4f4a-8b5c-7d8e9f0a1b2c';
   expect(files.has(at(openPaths.topicData('tide-pools', archive)))).toBe(true);
   expect(lines(problems)).toEqual(['warning empty_topic archive/topic.yaml']);
+}, 120_000);
+
+test('a topic whose id is an alias is named at its own topic.yaml, and the course folder is listed only by the reader', async () => {
+  const root = copy('instructor');
+  const archive = join(root, 'courses/tide-pools/archive/topic.yaml');
+  const yaml = fs.readFileSync(archive, 'utf8');
+  fs.writeFileSync(archive, yaml.replace(/^id: (\S+)$/m, 'objective: &topic $1\nid: *topic'));
+  const { problems, listed } = await listing(() => build(root, 'courses/tide-pools', 'tide-pools'));
+  expect(lines(problems)).toEqual(['warning empty_topic archive/topic.yaml']);
+  // After the reader has returned, buildCourse lists the course folder no second time.
+  const dir = join(root, 'courses/tide-pools');
+  const reader = await listing(() => readCourseForSite(dir));
+  const own = (paths: string[]) => paths.filter((path) => path === dir);
+  expect(own(reader.listed).length).toBeGreaterThan(0);
+  expect(own(listed)).toEqual(own(reader.listed));
 }, 120_000);
 
 test('the copy that vendor.ts writes holds content/convert.ts and content/reading.ts', () => {

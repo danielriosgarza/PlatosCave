@@ -197,13 +197,13 @@ A definition that is listed and found in neither place stops `sync` with exit co
 `packages/cli/src/folder/read.ts` has three entries; P5-08 builds the first, P5-08f the other two:
 
 ```ts
-readCourseForSync(dir, { overlay?: string }): Promise<{ manifest: CourseManifest | null; problems: Problem[]; open(file): Readable }>
-readCourseForSite(dir): Promise<{ manifest: SiteManifest | null; problems: Problem[]; open(file): Readable }>
+readCourseForSync(dir, { overlay?: string }): Promise<{ manifest: CourseManifest | null; problems: Problem[]; folders: Map<string, string>; open(file): Readable }>
+readCourseForSite(dir): Promise<{ manifest: SiteManifest | null; problems: Problem[]; folders: Map<string, string>; open(file): Readable }>
 readCourseHeader(dir): { title: string } | undefined          // course.yaml's title and nothing else
 type Problem = { severity: 'error' | 'warning' | 'note'; code: string; path: string; overlay?: true; field?: string; line?: number; message: string }   // overlay: the path is from the course's folder in private/
 ```
 
-`manifest` is null while an error stands, so no caller can convert a refused tree. Paths in a manifest are relative to the course folder, with `/`; the commands print them from the site root. Topics and resources carry their folder ids, never row ids: the reader knows no owner. The schemas in contracts (P5-08a) are the exact statement of both manifests; this is what they carry.
+`manifest` is null while an error stands, so no caller can convert a refused tree. `folders` gives each topic's folder by its folder id, and is empty while `manifest` is null: `check` and a level 0 build take the paths of their reports from it, and list and parse no course folder a second time. Paths in a manifest are relative to the course folder, with `/`; the commands print them from the site root. Topics and resources carry their folder ids, never row ids: the reader knows no owner. The schemas in contracts (P5-08a) are the exact statement of both manifests; this is what they carry.
 
 | | `CourseManifest` (schema `courseManifest`), for the operator | `SiteManifest` (schema `siteManifest`, strict), an allow-list for a site build |
 | --- | --- | --- |

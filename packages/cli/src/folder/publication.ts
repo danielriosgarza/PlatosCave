@@ -24,7 +24,7 @@ const CONVERSIONS = ['unconverted_deck', 'unprocessed_reading'];
 /**
  * Publication's report (docs/design/course-folder.md §9): the unchanged `validate` on the manifest
  * as loaded drafts, each issue with its path; without a test's rules, nor a conversion's unless
- * `derived` holds conversions. `folders` gives a topic's folder by its id (`topicFolders`).
+ * `derived` holds conversions. `folders` gives a topic's folder by its id (the reader's `folders`).
  */
 export function publicationReport(
   manifest: Manifest,

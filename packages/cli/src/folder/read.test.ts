@@ -1,9 +1,10 @@
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import { syncBuiltinESMExports } from 'node:module';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterAll, expect, test } from 'vitest';
-import { readCourseForSite, readCourseForSync, readCourseHeader } from './read';
+import { type Problem, readCourseForSite, readCourseForSync, readCourseHeader } from './read';
 
 delete process.env.DATABASE_URL;
 const fixture = resolve(import.meta.dirname, '../../fixtures/course');
@@ -45,6 +46,39 @@ async function watch<T>(run: () => Promise<T>) {
     syncBuiltinESMExports();
   }
 }
+// A function of node:fs that throws `fail(path)` for one path, as a denied permission does.
+const untouched = { ...writable };
+const failing =
+  (fail: (at: unknown) => unknown) =>
+  (name: string, ...path: string[]) => {
+    writable[name] = (at, ...rest) => {
+      if (resolve(String(at)) === join(...path)) throw fail(at);
+      return untouched[name]?.(at, ...rest);
+    };
+    syncBuiltinESMExports();
+  };
+const deny = failing((at) => Object.assign(Error(), { code: 'EACCES', path: at }));
+type Entry = (site: string) => Promise<{ manifest: unknown; problems: Problem[] }>;
+const forSite: Entry = (site) => readCourseForSite(join(site, course));
+/** What `entry` reads of a copy of the fixture changed by `change`; node:fs is restored after. */
+async function denied(change: (site: string) => void, entry: Entry = read) {
+  try {
+    return await entry(copy(change));
+  } finally {
+    for (const name of ['lstatSync', 'readFileSync', 'readdirSync']) {
+      writable[name] = untouched[name] as Call;
+    }
+    syncBuiltinESMExports();
+  }
+}
+const overlayAt = (site: string) => join(site, 'private', course);
+const overlayAsFile = (site: string) => {
+  fs.rmSync(overlayAt(site), { recursive: true });
+  fs.writeFileSync(overlayAt(site), '');
+};
+/** Each problem as `[overlay: ]<code> <path>`, so that a mark is seen where it should be absent. */
+const shown = (problems: Problem[]) =>
+  problems.map((p) => `${p.overlay ? 'overlay: ' : ''}${p.code} ${p.path}`);
 
 test('a topic without a tests/ folder reads as a topic with no test, and .gitkeep in a tab folder is skipped', async () => {
   const tides = join(fixture, course, 'tides');
@@ -61,31 +95,6 @@ test('links out of the course folder, names in another case and file-system erro
     fs.symlinkSync(target, join(site, reading, name), 'junction');
   const rename = (site: string, folder: string, from: string, to: string) =>
     fs.renameSync(join(site, folder, from), join(site, folder, to));
-  // A function of node:fs that fails for one path, as a denied permission does; restored below.
-  const real = { ...writable };
-  const deny = (name: string, ...path: string[]) => {
-    writable[name] = (at, ...rest) => {
-      const error = Object.assign(Error(), { code: 'EACCES', path: at });
-      if (resolve(String(at)) === join(...path)) throw error;
-      return real[name]?.(at, ...rest);
-    };
-    syncBuiltinESMExports();
-  };
-  const denied = async (change: (site: string) => void) => {
-    try {
-      return await read(copy(change));
-    } finally {
-      for (const name of ['lstatSync', 'readFileSync', 'readdirSync']) {
-        writable[name] = real[name] as Call;
-      }
-      syncBuiltinESMExports();
-    }
-  };
-  const overlayAt = (site: string) => join(site, 'private', course);
-  const overlayAsFile = (site: string) => {
-    fs.rmSync(overlayAt(site), { recursive: true });
-    fs.writeFileSync(overlayAt(site), '');
-  };
   const changes: [path: string, change: (site: string) => void, overlay?: true][] = [
     ['sampling/reading/out', (site) => link(site, site, 'out')],
     ['sampling/reading/quiz', (site) => link(site, join(site, 'private', course), 'quiz')],
@@ -197,6 +206,106 @@ test('each entry gives the folder of each topic by its folder id, and none for a
   expect((await readCourseForSite(join(fixture, course))).folders).toEqual(folders);
   const refused = copy((dir) => fs.rmSync(join(dir, 'private'), { recursive: true }));
   expect((await read(refused)).folders).toEqual(new Map());
+});
+
+test('an overlay whose lstat is denied, or that is a file, is one problem, also beside a course folder that cannot be listed', async () => {
+  const lstat = (site: string) => deny('lstatSync', overlayAt(site));
+  expect(shown((await denied(lstat)).problems)).toEqual(['overlay: read ']);
+  expect(shown((await denied(overlayAsFile)).problems)).toEqual(['overlay: overlay ']);
+  // The course folder's listing is its one problem, and the overlay's own problems are named too.
+  const unlisted = (site: string) => deny('readdirSync', site, course);
+  const both = (site: string) => {
+    overlayAsFile(site);
+    unlisted(site);
+  };
+  expect(shown((await denied(both)).problems)).toEqual(['read ', 'overlay: overlay ']);
+  expect(shown((await denied(unlisted, forSite)).problems)).toEqual(['read ']);
+});
+
+test('a value thrown that is not an Error is one read problem at the course folder, and the reader does not reject', async () => {
+  // Thrown by the course folder's listing; the last one throws again for its `code`, past `attempt`.
+  const values = [
+    undefined,
+    null,
+    {
+      get code() {
+        throw undefined;
+      },
+    },
+  ];
+  for (const value of values) {
+    const thrown = failing(() => value);
+    const { problems } = await denied((site) => thrown('readdirSync', site, course));
+    const message = `cannot be read (${value === null ? null : undefined})`;
+    expect(problems).toEqual([{ severity: 'error', code: 'read', path: '', message }]);
+  }
+});
+
+test('a listing denied to the site entry is one read problem, at its folder', async () => {
+  // A tab folder that the reader lists, and tests/ of the tree declared public, which only the
+  // listing of the answer folders reads.
+  const folders: [string, (site: string) => void][] = [
+    ['sampling/notebooks', () => {}],
+    ['sampling/tests', (site) => fs.mkdirSync(join(site, course, 'sampling/tests'))],
+  ];
+  for (const [folder, make] of folders) {
+    const change = (site: string) => {
+      make(site);
+      deny('readdirSync', site, course, folder);
+    };
+    expect(shown((await denied(change, forSite)).problems)).toEqual([`read ${folder}`]);
+  }
+});
+
+test('a listing of answer folders that fails without a path, or with one outside both roots, is one problem at the course folder, marked as the reading marks', async () => {
+  const tests = 'sampling/tests';
+  for (const error of [{ code: 'EACCES' }, { code: 'EACCES', path: tmpdir() }]) {
+    const thrown = failing(() => error);
+    // The overlay's tests/ for the operator; tests/ of the tree declared public for the site.
+    const overlay = (site: string) => thrown('readdirSync', overlayAt(site), tests);
+    expect(shown((await denied(overlay)).problems)).toEqual(['overlay: read ']);
+    const tree = (site: string) => {
+      fs.mkdirSync(join(site, course, tests));
+      thrown('readdirSync', site, course, tests);
+    };
+    expect(shown((await denied(tree, forSite)).problems)).toEqual(['read ']);
+  }
+});
+
+test('of a topic whose topic.yaml is refused, only what its entries decide is left unsaid', async () => {
+  const site = copy((dir) => {
+    edit(join(dir, course, 'sampling/topic.yaml'), (text) => `${text}colour: blue\n`);
+    fs.writeFileSync(join(overlayAt(dir), 'sampling/exercises/notes.txt'), 'Left here.\n');
+  });
+  // Its definitions are not called unlisted, nor its test's files misplaced; a stray file is named.
+  const stray = 'overlay: layout sampling/exercises/notes.txt';
+  expect(shown((await read(site)).problems)).toEqual(['schema sampling/topic.yaml', stray]);
+});
+
+test('a data file larger than one part is read in parts, with the sha256 and size of a whole read', async () => {
+  const data = 'sampling/notebooks/counts/data/large.csv';
+  // 2.5 MiB: more than two of the reader's parts.
+  const bytes = Buffer.alloc(5 * 2 ** 19, 'depth,count\n');
+  const site = copy((dir) => fs.writeFileSync(join(dir, course, data), bytes));
+  // The bytes of each read through node:fs: a whole read of the file would give them all at once.
+  const reads: number[] = [];
+  writable.readSync = (...args) => {
+    const length = untouched.readSync?.(...args);
+    reads.push(Number(length));
+    return length;
+  };
+  syncBuiltinESMExports();
+  try {
+    const { manifest } = await read(site);
+    const sha256 = createHash('sha256').update(bytes).digest('hex');
+    const entry = { path: data, sha256, size: bytes.length, format: 'data' };
+    expect(manifest?.files.find((file) => file.path === data)).toEqual(entry);
+    expect(reads.reduce((sum, length) => sum + length, 0)).toBeGreaterThan(bytes.length);
+    expect(Math.max(...reads)).toBeLessThan(bytes.length);
+  } finally {
+    writable.readSync = untouched.readSync as Call;
+    syncBuiltinESMExports();
+  }
 });
 
 test('without private/, a course declared public stops the reader with the paths it expected', async () => {

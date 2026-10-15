@@ -31,11 +31,6 @@ function topicFiles(dir: string) {
     });
 }
 
-/** Each topic's folder by its folder id, for the paths of a report on a course the reader passed. */
-export function topicFolders(dir: string): Map<string, string> {
-  return new Map(topicFiles(dir).map(({ folder, doc }) => [String(doc.get('id')), folder]));
-}
-
 /**
  * The ids `check --write-ids` writes (docs/design/course-folder.md §4.1): a random UUID as the
  * first key of each topic and entry without one, and no other byte. Null while the folder, read as

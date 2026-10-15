@@ -2,7 +2,6 @@ import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import type { Readable } from 'node:stream';
 import type { OpenResource, OpenTopic, SiteManifest, StoredNotebook } from '@parallax/contracts';
-import { topicFolders } from '../folder/ids';
 import { type Conversion, publicationReport, uploadProblems } from '../folder/publication';
 import { readCourseForSite } from '../folder/read';
 import { type Problem, refusal } from '../folder/yaml';
@@ -61,11 +60,10 @@ export type CourseBuild = { dir: string; ref: string; instructors: Names; shinyO
  */
 export async function buildCourse(course: CourseBuild, out: Output) {
   const { dir, ref, instructors, shinyOrigins } = course;
-  const { manifest, open, ...read } = await readCourseForSite(dir);
+  const { manifest, open, folders, ...read } = await readCourseForSite(dir);
   const problems: Problem[] = [...read.problems];
   const failed = () => problems.some((problem) => problem.severity === 'error');
   if (!manifest || failed()) return { problems };
-  const folders = topicFolders(dir);
   problems.push(...(await uploadProblems(manifest, open, folders)));
   if (failed()) return { problems };
 
