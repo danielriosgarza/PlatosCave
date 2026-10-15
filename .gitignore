@@ -15,3 +15,6 @@ e2e/test-results/
 
 __pycache__/
 *.pyc
+
+# The packed sources (packages/cli/scripts/vendor.ts): in the repository they would shadow the workspace.
+packages/cli/vendor/
