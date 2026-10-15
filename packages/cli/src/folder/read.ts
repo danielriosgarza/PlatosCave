@@ -1,18 +1,18 @@
 import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
-import { basename, dirname, join } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import type { Readable } from 'node:stream';
-import type { CourseManifest } from '@parallax/contracts';
+import type { CourseManifest, SiteManifest } from '@parallax/contracts';
 import { loadSource } from '../paths';
 import { checked, loadExercise, loadTest, parse, problemAt } from './definition';
 import { type Entry, listFolder, sameButCase, walk } from './listing';
-import { definitionSource } from './overlay';
-import { type Problem, refusal } from './yaml';
+import { definitionSource, type Source } from './overlay';
+import { type Field, type Problem, parseYaml, refusal } from './yaml';
 
 export type { Problem };
 
 type Contracts = typeof import('@parallax/contracts');
-// The tool reaches the contracts when it runs (paths.ts), once, when this module loads.
+// The tool reaches the contracts when it runs (paths.ts): once, so that the header is synchronous.
 const contracts = await loadSource<Contracts>('contracts', 'src/index.ts');
 const { courseMeta, topicMeta, resourceKindOf, shinyFile, shinyAddressProblem } = contracts;
 type Resource = CourseManifest['topics'][number]['resources'][number];
@@ -36,13 +36,41 @@ const has = (entries: Entry[], name: string) => entries.some((e) => !e.folder &&
 const answer = (file: string) => /^(exercise|test)$/.test(resourceKindOf(file) ?? '');
 const keep = (problem: Problem) => problem;
 const inOverlay = (problem: Problem): Problem => ({ ...problem, overlay: true });
+type Mark = typeof keep;
+type Attempt = <T>(path: string, run: () => T | Promise<T>, mark?: Mark) => Promise<T | undefined>;
+type Loaded = { definition?: unknown; problems: Problem[] };
+type Load = (root: string, path: string, type: unknown, files: string[]) => Promise<Loaded>;
+/**
+ * Where a reading takes definitions from (design §6), given what `course.yaml` declares and the
+ * definitions the topics list: the answer files found with the problems of where they lie, `mark`
+ * for a problem of a definition, and `load` for one entry's. A reading without `load` opens none.
+ */
+type Definitions = (
+  declared: boolean | undefined,
+  listed: string[],
+  attempt: Attempt,
+  problems: Problem[],
+) => Promise<{ source?: Source; mark: Mark; fromOverlay: boolean; load?: Load }>;
+
+const isMap = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+/** The fields of a parsed definition that the schema's value does not hold: keys it dropped. */
+const dropped = (input: unknown, output: unknown, at: Field = []): Field[] => {
+  if (Array.isArray(input) && Array.isArray(output)) {
+    return input.flatMap((item, i) => dropped(item, output[i], [...at, i]));
+  }
+  if (!isMap(input) || !isMap(output)) return [];
+  return Object.entries(input).flatMap(([key, item]) =>
+    key in output ? dropped(item, output[key], [...at, key]) : [[...at, key]],
+  );
+};
 
 /**
  * Reads one course folder (docs/design/course-folder.md §2 to §7): its topics in `position` order,
  * or its problems. A file-system error is a problem too, so it throws for none. Paths are from the
  * course folder, with `/`; a problem of the overlay is marked `overlay`.
  */
-async function readCourse(dir: string, overlay: string | undefined) {
+async function readCourse(dir: string, definitions: Definitions) {
   const problems: Problem[] = [];
   const refuse = (path: string, message: string, code = 'layout') =>
     problems.push(refusal(code, path, message));
@@ -116,19 +144,9 @@ async function readCourse(dir: string, overlay: string | undefined) {
   const answers = topics.flatMap(({ folder, value }) =>
     value.resources.flatMap(({ file }) => (answer(file) ? [`${folder}/${file}`] : [])),
   );
-  // The course's folder in the overlay, checked here: `definitionSource` would throw for a file.
-  const lstat = () => (overlay ? fs.lstatSync(overlay, { throwIfNoEntry: false }) : undefined);
-  const held = await attempt('', lstat, inOverlay);
-  if (held && !held.isDirectory()) {
-    const why = 'not a folder: the overlay of a course is a folder, and not a link';
-    problems.push(inOverlay(refusal('overlay', '', why)));
-  }
   const declared = course?.value.public;
-  const fromOverlay = declared === true;
-  const mark = fromOverlay ? inOverlay : keep;
-  const at = { tree: dir, public: fromOverlay, overlay: held?.isDirectory() ? overlay : undefined };
-  const look = () => definitionSource(at, answers);
-  const source = declared === undefined ? undefined : await attempt('', look, mark);
+  const found = await definitions(declared, answers, attempt, problems);
+  const { source, mark, fromOverlay, load } = found;
   problems.push(...(source?.problems ?? []));
   for (const file of source?.files ?? []) {
     const [topic, tab, name, ...deeper] = file.split('/');
@@ -176,10 +194,10 @@ async function readCourse(dir: string, overlay: string | undefined) {
       };
       if (answer(file)) {
         const root = source?.root;
-        if (root && source.files.includes(path)) {
-          const load = (): Promise<{ definition?: unknown; problems: Problem[] }> =>
-            type === 'test' ? loadTest(root, path, source.files) : loadExercise(root, path);
-          const loaded = await attempt(path, load, mark);
+        // A reading that loads no definition takes the entry as it stands in topic.yaml.
+        if (!load) add(undefined);
+        else if (root && source.files.includes(path)) {
+          const loaded = await attempt(path, () => load(root, path, type, source.files), mark);
           problems.push(...(loaded?.problems ?? []).map(mark));
           add({ definition: loaded?.definition });
         }
@@ -226,19 +244,57 @@ async function readCourse(dir: string, overlay: string | undefined) {
 }
 
 /**
- * The course and its overlay, for `sync` and for `check` at level 1 and above (design §7).
- * `open(file)` opens only a file the manifest lists, from the course folder.
+ * For `sync` and `check` at level 1 and above: each definition from the overlay or the tree, as
+ * `public` says, and a note for each key its schema drops, which is not stored (design §5).
  */
-export async function readCourseForSync(
+const fromSource =
+  (dir: string, overlay: string | undefined): Definitions =>
+  async (declared, listed, attempt, problems) => {
+    // The course's folder in the overlay, checked here: `definitionSource` would throw for a file.
+    const lstat = () => (overlay ? fs.lstatSync(overlay, { throwIfNoEntry: false }) : undefined);
+    const held = await attempt('', lstat, inOverlay);
+    if (held && !held.isDirectory()) {
+      const why = 'not a folder: the overlay of a course is a folder, and not a link';
+      problems.push(inOverlay(refusal('overlay', '', why)));
+    }
+    const into = held?.isDirectory() ? overlay : undefined;
+    const mark = declared ? inOverlay : keep;
+    const look = () => definitionSource({ tree: dir, public: !!declared, overlay: into }, listed);
+    const source = declared === undefined ? undefined : await attempt('', look, mark);
+    const load: Load = async (root, path, type, files) => {
+      const loaded = await (type === 'test'
+        ? loadTest(root, path, files)
+        : loadExercise(root, path));
+      if (loaded.definition === undefined) return loaded;
+      const input = parse(root, path);
+      const note = (field: Field): Problem => {
+        const why = 'no field of its schema, so it is not stored';
+        return { ...problemAt(input, field, why, 'dropped'), severity: 'note' };
+      };
+      return { ...loaded, problems: dropped(input.value, loaded.definition).map(note) };
+    };
+    return { source, mark, fromOverlay: !!declared, load };
+  };
+
+/**
+ * A level 0 build's reading (design §7): no overlay, and no definition opened. Of a tree declared
+ * public it lists the answer folders to refuse what lies there; of one declared private it finds
+ * the definitions the topics list. An exercise or a test is taken as topic.yaml states it.
+ */
+const listedOnly =
+  (dir: string): Definitions =>
+  async (declared, listed, attempt) => {
+    const look = () => definitionSource({ tree: dir, public: !!declared }, declared ? [] : listed);
+    const source = declared === undefined ? undefined : await attempt('', look);
+    return { source, mark: keep, fromOverlay: false };
+  };
+
+/** A manifest as its schema gives it, or a problem; `open(file)` opens only a file it lists. */
+function manifestOf<M extends { files: Stored[] }>(
   dir: string,
-  { overlay }: { overlay?: string },
-): Promise<Read<CourseManifest>> {
-  const { course, problems } = await readCourse(dir, overlay);
-  const topics = course?.topics.map(({ meta, resources }) => {
-    return { ...meta, resources: resources.map((r) => r.resource) };
-  });
-  const files = course?.topics.flatMap((topic) => topic.resources.flatMap((r) => r.files));
-  const read = course && contracts.courseManifest.safeParse({ ...course.meta, topics, files });
+  problems: Problem[],
+  read: { data?: M; error?: unknown } | undefined,
+): Read<M> {
   if (read?.error) problems.push(refusal('manifest', '', `not a valid manifest: ${read.error}`));
   const manifest = read?.data ?? null;
   const open = (file: string) => {
@@ -246,4 +302,62 @@ export async function readCourseForSync(
     return fs.createReadStream(join(dir, file));
   };
   return { manifest, problems, open };
+}
+
+/**
+ * The course and its overlay, for `sync` and for `check` at level 1 and above (design §7).
+ * `open(file)` opens only a file the manifest lists, from the course folder.
+ */
+export async function readCourseForSync(
+  dir: string,
+  { overlay }: { overlay?: string },
+): Promise<Read<CourseManifest>> {
+  // Resolved: with a trailing separator `lstat` would follow a link to the folder (design §7).
+  const tree = resolve(dir);
+  const { course, problems } = await readCourse(
+    tree,
+    fromSource(tree, overlay && resolve(overlay)),
+  );
+  const topics = course?.topics.map(({ meta, resources }) => {
+    return { ...meta, resources: resources.map((r) => r.resource) };
+  });
+  const files = course?.topics.flatMap((topic) => topic.resources.flatMap((r) => r.files));
+  const value = { ...course?.meta, topics, files };
+  return manifestOf(tree, problems, course && contracts.courseManifest.safeParse(value));
+}
+
+/**
+ * The course as a level 0 build receives it (design §7): no definition read, no hidden resource
+ * and no completion rule. `siteManifest` is strict, so a field outside its allow-list is refused.
+ */
+export async function readCourseForSite(dir: string): Promise<Read<SiteManifest>> {
+  const tree = resolve(dir);
+  const { course, problems } = await readCourse(tree, listedOnly(tree));
+  const shown = (list: Built[]) => list.filter((r) => r.resource.visibility === 'visible');
+  const topics = course?.topics.map(({ meta: { completionRule: _, ...topic }, resources }) => ({
+    ...topic,
+    resources: shown(resources).map(({ resource: { overlay: _, ...resource } }) => {
+      const { id, title, visibility, type } = resource;
+      return type === 'exercise' || type === 'test' ? { id, title, visibility, type } : resource;
+    }),
+  }));
+  const files = course?.topics.flatMap((topic) => shown(topic.resources).flatMap((r) => r.files));
+  const value = { title: course?.meta.title, topics, files };
+  return manifestOf(tree, problems, course && contracts.siteManifest.safeParse(value));
+}
+
+/**
+ * The title of `course.yaml` for the catalogue (design §7, §11), and nothing where the listing has
+ * no `course.yaml` or its title is not valid. It reports no problem and opens no other file.
+ */
+export function readCourseHeader(dir: string): { title: string } | undefined {
+  try {
+    if (!has(listFolder(dir).entries, 'course.yaml')) return undefined;
+    const text = utf8.decode(fs.readFileSync(join(dir, 'course.yaml')));
+    const { value, problems } = parseYaml(text, 'course.yaml');
+    const title = courseMeta.shape.title.safeParse((value as { title?: unknown } | null)?.title);
+    return problems.length === 0 && title.success ? { title: title.data } : undefined;
+  } catch {
+    return undefined;
+  }
 }

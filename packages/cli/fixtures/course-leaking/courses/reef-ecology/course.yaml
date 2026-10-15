@@ -1,0 +1,4 @@
+# The leaking copy of the fixture course: declared public, it holds in its tree the exercise, the
+# test and the code files that belong in the overlay, and the site has no private/ folder.
+title: Reef ecology
+public: true
