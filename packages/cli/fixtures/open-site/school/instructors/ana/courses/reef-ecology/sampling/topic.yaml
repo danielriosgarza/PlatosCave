@@ -1,5 +1,5 @@
 # One resource of each type, listed out of tab order: the list gives the order in each tab. The
-# draft report is hidden; the current explorer runs on an origin that the site does not list.
+# draft report is hidden, with a sentinel in its title and its file; the current explorer runs on an origin that the site does not list.
 id: 5f0c1d8e-3b7a-4c2e-9a41-7d2f6b0e1c33
 position: 1
 title: Sampling a reef
@@ -32,7 +32,7 @@ resources:
     alternative: A table of the tide's height at each hour of one day.
   - id: 7e6d5c4b-3a29-4f18-8e07-6d5c4b3a2918
     file: reading/hidden.pdf
-    title: Draft survey report
+    title: Draft survey report (sentinel-hidden-title)
     alternative: The draft as plain text.
     visibility: hidden
   - id: 0c9d8e7f-6a5b-4c3d-9e2f-1a0b9c8d7e6f

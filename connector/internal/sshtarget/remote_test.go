@@ -32,6 +32,7 @@ import (
 
 func TestMain(m *testing.M) {
 	jupytertest.RunIfStub()
+	runColabStub()
 	os.Exit(m.Run())
 }
 

@@ -11,4 +11,6 @@ export default defineConfig({
     content: 'https://content.reef.example.org',
     shiny: ['https://shiny.example.org'],
   },
+  // Unused at level 0: with it the same folder builds at level 1 as well (A46).
+  signIn: { email: { from: 'Reef ecology <login@example.org>' } },
 });

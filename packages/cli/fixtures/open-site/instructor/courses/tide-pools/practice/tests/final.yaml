@@ -1,8 +1,8 @@
-# A test of one choice question. Its correct answer is a word that starts with sentinel-.
+# A test of one choice question. Its question and its correct answer hold words that start with sentinel-.
 questions:
   - id: q1
     kind: choice
-    prompt: Which animal closes when the pool drains?
+    prompt: Which animal closes when the pool drains? (sentinel-question)
     points: 1
     options:
       - { id: sentinel-final-answer, label: An anemone }

@@ -15,13 +15,22 @@ export const LEFT_OUT =
  * A line as it is printed: control, format and separator characters as code points, and, in a line
  * not in NFC, every character outside ASCII, so that two Unicode forms of a name read apart.
  */
-const shown = (line: string) =>
+export const shown = (line: string) =>
   line.replace(
     line === line.normalize('NFC') ? /[\p{C}\p{Zl}\p{Zp}]/gu : /[^\x20-\x7e]/gu,
     (char) => `\\u{${char.codePointAt(0)?.toString(16)}}`,
   );
 const print = (line: string) => console.log(shown(line));
-const many = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`;
+export const many = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`;
+
+/** Prints a problem of the course folder at `from` (from the site folder), as check prints it. */
+export function printProblem(from: string, problem: Problem): void {
+  const { severity, path: at, overlay: hidden, field, line, message } = problem;
+  const where = [hidden ? `private/${from}` : from, at].filter(Boolean).join('/');
+  const kind = severity === 'error' ? '' : `${severity}: `;
+  const lineNumber = line ? ` (line ${line})` : '';
+  print(`${kind}${where}: ${field ? `${field}: ` : ''}${message}${lineNumber}`);
+}
 
 /**
  * `parallax check [--write-ids]` (docs/design/course-folder.md §9): the reader's problems, the
@@ -61,12 +70,9 @@ export const run: Command['run'] = async ({ site, args }) => {
         problems.push(...(await uploadProblems(read.manifest, read.open, folders)));
         problems.push(...blocking.map(as('error')), ...warnings.map(as('warning')));
       }
-      for (const { severity, path: at, overlay: hidden, field, line, message } of problems) {
-        const where = [hidden ? `private/${from}` : from, at].filter(Boolean).join('/');
-        const kind = severity === 'error' ? '' : `${severity}: `;
-        const lineNumber = line ? ` (line ${line})` : '';
-        print(`${kind}${where}: ${field ? `${field}: ` : ''}${message}${lineNumber}`);
-        if (severity === 'error') errors++;
+      for (const problem of problems) {
+        printProblem(from, problem);
+        if (problem.severity === 'error') errors++;
       }
       courses++;
     }

@@ -157,7 +157,7 @@ func (m *Hello) validate() error {
 	}
 	seen := map[string]bool{}
 	for _, t := range m.Targets {
-		if err := oneOf("targets[]", t, TargetLocal, TargetSSH, TargetManaged); err != nil {
+		if err := oneOf("targets[]", t, TargetLocal, TargetSSH, TargetManaged, TargetColab); err != nil {
 			return err
 		}
 		if seen[t] {
@@ -211,6 +211,14 @@ func (t *Target) check() error {
 	case TargetManaged:
 		return first(match("target.targetId", reManagedID, t.TargetID, 0), uuid("target.subject", t.Subject))
 	case TargetSSH:
+	case TargetColab:
+		if t.Auth == nil {
+			return fmt.Errorf("target.auth is required")
+		} else if len(t.HostKeys) > 1 {
+			return fmt.Errorf("target.hostKeys lists more than 1 key")
+		}
+		return first(match("target.user", reUser, t.User, 0), t.Auth.check("target.auth"),
+			path("target.workspace", t.Workspace), t.checkHostKeys())
 	default:
 		return fmt.Errorf("target.kind %q is unknown", t.Kind)
 	}
@@ -235,6 +243,10 @@ func (t *Target) check() error {
 	if len(t.HostKeys) > 2 {
 		return fmt.Errorf("target.hostKeys lists more than 2 keys")
 	}
+	return t.checkHostKeys()
+}
+
+func (t *Target) checkHostKeys() error {
 	for _, k := range t.HostKeys {
 		if err := first(host("target.hostKeys[].host", k.Host), port("target.hostKeys[].port", k.Port),
 			fingerprint("target.hostKeys[].sha256", k.SHA256)); err != nil {
