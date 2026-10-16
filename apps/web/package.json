@@ -4,6 +4,7 @@
   "type": "module",
   "exports": {
     "./app": "./src/app.tsx",
+    "./open": "./src/open/app.tsx",
     "./pages": "./src/sitePages.tsx"
   },
   "scripts": {
