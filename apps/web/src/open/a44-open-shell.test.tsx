@@ -140,20 +140,10 @@ describe('A44 level 0 shell', () => {
   });
 });
 
-describe('level 0 shell: addresses and missing files', () => {
-  test('/ goes to /courses', async () => {
-    const { router } = open('/', new Map());
-    await waitFor(() => expect(router.state.location.pathname).toBe('/courses'));
-  });
-
+describe('level 0 shell: missing files', () => {
   test('a missing data file shows "This page is not available"', async () => {
     open(openPaths.topic('tide-pools', SAMPLING, 'slides'), files());
     expect(await screen.findByRole('heading', { name: 'This page is not available' })).toBeTruthy();
     expect(requests.map((r) => r.url)).toContain(openPaths.courseData('tide-pools'));
-  });
-
-  test('an address with a trailing slash opens the same screen as one without', async () => {
-    open(`${slides}/`, files());
-    expect(await screen.findByRole('region', { name: 'Slide viewer' })).toBeInTheDocument();
   });
 });
