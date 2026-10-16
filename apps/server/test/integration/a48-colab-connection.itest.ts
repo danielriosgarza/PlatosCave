@@ -110,6 +110,11 @@ test('A48 a Colab connection is tested and opened only through a connector that 
   expect(requests(['test_connection', 'open_session'])).toEqual([]);
 
   const connector = await relink(relay, c.id, c.key, OFFERS_COLAB);
+  // `relink` may return while the replaced link is still registered.
+  await relay.until(
+    () => relay.links.get(c.id)?.hello.targets.includes('colab') === true,
+    'the link that offers colab',
+  );
   const confirmation = { ...TRUST, sha256: OLD_KEY };
   const request = await runTest({ ...c, connector }, 'ready_to_start', [listed(OLD_KEY)], {
     confirmations: [confirmation],
