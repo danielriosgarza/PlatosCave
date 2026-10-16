@@ -1,0 +1,16 @@
+{
+  "appOrigin": "https://school.example.org",
+  "instructors": [
+    { "ref": "ana", "path": "instructors/ana/instructor.yaml", "email": "ana@example.org" },
+    { "ref": "ben", "path": "instructors/ben/instructor.yaml", "email": "ben@example.org" }
+  ],
+  "classes": [
+    {
+      "course": "ana/reef-ecology",
+      "name": "Spring 2027",
+      "open": false,
+      "instructors": ["ana", "ben"]
+    },
+    { "course": "ben/statistics", "name": "Open course", "open": true, "instructors": ["ben"] }
+  ]
+}

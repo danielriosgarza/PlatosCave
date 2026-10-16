@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest';
 import type { SiteConfigInput } from './site';
-import { instructorMeta, siteCatalogue, siteConfig, siteIssueLines } from './site';
+import { instructorMeta, siteCatalogue, siteConfig, siteIssueLines, siteSetup } from './site';
 
 const runtime = {
   id: 'python-3.12',
@@ -160,4 +160,41 @@ test('instructor.yaml and the catalogue take no field beyond their own', () => {
   ];
   for (const bad of catalogues)
     expect(siteCatalogue.safeParse(bad).success, JSON.stringify(bad)).toBe(false);
+});
+
+test('siteSetup: the document of parallax apply names its fields, and a refused one each problem', () => {
+  const ana = { ref: 'ana', path: 'instructors/ana/instructor.yaml', email: 'ana@example.org' };
+  const ben = { ref: 'ben', path: 'instructors/ben/instructor.yaml', email: 'ben@example.org' };
+  const spring = { course: 'ana/reef', name: 'Spring', open: false, instructors: ['ana', 'ben'] };
+  const doc = { appOrigin: 'https://example.org', instructors: [ana, ben], classes: [spring] };
+  const named = (patch: object) => {
+    const parsed = siteSetup.safeParse({ ...doc, ...patch });
+    const lines = parsed.success ? [] : siteIssueLines(parsed.error.issues);
+    return lines.map((line) => line.slice(0, line.indexOf(': ')));
+  };
+  expect(named({})).toEqual([]);
+  // Instructor mode: the one folder is the site root, and a course is a folder of courses/.
+  const root = { ...ana, ref: '.', path: 'instructor.yaml' };
+  const solo = { ...spring, course: 'reef', instructors: ['.'] };
+  expect(named({ instructors: [root], classes: [solo] })).toEqual([]);
+  const refused: [string, object][] = [
+    ['code', { code: 'ABCDE-FGHJK' }],
+    ['appOrigin', { appOrigin: 'http://example.org' }],
+    ['classes[0].code', { classes: [{ ...spring, code: 'ABCDE-FGHJK' }] }],
+    ['instructors', { instructors: [], classes: [] }],
+    ['instructors[0].name', { instructors: [{ ...ana, name: 'Ana Example' }, ben] }],
+    ['instructors[0].path', { instructors: [{ ...ana, path: 'a\u001b[2Jb' }, ben] }],
+    ['instructors[1].ref', { instructors: [ana, { ...ben, ref: 'ana' }], classes: [] }],
+    ['instructors[1].email', { instructors: [ana, { ...ben, email: 'Ana@Example.org' }] }],
+    ['classes[0].course', { classes: [{ ...spring, course: 'carl/reef' }] }],
+    ['classes[0].course', { classes: [{ ...spring, course: 'reef' }] }],
+    ['classes[0].course', { classes: [{ ...spring, course: 'ana/reef/x' }] }],
+    ['classes[0].open', { classes: [{ ...spring, open: undefined }] }],
+    ['classes[0].instructors', { classes: [{ ...spring, instructors: [] }] }],
+    ['classes[0].instructors[1]', { classes: [{ ...spring, instructors: ['ana', 'carl'] }] }],
+    ['classes[0].instructors[1]', { classes: [{ ...spring, instructors: ['ana', 'ana'] }] }],
+    ['classes[1].name', { classes: [spring, spring] }],
+  ];
+  for (const [field, patch] of refused)
+    expect(named(patch), JSON.stringify(patch)).toEqual([field]);
 });
