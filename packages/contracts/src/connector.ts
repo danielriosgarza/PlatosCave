@@ -302,6 +302,22 @@ export type LinkTarget = z.infer<typeof LinkTarget>;
 /** The name a `colab` target's runtime key is trusted under (§5.7); never resolved or dialled. */
 export const COLAB_TRUST = { host: 'colab.invalid', port: 22 } as const;
 
+export interface HopEndpoint {
+  host: string;
+  port: number;
+}
+
+/**
+ * The `host:port` each hop of a target keeps its key under (§5.2, §5.7): an `ssh` target's host
+ * and jump host, `COLAB_TRUST` for the one hop of a `colab` target, none for the others.
+ */
+export function hopEndpoints(target: LinkTarget): { target?: HopEndpoint; jump?: HopEndpoint } {
+  if (target.kind === 'colab') return { target: { ...COLAB_TRUST } };
+  if (target.kind !== 'ssh') return {};
+  const { host, port, jump } = target;
+  return { target: { host, port }, ...(jump && { jump: { host: jump.host, port: jump.port } }) };
+}
+
 export const LinkRuntime = z.discriminatedUnion('mode', [
   z.strictObject({
     mode: z.literal('start'),
@@ -930,7 +946,7 @@ export function validateTarget(input: {
     issues.push({
       rule: 7,
       path: ['confirmations', 0],
-      message: 'only an ssh target has host keys to confirm',
+      message: 'only an ssh or colab target has host keys to confirm',
     });
   }
   return issues;

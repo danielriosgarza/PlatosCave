@@ -120,7 +120,7 @@ export const listSessionFiles = defineRoute({
   query: z.object({ dir: WorkspacePath.optional() }),
   response: z.object({
     workspace: z.string(),
-    /** The SSH host, or null for the connector's own computer. */
+    /** The SSH host, `the Colab runtime` for Colab, or null for the connector's own computer. */
     host: z.string().nullable(),
     dir: z.string(),
     entries: z.array(WorkspaceEntry),

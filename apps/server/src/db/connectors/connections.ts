@@ -1,5 +1,5 @@
 import { isDeepStrictEqual } from 'node:util';
-import { type LinkRuntime, validateTarget } from '@parallax/contracts';
+import { hopEndpoints, type LinkRuntime, validateTarget } from '@parallax/contracts';
 import {
   accountOf,
   TemplateRuntime,
@@ -266,13 +266,11 @@ export async function createConnection(
   }
 }
 
-const endpoints = (target: ConnectionTarget) =>
-  target.kind === 'ssh'
-    ? [
-        { host: target.host, port: target.port },
-        ...(target.jump ? [{ host: target.jump.host, port: target.jump.port }] : []),
-      ]
-    : [];
+/** The `host:port` each hop's key is kept under: a Colab runtime's is its trust name (§5.7). */
+const endpoints = (target: ConnectionTarget) => {
+  const { target: hop, jump } = hopEndpoints(target);
+  return [hop, jump].filter((e) => e !== undefined);
+};
 
 const sameEndpoint = (a: { host: string; port: number }, b: { host: string; port: number }) =>
   a.host.toLowerCase() === b.host.toLowerCase() && a.port === b.port;
@@ -423,14 +421,13 @@ export function recordHostKeys(
 ): Promise<TrustedHostKey[] | null> {
   return db.transaction(async (tx) => {
     const current = await findConnection(tx, scope, connectionId, { lock: true });
-    if (!current || input.sent.kind !== 'ssh') return null;
-    const sent = input.sent;
+    if (!current || input.sent.kind === 'local') return null;
+    const sent = hopEndpoints(input.sent);
     const keys = [...current.trustedHostKeys];
     const events: ReturnType<typeof connectionEvent>[] = [];
     for (const listed of input.hops) {
-      const hop = listed.hop === 'target' ? sent : sent.jump;
-      if (!hop) continue;
-      const endpoint = { host: hop.host, port: hop.port };
+      const endpoint = sent[listed.hop];
+      if (!endpoint) continue;
       // Only for a host:port this connection still names (a PATCH may have moved it meanwhile).
       if (!endpoints(current.target).some((e) => sameEndpoint(e, endpoint))) continue;
       const at = keys.findIndex((k) => sameEndpoint(k, endpoint));
