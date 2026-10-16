@@ -14,6 +14,7 @@ import {
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { z } from 'zod';
+import { RouteFailed } from '../components/RouteFailed';
 import { OpenBar } from './OpenBar';
 import { OpenUnavailable } from './OpenUnavailable';
 import { Topic } from './Topic';
@@ -56,6 +57,7 @@ export function createOpenApp() {
       path,
       validateSearch: topicSearch,
       component: TopicScreen,
+      errorComponent: RouteFailed,
     });
   const toCourses = createRoute({
     getParentRoute: () => root,
