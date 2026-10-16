@@ -61,9 +61,14 @@ export function ConnectSummary({
   const target = connection.target;
   const resolved = test.stages.find((s) => s.name === 'workspace')?.data?.resolvedPath;
   const workspace = resolved ?? ('workspace' in target ? target.workspace : '');
+  // A Colab runtime is never the connector's computer, nor its account (design §5.7).
   const where =
-    target.kind === 'ssh' ? `${target.host}:${target.port}` : (connector?.name ?? 'This computer');
-  const account = target.kind === 'ssh' ? target.user : 'the account running the connector';
+    target.kind === 'ssh'
+      ? `${target.host}:${target.port}`
+      : target.kind === 'colab'
+        ? 'the Colab runtime'
+        : (connector?.name ?? 'This computer');
+  const account = target.kind === 'local' ? 'the account running the connector' : target.user;
   const attach = connection.runtime.mode === 'attach';
   const scope = connector?.networkScope;
   const reach = scope

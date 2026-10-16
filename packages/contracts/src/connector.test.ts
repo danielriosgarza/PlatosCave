@@ -3,7 +3,9 @@ import { describe, expect, test } from 'vitest';
 import type { z } from 'zod';
 import {
   CAUSES,
+  COLAB_TRUST,
   ERROR_CODES,
+  hopEndpoints,
   ipv6Bytes,
   LINK_CLOSE,
   LinkConnectorMessage,
@@ -323,5 +325,24 @@ describe('connector protocol v1 error catalogue', () => {
       rate_limited: 4429,
       server_error: 4500,
     });
+  });
+});
+
+describe('hopEndpoints', () => {
+  const auth = { method: 'agent' as const };
+  const ssh = { kind: 'ssh' as const, host: 'gpu01.example.org', port: 2222, user: 'sam', auth };
+
+  test('local has no hop; ssh has its host and jump host; colab only the trust name', () => {
+    expect(hopEndpoints({ kind: 'local', workspace: '/home/sam' })).toEqual({});
+    const target = { host: 'gpu01.example.org', port: 2222 };
+    expect(hopEndpoints({ ...ssh, workspace: '/w' })).toEqual({ target });
+    const jump = { host: 'bastion.example.org', port: 22, user: 'sam' };
+    expect(hopEndpoints({ ...ssh, workspace: '/w', jump })).toEqual({
+      target,
+      jump: { host: 'bastion.example.org', port: 22 },
+    });
+    const colab = hopEndpoints({ kind: 'colab', user: 'sam', auth, workspace: '/content' });
+    expect(colab).toEqual({ target: { host: 'colab.invalid', port: 22 } });
+    expect(colab.target).toEqual(COLAB_TRUST);
   });
 });
