@@ -11,10 +11,11 @@ import {
   useParams,
   useSearch,
 } from '@tanstack/react-router';
-import { StrictMode } from 'react';
+import { type ReactNode, StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { z } from 'zod';
 import { RouteFailed } from '../components/RouteFailed';
+import { Catalogue, CourseIndex } from './Course';
 import { OpenBar } from './OpenBar';
 import { OpenUnavailable } from './OpenUnavailable';
 import { Topic } from './Topic';
@@ -40,6 +41,12 @@ function TopicScreen() {
   return <Topic {...{ course: ref, topicId, tab, resource, page }} />;
 }
 
+/** A course's topic index in either mode. */
+function CourseScreen() {
+  const { name, course = '' } = useParams({ strict: false }) as Record<string, string | undefined>;
+  return <CourseIndex course={name === undefined ? course : `${name}/${course}`} />;
+}
+
 /** The open site. `/` goes to `/courses`, the catalogue's address (§2). */
 export function createOpenApp() {
   const root = createRootRoute({
@@ -59,6 +66,8 @@ export function createOpenApp() {
       component: TopicScreen,
       errorComponent: RouteFailed,
     });
+  const screen = (path: string, component: () => ReactNode) =>
+    createRoute({ getParentRoute: () => root, path, component, errorComponent: RouteFailed });
   const toCourses = createRoute({
     getParentRoute: () => root,
     path: '/',
@@ -68,6 +77,9 @@ export function createOpenApp() {
   });
   root.addChildren([
     toCourses,
+    screen('/courses', Catalogue),
+    screen('/courses/$course', CourseScreen),
+    screen('/courses/$name/$course', CourseScreen),
     topic('/courses/$course/$topicId/$tab'),
     topic('/courses/$name/$course/$topicId/$tab'),
   ]);

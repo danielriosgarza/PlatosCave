@@ -12,6 +12,7 @@ import { type ClassTopic, type ClassTopics, TAB_LEGEND, type TopicTab } from '..
 import { useFocusMode } from '../workspace/focus';
 import { ResourceToolbar } from '../workspace/ResourceToolbar';
 import { ToolsHost } from '../workspace/ResourceTools';
+import { ClassOnly } from './ClassOnly';
 import { Missing, useCourse, useTopic } from './data';
 import { OpenUnavailable } from './OpenUnavailable';
 import { Panel, type PanelProps } from './panels';
@@ -23,7 +24,7 @@ export type TopicAddress = Pick<PanelProps, 'course' | 'topicId' | 'resource' | 
 
 /** What the heading reads: the course and its topics, each open, with nothing saved; no class. */
 const OPEN = { savedTab: null, state: 'available' as const, availableAt: null, requires: [] };
-const asClassTopics = ({ title, instructors, topics }: OpenCourse): ClassTopics => ({
+export const asClassTopics = ({ title, instructors, topics }: OpenCourse): ClassTopics => ({
   release: null,
   course: { id: '', title },
   cohort: 'Open to everyone',
@@ -109,7 +110,11 @@ function Workspace({ at, data, topic, tab, lists }: WorkspaceProps) {
           // biome-ignore lint/a11y/noNoninteractiveTabindex: panel without focusable content must be reachable
           tabIndex={0}
         >
-          <Panel {...at} tab={tab} lists={lists} onResource={(id) => go(tab, id)} />
+          {tab === 'exercises' || tab === 'tests' ? (
+            <ClassOnly tab={tab} items={lists[tab]} />
+          ) : (
+            <Panel {...at} tab={tab} lists={lists} onResource={(id) => go(tab, id)} />
+          )}
         </div>
       </ToolsHost.Provider>
     </main>

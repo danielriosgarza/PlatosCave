@@ -12,11 +12,14 @@ import { SlideViewer } from '../slides/SlideViewer';
 import type { TopicTab } from '../topics/topics';
 import { ResourceTools } from '../workspace/ResourceTools';
 import { Missing, useResource } from './data';
+import { NotebooksPanel } from './NotebooksPanel';
+import { OpenShiny } from './OpenShiny';
 
 /**
  * The panels of a topic's tabs at level 0 (docs/design/open-site.md §6): Slides and Reading in the
  * existing viewers, given what a data file holds and nothing that saves, renews or calls the API
- * (no `source.key`, so no download through the API); the other three tabs list their titles.
+ * (no `source.key`, so no download through the API); Notebooks shows a notebook (`NotebooksPanel`)
+ * or a Shiny app (`OpenShiny`). Exercises and Tests are `ClassOnly`.
  */
 export interface PanelProps {
   course: string;
@@ -33,7 +36,7 @@ export interface PanelProps {
 const nothing = () => {};
 const noRenewal = async () => null;
 
-const EMPTY = {
+export const EMPTY = {
   slides: 'No slides have been added',
   reading: 'No reading has been added',
   exercises: 'No exercises have been added',
@@ -41,23 +44,20 @@ const EMPTY = {
   tests: 'No tests have been added',
 };
 
-export function Panel(props: PanelProps) {
+const LABEL = { slides: 'Slides', reading: 'Reading', notebooks: 'Notebook' };
+
+export function Panel(props: PanelProps & { tab: keyof typeof LABEL }) {
   const { tab, lists } = props;
-  if (tab !== 'slides' && tab !== 'reading') {
-    const titles = lists[tab].map(({ resourceId, title }) => <li key={resourceId}>{title}</li>);
-    if (!titles.length) return <p className={page.intro}>{EMPTY[tab]}</p>;
-    return <ul className={page.bareList}>{titles}</ul>;
-  }
   const staged = (node: ReactNode) =>
     tab === 'reading' ? <div className={reading.stage}>{node}</div> : node;
   const items: OpenTopic['slides'] = lists[tab];
   const chosen = items.find((item) => item.resourceId === props.resource) ?? items[0];
   if (!chosen) {
-    return staged(<p className={tab === 'slides' ? slides.empty : reading.empty}>{EMPTY[tab]}</p>);
+    return staged(<p className={tab === 'reading' ? reading.empty : slides.empty}>{EMPTY[tab]}</p>);
   }
   const picker = (
     <label className={slides.picker}>
-      <span className={slides.label}>{tab === 'slides' ? 'Slides' : 'Reading'}</span>
+      <span className={slides.label}>{LABEL[tab]}</span>
       <select value={chosen.resourceId} onChange={(e) => props.onResource(e.target.value)}>
         {items.map(({ resourceId, title }) => (
           <option key={resourceId} value={resourceId}>
@@ -77,13 +77,15 @@ export function Panel(props: PanelProps) {
   );
 }
 
-/** One deck or reading, from its data file. */
+/** One deck, reading, notebook or Shiny app, from its data file. */
 function Shown({ at, resourceId }: { at: PanelProps; resourceId: string }) {
   const file = useResource(at.course, at.topicId, resourceId);
   const data = file.data;
   const deck = at.tab === 'slides';
+  if (data?.type === 'notebook') return <NotebooksPanel {...data} />;
+  if (data?.type === 'shiny') return <OpenShiny {...data} />;
   if (data?.type !== 'slides' && data?.type !== 'reading') {
-    const what = deck ? 'These slides' : 'This reading';
+    const what = deck ? 'These slides' : at.tab === 'reading' ? 'This reading' : 'This notebook';
     const state =
       file.error instanceof Missing ? (
         <p className={page.feedback} role="alert">
@@ -94,7 +96,9 @@ function Shown({ at, resourceId }: { at: PanelProps; resourceId: string }) {
       ) : (
         <Loading label={`Loading ${at.tab}`} />
       );
-    return data ? null : <div className={deck ? slides.status : undefined}>{state}</div>;
+    return data ? null : (
+      <div className={at.tab === 'reading' ? undefined : slides.status}>{state}</div>
+    );
   }
   const { pdf } = data;
   const source = { classId: '', revisionId: resourceId, key: null };
