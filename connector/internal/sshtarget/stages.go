@@ -55,6 +55,9 @@ type Target struct {
 	// ManagedKey reads the key a `managed_key` reference names, and its certificate (nil when
 	// there is none). Nil refuses `managed_key`; set, it is the only reference served.
 	ManagedKey func(keyID string) (key, cert []byte, err error)
+	// Colab reaches a `colab` target's runtime through the fixed command of design §5.7; nil
+	// refuses `colab` targets.
+	Colab *Colab
 }
 
 // Conn is an authenticated SSH connection to the target, through the jump host when there is
@@ -207,7 +210,11 @@ func stopped(err error, expired bool, ctx context.Context, b *budget) error {
 // connect runs the first three stages over every hop and returns the authenticated connection.
 func (c *checker) connect(ctx context.Context) *Conn {
 	req := c.req
-	if req.Target.Kind != protocol.TargetSSH {
+	if req.Target.Kind == protocol.TargetColab && c.t.Colab == nil {
+		c.finishReach(nil, &target.Failure{Code: protocol.CodeUnsupportedTarget, Detail: "this connector does not offer the colab target"})
+		return nil
+	}
+	if req.Target.Kind != protocol.TargetSSH && req.Target.Kind != protocol.TargetColab {
 		c.finishReach(nil, &target.Failure{Code: protocol.CodeUnsupportedTarget, Detail: "not an ssh target"})
 		return nil
 	}

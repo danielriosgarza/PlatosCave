@@ -46,6 +46,7 @@ func TargetViolations(t Target, rt Runtime, confirmations []Confirmation) []*Tar
 		out = append(out, &TargetError{Rule: rule, Field: field, Reason: fmt.Sprintf(format, args...)})
 	}
 	ssh := t.Kind == TargetSSH
+	colab := t.Kind == TargetColab
 
 	// Rules 1 and 2: host syntax, then forbidden literal addresses, for the target and the jump.
 	if ssh {
@@ -68,7 +69,7 @@ func TargetViolations(t Target, rt Runtime, confirmations []Confirmation) []*Tar
 	}
 
 	// Rule 3: the workspace is absolute and has no `..` segment.
-	if t.Kind == TargetLocal || ssh {
+	if t.Kind == TargetLocal || ssh || colab {
 		if !isAbsolute(t.Workspace, t.Kind == TargetLocal) {
 			add(3, "target.workspace", "must be an absolute path")
 		} else if hasDotDot(t.Workspace) {
@@ -77,7 +78,7 @@ func TargetViolations(t Target, rt Runtime, confirmations []Confirmation) []*Tar
 	}
 
 	// Rule 4: key paths are absolute or under ~/, without `..`.
-	if ssh {
+	if ssh || colab {
 		auths := [][2]any{{"target.auth", t.Auth}}
 		if t.Jump != nil {
 			auths = append(auths, [2]any{"target.jump.auth", t.Jump.Auth})
@@ -105,7 +106,7 @@ func TargetViolations(t Target, rt Runtime, confirmations []Confirmation) []*Tar
 				add(5, "runtime.python", "must not contain a .. segment")
 			}
 		}
-		if rt.Login != nil && !ssh {
+		if rt.Login != nil && !ssh && !colab {
 			add(5, "runtime.login", "applies to ssh targets only")
 		}
 	}
@@ -117,6 +118,10 @@ func TargetViolations(t Target, rt Runtime, confirmations []Confirmation) []*Tar
 	}
 	names := func(host string, port int) bool {
 		k := endpoint(host, port)
+		if colab {
+			// A colab target names no host: its one hop is trusted under the fixed name.
+			return k == endpoint(ColabHost, ColabPort)
+		}
 		return ssh && (k == targetKey || (jumpKey != "" && k == jumpKey))
 	}
 

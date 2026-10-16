@@ -288,8 +288,19 @@ export const LinkTarget = z.discriminatedUnion('kind', [
     expectedEnd: UtcTimestamp.optional(),
   }),
   z.strictObject({ kind: z.literal('managed'), targetId: ManagedId, subject: ConnectorUuid }),
+  /** A paid Colab runtime, reached through the connector's one fixed command (§5.7). */
+  z.strictObject({
+    kind: z.literal('colab'),
+    user: LinkUser,
+    auth: LinkAuth,
+    workspace: LinkPath,
+    hostKeys: z.array(HostKey).max(1).optional(),
+  }),
 ]);
 export type LinkTarget = z.infer<typeof LinkTarget>;
+
+/** The name a `colab` target's runtime key is trusted under (§5.7); never resolved or dialled. */
+export const COLAB_TRUST = { host: 'colab.invalid', port: 22 } as const;
 
 export const LinkRuntime = z.discriminatedUnion('mode', [
   z.strictObject({
@@ -511,7 +522,7 @@ export const LinkHello = msg('hello', {
   arch: ConnectorArch,
   mode: z.enum(['personal', 'managed']),
   targets: z
-    .array(z.enum(['local', 'ssh', 'managed']))
+    .array(z.enum(['local', 'ssh', 'managed', 'colab']))
     .min(1)
     .max(3)
     .refine((t) => new Set(t).size === t.length, { message: 'targets are unique' }),
@@ -844,7 +855,7 @@ export function validateTarget(input: {
   if (target.kind !== 'managed') {
     const ws = target.workspace;
     const absolute =
-      target.kind === 'ssh' ? ws.startsWith('/') : ws.startsWith('/') || isWindowsAbsolute(ws);
+      target.kind === 'local' ? ws.startsWith('/') || isWindowsAbsolute(ws) : ws.startsWith('/');
     if (!absolute || hasDotDot(ws)) {
       issues.push({
         rule: 3,
@@ -853,10 +864,11 @@ export function validateTarget(input: {
       });
     }
   }
-  if (target.kind === 'ssh') {
+  if (target.kind === 'ssh' || target.kind === 'colab') {
+    const jump = target.kind === 'ssh' ? target.jump : undefined;
     const auths: [z.infer<typeof LinkAuth> | undefined, (string | number)[]][] = [
       [target.auth, ['target', 'auth', 'keyPath']],
-      [target.jump?.auth, ['target', 'jump', 'auth', 'keyPath']],
+      [jump?.auth, ['target', 'jump', 'auth', 'keyPath']],
     ];
     for (const [auth, path] of auths) {
       if (auth?.method === 'key' && !isConnectorPath(auth.keyPath)) {
@@ -876,7 +888,7 @@ export function validateTarget(input: {
         message: 'python is absolute or starts with ~/, with no .. segment',
       });
     }
-    if (runtime.login !== undefined && target.kind !== 'ssh') {
+    if (runtime.login !== undefined && target.kind !== 'ssh' && target.kind !== 'colab') {
       issues.push({
         rule: 5,
         path: ['runtime', 'login'],
@@ -884,8 +896,9 @@ export function validateTarget(input: {
       });
     }
   }
-  if (target.kind === 'ssh') {
-    const named = [target, ...(target.jump ? [target.jump] : [])];
+  if (target.kind === 'ssh' || target.kind === 'colab') {
+    const named =
+      target.kind === 'colab' ? [COLAB_TRUST] : [target, ...(target.jump ? [target.jump] : [])];
     const keys = target.hostKeys ?? [];
     keys.forEach((k, i) => {
       const duplicate = keys.findIndex((o) => sameEndpoint(o, k)) !== i;
@@ -906,7 +919,7 @@ export function validateTarget(input: {
         });
       }
     });
-    if (target.jump && sameEndpoint(target.jump, target)) {
+    if (target.kind === 'ssh' && target.jump && sameEndpoint(target.jump, target)) {
       issues.push({
         rule: 8,
         path: ['target', 'jump'],
