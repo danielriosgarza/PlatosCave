@@ -141,6 +141,51 @@ export const siteCatalogue = z.strictObject({
 });
 export type SiteCatalogue = z.output<typeof siteCatalogue>;
 
+/** A class's course as written: the instructor folder that holds it ('.', the root) and its folder. */
+export function courseFolder(course: string): { owner: string; folder: string } {
+  const [first = '', second] = course.split('/');
+  return second === undefined ? { owner: '.', folder: first } : { owner: first, folder: second };
+}
+
+const ref = z.union([z.literal('.'), slug]);
+const person = z.strictObject({ ref, path: text(1024), email: instructorMeta.shape.email });
+/**
+ * What `parallax apply` pipes to the server (§8): the listed instructor folders, each with the
+ * path of its `instructor.yaml` for messages, and the classes as the configuration has them.
+ */
+export const siteSetup = z
+  .strictObject({
+    appOrigin: origin,
+    instructors: z.array(person).min(1),
+    classes: z.array(classEntry.extend({ open: z.boolean(), instructors: z.array(ref).min(1) })),
+  })
+  .superRefine(({ instructors, classes }, ctx) => {
+    const refuse = (message: string, ...path: PropertyKey[]) =>
+      ctx.addIssue({ code: 'custom', path, message });
+    const again = (list: string[], i: number) => list.indexOf(list[i] as string) < i;
+    const refs = instructors.map((instructor) => instructor.ref);
+    // The server compares addresses without case: two that differ only in case are one.
+    const emails = instructors.map((instructor) => instructor.email.toLowerCase());
+    instructors.forEach((_, i) => {
+      if (again(refs, i)) refuse('listed twice', 'instructors', i, 'ref');
+      if (again(emails, i)) refuse('an address listed twice', 'instructors', i, 'email');
+    });
+    classes.forEach((cls, i) => {
+      const parts = cls.course.split('/');
+      const formed = parts.length <= 2 && parts.every((part) => FOLDER.test(part));
+      const listed = formed && refs.includes(courseFolder(cls.course).owner);
+      if (!listed) refuse('a course folder of a listed instructor', 'classes', i, 'course');
+      const twin = classes.findIndex((o) => o.course === cls.course && o.name === cls.name) < i;
+      if (twin) refuse(`a second class of ${cls.course} with this name`, 'classes', i, 'name');
+      cls.instructors.forEach((r, j) => {
+        const unlisted = !refs.includes(r) && `${r} is not in instructors`;
+        const why = unlisted || (again(cls.instructors, j) && 'listed twice');
+        if (why) refuse(why, 'classes', i, 'instructors', j);
+      });
+    });
+  });
+export type SiteSetup = z.output<typeof siteSetup>;
+
 /** One line for each issue of a failed parse, starting with its field: `classes[1].course: …`. */
 export function siteIssueLines(issues: z.core.$ZodIssue[]): string[] {
   const at = (path: PropertyKey[]) =>
