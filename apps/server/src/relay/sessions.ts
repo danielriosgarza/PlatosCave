@@ -29,6 +29,7 @@ import type {
 import { LinkRequestError } from './links';
 import { checkTargetPolicy } from './netpolicy';
 import { isOpen, type SessionEvent, type SessionState, type SessionStatus } from './session-state';
+import { offersTarget } from './targets';
 
 /**
  * Notebook sessions on the relay (docs/design/connector.md §2, §9, §10.4, §10.7). It sends
@@ -65,7 +66,7 @@ export type OpenResult =
   | {
       ok: false;
       reason: 'target_not_allowed';
-      code: 'invalid_target' | 'network_scope_denied' | 'template_mismatch';
+      code: 'invalid_target' | 'network_scope_denied' | 'template_mismatch' | 'unsupported_target';
       rules?: number[];
     };
 
@@ -287,7 +288,7 @@ export class SessionRelay {
       port,
       sha256,
     }));
-    const sent = target.kind === 'ssh' && hostKeys.length > 0 ? { ...target, hostKeys } : target;
+    const sent = target.kind !== 'local' && hostKeys.length > 0 ? { ...target, hostKeys } : target;
     const issues = validateTarget({ target: sent, runtime });
     if (issues.length > 0) {
       const rules = [...new Set(issues.map((i) => i.rule))].sort();
@@ -295,6 +296,9 @@ export class SessionRelay {
     }
     const policy = checkTargetPolicy(target, link.hello.networkScope);
     if (!policy.ok) return { ok: false, reason: 'target_not_allowed', code: policy.code };
+    if (!offersTarget(link.hello, target)) {
+      return { ok: false, reason: 'target_not_allowed', code: 'unsupported_target' };
+    }
 
     const opened = await openSession(
       this.options.db,

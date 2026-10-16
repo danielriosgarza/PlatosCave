@@ -59,6 +59,7 @@ import {
   LiveLinkRegistry,
   systemTimers,
 } from './links';
+import { hostLabel } from './targets';
 
 /**
  * File transfer between Parallax and a notebook session's workspace (spec §10.5,
@@ -535,7 +536,7 @@ export class TransferRelay {
       return {
         ok: true as const,
         workspace: target.workspace,
-        host: target.kind === 'ssh' ? target.host : null,
+        host: hostLabel(target),
         dir: path,
         entries,
         declared,
