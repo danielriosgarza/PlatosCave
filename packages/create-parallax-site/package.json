@@ -1,0 +1,22 @@
+{
+  "name": "create-parallax-site",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "create-parallax-site": "./bin/create-parallax-site.mjs"
+  },
+  "files": [
+    "bin",
+    "src/create.mjs",
+    "templates"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/react": "19.3.0",
+    "parallax-site": "workspace:*",
+    "vite": "8.3.1"
+  }
+}
