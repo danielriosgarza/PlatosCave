@@ -291,6 +291,33 @@
             }
           },
           "description": "A target defined in a managed connector's own configuration. Personal connectors answer unsupported_target."
+        },
+        {
+          "type": "object",
+          "required": ["kind", "user", "auth", "workspace"],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "colab"
+            },
+            "user": {
+              "$ref": "#/$defs/user"
+            },
+            "auth": {
+              "$ref": "#/$defs/auth"
+            },
+            "workspace": {
+              "$ref": "#/$defs/path"
+            },
+            "hostKeys": {
+              "type": "array",
+              "maxItems": 1,
+              "items": {
+                "$ref": "#/$defs/hostKey"
+              }
+            }
+          },
+          "description": "A paid Colab runtime, reached through the one fixed command `colab ssh --proxy-mode` built into the connector (design §5.7). No field carries a program, a path to one, an argument or a command. Its host key is trusted under the name colab.invalid, port 22."
         }
       ]
     },
@@ -923,7 +950,7 @@
           "maxItems": 3,
           "uniqueItems": true,
           "items": {
-            "enum": ["local", "ssh", "managed"]
+            "enum": ["local", "ssh", "managed", "colab"]
           }
         },
         "features": {

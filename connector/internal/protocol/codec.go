@@ -362,12 +362,12 @@ func (a *AuthRef) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// Target is where code runs: one of the schema's three shapes, told apart by Kind.
+// Target is where code runs: one of the schema's four shapes, told apart by Kind.
 type Target struct {
 	Kind string `json:"kind"`
-	// local and ssh
+	// local, ssh and colab
 	Workspace string `json:"workspace,omitempty"`
-	// ssh
+	// ssh (User, Auth and HostKeys also colab)
 	Host        string    `json:"host,omitempty"`
 	Port        int       `json:"port,omitempty"`
 	User        string    `json:"user,omitempty"`
@@ -385,6 +385,12 @@ const (
 	TargetLocal   = "local"
 	TargetSSH     = "ssh"
 	TargetManaged = "managed"
+	TargetColab   = "colab"
+
+	// ColabHost and ColabPort are the trust name of a colab target's runtime (design §5.7): its
+	// host key is kept under them, and they are never resolved or dialled.
+	ColabHost = "colab.invalid"
+	ColabPort = 22
 )
 
 // UnmarshalJSON accepts exactly one variant of the schema's `target` oneOf.
@@ -403,6 +409,8 @@ func (t *Target) UnmarshalJSON(data []byte) error {
 			"jump", "hostKeys", "expectedEnd")
 	case TargetManaged:
 		err = allowKeys(data, "target", []string{"kind", "targetId", "subject"})
+	case TargetColab:
+		err = allowKeys(data, "target", []string{"kind", "user", "auth", "workspace"}, "hostKeys")
 	default:
 		err = fmt.Errorf("target: unknown kind %q", p.Kind)
 	}
