@@ -23,15 +23,16 @@ const connectionParams = z.object({ connectionId: z.uuid() });
 const exampleConnection = { connectionId: exampleIds.aa };
 const preview = z.object({ error: z.literal('forbidden') });
 
-const [localTarget, sshTarget] = LinkTarget.options;
+const [localTarget, sshTarget, , colabTarget] = LinkTarget.options;
 /**
- * The target a person saves: `local` or `ssh` as in §4.4, without `hostKeys`, which the server
- * fills from the keys the person trusted. `managed` targets are not offered yet
- * (connector side only until the owner decides, design §12).
+ * The target a person saves: `local`, `ssh` or `colab` (a paid Colab runtime, §5.7) as in §4.4,
+ * without `hostKeys`, which the server fills from the keys the person trusted. `managed` targets
+ * are not offered yet (connector side only until the owner decides, design §12).
  */
 export const ConnectionTarget = z.discriminatedUnion('kind', [
   localTarget,
   sshTarget.omit({ hostKeys: true }),
+  colabTarget.omit({ hostKeys: true }),
 ]);
 export type ConnectionTarget = z.infer<typeof ConnectionTarget>;
 
@@ -63,11 +64,17 @@ export type ConnectionView = z.infer<typeof ConnectionView>;
  * connector's reported scope does not cover (§8), `template_mismatch` is a connection naming a
  * class template whose target is not the one that template makes for the person's account
  * (`targetFromTemplate` in routes/computeTemplates), or whose runtime (another kernel aside) or
- * session lease is not the template's.
+ * session lease is not the template's, and `unsupported_target`, on Test connection and Connect,
+ * is a `colab` target for a connector whose live `hello` does not list `colab` (§4.6, §5.7).
  */
 export const targetRefused = z.object({
   error: z.literal('target_not_allowed'),
-  code: z.enum(['invalid_target', 'network_scope_denied', 'template_mismatch']),
+  code: z.enum([
+    'invalid_target',
+    'network_scope_denied',
+    'template_mismatch',
+    'unsupported_target',
+  ]),
   rules: z.array(z.number().int()).optional(),
 });
 

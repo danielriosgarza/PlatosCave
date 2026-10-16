@@ -1,5 +1,10 @@
 import { randomUUID } from 'node:crypto';
-import { type LinkConfirmation, type LinkStage, validateTarget } from '@parallax/contracts';
+import {
+  hopEndpoints,
+  type LinkConfirmation,
+  type LinkStage,
+  validateTarget,
+} from '@parallax/contracts';
 import type { ConnectionTestView } from '@parallax/contracts/routes/connections';
 import type { FastifyBaseLogger } from 'fastify';
 import type { z } from 'zod';
@@ -13,6 +18,7 @@ import {
 import type { LinkAnswer, LinkProgress, LinkRegistry, LinkRequest } from './links';
 import { LinkRequestError } from './links';
 import { checkTargetPolicy } from './netpolicy';
+import { offersTarget } from './targets';
 
 /**
  * Test connection runs (docs/design/connector.md §2 step 3, §5.1, §5.2, §10.3): held in memory by
@@ -58,7 +64,7 @@ export type StartRefusal =
   | {
       ok: false;
       reason: 'target_not_allowed';
-      code: 'invalid_target' | 'network_scope_denied';
+      code: 'invalid_target' | 'network_scope_denied' | 'unsupported_target';
       rules?: number[];
     };
 
@@ -125,7 +131,7 @@ export class ConnectionTests {
       v: 1,
       t: 'test_connection',
       requestId: randomUUID(),
-      target: target.kind === 'ssh' && hostKeys.length > 0 ? { ...target, hostKeys } : target,
+      target: target.kind !== 'local' && hostKeys.length > 0 ? { ...target, hostKeys } : target,
       runtime: connection.runtime,
       ...(confirmations.length > 0 && { confirmations }),
     };
@@ -136,6 +142,10 @@ export class ConnectionTests {
     }
     const policy = checkTargetPolicy(target, link.hello.networkScope);
     if (!policy.ok) return { ok: false, reason: 'target_not_allowed', code: policy.code };
+    // Never a kind the connector would close the link over (§4.6).
+    if (!offersTarget(link.hello, target)) {
+      return { ok: false, reason: 'target_not_allowed', code: 'unsupported_target' };
+    }
 
     const run: Run = {
       testId: randomUUID(),
@@ -205,12 +215,11 @@ export class ConnectionTests {
    * record.
    */
   private hostIdentity(scope: UserScope, run: Run, stage: Stage): void {
-    if (stage.name !== 'host_identity' || run.sent.kind !== 'ssh') return;
+    if (stage.name !== 'host_identity' || run.sent.kind === 'local') return;
     const sent = run.sent;
-    const endpoint = (hop: 'jump' | 'target') => (hop === 'target' ? sent : sent.jump);
     const hops = stage.data?.hops ?? [];
     if (stage.code === 'host_key_changed' && stage.data?.hop && stage.data.expected) {
-      const e = endpoint(stage.data.hop);
+      const e = hopEndpoints(sent)[stage.data.hop];
       if (e) this.changed.set(endpointKey(run.connectionId, e.host, e.port), stage.data.expected);
     }
     if (hops.length === 0) return;
