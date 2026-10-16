@@ -1,9 +1,10 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, sep } from 'node:path';
 import { type SiteSetup, siteSetup } from '@parallax/contracts';
 import { type SQL, sql } from 'drizzle-orm';
+import type { PgBoss } from 'pg-boss';
 import { afterAll, beforeAll, expect, test } from 'vitest';
 import { DEV_RUNNER_RUNTIMES } from '../../src/config';
 import { type SyncDeps, syncCourse } from '../../src/content/folder-sync';
@@ -41,12 +42,13 @@ const event = (actingFor: string, list: string) => ({
 });
 
 let t: TestDatabase;
+let boss: PgBoss;
 let deps: SyncDeps;
 let root: string;
 beforeAll(async () => {
   t = await createTestDatabase();
   root = await mkdtemp(join(tmpdir(), 'parallax-a51-'));
-  const boss = createBoss(t.db.$client, { role: 'api', onError() {}, onWarning() {} });
+  boss = createBoss(t.db.$client, { role: 'api', onError() {}, onWarning() {} });
   await boss.start();
   await ensureQueues(boss, await loadJobs());
   const storage = new FsStorage(root);
@@ -59,7 +61,7 @@ beforeAll(async () => {
   deps = { db: t.db, boss, storage, validate, instructorEmails: [ANA, BEN], wait };
 });
 afterAll(async () => {
-  await deps?.boss.stop({ graceful: false });
+  await boss?.stop({ graceful: false });
   await t?.drop();
   if (root) await rm(root, { recursive: true, force: true });
 });
@@ -81,10 +83,12 @@ async function sync(email: string, name: string) {
   expect(result, result.report.join('\n')).toMatchObject({ code: 0 });
 }
 
+/** One run, with every argument of each `print` call: a line is printed alone, as `console.log` would print each. */
 async function apply(document: SiteSetup = doc) {
-  const report: string[] = [];
-  const code = await applySetup(t.db, document, (line) => report.push(line));
-  return { code, report };
+  const calls: unknown[][] = [];
+  const code = await applySetup(t.db, document, (...args: unknown[]) => calls.push(args));
+  expect(calls.filter((args) => args.length !== 1)).toEqual([]);
+  return { code, report: calls.map(([line]) => line as string) };
 }
 
 const query = async (q: SQL) => (await t.db.execute(q)).rows;
@@ -165,11 +169,14 @@ test('A51 setup from the configuration creates instructor access, classes and en
   expect(await invitesOf(open?.id)).toEqual(UNLIMITED);
   const opened = event(ben, 'class.create membership.add release.adopt class.open invite.create');
   expect(await eventsOf(open?.id)).toEqual([opened]);
-  // No route writes the action of setup's own events.
-  const routes = join(import.meta.dirname, '../../src/http/routes');
-  for (const file of readdirSync(routes)) {
-    expect(readFileSync(join(routes, file), 'utf8'), file).not.toContain('setup.apply');
-  }
+  // No route, job or other module of the server writes the action of setup's own events.
+  const src = join(import.meta.dirname, '../../src');
+  const files = readdirSync(src, { recursive: true, encoding: 'utf8' });
+  const sources = files.filter((file) => /(?<!\.test)\.ts$/.test(file));
+  const holders = sources.filter((file) =>
+    readFileSync(join(src, file), 'utf8').includes('setup.apply'),
+  );
+  expect(holders.map((file) => file.split(sep).join('/'))).toEqual(['db/setup.ts']);
 
   // A second run changes no row and prints no code.
   const tables = ['users', 'auth_sessions', 'signin_tokens', 'course_memberships', 'classes'];
@@ -178,6 +185,12 @@ test('A51 setup from the configuration creates instructor access, classes and en
   const report = [`${SAID.spring} unchanged`, `${SAID.open} unchanged`];
   expect(await apply()).toEqual({ code: 0, report });
   expect(await rows(tables)).toEqual(settled);
+  // The codes were printed once and are stored nowhere, with or without the separator.
+  const stored = JSON.stringify(await rows());
+  for (const plain of [code, CODE.exec(second.report[1] as string)?.[0] as string]) {
+    expect(stored).not.toContain(plain);
+    expect(stored).not.toContain(plain.replace('-', ''));
+  }
 
   // A renamed class is created beside the earlier one, which stays as it was.
   const renamed = await apply({ ...doc, classes: [{ ...spring, name: 'Spring term 2027' }] });

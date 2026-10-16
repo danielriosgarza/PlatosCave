@@ -35,6 +35,7 @@ const REASONS: Record<string, string> = {
   class_archived: 'the class is archived',
   manual_grading: 'its release has test parts graded by hand, which an open class never takes',
   release_conflict: 'the class changed meanwhile; run apply again',
+  not_found: 'the newest release of the course is not found; run apply again',
 };
 function refuse(reason: string): never {
   throw new Refused(REASONS[reason] ?? reason);
@@ -65,7 +66,11 @@ export async function latestRelease(ex: Executor, scope: CourseScope) {
  * instructor of the class is left as it is, and a student of it is refused, as an invitation
  * refuses one.
  */
-export async function ensureInstructor(tx: Tx, scope: ClassManagerScope, userId: string) {
+export async function ensureInstructor(
+  tx: Tx,
+  scope: ClassManagerScope,
+  userId: string,
+): Promise<'added' | 'member' | 'student'> {
   const [member] = await tx
     .select({ role: classMemberships.role })
     .from(classMemberships)
@@ -74,7 +79,10 @@ export async function ensureInstructor(tx: Tx, scope: ClassManagerScope, userId:
   // Locked before the class membership exists, as `acceptInstructorInvite` locks it.
   const own = and(forCourse(scope, courseMemberships), eq(courseMemberships.userId, userId));
   await tx.select({ id: courseMemberships.id }).from(courseMemberships).where(own).for('update');
-  await tx.insert(classMemberships).values({ classId: scope.classId, userId, role: 'instructor' });
+  const row = { classId: scope.classId, userId, role: 'instructor' as const };
+  // An account that joined the class meanwhile is answered as a member is.
+  const added = await tx.insert(classMemberships).values(row).onConflictDoNothing().returning();
+  if (added.length === 0) return ensureInstructor(tx, scope, userId);
   await tx
     .insert(courseMemberships)
     .values({ courseId: scope.courseId, userId, editor: true })
@@ -113,7 +121,7 @@ type Rule = Parameters<typeof resolveActorScope>[2];
 /** A scope from `resolveActorScope` on the class's transaction, which sees its earlier writes. */
 async function scopeOn<S>(tx: Db, actorId: string, rule: Rule, id: string) {
   const resolved = await resolveActorScope(tx, actorId, rule, id);
-  if (!resolved.ok) throw new Error(`setup: ${resolved.reason}`);
+  if (!resolved.ok) refuse(`the scope does not resolve: ${resolved.reason}`);
   return resolved.scope as S;
 }
 
@@ -129,15 +137,16 @@ async function applyClass(db: Db, cls: Class, people: Map<string, Instructor>, o
   if (!resolved.ok) refuse(`${at(owner).path}: the account does not own this course`);
   const course = resolved.scope as CourseScope;
   if (course.archived) refuse('the course is archived');
-  // A first sync that stopped before publishing leaves a course with no release.
-  const release = await latestRelease(db, course);
-  if (!release) return PENDING;
 
   return db.transaction(async (tx) => {
     const handle = tx as unknown as Db;
     // One run at a time per course, so two cannot both create the class or a code.
     const lock = eq(courses.id, courseId);
     await tx.select({ id: courses.id }).from(courses).where(lock).for('no key update');
+    // Read under the lock that publication takes too. A first sync that stopped before
+    // publishing leaves a course with no release.
+    const release = await latestRelease(tx, course);
+    if (!release) return PENDING;
     const found = await findClassByName(tx, course, cls.name);
     const ids = found.map((row) => row.id).join(', ');
     if (found.length > 1) refuse(`two or more classes of the course have this name: ${ids}`);
@@ -209,7 +218,7 @@ export async function applySetup(db: Db, doc: SiteSetup, print: (line: string) =
     if (account) people.set(ref, { id: account.id, path });
     else missing.push(`${path}: ${NO_ACCOUNT}`);
   }
-  missing.forEach(print);
+  for (const line of missing) print(line);
   if (missing.length > 0) return 1 as const;
   let code: 0 | 1 = 0;
   for (const cls of doc.classes) {
