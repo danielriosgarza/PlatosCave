@@ -42,7 +42,8 @@ function files({ slide = '<p>Slide</p>', html = '<p>Text</p>', cell = '', output
   };
   const outputs = [
     out('image', { url: object('c', 'png'), alt: 'Counts per quadrat' }),
-    out('html', { url: object('d', 'html'), height: 120, scriptsRemoved: false }),
+    out('html', { url: object('d', 'html'), height: 120, scriptsRemoved: true }),
+    out('unsupported', { mimeTypes: ['application/javascript'] }),
     out('markdown', { html: output }),
   ];
   const cells = [
@@ -111,14 +112,19 @@ describe('A44 level 0 tabs', () => {
     expect(await screen.findByText('Stored output · Python 3')).toBeInTheDocument();
     expect(screen.getByText('Saved outputs')).toBeInTheDocument();
     const image = screen.getByRole('img', { name: 'Counts per quadrat' });
-    expect(image.getAttribute('src')).toMatch(CONTENT);
+    expect(image).toHaveAttribute('src', object('c', 'png'));
     const frame = screen.getByTitle('Output of cell [1]');
     expect(frame).toHaveAttribute('sandbox', '');
-    expect(frame.getAttribute('src')).toMatch(CONTENT);
+    expect(frame).toHaveAttribute('src', object('d', 'html'));
+    // The two notices beside which level 1 offers "Download original notebook".
+    expect(screen.getByText('Scripts in this output were removed and not run')).toBeInTheDocument();
+    expect(screen.getByText(/^Interactive output not shown/)).toBeInTheDocument();
     const downloads = screen.getAllByRole('link', { name: 'Download notebook without outputs' });
     for (const link of downloads) expect(link).toHaveAttribute('href', FILE);
     for (const role of ['button', 'link'] as const) {
-      expect(screen.queryAllByRole(role, { name: /connect|run|submit|original/i })).toEqual([]);
+      expect(
+        screen.queryAllByRole(role, { name: /connect|run|submit|original|saved outputs/i }),
+      ).toEqual([]);
     }
     onlyDataFiles();
     await axeWithFrames();
@@ -185,6 +191,15 @@ describe('A44 level 0 tabs', () => {
     expect(href('Download notebook without outputs', colab)).toBe(FILE);
     expect(document.querySelector('input[type="file"]')).toBeNull();
     expect(screen.queryByRole('button', { name: /submit/i })).toBeNull();
+    // Opening Colab and the download send nothing: no launch is recorded (jsdom navigates nowhere).
+    const stay = (event: Event) => event.preventDefault();
+    document.addEventListener('click', stay);
+    await user.click(within(colab).getByRole('link', { name: 'Open in Colab' }));
+    await user.click(
+      within(colab).getByRole('link', { name: 'Download notebook without outputs' }),
+    );
+    document.removeEventListener('click', stay);
+    onlyDataFiles();
     await axeWithFrames();
   });
 

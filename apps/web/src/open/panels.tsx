@@ -45,6 +45,7 @@ export const EMPTY = {
 };
 
 const LABEL = { slides: 'Slides', reading: 'Reading', notebooks: 'Notebook' };
+const WHAT = { slides: 'These slides', reading: 'This reading', notebooks: 'This notebook' };
 
 export function Panel(props: PanelProps & { tab: keyof typeof LABEL }) {
   const { tab, lists } = props;
@@ -52,6 +53,7 @@ export function Panel(props: PanelProps & { tab: keyof typeof LABEL }) {
     tab === 'reading' ? <div className={reading.stage}>{node}</div> : node;
   const items: OpenTopic['slides'] = lists[tab];
   const chosen = items.find((item) => item.resourceId === props.resource) ?? items[0];
+  const what = chosen && 'type' in chosen && chosen.type === 'shiny' ? 'This app' : WHAT[tab];
   if (!chosen) {
     return staged(<p className={tab === 'reading' ? reading.empty : slides.empty}>{EMPTY[tab]}</p>);
   }
@@ -72,20 +74,21 @@ export function Panel(props: PanelProps & { tab: keyof typeof LABEL }) {
       <ResourceTools>
         {items.length > 1 ? picker : <span className={slides.label}>{chosen.title}</span>}
       </ResourceTools>
-      {staged(<Shown key={chosen.resourceId} at={props} resourceId={chosen.resourceId} />)}
+      {staged(
+        <Shown key={chosen.resourceId} at={props} resourceId={chosen.resourceId} what={what} />,
+      )}
     </>
   );
 }
 
 /** One deck, reading, notebook or Shiny app, from its data file. */
-function Shown({ at, resourceId }: { at: PanelProps; resourceId: string }) {
+function Shown({ at, resourceId, what }: { at: PanelProps; resourceId: string; what: string }) {
   const file = useResource(at.course, at.topicId, resourceId);
   const data = file.data;
   const deck = at.tab === 'slides';
   if (data?.type === 'notebook') return <NotebooksPanel {...data} />;
   if (data?.type === 'shiny') return <OpenShiny {...data} />;
   if (data?.type !== 'slides' && data?.type !== 'reading') {
-    const what = deck ? 'These slides' : at.tab === 'reading' ? 'This reading' : 'This notebook';
     const state =
       file.error instanceof Missing ? (
         <p className={page.feedback} role="alert">
@@ -96,9 +99,7 @@ function Shown({ at, resourceId }: { at: PanelProps; resourceId: string }) {
       ) : (
         <Loading label={`Loading ${at.tab}`} />
       );
-    return data ? null : (
-      <div className={at.tab === 'reading' ? undefined : slides.status}>{state}</div>
-    );
+    return <div className={at.tab === 'reading' ? undefined : slides.status}>{state}</div>;
   }
   const { pdf } = data;
   const source = { classId: '', revisionId: resourceId, key: null };

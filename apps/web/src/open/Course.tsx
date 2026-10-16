@@ -1,6 +1,7 @@
 import { type OpenCatalogue, openPaths } from '@parallax/contracts';
 import type { UseQueryResult } from '@tanstack/react-query';
 import { Link } from '@tanstack/react-router';
+import { useId } from 'react';
 import { Loading } from '../components/Loading';
 import page from '../components/Page.module.css';
 import { usePageTitle } from '../components/pageTitle';
@@ -41,6 +42,7 @@ const CourseList = ({ courses }: { courses: Courses }) => (
  */
 export function Catalogue() {
   const file = useCatalogue();
+  const id = useId();
   usePageTitle('Courses');
   if (!file.data) {
     return (
@@ -55,10 +57,12 @@ export function Catalogue() {
       {teaching.length === 0 ? (
         <p className={page.intro}>No course has been published on this site.</p>
       ) : mode === 'school' ? (
-        teaching.map(({ name, courses }) => (
+        teaching.map(({ name, courses }, i) => (
           // A course reference is unique on the site, so the first one names the instructor's entry.
-          <section key={courses[0]?.ref} aria-label={name} className={page.mt40}>
-            <h2 className={page.sectionTitle}>{name}</h2>
+          <section key={courses[0]?.ref} aria-labelledby={`${id}-${i}`} className={page.mt40}>
+            <h2 id={`${id}-${i}`} className={page.sectionTitle}>
+              {name}
+            </h2>
             <CourseList courses={courses} />
           </section>
         ))
@@ -91,43 +95,45 @@ export function CourseIndex({ course }: { course: string }) {
       {data.topics.length === 0 ? (
         <p className={page.intro}>No topics have been published for this course.</p>
       ) : (
-        <section className={styles.wrap} aria-label="Topic syllabus">
-          <table className={styles.table}>
-            <thead>
-              <tr>
-                <th scope="col">No.</th>
-                <th scope="col">Topic</th>
-                {TAB_LEGEND.map((tab) => (
-                  <th key={tab.id} scope="col" className={styles.presence}>
-                    <abbr title={tab.label}>{tab.letter}</abbr>
-                  </th>
-                ))}
-                <th scope="col">Time</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.topics.map((topic) => (
-                <tr key={topic.topicId}>
-                  <td>{topicNumber(topic)}</td>
-                  <td>
-                    <Link to={openPaths.topic(course, topic.topicId, tabFor(topic)) as never}>
-                      {topic.title}
-                    </Link>
-                  </td>
-                  {TAB_LEGEND.map(({ id, label }) => (
-                    <td key={id} className={styles.presence}>
-                      <span
-                        className={`${styles.dot} ${topic.presence[id] ? styles.available : ''}`}
-                        role="img"
-                        aria-label={`${label}: ${present(topic.presence[id])}`}
-                      />
-                    </td>
+        <>
+          <section className={styles.wrap} aria-label="Topic syllabus">
+            <table className={styles.table}>
+              <thead>
+                <tr>
+                  <th scope="col">No.</th>
+                  <th scope="col">Topic</th>
+                  {TAB_LEGEND.map((tab) => (
+                    <th key={tab.id} scope="col" className={styles.presence}>
+                      <abbr title={tab.label}>{tab.letter}</abbr>
+                    </th>
                   ))}
-                  <td className={`${page.small} ${page.muted}`}>{minutes(topic)}</td>
+                  <th scope="col">Time</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {data.topics.map((topic) => (
+                  <tr key={topic.topicId}>
+                    <td>{topicNumber(topic)}</td>
+                    <td>
+                      <Link to={openPaths.topic(course, topic.topicId, tabFor(topic)) as never}>
+                        {topic.title}
+                      </Link>
+                    </td>
+                    {TAB_LEGEND.map(({ id, label }) => (
+                      <td key={id} className={styles.presence}>
+                        <span
+                          className={`${styles.dot} ${topic.presence[id] ? styles.available : ''}`}
+                          role="img"
+                          aria-label={`${label}: ${present(topic.presence[id])}`}
+                        />
+                      </td>
+                    ))}
+                    <td className={`${page.small} ${page.muted}`}>{minutes(topic)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </section>
           <div className={styles.legend}>
             {TAB_LEGEND.map((tab) => (
               <span key={tab.id}>
@@ -135,7 +141,7 @@ export function CourseIndex({ course }: { course: string }) {
               </span>
             ))}
           </div>
-        </section>
+        </>
       )}
     </main>
   );
