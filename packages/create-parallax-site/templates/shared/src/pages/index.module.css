@@ -1,0 +1,70 @@
+.front {
+  box-sizing: border-box;
+  max-width: calc(var(--pc-reading-width) + 2 * var(--pc-stage-inset));
+  margin: 0 auto;
+  padding: var(--pc-space-48) var(--pc-stage-inset);
+  color: var(--pc-ink);
+  font: var(--pc-text-body);
+}
+.logo {
+  display: block;
+  max-width: 100%;
+  max-height: var(--pc-space-56);
+  margin-bottom: var(--pc-space-24);
+}
+.title {
+  margin: 0;
+  font: var(--pc-text-title);
+  letter-spacing: var(--pc-tracking-title);
+}
+.audience {
+  margin: var(--pc-space-12) 0 0;
+  color: var(--pc-muted);
+}
+.instructor {
+  margin-top: var(--pc-space-32);
+  padding-top: var(--pc-space-20);
+  border-top: 1px solid var(--pc-rule);
+}
+.name {
+  margin: 0;
+  font: var(--pc-text-subsection);
+  letter-spacing: var(--pc-tracking-subsection);
+}
+.courses {
+  margin: var(--pc-space-8) 0 0;
+  padding-left: var(--pc-space-20);
+}
+.open {
+  display: inline-block;
+  margin-top: var(--pc-space-40);
+  padding: 9px 22px;
+  border-radius: var(--pc-radius-primary);
+  background: var(--pc-ink);
+  color: var(--pc-accent-ink);
+  font: var(--pc-text-ui);
+  font-weight: 600;
+  text-decoration: none;
+  min-height: 36px;
+}
+.open:hover {
+  filter: brightness(0.9);
+}
+.open:focus-visible {
+  outline: 2px solid var(--pc-ink);
+  outline-offset: 2px;
+}
+@media (max-width: 540px) {
+  .front {
+    padding: var(--pc-space-32) var(--pc-space-16);
+  }
+}
+/* The touch target of Buttons.module.css, which the global rule gives no link; last, to win. */
+@media (pointer: coarse) {
+  .open {
+    display: inline-flex;
+    align-items: center;
+    min-height: var(--pc-touch-target, 44px);
+    min-width: var(--pc-touch-target, 44px);
+  }
+}
