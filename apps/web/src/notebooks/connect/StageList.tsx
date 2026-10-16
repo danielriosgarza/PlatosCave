@@ -36,7 +36,7 @@ const STAGE_CAUSE: Record<string, string> = {
 };
 
 interface Props {
-  kind: 'local' | 'ssh' | 'colab';
+  kind: 'local' | 'ssh';
   test: ConnectionTest | undefined;
   /** Host and port of each hop as the connection names them, to address a key confirmation. */
   hosts: { jump?: { host: string; port: number }; target?: { host: string; port: number } };
@@ -91,7 +91,7 @@ export function StageList({
   onRetest,
 }: Props) {
   const [confirming, setConfirming] = useState(false);
-  const names = kind === 'local' ? LOCAL_STAGES : SSH_STAGES;
+  const names = kind === 'ssh' ? SSH_STAGES : LOCAL_STAGES;
   const byName = new Map<string, Stage>((test?.stages ?? []).map((s) => [s.name, s]));
   const stopped = test?.stages.find((s) => s.status === 'failed' || s.status === 'needs_action');
   const latest = test?.stages.at(-1);
@@ -114,7 +114,6 @@ export function StageList({
                 ) : null}
                 {stage?.status === 'failed' ? (
                   <Failure
-                    colab={kind === 'colab'}
                     stage={stage}
                     hosts={hosts}
                     busy={busy}
@@ -128,13 +127,7 @@ export function StageList({
                   />
                 ) : null}
                 {stage?.status === 'needs_action' ? (
-                  <Unknown
-                    colab={kind === 'colab'}
-                    stage={stage}
-                    hosts={hosts}
-                    busy={busy}
-                    onTrust={onTrust}
-                  />
+                  <Unknown stage={stage} hosts={hosts} busy={busy} onTrust={onTrust} />
                 ) : null}
                 {stage?.status === 'skipped' && stage.data?.blockedBy ? (
                   <span className={styles.muted}>
@@ -192,18 +185,12 @@ function hostFor(stage: Stage, hosts: Props['hosts']) {
   return stage.data?.hop === 'jump' ? hosts.jump : hosts.target;
 }
 
-/** A Colab runtime's key is kept under a trust name, never shown as a host (design §5.7). */
-const hopName = (colab: boolean, host: { host: string; port: number }) =>
-  colab ? 'this Colab runtime' : `${host.host}:${host.port}`;
-
 function Unknown({
-  colab,
   stage,
   hosts,
   busy,
   onTrust,
 }: {
-  colab: boolean;
   stage: Stage;
   hosts: Props['hosts'];
   busy: boolean;
@@ -214,13 +201,9 @@ function Unknown({
   if (!host || !fingerprint) return null;
   return (
     <div className={styles.notice}>
-      <p>{`First connection to ${hopName(colab, host)}. Its key fingerprint is:`}</p>
+      <p>{`First connection to ${host.host}:${host.port}. Its key fingerprint is:`}</p>
       <p className={styles.mono}>{fingerprint}</p>
-      <p>
-        {colab
-          ? 'Trust it only if you started this Colab runtime.'
-          : "Compare it with the fingerprint the host's owner publishes before you trust it."}
-      </p>
+      <p>Compare it with the fingerprint the host's owner publishes before you trust it.</p>
       <div className={styles.row}>
         <button
           type="button"
@@ -236,7 +219,6 @@ function Unknown({
 }
 
 function Failure({
-  colab,
   stage,
   hosts,
   busy,
@@ -245,7 +227,6 @@ function Failure({
   onCancel,
   onReplace,
 }: {
-  colab: boolean;
   stage: Stage;
   hosts: Props['hosts'];
   busy: boolean;
@@ -269,7 +250,7 @@ function Failure({
       {stage.detail ? <p className={styles.muted}>{stage.detail}</p> : null}
       {changed && host && expected && presented ? (
         <>
-          <p>{`${colab ? 'This Colab runtime' : `The host ${host.host}:${host.port}`} presented a key different from the trusted one.`}</p>
+          <p>{`The host ${host.host}:${host.port} presented a key different from the trusted one.`}</p>
           <dl className={styles.summary}>
             <dt>Trusted key</dt>
             <dd className={styles.mono}>{expected}</dd>
@@ -285,7 +266,7 @@ function Failure({
           // biome-ignore lint/a11y/noStaticElementInteractions: Escape cancels this confirmation
           <div className={styles.notice} onKeyDown={replace.onKeyDown}>
             <p>
-              {`Replace the trusted key for ${hopName(colab, host)}? ${colab ? 'Replace it only if you started a new Colab runtime.' : "Do this only if the host's owner confirmed that its key changed."} You must have signed in within the last 15 minutes.`}
+              {`Replace the trusted key for ${host.host}:${host.port}? Do this only if the host's owner confirmed that its key changed. You must have signed in within the last 15 minutes.`}
             </p>
             <div className={styles.row}>
               <button
@@ -301,7 +282,7 @@ function Failure({
                   })
                 }
               >
-                {`Replace key for ${colab ? 'this Colab runtime' : host.host}`}
+                {`Replace key for ${host.host}`}
               </button>
               <button type="button" className={buttons.textButton} onClick={onCancel}>
                 Keep the trusted key

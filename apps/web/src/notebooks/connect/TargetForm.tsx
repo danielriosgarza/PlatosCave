@@ -3,7 +3,7 @@ import buttons from '../../components/Buttons.module.css';
 import type { Connection, ConnectionRuntime, ConnectionTarget, Connector } from './api';
 import styles from './Connect.module.css';
 
-export type TargetKind = 'local' | 'ssh' | 'colab';
+export type TargetKind = 'local' | 'ssh';
 
 export interface TargetValues {
   name: string;
@@ -34,8 +34,6 @@ const LOGIN_NODE = /(^|[.-])(login|head|submit|gateway|hpc|cluster)\d*([.-]|$)/i
 export function TargetForm({ kind, connectors, saved, busy, error, onSubmit }: Props) {
   const id = useId();
   const sshSaved = saved?.target.kind === 'ssh' ? saved.target : undefined;
-  const colabSaved = saved?.target.kind === 'colab' ? saved.target : undefined;
-  const remoteSaved = sshSaved ?? colabSaved;
   const localSaved = saved?.target.kind === 'local' ? saved.target : undefined;
   const runtimeSaved = saved?.runtime;
   const startSaved = runtimeSaved?.mode === 'start' ? runtimeSaved : undefined;
@@ -45,18 +43,18 @@ export function TargetForm({ kind, connectors, saved, busy, error, onSubmit }: P
   const [connectorId, setConnectorId] = useState(saved?.connectorId ?? connectors[0]?.id ?? '');
   const [host, setHost] = useState(sshSaved?.host ?? '');
   const [port, setPort] = useState(String(sshSaved?.port ?? 22));
-  const [user, setUser] = useState(remoteSaved?.user ?? '');
+  const [user, setUser] = useState(sshSaved?.user ?? '');
   const [useJump, setUseJump] = useState(Boolean(sshSaved?.jump));
   const [jumpHost, setJumpHost] = useState(sshSaved?.jump?.host ?? '');
   const [jumpPort, setJumpPort] = useState(String(sshSaved?.jump?.port ?? 22));
   const [jumpUser, setJumpUser] = useState(sshSaved?.jump?.user ?? '');
   const [method, setMethod] = useState<'key' | 'agent'>(
-    remoteSaved?.auth.method === 'agent' ? 'agent' : 'key',
+    sshSaved?.auth.method === 'agent' ? 'agent' : 'key',
   );
   const [keyPath, setKeyPath] = useState(
-    remoteSaved?.auth.method === 'key' ? remoteSaved.auth.keyPath : '',
+    sshSaved?.auth.method === 'key' ? sshSaved.auth.keyPath : '',
   );
-  const [workspace, setWorkspace] = useState(remoteSaved?.workspace ?? localSaved?.workspace ?? '');
+  const [workspace, setWorkspace] = useState(sshSaved?.workspace ?? localSaved?.workspace ?? '');
   const [mode, setMode] = useState<'start' | 'attach'>(attachSaved ? 'attach' : 'start');
   const [python, setPython] = useState(startSaved?.python ?? '');
   const [login, setLogin] = useState(startSaved?.login ?? false);
@@ -65,9 +63,6 @@ export function TargetForm({ kind, connectors, saved, busy, error, onSubmit }: P
     startSaved?.kernelName ?? attachSaved?.kernelName ?? '',
   );
   const [problem, setProblem] = useState<string | null>(null);
-  // The native Windows connector does not offer Colab over SSH (design §5.7).
-  const noColab =
-    kind === 'colab' && connectors.find((c) => c.id === connectorId)?.os === 'windows';
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
@@ -76,19 +71,9 @@ export function TargetForm({ kind, connectors, saved, busy, error, onSubmit }: P
     if (!trimmed(name)) return setProblem('Name this connection.');
     if (!connectorId) return setProblem('Choose the computer that runs the connector.');
     if (!trimmed(workspace)) return setProblem('Enter the working directory.');
-    const auth =
-      method === 'key'
-        ? { method: 'key' as const, keyPath: trimmed(keyPath) }
-        : { method: 'agent' as const };
     let target: ConnectionTarget;
     if (kind === 'local') {
       target = { kind: 'local', workspace: trimmed(workspace) };
-    } else if (kind === 'colab') {
-      if (noColab) return;
-      if (!trimmed(user)) return setProblem('Enter the account.');
-      if (method === 'key' && !trimmed(keyPath))
-        return setProblem('Enter the path of the key file.');
-      target = { kind: 'colab', user: trimmed(user), auth, workspace: trimmed(workspace) };
     } else {
       if (!trimmed(host) || !trimmed(user)) return setProblem('Enter the host and the account.');
       if (!(num(port) >= 1 && num(port) <= 65535)) return setProblem('The port is 1 to 65535.');
@@ -102,7 +87,7 @@ export function TargetForm({ kind, connectors, saved, busy, error, onSubmit }: P
         host: trimmed(host),
         port: num(port),
         user: trimmed(user),
-        auth,
+        auth: method === 'key' ? { method: 'key', keyPath: trimmed(keyPath) } : { method: 'agent' },
         workspace: trimmed(workspace),
         ...(useJump
           ? {
@@ -111,7 +96,10 @@ export function TargetForm({ kind, connectors, saved, busy, error, onSubmit }: P
                 port: num(jumpPort) || 22,
                 user: trimmed(jumpUser),
                 // A jump host is reached the way the target is.
-                auth,
+                auth:
+                  method === 'key'
+                    ? { method: 'key' as const, keyPath: trimmed(keyPath) }
+                    : { method: 'agent' as const },
               },
             }
           : {}),
@@ -184,13 +172,11 @@ export function TargetForm({ kind, connectors, saved, busy, error, onSubmit }: P
               <span>Port</span>
               <input inputMode="numeric" value={port} onChange={(e) => setPort(e.target.value)} />
             </label>
+            <label className={styles.field}>
+              <span>Account</span>
+              <input value={user} onChange={(e) => setUser(e.target.value)} />
+            </label>
           </>
-        ) : null}
-        {kind !== 'local' ? (
-          <label className={styles.field}>
-            <span>Account</span>
-            <input value={user} onChange={(e) => setUser(e.target.value)} />
-          </label>
         ) : null}
         <label className={styles.field}>
           <span>Working directory</span>
@@ -206,36 +192,17 @@ export function TargetForm({ kind, connectors, saved, busy, error, onSubmit }: P
           </p>
         </div>
       ) : null}
-      {kind === 'colab' ? (
-        <div className={styles.notice} role="note">
-          <p>
-            For a paid Colab plan with a positive compute-unit balance. With free Colab, use Work in
-            Colab on this notebook: open it in Colab, then upload your copy.
-          </p>
-          <p>The computer running the connector needs Google's colab program, signed in.</p>
-        </div>
-      ) : null}
-      {noColab ? (
-        <div className={styles.alert}>
-          <p>
-            The Windows connector does not offer Colab over SSH. Run the Linux connector inside WSL,
-            or choose a Linux or Mac computer.
-          </p>
-        </div>
-      ) : null}
-      {kind !== 'local' ? (
+      {kind === 'ssh' ? (
         <>
-          {kind === 'ssh' ? (
-            <label className={styles.choice}>
-              <input
-                type="checkbox"
-                checked={useJump}
-                onChange={(e) => setUseJump(e.target.checked)}
-              />
-              Reach this host through a jump host
-            </label>
-          ) : null}
-          {kind === 'ssh' && useJump ? (
+          <label className={styles.choice}>
+            <input
+              type="checkbox"
+              checked={useJump}
+              onChange={(e) => setUseJump(e.target.checked)}
+            />
+            Reach this host through a jump host
+          </label>
+          {useJump ? (
             <div className={styles.fields}>
               <label className={styles.field}>
                 <span>Jump host</span>
@@ -343,7 +310,7 @@ export function TargetForm({ kind, connectors, saved, busy, error, onSubmit }: P
         <button
           type="submit"
           className={buttons.primary}
-          disabled={busy || connectors.length === 0 || noColab}
+          disabled={busy || connectors.length === 0}
         >
           Save and test connection
         </button>

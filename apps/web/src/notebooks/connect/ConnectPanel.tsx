@@ -1,4 +1,3 @@
-import { hopEndpoints } from '@parallax/contracts';
 import { useEffect, useRef, useState } from 'react';
 import buttons from '../../components/Buttons.module.css';
 import { Loading } from '../../components/Loading';
@@ -333,7 +332,8 @@ export function ConnectPanel({ classId, revisionId, instructor = false, onClose 
     setConnection(undefined);
     setError(null);
     const found = saved.find((c) => c.id === id);
-    if (found) setKind(found.templateId ? 'template' : found.target.kind);
+    if (found)
+      setKind(found.templateId ? 'template' : found.target.kind === 'ssh' ? 'ssh' : 'local');
   };
 
   const leaveSession = () => {
@@ -346,8 +346,14 @@ export function ConnectPanel({ classId, revisionId, instructor = false, onClose 
     setTestRef(undefined);
   };
 
-  // A Colab runtime's key is confirmed under its trust name (design §5.7).
-  const hosts = connection ? hopEndpoints(connection.target) : {};
+  const target = connection?.target;
+  const hosts = {
+    jump:
+      target?.kind === 'ssh' && target.jump
+        ? { host: target.jump.host, port: target.jump.port }
+        : undefined,
+    target: target?.kind === 'ssh' ? { host: target.host, port: target.port } : undefined,
+  };
   const testDone = test.data?.state === 'done' ? test.data : undefined;
   const connectable =
     testDone && (testDone.outcome === 'ready' || testDone.outcome === 'ready_to_start');
@@ -447,15 +453,6 @@ export function ConnectPanel({ classId, revisionId, instructor = false, onClose 
                 />
                 SSH host
               </label>
-              <label className={styles.choice}>
-                <input
-                  type="radio"
-                  name="connect-kind"
-                  checked={kind === 'colab'}
-                  onChange={() => choose('colab')}
-                />
-                Colab over SSH (paid Colab plan)
-              </label>
               {classComputers.length > 0 || kind === 'template' ? (
                 <label className={styles.choice}>
                   <input
@@ -517,7 +514,7 @@ export function ConnectPanel({ classId, revisionId, instructor = false, onClose 
                 </div>
               ) : (
                 <StageList
-                  kind={connection.target.kind}
+                  kind={connection.target.kind === 'ssh' ? 'ssh' : 'local'}
                   test={test.data}
                   hosts={hosts}
                   busy={busy}
