@@ -60,25 +60,29 @@ const NO_ACCOUNT = 'no active account has this address; that person signs in onc
 
 /**
  * Why the bundle's files are not the ones its entries name, from the manifest alone: each file
- * one an entry names, with the format the entry's type and extension give (§2), and a
- * notebook's data files before it.
+ * one an entry names, in one role only, with the format the entry's type and extension give
+ * (§2), and a notebook's data files before it.
  */
 function bundleProblem({ files, topics }: CourseManifest): string | undefined {
   const formats = new Map<string, CourseFileFormat>();
   const at = new Map(files.map((file, i) => [file.path, i]));
   let late: string | undefined;
+  const need = (file: string, format: CourseFileFormat) => {
+    if ((formats.get(file) ?? format) !== format) late ??= `${file}: named in two roles`;
+    formats.set(file, format);
+  };
   for (const entry of topics.flatMap((topic) => topic.resources)) {
     if (entry.type === 'notebook') {
       for (const { file } of entry.source.data) {
-        formats.set(file, 'data');
+        need(file, 'data');
         const before = (at.get(file) ?? -1) < (at.get(entry.source.file) ?? -1);
         if (!before) late ??= `${file}: stands after its notebook`;
       }
-      formats.set(entry.source.file, 'notebook');
+      need(entry.source.file, 'notebook');
     } else if (entry.type === 'reading_native') {
-      formats.set(entry.source.file, /\.html$/i.test(entry.source.file) ? 'html' : 'markdown');
+      need(entry.source.file, /\.html$/i.test(entry.source.file) ? 'html' : 'markdown');
     } else if (entry.type === 'slides_pdf' || entry.type === 'reading_pdf') {
-      formats.set(entry.source.file, 'pdf');
+      need(entry.source.file, 'pdf');
     }
   }
   if (at.size !== files.length || files.length !== formats.size) {
@@ -173,7 +177,7 @@ export async function syncCourse(
 
   // 4 and 5. The plan, and its refusals before any draft is written.
   const entries = manifest.topics.flatMap((topic) => topic.resources);
-  // Every file an entry names is among the stored ones (`formatsOf`).
+  // Every file an entry names is among the stored ones (`bundleProblem`).
   const storedFile = (file: string) => stored.get(file) as StoredFile;
   const payloads = new Map(entries.map((entry) => [entry.id, revisionPayload(entry, storedFile)]));
   const state = await sync.loadSyncState(db, scope, folder);
