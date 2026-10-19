@@ -103,7 +103,9 @@ function Shown({ at, resourceId, what }: { at: PanelProps; resourceId: string; w
   }
   const { pdf } = data;
   const source = { classId: '', revisionId: resourceId, key: null };
-  const shown = { source, initialPage: at.page ?? 1, onPage: nothing };
+  // The address names a slide of the deck it names, not of another one, as at level 1.
+  const addressed = at.resource === resourceId ? at.page : undefined;
+  const shown = { source, initialPage: addressed ?? 1, onPage: nothing };
   const read = { source, initial: null, onPosition: nothing };
   return (
     <>
