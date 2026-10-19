@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strconv"
@@ -30,13 +31,27 @@ type colabRun struct {
 	PID       int
 }
 
+// colabSecrets are what a colab program could print; none of them, nor any other byte the
+// program writes, may reach a log line, a message or a detail.
+var colabSecrets = []string{"https://accounts.example.org/signin?code=SECRETCODE&state=SECRETSTATE", "token=SECRETTOKEN",
+	"Zq8vW3nR7tY2kP5mX9cB4dF6gH1jL0aS2eU7iO3p", "QX7K-M2PL", `{"access_token":"SECRETJSON"}`, "\x1b[2J\x1b]8;;x\x07"}
+
+// colabNoise is 256 KiB of standard error, more than a pipe holds, with every secret planted and
+// the short code also inside a sentence.
+func colabNoise() []byte {
+	unit := strings.Join(colabSecrets, "\n") + "\nEnter QX7K-M2PL to sign in.\n" + strings.Repeat("colab-noise ", 80) + "\n"
+	return []byte(strings.Repeat(unit, 256<<10/len(unit)+1))
+}
+
 // runColabStub is the fake colab program: when the test binary runs as `colab` with a
-// colab-stub.json beside it (the server's address and the records folder, because the connector
-// filters the environment), it records its run, bridges its standard input and output to the
-// in-process SSH server, and exits when either side ends.
+// colab-stub.json beside it (the server's address, the records folder and a mode, because the
+// connector filters the environment), it records its run, bridges its standard input and output
+// to the in-process SSH server, and exits when either side ends. Mode "exit" writes colabNoise
+// and an SSH 1 banner and exits 3; "hang" starts a child and answers nothing; "noisy" starts a
+// child and writes colabNoise while it bridges.
 func runColabStub() {
 	self, err := os.Executable()
-	var cfg struct{ Addr, Records string }
+	var cfg struct{ Addr, Records, Mode string }
 	if err != nil || filepath.Base(self) != colabProgram {
 		return
 	} else if data, err := os.ReadFile(filepath.Join(filepath.Dir(self), "colab-stub.json")); err != nil || json.Unmarshal(data, &cfg) != nil {
@@ -44,9 +59,22 @@ func runColabStub() {
 	}
 	rec, _ := json.Marshal(colabRun{Args: os.Args, Env: os.Environ(), PID: os.Getpid()})
 	os.WriteFile(filepath.Join(cfg.Records, "run-"+strconv.Itoa(os.Getpid())+".json"), rec, 0o600)
+	if cfg.Mode == "exit" {
+		os.Stderr.Write(colabNoise())
+		os.Stdout.WriteString("SSH-1.0-SECRETBANNER\r\n")
+		os.Exit(3)
+	} else if cfg.Mode != "" {
+		exec.Command("/bin/sleep", "600").Start() // a process of its group, which must end with it
+	}
+	if cfg.Mode == "hang" {
+		time.Sleep(time.Hour)
+	}
 	conn, err := net.Dial("tcp", cfg.Addr)
 	if err != nil {
 		os.Exit(3)
+	}
+	if cfg.Mode == "noisy" {
+		go os.Stderr.Write(colabNoise())
 	}
 	go func() {
 		io.Copy(conn, os.Stdin)
@@ -58,7 +86,7 @@ func runColabStub() {
 
 // newColabHost is the remote host behind the fake colab program, first on PATH, its key trusted
 // under the trust name. It returns the folder the program's runs are recorded in.
-func newColabHost(t *testing.T) (*remoteHost, ssh.Signer, string) {
+func newColabHost(t *testing.T, mode string) (*remoteHost, ssh.Signer, string) {
 	t.Helper()
 	var hostKey ssh.Signer
 	h := newRemoteHost(t, "", func(o *sshtest.Options) { hostKey = o.HostKeys[0] })
@@ -67,7 +95,7 @@ func newColabHost(t *testing.T) (*remoteHost, ssh.Signer, string) {
 	dir, records := t.TempDir(), t.TempDir()
 	self, err := os.Executable()
 	bin, err2 := os.ReadFile(self)
-	cfg, _ := json.Marshal(map[string]string{"addr": h.srv.Addr, "records": records})
+	cfg, _ := json.Marshal(map[string]string{"addr": h.srv.Addr, "records": records, "mode": mode})
 	if err := errors.Join(err, err2, os.WriteFile(filepath.Join(dir, colabProgram), bin, 0o755),
 		os.WriteFile(filepath.Join(dir, "colab-stub.json"), cfg, 0o600)); err != nil {
 		t.Fatal(err)
@@ -95,7 +123,7 @@ var colabCommand = []string{"colab", "ssh", "--proxy-mode"}
 // Connect reuses that run and starts Jupyter in the workspace, a cell runs through the tunnel,
 // and after Stop the server and the program have both exited.
 func TestA48_ColabRuntimeRunsACellThroughTheProxy(t *testing.T) {
-	h, hostKey, records := newColabHost(t)
+	h, hostKey, records := newColabHost(t, "")
 	tg := protocol.Target{Kind: protocol.TargetColab, User: "student", Auth: keyAuth(h.key), Workspace: h.ws}
 	ctx := t.Context()
 	res := h.r.Test(ctx, &protocol.TestConnection{RequestID: requestID, Target: tg, Runtime: h.start()}, func(protocol.Stage) {})
@@ -161,7 +189,7 @@ func TestColabCommandNeverFromServer(t *testing.T) {
 		}
 	}
 
-	h, hostKey, records := newColabHost(t)
+	h, hostKey, records := newColabHost(t, "")
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("SSH_AUTH_SOCK", filepath.Join(home, "agent.sock"))

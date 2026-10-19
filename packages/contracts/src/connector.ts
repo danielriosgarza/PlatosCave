@@ -134,6 +134,8 @@ export const ERROR_CODES = [
   'auth_rejected',
   'body_too_large',
   'busy',
+  'colab_missing',
+  'colab_proxy_failed',
   'connection_refused',
   'connection_timeout',
   'environment_invalid',

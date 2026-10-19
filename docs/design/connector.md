@@ -201,7 +201,7 @@ Test connection and Connect run the same stages in the same order. A stage repor
 
 | Stage | What it checks (and nothing more) | Codes |
 | --- | --- | --- |
-| `reachability` | validate the target (§4.4), resolve, check every answer against the network scope (§8), dial by IP with a 10 s timeout, read the SSH banner; the jump host first when there is one (`data.hop`); for a `colab` target, start the fixed command of §5.7 and read the banner from its output, with no resolution and no network scope | `host_unresolved`, `connection_refused`, `connection_timeout`, `network_scope_denied`, `invalid_target`, `unsupported_target` |
+| `reachability` | validate the target (§4.4), resolve, check every answer against the network scope (§8), dial by IP with a 10 s timeout, read the SSH banner; the jump host first when there is one (`data.hop`); for a `colab` target, start the fixed command of §5.7 and read the banner from its output, with no resolution and no network scope | `host_unresolved`, `connection_refused`, `connection_timeout`, `network_scope_denied`, `invalid_target`, `unsupported_target`, `colab_missing`, `colab_proxy_failed` |
 | `host_identity` | key exchange; compare the presented key with the records using the table of §5.2 | `host_key_unknown` (`needs_action`), `host_key_changed`, `host_key_untrusted_managed` |
 | `ssh_auth` | authenticate each hop as §5.3 says | `key_file_unreadable`, `key_passphrase_required`, `key_passphrase_wrong`, `agent_unavailable`, `agent_no_identity`, `auth_rejected`, `auth_method_unsupported`, `mfa_requires_terminal`, `mfa_failed` |
 | `workspace` | the directory exists, is a directory and is writable (`test -d`, `test -w`; `stat` locally), and its canonical path (`cd -P`) is reported in `data.resolvedPath` so the panel can show the exact destination before any file is copied; **Creates nothing** | `remote_exec_denied` (the first exec of the connection), `workspace_missing`, `workspace_not_directory`, `workspace_not_writable` |
@@ -279,6 +279,8 @@ One SSH connection per session is kept and multiplexed (a `direct-tcpip` channel
 | `network_scope_denied` | `reachability` | policy | no | allow_network, pick_other_target | This connector is not allowed to reach that address. |
 | `unsupported_target` | `reachability` | policy | no | pick_other_target, update_connector | This connector does not support that kind of target. |
 | `invalid_target` | `reachability` | policy | no | check_address | The target fails Parallax's validation. |
+| `colab_missing` | `reachability` | reachability | no | install_colab, pick_other_target | The colab program is not on the PATH of the connector's computer. |
+| `colab_proxy_failed` | `reachability` | reachability | yes | check_colab, retry, pick_other_target | The colab program ended before a Colab runtime answered over SSH. |
 | `host_key_unknown` | `host_identity` | host_key | no | verify_host_key | First connection to this host: confirm its fingerprint. |
 | `host_key_changed` | `host_identity` | host_key | no | contact_host_owner, replace_host_key, pick_other_target | The host's key differs from the trusted one. Connection stopped. |
 | `host_key_untrusted_managed` | `host_identity` | host_key | no | contact_host_owner | A managed connector only connects to hosts its operator has pinned. |

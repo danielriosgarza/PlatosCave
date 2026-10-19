@@ -270,7 +270,7 @@
               "additionalProperties": false,
               "properties": {
                 "kind": {
-                  "enum": ["local", "ssh"]
+                  "enum": ["local", "ssh", "colab"]
                 },
                 "host": {
                   "$ref": "#/$defs/host"
