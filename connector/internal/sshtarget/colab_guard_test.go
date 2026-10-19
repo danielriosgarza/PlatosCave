@@ -48,10 +48,11 @@ func groupGone(t *testing.T, pid int) {
 // does not reap (a container without --init) one stays in the group after SIGKILL. Without /proc
 // (macOS) kill's answer stands.
 func groupRuns(pgid int) bool {
-	stats, _ := filepath.Glob("/proc/[0-9]*/stat")
 	if syscall.Kill(-pgid, 0) != nil {
 		return false
-	} else if len(stats) == 0 {
+	}
+	stats, _ := filepath.Glob("/proc/[0-9]*/stat")
+	if len(stats) == 0 {
 		return true
 	}
 	for _, f := range stats {
@@ -64,8 +65,8 @@ func groupRuns(pgid int) bool {
 	return false
 }
 
-// leaked returns what holds a byte of the program's output or a control character, also as
-// encoded writes one (\u0000 to \u001f; json.Marshal also writes < for <, which is not one).
+// leaked returns what holds a byte of the program's output or a control character, also as the
+// escape encoded writes for one (\u0000 to \u001f; not the escapes of <, > and &).
 func leaked(said []string) []string {
 	var out []string
 	for _, s := range said {
@@ -269,11 +270,11 @@ func TestColabCloseAfterTheProgramEndedSignalsNothing(t *testing.T) {
 	}
 	<-p.exited
 	var hit atomic.Bool
-	p.signalGroup = func(int, syscall.Signal) { hit.Store(true) } // this run's only
+	p.signalGroup = func(int, syscall.Signal) { hit.Store(true) } // this run's, not the package's
 	p.signal(syscall.SIGTERM, false)
 	p.Close()
 	if time.Sleep(1500 * time.Millisecond); hit.Load() {
-		t.Error("Close signalled the group of a program that had ended")
+		t.Error("the group of a program that had ended was signalled")
 	}
 }
 
