@@ -5,7 +5,10 @@ import { buildPaths, hiddenTrees, viteConfig } from '../build/web';
 import type { Command } from '../main';
 import { sourceRoot } from '../paths';
 import type { Site } from '../site/load';
-import { LEVEL_0 } from './build';
+
+/** What `parallax dev` says at level 0, where a site is plain files for two hosts (open-site.md §7). */
+export const LEVEL_0 =
+  'parallax dev: a level 0 site is not served by parallax dev. Run parallax build, then serve dist/site and dist/content from their two hosts.';
 
 /**
  * Answers 403 for a request whose file really lies in a course folder or the overlay, by the real
@@ -69,7 +72,7 @@ export function devServer(site: Site, port = 5173) {
   });
 }
 
-/** `parallax dev`: at level 0 it stops as `build` does; otherwise it serves until Ctrl+C. */
+/** `parallax dev`: at level 0 it stops and names the build; otherwise it serves until Ctrl+C. */
 export const run: Command['run'] = async ({ site }) => {
   if (site.config.level === 0) {
     console.error(LEVEL_0);

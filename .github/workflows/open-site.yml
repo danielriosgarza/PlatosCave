@@ -1,0 +1,44 @@
+name: open-site
+
+# The browser suite of a level 0 site (docs/design/open-site.md §10): e2e/playwright.open.config.ts
+# builds the school fixture with `parallax build` and serves dist/site and dist/content on two
+# static hosts. It needs no database and no API server. It runs on every pull request, beside the
+# e2e job of ci.yml, which it does not lengthen; it installs Chromium as that job does.
+
+on:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: open-site-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  browser:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-1.56.1
+      - run: pnpm exec playwright install --with-deps chromium
+        working-directory: e2e
+      - run: pnpm --filter @parallax/e2e exec playwright test --config playwright.open.config.ts
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: open-site-report
+          path: |
+            e2e/playwright-report
+            e2e/test-results
