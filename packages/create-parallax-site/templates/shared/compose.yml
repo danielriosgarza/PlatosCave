@@ -1,0 +1,166 @@
+# The one-host installation of this site at levels 1 and 2 (docs/design/site.md §9). Run it
+# through `parallax start`, which writes the two environment files and gives every
+# `docker compose` call both of them and the files for the level:
+#
+#   docker compose --env-file .env --env-file .parallax/site.env -f compose.yml up -d --wait
+#
+# .env holds the secrets: `parallax env` generates the database password and the server's keys,
+# and you type SMTP_URL (email links) and OIDC_CLIENT_SECRETS (sign-in providers) when the
+# configuration lists those ways to sign in. .parallax/site.env holds everything else, derived
+# from parallax.config.ts. Neither file is tracked, and this file holds no value from either.
+#
+# Networks, from the least to the most trusted:
+#   edge     Caddy and the server. Caddy is the only service with a published port, and the
+#            server believes X-Forwarded-For only from Caddy's fixed address here (TRUST_PROXY)
+#   egress   migrate, server and worker: mail, sign-in providers and an existing PostgreSQL
+#   backend  the bundled PostgreSQL, migrate, server and worker (internal: no route out)
+#
+# The subnets of edge and backend are fixed here and nowhere else; `parallax env` reads the
+# backend subnet from this file. Change one if it collides with a network on your host.
+
+x-server: &server
+  image: ${PARALLAX_SERVER_IMAGE:?run parallax env}
+  restart: unless-stopped
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  # tsx from the package's own node_modules, not pnpm, as in infra/compose.prod.yml.
+  working_dir: /app/apps/server
+  # Longer than the worker's 8 s drain and the relay's 8 s background wait (main.ts, app.ts).
+  stop_grace_period: 10s
+  logging: { driver: json-file, options: { max-size: 20m, max-file: "5" } }
+
+# The database: an existing PostgreSQL 16 when .env names it as DATABASE_URL, which leaves the
+# profile `bundled` off; otherwise the bundled one, as role and database `parallax`. The driver
+# reads the bundled database's password from PGPASSWORD, so no URL here carries it, and a
+# password in your own DATABASE_URL takes precedence over it.
+x-database: &database
+  DATABASE_URL: ${DATABASE_URL:-postgres://parallax@postgres:5432/parallax}
+  PGPASSWORD: ${POSTGRES_PASSWORD:?run parallax env}
+
+# The server and the worker: these values and .parallax/site.env, which the services read as
+# env_file (origins and host names, mail sender, providers without their secrets, instructor
+# addresses, runtimes), so a later version can add a setting there without a change here.
+x-server-env: &server-env
+  <<: *database
+  NODE_ENV: production
+  SESSION_SECRET: ${SESSION_SECRET:?run parallax env}
+  CONTENT_TOKEN_SECRET: ${CONTENT_TOKEN_SECRET:?run parallax env}
+  READY_PROBE_TOKEN: ${READY_PROBE_TOKEN:?run parallax env}
+  # Typed into .env only for a way to sign in that parallax.config.ts lists; `parallax start`
+  # stops before it starts anything when a listed one has none.
+  SMTP_URL: ${SMTP_URL:-}
+  OIDC_CLIENT_SECRETS: ${OIDC_CLIENT_SECRETS:-}
+  # Caddy's address on edge (below).
+  TRUST_PROXY: 172.30.11.10
+  STORAGE_DRIVER: fs
+  STORAGE_DIR: /var/lib/parallax/storage
+  STATIC_DIR: /site
+
+# The app answers by Host (ADR-0002), so the probe names the app host; ready is 503 until the
+# database, the job queue and the object store answer. The probe sends READY_PROBE_TOKEN, so it
+# gets the dependency detail and is not rate limited.
+x-ready: &ready
+  test:
+    - CMD
+    - node
+    - -e
+    - >-
+      require('http').get({host:'127.0.0.1',port:3000,path:'/api/ready',headers:{host:process.env.APP_HOST,'x-ready-token':process.env.READY_PROBE_TOKEN}},
+      (r)=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))
+  interval: 15s
+  timeout: 10s
+  retries: 4
+  start_period: 40s
+
+services:
+  postgres:
+    image: postgres:16.15
+    profiles: [bundled]
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: parallax
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?run parallax env}
+      POSTGRES_DB: parallax
+    volumes: [pgdata:/var/lib/postgresql/data]
+    networks: [backend]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U parallax"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    logging: { driver: json-file, options: { max-size: 20m, max-file: "5" } }
+
+  # Applies the schema, then exits; server and worker wait for it. With an existing PostgreSQL
+  # there is no postgres service to wait for, and egress is its route to that database.
+  migrate:
+    <<: *server
+    restart: "no"
+    command: ["node_modules/.bin/tsx", "src/db/migrate.ts"]
+    environment: { <<: *database, NODE_ENV: production }
+    depends_on:
+      postgres: { condition: service_healthy, required: false }
+    networks: [backend, egress]
+
+  # Exactly one process, which serves every path: connector links live in its memory
+  # (docs/operations.md, Routing), and it serves the compiled site from dist/.
+  server:
+    <<: *server
+    command: ["node_modules/.bin/tsx", "src/main.ts", "relay"]
+    env_file: [.parallax/site.env]
+    environment: { <<: *server-env, HOST: 0.0.0.0, PORT: "3000" }
+    volumes:
+      - ./dist:/site:ro
+      - storage:/var/lib/parallax/storage
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    networks: [backend, egress, edge]
+    healthcheck: *ready
+
+  worker:
+    <<: *server
+    command: ["node_modules/.bin/tsx", "src/main.ts", "worker"]
+    env_file: [.parallax/site.env]
+    environment: *server-env
+    volumes: [storage:/var/lib/parallax/storage]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    networks: [backend, egress]
+
+  # TLS for both host names: Caddy obtains a certificate for each, upgrades WebSockets and
+  # forwards Host unchanged, which is how the one server tells the two origins apart.
+  caddy:
+    image: caddy:2.11.7
+    restart: unless-stopped
+    cap_drop: [ALL]
+    # Caddy runs as root with only the capability to bind 80 and 443, so the Caddyfile must be
+    # readable by Caddy: `parallax start` keeps it readable.
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: ["no-new-privileges:true"]
+    environment:
+      APP_HOST: ${APP_HOST:?run parallax env}
+      CONTENT_HOST: ${CONTENT_HOST:?run parallax env}
+    ports: ["80:80", "443:443", "443:443/udp"]
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on: [server]
+    networks:
+      edge: { ipv4_address: 172.30.11.10 }
+    logging: { driver: json-file, options: { max-size: 20m, max-file: "5" } }
+
+networks:
+  backend:
+    internal: true
+    ipam: { config: [{ subnet: 172.30.10.0/24 }] }
+  egress: {}
+  # Other containers on edge (the server, and one-off runs of it such as `parallax apply`) get
+  # addresses from ip_range, so none can take Caddy's.
+  edge:
+    ipam: { config: [{ subnet: 172.30.11.0/24, ip_range: 172.30.11.128/25 }] }
+
+volumes:
+  pgdata: {}
+  storage: {}
+  caddy-data: {}
+  caddy-config: {}

@@ -1,0 +1,27 @@
+# Level 2 (docs/design/site.md §11): `parallax start` adds this file after compose.yml. It
+# changes only postgres, so that the runner on its own host reaches it directly on port 5432
+# over the private network between the two hosts (Parallax does not encrypt that connection):
+#
+# - the port is published only on runner.databaseHost, this host's address on that network;
+# - PostgreSQL starts with the generated .parallax/pg_hba.conf, which admits the application
+#   role only from the backend subnet and parallax_runner only from runner.host;
+# - Docker publishes no port of a container that is only on internal networks, so postgres also
+#   joins runner-link, which only it is on. Docker masquerades nothing from runner-link, so on a
+#   Linux host postgres cannot connect out through it, while the published port still answers
+#   with the runner host's own address as the source (Docker Desktop does not honour this).
+#
+# With an existing PostgreSQL (profile `bundled` off) there is no postgres service and this file
+# changes nothing: your database administrator applies the same rule.
+
+services:
+  postgres:
+    # The image's entrypoint initialises and drops privileges only for a command that starts
+    # with `postgres`, and this command replaces the image's own.
+    command: ["postgres", "-c", "hba_file=/etc/parallax/pg_hba.conf"]
+    ports: ["${RUNNER_DATABASE_HOST:?run parallax env}:5432:5432"]
+    volumes: ["./.parallax/pg_hba.conf:/etc/parallax/pg_hba.conf:ro"]
+    networks: [backend, runner-link]
+
+networks:
+  runner-link:
+    driver_opts: { com.docker.network.bridge.enable_ip_masquerade: "false" }
