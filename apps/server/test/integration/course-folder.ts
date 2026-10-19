@@ -24,7 +24,17 @@ import { createTestDatabase } from './db';
 // on real PostgreSQL.
 
 const fixtures = resolve(import.meta.dirname, '../../../../packages/cli/fixtures');
-const ANA = 'ana.lima@example.org';
+export const ANA = 'ana.lima@example.org';
+/** Folder ids of the fixture course. */
+export const ids = {
+  tides: '0b2f4a6c-8d1e-4f3a-b5c7-9e0a1b2c3d4e',
+  tidesReading: '3c4d5e6f-7a8b-4c9d-8e0f-1a2b3c4d5e6f',
+  transects: 'c1d2e3f4-a5b6-4c7d-8e9f-0a1b2c3d4e5f',
+  methods: '2b3c4d5e-6f7a-4b8c-9d0e-1f2a3b4c5d6e',
+  notebook: '9d8c7b6a-5f4e-4d3c-a2b1-0f9e8d7c6b5a',
+  deck: '6a5b4c3d-2e1f-4a0b-9c8d-7e6f5a4b3c2d',
+  shiny: '1f2e3d4c-5b6a-4978-8a9b-0c1d2e3f4a5b',
+};
 /** The fixture's PDFs are stand-ins that no PDF reader opens; these are read as the deck and paper. */
 const pdfs = {
   deck: makePdf(['Reef zones from the shore outward', 'The reef crest'], [960, 540]),
@@ -61,7 +71,7 @@ const bytesOf = (f: Folder, path: string) => {
 };
 
 /** The bundle's header for a folder, its files' sizes and hashes taken from their bytes. */
-function header(f: Folder): SyncHeader {
+function header(f: Folder, more: Partial<SyncHeader>): SyncHeader {
   const files = f.manifest.files.map((file) => {
     const bytes = bytesOf(f, file.path);
     return { ...file, size: bytes.length, sha256: sha256(bytes) };
@@ -71,6 +81,7 @@ function header(f: Folder): SyncHeader {
     course: 'reef-ecology',
     manifest: { ...f.manifest, files },
     options: { overwriteEditor: false, acceptNewIds: false },
+    ...more,
   };
 }
 
@@ -98,15 +109,19 @@ export async function syncWorld() {
   const deps: SyncDeps = { db, boss, storage, validate, instructorEmails: [ANA], wait };
   /** The rows of one of the four tables sync writes, for one course. */
   const of = async (table: string, id: string) => {
-    const query = sql`select * from ${sql.identifier(table)} where course_id = ${id} order by id`;
+    const order = sql.identifier(table === 'course_releases' ? 'version' : 'id');
+    const query = sql`select * from ${sql.identifier(table)} where course_id = ${id} order by ${order}`;
     return (await db.execute(query)).rows;
   };
-  const world = { db, app, storage, ana, cookie, errors };
+  /** The paths the byte source was asked for. */
+  const asked: string[] = [];
+  const world = { db, app, boss, storage, ana, cookie, deps, errors, worker, asked };
   return {
     ...world,
     /** One run of sync on the folder's files, read from their bytes. */
-    sync: (f: Folder) =>
-      syncCourse(deps, header(f), async function* (file) {
+    sync: (f: Folder, more: Partial<SyncHeader> = {}, other: Partial<SyncDeps> = {}) =>
+      syncCourse({ ...deps, ...other }, header(f, more), async function* (file) {
+        asked.push(file.path);
         yield bytesOf(f, file.path);
       }),
     rows: async (courseId: string) => ({
