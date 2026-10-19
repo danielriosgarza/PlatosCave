@@ -297,6 +297,8 @@ func describe(req *protocol.OpenSession) string {
 		where = fmt.Sprintf("%s@%s:%d in %s", req.Target.User, req.Target.Host, req.Target.Port, req.Target.Workspace)
 	case protocol.TargetManaged:
 		where = fmt.Sprintf("managed target %s for subject %s", req.Target.TargetID, req.Target.Subject)
+	case protocol.TargetColab:
+		where = fmt.Sprintf("the Colab runtime as %s in %s", req.Target.User, req.Target.Workspace)
 	}
 	what := "start Jupyter"
 	if req.Runtime.Mode == protocol.RuntimeAttach {

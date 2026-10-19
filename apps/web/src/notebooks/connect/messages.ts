@@ -24,6 +24,8 @@ export const CODE_STAGE: Record<string, string> = {
   network_scope_denied: 'reachability',
   unsupported_target: 'reachability',
   invalid_target: 'reachability',
+  colab_missing: 'reachability',
+  colab_proxy_failed: 'reachability',
   host_key_unknown: 'host_identity',
   host_key_changed: 'host_identity',
   host_key_untrusted_managed: 'host_identity',
@@ -84,6 +86,8 @@ export const CODE_COPY: Record<string, string> = {
   network_scope_denied: 'This connector is not allowed to reach that address.',
   unsupported_target: 'This connector cannot connect to that kind of target.',
   invalid_target: 'Parallax cannot use this target. Check the host, port and account.',
+  colab_missing: 'The computer running the connector has no colab program on its PATH.',
+  colab_proxy_failed: 'The colab program stopped before a Colab runtime answered.',
   host_key_unknown: 'This is the first connection to this host. Check its fingerprint.',
   host_key_changed:
     'The key this host presented differs from the one you trusted. Nothing was sent.',
@@ -188,6 +192,10 @@ export const RECOVERY_COPY: Record<string, string> = {
   new_session: 'Start a new session.',
   update_connector: 'Update the connector.',
   allow_network: "Ask the connector's owner to allow that network.",
+  install_colab:
+    "Install Google's colab program on the connector's computer and sign in with it there.",
+  check_colab:
+    'In a terminal on that computer, check that the colab program is signed in to a paid Colab plan.',
   none: '',
 };
 
@@ -236,6 +244,8 @@ export const CODE_RECOVERIES: Record<string, string[]> = {
   network_scope_denied: ['allow_network', 'pick_other_target'],
   unsupported_target: ['pick_other_target', 'update_connector'],
   invalid_target: ['check_address'],
+  colab_missing: ['install_colab', 'pick_other_target'],
+  colab_proxy_failed: ['check_colab', 'retry', 'pick_other_target'],
   host_key_unknown: ['verify_host_key'],
   host_key_changed: ['contact_host_owner', 'replace_host_key', 'pick_other_target'],
   host_key_untrusted_managed: ['contact_host_owner'],

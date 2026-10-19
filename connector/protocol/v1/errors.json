@@ -36,6 +36,8 @@
     "new_session",
     "update_connector",
     "allow_network",
+    "install_colab",
+    "check_colab",
     "none"
   ],
   "codes": {
@@ -80,6 +82,20 @@
       "retryable": false,
       "recoveries": ["check_address"],
       "summary": "The target fails Parallax's validation."
+    },
+    "colab_missing": {
+      "stage": "reachability",
+      "cause": "reachability",
+      "retryable": false,
+      "recoveries": ["install_colab", "pick_other_target"],
+      "summary": "The colab program is not on the PATH of the connector's computer."
+    },
+    "colab_proxy_failed": {
+      "stage": "reachability",
+      "cause": "reachability",
+      "retryable": true,
+      "recoveries": ["check_colab", "retry", "pick_other_target"],
+      "summary": "The colab program ended before a Colab runtime answered over SSH."
     },
     "host_key_unknown": {
       "stage": "host_identity",

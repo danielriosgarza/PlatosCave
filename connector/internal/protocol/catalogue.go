@@ -19,6 +19,8 @@ const (
 	CodeNetworkScopeDenied         Code = "network_scope_denied"
 	CodeUnsupportedTarget          Code = "unsupported_target"
 	CodeInvalidTarget              Code = "invalid_target"
+	CodeColabMissing               Code = "colab_missing"
+	CodeColabProxyFailed           Code = "colab_proxy_failed"
 	CodeHostKeyUnknown             Code = "host_key_unknown"
 	CodeHostKeyChanged             Code = "host_key_changed"
 	CodeHostKeyUntrustedManaged    Code = "host_key_untrusted_managed"
@@ -77,6 +79,8 @@ var Codes = []Code{
 	CodeNetworkScopeDenied,
 	CodeUnsupportedTarget,
 	CodeInvalidTarget,
+	CodeColabMissing,
+	CodeColabProxyFailed,
 	CodeHostKeyUnknown,
 	CodeHostKeyChanged,
 	CodeHostKeyUntrustedManaged,

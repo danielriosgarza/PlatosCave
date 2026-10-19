@@ -131,7 +131,7 @@ func (r *Record) validate() error {
 		}
 	}
 	switch r.Target.Kind {
-	case protocol.TargetLocal, protocol.TargetSSH, protocol.TargetManaged:
+	case protocol.TargetLocal, protocol.TargetSSH, protocol.TargetManaged, protocol.TargetColab:
 	default:
 		return fmt.Errorf("target kind %q", r.Target.Kind)
 	}

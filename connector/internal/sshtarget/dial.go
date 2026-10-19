@@ -275,6 +275,10 @@ func (c *checker) dialHop(ctx context.Context, h hop, via *ssh.Client) (net.Conn
 		if ctx.Err() != nil {
 			return nil, "", ctx.Err()
 		}
+		if pc, ok := conn.(*proxyConn); ok {
+			// What the colab program wrote is its own output: only its exit status is told.
+			return nil, "", c.t.Colab.failed(ctx, pc)
+		}
 		return nil, "", &target.Failure{Code: protocol.CodeConnectionRefused, Detail: fmt.Sprintf("%s did not answer as an SSH server: %v", dest, err)}
 	}
 	return bc, address, nil

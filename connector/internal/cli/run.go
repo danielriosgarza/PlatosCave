@@ -12,6 +12,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -118,7 +119,7 @@ func run(ctx context.Context, args []string, env Env) error {
 		Arch:    env.GOARCH,
 		Mode:    cfg.Mode,
 		// The design's personal-mode targets.
-		Targets:      []string{protocol.TargetLocal, protocol.TargetSSH},
+		Targets:      personalTargets(env.GOOS),
 		Features:     features(env),
 		NetworkScope: protocol.NetworkScope{CIDRs: scope.CIDRs(), Hosts: []string{}},
 	}
@@ -152,6 +153,11 @@ func run(ctx context.Context, args []string, env Env) error {
 			return remote.SweepOrphan(ctx, rec.Target, rec.SessionID, rec.Process.PID, jupyter.DefaultStopTimes)
 		},
 	}
+	if slices.Contains(hello.Targets, protocol.TargetColab) {
+		// The colab program's own output is never logged: only the connector's line about a run.
+		remote.SSH.Colab = &sshtarget.Colab{Log: func(line string) { fmt.Fprintln(out, line) }}
+		mgrCfg.Targets[protocol.TargetColab] = remote
+	}
 	if cfg.Mode == "managed" {
 		mgrCfg.Targets = map[string]target.Target{}
 		mgrCfg.SweepRemote = nil
@@ -163,6 +169,15 @@ func run(ctx context.Context, args []string, env Env) error {
 		store: store, name: cfg.Name, server: cfg.Server, connectorID: cfg.ConnectorID,
 		identity: id, hello: hello, mgr: mgrCfg, confirm: *confirm,
 	})
+}
+
+// personalTargets are the kinds a personal connector serves on goos (design §5.7): the colab
+// target on Linux and macOS, the Linux connector inside WSL included, and not on Windows.
+func personalTargets(goos string) []string {
+	if goos == "windows" {
+		return []string{protocol.TargetLocal, protocol.TargetSSH}
+	}
+	return []string{protocol.TargetLocal, protocol.TargetSSH, protocol.TargetColab}
 }
 
 // runManaged is `run --managed` (design §12): everything from the environment, a scope that
