@@ -256,6 +256,9 @@ func (rr *remoteRuntime) lost(ctx context.Context, c *Conn, ev cause.Evidence) {
 // reachable reports whether the first hop still accepts a TCP connection, through the network
 // scope like every dial.
 func (rr *remoteRuntime) reachable(remote net.Addr) bool {
+	if rr.target.Kind == protocol.TargetColab {
+		return false // the run has no address to probe: a lost Colab route is unreachable (§5.7)
+	}
 	ap, err := netip.ParseAddrPort(remote.String())
 	if err != nil || rr.r.SSH.Dialer == nil {
 		return false

@@ -60,7 +60,10 @@ func (c *Colab) dial(context.Context) (*proxyConn, error) {
 	if err != nil || !filepath.IsAbs(path) {
 		return nil, &target.Failure{Code: protocol.CodeColabMissing, Detail: "the colab program is not on the PATH of the connector's computer"}
 	}
-	home, _ := os.UserHomeDir()
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return nil, &target.Failure{Code: protocol.CodeColabProxyFailed, Detail: "the colab program was not started: the connector's account has no home directory"}
+	}
 	// Pipes of its own, not StdoutPipe: Wait would close a reader that x/crypto/ssh still reads.
 	inR, inW, err1 := os.Pipe()
 	outR, outW, err2 := os.Pipe()

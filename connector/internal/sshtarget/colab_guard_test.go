@@ -4,6 +4,8 @@ package sshtarget
 
 import (
 	"encoding/json"
+	"errors"
+	"os"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -15,8 +17,11 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"parallax/connector/internal/cause"
 	"parallax/connector/internal/jupyter"
+	"parallax/connector/internal/jupyter/jupytertest"
 	"parallax/connector/internal/protocol"
+	"parallax/connector/internal/sshtest"
 )
 
 // Guards of the colab program (design §5.7), built only where the connector offers the target.
@@ -54,16 +59,33 @@ func encoded(v any) string {
 	return string(data)
 }
 
-// TestColabProgramMissing: with no colab program on PATH, reachability fails with colab_missing
-// and the later stages are blocked.
+// TestColabProgramMissing: a program not on PATH, or only through a relative entry, is never run
+// and is colab_missing; without Colab the target is unsupported.
 func TestColabProgramMissing(t *testing.T) {
 	f := newFixture(t)
-	f.tg.Colab = &Colab{}
-	t.Setenv("PATH", t.TempDir())
 	req := &protocol.TestConnection{RequestID: requestID, Runtime: protocol.Runtime{Mode: protocol.RuntimeStart},
 		Target: protocol.Target{Kind: protocol.TargetColab, User: "student", Auth: &protocol.AuthRef{Method: protocol.AuthAgent}, Workspace: "/home/student"}}
-	if got := f.check(req).statuses(); got != "reachability=failed:colab_missing host_identity=skipped"+blocked {
-		t.Errorf("stages %s", got)
+	if got := f.check(req).statuses(); got != "reachability=failed:unsupported_target host_identity=skipped"+blocked {
+		t.Errorf("a connector without Colab: %s", got)
+	}
+	f.tg.Colab = &Colab{}
+	t.Chdir(t.TempDir())
+	scripts := []string{"colab", "bin/colab", "~/bin/colab"}
+	for _, p := range scripts {
+		if err := errors.Join(os.MkdirAll(filepath.Dir(p), 0o755), os.WriteFile(p, []byte("#!/bin/sh\ntouch \"$0.ran\"\n"), 0o755)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, path := range []string{t.TempDir(), ".", "", "bin", "~/bin"} {
+		t.Setenv("PATH", path)
+		if got := f.check(req).statuses(); got != "reachability=failed:colab_missing host_identity=skipped"+blocked {
+			t.Errorf("PATH %q: %s", path, got)
+		}
+	}
+	for _, p := range scripts {
+		if _, err := os.Stat(p + ".ran"); err == nil {
+			t.Errorf("%s ran", p)
+		}
 	}
 }
 
@@ -100,6 +122,24 @@ func TestColabProgramThatNeverAnswersIsEnded(t *testing.T) {
 		t.Errorf("reachability %+v", st)
 	}
 	groupGone(t, colabRuns(t, records)[0].PID)
+}
+
+// TestColabChangedKeyIsAHardStop: another key for colab.invalid is host_key_changed and changes
+// nothing; the confirmation that replaces it keeps the old line as a comment.
+func TestColabChangedKeyIsAHardStop(t *testing.T) {
+	h, hostKey, _ := newColabHost(t, "")
+	old := sshtest.NewSigner(t)
+	os.Remove(h.f.tg.KnownHosts.Path)
+	h.f.trust(protocol.ColabHost, protocol.ColabPort, old.PublicKey())
+	before := h.f.knownHosts()
+	req := &protocol.TestConnection{RequestID: requestID, Target: h.colab(), Runtime: h.start()}
+	if got := h.f.check(req).statuses(); got != "reachability=ok host_identity=failed:host_key_changed"+blocked || h.f.knownHosts() != before {
+		t.Fatalf("another key: %s\n%s", got, h.f.knownHosts())
+	}
+	req.Confirmations = []protocol.Confirmation{{Host: protocol.ColabHost, Port: protocol.ColabPort, SHA256: fingerprint(hostKey), Replacing: fingerprint(old)}}
+	if res := h.f.check(req); res.conn == nil || !strings.Contains(h.f.knownHosts(), " "+fingerprint(old)+" colab.invalid ") {
+		t.Fatalf("replaced: %s\n%s", res.statuses(), h.f.knownHosts())
+	}
 }
 
 // TestColabProgramRunsAloneAndEndsWithItsConnection: it leads its session and group, gets only
@@ -187,5 +227,61 @@ func TestColabCloseAfterTheProgramEndedSignalsNothing(t *testing.T) {
 	p.Close()
 	if time.Sleep(1500 * time.Millisecond); hit.Load() {
 		t.Error("Close signalled the group of a program that had ended")
+	}
+}
+
+// TestColabLossIsHostUnreachable: a program that ends during a session is a lost route,
+// host_unreachable; Reconnect starts a new run, after which the session answers again.
+func TestColabLossIsHostUnreachable(t *testing.T) {
+	h, _, records := newColabHost(t, "")
+	rt, err := h.r.Open(t.Context(), &protocol.OpenSession{RequestID: requestID, SessionID: sessionID, Target: h.colab(), Runtime: h.start(),
+		Lease: protocol.Lease{IdleTimeoutMin: 30, GracePeriodMin: 5}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(rt.Remote.Close)
+	killPID(colabRuns(t, records)[0].PID)
+	select {
+	case l := <-rt.Remote.Losses():
+		if why := cause.Classify(l.Evidence); l.Gone || why != cause.HostUnreachable {
+			t.Fatalf("loss %+v: %s", l, why)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("the end of the program was not reported")
+	}
+	if err := rt.Remote.Reconnect(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	if err := rt.Client.Status(t.Context()); err != nil || len(colabRuns(t, records)) != 2 {
+		t.Fatalf("after Reconnect: %v, %d runs", err, len(colabRuns(t, records)))
+	}
+}
+
+// TestColabOrphanSweptThroughTheProgram: SweepOrphan of a colab session stops the marked server
+// through a new run of the program, which then ends.
+func TestColabOrphanSweptThroughTheProgram(t *testing.T) {
+	h, _, records := newColabHost(t, "")
+	t.Setenv(jupytertest.EnvMode, "stubborn")
+	rt, err := h.r.Open(t.Context(), &protocol.OpenSession{RequestID: requestID, SessionID: sessionID, Target: h.colab(), Runtime: h.start(),
+		Lease: protocol.Lease{IdleTimeoutMin: 30, GracePeriodMin: 5}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	pid, _ := rt.Remote.Process()
+	rt.Remote.Close() // the connector crashes: its run ends, the server keeps running
+	if !alive(pid) {
+		t.Fatal("closing the connection ended the server")
+	}
+	times := jupyter.StopTimes{Shutdown: 200 * time.Millisecond, Terminate: 200 * time.Millisecond}
+	if err := h.r.SweepOrphan(t.Context(), h.colab(), sessionID, pid, times); err != nil {
+		t.Fatal(err)
+	}
+	waitGone(t, pid)
+	runs := colabRuns(t, records)
+	if len(runs) != 2 {
+		t.Fatalf("%d runs of the program, want the session's and the sweep's", len(runs))
+	}
+	for _, r := range runs {
+		groupGone(t, r.PID)
 	}
 }

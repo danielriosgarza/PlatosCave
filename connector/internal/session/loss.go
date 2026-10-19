@@ -139,7 +139,7 @@ func (m *Manager) watchRemote(s *Session, rem target.Remote) {
 			m.mu.Unlock()
 			ev.OS, ev.Now = m.cfg.OS, m.cfg.Now()
 			why := cause.Classify(ev)
-			m.logf("Session %s: the Jupyter server on %s ended (%s).", s.ID, s.Target.Host, why)
+			m.logf("Session %s: the Jupyter server on %s ended (%s).", s.ID, remoteName(s.Target), why)
 			m.finish(s, "", why)
 			return
 		}

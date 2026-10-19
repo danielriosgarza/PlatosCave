@@ -100,7 +100,7 @@ func restartCause(rec Record, now time.Time) string {
 
 func where(rec Record) string {
 	if rec.Process != nil && rec.Process.Where == "remote" {
-		return "on " + rec.Target.Host
+		return "on " + remoteName(rec.Target)
 	}
 	if rec.Process == nil {
 		return "no process was recorded"
