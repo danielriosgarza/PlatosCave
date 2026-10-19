@@ -10,6 +10,12 @@ COPY e2e/package.json e2e/
 RUN pnpm install --frozen-lockfile
 COPY . .
 RUN pnpm --filter @parallax/web build
-ENV NODE_ENV=production STATIC_DIR=/app/apps/web/dist HOST=0.0.0.0 PORT=3000
+# With STORAGE_DRIVER=fs the objects are kept here; a volume mounted on it starts owned by node.
+RUN install -d -o node -g node /var/lib/parallax/storage
+# The release's one version (docs/design/site.md §12), last, so the layers above stay cached.
+ARG PARALLAX_VERSION=0.0.0
+LABEL org.opencontainers.image.version="${PARALLAX_VERSION}"
+ENV NODE_ENV=production STATIC_DIR=/app/apps/web/dist HOST=0.0.0.0 PORT=3000 \
+    STORAGE_DIR=/var/lib/parallax/storage PARALLAX_VERSION=${PARALLAX_VERSION}
 USER node
 CMD ["pnpm","--filter","@parallax/server","start"]
