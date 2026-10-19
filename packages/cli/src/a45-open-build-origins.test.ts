@@ -5,7 +5,7 @@ import { join, resolve } from 'node:path';
 import { afterAll, beforeAll, expect, test } from 'vitest';
 import { main } from './main';
 import { buildOpenSite } from './open/build';
-import { LEVEL_0, noViewerYet } from './open/shell';
+import { compileOpenShell } from './open/shell';
 import { buildUnderGuard, printing, STAND_IN } from './open/testing';
 import { loadSite } from './site/load';
 
@@ -61,7 +61,7 @@ test('A45 a level 0 build without a distinct content origin stops', async () => 
     // Called past the loader, which refuses the configuration too, with the two origins.
     const origins = { ...site.config.origins, app, content };
     const call = () =>
-      buildOpenSite({ ...site, config: { ...site.config, origins } }, { shell: noViewerYet });
+      buildOpenSite({ ...site, config: { ...site.config, origins } }, { shell: compileOpenShell });
     const direct = await printing(call);
     const lines = [...command.lines, ...direct.lines];
     const both = lines.filter((line) =>
@@ -69,21 +69,22 @@ test('A45 a level 0 build without a distinct content origin stops', async () => 
     );
     expect([command.result, direct.result, both.length], content).toEqual([1, 1, 2]);
     expect(lines.filter((line) => line.includes('topic.yaml'))).toEqual([]);
-    // Nothing written: the stop came before the work folder, so not from noViewerYet, after it.
+    // Nothing written: the stop came before the work folder, so not from the shell, after it.
     expect([fs.existsSync(join(root, '.parallax')), fs.readdirSync(join(root, 'dist'))]).toEqual([
       false,
       ['index.html'],
     ]);
   }
-  // With the origins as given and no course, the command passes the host rule and stops with
-  // P5-07's level 0 message alone, as no viewer is compiled yet; dist/ is as it was.
+  // With the origins as given and no course, the command passes the host rule, compiles the shell
+  // and places the site in place of the earlier build.
   fs.writeFileSync(file, config);
   fs.rmSync(join(root, 'courses'), { recursive: true });
   fs.mkdirSync(join(root, 'courses'));
   const level0 = await printing(() => main(['build'], { cwd: root }));
   const placed = fs.readdirSync(join(root, 'dist'));
-  expect([level0.result, level0.lines, placed]).toEqual([1, [LEVEL_0], ['index.html']]);
-}, 120_000);
+  const last = `parallax build: dist/site is for ${site.config.origins.app}, and dist/content for ${site.config.origins.content}.`;
+  expect([level0.result, level0.lines.at(-1), placed]).toEqual([0, last, ['content', 'site']]);
+}, 300_000);
 
 test('A45 untrusted objects are written only under content/, and a build stops when one would land under site/', () => {
   const { root, files, status } = good;
