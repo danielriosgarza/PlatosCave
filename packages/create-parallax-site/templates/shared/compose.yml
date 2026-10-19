@@ -129,7 +129,7 @@ services:
   # TLS for both host names: Caddy obtains a certificate for each, upgrades WebSockets and
   # forwards Host unchanged, which is how the one server tells the two origins apart.
   caddy:
-    image: caddy:2.10.2
+    image: caddy:2.11.7
     restart: unless-stopped
     cap_drop: [ALL]
     cap_add: [NET_BIND_SERVICE]
