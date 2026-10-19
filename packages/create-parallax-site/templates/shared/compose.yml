@@ -132,8 +132,9 @@ services:
     image: caddy:2.11.7
     restart: unless-stopped
     cap_drop: [ALL]
-    # Caddy runs as root: it binds 80 and 443, and reads the Caddyfile whatever its owner and mode.
-    cap_add: [NET_BIND_SERVICE, DAC_READ_SEARCH]
+    # Caddy runs as root with only the capability to bind 80 and 443, so the Caddyfile must be
+    # readable by Caddy: `parallax start` keeps it readable.
+    cap_add: [NET_BIND_SERVICE]
     security_opt: ["no-new-privileges:true"]
     environment:
       APP_HOST: ${APP_HOST:?run parallax env}

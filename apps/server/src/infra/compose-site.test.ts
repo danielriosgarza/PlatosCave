@@ -110,9 +110,10 @@ describe('the site template installation', () => {
     }
     expect(services.postgres?.image).toMatch(/^postgres:16\.\d+$/);
     expect(services.caddy?.image).toMatch(/^caddy:\d+\.\d+\.\d+$/);
-    // Caddy runs as root: it binds 80 and 443 and reads the Caddyfile, and needs no more.
+    // Caddy runs as root with only the capability to bind 80 and 443 (owner's decision on #570),
+    // so the Caddyfile must be readable by Caddy; P5-23 makes `parallax start` keep it readable.
     const { cap_drop, cap_add, security_opt } = services.caddy ?? {};
-    expect([cap_drop, cap_add]).toEqual([['ALL'], ['NET_BIND_SERVICE', 'DAC_READ_SEARCH']]);
+    expect([cap_drop, cap_add]).toEqual([['ALL'], ['NET_BIND_SERVICE']]);
     expect(security_opt).toEqual(['no-new-privileges:true']);
   });
 
