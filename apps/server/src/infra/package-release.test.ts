@@ -14,8 +14,9 @@ const workflow = parse(text);
 const { build, publish } = workflow.jobs as Record<'build' | 'publish', Job>;
 const named = (job: Job, name: string) =>
   job.steps.find((step) => step.name === name || step.uses?.startsWith(name));
-const [check, push, npm] = [
+const [check, sums, push, npm] = [
   'The npm token is set',
+  'Check what build handed over against the release manifest',
   'Push the images',
   'Publish the npm packages',
 ] as const;
@@ -34,6 +35,7 @@ describe('package-release.yml', () => {
     // The first learns only whether the npm token is set, not its value.
     const set = `\${{ secrets.NPM_TOKEN != '' }}`;
     expect(named(publish, check)?.env).toEqual({ NPM_TOKEN_SET: set });
+    expect(named(publish, check)?.run).toBe('test "$NPM_TOKEN_SET" = true');
     expect(JSON.stringify(naming[1])).toMatch(/secrets\.GITHUB_TOKEN(?!.*NPM_TOKEN)/);
     expect(JSON.stringify(naming[2])).toContain('secrets.NPM_TOKEN }}');
     expect(text.match(/secrets\./g)).toHaveLength(3);
@@ -41,6 +43,7 @@ describe('package-release.yml', () => {
 
   test('publish runs only on the publish output, and builds and installs nothing', () => {
     expect([publish.needs, publish.if]).toEqual(['build', "needs.build.outputs.publish == 'true'"]);
+    expect(workflow.jobs.build.outputs.publish).toBe(`\${{ steps.release.outputs.publish }}`);
     // No checkout, no Node or pnpm set up, no image built: the runner's docker, npm and jq only.
     const actions = publish.steps.flatMap((step) => step.uses?.replace(/@.*/, '') ?? []);
     expect(actions.every((uses) => /^actions\/(up|down)load-artifact$/.test(uses))).toBe(true);
@@ -62,9 +65,11 @@ describe('package-release.yml', () => {
     const given = publish.steps
       .map((step) => step.run ?? '')
       .flatMap((each) => [...each.matchAll(/(?:npm publish|docker load --input) "([^"]*)"/g)]);
-    expect(given.map((match) => match[1]?.replace(/^\.?\/.*/, 'ok'))).toEqual(['ok', 'ok']);
-    // The token is checked first, then the images are pushed, then the npm packages (ADR-0001).
-    const order = [check, push, npm].map((name) => publish.steps.findIndex((s) => s.name === name));
+    const files = ['./images/$name.tar', './release/$name-$VERSION.tgz'];
+    expect(given.map((match) => match[1])).toEqual(files);
+    expect(run(sums)).toMatch(/\(\.packages\[\], \.images\[\]\).*\| sha256sum -c --strict$/);
+    // The token, then both checksums, then the images, then the npm packages (ADR-0001, Release).
+    const order = [check, sums, push, npm].map((n) => publish.steps.findIndex((s) => s.name === n));
     expect(order.every((at, i) => at > (order[i - 1] ?? -1))).toBe(true);
   });
 
@@ -84,7 +89,8 @@ describe('package-release.yml', () => {
     );
     // The workflow, the check and the conversion closure that vendor.ts packs.
     const packed = closure(resolve(repo, 'apps/server')).map((file) => `apps/server/${file}`);
-    const files = ['.github/workflows/package-release.yml', ...packed];
+    const own = ['.github/workflows/package-release.yml', 'packages/cli/scripts/packed-install.sh'];
+    const files = [...own, ...packed];
     expect(files.filter((file) => !paths.some((path) => path.test(file)))).toEqual([]);
   });
 });

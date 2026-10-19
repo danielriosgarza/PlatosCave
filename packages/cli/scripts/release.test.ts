@@ -40,7 +40,7 @@ test('a tag that is not parallax-v and a semantic version is refused', () => {
   for (const refName of [...tags.map((v) => `parallax-v${v}`), 'connector-v1.0.0']) {
     expect(() => decide(run({ refName })), refName).toThrow(ReleaseError);
   }
-  expect(() => decide(run({ ...branch, sha: '' }))).toThrow(ReleaseError);
+  expect(() => decide(run({ ...branch, sha: 'main' }))).toThrow(ReleaseError);
   expect(() => decide(run({ owner: 'own/er' }))).toThrow(ReleaseError);
   // The version is a Docker tag too, of at most 128 characters.
   const longest = `1.0.0-${'a'.repeat(122)}`;
@@ -78,8 +78,11 @@ test('both manifests and both image labels get the one version', () => {
     /^ARG PARALLAX_VERSION=0\.0\.0\nLABEL org\.opencontainers\.image\.version="\$\{PARALLAX_VERSION\}"$/m;
   for (const name of ['server', 'runner'])
     expect(read(`infra/docker/${name}.Dockerfile`)).toMatch(label);
-  type Step = { uses?: string; with?: object };
+  type Step = { uses?: string; run?: string; with?: object };
   const steps: Step[] = parse(read('.github/workflows/package-release.yml')).jobs.build.steps;
+  // The run's version and publish flag are decide's: one line writes the outputs, from release.ts.
+  const writes = steps.flatMap((step) => step.run?.match(/^.*GITHUB_OUTPUT.*$/gm) ?? []);
+  expect(`${writes}`).toMatch(/^pnpm exec tsx \S+release\.ts decide \| tee -a "\$GITHUB_OUTPUT"$/);
   const output = (name: string) => `\${{ steps.release.outputs.${name} }}`;
   const images = steps.filter((step) => step.uses?.startsWith('docker/build-push-action@'));
   expect(images.map((step) => step.with)).toEqual(
