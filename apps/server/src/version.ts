@@ -1,2 +1,2 @@
-/** The one version string `/api/health`, `/api/ready` and the OpenAPI document report. */
-export const VERSION = '0.0.0';
+/** What `/api/health`, `/api/ready` and OpenAPI report: the image's version (site.md §12). */
+export const VERSION = process.env.PARALLAX_VERSION || '0.0.0';

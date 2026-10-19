@@ -15,6 +15,9 @@ RUN pnpm install --frozen-lockfile --filter @parallax/runner...
 COPY tsconfig.base.json ./
 COPY packages/contracts packages/contracts
 COPY apps/runner apps/runner
+# The release's one version (docs/design/site.md §12).
+ARG PARALLAX_VERSION=0.0.0
+LABEL org.opencontainers.image.version="${PARALLAX_VERSION}"
 ENV NODE_ENV=production
 USER node
 CMD ["pnpm","--filter","@parallax/runner","start"]

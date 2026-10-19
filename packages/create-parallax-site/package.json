@@ -1,8 +1,14 @@
 {
   "name": "create-parallax-site",
   "version": "0.0.0",
-  "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
   "bin": {
     "create-parallax-site": "./bin/create-parallax-site.mjs"
   },
