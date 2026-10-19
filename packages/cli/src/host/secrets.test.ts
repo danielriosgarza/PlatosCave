@@ -33,9 +33,12 @@ test('a second env leaves .env byte-identical and prints no secret', async () =>
   if (process.platform !== 'win32') expect(statSync(join(root, '.env')).mode & 0o777).toBe(0o600);
 });
 
-test('env completes .env and keeps every value there, a typed one included', async () => {
-  const typed = "SMTP_URL='smtp://relay.example.org'\nSESSION_SECRET=kept\nPOSTGRES_PASSWORD=\n";
-  const values = readEnv((await env('typed', typed)).text());
+test('env completes .env and keeps every value there, a typed one included, byte for byte', async () => {
+  const kept = "SMTP_URL='smtp://relay.example.org'\r\nSESSION_SECRET=kept\r\n";
+  const { root, text } = await env('typed', `${kept}POSTGRES_PASSWORD=\r\n`);
+  expect(text().startsWith(`${kept}POSTGRES_PASSWORD=`)).toBe(true);
+  expect(statSync(join(root, '.parallax/.env.tmp'), { throwIfNoEntry: false })).toBeUndefined();
+  const values = readEnv(text());
   expect(values.get('SMTP_URL')?.value).toBe('smtp://relay.example.org');
   expect(values.get('SESSION_SECRET')?.value).toBe('kept');
   expect(values.get('POSTGRES_PASSWORD')?.value).toMatch(/^[0-9a-f]{64}$/);

@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import { chmodSync, existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 /** A value of an env file as Compose reads it; `changed` when Compose would replace part of it. */
@@ -41,15 +41,18 @@ export function completeEnv(root: string, level: number) {
   if (level === 2) keys.push('RUNNER_DB_PASSWORD');
   const missing = keys.filter((key) => !readEnv(text).get(key)?.value);
   if (missing.length > 0) {
-    // A line of a missing secret holds no value, so leaving it out loses nothing.
+    // A line of a missing secret holds no value, so leaving it out loses nothing; every other
+    // line keeps its bytes, its line ending included.
     const named = (line: string) => missing.includes(ASSIGN.exec(line)?.[1] ?? '');
-    const kept = text
-      .split(/\r?\n/)
-      .filter((line) => !named(line))
-      .join('\n')
-      .trimEnd();
+    const lines = text.split(/(?<=\n)/);
+    const kept = lines.filter((line) => !named(line)).join('');
+    const end = kept && !kept.endsWith('\n') ? '\n' : '';
     const added = missing.map((key) => `${key}=${randomBytes(32).toString('hex')}\n`);
-    writeFileSync(file, `${kept && `${kept}\n`}${added.join('')}`, { mode: 0o600 });
+    // Renamed over `.env`, so that a run cut short leaves it as it was; `.parallax/` is ignored.
+    const temp = join(root, '.parallax', '.env.tmp');
+    mkdirSync(join(root, '.parallax'), { recursive: true });
+    writeFileSync(temp, `${kept}${end}${added.join('')}`, { mode: 0o600 });
+    renameSync(temp, file);
   }
   chmodSync(file, 0o600);
   return { env: readEnv(readText(file)), added: missing };

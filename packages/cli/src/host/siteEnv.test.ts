@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterAll, expect, test } from 'vitest';
@@ -14,6 +14,9 @@ const PROVIDERS = [
   { id: 'uni', name: "Uni's $login #1 \\", issuer: 'https://login.example.org', clientId: 'p' },
   { id: 'clinic', name: 'Clinic', issuer: 'https://id.example.org/a', clientId: 'q' },
 ];
+const backend = (subnet: string) => ({
+  'compose.yml': `networks: { backend: { ipam: { config: [{ subnet: ${subnet} }] } } }`,
+});
 let copies = 0;
 /** `env`'s files in a copy of a fixture site, with an edit of its configuration and files over it. */
 async function env(fixture: string, edit: [RegExp | string, string] = ['', ''], files = {}) {
@@ -21,8 +24,7 @@ async function env(fixture: string, edit: [RegExp | string, string] = ['', ''], 
   cpSync(join(pkg, 'fixtures/config', fixture), root, { recursive: true });
   const config = readFileSync(join(root, 'parallax.config.ts'), 'utf8');
   writeFileSync(join(root, 'parallax.config.ts'), config.replace(edit[0], edit[1]));
-  const subnet = 'networks: { backend: { ipam: { config: [{ subnet: 172.30.1.0/24 }] } } }';
-  for (const [file, text] of Object.entries({ 'compose.yml': subnet, ...files })) {
+  for (const [file, text] of Object.entries({ ...backend('172.30.1.0/24'), ...files })) {
     writeFileSync(join(root, file), text);
   }
   const site = await loadSite(root);
@@ -102,6 +104,25 @@ test('at level 2 runner.env has only the runner variables and pg_hba.conf admits
   const runtimes = values('.parallax/site.env').RUNNER_RUNTIMES;
   expect(JSON.parse(runtimes ?? '')).toEqual(site.config.runner?.runtimes);
   expect(pulls).toContain(`docker pull ${image}`);
+  if (process.platform === 'win32') return; // Windows keeps no mode bits.
+  const mode = (file: string) => statSync(join(site.root, file)).mode & 0o777;
+  for (const file of ['.env', '.parallax/site.env', '.parallax/runner/runner.env']) {
+    expect(mode(file)).toBe(0o600);
+  }
+  expect(mode('.parallax/pg_hba.conf')).toBe(0o644);
+});
+
+test('with an existing PostgreSQL runner.env keeps a typed RUNNER_DATABASE_URL, not the bundled one', async () => {
+  const { site, values, read, write } = await env('school');
+  write();
+  const url = (role: string) => `postgres://${role}:pw@db.example.org/parallax`;
+  writeFileSync(join(site.root, '.env'), `${read('.env')}DATABASE_URL='${url('parallax')}'\n`);
+  write();
+  expect(values('.parallax/runner/runner.env').RUNNER_DATABASE_URL).toBeUndefined();
+  const runnerEnv = join(site.root, '.parallax/runner/runner.env');
+  writeFileSync(runnerEnv, `RUNNER_DATABASE_URL='${url('parallax_runner')}'\n`);
+  write();
+  expect(values('.parallax/runner/runner.env').RUNNER_DATABASE_URL).toBe(url('parallax_runner'));
 });
 
 test('env stops, before it writes anything, at a value the server or PostgreSQL cannot use', async () => {
@@ -114,10 +135,16 @@ test('env stops, before it writes anything, at a value the server or PostgreSQL 
     [['//shiny', '//a,b'], 'origins.shiny[0]: the host a,b.example.org'],
     [["login@example.org>'", "login@example.org>\\\\'"], 'signIn.email.from'],
     [['', ''], 'compose.yml: networks.backend', { 'compose.yml': 'services: {}' }],
+    [['', ''], 'subnet: not an IPv4 subnet inside', backend('0.0.0.0/0')],
+    [['', ''], 'subnet: not an IPv4 subnet inside', backend('192.168.0.0/15')],
   ];
   for (const [edit, line, files] of cases) {
     const { site, write } = await env('school', edit, files);
     expect(write).toThrow(line);
-    expect(['.env', '.parallax'].some((name) => existsSync(join(site.root, name)))).toBe(false);
+    expect(
+      ['.env', '.parallax'].some((name) =>
+        statSync(join(site.root, name), { throwIfNoEntry: false }),
+      ),
+    ).toBe(false);
   }
 });
