@@ -86,7 +86,7 @@ test('site.env holds the settings of the configuration and changes with it', asy
   expect(two.read('.parallax/site.env')).not.toContain('pw@');
 });
 
-test('at level 2 runner.env has only the runner variables and pg_hba.conf admits two roles', async () => {
+test("at level 2 runner.env has the runner's variables and image, and pg_hba.conf admits the socket and two roles", async () => {
   const { site, values, read, write } = await env('school');
   const { pulls } = write();
   const image = `registry.example.org/parallax-runner-python@sha256:${'1'.repeat(64)}`;
@@ -141,6 +141,10 @@ test('env stops, before it writes anything, at a value the server or PostgreSQL 
     [['', ''], 'compose.yml: networks.backend', { 'compose.yml': 'services: {}' }],
     [['', ''], 'subnet: not an IPv4 subnet inside', backend('0.0.0.0/0')],
     [['', ''], 'subnet: not an IPv4 subnet inside', backend('192.168.0.0/15')],
+    // Outside a range, wider than it, or more than one address and prefix, a rule line among them.
+    ...['172.32.0.0/16', '10.0.0.0/7', '172.16.0.0/8', '10.0.0.0/8/x', '10.0.0.0/8/\\nhost x'].map(
+      (subnet): [[string, string], string, object] => [['', ''], 'subnet:', backend(`"${subnet}"`)],
+    ),
   ];
   for (const [edit, line, files] of cases) {
     const { site, write } = await env('school', edit, files);
@@ -150,5 +154,13 @@ test('env stops, before it writes anything, at a value the server or PostgreSQL 
         statSync(join(site.root, name), { throwIfNoEntry: false }),
       ),
     ).toBe(false);
+  }
+});
+
+test('a backend subnet inside each private range is written into pg_hba.conf as its address and prefix', async () => {
+  for (const subnet of ['10.0.0.0/8', '172.31.0.0/16', '192.168.4.0/24']) {
+    const { read, write } = await env('school', ['', ''], backend(subnet));
+    write();
+    expect(read('.parallax/pg_hba.conf')).toContain(`\nhost parallax parallax ${subnet} scram`);
   }
 });

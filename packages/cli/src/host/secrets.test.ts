@@ -43,6 +43,9 @@ test('env completes .env and keeps every value there, a typed one included, byte
   expect(values.get('SESSION_SECRET')?.value).toBe('kept');
   expect(values.get('POSTGRES_PASSWORD')?.value).toMatch(/^[0-9a-f]{64}$/);
   expect(values.size).toBe(5);
+  // A last line with no line ending keeps its value and gets one before the added secrets.
+  const unended = await env('unended', 'SESSION_SECRET=kept');
+  expect(unended.text()).toMatch(/^SESSION_SECRET=kept\nPOSTGRES_PASSWORD=[0-9a-f]{64}\n/);
 });
 
 test('readEnv reads a value as Compose does and marks one that Compose would change', () => {

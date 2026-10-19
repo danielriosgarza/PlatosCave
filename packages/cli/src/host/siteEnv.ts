@@ -21,16 +21,17 @@ function write(root: string, file: string, text: string, mode: number): void {
 /**
  * The `backend` subnet, which only the site's `compose.yml` states (docs/design/site.md §9). Its
  * `pg_hba.conf` rule admits the cluster's superuser on a published port (§11), so it is taken
- * only inside a private range (RFC 1918), where Docker places its networks.
+ * only inside a private range (RFC 1918), where Docker places its networks, as exactly one
+ * address and one prefix, written anew so that nothing else of the value reaches the file.
  */
 function backendSubnet(root: string): string | undefined {
   try {
     const { subnet } = parse(readText(join(root, 'compose.yml'))).networks.backend.ipam.config[0];
-    const [address = '', bits = ''] = String(subnet).split('/');
+    const [address = '', bits = '', ...more] = String(subnet).split('/');
     const [a, b = 0] = address.split('.').map(Number);
     const n = /^\d{1,2}$/.test(bits) && Number(bits) <= 32 ? Number(bits) : -1;
     const least = a === 10 ? 8 : a === 172 && b >> 4 === 1 ? 12 : a === 192 && b === 168 ? 16 : 33;
-    return isIPv4(address) && n >= least ? subnet : undefined;
+    return isIPv4(address) && n >= least && more.length === 0 ? `${address}/${n}` : undefined;
   } catch {}
 }
 

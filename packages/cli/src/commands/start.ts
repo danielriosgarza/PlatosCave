@@ -1,3 +1,4 @@
+import { chmodSync, existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { compose, noServer } from '../host/compose';
 import { type EnvValue, readEnv, readText } from '../host/secrets';
@@ -48,6 +49,22 @@ function typedProblems({ config }: Site, dotenv: Map<string, EnvValue>): string[
 }
 
 /**
+ * Caddy has only the capability to bind its ports and the server runs as `node` with none
+ * (compose.yml), so neither reads a file by a capability: the Caddyfile and `dist/`, which hold
+ * no secret, are made readable to all, whatever the operator's umask left.
+ */
+export function readable(root: string): void {
+  const dist = join(root, 'dist');
+  const share = (path: string, folder: boolean) => {
+    if (existsSync(path)) chmodSync(path, folder ? 0o755 : 0o644);
+  };
+  share(join(root, 'Caddyfile'), false);
+  share(dist, true);
+  const tree = existsSync(dist) ? readdirSync(dist, { recursive: true, withFileTypes: true }) : [];
+  for (const entry of tree) share(join(entry.parentPath, entry.name), entry.isDirectory());
+}
+
+/**
  * `parallax start` (docs/design/site.md §5, §9, §11): `env`, the check of what the operator
  * typed into `.env`, `build`, then `docker compose pull` and `up -d --wait`, in which `migrate`
  * runs before the services. Run again it changes no generated secret and stops no service. At
@@ -64,6 +81,7 @@ export const run: Command['run'] = async ({ site }) => {
   if (problems.length > 0) return 1;
   const built = await build({ site, args: [] });
   if (built !== 0) return built;
+  readable(site.root);
   const steps: [string[], string?][] = [[['pull']], [['up', '-d', '--wait']]];
   if (site.config.level === 2 && !dotenv.get('DATABASE_URL')?.value) {
     const password = dotenv.get('RUNNER_DB_PASSWORD')?.value.replaceAll("'", "''");
