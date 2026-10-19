@@ -1,5 +1,6 @@
 import '@parallax/ui/tokens.css';
 import '../styles/global.css';
+import { OPEN_ADDRESSES } from '@parallax/contracts';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import {
   createRootRoute,
@@ -15,6 +16,7 @@ import { type ReactNode, StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { z } from 'zod';
 import { RouteFailed } from '../components/RouteFailed';
+import { type Site, screenAt, siteRoutes } from '../sitePages';
 import { Catalogue, CourseIndex } from './Course';
 import { OpenBar } from './OpenBar';
 import { OpenUnavailable } from './OpenUnavailable';
@@ -22,8 +24,8 @@ import { Topic } from './Topic';
 
 /**
  * The open site's viewer, level 0 (docs/design/open-site.md §6): a router of its own with its own
- * root (the open bar and an outlet) and the topics of the site's courses, read from the build's
- * data files. It holds no session, signs no one in and keeps nothing.
+ * root (the open bar and an outlet), the topics of the site's courses read from the build's data
+ * files, and the site's own pages. It holds no session, signs no one in and keeps nothing.
  */
 
 /** `?resource=` picks a resource of the tab, `&page=` a slide. */
@@ -47,8 +49,36 @@ function CourseScreen() {
   return <CourseIndex course={name === undefined ? course : `${name}/${course}`} />;
 }
 
-/** The open site. `/` goes to `/courses`, the catalogue's address (§2). */
-export function createOpenApp() {
+/**
+ * A page whose module cannot be fetched fails as any other page does (`RouteFailed`): with the
+ * browser's message the router would mark it in `sessionStorage` and reload, and the shell keeps
+ * nothing in the browser (§6).
+ */
+const settled = (site: Site): Site => ({
+  ...site,
+  pages: site.pages.map((page) => ({
+    ...page,
+    load: () =>
+      page.load().catch((cause: unknown) => {
+        throw new Error(`The site page ${page.path} could not be loaded.`, { cause });
+      }),
+  })),
+});
+
+/**
+ * The open site, with a site's pages below the bar. A page at `/` is the front page; without one
+ * `/` goes to `/courses`, the catalogue's address (§2). A page at an address Parallax keeps
+ * (`OPEN_ADDRESSES`) is refused.
+ */
+export function createOpenApp(site?: Site) {
+  for (const page of site?.pages ?? []) {
+    const kept = screenAt(page.path, OPEN_ADDRESSES);
+    if (kept) {
+      throw new Error(
+        `The site page ${page.path} would be at ${kept}: Parallax keeps /courses and the addresses below it.`,
+      );
+    }
+  }
   const root = createRootRoute({
     component: () => (
       <>
@@ -75,13 +105,15 @@ export function createOpenApp() {
       throw redirect({ to: '/courses', replace: true });
     },
   });
+  const front = site?.pages.some((page) => page.path === '/');
   root.addChildren([
-    toCourses,
+    ...(front ? [] : [toCourses]),
     screen('/courses', Catalogue),
     screen('/courses/$course', CourseScreen),
     screen('/courses/$name/$course', CourseScreen),
     topic('/courses/$course/$topicId/$tab'),
     topic('/courses/$name/$course/$topicId/$tab'),
+    ...(site ? siteRoutes(root, settled(site)) : []),
   ]);
 
   const queryClient = new QueryClient({
@@ -99,7 +131,7 @@ export function createOpenApp() {
   return { router, element };
 }
 
-/** Renders the open site into `root`. */
-export function mountOpen(root: HTMLElement) {
-  createRoot(root).render(createOpenApp().element);
+/** Renders the open site into `root`, with the site's pages when a site gives them. */
+export function mountOpen(root: HTMLElement, site?: Site) {
+  createRoot(root).render(createOpenApp(site).element);
 }
