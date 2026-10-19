@@ -18,6 +18,9 @@ const slash = (path: string) => path.replaceAll('\\', '/');
 const file = (id: string) => slash(id.replace(/\?.*$/, ''));
 const MAIN = 'src="/src/main.tsx"';
 const ENTRY = 'src="/src/site-entry.gen.tsx"';
+/** What the entry mounts: the application, or at level 0 the open site's shell (open-site.md §6). */
+const MOUNT = { app: "{ mount } from './app'", open: "{ mountOpen as mount } from './open/app'" };
+export type Entry = keyof typeof MOUNT;
 /** The course folders of both modes, which move between the modes unchanged, and the overlay. */
 const HIDDEN = /^(courses|private|instructors\/[^/]+\/courses)(\/|$)/i;
 
@@ -56,7 +59,7 @@ export const webPlugins = (tmpDir: string) => [
  * Steps 1 and 2 of §6.4: the sources copied into `.parallax/app/` (in a packed tool only for a new
  * version), the page list with the props of §6.6, the entry that mounts the app, and `index.html`.
  */
-function prepare(site: Site, paths: Paths, pages: Page[]): void {
+function prepare(site: Site, paths: Paths, pages: Page[], entry: Entry): void {
   const { version } = JSON.parse(fs.readFileSync(join(packageRoot, 'package.json'), 'utf8'));
   const marker = join(paths.app, 'version');
   const packed = fs.existsSync(join(packageRoot, 'vendor'));
@@ -85,9 +88,9 @@ function prepare(site: Site, paths: Paths, pages: Page[]): void {
     `export const props = ${props}`,
   ];
   fs.writeFileSync(join(src, 'site-pages.gen.ts'), `${lines.join('\n')}\n`);
-  const entry = `import { mount } from './app';\nimport { pages, props } from './site-pages.gen';\n
+  const main = `import ${MOUNT[entry]};\nimport { pages, props } from './site-pages.gen';\n
 mount(document.getElementById('root') as HTMLElement, { pages, props });\n`;
-  fs.writeFileSync(join(src, 'site-entry.gen.tsx'), entry);
+  fs.writeFileSync(join(src, 'site-entry.gen.tsx'), main);
   const html = fs.readFileSync(join(sourceRoot('web'), 'index.html'), 'utf8');
   if (!html.includes(MAIN)) throw new Error(`index.html of the web sources has no ${MAIN}`);
   fs.writeFileSync(join(paths.web, 'index.html'), html.replace(MAIN, ENTRY));
@@ -191,9 +194,9 @@ function sitePlugin(paths: Paths, refused: string[]): Plugin {
 }
 
 /** The Vite configuration of the site, its pages found and the work tree prepared (§6.4). */
-export function viteConfig(site: Site, refused: string[] = []): InlineConfig {
+export function viteConfig(site: Site, refused: string[] = [], entry: Entry = 'app'): InlineConfig {
   const paths = buildPaths(site.root);
-  prepare(site, paths, findPages(paths.root));
+  prepare(site, paths, findPages(paths.root), entry);
   const cacheDir = join(paths.root, '.parallax/vite');
   const log = createLogger('warn');
   return {
@@ -213,9 +216,9 @@ export function viteConfig(site: Site, refused: string[] = []): InlineConfig {
 }
 
 /** Steps 1 to 3 of §6.4, the compile into `.parallax/dist`; a refusal stops it as one line. */
-export async function compile(site: Site): Promise<void> {
+export async function compile(site: Site, { entry = 'app' }: { entry?: Entry } = {}) {
   const refused: string[] = [];
-  const config = viteConfig(site, refused);
+  const config = viteConfig(site, refused, entry);
   // A site is always built for production; Vite sets this only where it is unset.
   const before = process.env.NODE_ENV;
   process.env.NODE_ENV = 'production';

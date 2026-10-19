@@ -8,7 +8,13 @@ import { findPages } from '../site/pages';
 import { buildCourse } from './course';
 import { assertSeparateHosts } from './origins';
 import { BuildStop, createOutput, type Output, placeOutput } from './output';
-import { LEVEL_0, type ShellCompiler } from './shell';
+
+/**
+ * Compiles the shell of a level 0 site and hands its files to `out.shell` (open-site.md §4, §6):
+ * `compileOpenShell` of `shell.ts`, which the command hands in, so the build itself loads no
+ * compiler.
+ */
+export type ShellCompiler = (site: Site, out: Output) => Promise<void>;
 
 const contracts = await loadSource<typeof import('@parallax/contracts')>(
   'contracts',
@@ -22,10 +28,10 @@ const fileOf = (address: string) => address.split('/').map(decodeURIComponent).j
 const say = (message: string) => {
   for (const line of message.split('\n')) console.error(shown(line));
 };
-/** A stop, and that `dist/` is as it was; P5-07's level 0 message stands alone, as it did. */
+/** A stop, and that `dist/` is as it was. */
 function stopped(message: string): number {
   say(message);
-  if (message !== LEVEL_0) console.error('parallax build: dist/ is as it was.');
+  console.error('parallax build: dist/ is as it was.');
   return 1;
 }
 
