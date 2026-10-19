@@ -1,0 +1,176 @@
+name: package-release
+
+# The npm packages and images of docs/design/site.md §2 under one version (§12, ADR-0001 Release).
+# A tag parallax-v<version> on main publishes them; a pull request that changes this file or what it
+# packs, and workflow_dispatch with dry_run (the default), build, pack and check but publish nothing.
+
+on:
+  push:
+    tags:
+      - parallax-v*
+  pull_request:
+    paths:
+      - .github/workflows/package-release.yml
+      - packages/cli/package.json
+      - packages/create-parallax-site/package.json
+      - packages/cli/scripts/**
+      - infra/docker/**
+      # The conversion closure that vendor.ts packs; package-release.test.ts compares the two.
+      - apps/server/src/content/**
+      - apps/server/src/execution/**
+      - apps/server/src/config.ts
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Build, pack and check only; publish nothing
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: package-release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  DRY_RUN: ${{ inputs.dry_run }}
+
+defaults:
+  run:
+    shell: bash # -eo pipefail: a command that fails in a pipe fails its step
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      publish: ${{ steps.release.outputs.publish }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Version and publish
+        id: release
+        run: |
+          pnpm exec tsx packages/cli/scripts/release.ts decide | tee -a "$GITHUB_OUTPUT"
+          mkdir -p "$RUNNER_TEMP/handover/images"
+      - name: The tag is on main
+        if: steps.release.outputs.publish == 'true'
+        run: git merge-base --is-ancestor "$GITHUB_SHA" origin/main
+      # The images first, from the revision as it is, before the manifests are stamped.
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/docker/server.Dockerfile
+          build-args: PARALLAX_VERSION=${{ steps.release.outputs.version }}
+          tags: ${{ steps.release.outputs.server_image }}
+          push: false
+          outputs: type=docker,dest=${{ runner.temp }}/handover/images/parallax-server.tar
+          cache-from: type=gha,scope=server
+          cache-to: type=gha,mode=max,scope=server
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: infra/docker/runner.Dockerfile
+          build-args: PARALLAX_VERSION=${{ steps.release.outputs.version }}
+          tags: ${{ steps.release.outputs.runner_image }}
+          push: false
+          outputs: type=docker,dest=${{ runner.temp }}/handover/images/parallax-runner.tar
+          cache-from: type=gha,scope=runner
+          cache-to: type=gha,mode=max,scope=runner
+      - name: Check the image archives
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+          SERVER: ${{ steps.release.outputs.server_image }}
+          RUNNER: ${{ steps.release.outputs.runner_image }}
+        run: |
+          set -x
+          for name in server runner; do docker load --input "$RUNNER_TEMP/handover/images/parallax-$name.tar"; done
+          label='{{ index .Config.Labels "org.opencontainers.image.version" }}'
+          test "$(docker inspect --format "$label" "$SERVER" "$RUNNER")" = "$VERSION"$'\n'"$VERSION"
+          test "$(docker run --rm --workdir /app/apps/server "$SERVER" node_modules/.bin/tsx \
+            --eval "import('./src/version.ts').then((m) => process.stdout.write(m.VERSION))")" = "$VERSION"
+          test "$(docker run --rm "$SERVER" stat --format %U /var/lib/parallax/storage)" = node
+      - name: Pack check, then stamp the version and the image namespace
+        run: |
+          pnpm exec vitest run --project unit packages/cli/src/pack.test.ts
+          pnpm exec tsx packages/cli/scripts/release.ts stamp
+      - name: Installed-package check, then the release manifest
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          bash packages/cli/scripts/packed-install.sh "$VERSION" "$RUNNER_TEMP/handover/release"
+          pnpm exec tsx packages/cli/scripts/release.ts manifest "$RUNNER_TEMP/handover"
+          cat "$RUNNER_TEMP/handover/release.json"
+      # Handed over on every run, so that a dry run checks what publish would push.
+      - uses: actions/upload-artifact@v4
+        with:
+          name: parallax-${{ steps.release.outputs.version }}
+          path: ${{ runner.temp }}/handover/
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: ${{ steps.release.outputs.publish == 'true' && 30 || 3 }}
+
+  # Builds and installs nothing: it pushes what build handed over, with the runner's own tools.
+  publish:
+    needs: build
+    if: needs.build.outputs.publish == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    env:
+      VERSION: ${{ needs.build.outputs.version }}
+    steps:
+      # Whether the secret is set, not its value: without it a tag stops before anything is pushed.
+      - name: The npm token is set
+        env:
+          NPM_TOKEN_SET: ${{ secrets.NPM_TOKEN != '' }}
+        run: test "$NPM_TOKEN_SET" = true
+      - uses: actions/download-artifact@v4
+        with:
+          name: parallax-${{ needs.build.outputs.version }}
+      - name: Check what build handed over against the release manifest
+        run: jq -r '(.packages[], .images[]) | "\(.sha256)  ./\(.file)"' release.json | sha256sum -c --strict
+      - name: Push the images
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          echo "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          for name in parallax-server parallax-runner; do
+            ref="$(jq -r --arg name "$name" '.images[$name].ref' release.json)"
+            docker load --input "./images/$name.tar"
+            docker push "$ref"
+            digest="$(docker inspect --format '{{ index .RepoDigests 0 }}' "$ref")"
+            [[ "${digest#*@}" =~ ^sha256:[0-9a-f]{64}$ ]]
+            jq --arg name "$name" --arg digest "${digest#*@}" '.images[$name].digest = $digest' \
+              release.json > "$RUNNER_TEMP/release.json"
+            mv "$RUNNER_TEMP/release.json" release.json
+          done
+          docker logout ghcr.io
+      - name: Publish the npm packages
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          # The file holds only the token's name; npm takes a path without ./ for a GitHub repo.
+          printf '//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}\n' > "$RUNNER_TEMP/npmrc"
+          tag=latest && if [[ "$VERSION" == *-* ]]; then tag=next; fi
+          for name in parallax-site create-parallax-site; do
+            npm publish "./release/$name-$VERSION.tgz" --userconfig "$RUNNER_TEMP/npmrc" \
+              --access public --tag "$tag" --ignore-scripts
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: parallax-release-${{ needs.build.outputs.version }}
+          path: release.json
