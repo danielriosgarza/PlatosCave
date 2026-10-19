@@ -4,7 +4,6 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterAll, beforeAll, expect, test } from 'vitest';
 import { main } from './main';
-import { LEVEL_0 } from './open/shell';
 import { buildUnderGuard, filesOf, printing, STAND_IN } from './open/testing';
 
 delete process.env.DATABASE_URL;
@@ -121,17 +120,17 @@ test('A43 parallax build at level 0 refuses a public tree that holds a definitio
     1,
     leaked.map((file) => `${reef}/${file}: ${held}`),
   ]);
-  // The command, which at level 0 would stop at noViewerYet, and the build with the stand-in,
-  // which would place the site: both stop at the refusal, before either.
+  // The command, which would compile the shell and place the site, and the build with the
+  // stand-in, which would place it: both stop at the refusal, before either.
   for (const run of [buildUnderGuard(root, { command: true }), buildUnderGuard(root)]) {
     const dist = [...run.files].filter(([path]) => path.startsWith('dist/'));
     const stop = [run.status, errors(run.stdout.split('\n')), run.refused, dist];
-    expect([...stop, run.stderr.includes(LEVEL_0)]).toEqual([
+    expect([...stop, run.stderr.includes('above; no site is written.')]).toEqual([
       1,
       errors(check.lines),
       [],
       [earlier],
-      false,
+      true,
     ]);
   }
 }, 300_000);

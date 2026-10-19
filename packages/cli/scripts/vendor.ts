@@ -58,7 +58,7 @@ function sources(root: string, at = ''): string[] {
 }
 
 /** The files of the server that the entries reach through relative imports and thread scripts. */
-function closure(server: string): string[] {
+export function closure(server: string): string[] {
   const isFile = (path: string) =>
     fs.statSync(join(server, path), { throwIfNoEntry: false })?.isFile() === true;
   const seen = new Set<string>();

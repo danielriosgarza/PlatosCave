@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
-import { sourceRoot } from '../paths';
+import { loadSource, sourceRoot } from '../paths';
 import { SiteProblems } from './load';
 
 /** A page of the site: its file from the site folder, written with `/`, and its address. */
@@ -8,6 +8,11 @@ export type Page = { file: string; path: string };
 
 /** The addresses the Parallax server answers itself (`apps/server/src/http/`), never a page's. */
 const SERVED = ['api', 'assets', 'content'];
+/** `/courses` and the addresses below it, kept at every level (docs/design/open-site.md §2). */
+const { OPEN_ADDRESSES } = await loadSource<typeof import('@parallax/contracts')>(
+  'contracts',
+  'src/index.ts',
+);
 const segments = (address: string) => address.split('/').filter(Boolean);
 
 /**
@@ -37,8 +42,9 @@ const screenAt = (parts: string[], screens: string[]) =>
  * The pages under `src/pages` and their addresses (docs/design/site.md §6.2): `index.tsx` is `/`,
  * `team/index.tsx` is `/team`; a name that starts with `_` is a helper. Throws `SiteProblems`, one
  * line each, for a Markdown file, a segment other than lower-case letters, digits and hyphens, two
- * files at one address, and a page at a screen's address (§6.3) other than `/` or under an address
- * the server answers itself, all before anything is written.
+ * files at one address, a page at a screen's address (§6.3) other than `/` or under an address
+ * the server answers itself, and one at an address of `OPEN_ADDRESSES`, at every level (open-site
+ * design §2), all before anything is written.
  */
 export function findPages(root: string, screens = screenAddresses()): Page[] {
   const dir = join(root, 'src/pages');
@@ -63,10 +69,15 @@ export function findPages(root: string, screens = screenAddresses()): Page[] {
     }
     const path = `/${parts.join('/')}`;
     const screen = path === '/' ? undefined : screenAt(parts, screens);
+    const kept = screenAt(parts, [...OPEN_ADDRESSES]);
     const at = `${file} would be at ${path}`;
     if (screen) {
       problems.push(
         `${at}, the address of the Parallax screen ${screen}. A site adds pages and cannot replace a Parallax screen: move or rename the page.`,
+      );
+    } else if (kept) {
+      problems.push(
+        `${at}, which matches ${kept}: Parallax keeps /courses and the addresses below it. Move or rename the page.`,
       );
     } else if (SERVED.includes(parts[0] ?? '')) {
       problems.push(`${at}, under /${parts[0]}, which the Parallax server answers itself.`);

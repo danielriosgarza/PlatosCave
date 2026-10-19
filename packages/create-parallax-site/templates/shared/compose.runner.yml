@@ -1,0 +1,34 @@
+# The runner of a level 2 site (docs/design/site.md §11), on a host of its own that you control,
+# never on the site's host: it holds the Docker socket, which is root-equivalent on its host
+# (docs/design/runner.md §10.1). Copy this file there with .parallax/runner/runner.env, which
+# `parallax env` writes on the site host, pull the images `parallax env` prints (nothing is
+# pulled at run time), and start it with the group id of the host's Docker socket:
+#
+#   DOCKER_GID=$(stat -c %g /var/run/docker.sock) \
+#     docker compose --env-file runner.env -f compose.runner.yml up -d
+#
+# runner.env holds the URL of the role parallax_runner, which may use schema pgboss_exec only,
+# and the sandbox images; no application secret reaches this host.
+
+services:
+  runner:
+    image: ${PARALLAX_RUNNER_IMAGE:?from runner.env, written by parallax env}
+    restart: unless-stopped
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    working_dir: /app/apps/runner
+    # Longer than the 70 s main.ts waits for running sandboxes (runner design §7.2), so a stop
+    # does not kill the runner mid-job and orphan its containers.
+    stop_grace_period: 80s
+    command: ["node_modules/.bin/tsx", "src/main.ts"]
+    group_add: ["${DOCKER_GID:?the group id of /var/run/docker.sock on this host}"]
+    # Exactly the variables the runner reads (apps/runner/src/config.ts).
+    environment:
+      RUNNER_DATABASE_URL: ${RUNNER_DATABASE_URL:?the URL of the role parallax_runner, from runner.env}
+      RUNNER_IMAGES: ${RUNNER_IMAGES:?from runner.env, written by parallax env}
+      RUNNER_SLOTS: ${RUNNER_SLOTS:-4}
+      RUNNER_PULL: never
+      RUNNER_DOCKER_RUNTIME: ${RUNNER_DOCKER_RUNTIME:-runsc}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    volumes: ["/var/run/docker.sock:/var/run/docker.sock"]
+    logging: { driver: json-file, options: { max-size: 20m, max-file: "5" } }
