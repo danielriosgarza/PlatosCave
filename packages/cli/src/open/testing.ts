@@ -14,30 +14,35 @@ export const moduleUrl = (file: string) => pathToFileURL(join(packageRoot, 'src'
  * docs/design/open-site.md §10, check 1) for one site: `site` is its folder and `courses` are its
  * course folders. The code is a file of its own, as worker threads inherit the child's options; it
  * loads TypeScript with tsx, as `bin/parallax.mjs` does, and has no `DATABASE_URL`. It gives the
- * exit status, the output, and each call the guard refused, in order: its name, the path it
- * named, and that path with its links resolved.
+ * exit status, why the child did not run or finish (the time limit, for one) if it did not, the
+ * output, and each call the guard refused, in order: its name, the path it named, and that path
+ * with its links resolved. Its folder under `node_modules/.cache` is removed in every case.
  */
 export function underGuard(places: { site: string; courses: string[] }, code: string) {
   // In the tool's node_modules, where `tsx` resolves and git looks at nothing.
   const cache = join(packageRoot, 'node_modules/.cache');
   fs.mkdirSync(cache, { recursive: true });
   const folder = fs.mkdtempSync(join(cache, 'guard-'));
-  const [log, script] = [join(folder, 'refused.jsonl'), join(folder, 'run.mjs')];
-  fs.writeFileSync(script, `import { register } from 'tsx/esm/api';\nregister();\n${code}`);
-  // A variable without a value is not passed on: neither DATABASE_URL nor a variable PG….
-  const env: NodeJS.ProcessEnv = { ...process.env, DATABASE_URL: undefined };
-  for (const name of Object.keys(env).filter((name) => name.startsWith('PG')))
-    env[name] = undefined;
-  env.PARALLAX_READ_GUARD = JSON.stringify({ ...places, log });
-  const guard = pathToFileURL(join(import.meta.dirname, 'read-guard.mjs')).href;
-  const options = { cwd: packageRoot, env, encoding: 'utf8', timeout: 240_000 } as const;
-  const run = spawnSync(process.execPath, ['--import', guard, script], options);
-  const lines = fs.existsSync(log) ? fs.readFileSync(log, 'utf8').split('\n') : [];
-  fs.rmSync(folder, { recursive: true, force: true });
-  const refused: { call: string; path: string; real: string }[] = lines
-    .filter(Boolean)
-    .map((line) => JSON.parse(line));
-  return { status: run.status, stdout: run.stdout, stderr: run.stderr, refused };
+  try {
+    const [log, script] = [join(folder, 'refused.jsonl'), join(folder, 'run.mjs')];
+    fs.writeFileSync(script, `import { register } from 'tsx/esm/api';\nregister();\n${code}`);
+    // A variable without a value is not passed on: neither DATABASE_URL nor a variable PG….
+    const env: NodeJS.ProcessEnv = { ...process.env, DATABASE_URL: undefined };
+    for (const name of Object.keys(env).filter((name) => name.startsWith('PG')))
+      env[name] = undefined;
+    env.PARALLAX_READ_GUARD = JSON.stringify({ ...places, log });
+    const guard = pathToFileURL(join(import.meta.dirname, 'read-guard.mjs')).href;
+    const options = { cwd: packageRoot, env, encoding: 'utf8', timeout: 240_000 } as const;
+    const run = spawnSync(process.execPath, ['--import', guard, script], options);
+    const lines = fs.existsSync(log) ? fs.readFileSync(log, 'utf8').split('\n') : [];
+    const refused: { call: string; path: string; real: string }[] = lines
+      .filter(Boolean)
+      .map((line) => JSON.parse(line));
+    const { status, error, stdout, stderr } = run;
+    return { status, error: error?.message, stdout, stderr, refused };
+  } finally {
+    fs.rmSync(folder, { recursive: true, force: true });
+  }
 }
 
 /** Every file below `dir`, by `prefix` and its path from `dir` with `/`; none if it is absent. */
@@ -70,7 +75,8 @@ export const STAND_IN = `async (site, out) => {
  * Builds the site at `root` at level 0 under the file-read guard, which guards its course folders
  * in either mode: `buildOpenSite` with `shell`, a `ShellCompiler`'s code that may use `fs`, `join`
  * and `root`, or with `command: true` the command `parallax build`. It gives what `underGuard` gives,
- * and every file of `.parallax/open/` and `dist/`, by its path from the site.
+ * the names of the database variables the child had (`DATABASE_URL`, `PG…`), and every file of
+ * `.parallax/open/` and `dist/`, by its path from the site.
  */
 export function buildUnderGuard(root: string, { shell = STAND_IN, command = false } = {}) {
   const listed = (dir: string) =>
@@ -81,18 +87,24 @@ export function buildUnderGuard(root: string, { shell = STAND_IN, command = fals
     ? `main(['build'], { cwd: root })`
     : `buildOpenSite(await loadSite(root), { shell: ${shell} })`;
   const at = (file: string) => JSON.stringify(moduleUrl(file));
-  const run = underGuard(
+  // The child's first line names its database variables, before the build prints anything.
+  const { stdout, ...run } = underGuard(
     { site: root, courses },
     `const [fs, { join }] = [await import('node:fs'), await import('node:path')];
+    const names = Object.keys(process.env).filter((name) => /^(DATABASE_URL$|PG)/.test(name));
+    console.log(JSON.stringify(names));
     const { main } = await import(${at('main.ts')});
     const { loadSite } = await import(${at('site/load.ts')});
     const { buildOpenSite } = await import(${at('open/build.ts')});
     const root = ${JSON.stringify(root)};
     process.exitCode = await ${build};`,
   );
+  const [names = '', ...lines] = stdout.split('\n');
   const files = new Map([
     ...filesOf(join(root, '.parallax/open'), '.parallax/open/'),
     ...filesOf(join(root, 'dist'), 'dist/'),
   ]);
-  return { ...run, files };
+  // None if the child stopped before it printed them.
+  const database: string[] | null = names.startsWith('[') ? JSON.parse(names) : null;
+  return { ...run, stdout: lines.join('\n'), database, files };
 }
