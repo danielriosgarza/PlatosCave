@@ -42,6 +42,26 @@ test('a page at /courses/intro stops the build at level 0 and at level 1 and nam
   }
 }, 120_000);
 
+test('a page that does not compile, or imports the overlay, stops a level 0 build without escapes', async () => {
+  const overlay = '../../private/courses/reef-ecology/sampling/exercises/estimate.yaml?raw';
+  const pages = [
+    ['broken.tsx', 'export default () => <div>;\n'],
+    ['leak.tsx', `import text from '${overlay}';\nexport default () => text;\n`],
+  ];
+  for (const [name = '', page = ''] of pages) {
+    // No course, so that nothing is converted before the shell is compiled.
+    const root = copy(name, 0);
+    fs.rmSync(join(root, 'courses'), { recursive: true });
+    for (const dir of ['courses', 'src/pages']) fs.mkdirSync(join(root, dir), { recursive: true });
+    fs.writeFileSync(join(root, 'src/pages', name), page);
+    const { result, lines } = await printing(() => main(['build'], { cwd: root }));
+    const stop = [result, lines.at(-1), fs.readdirSync(join(root, 'dist'))];
+    expect(stop).toEqual([1, 'parallax build: dist/ is as it was.', ['index.html']]);
+    const named = lines.some((line) => line.includes(name));
+    expect([named, lines.join().match(/\\u\{1b\}/)]).toEqual([true, null]);
+  }
+}, 300_000);
+
 test('parallax dev at level 0 stops and names parallax build and the two folders', async () => {
   const run = await printing(() => main(['dev'], { cwd: copy('dev', 0) }));
   expect(run).toEqual({ result: 1, lines: [LEVEL_0] });

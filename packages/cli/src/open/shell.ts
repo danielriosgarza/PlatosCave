@@ -1,5 +1,6 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
+import { stripVTControlCharacters } from 'node:util';
 import { buildPaths, compile } from '../build/web';
 import { SiteProblems } from '../site/load';
 import type { ShellCompiler } from './build';
@@ -16,9 +17,10 @@ export const compileOpenShell: ShellCompiler = async (site, out) => {
   try {
     await compile(site, { entry: 'open' });
   } catch (error) {
-    // A page's refusal is printed as at levels 1 and 2; any other failure stops the build.
-    if (error instanceof SiteProblems) throw error;
-    throw new BuildStop(`parallax build: ${(error as Error).message}`);
+    // A page's refusal, or Vite's message without its colours, as every stop of the build.
+    const { message } = error as Error;
+    const why = error instanceof SiteProblems ? message : `parallax build: ${message}`;
+    throw new BuildStop(stripVTControlCharacters(why));
   }
   const dir = buildPaths(site.root).out;
   for (const entry of readdirSync(dir, { recursive: true, withFileTypes: true })) {

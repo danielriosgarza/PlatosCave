@@ -82,15 +82,14 @@ async function walk(page: Page, keys: boolean) {
   await go(page.getByRole('tab', { name: 'Notebooks' }));
   await screen(page, panel.getByText('Stored output · Python 3').first());
   await expect(page.getByText('Saved outputs')).toBeVisible();
-  const natural = await panel
-    .locator('img')
-    .evaluateAll((all) =>
-      all.map((img) => [
-        new URL((img as HTMLImageElement).src).origin,
-        (img as HTMLImageElement).naturalWidth > 0,
-      ]),
-    );
-  expect(natural).toEqual(Array(natural.length).fill([CONTENT, true]));
+  // Its three images (an attachment, a PNG and an SVG output), each loaded from the content host.
+  const images = () =>
+    panel
+      .locator('img')
+      .evaluateAll((all: HTMLImageElement[]) =>
+        all.map((img) => [new URL(img.src).origin, img.complete && img.naturalWidth > 0]),
+      );
+  await expect.poll(images).toEqual(Array(3).fill([CONTENT, true]));
   const colab = page.getByRole('region', { name: 'Work in Colab' });
   await expect(colab.getByRole('link', { name: 'Open in Colab' })).toBeVisible();
   const download = colab.getByRole('link', { name: 'Download notebook without outputs' });
