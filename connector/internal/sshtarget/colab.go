@@ -70,7 +70,7 @@ func (c *Colab) dial(context.Context) (*proxyConn, error) {
 	errR, errW, err3 := os.Pipe()
 	cmd := &exec.Cmd{Path: path, Args: append([]string{colabProgram}, colabArgs[:]...), Env: colabEnviron(), Dir: home,
 		Stdin: inR, Stdout: outW, Stderr: errW}
-	p := &proxyConn{r: outR, w: inW, cmd: cmd, exited: make(chan struct{})}
+	p := &proxyConn{r: outR, w: inW, cmd: cmd, exited: make(chan struct{}), signalGroup: signalGroup}
 	if err = errors.Join(err1, err2, err3); err == nil {
 		err = startProxy(cmd, func() { p.signal(syscall.SIGKILL, true); close(p.exited) })
 	}
@@ -106,7 +106,8 @@ func drain(r *os.File) {
 }
 
 // failed is a run that sent no SSH banner: once the program has ended (closing the run ends it),
-// the connector logs and reports its own line with the exit status, and nothing the program wrote.
+// the connector logs and reports its own line with the exit status, or without one when its own
+// signal ended the program, and nothing the program wrote.
 func (c *Colab) failed(ctx context.Context, p *proxyConn) error {
 	p.Close()
 	select {
@@ -114,7 +115,13 @@ func (c *Colab) failed(ctx context.Context, p *proxyConn) error {
 	case <-ctx.Done():
 		return ctx.Err()
 	}
+	p.mu.Lock()
+	ended := p.ended
+	p.mu.Unlock()
 	line := "the colab program ended with " + p.cmd.ProcessState.String() + " before a Colab runtime answered"
+	if ended {
+		line = "the colab program did not answer as an SSH server, and the connector ended it"
+	}
 	if c.Log != nil {
 		c.Log(line)
 	}
@@ -127,8 +134,11 @@ type proxyConn struct {
 	cmd    *exec.Cmd
 	exited chan struct{}
 	once   sync.Once
-	mu     sync.Mutex // the group is signalled, and reaped set, under mu
+	mu     sync.Mutex // the group is signalled, and reaped and ended set, under mu
 	reaped bool
+	ended  bool // the connector signalled the program before it exited
+	// signalGroup signals the group pid leads: the package's, or a test's for this run only.
+	signalGroup func(pid int, sig syscall.Signal)
 }
 
 func (p *proxyConn) Read(b []byte) (int, error)  { return p.r.Read(b) }
@@ -140,7 +150,8 @@ func (p *proxyConn) signal(sig syscall.Signal, last bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if !p.reaped {
-		signalGroup(p.cmd.Process.Pid, sig)
+		p.signalGroup(p.cmd.Process.Pid, sig)
+		p.ended = p.ended || !last
 	}
 	p.reaped = p.reaped || last
 }

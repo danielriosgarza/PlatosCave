@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"syscall"
@@ -35,18 +37,39 @@ const blocked = " ssh_auth=skipped workspace=skipped forwarding=skipped"
 // groupGone waits until no process is left in the process group a run of the program led.
 func groupGone(t *testing.T, pid int) {
 	t.Helper()
-	for deadline := time.Now().Add(10 * time.Second); syscall.Kill(-pid, 0) == nil; time.Sleep(20 * time.Millisecond) {
+	for deadline := time.Now().Add(10 * time.Second); groupRuns(pid); time.Sleep(20 * time.Millisecond) {
 		if time.Now().After(deadline) {
 			t.Fatalf("a process of the group of the colab program %d is still running", pid)
 		}
 	}
 }
 
-// leaked returns what holds a byte of the program's output or a control character.
+// groupRuns reports whether a process of group pgid runs. A zombie is not counted: where pid 1
+// does not reap (a container without --init) one stays in the group after SIGKILL. Without /proc
+// (macOS) kill's answer stands.
+func groupRuns(pgid int) bool {
+	stats, _ := filepath.Glob("/proc/[0-9]*/stat")
+	if syscall.Kill(-pgid, 0) != nil {
+		return false
+	} else if len(stats) == 0 {
+		return true
+	}
+	for _, f := range stats {
+		data, _ := os.ReadFile(f) // pid (comm) state ppid pgrp …; comm may hold ") "
+		fields := strings.Fields(string(data[strings.LastIndexByte(string(data), ')')+1:]))
+		if len(fields) > 2 && fields[2] == strconv.Itoa(pgid) && fields[0] != "Z" {
+			return true
+		}
+	}
+	return false
+}
+
+// leaked returns what holds a byte of the program's output or a control character, also as
+// encoded writes one (\u0000 to \u001f; json.Marshal also writes < for <, which is not one).
 func leaked(said []string) []string {
 	var out []string
 	for _, s := range said {
-		if strings.ContainsFunc(s, unicode.IsControl) || slices.ContainsFunc(append(colabSecrets, "colab-noise", "SECRET", "QX7K", `\u00`),
+		if strings.ContainsFunc(s, unicode.IsControl) || slices.ContainsFunc(append(colabSecrets, "colab-noise", "SECRET", "QX7K", `\u000`, `\u001`),
 			func(x string) bool { return strings.Contains(s, x) }) {
 			out = append(out, s)
 		}
@@ -60,7 +83,8 @@ func encoded(v any) string {
 }
 
 // TestColabProgramMissing: a program not on PATH, or only through a relative entry, is never run
-// and is colab_missing; without Colab the target is unsupported.
+// and is colab_missing; without Colab the target is unsupported; without a home directory the
+// program is not started.
 func TestColabProgramMissing(t *testing.T) {
 	f := newFixture(t)
 	req := &protocol.TestConnection{RequestID: requestID, Runtime: protocol.Runtime{Mode: protocol.RuntimeStart},
@@ -87,6 +111,15 @@ func TestColabProgramMissing(t *testing.T) {
 			t.Errorf("%s ran", p)
 		}
 	}
+	h, _, records := newColabHost(t, "")
+	t.Setenv("HOME", "")
+	os.Unsetenv("HOME")
+	res := h.f.check(&protocol.TestConnection{RequestID: requestID, Target: h.colab(), Runtime: h.start()})
+	detail := res.stage(t, "reachability").Detail
+	if res.statuses() != "reachability=failed:colab_proxy_failed host_identity=skipped"+blocked ||
+		detail != "the colab program was not started: the connector's account has no home directory" || len(colabRuns(t, records)) != 0 {
+		t.Errorf("HOME unset: %s, %q, %d runs", res.statuses(), detail, len(colabRuns(t, records)))
+	}
 }
 
 // TestColabProgramEndsBeforeABanner: a program that floods standard error and exits 3 is
@@ -108,6 +141,20 @@ func TestColabProgramEndsBeforeABanner(t *testing.T) {
 	}
 	if got := leaked(append(logged, encoded(progress), encoded(res))); len(got) != 0 {
 		t.Errorf("the program's output reached %q", got)
+	}
+	groupGone(t, colabRuns(t, records)[0].PID)
+}
+
+// TestColabProgramEndedByTheConnectorIsNamedSo: a program that answers with no SSH 2 banner and
+// stays is ended by the connector, and the one line about it says so, with no status.
+func TestColabProgramEndedByTheConnectorIsNamedSo(t *testing.T) {
+	h, _, records := newColabHost(t, "stuck")
+	run := &lines{}
+	h.f.tg.Colab.Log = run.add
+	res := h.f.check(&protocol.TestConnection{RequestID: requestID, Target: h.colab(), Runtime: h.start()})
+	line := "the colab program did not answer as an SSH server, and the connector ended it"
+	if st := res.stage(t, "reachability"); st.Code != protocol.CodeColabProxyFailed || st.Detail != line || !slices.Equal(run.all(), []string{line}) {
+		t.Errorf("reachability %+v, logged %q", st, run.all())
 	}
 	groupGone(t, colabRuns(t, records)[0].PID)
 }
@@ -137,7 +184,8 @@ func TestColabChangedKeyIsAHardStop(t *testing.T) {
 		t.Fatalf("another key: %s\n%s", got, h.f.knownHosts())
 	}
 	req.Confirmations = []protocol.Confirmation{{Host: protocol.ColabHost, Port: protocol.ColabPort, SHA256: fingerprint(hostKey), Replacing: fingerprint(old)}}
-	if res := h.f.check(req); res.conn == nil || !strings.Contains(h.f.knownHosts(), " "+fingerprint(old)+" colab.invalid ") {
+	if res := h.f.check(req); res.conn == nil || !strings.Contains(h.f.knownHosts(), "# replaced ") ||
+		!strings.Contains(h.f.knownHosts(), " "+fingerprint(old)+" colab.invalid ") {
 		t.Fatalf("replaced: %s\n%s", res.statuses(), h.f.knownHosts())
 	}
 }
@@ -211,8 +259,8 @@ func TestColabProgramEndsWithTheSession(t *testing.T) {
 	}
 }
 
-// TestColabCloseAfterTheProgramEndedSignalsNothing: a Close after the program has ended never
-// signals its group's id, which another group may by then have taken.
+// TestColabCloseAfterTheProgramEndedSignalsNothing: once the program has ended, neither a signal
+// nor Close reaches its group's id, which another group may by then have taken.
 func TestColabCloseAfterTheProgramEndedSignalsNothing(t *testing.T) {
 	newColabHost(t, "exit")
 	p, err := (&Colab{}).dial(t.Context())
@@ -221,9 +269,8 @@ func TestColabCloseAfterTheProgramEndedSignalsNothing(t *testing.T) {
 	}
 	<-p.exited
 	var hit atomic.Bool
-	real := signalGroup
-	signalGroup = func(pid int, _ syscall.Signal) { hit.CompareAndSwap(false, pid == p.cmd.Process.Pid) }
-	t.Cleanup(func() { signalGroup = real })
+	p.signalGroup = func(int, syscall.Signal) { hit.Store(true) } // this run's only
+	p.signal(syscall.SIGTERM, false)
 	p.Close()
 	if time.Sleep(1500 * time.Millisecond); hit.Load() {
 		t.Error("Close signalled the group of a program that had ended")
@@ -258,9 +305,11 @@ func TestColabLossIsHostUnreachable(t *testing.T) {
 }
 
 // TestColabOrphanSweptThroughTheProgram: SweepOrphan of a colab session stops the marked server
-// through a new run of the program, which then ends.
+// through a new run of the program; a sweep whose run fails logs nothing, and every run ends.
 func TestColabOrphanSweptThroughTheProgram(t *testing.T) {
 	h, _, records := newColabHost(t, "")
+	run := &lines{}
+	h.f.tg.Colab.Log = run.add
 	t.Setenv(jupytertest.EnvMode, "stubborn")
 	rt, err := h.r.Open(t.Context(), &protocol.OpenSession{RequestID: requestID, SessionID: sessionID, Target: h.colab(), Runtime: h.start(),
 		Lease: protocol.Lease{IdleTimeoutMin: 30, GracePeriodMin: 5}})
@@ -277,11 +326,22 @@ func TestColabOrphanSweptThroughTheProgram(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitGone(t, pid)
+	said := len(h.logs.all()) + len(*h.f.logs)
+	path, _ := exec.LookPath(colabProgram) // the next run ends before a banner
+	stub := filepath.Join(filepath.Dir(path), "colab-stub.json")
+	data, err := os.ReadFile(stub)
+	if err != nil || os.WriteFile(stub, []byte(strings.Replace(string(data), `"mode":""`, `"mode":"exit"`, 1)), 0o600) != nil {
+		t.Fatal(err)
+	}
+	err = h.r.SweepOrphan(t.Context(), h.colab(), sessionID, pid, times)
+	if err == nil || len(run.all()) != 0 || len(h.logs.all())+len(*h.f.logs) != said {
+		t.Errorf("a sweep whose run failed: %v, logged %q %q %q", err, run.all(), h.logs.all(), *h.f.logs)
+	}
 	runs := colabRuns(t, records)
-	if len(runs) != 2 {
-		t.Fatalf("%d runs of the program, want the session's and the sweep's", len(runs))
+	if len(runs) != 3 {
+		t.Fatalf("%d runs of the program, want the session's and two sweeps'", len(runs))
 	}
 	for _, r := range runs {
-		groupGone(t, r.PID)
+		groupGone(t, r.PID) // its leader ended, after which the group got SIGKILL
 	}
 }

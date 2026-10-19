@@ -91,11 +91,12 @@ func (t *Target) promptDeadline() time.Duration {
 }
 
 // Check runs reachability, host_identity, ssh_auth, workspace and forwarding on s for an `ssh`
-// target and returns the open connection when every one passed; the caller closes it. On a jump
-// route each of the first three stages covers both hops within one deadline: the jump host is
-// reached, identified and authenticated before the target can be reached through it, and a stage
-// is reported once its last hop is done or a hop stopped the route. It creates nothing on the
-// host and changes no record except a host key the decision table trusts.
+// or `colab` target (whose one hop is a run of the colab program, design §5.7) and returns the
+// open connection when every one passed; the caller closes it. On a jump route each of the first
+// three stages covers both hops within one deadline: the jump host is reached, identified and
+// authenticated before the target can be reached through it, and a stage is reported once its
+// last hop is done or a hop stopped the route. It creates nothing on the host and changes no
+// record except a host key the decision table trusts.
 func (t *Target) Check(ctx context.Context, req *protocol.TestConnection, s *target.Stages) *Conn {
 	c := &checker{t: t, req: req, s: s}
 	c.reach = newBudget("reachability", t.deadline(s, "reachability"))
@@ -515,9 +516,9 @@ func validPath(p string) bool {
 	return true
 }
 
-// Connect reaches, identifies and authenticates every hop of an `ssh` target, as the first three
-// stages of Check do, and nothing more: the reconnect of design §5.5 and the orphan sweep of §6
-// use it. A refusal is the *target.Failure of the stage that stopped the route.
+// Connect reaches, identifies and authenticates every hop of an `ssh` or `colab` target, as the
+// first three stages of Check do, and nothing more: the reconnect of design §5.5 and the orphan
+// sweep of §6 use it. A refusal is the *target.Failure of the stage that stopped the route.
 func (t *Target) Connect(ctx context.Context, req *protocol.TestConnection) (*Conn, error) {
 	s := &target.Stages{}
 	c := &checker{t: t, req: req, s: s}
