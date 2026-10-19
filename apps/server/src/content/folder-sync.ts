@@ -17,9 +17,9 @@ import { courseObjectId } from '../db/storage/objects';
 import { uniqueViolation } from '../db/unique';
 import { storeCourseObject } from '../storage/objects';
 import type { Body, Storage } from '../storage/storage';
-import { folderRowId } from './folder-ids';
+import { folderRowId, isFolderRow } from './folder-ids';
 import { BundleMismatch, checkedFile, notebookWithData } from './folder-input';
-import { planSync, type SyncStep } from './folder-plan';
+import { planSync, type SyncPlan, type SyncStep } from './folder-plan';
 import { convertAndPublish, type PublishDeps } from './publish-drafts';
 
 /**
@@ -56,6 +56,7 @@ const REFUSED_COURSE = {
   archived: 'the course is archived',
 };
 const AGAIN = 'run sync again';
+const CHANGED = 'another save or sync changed this draft first';
 const NO_ACCOUNT = 'no active account has this address; that person signs in once first';
 
 /**
@@ -147,6 +148,22 @@ async function write(db: Db, scope: CourseScope, step: SyncStep, at: Date) {
   }
 }
 
+/** The counts the report gives once every step of the plan is written (§10). */
+function counts(plan: SyncPlan, manifest: CourseManifest): string {
+  const n = { created: 0, revised: 0, moved: 0, changed: 0, archived: 0 };
+  for (const { op, input } of plan.steps) {
+    if (op === 'createTopic' || op === 'createResource') n.created += 1;
+    else if ('archived' in input && input.archived) n.archived += 1;
+    else if ('content' in input) n.revised += 1;
+    else if ('topicId' in input || 'position' in input) n.moved += 1;
+    else n.changed += 1;
+  }
+  const listed = manifest.topics.reduce((sum, topic) => sum + 1 + topic.resources.length, 0);
+  const same = listed - n.created - n.revised - n.moved - n.changed;
+  const { created, revised, moved, changed, archived } = n;
+  return `created ${created}, new revisions ${revised}, moved ${moved}, fields changed ${changed}, archived ${archived}, unchanged ${same}, editor only ${plan.editorOnly}`;
+}
+
 export async function syncCourse(
   deps: SyncDeps,
   header: SyncHeader,
@@ -154,7 +171,12 @@ export async function syncCourse(
 ): Promise<SyncResult> {
   const { db, instructorEmails } = deps;
   const { manifest, course: folder, instructor } = header;
-  const stop = (code: SyncResult['code'], ...report: string[]): SyncResult => ({ code, report });
+  /** What the run has done so far, which every stop prints before its own lines. */
+  const report: string[] = [];
+  const stop = (code: SyncResult['code'], ...lines: string[]): SyncResult => ({
+    code,
+    report: [...report, ...lines],
+  });
   const malformed = bundleProblem(manifest);
   if (malformed) return stop(2, malformed);
 
@@ -164,6 +186,7 @@ export async function syncCourse(
   const course = await sync.ensureFolderCourse(db, owner, folder, manifest.title, instructorEmails);
   if (!course.ok) return stop(1, `${instructor.path}: ${folder}: ${REFUSED_COURSE[course.reason]}`);
   const { scope } = course;
+  if (course.created) report.push(`created course ${folder}`);
 
   // 3. Objects.
   let stored: Map<string, StoredFile>;
@@ -186,30 +209,43 @@ export async function syncCourse(
   if (refused.length > 0) return stop(1, ...refused);
 
   // 6. Drafts, each with its row's expected revision, and the fingerprint publication checks.
-  const pathOf = new Map(
-    entries.map((e) => [folderRowId(scope.courseId, 'resource', e.id), e.path]),
-  );
+  // A row by the name the folder gives it, or, once no longer listed, by the path its head
+  // recorded or its topic's title.
+  const row = (kind: 'topic' | 'resource', id: string) => folderRowId(scope.courseId, kind, id);
+  const names = new Map<string, string>();
+  for (const t of state.topics) if (isFolderRow(t.id)) names.set(t.id, `topic "${t.title}"`);
+  for (const { id, head } of state.resources) {
+    if (head?.provenance?.path) names.set(id, String(head.provenance.path));
+  }
+  for (const topic of manifest.topics) names.set(row('topic', topic.id), `topic ${topic.id}`);
+  for (const e of entries) names.set(row('resource', e.id), e.path);
   const at = new Date();
-  for (const step of plan.steps) {
+  for (const [done, step] of plan.steps.entries()) {
     const outcome = await write(db, scope, step, at);
     if (outcome.ok) continue;
-    const where = pathOf.get(step.id) ?? step.id;
-    if (outcome.reason === 'invalid') return stop(1, `${where}: ${outcome.message}`);
-    return stop(3, `${where}: another save or sync changed this draft first; ${AGAIN}`);
+    const where = names.get(step.id) ?? step.id;
+    // The draft services also check what the plan does not (a Shiny address, an exercise).
+    const written = `${done} of ${plan.steps.length} draft changes were written; the next sync goes on from them`;
+    const left = done > 0 ? [written] : [];
+    if (outcome.reason === 'invalid') return stop(1, `${where}: ${outcome.message}`, ...left);
+    const why = outcome.reason === 'not_found' ? 'this draft is gone' : CHANGED;
+    return stop(3, `${where}: ${why}; ${AGAIN}`, ...left);
   }
   const fingerprint = await sync.draftFingerprint(db, scope);
-  const report = course.created ? [`created course ${folder}`] : [];
+  report.push(counts(plan, manifest));
+  for (const r of plan.replaced)
+    report.push(`${r.path}: ${r.id} replaces ${r.earlier}, which is archived`);
 
   // 7 and 8. Conversion and publication.
   const issues = (validation: ValidationReport) =>
     (['errors', 'warnings'] as const).flatMap((kind) =>
-      validation[kind].map(({ code, message, resourceId }) => {
-        const path = resourceId && pathOf.get(resourceId);
+      validation[kind].map(({ code, message, resourceId, topicId }) => {
+        const path = names.get(resourceId ?? topicId ?? '');
         return `${kind.slice(0, -1)} ${code}: ${message}${path ? ` (${path})` : ''}`;
       }),
     );
   const withReport = (code: SyncResult['code'], line: string, validation: ValidationReport) => ({
-    ...stop(code, ...report, line, ...issues(validation)),
+    ...stop(code, line, ...issues(validation)),
     validation,
   });
   const result = await convertAndPublish(deps, scope, fingerprint);
@@ -217,9 +253,9 @@ export async function syncCourse(
     case 'published':
       return withReport(0, `release ${result.release.version} published`, result.report);
     case 'unchanged':
-      return stop(0, ...report, 'nothing to publish: the drafts equal the newest release');
+      return stop(0, 'nothing to publish: the drafts equal the newest release');
     case 'conflict':
-      return stop(3, ...report, `not published: a draft changed while sync waited; ${AGAIN}`);
+      return stop(3, `not published: a draft changed while sync waited; ${AGAIN}`);
     case 'blocked':
       return withReport(1, 'not published', result.report);
     case 'unfinished': {
