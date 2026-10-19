@@ -722,7 +722,8 @@ Names are the contract: a PR keeps the names it is given here (Go: `TestA30_…`
 - **P3-11** the fixtures and flows of §15, `A27`–`A31` e2e, the weekly matrix.
 - **P5-20** `TestA48_ColabRuntimeRunsACellThroughTheProxy`, `TestColabCommandNeverFromServer`; the colab fixtures in `TestSchemaFixtures` and `connector.test.ts`.
 - **P5-20a** `TestColabProgramMissing`, `TestColabProgramEndsBeforeABanner`, `TestColabProgramThatNeverAnswersIsEnded`, `TestColabChangedKeyIsAHardStop`, `TestColabProgramRunsAloneAndEndsWithItsConnection`, `TestColabProgramEndsWithTheSession`, `TestColabLossIsHostUnreachable`, `TestColabOrphanSweptThroughTheProgram`, `TestRunOffersColabOnLinuxAndMacOSOnly`, `TestDescribeColabSession`, `TestSessionsFileKeepsColabRecords`.
-- **P5-21** `a48-colab-target.test.tsx` (`A48 the Connect panel offers Colab over SSH …`, `A48 a Colab connection is saved …`, `a Colab connection's summary names the Colab runtime and its account …`), `a48-colab-connection.itest.ts` (`A48 a Colab connection is tested and opened only through …`), `relay/targets.test.ts`, the `hopEndpoints` cases of `connector.test.ts`.
+- **P5-21** `a48-colab-connection.itest.ts` (`A48 a Colab connection is tested and opened only through …`), `relay/targets.test.ts`, the `hopEndpoints` cases of `connector.test.ts`.
+- **P5-21a** `a48-colab-target.test.tsx` (`A48 the Connect panel offers Colab over SSH …`, `A48 a Colab connection is saved …`, `the Windows connector does not offer Colab over SSH …`, `a Colab connection's summary names the Colab runtime and its account …`, `a Colab session shows Ready only once its kernel is idle`).
 
 ## 17. Decisions and deviations from ADR-0005
 
