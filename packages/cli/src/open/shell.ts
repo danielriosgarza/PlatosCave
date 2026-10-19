@@ -1,17 +1,29 @@
-import type { Site } from '../site/load';
-import { BuildStop, type Output } from './output';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join, relative } from 'node:path';
+import { buildPaths, compile } from '../build/web';
+import { SiteProblems } from '../site/load';
+import type { ShellCompiler } from './build';
+import { BuildStop } from './output';
 
-/** Compiles the shell of a level 0 site and hands its files to `out.shell` (open-site.md §4, §6). */
-export type ShellCompiler = (site: Site, out: Output) => Promise<void>;
-
-/** The level 0 stop of P5-07 (docs/design/site.md §5), which `parallax dev` gives as well. */
-export const LEVEL_0 = 'parallax: a level 0 site cannot be built or served by this version yet.';
+export type { ShellCompiler };
 
 /**
- * The shell of this version: there is no viewer yet (docs/design/open-site.md §10), so a level 0
- * build checks and converts every course and then stops here, before anything is placed. P5-16a
- * puts `compileOpenShell` in its place.
+ * The shell of a level 0 site (docs/design/open-site.md §6): the compile of `build/web.ts` with the
+ * entry `open`, the site's pages and its read check included, and every file it wrote handed to
+ * `out.shell` as it is. Nothing is added to `index.html`, which carries no content security policy.
  */
-export const noViewerYet: ShellCompiler = async () => {
-  throw new BuildStop(LEVEL_0);
+export const compileOpenShell: ShellCompiler = async (site, out) => {
+  try {
+    await compile(site, { entry: 'open' });
+  } catch (error) {
+    // A page's refusal is printed as at levels 1 and 2; any other failure stops the build.
+    if (error instanceof SiteProblems) throw error;
+    throw new BuildStop(`parallax build: ${(error as Error).message}`);
+  }
+  const dir = buildPaths(site.root).out;
+  for (const entry of readdirSync(dir, { recursive: true, withFileTypes: true })) {
+    if (!entry.isFile()) continue;
+    const file = join(entry.parentPath, entry.name);
+    out.shell(relative(dir, file).replaceAll('\\', '/'), readFileSync(file));
+  }
 };
