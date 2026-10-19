@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
@@ -167,5 +168,24 @@ func TestColabProgramEndsWithTheSession(t *testing.T) {
 	}
 	if got := leaked(append(append(said, h.logs.all()...), *h.f.logs...)); len(got) != 0 {
 		t.Errorf("the program's output reached %q", got)
+	}
+}
+
+// TestColabCloseAfterTheProgramEndedSignalsNothing: a Close after the program has ended never
+// signals its group's id, which another group may by then have taken.
+func TestColabCloseAfterTheProgramEndedSignalsNothing(t *testing.T) {
+	newColabHost(t, "exit")
+	p, err := (&Colab{}).dial(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-p.exited
+	var hit atomic.Bool
+	real := signalGroup
+	signalGroup = func(pid int, _ syscall.Signal) { hit.CompareAndSwap(false, pid == p.cmd.Process.Pid) }
+	t.Cleanup(func() { signalGroup = real })
+	p.Close()
+	if time.Sleep(1500 * time.Millisecond); hit.Load() {
+		t.Error("Close signalled the group of a program that had ended")
 	}
 }

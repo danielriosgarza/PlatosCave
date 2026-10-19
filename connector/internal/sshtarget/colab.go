@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sync"
+	"syscall"
 	"time"
 
 	"parallax/connector/internal/protocol"
@@ -68,7 +69,7 @@ func (c *Colab) dial(context.Context) (*proxyConn, error) {
 		Stdin: inR, Stdout: outW, Stderr: errW}
 	p := &proxyConn{r: outR, w: inW, cmd: cmd, exited: make(chan struct{})}
 	if err = errors.Join(err1, err2, err3); err == nil {
-		err = startProxy(cmd, p.exited)
+		err = startProxy(cmd, func() { p.signal(syscall.SIGKILL, true); close(p.exited) })
 	}
 	inR.Close() // a nil *os.File's Close is harmless
 	outW.Close()
@@ -123,23 +124,39 @@ type proxyConn struct {
 	cmd    *exec.Cmd
 	exited chan struct{}
 	once   sync.Once
+	mu     sync.Mutex // the group is signalled, and reaped set, under mu
+	reaped bool
 }
 
 func (p *proxyConn) Read(b []byte) (int, error)  { return p.r.Read(b) }
 func (p *proxyConn) Write(b []byte) (int, error) { return p.w.Write(b) }
 
-// Close closes both pipes, which ends the program's connection. Once the program has exited, or
-// 2 s later if it has not, its process group is ended, so nothing it started outlives the run.
+// signal sends sig to the program's group until its leader's end (last) is recorded; at that end
+// what is left of the group is killed, before its id can be reused, and never signalled again.
+func (p *proxyConn) signal(sig syscall.Signal, last bool) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if !p.reaped {
+		signalGroup(p.cmd.Process.Pid, sig)
+	}
+	p.reaped = p.reaped || last
+}
+
+// Close closes both pipes, which ends the program's connection. If the program has not exited
+// 2 s later, its group gets SIGTERM and 1 s after that SIGKILL (signal ends one that exits).
 func (p *proxyConn) Close() error {
 	p.once.Do(func() {
 		p.w.Close()
 		p.r.Close()
 		go func() {
-			select {
-			case <-p.exited:
-			case <-time.After(2 * time.Second):
+			for i, sig := range []syscall.Signal{syscall.SIGTERM, syscall.SIGKILL} {
+				select {
+				case <-p.exited:
+					return
+				case <-time.After(time.Duration(2-i) * time.Second):
+					p.signal(sig, false)
+				}
 			}
-			endProxy(p.cmd.Process)
 		}()
 	})
 	return nil

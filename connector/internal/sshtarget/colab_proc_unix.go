@@ -2,14 +2,7 @@
 
 package sshtarget
 
-import (
-	"os"
-	"syscall"
-	"time"
-)
+import "syscall"
 
-// endProxy ends the process group the colab program leads: SIGTERM, then SIGKILL 1 s later.
-func endProxy(p *os.Process) {
-	syscall.Kill(-p.Pid, syscall.SIGTERM)
-	time.AfterFunc(time.Second, func() { syscall.Kill(-p.Pid, syscall.SIGKILL) })
-}
+// signalGroup signals the process group that pid leads; a test may replace it to see the signals.
+var signalGroup = func(pid int, sig syscall.Signal) { syscall.Kill(-pid, sig) }
