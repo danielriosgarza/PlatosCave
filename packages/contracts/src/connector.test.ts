@@ -168,6 +168,8 @@ describe('connector protocol v1 link examples', () => {
     's2c-open_session-python-dotdot.json': 5,
     's2c-test_connection-colab-confirmation-other-host.json': 7,
     's2c-test_connection-colab-hostkey-other-host.json': 6,
+    's2c-test_connection-colab-keypath-relative.json': 4,
+    's2c-test_connection-colab-workspace-dotdot.json': 3,
     's2c-test_connection-confirmation-replacing-itself.json': 7,
     's2c-test_connection-host-decimal-ip.json': 1,
     's2c-test_connection-host-hex-ip-upper.json': 1,

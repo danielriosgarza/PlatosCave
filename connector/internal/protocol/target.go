@@ -97,7 +97,7 @@ func TargetViolations(t Target, rt Runtime, confirmations []Confirmation) []*Tar
 		}
 	}
 
-	// Rule 5: the interpreter path, and `login` for ssh only.
+	// Rule 5: the interpreter path, and `login` for ssh and colab only.
 	if rt.Mode == RuntimeStart {
 		if rt.Python != "" {
 			if !isAbsolute(rt.Python, t.Kind == TargetLocal) && !strings.HasPrefix(rt.Python, "~/") {
@@ -107,7 +107,7 @@ func TargetViolations(t Target, rt Runtime, confirmations []Confirmation) []*Tar
 			}
 		}
 		if rt.Login != nil && !ssh && !colab {
-			add(5, "runtime.login", "applies to ssh targets only")
+			add(5, "runtime.login", "applies to ssh and colab targets only")
 		}
 	}
 

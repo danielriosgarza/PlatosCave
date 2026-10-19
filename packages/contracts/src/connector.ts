@@ -910,7 +910,7 @@ export function validateTarget(input: {
       issues.push({
         rule: 5,
         path: ['runtime', 'login'],
-        message: 'login applies to ssh targets only',
+        message: 'login applies to ssh and colab targets only',
       });
     }
   }

@@ -196,6 +196,11 @@ func (r *Remote) SweepOrphan(ctx context.Context, t protocol.Target, sessionID s
 	quiet := *r.SSH
 	quiet.TTY, quiet.Terminal = false, nil
 	quiet.Log = nil
+	if quiet.Colab != nil { // nor does the colab program's line about a run that failed
+		c := *quiet.Colab
+		c.Log = nil
+		quiet.Colab = &c
+	}
 	conn, err := quiet.Connect(ctx, &protocol.TestConnection{RequestID: sessionID, Target: t, Runtime: protocol.Runtime{Mode: protocol.RuntimeStart}})
 	if err != nil {
 		return err

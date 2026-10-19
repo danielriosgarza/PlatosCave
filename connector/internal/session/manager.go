@@ -298,7 +298,7 @@ func describe(req *protocol.OpenSession) string {
 	case protocol.TargetManaged:
 		where = fmt.Sprintf("managed target %s for subject %s", req.Target.TargetID, req.Target.Subject)
 	case protocol.TargetColab:
-		where = fmt.Sprintf("the Colab runtime as %s in %s", req.Target.User, req.Target.Workspace)
+		where = fmt.Sprintf("%s as %s in %s", remoteName(req.Target), req.Target.User, req.Target.Workspace)
 	}
 	what := "start Jupyter"
 	if req.Runtime.Mode == protocol.RuntimeAttach {
@@ -308,6 +308,14 @@ func describe(req *protocol.OpenSession) string {
 		what += ", kernel " + req.Runtime.KernelName
 	}
 	return fmt.Sprintf("on %s: %s", where, what)
+}
+
+// remoteName names the computer a remote session's server runs on: a colab target has no host.
+func remoteName(t protocol.Target) string {
+	if t.Kind == protocol.TargetColab {
+		return "the Colab runtime"
+	}
+	return t.Host
 }
 
 func (m *Manager) open(l *link.Link, req *protocol.OpenSession) {

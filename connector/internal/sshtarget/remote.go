@@ -27,10 +27,11 @@ import (
 	"parallax/connector/internal/target"
 )
 
-// Remote is the `ssh` target (docs/design/connector.md §5.1, §6): after the stages of Check it
-// runs runtime, notebook_auth and kernels by exec over the same connection, and opens sessions
-// whose Jupyter server runs on the host, reached only through a tunnel to the session's fixed
-// 127.0.0.1 port. A host without a POSIX shell is shell_unsupported for every operation.
+// Remote is the `ssh` and `colab` targets (docs/design/connector.md §5.1, §5.7, §6): after the
+// stages of Check it runs runtime, notebook_auth and kernels by exec over the same connection, and
+// opens sessions whose Jupyter server runs on the host or the Colab runtime, reached only through
+// a tunnel to the session's fixed 127.0.0.1 port. A host without a POSIX shell is
+// shell_unsupported for every operation.
 type Remote struct {
 	// SSH runs the stages up to forwarding and makes the connections.
 	SSH *Target
@@ -115,8 +116,8 @@ func (r *Remote) logLine(line string) {
 
 func login(rt protocol.Runtime) bool { return rt.Login != nil && *rt.Login }
 
-// Test runs the eight stages of an `ssh` target. It starts no server, runs no cell and writes no
-// file; a connection that passed is kept for the Connect that follows (design §5.3).
+// Test runs the eight stages of an `ssh` or `colab` target. It starts no server, runs no cell and
+// writes no file; a connection that passed is kept for the Connect that follows (design §5.3).
 func (r *Remote) Test(ctx context.Context, req *protocol.TestConnection, progress target.Progress) *protocol.TestResult {
 	s := &target.Stages{Progress: progress}
 	res := &protocol.TestResult{RequestID: req.RequestID}

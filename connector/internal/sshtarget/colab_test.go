@@ -47,8 +47,8 @@ func colabNoise() []byte {
 // colab-stub.json beside it (the server's address, the records folder and a mode, because the
 // connector filters the environment), it records its run, bridges its standard input and output
 // to the in-process SSH server, and exits when either side ends. Mode "exit" writes colabNoise
-// and an SSH 1 banner and exits 3; "hang" starts a child and answers nothing; "noisy" starts a
-// child and writes colabNoise while it bridges.
+// and an SSH 1 banner and exits 3, "stuck" the same but stays; "hang" starts a child and answers
+// nothing; "noisy" starts a child and writes colabNoise while it bridges.
 func runColabStub() {
 	self, err := os.Executable()
 	var cfg struct{ Addr, Records, Mode string }
@@ -59,9 +59,12 @@ func runColabStub() {
 	}
 	rec, _ := json.Marshal(colabRun{Args: os.Args, Env: os.Environ(), PID: os.Getpid()})
 	os.WriteFile(filepath.Join(cfg.Records, "run-"+strconv.Itoa(os.Getpid())+".json"), rec, 0o600)
-	if cfg.Mode == "exit" {
+	if cfg.Mode == "exit" || cfg.Mode == "stuck" {
 		os.Stderr.Write(colabNoise())
 		os.Stdout.WriteString("SSH-1.0-SECRETBANNER\r\n")
+		if cfg.Mode == "stuck" {
+			time.Sleep(time.Hour)
+		}
 		os.Exit(3)
 	} else if cfg.Mode != "" {
 		exec.Command("/bin/sleep", "600").Start() // a process of its group, which must end with it

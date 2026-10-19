@@ -12,4 +12,4 @@ func startProxy(*exec.Cmd, func()) error {
 	return errors.New("the Windows connector does not run the colab program")
 }
 
-var signalGroup = func(int, syscall.Signal) {}
+func signalGroup(int, syscall.Signal) {}

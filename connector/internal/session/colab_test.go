@@ -45,7 +45,7 @@ func TestDescribeColabSession(t *testing.T) {
 }
 
 // TestSessionsFileKeepsColabRecords: a colab record of sessions.json is read, written back and
-// read again unchanged, as the schema allows.
+// read again unchanged, as the schema allows, and its process is on the Colab runtime.
 func TestSessionsFileKeepsColabRecords(t *testing.T) {
 	example, err := schemas.V1.ReadFile("v1/examples/state-Sessions-colab.json")
 	store := state.Open(t.TempDir())
@@ -63,5 +63,8 @@ func TestSessionsFileKeepsColabRecords(t *testing.T) {
 	validSessionsFile(t, compileSessionsSchema(t), written)
 	if again, err := readFile(store); err != nil || !reflect.DeepEqual(again, f) || f.Sessions[0].Target.Kind != protocol.TargetColab {
 		t.Fatalf("read back %+v, %v", again, err)
+	}
+	if got := where(f.Sessions[0]); got != "on the Colab runtime" {
+		t.Errorf("the sweep's line names %q", got)
 	}
 }
