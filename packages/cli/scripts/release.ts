@@ -11,9 +11,9 @@ export const PACKAGES = {
   'parallax-site': 'packages/cli',
   'create-parallax-site': 'packages/create-parallax-site',
 } as const;
-/** semver.org 2.0.0 without build metadata, whose `+` no Docker tag can hold. */
+/** semver.org 2.0.0 as a Docker tag holds it: no build metadata (`+`), at most 128 characters. */
 const SEMVER =
-  /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-(0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(\.(0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*)?$/;
+  /^(?=.{5,128}$)(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-(0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(\.(0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*)?$/;
 
 /** The run as GitHub Actions describes it; `dryRun` is the input `dry_run` as text. */
 export type Run = Record<'event' | 'refType' | 'refName' | 'sha' | 'owner', string> & {
@@ -47,21 +47,23 @@ export function stamp(release: Release, root = resolve(import.meta.dirname, '../
     const file = join(root, dir, 'package.json');
     const manifest = JSON.parse(fs.readFileSync(file, 'utf8'));
     manifest.version = release.version;
-    if (name === 'parallax-site') manifest.parallax = { registry: release.namespace };
+    if (name === 'parallax-site')
+      manifest.parallax = { ...manifest.parallax, registry: release.namespace };
     fs.writeFileSync(file, `${JSON.stringify(manifest, null, 2)}\n`);
   }
 }
 
-/** The tarballs' checksums, the images and the revision; `publish` adds the images' digests. */
+/** What build hands over in `folder`, each file with its checksum; `publish` adds the digests. */
 export function releaseManifest(release: Release, folder: string, revision: string) {
-  const packages = Object.fromEntries(
-    Object.keys(PACKAGES).map((name) => {
-      const file = `${name}-${release.version}.tgz`;
-      const sha256 = createHash('sha256').update(fs.readFileSync(join(folder, file)));
-      return [name, { file, sha256: sha256.digest('hex') }];
-    }),
-  );
-  const images = Object.entries(release.images).map(([name, ref]) => [`parallax-${name}`, { ref }]);
+  const sum = (file: string) => {
+    const sha256 = createHash('sha256').update(fs.readFileSync(join(folder, file)));
+    return { file, sha256: sha256.digest('hex') };
+  };
+  const tarball = (name: string) => sum(`release/${name}-${release.version}.tgz`);
+  const packages = Object.fromEntries(Object.keys(PACKAGES).map((name) => [name, tarball(name)]));
+  const images = Object.entries(release.images).map(([name, ref]) => {
+    return [`parallax-${name}`, { ref, ...sum(`images/parallax-${name}.tar`) }];
+  });
   return { version: release.version, revision, packages, images: Object.fromEntries(images) };
 }
 

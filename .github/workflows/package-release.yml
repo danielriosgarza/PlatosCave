@@ -51,6 +51,7 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
+          persist-credentials: false
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v5
         with:
@@ -104,14 +105,13 @@ jobs:
         run: |
           pnpm exec vitest run --project unit packages/cli/src/pack.test.ts
           pnpm exec tsx packages/cli/scripts/release.ts stamp
-      - name: Installed-package check
+      - name: Installed-package check, then the release manifest
         env:
           VERSION: ${{ steps.release.outputs.version }}
-        run: bash packages/cli/scripts/packed-install.sh "$VERSION" "$RUNNER_TEMP/handover/release"
-      - name: Release manifest
         run: |
-          pnpm exec tsx packages/cli/scripts/release.ts manifest "$RUNNER_TEMP/handover/release"
-          cat "$RUNNER_TEMP/handover/release/release.json"
+          bash packages/cli/scripts/packed-install.sh "$VERSION" "$RUNNER_TEMP/handover/release"
+          pnpm exec tsx packages/cli/scripts/release.ts manifest "$RUNNER_TEMP/handover"
+          cat "$RUNNER_TEMP/handover/release.json"
       # Handed over on every run, so that a dry run checks what publish would push.
       - uses: actions/upload-artifact@v4
         with:
@@ -133,39 +133,44 @@ jobs:
     env:
       VERSION: ${{ needs.build.outputs.version }}
     steps:
+      # Whether the secret is set, not its value: without it a tag stops before anything is pushed.
+      - name: The npm token is set
+        env:
+          NPM_TOKEN_SET: ${{ secrets.NPM_TOKEN != '' }}
+        run: test "$NPM_TOKEN_SET" = true
       - uses: actions/download-artifact@v4
         with:
           name: parallax-${{ needs.build.outputs.version }}
-      - name: Check the tarballs against the release manifest
-        run: jq -r '.packages[] | "\(.sha256)  release/\(.file)"' release/release.json | sha256sum -c --strict
+      - name: Check what build handed over against the release manifest
+        run: jq -r '(.packages[], .images[]) | "\(.sha256)  ./\(.file)"' release.json | sha256sum -c --strict
       - name: Push the images
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           echo "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
           for name in parallax-server parallax-runner; do
-            ref="$(jq -r --arg name "$name" '.images[$name].ref' release/release.json)"
-            docker load --input "images/$name.tar"
+            ref="$(jq -r --arg name "$name" '.images[$name].ref' release.json)"
+            docker load --input "./images/$name.tar"
             docker push "$ref"
             digest="$(docker inspect --format '{{ index .RepoDigests 0 }}' "$ref")"
             [[ "${digest#*@}" =~ ^sha256:[0-9a-f]{64}$ ]]
             jq --arg name "$name" --arg digest "${digest#*@}" '.images[$name].digest = $digest' \
-              release/release.json > "$RUNNER_TEMP/release.json"
-            mv "$RUNNER_TEMP/release.json" release/release.json
+              release.json > "$RUNNER_TEMP/release.json"
+            mv "$RUNNER_TEMP/release.json" release.json
           done
           docker logout ghcr.io
       - name: Publish the npm packages
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: |
-          # npm reads the token from the variable: the file holds only its name.
+          # The file holds only the token's name; npm takes a path without ./ for a GitHub repo.
           printf '//registry.npmjs.org/:_authToken=${NODE_AUTH_TOKEN}\n' > "$RUNNER_TEMP/npmrc"
           tag=latest && if [[ "$VERSION" == *-* ]]; then tag=next; fi
           for name in parallax-site create-parallax-site; do
-            npm publish "release/$name-$VERSION.tgz" --userconfig "$RUNNER_TEMP/npmrc" \
+            npm publish "./release/$name-$VERSION.tgz" --userconfig "$RUNNER_TEMP/npmrc" \
               --access public --tag "$tag" --ignore-scripts
           done
       - uses: actions/upload-artifact@v4
         with:
           name: parallax-release-${{ needs.build.outputs.version }}
-          path: release/release.json
+          path: release.json

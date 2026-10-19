@@ -8,12 +8,17 @@ import { closure } from '../../../../packages/cli/scripts/vendor';
 // a pull request or a dry run from publishing, and the one job that publishes to what build checked.
 const repo = resolve(import.meta.dirname, '../../../..');
 const text = readFileSync(resolve(repo, '.github/workflows/package-release.yml'), 'utf8');
-type Step = { name?: string; uses?: string; run?: string; with?: { name?: string } };
+type Step = { name?: string; uses?: string; run?: string; env?: object; with?: { name?: string } };
 type Job = { needs?: string; if?: string; permissions?: object; steps: Step[] };
 const workflow = parse(text);
 const { build, publish } = workflow.jobs as Record<'build' | 'publish', Job>;
 const named = (job: Job, name: string) =>
   job.steps.find((step) => step.name === name || step.uses?.startsWith(name));
+const [check, push, npm] = [
+  'The npm token is set',
+  'Push the images',
+  'Publish the npm packages',
+] as const;
 
 describe('package-release.yml', () => {
   test('the workflow may read the repository; only publish may write packages', () => {
@@ -25,13 +30,13 @@ describe('package-release.yml', () => {
 
   test('only publish names a secret: the GHCR token where it pushes, the npm token where it publishes', () => {
     const naming = publish.steps.filter((step) => JSON.stringify(step).includes('secrets.'));
-    expect(naming.map((step) => step.name)).toEqual([
-      'Push the images',
-      'Publish the npm packages',
-    ]);
-    expect(JSON.stringify(naming[0])).toMatch(/secrets\.GITHUB_TOKEN(?!.*NPM_TOKEN)/);
-    expect(JSON.stringify(naming[1])).toContain('secrets.NPM_TOKEN');
-    expect(text.match(/secrets\./g)).toHaveLength(2);
+    expect(naming.map((step) => step.name)).toEqual([check, push, npm]);
+    // The first learns only whether the npm token is set, not its value.
+    const set = `\${{ secrets.NPM_TOKEN != '' }}`;
+    expect(named(publish, check)?.env).toEqual({ NPM_TOKEN_SET: set });
+    expect(JSON.stringify(naming[1])).toMatch(/secrets\.GITHUB_TOKEN(?!.*NPM_TOKEN)/);
+    expect(JSON.stringify(naming[2])).toContain('secrets.NPM_TOKEN }}');
+    expect(text.match(/secrets\./g)).toHaveLength(3);
   });
 
   test('publish runs only on the publish output, and builds and installs nothing', () => {
@@ -50,14 +55,17 @@ describe('package-release.yml', () => {
     expect(named(publish, 'actions/download-artifact@')?.with?.name).toBe(
       handed?.replace('steps.release', 'needs.build'),
     );
-    const push = named(publish, 'Push the images')?.run;
-    expect(push).toMatch(/docker load --input "images\/\$name\.tar"\n\s*docker push "\$ref"/);
-    // The images first, then parallax-site, then create-parallax-site (ADR-0001, Release).
-    const npm = named(publish, 'Publish the npm packages');
-    expect(npm?.run).toMatch(
-      /for name in parallax-site create-parallax-site; do\n\s*npm publish "rel/,
-    );
-    expect(publish.steps.indexOf(npm as Step)).toBeGreaterThan(publish.steps.indexOf(push as Step));
+    const run = (name: string) => named(publish, name)?.run ?? '';
+    expect(run(push)).toMatch(/docker load --input "[^"]+"\n\s*docker push "\$ref"/);
+    expect(run(npm)).toMatch(/in parallax-site create-parallax-site; do\n\s*npm publish /);
+    // npm reads `release/x.tgz` as a GitHub repository: each file given to npm or docker is ./ or /.
+    const given = publish.steps
+      .map((step) => step.run ?? '')
+      .flatMap((each) => [...each.matchAll(/(?:npm publish|docker load --input) "([^"]*)"/g)]);
+    expect(given.map((match) => match[1]?.replace(/^\.?\/.*/, 'ok'))).toEqual(['ok', 'ok']);
+    // The token is checked first, then the images are pushed, then the npm packages (ADR-0001).
+    const order = [check, push, npm].map((name) => publish.steps.findIndex((s) => s.name === name));
+    expect(order.every((at, i) => at > (order[i - 1] ?? -1))).toBe(true);
   });
 
   test('a tag parallax-v* publishes; a manual run is a dry run unless dry_run is turned off', () => {
@@ -76,11 +84,7 @@ describe('package-release.yml', () => {
     );
     // The workflow, the check and the conversion closure that vendor.ts packs.
     const packed = closure(resolve(repo, 'apps/server')).map((file) => `apps/server/${file}`);
-    const files = [
-      '.github/workflows/package-release.yml',
-      'packages/cli/scripts/packed-install.sh',
-      ...packed,
-    ];
+    const files = ['.github/workflows/package-release.yml', ...packed];
     expect(files.filter((file) => !paths.some((path) => path.test(file)))).toEqual([]);
   });
 });

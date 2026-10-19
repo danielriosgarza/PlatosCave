@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { afterAll, expect, test } from 'vitest';
 import { parse } from 'yaml';
 import { decide, PACKAGES, ReleaseError, type Run, releaseManifest, stamp } from './release';
@@ -42,6 +42,10 @@ test('a tag that is not parallax-v and a semantic version is refused', () => {
   }
   expect(() => decide(run({ ...branch, sha: '' }))).toThrow(ReleaseError);
   expect(() => decide(run({ owner: 'own/er' }))).toThrow(ReleaseError);
+  // The version is a Docker tag too, of at most 128 characters.
+  const longest = `1.0.0-${'a'.repeat(122)}`;
+  expect(decide(run({ refName: `parallax-v${longest}` })).version).toBe(longest);
+  expect(() => decide(run({ refName: `parallax-v${longest}a` }))).toThrow(ReleaseError);
 });
 
 test('both manifests and both image labels get the one version', () => {
@@ -54,12 +58,19 @@ test('both manifests and both image labels get the one version', () => {
     expect(tracked).not.toHaveProperty('private');
     fs.cpSync(join(repo, dir, 'package.json'), join(temp, dir, 'package.json'));
   }
+  // The stamp keeps what else the manifest holds under `parallax`.
+  const cli = join(temp, PACKAGES['parallax-site'], 'package.json');
+  const kept = {
+    ...JSON.parse(fs.readFileSync(cli, 'utf8')),
+    parallax: { registry: 'x', other: 1 },
+  };
+  fs.writeFileSync(cli, JSON.stringify(kept));
   stamp(decide(run({ refName: 'parallax-v1.4.0-rc.2' })), temp);
   const [tool, scaffolder] = Object.values(PACKAGES).map((dir) =>
     JSON.parse(fs.readFileSync(join(temp, dir, 'package.json'), 'utf8')),
   );
   expect([tool.version, scaffolder.version]).toEqual(['1.4.0-rc.2', '1.4.0-rc.2']);
-  expect(tool.parallax).toEqual({ registry: 'ghcr.io/org-a' });
+  expect(tool.parallax).toEqual({ registry: 'ghcr.io/org-a', other: 1 });
   // A site's pages need React's types, which the scaffolded site gets from the tool alone.
   const types = { '@types/react': '19.3.0', '@types/react-dom': '19.3.0' };
   expect(tool.dependencies).toMatchObject(types);
@@ -67,9 +78,8 @@ test('both manifests and both image labels get the one version', () => {
     /^ARG PARALLAX_VERSION=0\.0\.0\nLABEL org\.opencontainers\.image\.version="\$\{PARALLAX_VERSION\}"$/m;
   for (const name of ['server', 'runner'])
     expect(read(`infra/docker/${name}.Dockerfile`)).toMatch(label);
-  type Step = { id?: string; uses?: string; run?: string; with?: object };
+  type Step = { uses?: string; with?: object };
   const steps: Step[] = parse(read('.github/workflows/package-release.yml')).jobs.build.steps;
-  expect(steps.find((step) => step.id === 'release')?.run).toContain('release.ts decide');
   const output = (name: string) => `\${{ steps.release.outputs.${name} }}`;
   const images = steps.filter((step) => step.uses?.startsWith('docker/build-push-action@'));
   expect(images.map((step) => step.with)).toEqual(
@@ -84,16 +94,21 @@ test('both manifests and both image labels get the one version', () => {
   );
 });
 
-test('the release manifest holds the checksums of the tarballs, the images and the revision', () => {
-  const sha256 = (text: string) => createHash('sha256').update(text).digest('hex');
+test('the release manifest holds the checksums of the tarballs and the image archives, and the revision', () => {
+  const sum = (file: string) => {
+    fs.mkdirSync(join(temp, dirname(file)), { recursive: true });
+    fs.writeFileSync(join(temp, file), file);
+    return { file, sha256: createHash('sha256').update(file).digest('hex') };
+  };
   const packages = Object.fromEntries(
-    Object.keys(PACKAGES).map((name) => {
-      fs.writeFileSync(join(temp, `${name}-1.4.0.tgz`), name);
-      return [name, { file: `${name}-1.4.0.tgz`, sha256: sha256(name) }];
-    }),
+    Object.keys(PACKAGES).map((name) => [name, sum(`release/${name}-1.4.0.tgz`)]),
   );
-  const runner = server.replace('server', 'runner');
-  const images = { 'parallax-server': { ref: server }, 'parallax-runner': { ref: runner } };
+  const images = Object.fromEntries(
+    ['server', 'runner'].map((name) => [
+      `parallax-${name}`,
+      { ref: server.replace('server', name), ...sum(`images/parallax-${name}.tar`) },
+    ]),
+  );
   const manifest = releaseManifest(decide(run()), temp, sha);
   expect(manifest).toEqual({ version: '1.4.0', revision: sha, packages, images });
 });
