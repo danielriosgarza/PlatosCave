@@ -93,6 +93,8 @@ export function writeSiteEnv(site: Site) {
     ['PARALLAX_RUNNER_IMAGE', image('runner')],
     ['COMPOSE_PROFILES', bundled ? 'bundled' : ''],
     ...(level === 2 && runner ? [['RUNNER_RUNTIMES', json(runner.runtimes)]] : []),
+    // Where `compose.level2.yml` publishes PostgreSQL's port.
+    ...(level === 2 && runner ? [['RUNNER_DATABASE_HOST', runner.databaseHost]] : []),
   ];
   mkdirSync(join(root, level === 2 ? '.parallax/runner' : '.parallax'), { recursive: true });
   const header = `# Written by parallax env from ${CONFIG}; a change here is overwritten.\n`;
@@ -112,7 +114,9 @@ export function writeSiteEnv(site: Site) {
   const url = bundled ? ours : typed === ours ? undefined : typed;
   const refs = runner.runtimes.map(({ image, digest }) => `${image}@${digest}`);
   const images = json(Object.fromEntries(runner.runtimes.map(({ id }, i) => [id, [refs[i]]])));
-  const lines = [...(url ? [['RUNNER_DATABASE_URL', url]] : []), ['RUNNER_IMAGES', images]];
+  // `compose.runner.yml` names its image from this file, the only one copied to the runner host.
+  const link = url ? [['RUNNER_DATABASE_URL', url]] : [];
+  const lines = [['PARALLAX_RUNNER_IMAGE', image('runner')], ...link, ['RUNNER_IMAGES', images]];
   write(root, 'runner/runner.env', lines.map(quoted).join(''), 0o600);
   return { added, pulls: [image('runner'), ...refs].map((ref) => `docker pull ${ref}`) };
 }

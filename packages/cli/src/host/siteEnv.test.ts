@@ -92,17 +92,21 @@ test('at level 2 runner.env has only the runner variables and pg_hba.conf admits
   const image = `registry.example.org/parallax-runner-python@sha256:${'1'.repeat(64)}`;
   const runner = values('.parallax/runner/runner.env');
   const password = values('.env').RUNNER_DB_PASSWORD;
-  expect(Object.keys(runner).every((key) => key in RunnerEnv.shape)).toBe(true);
-  expect(runner).toEqual({
+  // Besides the runner's variables, the image reference that compose.runner.yml reads.
+  const { PARALLAX_RUNNER_IMAGE, ...variables } = runner;
+  expect(Object.keys(variables).every((key) => key in RunnerEnv.shape)).toBe(true);
+  expect(variables).toEqual({
     RUNNER_DATABASE_URL: `postgres://parallax_runner:${password}@10.0.0.2:5432/parallax`,
     RUNNER_IMAGES: JSON.stringify({ 'python-3.12': [image] }),
   });
+  const siteEnv = values('.parallax/site.env');
+  expect(PARALLAX_RUNNER_IMAGE).toBe(siteEnv.PARALLAX_RUNNER_IMAGE);
+  expect(siteEnv.RUNNER_DATABASE_HOST).toBe('10.0.0.2');
   expect(read('.parallax/pg_hba.conf')).toBe(
     'local all all trust\nhost parallax parallax 172.30.1.0/24 scram-sha-256\n' +
       'host parallax parallax_runner 10.0.0.7/32 scram-sha-256\n',
   );
-  const runtimes = values('.parallax/site.env').RUNNER_RUNTIMES;
-  expect(JSON.parse(runtimes ?? '')).toEqual(site.config.runner?.runtimes);
+  expect(JSON.parse(siteEnv.RUNNER_RUNTIMES ?? '')).toEqual(site.config.runner?.runtimes);
   expect(pulls).toContain(`docker pull ${image}`);
   if (process.platform === 'win32') return; // Windows keeps no mode bits.
   const mode = (file: string) => statSync(join(site.root, file)).mode & 0o777;
