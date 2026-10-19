@@ -31,7 +31,11 @@ type Compose = {
   services: Record<string, Service>;
   networks?: Record<
     string,
-    { internal?: boolean; ipam?: { config: { subnet: string; ip_range?: string }[] } }
+    {
+      internal?: boolean;
+      driver_opts?: Record<string, string>;
+      ipam?: { config: { subnet: string; ip_range?: string }[] };
+    }
   >;
 };
 const load = (file: string) => parse(text[file] ?? '', { merge: true }) as Compose;
@@ -56,9 +60,13 @@ const refs = files
   .map(([, name = '', op = '', rest = '']) => ({ name, op, rest }));
 /** A `${NAME…}` reference as the files write it; most end in the hint to run `parallax env`. */
 const ref = (name: string, tail = ':?run parallax env') => `\${${name}${tail}}`;
+/** Whether an IPv4 address is in a CIDR range; false for anything that is not one of each. */
 const inSubnet = (address: string, cidr: string) => {
   const number = (ip: string) => ip.split('.').reduce((n, part) => n * 256 + Number(part), 0);
   const [base = '', bits = ''] = cidr.split('/');
+  const ip = /^\d{1,3}(\.\d{1,3}){3}$/;
+  if (!ip.test(address) || !ip.test(base) || !/^\d{1,2}$/.test(bits) || Number(bits) > 32)
+    return false;
   const size = 2 ** (32 - Number(bits));
   return Math.floor(number(address) / size) === Math.floor(number(base) / size);
 };
@@ -87,6 +95,25 @@ describe('the site template installation', () => {
     expect(services.worker?.command?.at(-1)).toBe('worker');
     expect(services.server?.environment?.STATIC_DIR).toBe('/site');
     expect(services.server?.volumes).toContain('./dist:/site:ro');
+    // It listens beyond its own loopback, where Caddy reaches it, and is ready only when it says so.
+    const { HOST, PORT } = services.server?.environment ?? {};
+    expect([HOST, PORT]).toEqual(['0.0.0.0', '3000']);
+    const probe = JSON.stringify(services.server?.healthcheck);
+    for (const part of ['/api/ready', 'APP_HOST', 'x-ready-token']) expect(probe).toContain(part);
+  });
+
+  test('the server image runs with no capability and no new privilege, and every image is pinned', () => {
+    for (const name of ['migrate', 'server', 'worker']) {
+      const s = services[name];
+      expect([s?.image, s?.cap_drop], name).toEqual([ref('PARALLAX_SERVER_IMAGE'), ['ALL']]);
+      expect(s?.security_opt, name).toEqual(['no-new-privileges:true']);
+    }
+    expect(services.postgres?.image).toMatch(/^postgres:16\.\d+$/);
+    expect(services.caddy?.image).toMatch(/^caddy:\d+\.\d+\.\d+$/);
+    // Caddy runs as root: it binds 80 and 443 and reads the Caddyfile, and needs no more.
+    const { cap_drop, cap_add, security_opt } = services.caddy ?? {};
+    expect([cap_drop, cap_add]).toEqual([['ALL'], ['NET_BIND_SERVICE', 'DAC_READ_SEARCH']]);
+    expect(security_opt).toEqual(['no-new-privileges:true']);
   });
 
   test('only caddy publishes ports', () => {
@@ -231,6 +258,9 @@ describe('the site template installation', () => {
     expect(level2.networks?.[own]?.internal).toBeUndefined();
     expect(site.networks?.[own]).toBeUndefined();
     expect(onNetwork(own)).toEqual([]);
+    // On a Linux host Docker masquerades nothing from it, so postgres cannot connect out there.
+    const masquerade = 'com.docker.network.bridge.enable_ip_masquerade';
+    expect(level2.networks?.[own]?.driver_opts).toEqual({ [masquerade]: 'false' });
   });
 
   test('compose.runner.yml has the one service runner, only the variables the runner reads, no application secret, and the URL of parallax_runner', () => {
@@ -282,12 +312,13 @@ describe('the site template installation', () => {
       ]),
       INSTRUCTOR_EMAILS: 'alex@example.org',
     };
+    // As Compose does: a default only for `:-`, and a reference that resolves to nothing stops.
     const fill = (raw: string) =>
-      raw.replace(
-        /\$\{([A-Z0-9_]+)(?::[?-]([^}]*))?\}/g,
-        (_, name: string, fallback = '') =>
-          env[name] ?? (raw.includes(`\${${name}:-`) ? fallback : ''),
-      );
+      raw.replace(/\$\{([A-Z0-9_]+)(:[?-])?([^}]*)\}/g, (_, name: string, op = '', tail = '') => {
+        const value = env[name] ?? (op === ':-' ? tail : undefined);
+        if (value === undefined) throw new Error(`\${${name}} is not set in the test's .env`);
+        return value;
+      });
     for (const name of ['server', 'worker']) {
       const given = Object.entries(services[name]?.environment ?? {}).map(([k, v]) => [
         k,

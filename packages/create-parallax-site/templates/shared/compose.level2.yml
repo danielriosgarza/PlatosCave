@@ -6,7 +6,9 @@
 # - PostgreSQL starts with the generated .parallax/pg_hba.conf, which admits the application
 #   role only from the backend subnet and parallax_runner only from runner.host;
 # - Docker publishes no port of a container that is only on internal networks, so postgres also
-#   joins runner-link, which only it is on.
+#   joins runner-link, which only it is on. Docker masquerades nothing from runner-link, so on a
+#   Linux host postgres cannot connect out through it, while the published port still answers
+#   with the runner host's own address as the source (Docker Desktop does not honour this).
 #
 # With an existing PostgreSQL (profile `bundled` off) there is no postgres service and this file
 # changes nothing: your database administrator applies the same rule.
@@ -21,4 +23,5 @@ services:
     networks: [backend, runner-link]
 
 networks:
-  runner-link: {}
+  runner-link:
+    driver_opts: { com.docker.network.bridge.enable_ip_masquerade: "false" }
