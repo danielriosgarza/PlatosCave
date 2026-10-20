@@ -23,6 +23,8 @@ For installing and starting the app, see [getting-started.md](../getting-started
 | Accept an instructor invitation | API only |
 | List, remove or change members and grants | API only |
 | Make a class adopt another release | API only |
+| Courses from a folder of files, on a site | Command: `parallax check`, `parallax sync` ([below](#courses-from-a-folder)) |
+| Classes, instructors, codes and a first release from a site's configuration | Command: `parallax apply` ([below](#classes-from-a-sites-configuration)) |
 
 There is no screen yet for the API-only rows. The routes named in this guide are defined in `packages/contracts/src/routes/`. A development server also serves them as `/api/openapi.json`; a production server does not.
 
@@ -40,6 +42,8 @@ Signing in through **Instructor sign in** does not grant anything. If your accou
 Sign in with your email address. Choose **Send sign-in link** and open the link you receive.
 
 If you also study in a class, **Student view** and **Instructor view** switch between the two contexts.
+
+On a site ([getting started](../getting-started.md#make-a-site)), the addresses in the site's `instructor.yaml` files are its `INSTRUCTOR_EMAILS`. If the site offers a provider, **Sign in with** *name* works as well as an email link: the account is the one of the verified address the provider sends.
 
 ## Creating a course
 
@@ -180,7 +184,7 @@ You can review the declared files later with **Workspace files of** *notebook ti
 
 Students see the app only when the host has approved its origin. Otherwise the publication check warns you. An embedded Shiny app does not grade anything by itself ([spec §10.7](../product-spec.md#107-rendering-colab-and-shiny)).
 
-**Colab.** There is nothing to configure for Colab. The student's notebook view has a **Work in Colab** section. Students open the notebook in Colab on Google's computers, and hand it back by uploading an `.ipynb` file. As an instructor you see **Student submissions** in that section, with a **Student** column and a **Download** button for each file.
+**Colab.** There is nothing to configure for Colab. The student's notebook view has a **Work in Colab** section. Students open the notebook in Colab on Google's computers, and hand it back by uploading an `.ipynb` file. As an instructor you see **Student submissions** in that section, with a **Student** column and a **Download** button for each file. A person with a paid Colab plan can also run the cells in a Colab runtime from the Connect panel ([student guide](students.md#run-cells-on-a-computer)).
 
 Connecting to a personal computer or SSH account is a student and instructor workflow of its own. It is not part of authoring.
 
@@ -346,3 +350,73 @@ To undo, choose **Restore class** or **Restore course** in the same way. Restore
 The **Archived** filter shows archived items. Archiving a course also stops edits to its draft and new releases.
 
 Who may do what is also described in [operations](../operations.md).
+
+## Courses from a folder
+
+On a site ([getting started](../getting-started.md#make-a-site)), a course can be written as a folder of files. The files become the same material, in the same format and appearance, as the editor makes from them ([course folder design](../design/course-folder.md)).
+
+```text
+courses/reef-ecology/           the course folder: its name is part of the course's identity
+  course.yaml                   title, and public: true or false
+  sampling/                     one folder per topic; its name is only a path
+    topic.yaml                  the topic's fields and its resources, each with an id
+    slides/     transects.md  deck.pdf
+    reading/    methods.md  paper.pdf
+    notebooks/  counts.ipynb  counts/data/quadrats.csv  tide.shiny.yaml
+    exercises/  estimate.yaml   in a course with public: false
+    tests/      quiz.yaml  quiz/q3/main.py
+```
+
+`topic.yaml` holds `id`, `position` and `title`, and optionally `objective`, `estimatedMinutes`, `prerequisites` and `completionRule`. Its `resources` list every file of the tab folders, in display order, each with an `id`, a `file` and a `title`, and optionally `visibility: hidden` and `alternative`, the accessible alternative. A file no entry lists, or a kind of file its folder does not take, is an error. Files carry no front matter, and a folder states no release date, class or grade. A notebook's data files lie in the folder of its name (`counts/`); a Shiny file holds `url` and nothing else.
+
+- **Ids.** A topic or resource keeps its `id` through a rename or a move, so notes, highlights and attempts stay attached. `parallax check --write-ids` writes the missing ids and nothing else, and prints each one. Renaming the course folder, or changing the address in `instructor.yaml`, makes another course.
+- **Exercises and tests** are YAML files that hold the definition the editor saves, checked by the same schemas. A code question's file entry without `content` is read from `tests/<test>/<question id>/<path>`.
+- **Public trees.** When `course.yaml` says `public: true`, the definitions under `exercises/` and `tests/`, with a test's code files, lie in the private overlay, which git ignores: `private/courses/<course>/<topic>/` in instructor mode and `private/instructors/<name>/courses/<course>/<topic>/` in school mode. A definition in the tree itself is an error. The overlay does not move with the course folder: moving a course between the modes, move its overlay to the other path. With `public: false` they lie in the tree.
+
+Check a folder on your own machine, with no server, at any level:
+
+```
+npx parallax check
+npx parallax check --write-ids
+```
+
+`check` prints one line per problem, with the file, the field and the line (`courses/statistics/means/topic.yaml: resources[1].id: no id: run parallax check --write-ids to give it one (line 8)`), and ends with `parallax check: 1 course folder read, 0 errors.` It exits 1 on an error, 0 when there are only warnings or notes, and 2 for a wrong argument. It leaves out a test's publication rules, conversions, the course's other drafts and the server's settings, which `sync` checks. At level 0 it reads no definition.
+
+### Sync
+
+At levels 1 and 2, `npx parallax sync [<course> …] [--overwrite-editor] [--accept-new-ids]` runs in the site folder on the server's host (**Docker**); with no course it syncs every course of the site. For each course the server stores the files, writes the drafts as the owner's, converts them with the worker and publishes a release through the publication check. It prints, per course, its counts (created, new revisions, moved, fields changed, archived, unchanged, editor only), then `release <n> published`, `nothing to publish`, or `not published` with every problem. A class keeps its release: `parallax apply` adopts the newest one for a class that has none, and a class moves later by [adoption](#adopting-a-release).
+
+- The owner, the account of the `instructor.yaml` address, must have signed in once, and a new course needs that address in `INSTRUCTOR_EMAILS`.
+- `private/` must be on that host. A site deployed from a git checkout lacks it, because git ignores it: copy it there. Without it `sync` names each definition it expected (`private/courses/statistics/means/tests/quiz.yaml: no definition here`), prints `parallax sync: 1 error in the course folders; no course was synced` and exits 1.
+- The folder wins for what it declares. Each run sets a topic's title, objective, estimated time, prerequisites, completion rule and position, and a resource's topic, order, title and visibility, to the folder's values, asking nothing, and counts them under "moved" and "fields changed". A resource hidden in the editor but not marked `visibility: hidden` in `topic.yaml` is visible again in the release the run publishes. A topic or resource that `sync` made and the folder no longer lists is archived. The release holds the whole course, so changes made in the editor and not yet published are published with it.
+- A resource whose latest revision was made in the editor is not overwritten or archived, and a topic that holds one is not archived: `sync` stops and names each file. With `--overwrite-editor` the folder's content becomes the new revision, and the editor's stays in the history. Topics and resources made only in the editor are left as they are and counted.
+- A new id at the path of a resource `sync` made stops it as well: put the earlier id back, or accept the new one with `--accept-new-ids`, which archives the earlier resource.
+- A course folder whose name starts with `-` cannot be named on the command line (`parallax sync -2024` is an unknown option); run `sync` with no course to include it. A site with no course folders prints nothing and exits 0.
+
+| Exit code | Meaning |
+| --- | --- |
+| 0 | published, or nothing to publish |
+| 1 | refused or blocked: errors in a folder, no account, an address outside `INSTRUCTOR_EMAILS`, a course the account does not own or an archived one, editor revisions, a changed id, publication errors |
+| 2 | a wrong argument or an unknown course, level 0, an invalid server environment, or a malformed bundle |
+| 3 | not finished, and safe to run again: a time-out, no conversion moved on (no worker took the jobs, or one is waiting out a retry), the queue or storage unavailable, or a draft that changed meanwhile |
+
+## Classes from a site's configuration
+
+`classes` in `parallax.config.ts` lists each class with its `course`, `name`, an optional `open` and optional `instructors`. After `sync`, the operator runs `npx parallax apply` on the server's host (**Docker**). With no API call, for each class it:
+
+- gives each listed instructor's account the class's instructor membership and course editing;
+- creates the class if the course has none of that name;
+- adopts the course's newest release if the class has none;
+- issues an enrolment code, or for an open class a join link, and prints it once: `<course>, <class>: … enrolment code <code>`.
+
+A second run prints `unchanged` for a class that still has an open enrolment invitation and the configured `open`. Otherwise it changes the class back: a class whose code was revoked, has expired or is used up gets a new code, printed at that run, and `open` is set to the configured value on every run (`opened` or `closed`), so a class opened or closed through the API is changed back. On a site, set `open` in `classes`, not through the API. `apply` stops before writing anything and names each `instructor.yaml` whose address has no account yet (`no active account has this address; that person signs in once first`). A class whose course is not synced is `pending: the course is not synced; run parallax sync`. `apply` never renames, archives or deletes: a class renamed in the configuration is a new class. A lost code is replaced through [the API](#inviting-people-and-managing-members). It exits 0, 1 when a class is pending or refused or an account is missing, and 2 for a malformed document.
+
+## Open classes
+
+In an open class anyone who signs in may join, through its link `/join/<enrolment code>` (spec §13, N10). On a site, `open: true` in `classes` makes one, and `apply` prints its join link. Through the API an instructor with the membership-management grant sends `PUT /api/classes/{classId}/open` with `{ "open": true }`, and any enrolment code of the class makes a link; on a site the next `apply` sets `open` back to the configuration. In an open class:
+
+- Students use exercises, private notes, tests and notebooks. Questions and comments are off: the reading margin and slide notes say **Questions and comments are off in this open class.**, and the server refuses a post.
+- Nobody grades. A test's automatic score is released once it is scored, or at the time the terms set for results. With **Solutions: Shown with results**, each student sees the solutions at once, while others may still be taking the test. **Reported grade: Chosen by an instructor** stays empty, because nobody chooses.
+- The automatic release runs as an instructor of the class, so the class needs an instructor member.
+- A release with manually graded test parts cannot be adopted by an open class, and a class on such a release cannot be opened (`manual_grading`).
+- `apply` gives an open class a code with no limit and no expiry. If it is revoked or expires, the next `apply` issues a new one and prints the new link.

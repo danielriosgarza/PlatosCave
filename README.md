@@ -8,6 +8,8 @@ The repository directory is PlatosCave; the product is Parallax.
 
 The application described in the [product specification](docs/product-spec.md) is implemented, except that some tasks have API routes but no screen yet, such as creating a class, issuing enrolment codes, managing members and adopting a release (a class shows no material until it adopts one). The [instructor guide](docs/guide/instructors.md) lists them. The application was built autonomously by Claude sessions; see [the delivery process](docs/delivery/README.md).
 
+Parallax is also installable: from the first release, `npm create parallax-site` makes a site folder for one instructor or a school, whose courses can be folders of files, built at three levels: an open site of plain files, a class site with sign-in on one host, and code checks with a runner on a host of its own. [Make a site](docs/getting-started.md#make-a-site) has the steps.
+
 ## Run it locally
 
 You need Node 22.12 or newer, pnpm (through corepack) and the PostgreSQL 16 server binaries (`initdb`, `pg_ctl`); `pnpm db:local start` runs them without Docker and stops with "Postgres binaries not found" if they are missing. The [prerequisites table](docs/getting-started.md#prerequisites) lists everything. In short:
@@ -26,19 +28,19 @@ pnpm --filter @parallax/server worker   # in a second shell: background jobs
 
 For people using Parallax:
 
-- [Getting started](docs/getting-started.md): run it locally and set up a first course.
+- [Getting started](docs/getting-started.md): make a site, or run the repository locally and set up a first course.
 - [Instructor guide](docs/guide/instructors.md) and [student guide](docs/guide/students.md): what each role can do.
 
 For people running it:
 
-- [Operations](docs/operations.md): deployment, health, logs, limits, incidents.
+- [Operations](docs/operations.md): a site on one host, sign-in, deployment, health, logs, limits, incidents, releases.
 - [Backup and restore](docs/backup-restore.md).
 
 For people changing it:
 
 - [Product specification](docs/product-spec.md): the requirements and acceptance scenarios. [PRODUCT.md](PRODUCT.md) lists the owner's commitments.
 - [Architecture decisions](docs/adr/): technology stack, authorization and class isolation, content releases, code-execution isolation, notebook connector, testing strategy.
-- [Designs](docs/design/): the [runner](docs/design/runner.md) and the [connector](docs/design/connector.md).
+- [Designs](docs/design/): the [runner](docs/design/runner.md), the [connector](docs/design/connector.md), the [site toolkit](docs/design/site.md), the [course folder](docs/design/course-folder.md) and the [open site](docs/design/open-site.md).
 - [Visual system](DESIGN.md): palette, typography, dimensions and controls.
 - [Delivery plan](docs/delivery/plan.md) and [delivery process](docs/delivery/README.md).
 - [Design decisions](docs/design-reconciliation.md) and [Fable's review comments](docs/reviews/fable-2026-09-28.md): how the review was reconciled with the original brief.

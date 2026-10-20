@@ -16,7 +16,7 @@ Work is delivered autonomously: one GitHub issue per plan item, one PR per issue
 
 ## Stack
 
-TypeScript 5.9 on Node 22 with pnpm workspaces: Fastify API with zod contracts (`apps/server`, `packages/contracts`), React 19 + Vite + TanStack Router/Query (`apps/web`), design tokens and shared CSS (`packages/ui`), PostgreSQL 16 via drizzle, pg-boss jobs, Vitest and Playwright. Go 1.24 for the compute connector (`connector/`). Details and versions: `docs/adr/0001-technology-stack.md`.
+TypeScript 5.9 on Node 22 with pnpm workspaces: Fastify API with zod contracts (`apps/server`, `packages/contracts`), React 19 + Vite + TanStack Router/Query (`apps/web`), design tokens and shared CSS (`packages/ui`), PostgreSQL 16 via drizzle, pg-boss jobs, Vitest and Playwright. Go 1.24 for the compute connector (`connector/`). Published under one version: the site tool `parallax-site` (`packages/cli`, command `parallax`) and the scaffolder `create-parallax-site` (`packages/create-parallax-site`) on npm, and the server and runner images on GHCR (`docs/design/site.md`). Details and versions: `docs/adr/0001-technology-stack.md`.
 
 ## Commands
 
@@ -39,6 +39,10 @@ Available once Phase 0 (P0-01…P0-03) has merged; Phase 0 items keep this list 
 | Scenario coverage | `pnpm scenarios` |
 | Compose (Docker only) | `pnpm compose …` wraps `docker compose -f infra/compose.yml`; unavailable in cloud sessions |
 | Connector | `cd connector && gofmt -l . && go vet ./... && go test ./...` |
+| Site tool on a fixture site | `cd packages/cli/fixtures/open-site/school && node ../../../bin/parallax.mjs check` (in a site: `npx parallax <command>`) |
+| Level 0 browser suite | `pnpm --filter @parallax/e2e exec playwright test --config playwright.open.config.ts` (no database, no Docker) |
+| Pack a published package | `pnpm exec tsx packages/cli/scripts/pack.ts <parallax-site\|create-parallax-site> <version> <folder>` |
+| Installed-package check | `bash packages/cli/scripts/packed-install.sh <version> <folder>` (needs the npm registry) |
 
 ## Environment facts
 
