@@ -1,8 +1,8 @@
-import { createHash } from 'node:crypto';
 import * as fs from 'node:fs';
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import type { Readable } from 'node:stream';
 import type { CourseManifest, SiteManifest } from '@parallax/contracts';
+import { fileDigest } from '../digest';
 import { loadSource } from '../paths';
 import { checked, loadExercise, loadTest, parse, problemAt } from './definition';
 import { type Entry, listFolder, sameButCase, walk } from './listing';
@@ -45,24 +45,6 @@ const keep: Mark = (problem) => problem;
 const inOverlay = (problem: Problem): Problem => ({ ...problem, overlay: true });
 const cannot = (error: unknown) =>
   `cannot be read (${(error as NodeJS.ErrnoException | null | undefined)?.code ?? error})`;
-/** A stored file is read in parts of this size, in turn: the reader never holds a whole one. */
-const PART = 2 ** 20;
-/** A file's `sha256` and size, hashed part by part. */
-function digest(file: string) {
-  const [hash, part] = [createHash('sha256'), Buffer.allocUnsafe(PART)];
-  const descriptor = fs.openSync(file, 'r');
-  let [size, length] = [0, PART];
-  try {
-    while (length > 0) {
-      length = fs.readSync(descriptor, part, 0, PART, size);
-      hash.update(part.subarray(0, length));
-      size += length;
-    }
-  } finally {
-    fs.closeSync(descriptor);
-  }
-  return { sha256: hash.digest('hex'), size };
-}
 type Attempt = <T>(path: string, run: () => T | Promise<T>, mark?: Mark) => Promise<T | undefined>;
 type Loaded = { definition?: unknown; problems: Problem[] };
 type Load = (root: string, path: string, type: unknown, files: string[]) => Promise<Loaded>;
@@ -146,7 +128,7 @@ async function readTree(dir: string, definitions: Definitions, problems: Problem
     return parsed && value !== undefined ? { parsed, value } : undefined;
   };
   const stored = async (path: string, format: Stored['format']): Promise<Stored[]> => {
-    const read = await attempt(path, () => digest(join(dir, path)));
+    const read = await attempt(path, () => fileDigest(join(dir, path)));
     return read ? [{ path, ...read, format }] : [];
   };
 
