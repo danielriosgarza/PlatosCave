@@ -18,24 +18,24 @@ npm install
 npx parallax --help
 ```
 
-The first command asks nothing, runs no install and refuses a folder that is not empty; it prints `Created my-site from the instructor template. Next: cd my-site, then npm install.` `package.json` names the exact version of `parallax-site`, and no other file of the site does. `npx parallax --help` lists the commands: `apply, build, check, dev, env, start, sync, upgrade`.
+The first command asks nothing, runs no install and refuses a folder that is not empty; it prints `Created my-site from the instructor template. Next: cd my-site, then npm install.` `package.json` names the exact version of `parallax-site`, and no other file of the site does. `npx parallax --help` lists the commands: `apply, build, check, dev, env, start, sync, upgrade`. The template's values are samples on `example.org`: replace `name`, `origins` and `signIn` in `parallax.config.ts` and the address in `instructor.yaml` before a first start or a deployed build.
 
 | File | Holds |
 | --- | --- |
-| `parallax.config.ts` | `mode`, `name`, an optional `logo` (PNG, JPEG or WebP), `level`, `origins` (two host names), `signIn`, `classes`, and at level 2 `runner` |
+| `parallax.config.ts` | `mode`, `name`, an optional `logo` (PNG, JPEG or WebP), `level`, `origins` (two host names, and optionally `shiny`, the origins Shiny apps may be framed from), `signIn`, `classes`, and at level 2 `runner` (two IPv4 addresses and the runtimes) |
 | `instructor.yaml` | the instructor's `name` and `email` |
 | `courses/<course>/` | the course folders ([instructor guide](guide/instructors.md#courses-from-a-folder)) |
 | `src/pages/` | the site's own pages, JSX only: `index.tsx` is the front page at `/`, `about.tsx` is `/about`; styles are `*.module.css` files beside them |
 | `compose.yml`, `Caddyfile`, `compose.level2.yml`, `compose.runner.yml` | the installation at levels 1 and 2 ([operations](operations.md#a-site-on-one-host)) |
 
-Git ignores `node_modules/`, `dist/`, `.parallax/`, `.env`, `backups/` and `private/`. Every command first checks the configuration and the instructor folders, prints one line per problem (`parallax.config.ts: classes[1].course: no folder courses/genetics`) and exits 1 before it writes anything. Rules that span several fields are checked once each field is valid, so a second run can show a line the first did not. A page at the address of a Parallax screen, or under `/courses`, `/api`, `/assets` or `/content`, stops the build, which names both; a page cannot change the look of a Parallax screen. At levels 1 and 2, `npx parallax dev` serves the site with pages that reload on save and sends `/api` to `127.0.0.1:3000`.
+Git ignores `node_modules/`, `dist/`, `.parallax/`, `.env`, `backups/` and `private/`. Every command first checks the configuration and the instructor folders, prints one line per problem (`parallax.config.ts: classes[1].course: no folder courses/genetics`) and exits 1 before it writes anything. Rules that span several fields are checked once each field is valid, so a second run can show a line the first did not. A page at the address of a Parallax screen, or under `/courses`, `/api`, `/assets` or `/content`, stops the build, which names both. So does a stylesheet that is not a `*.module.css`, declares a `--pc-*` token, uses `:global` or has a selector without a class. That rule guards against accidents and is not a boundary: a page is the site owner's own code, and at levels 1 and 2 it runs with the visitor's session. At levels 1 and 2, `npx parallax dev` serves the site with pages that reload on save and sends `/api` to `127.0.0.1:3000`.
 
 ### Two modes
 
 - **Instructor mode** (`mode: 'instructor'`): one instructor; `instructor.yaml` and `courses/` are at the top of the site, and a class names its course as `statistics`.
 - **School mode** (`mode: 'school'`): several instructors, each in `instructors/<name>/` with an `instructor.yaml` and a `courses/` of their own. `instructors: ['ana', 'ben']` lists the folders, a class names its course as `ana/reef-ecology`, and the front page lists the instructors, then their courses.
 
-A `courses/` folder moves between the modes unchanged. The account with the verified address of an `instructor.yaml` owns that folder's courses, and those addresses are the site's `INSTRUCTOR_EMAILS`. A folder on disk that `instructors` leaves out, or a listed folder that is missing, stops every command. A mode adds no role.
+A `courses/` folder moves between the modes unchanged; its overlay in `private/` moves to the matching path ([instructor guide](guide/instructors.md#courses-from-a-folder)). The account with the verified address of an `instructor.yaml` owns that folder's courses, and those addresses are the site's `INSTRUCTOR_EMAILS`. A folder on disk that `instructors` leaves out, or a listed folder that is missing, stops every command. A mode adds no role.
 
 ### Three levels
 
@@ -49,6 +49,8 @@ A `courses/` folder moves between the modes unchanged. The account with the veri
 
 ### Level 0: an open site
 
+With `level: 0` in `parallax.config.ts` (the templates have `level: 1`):
+
 ```
 npx parallax build
 ```
@@ -58,9 +60,9 @@ The build reads the course folders and nothing else, checks and converts them as
 The hosting must give:
 
 1. **Two host names**, each serving its tree at its root; two paths of one host do not count. A folder's `index.html` must answer the folder's address, which every static host does; no rewrite rule is needed.
-2. **For PDFs, cross-origin range requests from the content host.** A `GET` from the site's origin, with or without a `Range` header, gets `Access-Control-Allow-Origin` for that origin (or `*`); a ranged one gets status 206 and `Content-Range`; `Access-Control-Expose-Headers` names `Content-Range, Accept-Ranges, Content-Length`; and the preflight that the `Range` header causes is answered (`Access-Control-Allow-Headers: range`). [`e2e/static-server.ts`](../e2e/static-server.ts) gives exactly these answers. Without them a PDF says it could not be loaded and keeps its download link.
+2. **For PDFs, cross-origin range requests from the content host.** A `GET` from the site's origin, with or without a `Range` header, gets `Access-Control-Allow-Origin` for that origin (or `*`); a ranged one gets status 206 and `Content-Range`; `Access-Control-Expose-Headers` names `Content-Range, Accept-Ranges, Content-Length`; and the preflight that the `Range` header causes gets a 2xx answer with `Access-Control-Allow-Origin` for that origin and `Access-Control-Allow-Headers: range`. [`e2e/static-server.ts`](../e2e/static-server.ts) gives exactly these answers. Without them a PDF says it could not be loaded and keeps its download link.
 
-Give the content host a domain of its own, one that shares no registrable domain with an application that sets cookies: a file opened on the content host runs as that host. Deploy by mirroring, so that each host ends up with exactly the new tree and loses what the tree no longer holds (rsync and `aws s3 sync` do so with `--delete`). A host that is only added to, by `scp -r`, `aws s3 cp --recursive` or a copy onto a pages branch, keeps the files of hidden or removed resources at their permanent addresses. Files a host asks for, such as `_headers`, `CNAME` or `.nojekyll`, are not part of a build: add them to `dist/site` or `dist/content` after every build.
+A file opened on the content host runs as that host, and can read and set the cookies of its registrable domain. The templates' sample origins (`stats.example.org`, `content.stats.example.org`) are placeholders: if any application on the content host's registrable domain sets cookies for the whole domain, give the content host a domain of its own. Deploy by mirroring, so that each host ends up with exactly the new tree and loses what the tree no longer holds (rsync and `aws s3 sync` do so with `--delete`). A host that is only added to, by `scp -r`, `aws s3 cp --recursive` or a copy onto a pages branch, keeps the files of hidden or removed resources at their permanent addresses. Files a host asks for, such as `_headers`, `CNAME` or `.nojekyll`, are not part of a build: add them to `dist/site` or `dist/content` after every build.
 
 A static host enforces nothing for Parallax: the build sets no response header, and the shell has no content security policy. Whether to recommend headers for hosts that can set them is an open owner question ([open site design](design/open-site.md) §12, question 2), so this guide recommends none. **Download notebook without outputs** is a link to the content host, and a browser may show the file as text (Chromium does), from where the visitor saves it. An upgrade at level 0 is a new version in `package.json`, `npm install` and `npx parallax build`.
 
@@ -68,9 +70,9 @@ A static host enforces nothing for Parallax: the build sets no response header, 
 
 A site changes level by changing `level` and running the commands of the new level.
 
-- **To level 0.** Export first: instructors download each class's results (**Export results (CSV)**) and students their annotations (**Download my annotations**). Then run `npx parallax sync` (**Docker**): it stops and names each file whose latest revision was made in the editor, and its report counts the topics and resources made only in the editor. None of that is in the folder, so none of it is on a level 0 site. Set `level: 0`, run `npx parallax build`, and stop the services (**Docker**: `docker compose --env-file .env --env-file .parallax/site.env -f compose.yml stop`). Keep the database volume and `backups/`: the database is kept as a backup and never published.
+- **To level 0.** Export first: instructors download each class's results (**Export results (CSV)**) and students their annotations (**Download my annotations**). Then run `npx parallax sync` (**Docker**): it stops and names each file whose latest revision was made in the editor, and its report counts the topics and resources made only in the editor. None of that is in the folder, so none of it is on a level 0 site. Take a backup: `npx parallax upgrade` (**Docker**) with the version unchanged stops `server` and `worker`, writes one into `backups/<UTC time>` and starts the same version again. Stop the services (**Docker**: `docker compose --env-file .env --env-file .parallax/site.env -f compose.yml stop`), and at level 2 the runner on its host, before `npx parallax build` with `level: 0` replaces `dist/`. Keep the volumes and `backups/`: the database is kept as a backup and never published.
 - **To level 1.** Set `level: 1` and `signIn`, then follow the [first start](operations.md#first-start-of-a-site).
-- **Between levels 1 and 2.** Add or remove `runner` with the level, and run `npx parallax start` (**Docker**); level 2 also needs the [runner host](operations.md#level-2-the-runner-host).
+- **Between levels 1 and 2.** Add or remove `runner` with the level, and run `npx parallax start` (**Docker**); level 2 also needs the [runner host](operations.md#level-2-the-runner-host), and leaving it, the runner stopped there.
 
 ## Prerequisites
 

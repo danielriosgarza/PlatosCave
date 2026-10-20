@@ -8,7 +8,7 @@ The repository directory is PlatosCave; the product is Parallax.
 
 The application described in the [product specification](docs/product-spec.md) is implemented, except that some tasks have API routes but no screen yet, such as creating a class, issuing enrolment codes, managing members and adopting a release (a class shows no material until it adopts one). The [instructor guide](docs/guide/instructors.md) lists them. The application was built autonomously by Claude sessions; see [the delivery process](docs/delivery/README.md).
 
-Parallax is also installable: `npm create parallax-site` makes a site folder for one instructor or a school, whose courses can be folders of files, built at three levels: an open site of plain files, a class site with sign-in on one host, and code checks with a runner on a host of its own. [Make a site](docs/getting-started.md#make-a-site) has the steps.
+Parallax is also installable: from the first release, `npm create parallax-site` makes a site folder for one instructor or a school, whose courses can be folders of files, built at three levels: an open site of plain files, a class site with sign-in on one host, and code checks with a runner on a host of its own. [Make a site](docs/getting-started.md#make-a-site) has the steps.
 
 ## Run it locally
 

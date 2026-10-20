@@ -371,7 +371,7 @@ courses/reef-ecology/           the course folder: its name is part of the cours
 
 - **Ids.** A topic or resource keeps its `id` through a rename or a move, so notes, highlights and attempts stay attached. `parallax check --write-ids` writes the missing ids and nothing else, and prints each one. Renaming the course folder, or changing the address in `instructor.yaml`, makes another course.
 - **Exercises and tests** are YAML files that hold the definition the editor saves, checked by the same schemas. A code question's file entry without `content` is read from `tests/<test>/<question id>/<path>`.
-- **Public trees.** When `course.yaml` says `public: true`, the definitions under `exercises/` and `tests/` lie in the private overlay, `private/courses/<course>/<topic>/`, which git ignores, and a definition in the tree itself is an error. With `public: false` they lie in the tree.
+- **Public trees.** When `course.yaml` says `public: true`, the definitions under `exercises/` and `tests/`, with a test's code files, lie in the private overlay, which git ignores: `private/courses/<course>/<topic>/` in instructor mode and `private/instructors/<name>/courses/<course>/<topic>/` in school mode. A definition in the tree itself is an error. The overlay does not move with the course folder: moving a course between the modes, move its overlay to the other path. With `public: false` they lie in the tree.
 
 Check a folder on your own machine, with no server, at any level:
 
@@ -388,6 +388,7 @@ At levels 1 and 2, `npx parallax sync [<course> …] [--overwrite-editor] [--acc
 
 - The owner, the account of the `instructor.yaml` address, must have signed in once, and a new course needs that address in `INSTRUCTOR_EMAILS`.
 - `private/` must be on that host. A site deployed from a git checkout lacks it, because git ignores it: copy it there. Without it `sync` names each definition it expected (`private/courses/statistics/means/tests/quiz.yaml: no definition here`), prints `parallax sync: 1 error in the course folders; no course was synced` and exits 1.
+- The folder wins for what it declares. Each run sets a topic's title, objective, estimated time, prerequisites, completion rule and position, and a resource's topic, order, title and visibility, to the folder's values, asking nothing, and counts them under "moved" and "fields changed". A resource hidden in the editor but not marked `visibility: hidden` in `topic.yaml` is visible again in the release the run publishes. A topic or resource that `sync` made and the folder no longer lists is archived. The release holds the whole course, so changes made in the editor and not yet published are published with it.
 - A resource whose latest revision was made in the editor is not overwritten or archived, and a topic that holds one is not archived: `sync` stops and names each file. With `--overwrite-editor` the folder's content becomes the new revision, and the editor's stays in the history. Topics and resources made only in the editor are left as they are and counted.
 - A new id at the path of a resource `sync` made stops it as well: put the earlier id back, or accept the new one with `--accept-new-ids`, which archives the earlier resource.
 - A course folder whose name starts with `-` cannot be named on the command line (`parallax sync -2024` is an unknown option); run `sync` with no course to include it. A site with no course folders prints nothing and exits 0.
@@ -397,7 +398,7 @@ At levels 1 and 2, `npx parallax sync [<course> …] [--overwrite-editor] [--acc
 | 0 | published, or nothing to publish |
 | 1 | refused or blocked: errors in a folder, no account, an address outside `INSTRUCTOR_EMAILS`, a course the account does not own or an archived one, editor revisions, a changed id, publication errors |
 | 2 | a wrong argument or an unknown course, level 0, an invalid server environment, or a malformed bundle |
-| 3 | not finished, and safe to run again: a time-out, no conversion moved on (no worker took the jobs), the queue or storage unavailable, or a draft that changed meanwhile |
+| 3 | not finished, and safe to run again: a time-out, no conversion moved on (no worker took the jobs, or one is waiting out a retry), the queue or storage unavailable, or a draft that changed meanwhile |
 
 ## Classes from a site's configuration
 
@@ -408,14 +409,14 @@ At levels 1 and 2, `npx parallax sync [<course> …] [--overwrite-editor] [--acc
 - adopts the course's newest release if the class has none;
 - issues an enrolment code, or for an open class a join link, and prints it once: `<course>, <class>: … enrolment code <code>`.
 
-A second run changes nothing and prints `unchanged`. `apply` stops before writing anything and names each `instructor.yaml` whose address has no account yet (`no active account has this address; that person signs in once first`). A class whose course is not synced is `pending: the course is not synced; run parallax sync`. `apply` never renames, archives or deletes: a class renamed in the configuration is a new class. A lost code is replaced through [the API](#inviting-people-and-managing-members). It exits 0, 1 when a class is pending or refused or an account is missing, and 2 for a malformed document.
+A second run prints `unchanged` for a class that still has an open enrolment invitation and the configured `open`. Otherwise it changes the class back: a class whose code was revoked, has expired or is used up gets a new code, printed at that run, and `open` is set to the configured value on every run (`opened` or `closed`), so a class opened or closed through the API is changed back. On a site, set `open` in `classes`, not through the API. `apply` stops before writing anything and names each `instructor.yaml` whose address has no account yet (`no active account has this address; that person signs in once first`). A class whose course is not synced is `pending: the course is not synced; run parallax sync`. `apply` never renames, archives or deletes: a class renamed in the configuration is a new class. A lost code is replaced through [the API](#inviting-people-and-managing-members). It exits 0, 1 when a class is pending or refused or an account is missing, and 2 for a malformed document.
 
 ## Open classes
 
-In an open class anyone who signs in may join, through its link `/join/<enrolment code>` (spec §13, N10). On a site, `open: true` in `classes` makes one, and `apply` prints its join link. Through the API an instructor with the membership-management grant sends `PUT /api/classes/{classId}/open` with `{ "open": true }`, and any enrolment code of the class makes a link. In an open class:
+In an open class anyone who signs in may join, through its link `/join/<enrolment code>` (spec §13, N10). On a site, `open: true` in `classes` makes one, and `apply` prints its join link. Through the API an instructor with the membership-management grant sends `PUT /api/classes/{classId}/open` with `{ "open": true }`, and any enrolment code of the class makes a link; on a site the next `apply` sets `open` back to the configuration. In an open class:
 
 - Students use exercises, private notes, tests and notebooks. Questions and comments are off: the reading margin and slide notes say **Questions and comments are off in this open class.**, and the server refuses a post.
 - Nobody grades. A test's automatic score is released once it is scored, or at the time the terms set for results. With **Solutions: Shown with results**, each student sees the solutions at once, while others may still be taking the test. **Reported grade: Chosen by an instructor** stays empty, because nobody chooses.
 - The automatic release runs as an instructor of the class, so the class needs an instructor member.
 - A release with manually graded test parts cannot be adopted by an open class, and a class on such a release cannot be opened (`manual_grading`).
-- `apply` gives an open class a code with no limit and no expiry. If that code is revoked or expires, the next `apply` issues a new one and prints the new link.
+- `apply` gives an open class a code with no limit and no expiry. If it is revoked or expires, the next `apply` issues a new one and prints the new link.
