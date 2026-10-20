@@ -1,8 +1,14 @@
-import { createHash } from 'node:crypto';
-import { cpSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
+import { createHash, randomUUID } from 'node:crypto';
+import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
 import { CONTENT, DIST, lookup, ROOT, SITE } from '../static-server';
+
+/** The copies and stand-ins the tests write, removed once their pages are closed. */
+const made: string[] = [];
+test.afterAll(() => {
+  for (const path of made.splice(0)) rmSync(path, { recursive: true, force: true, maxRetries: 3 });
+});
 
 // The school fixture, built by static-server.ts with `parallax build` and served on two hosts.
 const sampling = '/courses/ana/reef-ecology/5f0c1d8e-3b7a-4c2e-9a41-7d2f6b0e1c33';
@@ -23,6 +29,7 @@ type Seen = { url: string; type: string; mime: string; frame: boolean };
  */
 async function disposable(page: Page) {
   const copy = mkdtempSync(join(ROOT, 'copy-'));
+  made.push(copy);
   cpSync(join(DIST, 'site'), copy, { recursive: true });
   await page.route(`${SITE}/**/*.json`, (route) => {
     const file = lookup(copy, new URL(route.request().url()).pathname);
@@ -35,9 +42,13 @@ async function disposable(page: Page) {
   };
 }
 
-/** Writes `text` to the content host as an object would be, and gives its address there. */
+/**
+ * Writes `text` to the content host as an object would be, and gives its address there; a name of
+ * this run's own, so that no other run removes it.
+ */
 function object(text: string, ext: string) {
-  const name = `o/${createHash('sha256').update(text).digest('hex')}.${ext}`;
+  const name = `o/${createHash('sha256').update(text).update(randomUUID()).digest('hex')}.${ext}`;
+  made.push(join(DIST, 'content', name));
   writeFileSync(join(DIST, 'content', name), text);
   return `${CONTENT}/${name}`;
 }
@@ -46,7 +57,16 @@ function object(text: string, ext: string) {
 const SCRIPT = `parent.postMessage('stand-in', '*');
 try { parent.document.title = 'changed'; } catch {}
 document.title = JSON.stringify({ storage: localStorage.length + sessionStorage.length,
-  cookie: document.cookie, opener: window.opener !== null });`;
+  cookie: document.cookie });`;
+
+/** `text` as a pattern that matches it literally. */
+const escaped = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/** The targets of the page's links to the content host: `['']` when there are some, none with one. */
+const targets = (page: Page) => () =>
+  page
+    .locator(`a[href^="${CONTENT}/"]`)
+    .evaluateAll((all: HTMLAnchorElement[]) => [...new Set(all.map((a) => a.target))]);
 
 test('A45 a notebook’s HTML output and an SVG load only from the content origin and cannot run script against the site', async ({
   page,
@@ -68,16 +88,20 @@ test('A45 a notebook’s HTML output and an SVG load only from the content origi
   await expect(panel.getByText('Page 1 of 2')).toBeVisible();
   await expect.poll(() => responses.some((r) => r.url.endsWith('.pdf'))).toBe(true);
   await expect.poll(() => responses.some((r) => scripts(r) && r.url.includes('worker'))).toBe(true);
+  // Its link to the PDF opens no window: no link of the site to the content host has a target.
+  await expect.poll(targets(page)).toEqual(['']);
   await page.goto(`${sampling}/notebooks`);
   await expect(panel.getByText('Scripts in this output were removed and not run')).toHaveCount(2);
   await expect(
     panel.getByText('Interactive output not shown (application/javascript)'),
   ).toBeVisible();
   // The fixture's one HTML output: a frame with every sandbox restriction, on the content host.
+  // It loads lazily, so it is brought into view first.
   const frames = panel.locator('iframe');
   await expect(frames).toHaveCount(1);
+  await frames.scrollIntoViewIfNeeded();
   await expect(frames).toHaveAttribute('sandbox', '');
-  await expect(frames).toHaveAttribute('src', new RegExp(`^${CONTENT}/o/`));
+  await expect(frames).toHaveAttribute('src', new RegExp(`^${escaped(CONTENT)}/o/`));
   // Its three images (an attachment, a PNG and an SVG output), each loaded from the content host.
   const images = () =>
     panel
@@ -99,8 +123,9 @@ test('A45 a notebook’s HTML output and an SVG load only from the content origi
   await expect
     .poll(seen(site, (r) => r.mime.split(';')[0] ?? ''))
     .toEqual(['application/json', 'text/css', 'text/html', 'text/javascript']);
-  const folder = (r: Seen) => r.url.slice(0, r.url.lastIndexOf('/') + 1);
-  await expect.poll(seen(scripts, folder)).toEqual([`${SITE}/assets/`]);
+  const assets = `${SITE}/assets/`;
+  const folder = (r: Seen) => (r.url.startsWith(assets) ? assets : r.url);
+  await expect.poll(seen(scripts, folder)).toEqual([assets]);
 
   // Stand-ins for script that survived conversion, pointed at by one data file of a copy.
   const html = object(`<!doctype html><title>stand-in</title><script>${SCRIPT}</script>`, 'html');
@@ -118,11 +143,13 @@ test('A45 a notebook’s HTML output and an SVG load only from the content origi
     (window as Json).messages = [];
     window.addEventListener('message', (event) => (window as Json).messages.push(event.data));
   });
-  const framed = page.waitForResponse(html);
-  await page.goto(`${sampling}/notebooks`);
-  const response = await framed;
+  const standIn = panel.locator(`iframe[src="${html}"]`);
+  const [response] = await Promise.all([
+    page.waitForResponse(html),
+    page.goto(`${sampling}/notebooks`).then(() => standIn.scrollIntoViewIfNeeded()),
+  ]);
   expect(response.status()).toBe(200);
-  await expect(panel.locator(`iframe[src="${html}"]`)).toHaveAttribute('sandbox', '');
+  await expect(standIn).toHaveAttribute('sandbox', '');
   await expect
     .poll(() =>
       panel.locator(`img[src="${svg}"]`).evaluate((img: HTMLImageElement) => img.naturalWidth),
@@ -137,6 +164,9 @@ test('A45 a notebook’s HTML output and an SVG load only from the content origi
   await expect.poll(() => page.evaluate(() => (window as Json).messages)).toEqual(['last']);
   await expect(page).toHaveTitle('Sampling a reef · Parallax');
 
+  // The site opens no page of the content host in a window, so none has it as opener: no link of
+  // the site to the content host has a target (the two download links of the notebook here).
+  await expect.poll(targets(page)).toEqual(['']);
   // Opened on its own, the stand-in runs as the content host and finds nothing of the site: not
   // its storage, and not its cookie for every path, which a host of the same name on another
   // port would be sent.
@@ -149,7 +179,7 @@ test('A45 a notebook’s HTML output and an SVG load only from the content origi
   expect(kept).toEqual(['kept', 'site=kept']);
   const alone = await context.newPage();
   await alone.goto(html);
-  await expect(alone).toHaveTitle(JSON.stringify({ storage: 0, cookie: '', opener: false }));
+  await expect(alone).toHaveTitle(JSON.stringify({ storage: 0, cookie: '' }));
 });
 
 test('A45 the browser cleans the three app-origin surfaces of an altered data file', async ({
@@ -167,25 +197,36 @@ test('A45 the browser cleans the three app-origin surfaces of an altered data fi
   edit(data.deck, (deck) => {
     deck.web.slides[0] = hostile + deck.web.slides[0];
   });
+  // The window sees a failed image's error before the image's own handler would run.
+  await page.addInitScript(() => {
+    const failed: (string | null)[] = [];
+    (window as Json).failed = failed;
+    const seen = (event: Event) =>
+      event.target instanceof HTMLImageElement && failed.push(event.target.getAttribute('src'));
+    window.addEventListener('error', seen, true);
+  });
   for (const tab of ['reading', 'notebooks', 'slides']) {
     await page.goto(`${sampling}/${tab}`);
     const main = page.getByRole('main');
     await expect(main.getByText('Altered by the test')).toBeVisible();
     await expect(main.getByText('Run', { exact: true })).toBeVisible();
-    // The image stays; once its load has failed, its handler, if it had kept one, has run.
-    const image = main.locator('img[src="x"]');
-    await expect(image).toHaveCount(1);
-    await expect.poll(() => image.evaluate((img: HTMLImageElement) => img.complete)).toBe(true);
-    const found = await main.evaluate((root) => ({
-      scripts: root.querySelectorAll('script').length,
-      handlers: [...root.querySelectorAll('*')].flatMap((el) =>
-        el.getAttributeNames().filter((name) => name.startsWith('on')),
-      ),
-      javascript: [...root.querySelectorAll('[href],[src]')].filter((el) =>
-        /^\s*javascript:/i.test(el.getAttribute('href') ?? el.getAttribute('src') ?? ''),
-      ).length,
-      ran: (window as Json).ran ?? null,
-    }));
+    // The image stays and fails to load. One task after the window has seen its error, a handler
+    // it had kept would have run, and the marker is read then.
+    await expect(main.locator('img[src="x"]')).toHaveCount(1);
+    await expect.poll(() => page.evaluate(() => (window as Json).failed)).toContain('x');
+    const found = await main.evaluate(async (root) => {
+      await new Promise((next) => setTimeout(next));
+      return {
+        scripts: root.querySelectorAll('script').length,
+        handlers: [...root.querySelectorAll('*')].flatMap((el) =>
+          el.getAttributeNames().filter((name) => name.startsWith('on')),
+        ),
+        javascript: [...root.querySelectorAll('[href],[src]')].filter((el) =>
+          /^\s*javascript:/i.test(el.getAttribute('href') ?? el.getAttribute('src') ?? ''),
+        ).length,
+        ran: (window as Json).ran ?? null,
+      };
+    });
     expect(found, tab).toEqual({ scripts: 0, handlers: [], javascript: 0, ran: null });
   }
 });
