@@ -1,0 +1,60 @@
+# A test: questions with points. It lies in private/ because the course is public: true, and it
+# holds the correct answers and rubrics. Students see the prompts and the options only, and their
+# results when the class releases them.
+#
+# Kinds of question: choice (one or several correct options), numeric, explanation (graded by hand
+# with a rubric) and code (graded by a runner, at level 2; see the end of this file).
+questions:
+  - id: write-ids
+    kind: choice
+    prompt: Which command gives a new topic or resource in topic.yaml its id?
+    points: 1
+    options:
+      - { id: check, label: npx parallax check --write-ids }
+      - { id: build, label: npx parallax build }
+      - { id: sync, label: npx parallax sync }
+    correct: [check]
+  - id: open-site
+    kind: choice
+    prompt: Which tabs does a level 0 site show in full to anyone, without signing in?
+    points: 2
+    multiple: true
+    options:
+      - { id: slides, label: Slides }
+      - { id: reading, label: Reading }
+      - { id: exercises, label: Exercises }
+      - { id: notebooks, label: Notebooks }
+      - { id: tests, label: Tests }
+    correct: [slides, reading, notebooks]
+  - id: position
+    kind: numeric
+    prompt: >-
+      A course has three topics whose topic.yaml files say position 4, position 0 and position 1.
+      Counting from 1, where in the list of topics is the one with position 4 shown?
+    points: 1
+    answer: 3
+    tolerance: 0
+  - id: plan
+    kind: explanation
+    prompt: Describe a topic of a course you teach, and say what you would put in each of its tabs.
+    points: 2
+    maxLength: 3000
+    rubric:
+      - { id: topic, label: Names a topic and what students should learn from it, points: 1 }
+      - { id: tabs, label: Matches material to at least three tabs, points: 1 }
+# The author's defaults for the class's assignment of this test; a class may change them.
+settings:
+  attempts: 2
+#
+# A code question needs a runner (level 2). Its checks call the student's function and compare
+# the result. Files without `content` lie beside this file, in tests/sample-test/<question id>/.
+#
+#  - id: mean
+#    kind: code
+#    prompt: Write mean(values), which returns the mean of a list of numbers.
+#    points: 3
+#    runtime: python-3.12
+#    files:
+#      - { path: main.py, content: "def mean(values):\n    ...\n", editable: true, hidden: false }
+#    checks:
+#      - { name: three values, kind: call, visibility: public, file: main.py, function: mean, args: [[1, 2, 6]], expected: { value: 3 }, compare: { mode: numeric } }

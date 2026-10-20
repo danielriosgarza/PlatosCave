@@ -1,0 +1,5 @@
+# The course's title, and where its exercises and tests are read from: with public: true they lie
+# in private/, at the same path as this folder from the site's root, which git ignores: a public
+# repository of the site then holds no answer. With public: false they lie in each topic's folder.
+title: Welcome to Parallax
+public: true

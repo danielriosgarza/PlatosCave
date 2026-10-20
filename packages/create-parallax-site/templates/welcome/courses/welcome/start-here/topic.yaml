@@ -1,0 +1,25 @@
+# A topic: its id, its place among the course's topics, its title and its resources. The name of
+# the folder (start-here) is only a path. Each resource names a file of one tab folder; the list
+# gives the order within each tab. `npx parallax check --write-ids` gives an entry without an id a
+# new one: never copy an id from one entry to another.
+id: 86c5d566-494a-46d0-afed-0d0ee178a917
+position: 0
+title: How a Parallax course works
+objective: Find each of the five kinds of material and the file it comes from.
+estimatedMinutes: 30
+resources:
+  - id: 1a9974f3-729f-4feb-9718-c1476a79ef41
+    file: slides/welcome.md
+    title: Parallax in five slides
+  - id: 0f91a4bd-d8c2-43fb-a28b-4511d4c8cfc0
+    file: reading/guide.md
+    title: Make the site your own
+  - id: c991b7e4-6f17-4e21-8777-d4eedfbed4c6
+    file: exercises/first-exercise.yaml
+    title: Predict, inspect, explain
+  - id: b3d27409-dfa3-422b-b01f-8fd0e6a77abe
+    file: notebooks/demo.ipynb
+    title: A notebook with its outputs
+  - id: 0eb2d011-e3a8-4fc6-93ae-d22e07e1caed
+    file: tests/sample-test.yaml
+    title: Check what you know

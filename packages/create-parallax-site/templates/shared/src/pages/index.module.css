@@ -1,10 +1,21 @@
 .front {
   box-sizing: border-box;
-  max-width: calc(var(--pc-reading-width) + 2 * var(--pc-stage-inset));
+  max-width: calc(1200px + 2 * var(--pc-stage-inset));
   margin: 0 auto;
-  padding: var(--pc-space-48) var(--pc-stage-inset);
+  padding: var(--pc-space-48) var(--pc-stage-inset) var(--pc-space-56);
   color: var(--pc-ink);
   font: var(--pc-text-body);
+}
+
+/* The title and the scene side by side, stacked on narrow screens. */
+.hero {
+  display: grid;
+  grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
+  gap: var(--pc-space-48);
+  align-items: center;
+}
+.intro {
+  min-width: 0;
 }
 .logo {
   display: block;
@@ -17,27 +28,13 @@
   font: var(--pc-text-title);
   letter-spacing: var(--pc-tracking-title);
 }
-.audience {
+.tagline {
   margin: var(--pc-space-12) 0 0;
   color: var(--pc-muted);
 }
-.instructor {
-  margin-top: var(--pc-space-32);
-  padding-top: var(--pc-space-20);
-  border-top: 1px solid var(--pc-rule);
-}
-.name {
-  margin: 0;
-  font: var(--pc-text-subsection);
-  letter-spacing: var(--pc-tracking-subsection);
-}
-.courses {
-  margin: var(--pc-space-8) 0 0;
-  padding-left: var(--pc-space-20);
-}
 .open {
   display: inline-block;
-  margin-top: var(--pc-space-40);
+  margin-top: var(--pc-space-28);
   padding: 9px 22px;
   border-radius: var(--pc-radius-primary);
   background: var(--pc-ink);
@@ -46,6 +43,7 @@
   font-weight: 600;
   text-decoration: none;
   min-height: 36px;
+  box-sizing: border-box;
 }
 .open:hover {
   filter: brightness(0.9);
@@ -54,9 +52,78 @@
   outline: 2px solid var(--pc-ink);
   outline-offset: 2px;
 }
+
+/* The two sections below: a heading, then a grid of bordered cards. */
+.section {
+  margin-top: var(--pc-space-56);
+  padding-top: var(--pc-space-24);
+  border-top: 1px solid var(--pc-rule);
+}
+.heading {
+  margin: 0 0 var(--pc-space-20);
+  font: var(--pc-text-subsection);
+  letter-spacing: var(--pc-tracking-subsection);
+}
+.grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--pc-space-20);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.card {
+  min-width: 0;
+  padding: 22px 22px 18px;
+  border: 1px solid var(--pc-rule);
+  border-radius: var(--pc-radius-card);
+}
+.cardTitle {
+  margin: 0 0 var(--pc-space-8);
+  font: 600 var(--pc-size-body) / 1.3 var(--pc-font-sans);
+  letter-spacing: var(--pc-tracking-subsection);
+}
+.cardText {
+  margin: 0;
+  font: var(--pc-text-ui);
+}
+.meta {
+  margin: 0;
+  color: var(--pc-muted);
+  font: var(--pc-text-label);
+}
+.code {
+  padding: 0 var(--pc-space-4);
+  border-radius: var(--pc-radius-control);
+  background: var(--pc-secondary);
+  font: var(--pc-text-code);
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 1199px) {
+  .front {
+    padding-inline: var(--pc-space-32);
+  }
+}
+@media (max-width: 800px) {
+  .front {
+    padding-inline: var(--pc-space-24);
+  }
+  .hero {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--pc-space-32);
+  }
+  .grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
 @media (max-width: 540px) {
   .front {
     padding: var(--pc-space-32) var(--pc-space-16);
+  }
+  .grid {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 14px;
   }
 }
 /* The touch target of Buttons.module.css, which the global rule gives no link; last, to win. */

@@ -25,9 +25,9 @@ const read = (dir: string, file: string) => fs.readFileSync(join(dir, file), 'ut
 const ignored = ['node_modules/', '.env', '.parallax/', 'dist/', 'backups/', 'private/'];
 /** Each instructor's name with the titles of their courses, as the front page lists them. */
 const listed = {
-  instructor: [['Alex Example', ['Introduction to Statistics']]],
+  instructor: [['Alex Example', ['Welcome to Parallax']]],
   school: [
-    ['Ana Example', ['Reef Ecology']],
+    ['Ana Example', ['Reef Ecology', 'Welcome to Parallax']],
     ['Ben Example', ['Field Statistics']],
   ],
 };
@@ -52,6 +52,16 @@ test('A37 one command creates a site of either mode, and only package.json names
     // npm delivers no .gitignore or .npmrc in a package: the templates hold them as _gitignore
     // and _npmrc, and _gitattributes beside them, and the site gets them under their real names.
     expect(made).toEqual(expect.arrayContaining(['.gitattributes', 'src/pages/index.tsx']));
+    // The starter course, with its exercise and test in the overlay at the same path.
+    const welcome = `${template === 'school' ? 'instructors/ana/' : ''}courses/welcome/start-here`;
+    expect(made).toEqual(
+      expect.arrayContaining([
+        `${welcome}/topic.yaml`,
+        `${welcome}/notebooks/demo/data/heights.csv`,
+        `private/${welcome}/exercises/first-exercise.yaml`,
+        `private/${welcome}/tests/sample-test.yaml`,
+      ]),
+    );
     expect(made.filter((file) => /^_(gitignore|npmrc|gitattributes)$/.test(file))).toEqual([]);
     expect(read(site, '.npmrc')).toBe('package-lock=false\n');
     expect(read(site, '.gitattributes')).toBe('* text=auto eol=lf\n');
@@ -96,12 +106,15 @@ test('A37 one command creates a site of either mode, and only package.json names
   expect(create([join(temp, 'file', 'site')], { print })).toBe(1);
   expect(lines.at(-1)).toMatch(/file[\\/]site could not be written \(E[A-Z]+\)\.$/);
 
-  // The templates hold no secret, only references to one, and no exercise or test definition.
+  // The templates hold no secret, only references to one, and every exercise and test definition
+  // lies in the starter course's overlay, which the site's .gitignore lists (private/ above).
   const templates = join(pkg, 'templates');
   const all = files(templates);
   // Each line that grep -rniE "(password|secret|token)\s*[:=]" prints names a ${VAR} reference.
   const named = /(password|secret|token)\s*[:=]\s*(["']?\$\{\w)?/i;
   const rows = all.flatMap((file) => read(templates, file).split('\n'));
   expect(rows.filter((row) => named.test(row) && !named.exec(row)?.[2])).toEqual([]);
-  expect(all.filter((file) => /(^|\/)(exercises|tests|private)\//.test(file))).toEqual([]);
+  const definitions = all.filter((file) => /(^|\/)(exercises|tests|private)\//.test(file));
+  expect(definitions.length).toBeGreaterThan(0);
+  expect(definitions.filter((file) => !file.startsWith('welcome/private/courses/'))).toEqual([]);
 });

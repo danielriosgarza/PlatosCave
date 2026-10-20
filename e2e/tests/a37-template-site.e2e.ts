@@ -14,7 +14,7 @@ import { small } from '../touch';
 const repo = resolve(import.meta.dirname, '../..');
 const versions = ['0.0.1-a37.1', '0.0.2-a37.2'] as const;
 const base = 'http://127.0.0.1:3117';
-const name = 'Introduction to Statistics';
+const name = 'My Parallax site';
 const { DATABASE_URL: _, ...operator } = process.env;
 // On Windows npm and npx are command scripts, which only a shell can start.
 const shell = process.platform === 'win32';
@@ -109,8 +109,19 @@ test('A37 a site created from the instructor template shows its front page at / 
   expect(await logo.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
   const src = await logo.getAttribute('src');
   expect(src).toMatch(/^\/assets\/logo-[\w-]+\.png$/);
-  await expect(main.getByRole('heading', { level: 2 })).toHaveText(['Alex Example']);
-  await expect(main.getByRole('listitem')).toHaveText([name]);
+  await expect(main.getByRole('heading', { level: 2 })).toHaveText([
+    'Make this site yours',
+    'Courses',
+  ]);
+  // The course catalogue: one card per course, with its instructor.
+  const courses = main.getByRole('region', { name: 'Courses' }).getByRole('listitem');
+  await expect(courses).toHaveCount(1);
+  await expect(courses.getByRole('heading', { level: 3 })).toHaveText('Welcome to Parallax');
+  await expect(courses).toContainText('Alex Example');
+  // The scene beside the title draws on a canvas, and a button stops and starts it.
+  await expect(main.getByRole('img', { name: /scholar walks through a cave/ })).toBeVisible();
+  await main.getByRole('button', { name: 'Pause animation' }).click();
+  await expect(main.getByRole('button', { name: 'Play animation' })).toBeVisible();
   const { violations } = await new AxeBuilder({ page }).analyze();
   expect(violations).toEqual([]);
   // On a touch screen every control of the page is a target of at least 44 px (DESIGN.md, A20).
