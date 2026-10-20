@@ -168,11 +168,11 @@ export async function syncCourse(
   deps: SyncDeps,
   header: SyncHeader,
   files: SyncFiles,
+  /** What the run has done so far, which every stop prints first; a caller keeps it on a throw. */
+  report: string[] = [],
 ): Promise<SyncResult> {
   const { db, instructorEmails } = deps;
   const { manifest, course: folder, instructor } = header;
-  /** What the run has done so far, which every stop prints before its own lines. */
-  const report: string[] = [];
   const stop = (code: SyncResult['code'], ...lines: string[]): SyncResult => ({
     code,
     report: [...report, ...lines],
@@ -259,8 +259,10 @@ export async function syncCourse(
     case 'blocked':
       return withReport(1, 'not published', result.report);
     case 'unfinished': {
-      const why = result.reason === 'idle' ? 'no worker took the jobs' : 'they took too long';
-      return withReport(3, `not published: ${why}; ${AGAIN}`, result.report);
+      // A wait also goes idle while a worker waits out a retry, so no worker is said to be missing.
+      const why = result.reason === 'idle' ? 'no conversion moved on' : 'conversions took too long';
+      const line = `not published: ${why}; the jobs stay queued, and sync is safe to run again`;
+      return withReport(3, line, result.report);
     }
   }
 }
