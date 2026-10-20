@@ -47,7 +47,7 @@ DOCKER_GID=$(stat -c %g /var/run/docker.sock) docker compose --env-file runner.e
 
 - The subnets of `edge` and `backend` (`172.30.11.0/24`, `172.30.10.0/24`) can collide with a network on the host; each is one line of `compose.yml`.
 - `compose.yml`, `Caddyfile`, `compose.level2.yml` and `compose.runner.yml` are copied from the template once: a later version that needs a new secret, volume, service or Caddy rule asks for an edit of them.
-- `apply` issues a new enrolment code, and prints it, for every listed class with no open enrolment invitation, and for an open class whose open invitations all have a limit or an expiry: a code that was revoked, has expired or is used up is replaced at the next `apply`, for an open class with no limit and no expiry. It also sets a class's `open` back to the configuration when the two differ.
+- `apply` issues a new enrolment code, and prints it, for every listed class that has no open enrolment invitation; an open class also gets one when each of its open invitations has a limit or an expiry. So a code that was revoked, has expired or is used up is replaced at the next `apply`, and an open class's new code has no limit and no expiry. It also sets a class's `open` back to the configuration when the two differ.
 - `apply` waits for every listed instructor's first sign-in; a mistyped address in an `instructor.yaml` gives nobody the courses, and `apply` names the file.
 
 ## Sign-in

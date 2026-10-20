@@ -212,7 +212,7 @@ Copied from DESIGN.md frontmatter; `tokens.test.ts` parses the frontmatter with 
 
 `scripts/pg-local.sh` (validated in this container): data dir `${PARALLAX_PG_DIR:-/tmp/parallax-pg}`, port 54329, user `parallax`, `--auth=trust`. When running as root (cloud sessions), the script `chown`s the directory to `postgres` and runs `initdb`/`pg_ctl`/`createdb` via `runuser -u postgres --`; otherwise it runs them directly. `start` prints `DATABASE_URL=postgres://parallax:parallax@127.0.0.1:54329/parallax` (same URL as compose, so `.env.example` works with both). `initdb` refuses to run as root; the script must not try.
 
-`scripts/check-scenarios.ts`: greps `**/*.{test,itest,e2e}.{ts,tsx}` and `connector/**/*_test.go` for `\bA(0[1-9]|[1-4][0-9]|5[0-2])\b` in test titles (A01 to A52 since P5-02; A01 to A36 before), prints a table scenario → files; exits non-zero only for IDs listed in `docs/delivery/done/*.txt` (§6) that have no test.
+`scripts/check-scenarios.ts`: greps `**/*.{test,itest,e2e}.{ts,tsx}` and `connector/**/*_test.go` for `\bA(0[1-9]|[1-4][0-9]|5[0-2])\b` in test titles (A01 to A52 since P5-02; A01 to A36 before), prints a table scenario → files; exits non-zero for IDs listed in `docs/delivery/done/*.txt` (§6) that have no test, and since P5-25 (2026-10-20) also for a counted test file that no Vitest `include`, Playwright `testDir`/`testMatch` or Go package collects.
 
 ### 1.8 Compose and container image
 

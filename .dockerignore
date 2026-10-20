@@ -7,5 +7,6 @@ e2e/playwright-report
 **/.env
 **/.env.*
 **/prod.env
+**/garage.toml
 **/.parallax
 .claude

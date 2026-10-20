@@ -11,6 +11,8 @@ dist/
 .env.*
 !.env.example
 prod.env
+garage.toml
+!infra/garage/garage.toml
 .claude/worktrees/
 coverage/
 e2e/playwright-report/
