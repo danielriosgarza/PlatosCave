@@ -65,7 +65,7 @@ openCatalogue: { mode: 'instructor' | 'school', instructors: [{ name, courses: [
 openCourse:    { title, instructors: string[], topics: [{ topicId, number, title, objective, estimatedMinutes, presence, firstTab }] }
 openTopic:     { slides: [{ resourceId, title }], reading: [{ resourceId, title, kind }], notebooks: [{ resourceId, title, type }],
                  exercises: [{ resourceId, title }], tests: [{ resourceId, title }] }
-openResource:  { type: 'slides', title, pdf: { url, pageCount } | null, web: { slides } | null }
+openResource:  { type: 'slides', title, pdf: { url, pageCount, steps? } | null, web: { slides } | null }   (steps: P6-02, slide decks design §5.3)
              | { type: 'reading', title, kind, html: string | null, pdf: { url, pageCount } | null }
              | { type: 'notebook', title, file, notebook }
              | { type: 'shiny', title, url, origin: string | null }

@@ -730,6 +730,8 @@ Phase 5 (§9) covers the scenarios added on 2026-10-12. This table lists the ite
 | A42 | P5-08 | | A50 | P5-11 |
 | A43 | P5-08, P5-08f, P5-14 | | A51 | P5-19 |
 | A44 | P5-15, P5-16, P5-16a | | A52 | P5-23, P5-23c |
+| A53 | P6-02a, P6-02e | | A55 | P6-02b |
+| A54 | P6-02c | | A56 | P6-02g |
 
 Every scenario A01–A52 is covered by at least one item; no done file lists one of A37–A52 before the item that tests it merges, and none does before session 2 of §9. Each item's PR adds a file `docs/delivery/done/<ID>.txt` listing, one per line, the scenario IDs whose tests it adds (an empty file if none). A new file per item means parallel PRs never conflict here. `pnpm scenarios` fails if an ID listed in any of those files has no test, so scenario tests cannot silently disappear.
 
@@ -1313,7 +1315,50 @@ Owner decisions of 2026-10-20, in that session: the licence is MIT; the first ta
 - Scope: `docs/design/slide-decks.md` (new): a `.pptx` deck (and the existing PDF deck) as a resource that shows the instructor's figures, fonts and layout, with each click of an animation as a frame; the converter (a pinned LibreOffice in a container, the same on every machine, or a local LibreOffice where Docker is absent), what it is trusted for and where its output is served (the content origin, never script); the course folder's `slides/*.pptx`, the level 0 build, `sync`, the viewer's steps, slide notes per slide, accessibility text, the original file for download, and limits (fonts, embedded media, effects that become their end state). It amends spec §7 and the ADRs it touches, and adds the entries of its units to this section.
 - Verify: the design names every decision of the owner above and every file a unit will touch; each unit entry has the §0 fields; `pnpm check` green.
 - Spec: §7, §13, §14. Class: complex. Scenarios: none. Depends on: none. Model: fable. Security: yes. Size: M.
-- Touches: `docs/design/slide-decks.md` (new), `docs/product-spec.md`, `docs/adr/0002-authorization-and-class-isolation.md`, `docs/design/course-folder.md`, `docs/delivery/plan.md`.
+- Touches: `docs/design/slide-decks.md` (new), `docs/product-spec.md`, `docs/adr/0002-authorization-and-class-isolation.md`, `docs/adr/0003-content-releases-and-revisions.md`, `docs/design/course-folder.md`, `docs/design/open-site.md`, `docs/delivery/plan.md`.
+- As built: the design is `docs/design/slide-decks.md`; its units are P6-02a to P6-02g below, and spec §16 gains A53 to A56.
+
+### P6-02a · The deck converter
+- Scope: `converter/convert.py` (new): the program of the slide decks design §3, which drives LibreOffice through UNO, turns each click of a slide's main sequence into a frame by the rules of §3.2, leaves out hidden slides, speaker notes and comments, exports one PDF, rewrites its date, ID and checksum in place (§3.4) and writes the result line and the PDF (§3.3); `converter/Dockerfile` (new) with LibreOffice, `python3-uno` and the fonts of §3.1, pinned; `converter/fixtures/make.py` (new) and the fixture decks it writes; `converterResult` and the limits in `packages/contracts/src/deckSteps.ts` (new); a Vitest project `converter` that runs the program in the image where Docker is present (mandatory in CI) and with the machine's LibreOffice where it is present; the root script `converter:image`; the CI job that builds the image and runs the project. `scripts/check-scenarios.ts` gains A53 to A56 in `RANGE`.
+- Verify: `converter/test/a53-convert.test.ts` (new): the fixture decks give the frames and steps of §3.2 (text per page with pdf.js, pixels at fixed points), no page holds a hidden slide's title, a speaker note or a comment, two conversions are byte-identical, a non-presentation, an empty file and a file over the limit exit 1 with one line; `pnpm check` green; the CI job green.
+- Spec: §7. Class: complex (design P6-02). Scenarios: A53 (partial). Depends on: P6-02. Model: opus. Security: yes. Size: M.
+- Touches: `converter/**` (new), `packages/contracts/src/deckSteps.ts` (new), `packages/contracts/src/index.ts`, `vitest.config.ts`, `package.json`, `.github/workflows/ci.yml`, `scripts/check-scenarios.ts`.
+
+### P6-02b · Steps in a PDF deck, server side
+- Scope: the slide decks design §4: `content.steps` of a `slides_pdf` revision (`deckSteps`), the check of steps against pages and `rasterOnly` on finished frames in `convertRevision`, `steps` in `getSlides`' response, `savePosition` counting slides in a deck with steps, `outputsOf` giving one text hash per slide, export labels by slide.
+- Verify: `apps/server/src/content/a55-deck-steps.test.ts` and `apps/server/test/integration/a55-deck-steps.itest.ts` (new) for A55; the existing slide, position and mapping tests green unchanged; `pnpm check`, `pnpm test:integration` green.
+- Spec: §7, §16. Class: complex (design P6-02). Scenarios: A55. Depends on: P6-02. Model: opus. Security: no. Size: M.
+- Touches: `packages/contracts/src/deckSteps.ts`, `packages/contracts/src/routes/slides.ts`, `apps/server/src/content/convert.ts`, `apps/server/src/db/slides.ts`, `apps/server/src/db/readings.ts`, `apps/server/src/annotations/mapping.ts`, `apps/server/src/db/lifecycle.ts`, `apps/server/src/http/routes/slides.routes.ts`.
+
+### P6-02c · The viewer steps through a deck
+- Scope: the slide decks design §6: `SlideViewer` takes `steps`, keeps the slide and a step, moves through steps with Next, Previous and the arrow keys, opens a slide reached any other way at its last step, shows `Step k of K`, reads one page ahead; `SlidesTab` and `slides.ts` pass the steps; the level 0 shell's slides branch and `openResource`'s optional `steps` (`openSite.ts`), with the level 0 build writing them from the revision.
+- Verify: `apps/web/src/slides/a54-steps.test.tsx` and `e2e/tests/a54-deck-steps.e2e.ts` (new) with a world fixture deck with steps; the existing slide tests (A04, A24) green unchanged; `pnpm check`, `pnpm build && pnpm test:e2e` for the slide tests, and the level 0 browser suite green.
+- Spec: §7, §13, §16. Class: complex (design P6-02). Scenarios: A54. Depends on: P6-02b. Model: opus. Security: no. Size: M.
+- Touches: `apps/web/src/slides/SlideViewer.tsx`, `apps/web/src/slides/SlidesTab.tsx`, `apps/web/src/slides/slides.ts`, `apps/web/src/slides/Slides.module.css`, `apps/web/src/open/panels.tsx`, `packages/contracts/src/openSite.ts`, `packages/cli/src/open/course.ts`, `apps/server/test/fixtures/world.ts`.
+
+### P6-02d · The tool runs the converter
+- Scope: `packages/cli/src/host/converter.ts` (new): the converter image's reference from `parallax.registry` and the tool's version (`parallax-converter:dev` in the repository), the container of the slide decks design §3.6 through the replaceable process runner of `host/compose.ts`, the machine's LibreOffice of §3.7 for `check` and the level 0 build only, the cache of §3.8, the parse of the result line, and the messages of §3.5 and §3.7.
+- Verify: `packages/cli/src/host/converter.test.ts` (new), with the process replaced: the exact `docker run` arguments, the time limit, a cache hit runs nothing, an incomplete cache entry is made again, a refused conversion's line is reported, no Docker and no LibreOffice gives the warning for `check` and the error for `build` and `sync`; `pnpm check` green.
+- Spec: §7, §13. Class: complex (design P6-02). Scenarios: none. Depends on: P6-02a. Model: opus. Security: yes. Size: M.
+- Touches: `packages/cli/src/host/converter.ts` (new), `packages/cli/src/host/converter.test.ts` (new), `packages/cli/src/host/compose.ts`.
+
+### P6-02e · Presentation files in a course folder
+- Scope: the slide decks design §5: the layout rows `slides/*.pptx` and `slides/*.odp`, `TAKES`, the size and ZIP check, the reader's conversion with `open()` reading the cached PDF, `steps` in `withSource` and `revisionPayload`, `check`, the level 0 build's `dataOf` and `untrusted`, `sync`.
+- Verify: `packages/cli/src/a53-presentation-folder.test.ts` (new) for the folder half of A53, with the converter's process replaced; the golden manifest and the A38, A40, A43, A45 and A46 tests green with a fixture presentation file added where the design says; `pnpm check` and `pnpm test:integration` green.
+- Spec: §7, §13. Class: complex (design P6-02). Scenarios: A53 (folder half). Depends on: P6-02b, P6-02d. Model: opus. Security: yes. Size: M.
+- Touches: `packages/contracts/src/courseFolder.ts`, `packages/contracts/src/courseFiles.ts`, `packages/cli/src/folder/read.ts`, `packages/cli/src/folder/publication.ts`, `packages/cli/src/commands/check.ts`, `packages/cli/src/commands/sync.ts`, `packages/cli/src/open/course.ts`, `packages/cli/fixtures/**`.
+
+### P6-02f · Publishing the converter
+- Scope: the slide decks design §8: the converter image in `release.ts`, `package-release.yml` (build, label and version check, push, and the check that the version is not published yet) and `image.yml`, with their tests; the user documentation of presentation files (instructor guide, getting started, operations: Docker or LibreOffice, the warnings, the limits).
+- Verify: `packages/cli/scripts/release.test.ts` and `apps/server/src/infra/package-release.test.ts` name three images; the workflow's dry run green on the pull request; every command the documentation shows that needs no Docker was run in the session; `pnpm check` green.
+- Spec: §7, §13. Class: complex (design P6-02). Scenarios: none. Depends on: P6-02a, P6-02e. Model: opus. Security: yes. Size: M.
+- Touches: `packages/cli/scripts/release.ts`, `packages/cli/scripts/release.test.ts`, `.github/workflows/package-release.yml`, `.github/workflows/image.yml`, `apps/server/src/infra/package-release.test.ts`, `docs/guide/instructors.md`, `docs/getting-started.md`, `docs/operations.md`.
+
+### P6-02g · PDF decks with overlays
+- Scope: the slide decks design §7: the pdf.js worker reads page labels, `derived.steps` holds the runs of labels that repeat on consecutive pages, and a deck's steps are `content.steps ?? derived.steps` in the server and the viewer.
+- Verify: `apps/server/src/content/a56-overlays.test.ts` (new) with a PDF written by the test; `pnpm check` green.
+- Spec: §7. Class: simple. Scenarios: A56. Depends on: P6-02b, P6-02c. Model: opus. Security: no. Size: S.
+- Touches: `apps/server/src/content/pdf-text.worker.mjs`, `apps/server/src/content/pdf-text.ts`, `apps/server/src/content/convert.ts`, `packages/contracts/src/deckSteps.ts`, `apps/web/src/slides/SlidesTab.tsx`.
 
 ### P6-03 · Design: screens for the instructor tasks that are API-only
 - Scope: `docs/design/instructor-screens.md` (new): screens, on the existing routes and the components of `DESIGN.md`, for adding a PDF deck, creating a class, issuing enrolment codes and instructor invitations, accepting an invitation, listing and changing members and grants, adopting another release (with the changed resources, affected anchors and existing assignments of spec §12), and setting one class's terms for a test; where each sits in the existing screens, its states and copy, and the entries of its units in this section.

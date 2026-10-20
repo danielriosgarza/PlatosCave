@@ -50,6 +50,7 @@ In a tree declared `public: false` the folders `exercises/` and `tests/` lie in 
 | --- | --- | --- | --- |
 | `slides/` | `*.md`, `*.markdown` | `slides_web` | nothing |
 | `slides/` | `*.pdf` | `slides_pdf` | nothing |
+| `slides/` | `*.pptx`, `*.odp` | `slides_pdf`, converted by the site tool ([slide decks design](slide-decks.md) §5; added by P6-02) | nothing |
 | `reading/` | `*.md`, `*.markdown`, `*.html` | `reading_native` | nothing |
 | `reading/` | `*.pdf` | `reading_pdf` | nothing |
 | `notebooks/` | `*.ipynb` | `notebook` | a folder with its data files (below) |
