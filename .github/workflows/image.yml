@@ -10,6 +10,15 @@ on:
       - pnpm-workspace.yaml
       - apps/*/package.json
       - packages/*/package.json
+      # What the one-host suite (A52) starts and checks.
+      - .github/workflows/image.yml
+      - vitest.config.ts
+      - packages/create-parallax-site/templates/shared/**
+      - packages/cli/src/host/**
+      - packages/cli/src/commands/**
+      - apps/server/src/db/migrate.ts
+      - apps/server/drizzle/**
+      - apps/server/test/onehost/**
   workflow_dispatch:
 
 permissions:
@@ -31,6 +40,9 @@ jobs:
           context: .
           file: infra/docker/server.Dockerfile
           push: false
+          # Loaded under the reference `parallax env` writes from packages/cli/package.json.
+          load: true
+          tags: ghcr.io/danielriosgarza/parallax-server:0.0.0
           cache-from: type=gha,scope=server
           cache-to: type=gha,mode=max,scope=server
       - uses: docker/build-push-action@v6
@@ -40,3 +52,11 @@ jobs:
           push: false
           cache-from: type=gha,scope=runner
           cache-to: type=gha,mode=max,scope=runner
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: A52 one-host installation of the site template
+        run: pnpm test:onehost

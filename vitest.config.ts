@@ -56,6 +56,17 @@ export default defineConfig({
           hookTimeout: 60000,
         },
       },
+      {
+        test: {
+          // The template's installation on Docker (A52), after the `image` workflow has loaded the
+          // server image; outside the integration project's glob, so test:integration has none.
+          name: 'onehost',
+          environment: 'node',
+          include: ['apps/server/test/onehost/**/*.docker.itest.ts'],
+          fileParallelism: false,
+          hookTimeout: 120000,
+        },
+      },
     ],
   },
 });
