@@ -9,11 +9,6 @@ const own = fileURLToPath(new URL('..', import.meta.url));
 const TEMPLATES = ['instructor', 'school'];
 /** The files the templates hold under another name, each written as `.<name>` (§3). */
 const RENAMED = ['_gitignore', '_npmrc', '_gitattributes'];
-/**
- * Where each mode keeps the starter course Welcome to Parallax: the folder that holds `courses/`,
- * which the overlay `private/` mirrors. In school mode it is the first instructor's course.
- */
-const WELCOME = { instructor: '.', school: 'instructors/ana' };
 const USAGE = 'usage: npm create parallax-site <folder> [-- --template instructor|school]';
 const FLAGS = /** @type {const} */ ({
   template: { type: 'string', default: 'instructor' },
@@ -21,8 +16,8 @@ const FLAGS = /** @type {const} */ ({
 });
 
 /**
- * Creates a site folder from a template: the shared files, then the mode's, then the starter
- * course with its overlay in `private/` (which the site's `.gitignore` lists), with `_gitignore`,
+ * Creates a site folder from a template: the shared files, then the mode's (in school mode also
+ * the instructor template's starter course and its overlay in `private/`), with `_gitignore`,
  * `_npmrc` and `_gitattributes` under their real names (npm delivers no file of the first two names
  * in a package), and a `package.json` whose one dependency is `parallax-site` at `version`, by
  * default the scaffolder's own. It asks nothing, uses no network, runs no install and refuses a
@@ -58,12 +53,16 @@ export function create(argv, options = {}) {
     for (const from of ['shared', template]) {
       fs.cpSync(join(own, 'templates', from), target, { recursive: true });
     }
-    const welcome = join(own, 'templates', 'welcome');
-    const owner = WELCOME[/** @type {keyof typeof WELCOME} */ (template)];
-    fs.cpSync(join(welcome, 'courses'), join(target, owner, 'courses'), { recursive: true });
-    fs.cpSync(join(welcome, 'private', 'courses'), join(target, 'private', owner, 'courses'), {
-      recursive: true,
-    });
+    // The instructor template's starter course, Welcome to Parallax, is the first instructor's in
+    // a school site too, with its overlay at the matching path of private/.
+    if (template === 'school') {
+      const welcome = join(own, 'templates', 'instructor');
+      const ana = join('instructors', 'ana', 'courses');
+      fs.cpSync(join(welcome, 'courses'), join(target, ana), { recursive: true });
+      fs.cpSync(join(welcome, 'private', 'courses'), join(target, 'private', ana), {
+        recursive: true,
+      });
+    }
     for (const name of RENAMED)
       fs.renameSync(join(target, name), join(target, name.replace('_', '.')));
     const manifest = JSON.parse(fs.readFileSync(join(own, 'package.json'), 'utf8'));

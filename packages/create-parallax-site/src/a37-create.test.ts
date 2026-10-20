@@ -116,5 +116,5 @@ test('A37 one command creates a site of either mode, and only package.json names
   expect(rows.filter((row) => named.test(row) && !named.exec(row)?.[2])).toEqual([]);
   const definitions = all.filter((file) => /(^|\/)(exercises|tests|private)\//.test(file));
   expect(definitions.length).toBeGreaterThan(0);
-  expect(definitions.filter((file) => !file.startsWith('welcome/private/courses/'))).toEqual([]);
+  expect(definitions.filter((file) => !file.startsWith('instructor/private/courses/'))).toEqual([]);
 });
