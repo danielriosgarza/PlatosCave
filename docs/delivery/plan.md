@@ -751,7 +751,7 @@ None of these blocks Phases 1–4, which run entirely locally and in GitHub Acti
 
 Phase 5 (§9) adds three owner inputs. No Phase 5 item waits for them:
 
-- Registry accounts (npm for `parallax-site` and `create-parallax-site`, GHCR for the server and runner images) and the first release tag `parallax-v<version>`. Sessions publish nothing; P5-22 verifies by a dry run and its workflow reads registry tokens from repository secrets only.
+- Registry accounts (npm for `parallax-site` and `create-parallax-site`, GHCR for the server and runner images) and the first release tag `parallax-v<version>`. Sessions publish nothing; P5-22 verifies by a dry run and its workflow reads registry tokens from GitHub secrets only: since P5-AUD14 (owner decision of 2026-10-20), the npm token is a secret of the environment `release`, which only `parallax-v*` tags may use.
 - Real identity-provider credentials (issuer, client id and secret) at deployment. The tests use an in-process issuer (P5-12).
 - One check of Colab over SSH on a paid Colab plan before the option is announced. It gates neither P5-20 nor P5-21. The owner records the outcome here (works or not, date, platform), with no account data. Outcome: not checked yet.
 

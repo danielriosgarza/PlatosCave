@@ -1,7 +1,7 @@
-import { createHash } from 'node:crypto';
 import fs from 'node:fs';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { fileDigest } from '../src/digest';
 
 // `release.ts decide|stamp|manifest <folder>` (docs/design/site.md §12): each command reads the run
 // from the GITHUB_* variables and DRY_RUN (`dry_run`), so each step takes the same decision.
@@ -53,12 +53,12 @@ export function stamp(release: Release, root = resolve(import.meta.dirname, '../
   }
 }
 
-/** What build hands over in `folder`, each file with its checksum; `publish` adds the digests. */
+/**
+ * What build hands over in `folder`, each file with its checksum; `publish` adds the digests. An
+ * image archive is hashed part by part, since it may pass the 2 GiB that readFileSync returns.
+ */
 export function releaseManifest(release: Release, folder: string, revision: string) {
-  const sum = (file: string) => {
-    const sha256 = createHash('sha256').update(fs.readFileSync(join(folder, file)));
-    return { file, sha256: sha256.digest('hex') };
-  };
+  const sum = (file: string) => ({ file, sha256: fileDigest(join(folder, file)).sha256 });
   const tarball = (name: string) => sum(`release/${name}-${release.version}.tgz`);
   const packages = Object.fromEntries(Object.keys(PACKAGES).map((name) => [name, tarball(name)]));
   const images = Object.entries(release.images).map(([name, ref]) => {
