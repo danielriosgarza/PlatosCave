@@ -82,7 +82,7 @@ test('the files env writes fill every reference of the compose files, at level 1
   }
 });
 
-test('server and worker, filled from what env writes, are a production configuration the server accepts, and the runner one the runner accepts', async () => {
+test('server and worker, filled from what env writes, are a production configuration the server accepts, the runner one the runner accepts, and the backup reads the database as server does', async () => {
   for (const fixture of ['instructor', 'school'] as const) {
     const { compose, site, env, runner } = await written(fixture);
     const { services } = compose('compose.yml');
@@ -100,18 +100,12 @@ test('server and worker, filled from what env writes, are a production configura
       });
       expect(config.OIDC_PROVIDERS).toEqual([{ ...PROVIDERS[0], clientSecret: 's3' }]);
     }
+    const { DATABASE_URL, PGPASSWORD } = services.server?.environment ?? {};
+    const backup = { image: services.postgres?.image, environment: { DATABASE_URL, PGPASSWORD } };
+    expect(compose('.parallax/compose.backup.yml').services.backup).toMatchObject(backup);
     if (fixture !== 'school') continue;
     const { runner: service } = compose('compose.runner.yml').services;
     const given = filled(service?.environment, { ...runner, DOCKER_GID: '998' });
     expect(runnerConfig(given).RUNNER_DATABASE_URL).toMatch(/^postgres:\/\/parallax_runner:/);
   }
-});
-
-test('the backup container reads the database as the server does, with the bundled image', async () => {
-  const { compose } = await written('instructor');
-  const { postgres, server } = compose('compose.yml').services;
-  const { backup } = compose('.parallax/compose.backup.yml').services;
-  expect(backup?.image).toBe(postgres?.image);
-  const { DATABASE_URL, PGPASSWORD } = server?.environment ?? {};
-  expect(backup?.environment).toMatchObject({ DATABASE_URL, PGPASSWORD });
 });

@@ -39,13 +39,19 @@ export function backupService(uid = process.getuid?.(), gid = process.getgid?.()
   return { services: { backup } };
 }
 
-/** The backup of §10 into `backups/<UTC time>`, which must not exist; its exit code and folder. */
-export async function backup(site: Site, at = new Date()) {
-  const dir = `backups/${at.toISOString().slice(0, 19).replaceAll(':', '-')}Z`;
+/** Writes the overlay; `upgrade` pulls with it, so the image is there before anything stops. */
+export function writeBackupFile(site: Site): string {
   // `backups/` is made here, so that Docker does not make it for root.
   for (const made of ['backups', '.parallax'])
     mkdirSync(join(site.root, made), { recursive: true });
   writeFileSync(join(site.root, FILE), `${JSON.stringify(backupService(), null, 2)}\n`);
+  return FILE;
+}
+
+/** The backup of §10 into `backups/<UTC time>`, which must not exist; its exit code and folder. */
+export async function backup(site: Site, at = new Date()) {
+  const dir = `backups/${at.toISOString().slice(0, 19).replaceAll(':', '-')}Z`;
+  writeBackupFile(site);
   const code = await compose(site, ['-f', FILE, 'run', '--rm', '--no-deps', 'backup', `/${dir}`]);
   return { code, dir };
 }

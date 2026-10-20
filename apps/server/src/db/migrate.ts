@@ -7,6 +7,9 @@ import pg from 'pg';
 
 const migrationsFolder = resolve(import.meta.dirname, '../../drizzle');
 
+/** The one error of `migrate` that is said in a line of its own (below). */
+export class NewerDatabase extends Error {}
+
 /**
  * Stops before anything is applied when the database holds a migration newer than the newest of
  * this package (docs/design/site.md §10): drizzle's migrator would apply nothing, and an older
@@ -21,7 +24,7 @@ export async function assertNotNewer(pool: pg.Pool): Promise<void> {
   const theirs = Number((await pool.query(newest)).rows[0]?.at ?? 0);
   if (theirs <= ours) return;
   const [db, own] = [theirs, ours].map((at) => new Date(at).toISOString());
-  throw new Error(
+  throw new NewerDatabase(
     `the database holds a migration of ${db}, newer than this version's newest, of ${own}. ` +
       'Install the version that wrote it, or restore the backup taken before the upgrade with ' +
       'the earlier version (docs/backup-restore.md).',
@@ -44,8 +47,9 @@ if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {
     console.error('DATABASE_URL is required');
     process.exit(1);
   }
-  await runMigrations(url).catch((error: Error) => {
-    console.error(`migrate: ${error.message}`);
+  await runMigrations(url).catch((error: unknown) => {
+    // Any other error as Node prints it, with its code and cause.
+    console.error(error instanceof NewerDatabase ? `migrate: ${error.message}` : error);
     process.exit(1);
   });
   console.log('migrations applied');

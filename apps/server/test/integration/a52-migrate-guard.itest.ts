@@ -37,12 +37,8 @@ async function state(url: string) {
       from information_schema.columns where table_schema not in ('pg_catalog', 'information_schema')
       group by table_schema, table_name order by 1`;
     const tables = (await client.query<{ t: string }>(columns)).rows.map(({ t }) => t);
-    const there = await client.query(`select to_regclass('drizzle.__drizzle_migrations') as t`);
-    const rows = there.rows[0]?.t
-      ? await client.query<{ at: string }>(
-          'select created_at as at from drizzle.__drizzle_migrations order by id',
-        )
-      : { rows: [] };
+    const migrations = 'select created_at as at from drizzle.__drizzle_migrations order by id';
+    const rows = await client.query<{ at: string }>(migrations);
     return { tables, migrations: rows.rows.map(({ at }) => Number(at)) };
   } finally {
     await client.end();
@@ -80,4 +76,15 @@ test('A52 an upgrade migrates forward and a database newer than the package is r
     expect(refused.stderr).toContain(new Date(at).toISOString());
   }
   expect(await state(earlier)).toEqual(before);
+});
+
+test('a migration that fails shows its cause', async () => {
+  const url = await emptyDatabase();
+  const client = new pg.Client({ connectionString: url });
+  await client.connect();
+  await client.query('create table app_settings (id int)');
+  await client.end();
+  const failed = await migrateScript(url);
+  expect(failed.code).not.toBe(0);
+  expect(failed.stderr).toContain('relation "app_settings" already exists');
 });
