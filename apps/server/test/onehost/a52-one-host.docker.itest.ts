@@ -7,6 +7,7 @@ import {
   readdirSync,
   readFileSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from 'node:fs';
 import { request } from 'node:https';
@@ -153,10 +154,15 @@ describe.skipIf(!imagePresent)('A52 one-host installation (site.md §9 to §11)'
     const before = state('migrate');
     expect(await main(['upgrade'], { cwd: root })).toBe(0);
     const [backup = ''] = readdirSync(join(root, 'backups'));
-    const files = readdirSync(join(root, 'backups', backup)).sort();
+    const folder = join(root, 'backups', backup);
+    const files = readdirSync(folder).sort();
     expect(files).toEqual(['backup.info', 'database.dump', 'storage', 'storage.manifest']);
-    const manifest = readFileSync(join(root, 'backups', backup, 'storage.manifest'), 'utf8');
+    const manifest = readFileSync(join(folder, 'storage.manifest'), 'utf8');
     expect(manifest).toBe(`${key.split('/').at(-1)}\t${bytes.length}\t${key}\n`);
+    // The backup container runs as the operator, who owns all it wrote (on a POSIX host).
+    const written = ['', ...readdirSync(folder, { recursive: true, encoding: 'utf8' })];
+    const owners = new Set(written.map((path) => statSync(join(folder, path)).uid));
+    if (process.getuid) expect([...owners]).toEqual([process.getuid()]);
     const [migrate, server] = [state('migrate'), state('server')];
     expect(migrate.ExitCode).toBe(0);
     expect(Date.parse(migrate.StartedAt)).toBeGreaterThan(Date.parse(before.FinishedAt));
@@ -196,6 +202,17 @@ describe.skipIf(!imagePresent)('A52 one-host installation (site.md §9 to §11)'
     // postgres alone on a fresh volume: the image's first start initialises over the socket.
     expect(await processes.run([...composeArgs(2), 'up', '-d', '--wait', 'postgres'], two)).toBe(0);
     expect(level2(['logs', 'postgres'])).toContain('PostgreSQL init process complete');
+    // Docker made runner-link without masquerading. That nothing then leaves through it is not
+    // tried: it needs a destination outside the host, and Docker Desktop does not honour it.
+    const link = docker([
+      'network',
+      'inspect',
+      '-f',
+      '{{json .Options}}',
+      'a52-level2_runner-link',
+    ]);
+    const masquerade = 'com.docker.network.bridge.enable_ip_masquerade';
+    expect(JSON.parse(link)).toMatchObject({ [masquerade]: 'false' });
     // The runner role as scripts/runner-role.sql makes it (migration 0010 repeats it, and no
     // migrate runs here), then the ALTER ROLE on psql's standard input as `start` sends it.
     const psqlIn = 'exec -T postgres psql -U parallax -d parallax -v ON_ERROR_STOP=1'.split(' ');
