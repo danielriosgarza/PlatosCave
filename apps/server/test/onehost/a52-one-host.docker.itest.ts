@@ -1,4 +1,4 @@
-import { execFileSync, spawn } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
   chmodSync,
@@ -10,17 +10,19 @@ import {
   writeFileSync,
 } from 'node:fs';
 import { request } from 'node:https';
-import { tmpdir } from 'node:os';
+import { networkInterfaces, tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import type { TLSSocket } from 'node:tls';
 import { afterAll, describe, expect, onTestFailed, test } from 'vitest';
 import { composeArgs, processes } from '../../../../packages/cli/src/host/compose';
+import { readEnv, readText } from '../../../../packages/cli/src/host/secrets';
 import { main } from '../../../../packages/cli/src/main';
 
 /**
- * A52 on Docker (docs/design/site.md §9, §10): the instructor template's installation, started
+ * A52 on Docker (docs/design/site.md §9 to §11): the instructor template's installation, started
  * by `parallax start` with the server image that the `image` workflow has built and loaded under
- * the reference `parallax env` writes. Skipped without that image; mandatory in CI.
+ * the reference `parallax env` writes, and at level 2 its database alone. Skipped without that
+ * image; mandatory in CI.
  */
 const repo = resolve(import.meta.dirname, '../../../..');
 const cli = JSON.parse(readFileSync(join(repo, 'packages/cli/package.json'), 'utf8'));
@@ -32,17 +34,33 @@ const imagePresent = (() => {
     return false;
   }
 })();
-// The site folder, whose name is the Compose project's; made only where the suite runs.
+// The site folders, whose names are the Compose projects'; made only where the suite runs.
 const temp = imagePresent ? mkdtempSync(join(tmpdir(), 'parallax-a52-')) : tmpdir();
 const root = join(temp, 'a52-onehost');
-const docker = (args: string[], input?: string) =>
-  execFileSync('docker', args, { cwd: root, encoding: 'utf8', input, stdio: 'pipe' });
+const two = join(temp, 'a52-level2');
+const docker = (args: string[], input?: string, cwd = root) =>
+  execFileSync('docker', args, { cwd, encoding: 'utf8', input, stdio: 'pipe' });
 const project = (args: string[], input?: string) => docker([...composeArgs(1), ...args], input);
 const psql = (sql: string) =>
   project(['exec', '-T', 'postgres', 'psql', '-U', 'parallax', '-d', 'parallax', '-tAc', sql]);
 /** The state of the one container of `service`, running or not. */
 const state = (service: string) =>
   JSON.parse(docker(['inspect', '-f', '{{json .State}}', project(['ps', '-aq', service]).trim()]));
+/** The level 2 site's compose calls, and a `docker` call that may fail, with `env` added. */
+const level2 = (args: string[], input?: string) => docker([...composeArgs(2), ...args], input, two);
+const attempt = (args: string[], env: Record<string, string | undefined> = {}) =>
+  spawnSync('docker', args, { cwd: two, encoding: 'utf8', env: { ...process.env, ...env } });
+
+/** A copy of the instructor template in `folder`, with one edit of its configuration. */
+function template(folder: string, from: RegExp | string, to: string) {
+  const templates = join(repo, 'packages/create-parallax-site/templates');
+  for (const name of ['shared', 'instructor'])
+    cpSync(join(templates, name), folder, { recursive: true });
+  const site = { private: true, type: 'module', dependencies: { 'parallax-site': cli.version } };
+  writeFileSync(join(folder, 'package.json'), JSON.stringify(site));
+  const config = join(folder, 'parallax.config.ts');
+  writeFileSync(config, readFileSync(config, 'utf8').replace(from, to));
+}
 
 /** GET `path` from Caddy on 127.0.0.1:443 as `host`, and the names its certificate holds. */
 const get = (host: string, path: string) =>
@@ -84,6 +102,7 @@ async function reach(host: string, path: string) {
 afterAll(async () => {
   if (!imagePresent) return;
   await processes.run([...composeArgs(1), 'down', '--volumes'], root);
+  await processes.run([...composeArgs(2), 'down', '--volumes'], two);
   rmSync(temp, { recursive: true, force: true });
 });
 
@@ -91,20 +110,14 @@ test.runIf(process.env.CI)('CI provides Docker and the server image', () => {
   expect(imagePresent).toBe(true);
 });
 
-describe.skipIf(!imagePresent)('A52 one-host installation (site.md §9, §10)', () => {
+describe.skipIf(!imagePresent)('A52 one-host installation (site.md §9 to §11)', () => {
   test('A52 the one-host installation answers on both host names', {
     timeout: 900_000,
   }, async () => {
     onTestFailed(() => console.error(output));
-    const templates = join(repo, 'packages/create-parallax-site/templates');
-    for (const from of ['shared', 'instructor'])
-      cpSync(join(templates, from), root, { recursive: true });
-    const site = { private: true, type: 'module', dependencies: { 'parallax-site': cli.version } };
-    writeFileSync(join(root, 'package.json'), JSON.stringify(site));
-    const config = join(root, 'parallax.config.ts');
     const origins =
       "origins: { app: 'https://app.localhost', content: 'https://content.localhost' },";
-    writeFileSync(config, readFileSync(config, 'utf8').replace(/origins: .*/, origins));
+    template(root, /origins: .*/, origins);
     writeFileSync(join(root, '.env'), "SMTP_URL='smtp://relay.example.org:587'\n");
     // As a restrictive umask leaves it; Caddy, with no capability to read it, needs it readable.
     chmodSync(join(root, 'Caddyfile'), 0o600);
@@ -158,5 +171,67 @@ describe.skipIf(!imagePresent)('A52 one-host installation (site.md §9, §10)', 
     expect(state('migrate').ExitCode).not.toBe(0);
     expect(state('server').StartedAt).toBe(server.StartedAt);
     expect(project(['logs', 'migrate'])).toContain(new Date(later).toISOString());
+  });
+
+  test('A52 a level 2 database admits only the rules of pg_hba.conf', {
+    timeout: 300_000,
+  }, async () => {
+    output = '';
+    onTestFailed(() => console.error(output));
+    // compose.level2.yml publishes the port on this host's own address. The level 1 stack has
+    // the template's backend subnet, so this site changes it, as compose.yml tells an operator.
+    const own = Object.values(networkInterfaces())
+      .flat()
+      .find((address) => address?.family === 'IPv4' && !address.internal);
+    const subnet = '172.30.20.0/24';
+    const python = { id: 'python-3.12', language: 'python', harnessVersion: '4', packages: [] };
+    const image = { image: 'registry.example.org/runner', digest: `sha256:${'1'.repeat(64)}` };
+    const runtimes = [{ ...python, ...image }];
+    const runner = { host: '192.0.2.7', databaseHost: own?.address, runtimes };
+    template(two, 'level: 1,', `level: 2, runner: ${JSON.stringify(runner)},`);
+    const compose = join(two, 'compose.yml');
+    writeFileSync(compose, readFileSync(compose, 'utf8').replace('172.30.10.0/24', subnet));
+    expect(await main(['env'], { cwd: two })).toBe(0);
+
+    // postgres alone on a fresh volume: the image's first start initialises over the socket.
+    expect(await processes.run([...composeArgs(2), 'up', '-d', '--wait', 'postgres'], two)).toBe(0);
+    expect(level2(['logs', 'postgres'])).toContain('PostgreSQL init process complete');
+    // The runner role as scripts/runner-role.sql makes it (migration 0010 repeats it, and no
+    // migrate runs here), then the ALTER ROLE on psql's standard input as `start` sends it.
+    const psqlIn = 'exec -T postgres psql -U parallax -d parallax -v ON_ERROR_STOP=1'.split(' ');
+    const role = readFileSync(join(repo, 'scripts/runner-role.sql'), 'utf8');
+    level2([...psqlIn, '-v', 'app_role=parallax'], role);
+    const env = readEnv(readText(join(two, '.env')));
+    const password = env.get('RUNNER_DB_PASSWORD')?.value;
+    const login = `LOGIN PASSWORD '${password}' CONNECTION LIMIT 8`;
+    level2(psqlIn, `ALTER ROLE parallax_runner ${login};\nSELECT pg_reload_conf();\n`);
+    const query = (sql: string) => level2([...psqlIn, '-tAc', sql]).match(/.+/g);
+    const roles = 'select rolname, rolcanlogin, rolconnlimit from pg_roles';
+    expect(query(`${roles} where rolname = 'parallax_runner'`)).toEqual(['parallax_runner|t|8']);
+
+    // Exactly the generated file's three rules, each read without an error.
+    const columns = 'type, database, user_name, address, netmask, auth_method, error';
+    expect(query(`select ${columns} from pg_hba_file_rules order by rule_number`)).toEqual([
+      'local|{all}|{all}|||trust|',
+      'host|{parallax}|{parallax}|172.30.20.0|255.255.255.0|scram-sha-256|',
+      'host|{parallax}|{parallax_runner}|192.0.2.7|255.255.255.255|scram-sha-256|',
+    ]);
+    // No rule names a loopback address, so TCP inside the container is refused.
+    const tcp = 'exec -T postgres psql -h 127.0.0.1 -U parallax -d parallax -w -c';
+    const loopback = attempt([...composeArgs(2), ...tcp.split(' '), 'select 1']);
+    expect(loopback.status).not.toBe(0);
+    expect(loopback.stderr).toContain('no pg_hba.conf entry for host "127.0.0.1"');
+
+    // From a container on backend: the application role, from the subnet its rule names; not
+    // parallax_runner, which may log in now, but only from the runner host.
+    const run = 'run --rm --network a52-level2_backend -e PGPASSWORD postgres:16.15'.split(' ');
+    const sql = `select current_user, inet_client_addr() << '${subnet}'`;
+    const psqlAs = (user: string) => ['psql', '-h', 'postgres', '-U', user, '-d', 'parallax', '-w'];
+    const client = (user: string, secret?: string) =>
+      attempt([...run, ...psqlAs(user), '-tAc', sql], { PGPASSWORD: secret });
+    const app = client('parallax', env.get('POSTGRES_PASSWORD')?.value);
+    expect(app).toMatchObject({ status: 0, stdout: 'parallax|t\n' });
+    const refused = /no pg_hba.conf entry for host "172\.30\.20\.\d+", user "parallax_runner"/;
+    expect(client('parallax_runner', password).stderr).toMatch(refused);
   });
 });
