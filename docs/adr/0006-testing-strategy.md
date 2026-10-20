@@ -1,6 +1,6 @@
 # ADR 0006 — Testing strategy
 
-**Status:** Accepted, 2026-09-30. Amended 2026-10-09 (P3-AUD13b, records the owner's existing economy, no change of rule): **Actions budget** names wall time and queueing instead of minutes. Amended 2026-10-12 (P5-02, owner decisions in issue #559): scenario IDs run to A52.
+**Status:** Accepted, 2026-09-30. Amended 2026-10-09 (P3-AUD13b, records the owner's existing economy, no change of rule): **Actions budget** names wall time and queueing instead of minutes. Amended 2026-10-12 (P5-02, owner decisions in issue #559): scenario IDs run to A52. Amended 2026-10-20 (P5-25, #683): the scenario gate also fails on a test file no runner collects.
 
 ## Context
 
@@ -21,7 +21,7 @@ Spec §16 lists 52 acceptance scenarios (A01 to A36 for the application as first
 | Go | `go test ./...` | `connector/**/*_test.go` | in-process SSH/Jupyter fakes |
 | Load | k6-free Node script, weekly only | `scripts/load/start-test.ts` | staging-like compose |
 
-**Scenario naming.** A test that realises an acceptance scenario puts the ID first in its title: `test('A05 classmate cannot read a private note', …)`, `it('A14 double submit returns the same receipt')`, Go: `func TestA30_ChangedHostKeyBlocks(t *testing.T)`. Files for scenario suites are named `a05-annotation-audience.itest.ts`, `a27-local-connector.e2e.ts`. One scenario may be covered at several levels (API rule in an `itest`, user-visible behaviour in an `e2e`); the plan's coverage table names the item that owns each. `scripts/check-scenarios.ts` greps test titles for `\bA(0[1-9]|[1-4][0-9]|5[0-2])\b` (A01 to A52) and Go test names for `TestA<nn>` in the same range, prints the coverage table, and fails if a scenario ID recorded as done has no test. Each merged item records its covered IDs in its own file `docs/delivery/done/<ID>.txt`, added by the item's PR (one file per item, so parallel PRs never conflict).
+**Scenario naming.** A test that realises an acceptance scenario puts the ID first in its title: `test('A05 classmate cannot read a private note', …)`, `it('A14 double submit returns the same receipt')`, Go: `func TestA30_ChangedHostKeyBlocks(t *testing.T)`. Files for scenario suites are named `a05-annotation-audience.itest.ts`, `a27-local-connector.e2e.ts`. One scenario may be covered at several levels (API rule in an `itest`, user-visible behaviour in an `e2e`); the plan's coverage table names the item that owns each. `scripts/check-scenarios.ts` greps test titles for `\bA(0[1-9]|[1-4][0-9]|5[0-2])\b` (A01 to A52) and Go test names for `TestA<nn>` in the same range, prints the coverage table, and fails if a scenario ID recorded as done has no test. Since 2026-10-20 (P5-25) it also fails when a file it counts as a test is collected by no Vitest project `include`, no Playwright `testDir`/`testMatch` and no Go package. Each merged item records its covered IDs in its own file `docs/delivery/done/<ID>.txt`, added by the item's PR (one file per item, so parallel PRs never conflict).
 
 **Fixtures.** `apps/server/test/fixtures/world.ts` builds the standard world (ADR-0002) through the same service functions the API uses; `scripts/seed.ts` reuses it for the e2e database and local development. Time is injected (`Clock`), randomness seeded, ids deterministic in fixtures, so assertions can be exact.
 

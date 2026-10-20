@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import ts from 'typescript';
@@ -51,14 +51,154 @@ function walk(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
     if (SKIP_DIRS.has(entry)) continue;
     const path = join(dir, entry);
-    if (statSync(path).isDirectory()) walk(path, out);
-    else out.push(path);
+    // A folder with its own `.git` is another checkout (a worktree under .claude/worktrees/).
+    if (statSync(path).isDirectory()) {
+      if (!existsSync(join(path, '.git'))) walk(path, out);
+    } else out.push(path);
   }
   return out;
 }
 
 const isTestFile = (path: string): boolean =>
   /\.(test|itest|e2e)\.tsx?$/.test(path) || /^connector\/.*_test\.go$/.test(path);
+
+/** One runner's rule: does it run this repository file (a POSIX path from the root) as tests? */
+export type Collector = (file: string) => boolean;
+
+/**
+ * A Vitest glob as a RegExp: `**`, `*`, `?` and `{a,b}`. Any other character is literal, so a
+ * pattern this does not understand matches less and the gate fails rather than passes.
+ */
+function globToRegExp(glob: string): RegExp {
+  let out = '';
+  let depth = 0;
+  for (let i = 0; i < glob.length; i++) {
+    const c = glob[i] as string;
+    if (c === '*' && glob[i + 1] === '*') {
+      const folders = glob[i + 2] === '/';
+      out += folders ? '(?:[^/]*/)*' : '.*';
+      i += folders ? 2 : 1;
+    } else if (c === '*') out += '[^/]*';
+    else if (c === '?') out += '[^/]';
+    else if (c === '{') {
+      out += '(?:';
+      depth++;
+    } else if (c === '}' && depth > 0) {
+      out += ')';
+      depth--;
+    } else if (c === ',' && depth > 0) out += '|';
+    else out += c.replace(/[.+^$()|[\]\\{}]/g, '\\$&');
+  }
+  return new RegExp(`^${out}$`);
+}
+
+function property(obj: ts.ObjectLiteralExpression, name: string): ts.Expression | undefined {
+  for (const p of obj.properties) {
+    if (ts.isPropertyAssignment(p) && ts.isIdentifier(p.name) && p.name.text === name) {
+      return p.initializer;
+    }
+  }
+  return undefined;
+}
+
+function literal(node: ts.Expression | undefined, what: string): string {
+  if (node && (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node))) {
+    return node.text;
+  }
+  throw new Error(`${what} is not a literal the scenario gate can read`);
+}
+
+/** A list of string globs. `...configDefaults.exclude` (node_modules, dist, …) is left out: the walk skips those folders. */
+function globs(node: ts.Expression | undefined, what: string): RegExp[] {
+  if (!node || !ts.isArrayLiteralExpression(node)) {
+    throw new Error(`${what} is not a list the scenario gate can read`);
+  }
+  return node.elements.flatMap((el) =>
+    ts.isSpreadElement(el) && el.expression.getText() === 'configDefaults.exclude'
+      ? []
+      : [globToRegExp(literal(el as ts.Expression, what))],
+  );
+}
+
+/** The projects of vitest.config.ts: each `test` object with a name, its `include`, `exclude` and the project's `root`. */
+export function vitestCollectors(source: string): Collector[] {
+  const out: Collector[] = [];
+  const visit = (node: ts.Node): void => {
+    const test = ts.isObjectLiteralExpression(node) ? property(node, 'test') : undefined;
+    if (ts.isObjectLiteralExpression(node) && test && ts.isObjectLiteralExpression(test)) {
+      const nameNode = property(test, 'name');
+      if (nameNode || property(test, 'include')) {
+        const name = nameNode ? literal(nameNode, 'a Vitest project name') : 'vitest';
+        const rootNode = property(node, 'root');
+        const root = rootNode ? `${literal(rootNode, `${name} root`)}/` : '';
+        const include = globs(property(test, 'include'), `${name} include`);
+        const excludeNode = property(test, 'exclude');
+        const exclude = excludeNode ? globs(excludeNode, `${name} exclude`) : [];
+        out.push((file) => {
+          const path = file.slice(root.length);
+          return (
+            file.startsWith(root) &&
+            include.some((re) => re.test(path)) &&
+            !exclude.some((re) => re.test(path))
+          );
+        });
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(parse(source, 'vitest.config.ts'));
+  if (out.length === 0) throw new Error('vitest.config.ts: no test project the gate can read');
+  return out;
+}
+
+/**
+ * A Playwright config's `testDir` (from the config's folder) and `testMatch` regular expression.
+ * `testIgnore` is not read: the config sets it per run (`CONNECTOR_E2E`), and some run collects
+ * what another ignores.
+ */
+export function playwrightCollector(source: string, file: string): Collector {
+  let config: ts.ObjectLiteralExpression | undefined;
+  const visit = (node: ts.Node): void => {
+    const [arg] = ts.isCallExpression(node) ? node.arguments : [];
+    if (
+      !config &&
+      ts.isCallExpression(node) &&
+      node.expression.getText() === 'defineConfig' &&
+      arg &&
+      ts.isObjectLiteralExpression(arg)
+    ) {
+      config = arg;
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(parse(source, file));
+  if (!config) throw new Error(`${file}: no defineConfig({ … }) the scenario gate can read`);
+  const testDir = property(config, 'testDir');
+  const base = file.slice(0, file.lastIndexOf('/') + 1);
+  const dir = testDir ? `${base}${literal(testDir, `${file} testDir`)}/` : base;
+  const match = property(config, 'testMatch');
+  if (!match || !ts.isRegularExpressionLiteral(match)) {
+    throw new Error(`${file}: testMatch is not a regular expression the scenario gate can read`);
+  }
+  const end = match.text.lastIndexOf('/');
+  const re = new RegExp(match.text.slice(1, end), match.text.slice(end + 1));
+  return (f) => f.startsWith(dir) && re.test(f);
+}
+
+/** `go test ./...` in connector/: every package but folders named testdata or starting with `.` or `_`. */
+export const inGoPackage: Collector = (file) =>
+  /^connector\/.*_test\.go$/.test(file) &&
+  !file.split('/').some((part) => part === 'testdata' || /^[._]/.test(part));
+
+const PLAYWRIGHT_CONFIGS = ['e2e/playwright.config.ts', 'e2e/playwright.open.config.ts'];
+
+/** Test files (by the names this gate counts) that no runner collects, sorted, with `/` separators. */
+export function uncollected(files: string[], collectors: Collector[]): string[] {
+  return files
+    .map((f) => f.replaceAll('\\', '/'))
+    .filter((f) => isTestFile(f) && !collectors.some((collects) => collects(f)))
+    .sort();
+}
 
 const addId = (found: Map<string, Set<string>>, id: string, file: string): void => {
   if (!found.has(id)) found.set(id, new Set());
@@ -480,8 +620,19 @@ export function main(): number {
       console.error(`${id} is listed in docs/delivery/done/${source} but has no test`);
     }
   }
+  const read = (file: string): string => readFileSync(join(root, file), 'utf8');
+  const stray = uncollected(files, [
+    ...vitestCollectors(read('vitest.config.ts')),
+    ...PLAYWRIGHT_CONFIGS.map((file) => playwrightCollector(read(file), file)),
+    inGoPackage,
+  ]);
+  for (const file of stray) {
+    console.error(
+      `${file} is a test file no runner collects: no include of vitest.config.ts, no testDir/testMatch of ${PLAYWRIGHT_CONFIGS.join(' or ')}, no Go package`,
+    );
+  }
   console.log(`${found.size} scenarios with tests, ${done.size} recorded done`);
-  return missing.length === 0 ? 0 : 1;
+  return missing.length === 0 && stray.length === 0 ? 0 : 1;
 }
 
 if (import.meta.url === pathToFileURL(process.argv[1] ?? '').href) {

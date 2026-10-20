@@ -397,6 +397,17 @@ func skipWithoutShell(t *testing.T) {
 	}
 }
 
+// realTempDir is t.TempDir() with its symbolic links resolved, as the host's shell reports it. On
+// macOS the temporary folder /var/folders/… lies behind the link /var → /private/var.
+func realTempDir(t *testing.T) string {
+	t.Helper()
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return dir
+}
+
 func mustJSON(t *testing.T, v any) string {
 	t.Helper()
 	b, err := json.Marshal(v)

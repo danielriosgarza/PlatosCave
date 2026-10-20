@@ -3,3 +3,10 @@
 .git
 docs
 e2e/playwright-report
+# Secrets an operator writes into the folder (docs/operations.md) and local state: never in an image.
+**/.env
+**/.env.*
+**/prod.env
+**/garage.toml
+**/.parallax
+.claude

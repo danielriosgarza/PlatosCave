@@ -249,7 +249,7 @@ func TestWorkspaceStagesCreateNothing(t *testing.T) {
 	skipWithoutShell(t)
 	key := newClientKey(t, "")
 	opts := sshtest.Options{AuthorizedKeys: []ssh.PublicKey{key.signer.PublicKey()}}
-	root := t.TempDir()
+	root := realTempDir(t)
 	file := filepath.Join(root, "notes.txt")
 	writeFile(t, file, []byte("x"))
 	quoted := filepath.Join(root, "it's here")

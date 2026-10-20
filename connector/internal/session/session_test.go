@@ -440,12 +440,11 @@ func parseProcAddr(t *testing.T, s string) netip.AddrPort {
 	return netip.AddrPortFrom(a.Unmap(), uint16(port))
 }
 
+// processAlive reports whether pid still runs. Without /proc (Windows, macOS) it asks pidAlive; the
+// servers the tests start are children the connector reaps before it reports them stopped.
 func processAlive(pid int) bool {
-	if runtime.GOOS == "windows" {
-		return pidAlive(pid)
-	}
 	if runtime.GOOS != "linux" {
-		return false
+		return pidAlive(pid)
 	}
 	data, err := os.ReadFile(fmt.Sprintf("/proc/%d/stat", pid))
 	if err != nil {
