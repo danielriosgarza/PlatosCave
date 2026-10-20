@@ -1,6 +1,6 @@
 # ADR 0003 — Content releases, resource revisions and annotation anchors
 
-**Status:** Accepted, 2026-09-30. Amended 2026-10-13 (P5-04, owner decisions in issue #559): conversion from a folder: identity, provenance and which side wins; see **Amendment: Conversion from a folder** below, which [docs/design/course-folder.md](../design/course-folder.md) refines.
+**Status:** Accepted, 2026-09-30. Amended 2026-10-13 (P5-04, owner decisions in issue #559): conversion from a folder: identity, provenance and which side wins; see **Amendment: Conversion from a folder** below, which [docs/design/course-folder.md](../design/course-folder.md) refines. Amended 2026-10-20 (P6-02, owner request): a PDF deck may have steps; see **Amendment: Decks with steps** at the end.
 
 ## Context
 
@@ -68,3 +68,13 @@ Reading ingestion (ADR-0001 pipeline) assigns every block element a stable `bloc
 **Consequences.** No table or column is added, and P5-18 adds no migration. `createTopic` and `createResource` take an optional id that no route passes. `validate` moves unchanged to a module without database imports, so that the check and a level 0 build report with publication's codes and messages. A renamed course folder, or another address in `instructor.yaml`, is a different course. Each conversion that changes content adds revisions, as an editor's save does.
 
 **Alternatives considered.** *A table from folder ids to rows:* stored state that can disagree with the folder, and a migration, for what a derivation gives. *Ids from file paths:* a rename would detach every note. *Front matter:* the stored bytes would differ from an upload, and PDFs and notebooks cannot carry it. *Telling the editor's head by the provenance source alone:* the editor's save carries provenance forward. *Letting sync write ids:* the folder on the server would differ from the author's copy.
+
+## Amendment: Decks with steps (P6-02, 2026-10-20)
+
+Decided on 2026-10-20 (owner request; design [docs/design/slide-decks.md](../design/slide-decks.md) §4 and §7), for spec §7.
+
+**Decision.** A `slides_pdf` revision's content may hold `steps`, the number of consecutive pages of each slide, as the deck converter writes it. Conversion writes the deck's effective steps into `derived.steps`: `content.steps` when the revision has them, otherwise the runs of a page label that repeats on consecutive pages, otherwise none; every reader takes the steps from `derived.steps`. Conversion refuses a deck whose steps do not add up to its pages. In a deck with steps every page number kept or received for the deck counts slides, not pages: the remembered place, the `page` of a `slide` anchor and of a `pdf` anchor (0-based, as above; a `pdf` anchor lies on the slide's last page), and the text hash that the mapping compares, which is that of the slide's last page. A deck without steps is unchanged.
+
+**Consequences.** No resource type, column or migration is added. A note on a slide keeps its slide when a new revision changes the slide's clicks but not its finished text, and shows **Needs reattachment** otherwise, as for any PDF deck.
+
+**Alternatives considered.** *A resource type for converted decks:* a migration and a second copy of every rule of PDF decks, for what one optional field gives. *Positions and anchors by page:* a note would belong to one click of a slide, and a deck whose clicks change would lose its notes although its slides did not change.
