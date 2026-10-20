@@ -1,0 +1,12 @@
+# The two host names of this site (docs/design/site.md §9), from .parallax/site.env. Caddy
+# obtains a certificate for each, upgrades WebSockets and forwards Host unchanged: the server
+# tells the app origin and the content origin apart by Host (ADR-0002), so no rule here may
+# rewrite it.
+
+{$APP_HOST} {
+	reverse_proxy server:3000
+}
+
+{$CONTENT_HOST} {
+	reverse_proxy server:3000
+}
