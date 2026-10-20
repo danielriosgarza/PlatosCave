@@ -68,9 +68,16 @@ describe('package-release.yml', () => {
   });
 
   test('the release manifest is uploaded also when a step fails, with the digests pushed so far', () => {
-    const last = publish.steps.at(-1) as Step & { if?: string; with?: { path?: string } };
+    const last = publish.steps.at(-1) as Step & { if?: string };
     expect(last.uses).toMatch(/^actions\/upload-artifact@/);
-    expect([last.if, last.with?.path]).toEqual(['always()', 'release.json']);
+    const upload = last.with as { name?: string; path?: string; overwrite?: boolean };
+    expect([last.if, upload.path]).toEqual(['always()', 'release.json']);
+    // A second attempt of a run that stopped part way uploads under its own name, so it neither
+    // fails on the first attempt's artifact nor replaces the digests that attempt recorded.
+    expect(upload.name).toBe(
+      `parallax-release-\${{ needs.build.outputs.version }}-\${{ github.run_attempt }}`,
+    );
+    expect(upload.overwrite).toBeUndefined();
   });
 
   test('publish runs only on the publish output, and builds and installs nothing', () => {
@@ -130,10 +137,18 @@ describe('package-release.yml', () => {
 });
 
 // The step's own script, run by bash as GitHub runs it (`bash -eo pipefail`), against stub npm and
-// curl that answer as the registries do. CI's runners have bash and jq; a machine without them
-// skips these cases.
-const shellReady = spawnSync('bash', ['-c', 'command -v jq'], { encoding: 'utf8' }).status === 0;
+// curl that answer as the registries do. CI's Linux runners have bash and jq; Windows and a
+// machine without them skip these cases, and a Linux CI runner fails if it would skip them.
+const windows = process.platform === 'win32';
+const shellReady =
+  !windows && spawnSync('bash', ['-c', 'command -v jq'], { encoding: 'utf8' }).status === 0;
+
+test('CI runs the step against stub registries', () => {
+  if (process.env.CI && !windows) expect(shellReady, 'bash and jq on the CI runner').toBe(true);
+});
+
 const STUB_NPM = `#!/usr/bin/env bash
+printf '%s\n' "$*" >> "$STUB_LOG/npm-argv"
 case "$NPM_CASE" in
   absent) printf 'npm error code E404\nnpm error 404 No match found\n' >&2; exit 1 ;;
   published) printf '%s\n' "\${2#*@}" ;;
@@ -158,6 +173,8 @@ case "$GHCR_CASE" in
   published) echo '{"schemaVersion":2}' > "$out"; printf 200 ;;
   denied) echo '{"errors":[{"code":"DENIED","message":"denied"}]}' > "$out"; printf 403 ;;
   page) echo '<html>not found</html>' > "$out"; printf 404 ;;
+  mixed) echo '{"errors":[{"code":"MANIFEST_UNKNOWN"},{"code":"DENIED"}]}' > "$out"; printf 404 ;;
+  empty) echo '{"errors":[]}' > "$out"; printf 404 ;;
 esac
 `;
 
@@ -166,7 +183,11 @@ describe.skipIf(!shellReady)(
   () => {
     const script = named(publish, unpublished)?.run ?? '';
     const VERSION = '0.1.0-rc.1';
-    const refs = ['server', 'runner'].map((name) => `ghcr.io/org-a/parallax-${name}:${VERSION}`);
+    // The runner's tag differs from VERSION, so a lookup that ignored the ref's own tag would show.
+    const refs = [
+      `ghcr.io/org-a/parallax-server:${VERSION}`,
+      'ghcr.io/org-a/parallax-runner:0.1.0-rc.9',
+    ];
     const runStep = (npmCase: string, ghcrCase: string, tokenCase = 'granted') => {
       const dir = mkdtempSync(join(tmpdir(), 'parallax-unpublished-'));
       try {
@@ -205,6 +226,7 @@ describe.skipIf(!shellReady)(
           output: done.stdout + done.stderr,
           argv: log('argv'),
           stdin: log('stdin'),
+          npmArgv: log('npm-argv'),
         };
       } finally {
         rmSync(dir, { recursive: true, force: true });
@@ -220,10 +242,10 @@ describe.skipIf(!shellReady)(
         // It prints nothing but the mask of each image's bearer, which GitHub does not mask itself.
         const masks = '::add-mask::bearer-from-ghcr\n'.repeat(refs.length);
         expect([status, output], `${npmCase} ${ghcrCase}`).toEqual([0, masks]);
-        // Both images were asked for, each at the version.
+        // Both images were asked for, each at the tag of its own ref.
         for (const ref of refs) {
-          const [repo] = ref.replace('ghcr.io/', '').split(':');
-          expect(argv).toContain(`https://ghcr.io/v2/${repo}/manifests/${VERSION}`);
+          const [repo, tag] = ref.replace('ghcr.io/', '').split(':');
+          expect(argv).toContain(`https://ghcr.io/v2/${repo}/manifests/${tag}`);
         }
       }
     });
@@ -240,6 +262,8 @@ describe.skipIf(!shellReady)(
         ['absent', 'published', 'granted', `::error::${refs[0]} is already on GHCR`],
         ['absent', 'denied', 'granted', `::error::GHCR answered 403 for ${refs[0]}`],
         ['absent', 'page', 'granted', `::error::GHCR answered 404 for ${refs[0]}`],
+        ['absent', 'mixed', 'granted', `::error::GHCR answered 404 for ${refs[0]}`],
+        ['absent', 'empty', 'granted', `::error::GHCR answered 404 for ${refs[0]}`],
         ['absent', 'absent', 'refused', `::error::GHCR refused a token to push ${refs[0]}`],
       ];
       for (const [npmCase, ghcrCase, tokenCase, error] of cases) {
@@ -258,6 +282,33 @@ describe.skipIf(!shellReady)(
       }
       // Each request is bounded in time and retried.
       for (const line of argv.trim().split('\n')) expect(line).toMatch(/--max-time 30 --retry 3/);
+    });
+
+    test('each image is asked for with the scope and the media types of a push, and npm is bounded', () => {
+      const { status, argv, npmArgv } = runStep('absent', 'absent');
+      expect(status).toBe(0);
+      const lines = argv.trim().split('\n');
+      const accept = [
+        'application/vnd.oci.image.index.v1+json',
+        'application/vnd.oci.image.manifest.v1+json',
+        'application/vnd.docker.distribution.manifest.list.v2+json',
+        'application/vnd.docker.distribution.manifest.v2+json',
+      ].join(',');
+      for (const ref of refs) {
+        const [repo, tag] = ref.replace('ghcr.io/', '').split(':');
+        // A token that may push, so a package not created yet answers 404; a refusal fails (-f).
+        const token = `https://ghcr.io/token?service=ghcr.io&scope=repository:${repo}:pull,push`;
+        expect(lines.filter((line) => line.endsWith(` ${token}`))).toEqual([
+          expect.stringMatching(/^--config - -fsS /),
+        ]);
+        const manifest = lines.filter((line) => line.endsWith(`/v2/${repo}/manifests/${tag}`));
+        expect(manifest).toEqual([expect.stringContaining(`--header Accept: ${accept} `)]);
+      }
+      for (const name of ['parallax-site', 'create-parallax-site']) {
+        expect(npmArgv).toContain(
+          `view ${name}@${VERSION} version --fetch-timeout=30000 --fetch-retries=2\n`,
+        );
+      }
     });
   },
 );
