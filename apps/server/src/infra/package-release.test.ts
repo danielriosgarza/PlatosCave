@@ -1,5 +1,15 @@
-import { readFileSync } from 'node:fs';
-import { resolve } from 'node:path';
+import { spawnSync } from 'node:child_process';
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, resolve } from 'node:path';
 import { describe, expect, test } from 'vitest';
 import { parse } from 'yaml';
 import { closure } from '../../../../packages/cli/scripts/vendor';
@@ -57,25 +67,10 @@ describe('package-release.yml', () => {
     expect(text.match(/^\s*environment:/gm)).toHaveLength(1);
   });
 
-  test('before any push, publish stops on a version that npm or GHCR already has', () => {
-    const run = named(publish, unpublished)?.run ?? '';
-    // npm: a version found stops; E404 (no such version or package) goes on; anything else stops.
-    expect(run).toContain('for name in parallax-site create-parallax-site; do');
-    expect(run).toMatch(
-      /if found="\$\(npm view "\$name@\$VERSION" version 2>&1\)"; then\n\s*if \[\[ -n "\$found" \]\]; then .*exit 1; fi\n\s*elif \[\[ "\$found" != \*E404\* \]\]; then/,
-    );
-    // GHCR: each image of the release manifest; 200 stops, and so does anything but a 404 whose
-    // errors all say that the manifest or the package is unknown.
-    expect(run).toMatch(
-      /for name in parallax-server parallax-runner; do\n\s*ref="\$\(jq -r --arg name "\$name" '\.images\[\$name\]\.ref' release\.json\)"/,
-    );
-    expect(run).toContain('"https://ghcr.io/v2/$repo/manifests/$VERSION"');
-    expect(run).toMatch(/if \[\[ "\$code" == 200 \]\]; then .*exit 1; fi/);
-    expect(run).toContain('all(.code == "MANIFEST_UNKNOWN" or .code == "NAME_UNKNOWN")');
-    expect(run).toMatch(/if \[\[ "\$code" != 404 \]\] \|\| ! jq -e "\$unknown"/);
-    // No token on a command line: curl reads the credential and the bearer from its standard input.
-    expect(run).not.toMatch(/--user|-u "|Authorization: Bearer \$/);
-    expect(run.match(/curl --config -/g)).toHaveLength(2);
+  test('the release manifest is uploaded also when a step fails, with the digests pushed so far', () => {
+    const last = publish.steps.at(-1) as Step & { if?: string; with?: { path?: string } };
+    expect(last.uses).toMatch(/^actions\/upload-artifact@/);
+    expect([last.if, last.with?.path]).toEqual(['always()', 'release.json']);
   });
 
   test('publish runs only on the publish output, and builds and installs nothing', () => {
@@ -133,3 +128,136 @@ describe('package-release.yml', () => {
     expect(files.filter((file) => !paths.some((path) => path.test(file)))).toEqual([]);
   });
 });
+
+// The step's own script, run by bash as GitHub runs it (`bash -eo pipefail`), against stub npm and
+// curl that answer as the registries do. CI's runners have bash and jq; a machine without them
+// skips these cases.
+const shellReady = spawnSync('bash', ['-c', 'command -v jq'], { encoding: 'utf8' }).status === 0;
+const STUB_NPM = `#!/usr/bin/env bash
+case "$NPM_CASE" in
+  absent) printf 'npm error code E404\nnpm error 404 No match found\n' >&2; exit 1 ;;
+  published) printf '%s\n' "\${2#*@}" ;;
+  warned) echo 'npm warn config the setting is deprecated' >&2 ;;
+  offline) echo 'npm error code ETIMEDOUT' >&2; exit 1 ;;
+esac
+`;
+const STUB_CURL = `#!/usr/bin/env bash
+config="$(cat)"
+printf '%s\n' "$*" >> "$STUB_LOG/argv"
+printf '%s\n' "$config" >> "$STUB_LOG/stdin"
+url="\${*: -1}" out='' previous=''
+for arg in "$@"; do [[ "$previous" == --output ]] && out="$arg"; previous="$arg"; done
+if [[ "$url" == *'/token?'* ]]; then
+  if [[ "$TOKEN_CASE" == refused ]]; then echo 'curl: (22) The requested URL returned error: 403' >&2; exit 22; fi
+  echo '{"token":"bearer-from-ghcr"}'
+  exit 0
+fi
+case "$GHCR_CASE" in
+  absent) echo '{"errors":[{"code":"MANIFEST_UNKNOWN","message":"manifest unknown"}]}' > "$out"; printf 404 ;;
+  new) echo '{"errors":[{"code":"NAME_UNKNOWN","message":"name unknown"}]}' > "$out"; printf 404 ;;
+  published) echo '{"schemaVersion":2}' > "$out"; printf 200 ;;
+  denied) echo '{"errors":[{"code":"DENIED","message":"denied"}]}' > "$out"; printf 403 ;;
+  page) echo '<html>not found</html>' > "$out"; printf 404 ;;
+esac
+`;
+
+describe.skipIf(!shellReady)(
+  'The version is not published yet, run against stub registries',
+  () => {
+    const script = named(publish, unpublished)?.run ?? '';
+    const VERSION = '0.1.0-rc.1';
+    const refs = ['server', 'runner'].map((name) => `ghcr.io/org-a/parallax-${name}:${VERSION}`);
+    const runStep = (npmCase: string, ghcrCase: string, tokenCase = 'granted') => {
+      const dir = mkdtempSync(join(tmpdir(), 'parallax-unpublished-'));
+      try {
+        const bin = join(dir, 'bin');
+        mkdirSync(bin);
+        for (const [name, body] of [
+          ['npm', STUB_NPM],
+          ['curl', STUB_CURL],
+        ] as const) {
+          writeFileSync(join(bin, name), body);
+          chmodSync(join(bin, name), 0o755);
+        }
+        writeFileSync(join(dir, 'step.sh'), script);
+        const images = Object.fromEntries(
+          refs.map((ref, i) => [`parallax-${['server', 'runner'][i]}`, { ref }]),
+        );
+        writeFileSync(join(dir, 'release.json'), JSON.stringify({ images }));
+        const env = {
+          ...process.env,
+          PATH: `${bin}:${process.env.PATH}`,
+          VERSION,
+          GITHUB_ACTOR: 'owner-a',
+          GHCR_TOKEN: 'secret-ghcr-token',
+          RUNNER_TEMP: dir,
+          STUB_LOG: dir,
+          NPM_CASE: npmCase,
+          GHCR_CASE: ghcrCase,
+          TOKEN_CASE: tokenCase,
+        };
+        const shell = ['--noprofile', '--norc', '-eo', 'pipefail', join(dir, 'step.sh')];
+        const done = spawnSync('bash', shell, { cwd: dir, env, encoding: 'utf8' });
+        const log = (name: string) =>
+          existsSync(join(dir, name)) ? readFileSync(join(dir, name), 'utf8') : '';
+        return {
+          status: done.status,
+          output: done.stdout + done.stderr,
+          argv: log('argv'),
+          stdin: log('stdin'),
+        };
+      } finally {
+        rmSync(dir, { recursive: true, force: true });
+      }
+    };
+
+    test('a version that neither registry has goes on, and a warning from npm is not a version', () => {
+      for (const [npmCase, ghcrCase] of [
+        ['absent', 'absent'],
+        ['warned', 'new'],
+      ] as const) {
+        const { status, output, argv } = runStep(npmCase, ghcrCase);
+        // It prints nothing but the mask of each image's bearer, which GitHub does not mask itself.
+        const masks = '::add-mask::bearer-from-ghcr\n'.repeat(refs.length);
+        expect([status, output], `${npmCase} ${ghcrCase}`).toEqual([0, masks]);
+        // Both images were asked for, each at the version.
+        for (const ref of refs) {
+          const [repo] = ref.replace('ghcr.io/', '').split(':');
+          expect(argv).toContain(`https://ghcr.io/v2/${repo}/manifests/${VERSION}`);
+        }
+      }
+    });
+
+    test('a version that npm or GHCR has stops the run, and so does any answer but not found', () => {
+      const cases = [
+        ['published', 'absent', 'granted', `::error::parallax-site@${VERSION} is already on npm`],
+        [
+          'offline',
+          'absent',
+          'granted',
+          `::error::npm could not say whether parallax-site@${VERSION} is published`,
+        ],
+        ['absent', 'published', 'granted', `::error::${refs[0]} is already on GHCR`],
+        ['absent', 'denied', 'granted', `::error::GHCR answered 403 for ${refs[0]}`],
+        ['absent', 'page', 'granted', `::error::GHCR answered 404 for ${refs[0]}`],
+        ['absent', 'absent', 'refused', `::error::GHCR refused a token to push ${refs[0]}`],
+      ];
+      for (const [npmCase, ghcrCase, tokenCase, error] of cases) {
+        const { status, output } = runStep(npmCase as string, ghcrCase as string, tokenCase);
+        expect(status, `${npmCase} ${ghcrCase} ${tokenCase}`).toBe(1);
+        expect(output, `${npmCase} ${ghcrCase} ${tokenCase}`).toContain(error);
+      }
+    });
+
+    test('the GHCR credential and the bearer reach curl on its standard input, never its command line', () => {
+      const { status, argv, stdin } = runStep('absent', 'absent');
+      expect(status).toBe(0);
+      for (const secret of ['secret-ghcr-token', 'bearer-from-ghcr']) {
+        expect(argv).not.toContain(secret);
+        expect(stdin).toContain(secret);
+      }
+      // Each request is bounded in time and retried.
+      for (const line of argv.trim().split('\n')) expect(line).toMatch(/--max-time 30 --retry 3/);
+    });
+  },
+);

@@ -146,18 +146,22 @@ jobs:
           name: parallax-${{ needs.build.outputs.version }}
       - name: Check what build handed over against the release manifest
         run: jq -r '(.packages[], .images[]) | "\(.sha256)  ./\(.file)"' release.json | sha256sum -c --strict
-      # A re-pushed tag or a manual run over a published tag stops here, before any push, so a
-      # published image tag is never replaced. Any answer but "not found" stops the run as well.
+      # A re-pushed tag or a manual run over a published tag stops here, before any push, so the
+      # workflow as written never replaces a published image or version. Any answer but "not
+      # found" stops the run as well. apps/server/src/infra/package-release.test.ts runs this
+      # script against stub npm and curl.
       - name: The version is not published yet
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           for name in parallax-site create-parallax-site; do
-            # npm answers E404 for a version, or a whole package, that is not there.
-            if found="$(npm view "$name@$VERSION" version 2>&1)"; then
-              if [[ -n "$found" ]]; then echo "::error::$name@$VERSION is already on npm"; exit 1; fi
-            elif [[ "$found" != *E404* ]]; then
-              printf '%s\n' "$found"
+            # The version on standard output when npm has it; E404 on standard error when it has
+            # neither the version nor the package. Warnings on standard error are neither.
+            if found="$(npm view "$name@$VERSION" version 2> "$RUNNER_TEMP/npm-view.err")"; then
+              if [[ "$found" == "$VERSION" ]]; then echo "::error::$name@$VERSION is already on npm"; exit 1; fi
+            elif ! grep -qE '^npm (error|ERR!) code E404$' "$RUNNER_TEMP/npm-view.err"; then
+              cat "$RUNNER_TEMP/npm-view.err"
+              echo "::error::npm could not say whether $name@$VERSION is published"
               exit 1
             fi
           done
@@ -168,11 +172,18 @@ jobs:
             ref="$(jq -r --arg name "$name" '.images[$name].ref' release.json)"
             repo="${ref#ghcr.io/}" && repo="${repo%:*}"
             # The scope a push asks for, so that a package not created yet answers 404, not denied.
-            token="$(printf 'user = "%s:%s"\n' "$GITHUB_ACTOR" "$GHCR_TOKEN" | curl --config - -fsS \
-              "https://ghcr.io/token?service=ghcr.io&scope=repository:$repo:pull,push" | jq -er .token)"
+            # Credentials and the bearer reach curl on its standard input, never its command line.
+            if ! answer="$(printf 'user = "%s:%s"\n' "$GITHUB_ACTOR" "$GHCR_TOKEN" | curl --config - \
+              -fsS --max-time 30 --retry 3 \
+              "https://ghcr.io/token?service=ghcr.io&scope=repository:$repo:pull,push")"; then
+              echo "::error::GHCR refused a token to push $ref; the package must allow this repository to write"
+              exit 1
+            fi
+            token="$(jq -er .token <<< "$answer")"
+            echo "::add-mask::$token"
             code="$(printf 'header = "Authorization: Bearer %s"\n' "$token" | curl --config - -sS \
-              --header "Accept: $accept" --output "$RUNNER_TEMP/manifest.json" --write-out '%{http_code}' \
-              "https://ghcr.io/v2/$repo/manifests/$VERSION")"
+              --max-time 30 --retry 3 --header "Accept: $accept" --output "$RUNNER_TEMP/manifest.json" \
+              --write-out '%{http_code}' "https://ghcr.io/v2/$repo/manifests/$VERSION")"
             if [[ "$code" == 200 ]]; then echo "::error::$ref is already on GHCR"; exit 1; fi
             unknown='.errors | length > 0 and all(.code == "MANIFEST_UNKNOWN" or .code == "NAME_UNKNOWN")'
             if [[ "$code" != 404 ]] || ! jq -e "$unknown" "$RUNNER_TEMP/manifest.json" > /dev/null; then
@@ -208,7 +219,9 @@ jobs:
             npm publish "./release/$name-$VERSION.tgz" --userconfig "$RUNNER_TEMP/npmrc" \
               --access public --tag "$tag" --ignore-scripts
           done
+      # Also when a step failed: the digests of the images pushed so far are recorded nowhere else.
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: parallax-release-${{ needs.build.outputs.version }}
           path: release.json

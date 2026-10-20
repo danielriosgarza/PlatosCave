@@ -4,15 +4,8 @@ import { tmpdir } from 'node:os';
 import { dirname, join, resolve } from 'node:path';
 import { afterAll, expect, test } from 'vitest';
 import { parse } from 'yaml';
-import {
-  decide,
-  PACKAGES,
-  ReleaseError,
-  type Run,
-  releaseManifest,
-  sha256File,
-  stamp,
-} from './release';
+import { fileDigest, PART } from '../src/digest';
+import { decide, PACKAGES, ReleaseError, type Run, releaseManifest, stamp } from './release';
 
 // The release rule of docs/design/site.md §12, on the functions the workflow runs: no network.
 const repo = resolve(import.meta.dirname, '../../..');
@@ -124,15 +117,54 @@ test('the release manifest holds the checksums of the tarballs and the image arc
   expect(manifest).toEqual({ version: '1.4.0', revision: sha, packages, images });
 });
 
-test('a checksum is read in chunks, so an archive above 2 GiB is summed like a small one', () => {
-  // Three chunks and a part: the boundaries fall inside the bytes, not only at their end.
-  const bytes = Buffer.alloc(3 * 4096 + 17);
+test('an image archive is hashed part by part, so one above 2 GiB is summed like a small one', () => {
+  // Two parts and a piece: the boundaries fall inside the bytes, not only at their end.
+  const bytes = Buffer.alloc(2 * PART + 17);
   for (let at = 0; at < bytes.length; at++) bytes[at] = (at * 31) % 251;
-  const file = join(temp, 'chunks.bin');
+  const folder = join(temp, 'large');
+  for (const file of [
+    'release/parallax-site-1.4.0.tgz',
+    'release/create-parallax-site-1.4.0.tgz',
+  ]) {
+    fs.mkdirSync(join(folder, dirname(file)), { recursive: true });
+    fs.writeFileSync(join(folder, file), file);
+  }
+  fs.mkdirSync(join(folder, 'images'));
+  for (const name of ['server', 'runner'])
+    fs.writeFileSync(join(folder, `images/parallax-${name}.tar`), bytes);
+  // Each read through node:fs: a whole read of an archive would give all of its bytes at once.
+  type Call = (...args: unknown[]) => unknown;
+  const writable = fs as unknown as Record<string, Call>;
+  const readSync = writable.readSync as Call;
+  const reads: number[] = [];
+  writable.readSync = (...args) => {
+    const length = readSync(...args);
+    reads.push(Number(length));
+    return length;
+  };
+  try {
+    const manifest = releaseManifest(decide(run()), folder, sha);
+    const whole = createHash('sha256').update(bytes).digest('hex');
+    expect(manifest.images['parallax-server']?.sha256).toBe(whole);
+    expect(manifest.images['parallax-runner']?.sha256).toBe(whole);
+    expect(Math.max(...reads)).toBe(PART);
+    expect(reads.filter((length) => length > 0).length).toBeGreaterThanOrEqual(2 * 3);
+  } finally {
+    writable.readSync = readSync;
+  }
+});
+
+test('a digest is the same for any part size, and a part of no bytes is refused', () => {
+  const bytes = Buffer.alloc(3 * 4096 + 17);
+  for (let at = 0; at < bytes.length; at++) bytes[at] = (at * 7) % 253;
+  const file = join(temp, 'parts.bin');
   fs.writeFileSync(file, bytes);
-  const whole = createHash('sha256').update(bytes).digest('hex');
-  expect(sha256File(file, 4096)).toBe(whole);
-  expect(sha256File(file)).toBe(whole);
+  const whole = { sha256: createHash('sha256').update(bytes).digest('hex'), size: bytes.length };
+  expect(fileDigest(file, 4096)).toEqual(whole);
+  expect(fileDigest(file)).toEqual(whole);
+  // A part of 0 bytes would read nothing and give the digest of no input for every file.
+  for (const part of [0, -1, 0.5, Number.NaN])
+    expect(() => fileDigest(file, part)).toThrow(RangeError);
   fs.writeFileSync(file, '');
-  expect(sha256File(file, 4096)).toBe(createHash('sha256').digest('hex'));
+  expect(fileDigest(file, 4096)).toEqual({ sha256: createHash('sha256').digest('hex'), size: 0 });
 });
