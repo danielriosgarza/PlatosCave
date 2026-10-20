@@ -70,10 +70,14 @@ describe('package-release.yml', () => {
   test('the release manifest is uploaded also when a step fails, with the digests pushed so far', () => {
     const last = publish.steps.at(-1) as Step & { if?: string };
     expect(last.uses).toMatch(/^actions\/upload-artifact@/);
-    const upload = last.with as { path?: string; overwrite?: boolean };
+    const upload = last.with as { name?: string; path?: string; overwrite?: boolean };
     expect([last.if, upload.path]).toEqual(['always()', 'release.json']);
-    // A second attempt of a run that stopped part way uploads again under the same name.
-    expect(upload.overwrite).toBe(true);
+    // A second attempt of a run that stopped part way uploads under its own name, so it neither
+    // fails on the first attempt's artifact nor replaces the digests that attempt recorded.
+    expect(upload.name).toBe(
+      `parallax-release-\${{ needs.build.outputs.version }}-\${{ github.run_attempt }}`,
+    );
+    expect(upload.overwrite).toBeUndefined();
   });
 
   test('publish runs only on the publish output, and builds and installs nothing', () => {
@@ -179,7 +183,11 @@ describe.skipIf(!shellReady)(
   () => {
     const script = named(publish, unpublished)?.run ?? '';
     const VERSION = '0.1.0-rc.1';
-    const refs = ['server', 'runner'].map((name) => `ghcr.io/org-a/parallax-${name}:${VERSION}`);
+    // The runner's tag differs from VERSION, so a lookup that ignored the ref's own tag would show.
+    const refs = [
+      `ghcr.io/org-a/parallax-server:${VERSION}`,
+      'ghcr.io/org-a/parallax-runner:0.1.0-rc.9',
+    ];
     const runStep = (npmCase: string, ghcrCase: string, tokenCase = 'granted') => {
       const dir = mkdtempSync(join(tmpdir(), 'parallax-unpublished-'));
       try {
@@ -234,10 +242,10 @@ describe.skipIf(!shellReady)(
         // It prints nothing but the mask of each image's bearer, which GitHub does not mask itself.
         const masks = '::add-mask::bearer-from-ghcr\n'.repeat(refs.length);
         expect([status, output], `${npmCase} ${ghcrCase}`).toEqual([0, masks]);
-        // Both images were asked for, each at the version.
+        // Both images were asked for, each at the tag of its own ref.
         for (const ref of refs) {
-          const [repo] = ref.replace('ghcr.io/', '').split(':');
-          expect(argv).toContain(`https://ghcr.io/v2/${repo}/manifests/${VERSION}`);
+          const [repo, tag] = ref.replace('ghcr.io/', '').split(':');
+          expect(argv).toContain(`https://ghcr.io/v2/${repo}/manifests/${tag}`);
         }
       }
     });
@@ -298,7 +306,7 @@ describe.skipIf(!shellReady)(
       }
       for (const name of ['parallax-site', 'create-parallax-site']) {
         expect(npmArgv).toContain(
-          `view ${name}@${VERSION} version --fetch-timeout=30000 --fetch-retries=3\n`,
+          `view ${name}@${VERSION} version --fetch-timeout=30000 --fetch-retries=2\n`,
         );
       }
     });

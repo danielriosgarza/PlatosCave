@@ -157,7 +157,7 @@ jobs:
           for name in parallax-site create-parallax-site; do
             # The version on standard output when npm has it; E404 on standard error when it has
             # neither the version nor the package. Warnings on standard error are neither.
-            if found="$(npm view "$name@$VERSION" version --fetch-timeout=30000 --fetch-retries=3 \
+            if found="$(npm view "$name@$VERSION" version --fetch-timeout=30000 --fetch-retries=2 \
               2> "$RUNNER_TEMP/npm-view.err")"; then
               if [[ "$found" == "$VERSION" ]]; then echo "::error::$name@$VERSION is already on npm"; exit 1; fi
             elif ! grep -qE '^npm (error|ERR!) code E404$' "$RUNNER_TEMP/npm-view.err"; then
@@ -221,10 +221,9 @@ jobs:
               --access public --tag "$tag" --ignore-scripts
           done
       # Also when a step failed: the digests of the images pushed so far are recorded nowhere else.
-      # A second attempt of the same run replaces the first attempt's upload instead of failing on it.
+      # One name per attempt, so a re-run neither fails on the first attempt's name nor replaces it.
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: parallax-release-${{ needs.build.outputs.version }}
+          name: parallax-release-${{ needs.build.outputs.version }}-${{ github.run_attempt }}
           path: release.json
-          overwrite: true
