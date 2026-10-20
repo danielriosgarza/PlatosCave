@@ -14,6 +14,8 @@ The page then says **Sign-in link requested**. A link works once and expires aft
 
 If you were sent to sign in from a link inside the app, you return to that page after signing in.
 
+A site may also offer a button **Sign in with** *name* for your university or another provider, and may offer no email link at all. Parallax signs you in to the account of the confirmed address the provider sends. If it sends none, the page says *name* **did not confirm an email address**, and you are not signed in.
+
 To leave, select **Sign out** in the top bar. Unsent notes kept on this device are cleared when you sign out.
 
 Details: [spec section 3](../product-spec.md#3-sign-in-and-permissions).
@@ -25,6 +27,8 @@ Your instructor gives you an enrolment code.
 - A new account with no classes shows **Join a class** on **Your courses**. Type the code in **Invitation code** and select **Join class**.
 - If you already have classes, select **Join a class** at the top of **Your courses**. A dialog opens with the same field.
 
+Your instructor may give you a join link instead, ending in `/join/<code>`. Open it, sign in if asked, and select **Join class**.
+
 After joining, a message says **You joined** the course and class. Select **Open the course** to go to its topics. If you are already in the class, the message says so.
 
 A code can fail. The message tells you why:
@@ -34,6 +38,8 @@ A code can fail. The message tells you why:
 - it has expired
 - the class has reached its enrolment limit
 - the class is archived and takes no new students
+
+In an open class, anyone who signs in may join through its link. Questions and comments are off there (**Questions and comments are off in this open class.**), and a test's result is released once it is scored (the terms say **Released once scored**), unless the terms give a time.
 
 An instructor account holder who also studies can switch between **Student view** and **Instructor view** on the courses page. This guide covers the student view only.
 
@@ -300,6 +306,7 @@ The toolbar button that says **Saved outputs** opens **Connect a computer**. Thi
 
 - **This computer**: the computer running the connector.
 - **SSH host**: another computer reached over SSH. You give a host, port, account and working directory, and choose a key file path or the SSH agent on the connector's computer. A jump host is optional. You never type a password or passphrase here.
+- **Colab over SSH (paid Colab plan)**: a Colab runtime, for a paid Colab plan with a positive compute-unit balance. The connector's computer needs Google's `colab` program, which you install and sign in with in your own terminal first. The Linux and macOS connectors offer it, and so does the Linux connector inside WSL; the Windows connector does not. **Account** is the user name inside the Colab runtime, not your Google account. Each new runtime has a new host key, so a new runtime stops at the changed key until you check it and select **Replace trusted key…**. With free Colab, use **Work in Colab**.
 - **Class computers**: shown when your instructor published a computer for the class.
 
 You also give a **Connection name**, the **Computer running the connector** and the working directory. You can reuse a **Saved connection**.
@@ -347,6 +354,10 @@ Details: [spec section 10.5](../product-spec.md#105-files-saving-and-submission)
 ### Shiny apps
 
 A Shiny app opens in a frame in the Notebooks tab. The frame shows **Loading app**, **App reported ready** or **No ready message from the app**. Use **Restart** to reload it and **Open externally** to open it in its own tab. If the app's address is not on an approved origin, the app is neither shown nor linked. The header shows **Preview · no session** and a notice says to ask the instructor. An app shown here does not by itself record a grade.
+
+## An open site
+
+Some sites have no sign-in. There you read slides, readings and notebooks with their saved outputs, and nothing you do is saved. **Exercises** and **Tests** list titles only, with **Exercises are done in a class.** and **Tests are taken in a class.** **Download notebook without outputs** gives the notebook file; your browser may show it as text, from where you save it as `.ipynb`. **Work in Colab** offers **Open in Colab**: notebooks are handed in in a class.
 
 ## Download your own data
 

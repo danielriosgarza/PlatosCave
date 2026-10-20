@@ -1,8 +1,76 @@
 # Getting started
 
-Run Parallax on your own machine, sign in, and set up a first course and class. This page is for a developer or evaluator. For using the app, see the [instructor guide](guide/instructors.md) and the [student guide](guide/students.md). For production, see [operations](operations.md).
+Two ways in. [Make a site](#make-a-site) is for an instructor or a school: one command creates a site folder from the published packages, and the site is built at one of three levels. The sections from [Prerequisites](#prerequisites) on are for a developer or evaluator: run Parallax from this repository, sign in, and set up a first course and class. For using the app, see the [instructor guide](guide/instructors.md) and the [student guide](guide/students.md). For production, see [operations](operations.md).
 
-The commands here that do not need Docker were run in a cloud session. Steps that need Docker are marked **Docker**; they were not run there, because a cloud session has no Docker daemon.
+The commands of **Make a site** that do not need Docker were run on 2026-10-20 in a local session on Windows, from packages packed in this repository, since nothing is published before the first release tag. The other commands here that do not need Docker were run in a cloud session. Steps that need Docker are marked **Docker**; they were not run.
+
+## Make a site
+
+A site is a folder with one project's configuration, its own pages and its course folders, and one dependency, `parallax-site`. You need Node.js 22.12 or newer with npm; levels 1 and 2 also need Docker with Compose v2 on the host that serves the site. Designs: [site toolkit](design/site.md), [course folder](design/course-folder.md), [open site](design/open-site.md).
+
+### Create it
+
+```
+npm create parallax-site my-site                          # instructor mode
+npm create parallax-site my-school -- --template school   # school mode
+cd my-site
+npm install
+npx parallax --help
+```
+
+The first command asks nothing, runs no install and refuses a folder that is not empty; it prints `Created my-site from the instructor template. Next: cd my-site, then npm install.` `package.json` names the exact version of `parallax-site`, and no other file of the site does. `npx parallax --help` lists the commands: `apply, build, check, dev, env, start, sync, upgrade`.
+
+| File | Holds |
+| --- | --- |
+| `parallax.config.ts` | `mode`, `name`, an optional `logo` (PNG, JPEG or WebP), `level`, `origins` (two host names), `signIn`, `classes`, and at level 2 `runner` |
+| `instructor.yaml` | the instructor's `name` and `email` |
+| `courses/<course>/` | the course folders ([instructor guide](guide/instructors.md#courses-from-a-folder)) |
+| `src/pages/` | the site's own pages, JSX only: `index.tsx` is the front page at `/`, `about.tsx` is `/about`; styles are `*.module.css` files beside them |
+| `compose.yml`, `Caddyfile`, `compose.level2.yml`, `compose.runner.yml` | the installation at levels 1 and 2 ([operations](operations.md#a-site-on-one-host)) |
+
+Git ignores `node_modules/`, `dist/`, `.parallax/`, `.env`, `backups/` and `private/`. Every command first checks the configuration and the instructor folders, prints one line per problem (`parallax.config.ts: classes[1].course: no folder courses/genetics`) and exits 1 before it writes anything. Rules that span several fields are checked once each field is valid, so a second run can show a line the first did not. A page at the address of a Parallax screen, or under `/courses`, `/api`, `/assets` or `/content`, stops the build, which names both; a page cannot change the look of a Parallax screen. At levels 1 and 2, `npx parallax dev` serves the site with pages that reload on save and sends `/api` to `127.0.0.1:3000`.
+
+### Two modes
+
+- **Instructor mode** (`mode: 'instructor'`): one instructor; `instructor.yaml` and `courses/` are at the top of the site, and a class names its course as `statistics`.
+- **School mode** (`mode: 'school'`): several instructors, each in `instructors/<name>/` with an `instructor.yaml` and a `courses/` of their own. `instructors: ['ana', 'ben']` lists the folders, a class names its course as `ana/reef-ecology`, and the front page lists the instructors, then their courses.
+
+A `courses/` folder moves between the modes unchanged. The account with the verified address of an `instructor.yaml` owns that folder's courses, and those addresses are the site's `INSTRUCTOR_EMAILS`. A folder on disk that `instructors` leaves out, or a listed folder that is missing, stops every command. A mode adds no role.
+
+### Three levels
+
+| Level | Plugged in | Unlocks | Served by |
+| --- | --- | --- | --- |
+| 0. Open site | nothing: no server, database or sign-in | anyone reads slides, readings and rendered notebooks; Exercises and Tests list titles only | `npx parallax build`, then two static hosts |
+| 1. Class | the server, PostgreSQL 16 and a way to sign in | accounts, classes, notes, exercises, tests, review, discussion, connected notebooks | `npx parallax start` on one host (**Docker**) |
+| 2. Code checks | level 1 and a runner on a host of its own | sample runs and automatic grading of code questions | as level 1, and the runner host (**Docker**) |
+
+`level` in `parallax.config.ts` sets it ([spec §13](product-spec.md#installation-levels-and-boundaries)). At level 0, `env`, `start`, `upgrade` and `apply` exit 1 (`parallax apply: level 0 has no server; apply is for levels 1 and 2.`) and `sync` exits 2. Levels 1 and 2: [operations](operations.md#a-site-on-one-host).
+
+### Level 0: an open site
+
+```
+npx parallax build
+```
+
+The build reads the course folders and nothing else, checks and converts them as publication does, and stops on a problem that would block publication. It writes `dist/site` for the host of `origins.app` and `dist/content` for the host of `origins.content`, and stops when the two hosts are the same. It leaves out every exercise and test definition and every resource marked `hidden`, and holds no account, note, attempt or grade. Each build replaces `dist/`, so a resource hidden or removed since the last build is gone from it.
+
+The hosting must give:
+
+1. **Two host names**, each serving its tree at its root; two paths of one host do not count. A folder's `index.html` must answer the folder's address, which every static host does; no rewrite rule is needed.
+2. **For PDFs, cross-origin range requests from the content host.** A `GET` from the site's origin, with or without a `Range` header, gets `Access-Control-Allow-Origin` for that origin (or `*`); a ranged one gets status 206 and `Content-Range`; `Access-Control-Expose-Headers` names `Content-Range, Accept-Ranges, Content-Length`; and the preflight that the `Range` header causes is answered (`Access-Control-Allow-Headers: range`). [`e2e/static-server.ts`](../e2e/static-server.ts) gives exactly these answers. Without them a PDF says it could not be loaded and keeps its download link.
+
+Give the content host a domain of its own, one that shares no registrable domain with an application that sets cookies: a file opened on the content host runs as that host. Deploy by mirroring, so that each host ends up with exactly the new tree and loses what the tree no longer holds (rsync and `aws s3 sync` do so with `--delete`). A host that is only added to, by `scp -r`, `aws s3 cp --recursive` or a copy onto a pages branch, keeps the files of hidden or removed resources at their permanent addresses. Files a host asks for, such as `_headers`, `CNAME` or `.nojekyll`, are not part of a build: add them to `dist/site` or `dist/content` after every build.
+
+A static host enforces nothing for Parallax: the build sets no response header, and the shell has no content security policy. Whether to recommend headers for hosts that can set them is an open owner question ([open site design](design/open-site.md) §12, question 2), so this guide recommends none. **Download notebook without outputs** is a link to the content host, and a browser may show the file as text (Chromium does), from where the visitor saves it. An upgrade at level 0 is a new version in `package.json`, `npm install` and `npx parallax build`.
+
+### Moving between levels
+
+A site changes level by changing `level` and running the commands of the new level.
+
+- **To level 0.** Export first: instructors download each class's results (**Export results (CSV)**) and students their annotations (**Download my annotations**). Then run `npx parallax sync` (**Docker**): it stops and names each file whose latest revision was made in the editor, and its report counts the topics and resources made only in the editor. None of that is in the folder, so none of it is on a level 0 site. Set `level: 0`, run `npx parallax build`, and stop the services (**Docker**: `docker compose --env-file .env --env-file .parallax/site.env -f compose.yml stop`). Keep the database volume and `backups/`: the database is kept as a backup and never published.
+- **To level 1.** Set `level: 1` and `signIn`, then follow the [first start](operations.md#first-start-of-a-site).
+- **Between levels 1 and 2.** Add or remove `runner` with the level, and run `npx parallax start` (**Docker**); level 2 also needs the [runner host](operations.md#level-2-the-runner-host).
 
 ## Prerequisites
 

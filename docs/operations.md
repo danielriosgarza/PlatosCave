@@ -1,6 +1,65 @@
 # Operations runbook
 
-How to run Parallax in production (spec §13, §14, §17). The deployment is `infra/compose.prod.yml`; this page says what to put in it, what to watch, and what to do when it is red. Backups have their own page: [backup-restore.md](backup-restore.md). The runner's host and network rules are in [design/runner.md](design/runner.md) §10; the connector's in [design/connector.md](design/connector.md) §12.
+How to run Parallax in production (spec §13, §14, §17). There are two deployments: a site's own installation on one host ([next section](#a-site-on-one-host)), and the repository's `infra/compose.prod.yml`, which the sections from [Topology](#topology) on cover: what to put in it, what to watch, and what to do when it is red. Backups have their own page: [backup-restore.md](backup-restore.md). The runner's host and network rules are in [design/runner.md](design/runner.md) §10; the connector's in [design/connector.md](design/connector.md) §12.
+
+## A site on one host
+
+A site at level 1 or 2 ([getting started](getting-started.md#make-a-site)) runs from its folder with the template's `compose.yml`: `postgres` (unless `.env` names an existing PostgreSQL 16 as `DATABASE_URL`), `migrate`, one `server` in relay mode that also serves `dist/`, `worker`, and `caddy`, which obtains a certificate for each of the two host names. There is no runner, Docker socket or object store; files are on the volume `storage`. Every `docker compose` call of `parallax` passes `--env-file .env --env-file .parallax/site.env -f compose.yml`, and `-f compose.level2.yml` at level 2. [Site design](design/site.md) §9 to §11 has the detail.
+
+### First start of a site
+
+1. Point both host names of `origins` at the host, and open ports 80 and 443, which Caddy needs for the certificates.
+2. Run `npx parallax env`. It writes `.parallax/site.env` from the configuration and creates `.env` (mode 0600) with generated `POSTGRES_PASSWORD`, `SESSION_SECRET`, `CONTENT_TOKEN_SECRET` and `READY_PROBE_TOKEN` (and `RUNNER_DB_PASSWORD` at level 2). It never changes a value that is there, and names what it added: `parallax env: wrote .parallax/site.env; .env gained POSTGRES_PASSWORD, SESSION_SECRET, CONTENT_TOKEN_SECRET, READY_PROBE_TOKEN.`
+3. Type into `.env`, **single-quoted**, what the configuration needs: `SMTP_URL='smtp://user:password@mail.example.org:587'` when `signIn` has `email`, `OIDC_CLIENT_SECRETS='{"university":"…"}'` when it lists providers, and `DATABASE_URL='postgres://…'` for an existing PostgreSQL. Compose replaces an unquoted `$name`, and a `#` after a space ends an unquoted value. `start` stops on such a value, and on a missing one, and names it: `parallax start: .env: SMTP_URL holds $ or \ that Compose would change: write it SMTP_URL='…'`.
+4. Run `npx parallax start` (**Docker**): `env`, the check of `.env`, `build`, `docker compose pull` and `up -d --wait`, in which `migrate` runs before the services. It ends with `parallax start: the services are up.` and is safe to run again.
+5. Each instructor of the configuration signs in once in the browser.
+6. Run `npx parallax sync`, then `npx parallax apply` (both **Docker**); the instructor guide has [sync](guide/instructors.md#sync) and [apply](guide/instructors.md#classes-from-a-sites-configuration). `apply` prints each enrolment code or join link once, to this terminal only.
+
+Caddy and the server read the `Caddyfile` and `dist/` with no special right, so `start` and `upgrade` make both readable to everyone; they hold no secret. A `npx parallax build` alone leaves new files as the operator's umask makes them, and with 077 or 027 the server cannot read them: rebuild a running site with `npx parallax start`.
+
+### Upgrade of a site
+
+Change the version of `parallax-site` in `package.json`, run `npm install`, then `npx parallax upgrade` (**Docker**). While the old version still serves, it runs `env`, compiles the new site into `.parallax/dist` and pulls the images. It then stops `server` and `worker`, backs up the database and the files into `backups/<UTC time>`, puts the new site into `dist/` and runs `up -d --wait`, in which `migrate` runs first; it ends with `parallax upgrade: the new version is up; the backup taken before is backups/…`. A failure names its stage, and a failed backup starts no migration and prints the command that starts the old services again. Migrations only move forward, and `migrate` refuses a database newer than the package, naming both dates. Rollback is the earlier version and the backup taken before the upgrade, restored with `restore.sh` into an empty database ([backup and restore](backup-restore.md)); the tool has no restore command. The bundled database's URL holds no password, so a restore into it sets `PGPASSWORD` to `POSTGRES_PASSWORD` of `.env`.
+
+### Level 2: the runner host
+
+Level 2 adds `runner: { host, databaseHost, runtimes }` to `parallax.config.ts`: the runner host's address, the site host's address on a private network between the two (a provider's private network or a WireGuard link; Parallax does not encrypt this connection), and the sandbox runtimes in the form of `RUNNER_RUNTIMES` ([First start](#first-start), step 4). `npx parallax env` also writes `.parallax/pg_hba.conf` and `.parallax/runner/runner.env` and prints the pulls for the runner host:
+
+```
+parallax env: wrote .parallax/site.env, .parallax/pg_hba.conf and .parallax/runner/runner.env; .env gained RUNNER_DB_PASSWORD.
+Pull on the runner host, before it starts:
+  docker pull ghcr.io/<owner>/parallax-runner:<version>
+  docker pull <each runtime's image>@<digest>
+```
+
+`npx parallax start` then publishes PostgreSQL only on `databaseHost` and sets the login of the role `parallax_runner`, which reaches schema `pgboss_exec` only. On the runner host (**Docker**, with gVisor as in [First start](#first-start), step 1), copy `compose.runner.yml` and `runner.env` there, run the pulls, and start it:
+
+```
+DOCKER_GID=$(stat -c %g /var/run/docker.sock) docker compose --env-file runner.env -f compose.runner.yml up -d
+```
+
+- With an existing PostgreSQL, `start` sets nothing: its administrator applies the same rules and the role's password, and you type `RUNNER_DATABASE_URL='postgres://parallax_runner:…@<databaseHost>:5432/parallax'` into `.parallax/runner/runner.env`, where `env` keeps it. Without it `env` writes none and says nothing.
+- Set `RUNNER_SLOTS` (default 4) in the shell that starts the runner, not in `runner.env`, which `env` rewrites. `start` sets the role's connection limit to 8, which is 4 slots and 4; for more slots, set the limit to slots + 4 with `ALTER ROLE parallax_runner CONNECTION LIMIT …` after each `start`.
+- The sandbox images are not published: build them with `scripts/runner-image.sh` from a copy of the repository.
+- On a Linux engine the level 2 `postgres` has no route out of its host; on Docker Desktop it keeps one, because Docker Desktop ignores `enable_ip_masquerade`.
+
+### Limits of a site's installation
+
+- The subnets of `edge` and `backend` (`172.30.11.0/24`, `172.30.10.0/24`) can collide with a network on the host; each is one line of `compose.yml`.
+- `compose.yml`, `Caddyfile`, `compose.level2.yml` and `compose.runner.yml` are copied from the template once: a later version that needs a new secret, volume, service or Caddy rule asks for an edit of them.
+- `apply` waits for every listed instructor's first sign-in; a mistyped address in an `instructor.yaml` gives nobody the courses, and `apply` names the file.
+
+## Sign-in
+
+People sign in with an email link, through an OpenID Connect provider, or both (spec §3). On a site, `signIn` in `parallax.config.ts` sets them: `email: { from }` and `providers: [{ id, name, issuer, clientId }]`, with the secrets in `.env` ([first start](#first-start-of-a-site), step 3). In the server's own environment they are `MAIL_TRANSPORT`, `OIDC_PROVIDERS` and `OIDC_CLIENT_SECRETS` ([`.env.example`](../.env.example)); `MAIL_TRANSPORT=none` offers no email link and needs a provider. `infra/compose.prod.yml` passes no provider setting.
+
+Register `<APP_ORIGIN>/api/auth/oidc/<id>/callback` at the issuer. The issuer must:
+
+- verify addresses: accounts are keyed by a verified address, and a sign-in whose `email_verified` is not `true` is refused;
+- accept `client_secret_basic`, the one way Parallax sends the client secret. With an issuer that offers only `client_secret_post`, every sign-in ends with **Signing in with** *name* **did not finish**;
+- be configured exactly as it publishes itself: `issuer` is the `issuer` value of its `/.well-known/openid-configuration`.
+
+An address in `INSTRUCTOR_EMAILS` (on a site, the addresses of the `instructor.yaml` files) may create courses once someone signs in with it, by an email link or through an issuer that says it verified the address. The list is only as safe as the address checks of every configured issuer.
 
 ## Topology
 
@@ -117,6 +176,17 @@ Spec §17 asks the operator to decide session limits, expected concurrent classe
 ## Connector downloads
 
 Learners get the connector from this repository's GitHub releases (owner decision, 2026-10-08, issue #461). **Pushing a tag `connector-v<version>` on `main` publishes the release** (for example `connector-v0.1.0`): the `connector-release` workflow builds five unsigned binaries (`parallax-connector_<version>_<os>_<arch>[.exe]` for linux/amd64, linux/arm64, darwin/amd64, darwin/arm64, windows/amd64) and attaches them with that release's `SHA256SUMS`. Run the workflow by hand (`workflow_dispatch`) with `dry_run` off, selecting the tag, only to retry a tag whose push run failed before the release was created; with `dry_run` on (the default) it builds and checks without publishing. The device list in the web app links to `https://github.com/danielriosgarza/PlatosCave/releases` (`CONNECTOR_RELEASES` in `DeviceList.tsx`); a deployment from a fork must change that constant. The first release, `connector-v0.1.0`, was published on 2026-10-08; later versions are published the same way, by pushing the next `connector-v<version>` tag. Raise the server's minimum connector version only after the matching release exists.
+
+## Package releases
+
+Pushing a tag `parallax-v<version>` on `main` publishes the npm packages `parallax-site` and `create-parallax-site` and the images `ghcr.io/<owner>/parallax-server` and `ghcr.io/<owner>/parallax-runner`, all under that version (`.github/workflows/package-release.yml`, [site design](design/site.md) §12). A pull request that changes what it packs, and a manual run with `dry_run` on (the default), build and check without publishing. No session pushes a tag. Before the first one, the owner:
+
+1. holds the npm names `parallax-site` and `create-parallax-site`, and adds the repository secret `NPM_TOKEN` with a token that may publish them. Without it the step **The npm token is set** fails, before anything is pushed;
+2. settles the licence of the two manifests, which is still open ([site design](design/site.md) §14, question 3).
+
+After the first publish, make both GHCR packages public (GHCR creates new packages as private), and link each to this repository in its package settings: neither image carries the label `org.opencontainers.image.source`.
+
+The images are pushed before the npm packages, and running the job again does not resume it: npm refuses a version that is already published. If `npm publish` fails, download the run's artifact `parallax-<version>` and publish what is missing by hand, `parallax-site` before `create-parallax-site`, adding `--tag next` for a prerelease: `npm publish ./release/create-parallax-site-<version>.tgz --access public --ignore-scripts`.
 
 ## Managed connector
 
