@@ -1,3 +1,4 @@
+import { chmodSync, existsSync, lstatSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { compose, noServer } from '../host/compose';
 import { type EnvValue, readEnv, readText } from '../host/secrets';
@@ -18,7 +19,7 @@ const parsed = (text: string): unknown => {
  * Why what the operator typed into `.env` would stop the server or reach it changed (§9). The
  * lines name keys and provider ids, never a value.
  */
-function typedProblems({ config }: Site, dotenv: Map<string, EnvValue>): string[] {
+export function typedProblems({ config }: Site, dotenv: Map<string, EnvValue>): string[] {
   const { email, providers = [] } = config.signIn ?? {};
   const lines = ['SMTP_URL', 'OIDC_CLIENT_SECRETS', 'DATABASE_URL']
     .filter((key) => dotenv.get(key)?.changed)
@@ -48,6 +49,21 @@ function typedProblems({ config }: Site, dotenv: Map<string, EnvValue>): string[
 }
 
 /**
+ * Caddy has only the capability to bind its ports and the server runs as `node` with none
+ * (compose.yml), so neither reads a file by a capability: the Caddyfile and `dist/`, which hold
+ * no secret, are made readable to all, whatever the operator's umask left. A link is left as it
+ * is: chmod would change what it points to.
+ */
+export function readable(root: string): void {
+  const dist = join(root, 'dist');
+  const tree = existsSync(dist) ? readdirSync(dist, { recursive: true, encoding: 'utf8' }) : [];
+  for (const path of [join(root, 'Caddyfile'), dist, ...tree.map((name) => join(dist, name))]) {
+    const stat = lstatSync(path, { throwIfNoEntry: false });
+    if (stat && !stat.isSymbolicLink()) chmodSync(path, stat.isDirectory() ? 0o755 : 0o644);
+  }
+}
+
+/**
  * `parallax start` (docs/design/site.md §5, §9, §11): `env`, the check of what the operator
  * typed into `.env`, `build`, then `docker compose pull` and `up -d --wait`, in which `migrate`
  * runs before the services. Run again it changes no generated secret and stops no service. At
@@ -64,6 +80,7 @@ export const run: Command['run'] = async ({ site }) => {
   if (problems.length > 0) return 1;
   const built = await build({ site, args: [] });
   if (built !== 0) return built;
+  readable(site.root);
   const steps: [string[], string?][] = [[['pull']], [['up', '-d', '--wait']]];
   if (site.config.level === 2 && !dotenv.get('DATABASE_URL')?.value) {
     const password = dotenv.get('RUNNER_DB_PASSWORD')?.value.replaceAll("'", "''");

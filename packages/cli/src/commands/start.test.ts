@@ -1,6 +1,14 @@
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import {
+  cpSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { dirname, join, resolve } from 'node:path';
 import { text } from 'node:stream/consumers';
 import { afterAll, expect, test, vi } from 'vitest';
 import { composeArgs, processes } from '../host/compose';
@@ -87,4 +95,18 @@ test('at level 2 start sends its ALTER ROLE on standard input to psql in the pos
   expect(calls).toEqual([...UP, psql]);
   const login = `LOGIN PASSWORD '${password}' CONNECTION LIMIT 8`;
   expect(inputs).toEqual([`ALTER ROLE parallax_runner ${login};\nSELECT pg_reload_conf();\n`]);
+});
+
+test('start leaves the Caddyfile and dist/ readable to Caddy and the server, which have no capability to read them otherwise', async () => {
+  const { root } = await start('instructor');
+  // As an umask of 077 leaves them.
+  for (const file of ['Caddyfile', 'dist/index.html', 'dist/assets/a.js']) {
+    mkdirSync(dirname(join(root, file)), { recursive: true, mode: 0o700 });
+    writeFileSync(join(root, file), '', { mode: 0o600 });
+  }
+  expect(await again(root)).toMatchObject({ code: 0, calls: UP });
+  if (process.platform === 'win32') return; // Windows keeps no mode bits.
+  const files = ['Caddyfile', 'dist', 'dist/assets', 'dist/index.html', 'dist/assets/a.js'];
+  const modes = files.map((file) => statSync(join(root, file)).mode & 0o777);
+  expect(modes).toEqual([0o644, 0o755, 0o755, 0o644, 0o644]);
 });
