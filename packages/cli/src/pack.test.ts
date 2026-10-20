@@ -20,7 +20,13 @@ const status = () =>
   execFileSync('git', ['status', '--porcelain', '-uno'], { cwd: repo, encoding: 'utf8' });
 const read = (file: string) => JSON.parse(fs.readFileSync(file, 'utf8'));
 type Pins = Record<string, string>;
-type Manifest = { name: string; version: string; dependencies: Pins; devDependencies?: Pins };
+type Manifest = {
+  name: string;
+  version: string;
+  license?: string;
+  dependencies: Pins;
+  devDependencies?: Pins;
+};
 
 /** The files of a gzipped tarball by path, `package/` removed (ustar names and pax `path`). */
 function untar(tgz: Buffer): Map<string, Buffer> {
@@ -164,6 +170,19 @@ test('no test, fixture or .env file is packed; tsconfig.base.json and the backup
   }
   expect(paths).toEqual(expect.arrayContaining(['bin/parallax.mjs', 'pages.d.ts', 'src/main.ts']));
   expect(paths).toContain('vendor/web/src/routeTree.gen.ts');
+});
+
+test('both published packages carry the MIT licence: the license field and the LICENSE file', () => {
+  // The owner's decision of 2026-10-20 (docs/design/site.md §14, question 3).
+  const licence = fs.readFileSync(join(repo, 'LICENSE'), 'utf8');
+  expect(licence).toMatch(/^MIT License\n\nCopyright \(c\) \d{4} \S/);
+  expect(manifest.license).toBe('MIT');
+  expect(String(files.get('LICENSE'))).toBe(licence);
+  const scaffolder = untar(
+    fs.readFileSync(pack('create-parallax-site', version, join(temp, 'scaffolder'))),
+  );
+  expect(JSON.parse(String(scaffolder.get('package.json'))).license).toBe('MIT');
+  expect(String(scaffolder.get('LICENSE'))).toBe(licence);
 });
 
 test('pack.ts gives a tarball whose manifest carries the version asked for, and no tracked file changes', () => {

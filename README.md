@@ -46,3 +46,7 @@ For people changing it:
 - [Design decisions](docs/design-reconciliation.md) and [Fable's review comments](docs/reviews/fable-2026-09-28.md): how the review was reconciled with the original brief.
 
 The [interactive wireframe](docs/wireframe.html) is a design demonstration, not the application. Open it in a browser. Its course material and student records are fixtures; saves stay in memory and reset on reload. It follows [the supplied layout reference](docs/idea_draft.png).
+
+## Licence
+
+Parallax is released under the [MIT licence](LICENSE).

@@ -182,8 +182,9 @@ Learners get the connector from this repository's GitHub releases (owner decisio
 
 Pushing a tag `parallax-v<version>` on `main` publishes the npm packages `parallax-site` and `create-parallax-site` and the images `ghcr.io/<owner>/parallax-server` and `ghcr.io/<owner>/parallax-runner`, all under that version (`.github/workflows/package-release.yml`, [site design](design/site.md) §12). A pull request that changes what it packs, and a manual run with `dry_run` on (the default), build and check without publishing. No session pushes a tag. Before the first one, the owner:
 
-1. holds the npm names `parallax-site` and `create-parallax-site`, and adds the repository secret `NPM_TOKEN` with a token that may publish them. Without it the step **The npm token is set** fails, before anything is pushed;
-2. settles the licence of the two manifests, which is still open ([site design](design/site.md) §14, question 3).
+1. holds the npm names `parallax-site` and `create-parallax-site`, and adds the repository secret `NPM_TOKEN` with a token that may publish them. Without it the step **The npm token is set** fails, before anything is pushed.
+
+Both packages are published under the MIT licence of `LICENSE` ([site design](design/site.md) §14, question 3).
 
 After the first publish, make both GHCR packages public (GHCR creates new packages as private), and link each to this repository in its package settings: neither image carries the label `org.opencontainers.image.source`.
 
