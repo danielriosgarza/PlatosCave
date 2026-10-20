@@ -127,6 +127,9 @@ jobs:
     if: needs.build.outputs.publish == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    # NPM_TOKEN is a secret of this environment, which only parallax-v* tags may use
+    # (docs/operations.md, Package releases): no pull request run can read it.
+    environment: release
     permissions:
       contents: read
       packages: write
@@ -143,6 +146,41 @@ jobs:
           name: parallax-${{ needs.build.outputs.version }}
       - name: Check what build handed over against the release manifest
         run: jq -r '(.packages[], .images[]) | "\(.sha256)  ./\(.file)"' release.json | sha256sum -c --strict
+      # A re-pushed tag or a manual run over a published tag stops here, before any push, so a
+      # published image tag is never replaced. Any answer but "not found" stops the run as well.
+      - name: The version is not published yet
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          for name in parallax-site create-parallax-site; do
+            # npm answers E404 for a version, or a whole package, that is not there.
+            if found="$(npm view "$name@$VERSION" version 2>&1)"; then
+              if [[ -n "$found" ]]; then echo "::error::$name@$VERSION is already on npm"; exit 1; fi
+            elif [[ "$found" != *E404* ]]; then
+              printf '%s\n' "$found"
+              exit 1
+            fi
+          done
+          accept='application/vnd.oci.image.index.v1+json,application/vnd.oci.image.manifest.v1+json'
+          accept+=',application/vnd.docker.distribution.manifest.list.v2+json'
+          accept+=',application/vnd.docker.distribution.manifest.v2+json'
+          for name in parallax-server parallax-runner; do
+            ref="$(jq -r --arg name "$name" '.images[$name].ref' release.json)"
+            repo="${ref#ghcr.io/}" && repo="${repo%:*}"
+            # The scope a push asks for, so that a package not created yet answers 404, not denied.
+            token="$(printf 'user = "%s:%s"\n' "$GITHUB_ACTOR" "$GHCR_TOKEN" | curl --config - -fsS \
+              "https://ghcr.io/token?service=ghcr.io&scope=repository:$repo:pull,push" | jq -er .token)"
+            code="$(printf 'header = "Authorization: Bearer %s"\n' "$token" | curl --config - -sS \
+              --header "Accept: $accept" --output "$RUNNER_TEMP/manifest.json" --write-out '%{http_code}' \
+              "https://ghcr.io/v2/$repo/manifests/$VERSION")"
+            if [[ "$code" == 200 ]]; then echo "::error::$ref is already on GHCR"; exit 1; fi
+            unknown='.errors | length > 0 and all(.code == "MANIFEST_UNKNOWN" or .code == "NAME_UNKNOWN")'
+            if [[ "$code" != 404 ]] || ! jq -e "$unknown" "$RUNNER_TEMP/manifest.json" > /dev/null; then
+              echo "::error::GHCR answered $code for $ref"
+              cat "$RUNNER_TEMP/manifest.json"
+              exit 1
+            fi
+          done
       - name: Push the images
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -53,12 +53,26 @@ export function stamp(release: Release, root = resolve(import.meta.dirname, '../
   }
 }
 
+/** SHA-256 of a file read in chunks: an image archive may pass readFileSync's limit of 2 GiB. */
+export function sha256File(path: string, chunkBytes = 1 << 20): string {
+  const hash = createHash('sha256');
+  const chunk = Buffer.alloc(chunkBytes);
+  const fd = fs.openSync(path, 'r');
+  try {
+    let read = fs.readSync(fd, chunk);
+    while (read > 0) {
+      hash.update(chunk.subarray(0, read));
+      read = fs.readSync(fd, chunk);
+    }
+  } finally {
+    fs.closeSync(fd);
+  }
+  return hash.digest('hex');
+}
+
 /** What build hands over in `folder`, each file with its checksum; `publish` adds the digests. */
 export function releaseManifest(release: Release, folder: string, revision: string) {
-  const sum = (file: string) => {
-    const sha256 = createHash('sha256').update(fs.readFileSync(join(folder, file)));
-    return { file, sha256: sha256.digest('hex') };
-  };
+  const sum = (file: string) => ({ file, sha256: sha256File(join(folder, file)) });
   const tarball = (name: string) => sum(`release/${name}-${release.version}.tgz`);
   const packages = Object.fromEntries(Object.keys(PACKAGES).map((name) => [name, tarball(name)]));
   const images = Object.entries(release.images).map(([name, ref]) => {
