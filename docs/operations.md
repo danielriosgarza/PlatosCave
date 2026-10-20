@@ -9,7 +9,7 @@ A site at level 1 or 2 ([getting started](getting-started.md#make-a-site)) runs 
 ### First start of a site
 
 1. Point both host names of `origins` at the host, and open ports 80 and 443, which Caddy needs for the certificates.
-2. Run `npx parallax env`. It writes `.parallax/site.env` from the configuration and creates `.env` (mode 0600) with generated `POSTGRES_PASSWORD`, `SESSION_SECRET`, `CONTENT_TOKEN_SECRET` and `READY_PROBE_TOKEN` (and `RUNNER_DB_PASSWORD` at level 2). It never changes a value in `.env`, and names what it added: `parallax env: wrote .parallax/site.env; .env gained POSTGRES_PASSWORD, SESSION_SECRET, CONTENT_TOKEN_SECRET, READY_PROBE_TOKEN.` It writes `.parallax/site.env`, and at level 2 `pg_hba.conf` and `runner.env`, anew on every run, as `start` and `upgrade` do: change the configuration, not those files (a `RUNNER_DATABASE_URL` typed into `runner.env` is kept).
+2. Run `npx parallax env`. It writes `.parallax/site.env` from the configuration and creates `.env` (mode 0600) with generated `POSTGRES_PASSWORD`, `SESSION_SECRET`, `CONTENT_TOKEN_SECRET` and `READY_PROBE_TOKEN` (and `RUNNER_DB_PASSWORD` at level 2). It never changes a value in `.env`, and names what it added: `parallax env: wrote .parallax/site.env; .env gained POSTGRES_PASSWORD, SESSION_SECRET, CONTENT_TOKEN_SECRET, READY_PROBE_TOKEN.` It writes `.parallax/site.env`, and at level 2 `pg_hba.conf` and `runner.env`, anew on every run, as `start` and `upgrade` do: change the configuration, not those files (with an existing PostgreSQL a `RUNNER_DATABASE_URL` typed into `runner.env` is kept; with the bundled database `env` replaces it). On Windows the mode does not apply and `.env` takes the permissions of its folder: keep the site in a folder only you can read.
 3. Type into `.env`, **single-quoted**, what the configuration needs: `SMTP_URL='smtp://user:password@mail.example.org:587'` when `signIn` has `email`, `OIDC_CLIENT_SECRETS='{"university":"…"}'` when it lists providers, and `DATABASE_URL='postgres://…'` for an existing PostgreSQL. Compose replaces an unquoted `$name`, and a `#` after a space ends an unquoted value. `start` stops on such a value, and on a missing one, and names it: `parallax start: .env: SMTP_URL holds $ or \ that Compose would change: write it SMTP_URL='…'`.
 4. Run `npx parallax start` (**Docker**): `env`, the check of `.env`, `build`, `docker compose pull` and `up -d --wait`, in which `migrate` runs before the services. It ends with `parallax start: the services are up.` and is safe to run again.
 5. Each instructor of the configuration signs in once in the browser.
@@ -47,7 +47,7 @@ DOCKER_GID=$(stat -c %g /var/run/docker.sock) docker compose --env-file runner.e
 
 - The subnets of `edge` and `backend` (`172.30.11.0/24`, `172.30.10.0/24`) can collide with a network on the host; each is one line of `compose.yml`.
 - `compose.yml`, `Caddyfile`, `compose.level2.yml` and `compose.runner.yml` are copied from the template once: a later version that needs a new secret, volume, service or Caddy rule asks for an edit of them.
-- `apply` issues a new enrolment code, and prints it, for every listed class with no open enrolment invitation: a code that was revoked, has expired or is used up is replaced at the next `apply`, for an open class with no limit and no expiry. It also sets each class's `open` back to the configuration.
+- `apply` issues a new enrolment code, and prints it, for every listed class with no open enrolment invitation, and for an open class whose open invitations all have a limit or an expiry: a code that was revoked, has expired or is used up is replaced at the next `apply`, for an open class with no limit and no expiry. It also sets a class's `open` back to the configuration when the two differ.
 - `apply` waits for every listed instructor's first sign-in; a mistyped address in an `instructor.yaml` gives nobody the courses, and `apply` names the file.
 
 ## Sign-in
@@ -56,7 +56,7 @@ People sign in with an email link, through an OpenID Connect provider, or both (
 
 Register `<APP_ORIGIN>/api/auth/oidc/<id>/callback` at the issuer. The issuer must:
 
-- verify addresses: accounts are keyed by a verified address, and the ID token must carry `email` and `email_verified: true`, a boolean. A missing claim, a string, or a claim sent only by the userinfo endpoint ends with *name* **did not confirm an email address**;
+- verify addresses: accounts are keyed by a verified address, and the ID token must carry `email`, a valid address of at most 254 characters, and `email_verified: true`, a boolean. A missing claim, a string, or a claim sent only by the userinfo endpoint ends with *name* **did not confirm an email address**;
 - accept `client_secret_basic`, the one way Parallax sends the client secret. With an issuer that offers only `client_secret_post`, every sign-in ends with **Signing in with** *name* **did not finish**;
 - be configured exactly as it publishes itself: `issuer` is the `issuer` value of its `/.well-known/openid-configuration`.
 

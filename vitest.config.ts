@@ -26,7 +26,7 @@ export default defineConfig({
         test: {
           name: 'component',
           environment: 'jsdom',
-          include: ['src/**/*.test.tsx'],
+          include: ['src/**/*.test.{ts,tsx}'],
           setupFiles: ['src/test/setup.ts'],
           ...coldStart,
         },

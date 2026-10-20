@@ -2,7 +2,16 @@ import { mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { findTests, idsInGoTests, idsInTsTitles, readDone } from './check-scenarios.js';
+import {
+  findTests,
+  idsInGoTests,
+  idsInTsTitles,
+  inGoPackage,
+  playwrightCollector,
+  readDone,
+  uncollected,
+  vitestCollectors,
+} from './check-scenarios.js';
 
 describe('scenario scanner', () => {
   it('AUD8 counts IDs in test, it and describe titles', () => {
@@ -291,5 +300,70 @@ func TestA520_NotAnID(t *testing.T) {}
     const done = readDone(dir);
     expect(done.get('A01')).toEqual(['P1-01.txt', 'P1-02.txt']);
     expect(done.get('A02')).toEqual(['P1-01.txt']);
+  });
+});
+
+// The configurations in miniature: the shapes of vitest.config.ts and e2e/playwright*.config.ts.
+describe('test files no runner collects', () => {
+  const vitest = (component: string) => `
+    import { configDefaults, defineConfig } from 'vitest/config';
+    export default defineConfig({ test: { projects: [
+      { test: { name: 'unit', include: ['packages/**/*.test.ts', 'scripts/**/*.test.ts'] } },
+      { root: 'apps/web', test: { name: 'component', include: ['${component}'] } },
+      { test: { name: 'integration', include: ['apps/server/test/**/*.itest.ts'],
+        exclude: [...configDefaults.exclude, 'apps/server/test/**/*.docker.itest.ts'] } },
+    ] } });`;
+  const playwright = (dir: string) =>
+    `export default defineConfig({ testDir: '${dir}', testMatch: /\\.e2e\\.ts$/, workers: 2 });`;
+  const collectors = (component: string) => [
+    ...vitestCollectors(vitest(component)),
+    playwrightCollector(playwright('tests'), 'e2e/playwright.config.ts'),
+    playwrightCollector(playwright('open'), 'e2e/playwright.open.config.ts'),
+    inGoPackage,
+  ];
+  const files = [
+    'packages/cli/src/a.test.ts',
+    'apps/web/src/b.test.tsx',
+    'apps/web/src\\styles\\c.test.ts',
+    'apps/web/src/helper.ts',
+    'apps/server/test/d.itest.ts',
+    'apps/server/test/e.docker.itest.ts',
+    'e2e/tests/f.e2e.ts',
+    'e2e/open/g.e2e.ts',
+    'e2e/stray/h.e2e.ts',
+    'connector/internal/x/i_test.go',
+    'connector/internal/x/testdata/j_test.go',
+    'connector/_old/k_test.go',
+  ];
+
+  it('P5-AUD1 names each test file that no include, testDir/testMatch or Go package collects', () => {
+    expect(uncollected(files, collectors('src/**/*.test.tsx'))).toEqual([
+      'apps/server/test/e.docker.itest.ts',
+      'apps/web/src/styles/c.test.ts',
+      'connector/_old/k_test.go',
+      'connector/internal/x/testdata/j_test.go',
+      'e2e/stray/h.e2e.ts',
+    ]);
+  });
+
+  it('P5-AUD1 the component include widened to .ts collects the web .test.ts files', () => {
+    expect(uncollected(files, collectors('src/**/*.test.{ts,tsx}'))).toEqual([
+      'apps/server/test/e.docker.itest.ts',
+      'connector/_old/k_test.go',
+      'connector/internal/x/testdata/j_test.go',
+      'e2e/stray/h.e2e.ts',
+    ]);
+  });
+
+  it('P5-AUD1 a configuration the gate cannot read fails the gate instead of passing it', () => {
+    const project = (test: string) => `defineConfig({ test: { projects: [{ test: ${test} }] } })`;
+    expect(() => vitestCollectors(project("{ name: 'u', include: globs }"))).toThrow(/include/);
+    expect(() => vitestCollectors(project("{ name: 'u' }"))).toThrow(/include/);
+    expect(() => vitestCollectors(project("{ name: 'u', include: ['a'], exclude: [x] }"))).toThrow(
+      /exclude/,
+    );
+    expect(() => vitestCollectors('export default {};')).toThrow(/project/);
+    const config = "defineConfig({ testDir: 'tests', testMatch: '**/*.e2e.ts' })";
+    expect(() => playwrightCollector(config, 'e2e/p.config.ts')).toThrow(/testMatch/);
   });
 });

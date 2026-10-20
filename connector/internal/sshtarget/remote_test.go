@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
@@ -88,7 +89,7 @@ func newRemoteHost(t *testing.T, mode string, edit ...func(*sshtest.Options)) *r
 	f := newFixture(t)
 	f.trust(srv.Host, srv.Port, hostKey.PublicKey())
 	logs := &lines{}
-	h := &remoteHost{t: t, f: f, srv: srv, key: key, stub: stub, ws: t.TempDir(), logs: logs,
+	h := &remoteHost{t: t, f: f, srv: srv, key: key, stub: stub, ws: realTempDir(t), logs: logs,
 		r: &Remote{SSH: f.tg, Log: logs.add, ReadyTimeout: 10 * time.Second, PollInterval: 50 * time.Millisecond,
 			Keepalive: 50 * time.Millisecond, KeepaliveLoss: time.Second, Interfaces: loopbackOnly, Ports: sshtest.QuietPorts}}
 	// Whatever a test leaves serving is killed when it ends.
@@ -213,7 +214,7 @@ func TestA28_OwnedSessionReady(t *testing.T) {
 	if d := stageOf(t, res.Stages, "kernels").Data; d.Source != "cli" {
 		t.Fatalf("kernels %+v", d)
 	}
-	if res.JupyterVersion != jupytertest.Version || res.Environment == nil || res.Environment.OS != "linux" || res.Environment.Runtime != "Python 3.12.8" {
+	if res.JupyterVersion != jupytertest.Version || res.Environment == nil || res.Environment.OS != runtime.GOOS || res.Environment.Runtime != "Python 3.12.8" {
 		t.Fatalf("version %q environment %+v", res.JupyterVersion, res.Environment)
 	}
 	if len(jupytertest.Records(t, h.stub)) != 0 {

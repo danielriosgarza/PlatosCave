@@ -60,7 +60,7 @@ my-site/
   courses/<course>/…     instructor mode; the layout inside a course folder is run R2's
   instructors/<name>/    school mode: instructor.yaml and courses/<course>/…, the same layout
   compose.yml  Caddyfile  compose.level2.yml  compose.runner.yml      the installation (§9, §11)
-  .gitignore             node_modules/  dist/  .parallax/  .env  backups/  private/
+  .gitignore             node_modules/  dist/  .parallax/  .env  .env.*  *.env  backups/  private/
 ```
 
 Generated and git-ignored: `.env` (secrets); `.parallax/` (the work tree `app/`, the compile's own output `dist/` of §6.4, the Vite cache `vite/`, `site.env`, the backup overlay `compose.backup.yml` of §10, and at level 2 `pg_hba.conf` and `runner/runner.env`); `dist/` (the compiled site that is served); `backups/`. `private/` stands for the private overlay of run R2, and the name `docs/design/course-folder.md` gives it wins.

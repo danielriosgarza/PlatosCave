@@ -2,5 +2,7 @@ node_modules/
 dist/
 .parallax/
 .env
+.env.*
+*.env
 backups/
 private/
