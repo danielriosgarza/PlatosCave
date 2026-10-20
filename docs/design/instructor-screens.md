@@ -13,18 +13,18 @@ The [wireframe](../wireframe.html) has none of these screens, so they are built 
 | List, remove or change members and grants | **Members** page of a class | `listMembers`, `removeMember`, `setManageMembers` | P6-03c |
 | Issue enrolment codes and instructor invitations | **Members** page: **Create enrolment code**, **Invite an instructor**, **Revoke** | `createInvite`, `revokeInvite` | P6-03d |
 | Accept an instructor invitation | **Accept an invitation** page at `/invitations/<token>` | `acceptInvitation` | P6-03e |
-| Course grants (publisher, owner) | **Course staff** section of the course editor | `listCourseStaff` (new, §5.2), `setPublisher`, `setOwner` | P6-03f |
+| Course grants (publisher, owner) | **Course staff** page of a course | `listCourseStaff` (new, §5.2), `setPublisher`, `setOwner` | P6-03f |
 | Make a class adopt another release | **Releases** page of a class | `listClassReleases`, `previewAdoption`, `adoptRelease` | P6-03g |
 | Set one class's terms for a test | **Terms for this class** on the class's Tests tab | `readAssignment`, `updateAssignment` | P6-03h |
 
-Two server changes come with the screens (§5): `createClass` may make its creator an instructor of the new class, and a course owner can list the course's staff. Everything else is the web application. The guide's table then lists no **API only** row except the one §8 leaves out.
+Two server changes come with the screens (§5): `createClass` may make its creator an instructor of the new class, and a course owner can list the course's staff. Everything else is the web application. Every **API only** row of the guide's table then has a screen; §8 names what stays without one.
 
 ## 2. Where they sit
 
 - **Courses you teach** (`routes/_authed/courses.index.tsx`): a class card's status row gains **Members** (when the account manages the class's members: `me.classes[].manageMembers`, or owns the course) and **Releases** (when it is an instructor of the class), beside **Class review**.
-- **Course editor** (`courses.$courseId.edit.index.tsx`): the side area holds, above **Publication**, a **Classes** panel (§3.2) and, for an owner, a **Course staff** section (§3.6). Its class list, today inside `PublishPanel`, moves into the Classes panel with each class's release and its links.
-- **Class pages** (new routes, under `_authed`): `/classes/$classId/members` and `/classes/$classId/releases`, each with the class context line that Class review uses (course · class, spec §2: the cohort name stays visible) and a **Back to courses** link.
-- **Accept an invitation** (new route `/invitations/$token`, under `_authed` so that sign-in returns to it, as `/join/$code` does).
+- **Course editor** (`courses.$courseId.edit.index.tsx`): the side area holds, above **Publication**, a **Classes** panel (§3.2) with **Create class** and each class's links, and, for an owner, a **Course staff** link (§3.6). **Publication** keeps its lines on each class's release ("Spring 2027 uses release 3."), as the wireframe's Publication side shows them (`docs/wireframe.html`, edit topic) and as the tests of `apps/web/src/test/authoring.test.tsx` read them there; the Classes panel does not repeat them.
+- **Course and class pages** (new routes, under `_authed`): `/courses/$courseId/staff` (§3.6), `/classes/$classId/members` and `/classes/$classId/releases`, each with the class context line that Class review uses (course · class, spec §2: the cohort name stays visible) and a **Back to courses** link.
+- **Accept an invitation** (new route `/invitations/$token`, under `_authed` so that sign-in returns to it, as `/join/$code` does). The token is in the path, as an enrolment code is in a join link; P6-03e keeps it out of the request log and of the stored sign-in destination as #685 does for the join code (`redactUrl` scrubs only `token`, `code` and `state` query parameters today).
 - **Topic editor**, Slides section: **Add PDF slides** beside **Add web slides**.
 - **Class Tests tab**, instructor view (`assessments/TestsPanel.tsx`): **Terms for this class**, above the accommodations that are there today.
 
@@ -38,19 +38,19 @@ A PDF deck's row gains **Edit** *title*, which opens the reading editor's fields
 
 ### 3.2 Classes and Create class (P6-03b)
 
-The **Classes** panel lists the course's classes from `getCourseOverview`: the class's name, its release (**Uses release 3** or **No release adopted**), and the links the account may follow (**Members**, **Releases**, **Class review**). An archived class is listed under **Archived** with its name only.
+The **Classes** panel lists the course's classes from `getCourseOverview`, each with its name and the links the account may follow: **Members** (for an owner, or an instructor who manages the class's members), **Releases** (for an instructor of the class) and **Class review** (for an instructor of the class). For an owner who does not teach a class, **Members** is the way to it: such a class has no card under **Courses you teach**. An archived class is listed under **Archived** with its name only. The release each class uses stays in **Publication** (§2).
 
-**Create class** (course owners only, as the route requires) opens a dialog: **Class name** (1 to 120 characters, the route's rule), a checkbox **I teach this class**, checked by default, and **Create class**. On success the dialog closes, the panel lists the class, and a status line says **Created Spring 2027.** When **I teach this class** was checked, the class also appears under **Courses you teach**, and the status line adds **You teach it.** A class without a release says so, with the next step: **Adopt a release on the class's Releases page** (or **Publish a release first** when the course has none).
+**Create class** (course owners only, as the route requires) opens a dialog: **Class name** (1 to 120 characters, the route's rule), a checkbox **I teach this class**, checked by default, and **Create class**. With the box checked the request is a membership change and needs a recent sign-in (§5.1); its refusal is handled as §4 says. On success the dialog closes, the panel lists the class, and a status line says **Created Spring 2027.** When **I teach this class** was checked, the class also appears under **Courses you teach**, and the status line adds **You teach it.** A class without a release says so, with the next step: **Adopt a release on the class's Releases page** for a class the account teaches, or **Publish a release first** when the course has none. A name the course already uses, archived classes included, is refused in the dialog (**The course already has a class named Spring 2027.**), since classes are found by name in a site's configuration (`parallax apply` refuses two of one name) and no route renames one; the route itself does not check it.
 
 ### 3.3 Members (P6-03c)
 
-`/classes/$classId/members` has three sections, each a table in the review table's style (header row on the secondary surface, the table scrolling inside its own container at 320 px, spec §14):
+`/classes/$classId/members` has three sections, each a table in the review table's style (header row on the secondary surface, the table scrolling inside its own container at 320 px, §4):
 
 - **Instructors**: name, email, **Manages members** (a checkbox, `setManageMembers`) and **Remove**.
-- **Students**: name, email and **Remove**. Paginated at 50, with a filter by name or email, as a long student list must be (spec §14).
+- **Students**: name, email and **Remove**. Paginated at 50 in the browser, with a filter by name or email, as a long student list must be (spec §14); `listMembers` answers the whole list, which an open class can make long, and a route with pages is a later item if a class grows past a few thousand.
 - **Open invitations** (§3.4).
 
-**Remove** opens the archiving dialog's pattern: title **Remove Ana Silva from Spring 2027?**, a sentence that states the consequence from the route's cascade (**They lose access to this class. Their submitted work and grades stay in the class's results.** for a student; for an instructor, also **Their open instructor invitations are revoked.**), a primary **Remove** and **Cancel**. The table changes only after the server answers. The grant checkbox shows its new state only after the server answers too, and is disabled while it waits.
+**Remove** opens the archiving dialog's pattern: title **Remove Ana Silva from Spring 2027?**, a sentence that states the consequence from the route's cascade (`removeMember`): for a student, **They lose access to this class. Their submitted work and grades stay in the class's results.**; for an instructor, also **The instructor invitations they issued and that are still open are revoked**, unless they own the course, and **They stop editing the course's drafts** when they teach no other class of it; then a primary **Remove** and **Cancel**. The table changes only after the server answers. Unchecking **Manages members** confirms in the same way, since it also revokes the open instructor invitations that person issued unless they own the course (`setManageMembers`); the checkbox shows its new state only after the server answers and is disabled while it waits.
 
 ### 3.4 Enrolment codes and instructor invitations (P6-03d)
 
@@ -69,13 +69,21 @@ The answer holds the code or the token **once**: the server keeps only its hash.
 
 ### 3.6 Course staff (P6-03f)
 
-For a course owner, the course editor's **Course staff** section lists the people who hold a grant on the course (§5.2): name, email, **Owner**, **Publisher**, **Edits drafts** (read only: it comes from teaching a class), and the classes they teach. **Owner** and **Publisher** are checkboxes (`setOwner`, `setPublisher`), each changed only after a confirmation dialog that states the consequence (**Make Ana Silva an owner of Reef ecology? Owners can create classes, change every grant and archive the course.**; removing the last owner is refused by the server with **A course needs at least one owner.**). A person who teaches none of the course's classes and holds no grant is not staff and is not listed.
+`/courses/$courseId/staff`, linked from the course editor's side area for an owner, is a page of its own: the side area's 280 px column cannot hold the list (DESIGN.md: authoring uses a 280 px side area). It lists, from `listCourseStaff` (§5.2), each person who holds a grant on the course, in the review table's style: name, email, **Owner**, **Publisher**, **Edits drafts** (read only: it comes from teaching a class or from being an owner) and the classes they teach. The values are the effective ones of §5.2, so an owner reads as a publisher.
+
+**Owner** and **Publisher** are checkboxes, each changed only after a confirmation dialog that states the consequence (**Make Ana Silva an owner of Reef ecology? Owners can create classes, change every grant and archive the course.**), and each shows its new state only after the server answers. The routes' own rules decide which boxes can change, and the page shows them before a click rather than after a refusal:
+
+- **Publisher** is checked and disabled for an owner, with the note **Owners publish**: `setPublisher` refuses an owner (409 `owner`).
+- **Owner** is disabled, with the note **Only someone who edits this course or teaches one of its classes can be an owner**, for a person who does neither (for example one who only publishes): `setOwner` refuses them (409 `not_course_staff`).
+- Removing the last owner is refused with **A course needs at least one owner.** (409 `last_owner`); an account that is no longer an owner when its request arrives gets **You are no longer an owner of this course.** (403 `forbidden`), and the page reloads its data.
+
+A person who teaches none of the course's classes and holds no grant is not staff and is not listed.
 
 ### 3.7 Releases (P6-03g)
 
 `/classes/$classId/releases` shows **Uses release 3** (or **No release adopted**), then the course's releases, newest first (version, published date). Choosing **Preview changes** on a release shows what `previewAdoption` answers, before anything changes (spec §12: adoption shows changed resources, affected anchors and existing assignments):
 
-- **Added**, **Removed** and **Changed** resources, each with its topic and tab, and for a changed one what changed (**new version**, **title**, **moved to another topic**, **position**, **visibility**, **release date**);
+- **Added**, **Removed** and **Changed** resources, each with its topic and tab, and for a changed one what changed (**new version**, **title**, **moved to another tab**, **moved to another topic**, **position**, **visibility**, **release date**: one label for each value of `changed[].fields`);
 - for each removed or changed resource, **Notes and questions to re-place** (the annotations the instructor can see) and **Started test attempts** (attempts pinned to the earlier version), as counts, with the totals above the lists;
 - the sentence **Started tests keep the version they began with. Notes that cannot be placed on the new version are marked Needs reattachment.**
 
@@ -83,28 +91,29 @@ For a course owner, the course editor's **Course staff** section lists the peopl
 
 ### 3.8 Terms for this class (P6-03h)
 
-On the class's Tests tab, for an instructor and for each test of the class's release, **Terms for this class** shows the terms in effect (`readAssignment`, `effective`) with the fields of the test editor's **Attempts, timing and release** (`SettingsEditor`): attempts, duration, opens and closes, time zone, late submission, results, solutions, reported grade, hidden test details and allowed materials. A field the class sets is marked **Set for this class**; the others show the test's value. **Save terms** sends the class's settings with the revision it read (`expectedRevision`, `null` before the first save) and says **Saved** only after the server answers; **Use the test's terms** clears the class's settings after a confirmation. A 400 shows the server's sentence (**These terms cannot be applied: …**). A `revision_conflict` shows the conflict view of the editor (**Keep my version**, **Use their version**). The form says, as spec §11 does, that a started attempt keeps the terms it began with.
+On the class's Tests tab, for an instructor and for each test of the class's release, **Terms for this class** shows the terms in effect (`readAssignment`, `effective`) with the fields of the test editor's **Attempts, timing and release**: attempts, duration, opens and closes, time zone, late submission, results, solutions, reported grade, hidden test details and allowed materials. `SettingsEditor` is private to `TestEditor.tsx` and reads an empty field as inherited, so P6-03h exports it with a mode in which each field shows its effective value. A field, or for `late` and `release` the whole group (the patch replaces those objects whole), that the class sets is marked **Set for this class**, and the others show the test's value. **Save terms** sends only the fields and groups the instructor set for the class, never the effective values shown, so a later change to the test's own terms still reaches the fields the class did not set; it sends them with the revision it read (`expectedRevision`, `null` before the first save) and says **Saved** only after the server answers; **Use the test's terms** clears the class's settings after a confirmation. A 400 shows the server's sentence (**These terms cannot be applied: …**). A `revision_conflict` shows the conflict view of the editor (**Keep my version**, **Use their version**). The form says, as spec §11 does, that a started attempt keeps the terms it began with.
 
 The save is explicit, not autosaved: the route replaces the class's whole set of terms and starts without a revision, and a term saved halfway (an opening time without its closing time) can be refused or can change a running test.
 
 ## 4. Rules every screen keeps
 
-- **A sign-in that is not recent.** The member routes need a sign-in in the last 15 minutes; their refusal is a 401 whose `code` is `recent_auth_required`. Every screen of §3.3 to §3.6 reads `code`, as `TemplateManager.tsx` does, and says **Changing members needs a recent sign-in. Sign in again, then retry.** with **Sign in again**, which signs out and returns to the same page after sign-in. The form keeps what was typed.
+- **A sign-in that is not recent.** The member routes, and `createClass` with `teach` (§5.1), need a sign-in in the last 15 minutes; their refusal is a 401 whose `code` is `recent_auth_required`. The screens of §3.2 (with **I teach this class** checked), §3.3, §3.4 and §3.6 read `code`, as `TemplateManager.tsx` does, and say **Changing members needs a recent sign-in. Sign in again, then retry.** with **Sign in again**, which signs out and opens the sign-in page with the current page as its destination (`next`), so the instructor comes back to the same page. What was typed in a dialog is not kept across the sign-in; the dialogs hold a name, an address or a date, so this is accepted rather than stored. Accepting an invitation (§3.5) needs no recent sign-in. The shared **Sign in again** control is new: P6-03b, the first unit that needs it, adds it, and the screens that show the sentence alone today (`TemplateManager.tsx`, `DeviceList.tsx`, `ConnectPanel.tsx`) keep it as it is.
 - **Real state only.** A table, a checkbox or a status line changes after the server's answer, never before (CLAUDE.md: never show "Saved" without an acknowledgement). Buttons say what they are doing while they wait (**Creating…**, **Removing…**, **Adopting…**) and are disabled.
 - **Refusals are sentences** (`role="alert"`) next to the action that caused them; outcomes are status lines (`role="status"`). There is no toast.
 - **Dialogs** are the `Dialog` of `courses/Dialogs.tsx`: focus trapped, Escape closes unless an action is running, focus returns to the opener (spec §14). Destructive actions confirm in one; the primary button repeats the action's name.
-- **Archived classes**: a 409 `class_archived` says **This class is archived.** and leaves the page's data as it is; **Revoke** and **Remove** still work, as their routes allow.
-- **Layout and access**: the pages use `.index` width and the review table styles; at 320 px tables scroll in their containers and no control is under 44 × 44 px on a coarse pointer; every control has a label, every table its headers, and each page passes axe in the component tests.
+- **Archived classes and courses**: a 409 `class_archived` says **This class is archived.**, and `course_archived` **This course is archived.**; the page's data stays as it is, and **Revoke** and **Remove** still work, as their routes allow.
+- **Access that ends meanwhile**: a 404 on a page's data, or on an action, shows the application's existing unavailable state (`ClassUnavailable`, `Unavailable` in `components/AccessLost.tsx`), as spec §14 asks when a permission is revoked.
+- **Layout and access**: the pages use `.index` width and the review table styles; at 320 px tables scroll in their own containers (DESIGN.md: "Tables scroll inside their own containers") and no control is under 44 × 44 px on a coarse pointer; every control has a label, every table its headers, and each page passes axe in the component tests.
 
 ## 5. Server changes
 
 ### 5.1 `createClass` may enrol its creator
 
-`createClass` (`packages/contracts/src/routes/members.ts`) gains an optional body field `teach: boolean` (default `false`, so every existing caller is unchanged). With `teach: true` the route creates the class and then, in the same transaction, makes the creator an instructor of it with `ensureInstructor` (`apps/server/src/db/setup.ts`, the function `parallax apply` already uses), under a `ClassManagerScope` resolved for the creator as course owner (`via: 'course_owner'`). It records the audit events both functions record (`class.create`, `membership.add`). The route's scope stays `{ kind: 'course', role: 'owner' }`, so nobody gains a way in they did not have: an owner can already make themselves an instructor of any class of the course through an invitation to their own address. The response gains `teaching: boolean`.
+`createClass` (`packages/contracts/src/routes/members.ts`) gains an optional body field `teach: boolean` (default `false`, so every existing caller is unchanged). With `teach: true` the route first calls `scope.requireRecentAuth()`, as every membership change does (ADR-0002, **Audit**; spec §3: "require authentication again for sensitive membership changes"), and then, in one transaction, creates the class and makes the creator an instructor of it with `ensureInstructor` (`apps/server/src/db/setup.ts`, the function `parallax apply` already uses), under a `ClassManagerScope` resolved for the creator as course owner (`via: 'course_owner'`). It records the audit events both functions record (`class.create`, `membership.add`). A stale sign-in with `teach: true` gets the 401 before any write, so no class is created; without `teach` the route is as today and needs no recent sign-in. The route's scope stays `{ kind: 'course', role: 'owner' }`, so nobody gains a way in they did not have: an owner can already make themselves an instructor of any class of the course by inviting their own address, which needs the same recent sign-in. The response gains `teaching: boolean`.
 
 ### 5.2 `listCourseStaff`
 
-`GET /api/courses/:courseId/staff`, registered with `registerRoute`, scope `{ kind: 'course', role: 'owner' }`, with examples, answers `{ staff: [{ userId, name, email, owner, publisher, editor, classes: [{ id, name }] }] }`: the course's `course_memberships` rows with any grant, joined to the class memberships of the course's classes where the person is an instructor, ordered by name; preview accounts are left out, as `listMembers` leaves them out. A non-owner gets 403 and a non-member 404 (ADR-0002). It reads through `forCourse`.
+`GET /api/courses/:courseId/staff`, registered with `registerRoute`, scope `{ kind: 'course', role: 'owner' }`, with examples, answers `{ staff: [{ userId, name, email, owner, publisher, editor, classes: [{ id, name }] }] }`, where `publisher` and `editor` are the effective grants (`owner || publisher`, `owner || editor`, as `resolveCourse` reads them; `setOwner` writes only `owner` and `editor`): the course's `course_memberships` rows with any grant, joined to the class memberships of the course's classes where the person is an instructor, ordered by name. Only accounts of kind `user` that are not preview accounts are listed, as `listMembers` lists them; a deactivated account that still holds a grant is listed, marked **Deactivated**, with its boxes disabled, since `setOwner` and `setPublisher` answer 404 for it. A non-owner gets 403 and a non-member 404 (ADR-0002). It reads through `forCourse`, so no row of another course is reached.
 
 ## 6. Tests
 
@@ -113,11 +122,11 @@ Each screen's component test (Vitest with `stubApi`, `renderApp` and axe, as `te
 | Unit | Tests | IDs in their titles |
 | --- | --- | --- |
 | P6-03a | `apps/web/src/authoring/pdf-slides.test.tsx`: upload, create, the processing line, a refused file, edit and replace | A26 |
-| P6-03b | `apps/web/src/authoring/classes.test.tsx`; `apps/server/test/integration/create-class-teach.itest.ts`: `teach` adds the instructor membership and the audit events; without it nothing changes; a non-owner is refused | A01, A02 |
+| P6-03b | `apps/web/src/authoring/classes.test.tsx` (the dialog, its recent sign-in refusal and **Sign in again**; Publication's class lines unchanged); `apps/server/test/integration/create-class-teach.itest.ts`: a fresh sign-in with `teach` gets the membership and both audit events; a stale sign-in with `teach` gets 401 and leaves no class and no membership; a stale sign-in without `teach` still gets 201; a non-owner is refused | A01, A02 |
 | P6-03c | `apps/web/src/members/members.test.tsx`: tables, grant, remove with its dialog, pagination, recent sign-in | A01, A02 |
 | P6-03d | `apps/web/src/members/invitations.test.tsx`: the code and the link shown once, copy, revoke, expiry limits | A02 |
 | P6-03e | `apps/web/src/members/accept.test.tsx`: success, already a member, each refusal's sentence | A02 |
-| P6-03f | `apps/web/src/members/staff.test.tsx`; `apps/server/test/integration/course-staff.itest.ts`: the list, 403 and 404, preview accounts left out | A01 |
+| P6-03f | `apps/web/src/members/staff.test.tsx` (an owner's **Publisher** checked and disabled, **Owner** disabled for a publisher only, a deactivated account's boxes disabled, each refusal's sentence); `apps/server/test/integration/course-staff.itest.ts`: the list with effective grants, 403 and 404, preview accounts left out, no person or class of another course | A01 |
 | P6-03g | `apps/web/src/releases/releases.test.tsx`: preview, adopt, conflict, open-class refusal, history | A16, A26 |
 | P6-03h | `apps/web/src/assessments/class-terms.test.tsx`: effective terms, save with revision, conflict, invalid terms, reset | A16 |
 
@@ -129,14 +138,14 @@ Each screen's component test (Vitest with `stubApi`, `renderApp` and axe, as `te
 | --- | --- | --- | --- |
 | P6-03a | §3.1 | none | M |
 | P6-03b | §3.2 and §5.1 | none | M |
-| P6-03c | §3.3, the class pages' route and the course card links | none | M |
+| P6-03c | §3.3, its route, the **Members** links on course cards and in the Classes panel | P6-03b | M |
 | P6-03d | §3.4 | P6-03c | M |
 | P6-03e | §3.5 and the end-to-end path of §6 | P6-03b, P6-03d, P6-03g | M |
-| P6-03f | §3.6 and §5.2 | P6-03b | M |
+| P6-03f | §3.6, its route and link, and §5.2 | P6-03b | M |
 | P6-03g | §3.7, its route and link | P6-03c | M |
 | P6-03h | §3.8 | none | M |
 
-P6-03b and P6-03f change routes (`Security: yes`); the others change the web application only. The guide's **What you can do on a screen** table and its sections are updated by the unit that adds each screen.
+P6-03b and P6-03f change routes, and P6-03d and P6-03e handle the code and the invitation token (`Security: yes` for all four); the others change the web application only. P6-03c, P6-03f and P6-03g are near the 600-line target of plan §0, which splits a unit that passes it; their first candidates are the student table's pagination and filter (c), the page's refusal states and their test cases (f), and the history list (g). The guide's **What you can do on a screen** table and its sections are updated by the unit that adds each screen.
 
 ## 8. Left out and open questions
 
@@ -145,4 +154,4 @@ P6-03b and P6-03f change routes (`Security: yes`); the others change the web app
 1. Should **I teach this class** be checked by default? This design says yes: the class an owner creates is nearly always one they teach, and the course editor's preview needs a class the owner teaches.
 2. Opening a class to anyone with the link (`setClassOpen`) has a route and is set by `parallax apply` on a site, which sets it back on its next run. This design gives it no screen, so a site's configuration stays the one place it is set. A screen is a small later item if wanted for installations without a site configuration.
 
-**Left out:** sending invitations by email (spec §12 assumes no email), invitations for several addresses at once, importing a class list, and moving a student between classes.
+**Left out:** publishing for a publisher who does not edit the course (the guide notes that such a person publishes through the API only; making the course editor reachable to them is a later item), sending invitations by email (spec §12 assumes no email), invitations for several addresses at once, importing a class list, and moving a student between classes.

@@ -1329,34 +1329,34 @@ Owner decisions of 2026-10-20, in that session: the licence is MIT; the first ta
 - Touches: `apps/web/src/authoring/ResourceSection.tsx`, `apps/web/src/authoring/AddPdfSlides.tsx` (new), `apps/web/src/authoring/upload.ts`, `docs/guide/instructors.md`.
 
 ### P6-03b · Classes panel and Create class
-- Scope: the instructor screens design §3.2 and §5.1: the course editor's **Classes** panel (moving the class list out of `PublishPanel`), the **Create class** dialog with **I teach this class**, and `createClass`'s optional `teach`, which enrols the creator with `ensureInstructor` in the same transaction.
-- Verify: `apps/web/src/authoring/classes.test.tsx` and `apps/server/test/integration/create-class-teach.itest.ts` (new); `membership.itest.ts` green unchanged; `pnpm check` and `pnpm test:integration` green.
+- Scope: the instructor screens design §3.2 and §5.1: the course editor's **Classes** panel (each class with its **Releases** and **Class review** links; **Publication** keeps its release lines), the **Create class** dialog with **I teach this class**, the shared **Sign in again** control of §4, and `createClass`'s optional `teach`, which first requires a recent sign-in and then enrols the creator with `ensureInstructor` in the same transaction.
+- Verify: `apps/web/src/authoring/classes.test.tsx` and `apps/server/test/integration/create-class-teach.itest.ts` (new): a fresh sign-in with `teach` gets the membership and both audit events, a stale sign-in with `teach` gets 401 and no class or membership row, a stale sign-in without `teach` still gets 201; `membership.itest.ts` and `apps/web/src/test/authoring.test.tsx` green unchanged; `pnpm check` and `pnpm test:integration` green.
 - Spec: §3, §12. Class: complex (design P6-03). Scenarios: A01, A02 (screen and route). Depends on: P6-03. Model: opus. Security: yes. Size: M.
-- Touches: `packages/contracts/src/routes/members.ts`, `apps/server/src/http/routes/members.routes.ts`, `apps/server/src/db/identity.ts`, `apps/web/src/authoring/ClassesPanel.tsx` (new), `apps/web/src/authoring/PublishPanel.tsx`, `apps/web/src/routes/_authed/courses.$courseId.edit.index.tsx`, `docs/guide/instructors.md`.
+- Touches: `packages/contracts/src/routes/members.ts`, `apps/server/src/http/routes/members.routes.ts`, `apps/server/src/db/identity.ts`, `apps/server/src/db/setup.ts`, `apps/web/src/authoring/ClassesPanel.tsx` (new), `apps/web/src/components/SignInAgain.tsx` (new), `apps/web/src/routes/_authed/courses.$courseId.edit.index.tsx`, `docs/guide/instructors.md`.
 
 ### P6-03c · Members of a class
-- Scope: the instructor screens design §3.3: the route `/classes/$classId/members` with its context line, the **Instructors** and **Students** tables, **Manages members**, **Remove** with its dialog, pagination and filter, the recent sign-in refusal of §4, and the **Members** link on class cards.
+- Scope: the instructor screens design §3.3: the route `/classes/$classId/members` with its context line, the **Instructors** and **Students** tables, **Manages members**, **Remove** with its dialog, pagination and filter, the recent sign-in refusal of §4, and the **Members** links on class cards and in the Classes panel.
 - Verify: `apps/web/src/members/members.test.tsx` (new), with axe; `pnpm check` green.
-- Spec: §3, §14. Class: complex (design P6-03). Scenarios: A01, A02 (screen). Depends on: P6-03. Model: opus. Security: no. Size: M.
-- Touches: `apps/web/src/routes/_authed/classes.$classId.members.tsx` (new), `apps/web/src/members/**` (new), `apps/web/src/routes/_authed/courses.index.tsx`, `apps/web/src/routeTree.gen.ts`, `docs/guide/instructors.md`.
+- Spec: §3, §14. Class: complex (design P6-03). Scenarios: A01, A02 (screen). Depends on: P6-03b. Model: opus. Security: no. Size: M.
+- Touches: `apps/web/src/routes/_authed/classes.$classId.members.tsx` (new), `apps/web/src/members/**` (new), `apps/web/src/routes/_authed/courses.index.tsx`, `apps/web/src/authoring/ClassesPanel.tsx`, `apps/web/src/routeTree.gen.ts`, `docs/guide/instructors.md`.
 
 ### P6-03d · Enrolment codes and instructor invitations
 - Scope: the instructor screens design §3.4: **Create enrolment code** and **Invite an instructor** with the code or link shown once and **Copy**, **Open invitations** with **Revoke**.
 - Verify: `apps/web/src/members/invitations.test.tsx` (new), with axe; `pnpm check` green.
-- Spec: §3, §4. Class: complex (design P6-03). Scenarios: A02 (screen). Depends on: P6-03c. Model: opus. Security: no. Size: M.
+- Spec: §3, §4. Class: complex (design P6-03). Scenarios: A02 (screen). Depends on: P6-03c. Model: opus. Security: yes. Size: M.
 - Touches: `apps/web/src/members/**`, `docs/guide/instructors.md`.
 
 ### P6-03e · Accept an invitation, and the whole path in the browser
 - Scope: the instructor screens design §3.5 and the end-to-end path of §6: the route `/invitations/$token`, its states and refusals, and `e2e/tests/a02-instructor-screens.e2e.ts`.
 - Verify: `apps/web/src/members/accept.test.tsx` and `e2e/tests/a02-instructor-screens.e2e.ts` (new); `pnpm check` and `pnpm build && pnpm test:e2e` for the new file green.
-- Spec: §3, §4. Class: complex (design P6-03). Scenarios: A02 (screen, end to end). Depends on: P6-03b, P6-03d, P6-03g. Model: opus. Security: no. Size: M.
+- Spec: §3, §4. Class: complex (design P6-03). Scenarios: A02 (screen, end to end). Depends on: P6-03b, P6-03d, P6-03g. Model: opus. Security: yes. Size: M.
 - Touches: `apps/web/src/routes/_authed/invitations.$token.tsx` (new), `apps/web/src/members/**`, `apps/web/src/routeTree.gen.ts`, `e2e/tests/a02-instructor-screens.e2e.ts` (new), `docs/guide/instructors.md`.
 
 ### P6-03f · Course staff
-- Scope: the instructor screens design §3.6 and §5.2: the route `listCourseStaff` (`GET /api/courses/:courseId/staff`, course owners, through `forCourse`) and the course editor's **Course staff** section with **Owner** and **Publisher** and their confirmations.
+- Scope: the instructor screens design §3.6 and §5.2: the route `listCourseStaff` (`GET /api/courses/:courseId/staff`, course owners, through `forCourse`, effective grants) and the page `/courses/$courseId/staff` with **Owner** and **Publisher**, the boxes the routes would refuse disabled with their notes, the confirmations and each refusal's sentence, linked from the course editor for an owner.
 - Verify: `apps/server/test/integration/course-staff.itest.ts` and `apps/web/src/members/staff.test.tsx` (new); `pnpm check` and `pnpm test:integration` green.
 - Spec: §3. Class: complex (design P6-03). Scenarios: A01 (route and screen). Depends on: P6-03b. Model: opus. Security: yes. Size: M.
-- Touches: `packages/contracts/src/routes/members.ts`, `apps/server/src/http/routes/members.routes.ts`, `apps/server/src/db/members.ts`, `apps/web/src/members/**`, `apps/web/src/routes/_authed/courses.$courseId.edit.index.tsx`, `docs/guide/instructors.md`.
+- Touches: `packages/contracts/src/routes/members.ts`, `apps/server/src/http/routes/members.routes.ts`, `apps/server/src/db/members.ts`, `apps/web/src/members/**`, `apps/web/src/routes/_authed/courses.$courseId.staff.tsx` (new), `apps/web/src/routes/_authed/courses.$courseId.edit.index.tsx`, `apps/web/src/routeTree.gen.ts`, `docs/guide/instructors.md`.
 
 ### P6-03g · Releases of a class
 - Scope: the instructor screens design §3.7: the route `/classes/$classId/releases`, the preview of an adoption, **Adopt release N** with its conflict and open-class refusals, the history, and the **Releases** link on class cards and in the Classes panel; the new pages in `a20-touch-targets.e2e.ts`.
