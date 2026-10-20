@@ -21,8 +21,9 @@ function folderOf(name: string): string {
 }
 
 /**
- * Stages the package in a temporary folder (its manifest, `scripts/` and what `files` names),
- * stamps `version` there and runs `npm pack`, which runs `prepack` first; the tarball is put into
+ * Stages the package in a temporary folder (its manifest, `scripts/`, what `files` names and the
+ * repository's `LICENSE`, which npm packs from a package's root whatever `files` says), stamps
+ * `version` there and runs `npm pack`, which runs `prepack` first; the tarball is put into
  * `folder` and its path returned. The staged manifest keeps no `devDependencies`: a published
  * package installs none, and `workspace:` means nothing outside the workspace.
  */
@@ -38,6 +39,7 @@ export function pack(name: string, version: string, folder: string): string {
     for (const entry of ['scripts', ...named].filter((each) => fs.existsSync(join(source, each)))) {
       fs.cpSync(join(source, entry), join(stage, entry), { recursive: true });
     }
+    fs.copyFileSync(join(repository, 'LICENSE'), join(stage, 'LICENSE'));
     manifest.version = version;
     delete manifest.devDependencies;
     fs.writeFileSync(join(stage, 'package.json'), `${JSON.stringify(manifest, null, 2)}\n`);
