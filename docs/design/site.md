@@ -281,7 +281,7 @@ If run R2 offers no course lookup, P5-19 cannot finish and is labelled `needs-hu
 
 1. The templates are written at level 1, the level this design can build, serve and install. Should level 0 be the default once run R3 has decided whether its shell mounts site pages?
 2. How does a level 2 operator get the sandbox runtime images without a copy of the repository? Q1 names the images a host runs as "server, runner", so a release publishes the runner service only. Should a release publish the runtime images as well?
-3. The licence named in the two published manifests. It is needed before the first release tag.
+3. The licence named in the two published manifests. It is needed before the first release tag. Answered by the owner on 2026-10-20 (P6-01): MIT. `LICENSE` at the root of the repository holds it, both manifests name `"license": "MIT"`, and `pack.ts` puts the file into both tarballs.
 4. Is an SVG logo wanted? This design accepts PNG, JPEG and WebP only.
 
 **Left out on purpose, each a later owner decision** (`needs-human` if a unit is asked for one): moving a class to a later release and replacing a lost enrolment code from the command line (the existing routes stay for both); TLS for PostgreSQL between the two hosts; a command that restores a backup; a profile with the runner on the site's host; a site theme; Markdown pages; a runtime API for pages; pages with parameters in their address. Owner inputs that no unit waits for: the npm account and the first tag `parallax-v<version>` (plan §7).

@@ -184,10 +184,11 @@ Pushing a tag `parallax-v<version>` on `main` publishes the npm packages `parall
 
 1. holds the npm names `parallax-site` and `create-parallax-site`;
 2. creates the environment `release` (**Settings → Environments → New environment**), sets its **Deployment branches and tags** to **Selected branches and tags** with one rule of ref type **Tag**, `parallax-v*`, adds themselves under **Required reviewers**, and adds to it the environment secret `NPM_TOKEN`: a granular npm access token with read and write access to the two packages (before the first publish, to all packages of the account, since the two do not exist yet; narrow it after), allowed to publish without a one-time password, and with an expiry date you note, since a publish fails once it has passed. Do not add `NPM_TOKEN` as a repository secret. Without the environment secret the step **The npm token is set** fails, before anything is pushed;
-3. creates a tag ruleset (**Settings → Rules → Rulesets → New tag ruleset**) targeting `parallax-v*`, active, with **Restrict creations**, **Restrict updates** and **Restrict deletions**, and only the repository admin role in its bypass list;
-4. settles the licence of the two manifests, which is still open ([site design](design/site.md) §14, question 3).
+3. creates a tag ruleset (**Settings → Rules → Rulesets → New tag ruleset**) targeting `parallax-v*`, active, with **Restrict creations**, **Restrict updates** and **Restrict deletions**, and only the repository admin role in its bypass list.
 
 Steps 2 and 3 are both required. Only the job `publish` names the environment, so the run of a pull request cannot read `NPM_TOKEN`, even from an edited copy of the workflow. The environment admits any ref named `parallax-v*`, though, and the step that checks that the tag is on `main` is part of the workflow file: someone who could push a release tag on a commit of their own could have that commit's copy of the workflow read the token. The ruleset keeps everyone but an admin from creating, moving or deleting a release tag, and the required review makes every publish wait until the owner approves it, on a page that names the run's commit. Neither control tells a Claude session from the owner, since sessions act through the owner's account: for sessions, what holds is the rule that no session pushes a release tag or approves a deployment, and an approval request the owner did not expect is one to reject.
+
+Both packages are published under the MIT licence of `LICENSE` ([site design](design/site.md) §14, question 3).
 
 After the first publish, make both GHCR packages public (GHCR creates new packages as private), and link each to this repository in its package settings: neither image carries the label `org.opencontainers.image.source`.
 
