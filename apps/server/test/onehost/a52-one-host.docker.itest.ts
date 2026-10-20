@@ -12,9 +12,9 @@ import {
 } from 'node:fs';
 import { request } from 'node:https';
 import { networkInterfaces, tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import type { TLSSocket } from 'node:tls';
-import { afterAll, describe, expect, onTestFailed, test } from 'vitest';
+import { afterAll, beforeAll, describe, expect, onTestFailed, test } from 'vitest';
 import { composeArgs, processes } from '../../../../packages/cli/src/host/compose';
 import { readEnv, readText } from '../../../../packages/cli/src/host/secrets';
 import { main } from '../../../../packages/cli/src/main';
@@ -39,16 +39,20 @@ const imagePresent = (() => {
 const temp = imagePresent ? mkdtempSync(join(tmpdir(), 'parallax-a52-')) : tmpdir();
 const root = join(temp, 'a52-onehost');
 const two = join(temp, 'a52-level2');
-const docker = (args: string[], input?: string, cwd = root) =>
+/** `docker` in `cwd`, which each case names: neither case uses the other's folder. */
+const docker = (cwd: string, args: string[], input?: string) =>
   execFileSync('docker', args, { cwd, encoding: 'utf8', input, stdio: 'pipe' });
-const project = (args: string[], input?: string) => docker([...composeArgs(1), ...args], input);
+const project = (args: string[], input?: string) =>
+  docker(root, [...composeArgs(1), ...args], input);
 const psql = (sql: string) =>
   project(['exec', '-T', 'postgres', 'psql', '-U', 'parallax', '-d', 'parallax', '-tAc', sql]);
 /** The state of the one container of `service`, running or not. */
-const state = (service: string) =>
-  JSON.parse(docker(['inspect', '-f', '{{json .State}}', project(['ps', '-aq', service]).trim()]));
+const state = (service: string) => {
+  const id = project(['ps', '-aq', service]).trim();
+  return JSON.parse(docker(root, ['inspect', '-f', '{{json .State}}', id]));
+};
 /** The level 2 site's compose calls, and a `docker` call that may fail, with `env` added. */
-const level2 = (args: string[], input?: string) => docker([...composeArgs(2), ...args], input, two);
+const level2 = (args: string[], input?: string) => docker(two, [...composeArgs(2), ...args], input);
 const attempt = (args: string[], env: Record<string, string | undefined> = {}) =>
   spawnSync('docker', args, { cwd: two, encoding: 'utf8', env: { ...process.env, ...env } });
 
@@ -85,6 +89,8 @@ processes.run = (args, cwd, input) =>
   new Promise((done) => {
     if (args.at(-1) === 'pull') return done(0);
     const child = spawn('docker', args, { cwd, stdio: ['pipe', 'pipe', 'pipe'] });
+    // As in compose.ts: a process that ends before it has read its input leaves the rest unread.
+    child.stdin.on('error', () => {});
     for (const stream of [child.stdout, child.stderr]) stream.on('data', (d) => (output += d));
     if (input) input.pipe(child.stdin);
     else child.stdin.end();
@@ -100,20 +106,30 @@ async function reach(host: string, path: string) {
   }
 }
 
+/**
+ * Removes both projects by name, before the cases too: a run that was killed leaves a database
+ * whose password was that run's.
+ */
+async function down() {
+  for (const folder of [root, two])
+    await processes.run(['compose', '-p', basename(folder), 'down', '--volumes'], temp);
+}
+beforeAll(async () => {
+  if (imagePresent) await down();
+});
 afterAll(async () => {
   if (!imagePresent) return;
-  await processes.run([...composeArgs(1), 'down', '--volumes'], root);
-  await processes.run([...composeArgs(2), 'down', '--volumes'], two);
+  await down();
   rmSync(temp, { recursive: true, force: true });
 });
 
 test.runIf(process.env.CI)('CI provides Docker and the server image', () => {
-  expect(imagePresent).toBe(true);
+  expect(imagePresent, `image.yml loads the server image as ${IMAGE}`).toBe(true);
 });
 
 describe.skipIf(!imagePresent)('A52 one-host installation (site.md §9 to §11)', () => {
   test('A52 the one-host installation answers on both host names', {
-    timeout: 900_000,
+    timeout: 300_000,
   }, async () => {
     onTestFailed(() => console.error(output));
     const origins =
@@ -169,26 +185,30 @@ describe.skipIf(!imagePresent)('A52 one-host installation (site.md §9 to §11)'
     expect(Date.parse(migrate.FinishedAt)).toBeLessThanOrEqual(Date.parse(server.StartedAt));
     expect((await get('app.localhost', '/api/health')).status).toBe(200);
 
-    // A database a later version migrated: migrate exits non-zero and the server is not restarted.
+    // A database a later version migrated, with server and worker stopped as `upgrade` leaves
+    // them: migrate exits non-zero, and neither is started again.
     const journal = readFileSync(join(repo, 'apps/server/drizzle/meta/_journal.json'), 'utf8');
     const later = Math.max(...JSON.parse(journal).entries.map((e: { when: number }) => e.when)) + 1;
     psql(`insert into drizzle.__drizzle_migrations (hash, created_at) values ('a52', ${later})`);
+    project(['stop', 'server', 'worker']);
     expect(await processes.run([...composeArgs(1), 'up', '-d', '--wait'], root)).not.toBe(0);
     expect(state('migrate').ExitCode).not.toBe(0);
-    expect(state('server').StartedAt).toBe(server.StartedAt);
+    for (const service of ['server', 'worker']) expect(state(service).Running).toBe(false);
     expect(project(['logs', 'migrate'])).toContain(new Date(later).toISOString());
   });
 
   test('A52 a level 2 database admits only the rules of pg_hba.conf', {
-    timeout: 300_000,
+    timeout: 120_000,
   }, async () => {
     output = '';
     onTestFailed(() => console.error(output));
     // compose.level2.yml publishes the port on this host's own address. The level 1 stack has
     // the template's backend subnet, so this site changes it, as compose.yml tells an operator.
-    const own = Object.values(networkInterfaces())
-      .flat()
-      .find((address) => address?.family === 'IPv4' && !address.internal);
+    const own = Object.entries(networkInterfaces())
+      .filter(([name]) => !/^(docker\d|br-)/.test(name))
+      .flatMap(([, addresses]) => addresses ?? [])
+      .find((address) => address.family === 'IPv4' && !address.internal);
+    expect(own, 'an IPv4 address of this host, not of a Docker bridge').toBeDefined();
     const subnet = '172.30.20.0/24';
     const python = { id: 'python-3.12', language: 'python', harnessVersion: '4', packages: [] };
     const image = { image: 'registry.example.org/runner', digest: `sha256:${'1'.repeat(64)}` };
@@ -204,15 +224,9 @@ describe.skipIf(!imagePresent)('A52 one-host installation (site.md §9 to §11)'
     expect(level2(['logs', 'postgres'])).toContain('PostgreSQL init process complete');
     // Docker made runner-link without masquerading. That nothing then leaves through it is not
     // tried: it needs a destination outside the host, and Docker Desktop does not honour it.
-    const link = docker([
-      'network',
-      'inspect',
-      '-f',
-      '{{json .Options}}',
-      'a52-level2_runner-link',
-    ]);
+    const [link] = JSON.parse(docker(two, ['network', 'inspect', 'a52-level2_runner-link']));
     const masquerade = 'com.docker.network.bridge.enable_ip_masquerade';
-    expect(JSON.parse(link)).toMatchObject({ [masquerade]: 'false' });
+    expect(link.Options).toMatchObject({ [masquerade]: 'false' });
     // The runner role as scripts/runner-role.sql makes it (migration 0010 repeats it, and no
     // migrate runs here), then the ALTER ROLE on psql's standard input as `start` sends it.
     const psqlIn = 'exec -T postgres psql -U parallax -d parallax -v ON_ERROR_STOP=1'.split(' ');
