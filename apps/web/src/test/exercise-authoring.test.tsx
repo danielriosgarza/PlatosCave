@@ -1,4 +1,4 @@
-import { cleanup, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { COURSE, makeMe, renderApp, stubApi } from './render';
@@ -249,6 +249,86 @@ describe('exercise editor', () => {
     await user.click(screen.getByRole('button', { name: 'Add step' }));
     expect(screen.getByRole('group', { name: 'Step 2' })).toBeInTheDocument();
     expect(await screen.findByText(/Step 2 · prompt/)).toBeInTheDocument();
+  });
+
+  it('A42 adds an interactive step as YAML fields, previews it, and tries it as a student would', async () => {
+    const { user } = await editor();
+    await user.selectOptions(screen.getByLabelText(/Step type/), 'hotspot');
+    await user.click(screen.getByRole('button', { name: 'Add step' }));
+    const step = screen.getByRole('group', { name: 'Step 2' });
+    const fields = within(step).getByRole('textbox', { name: 'Step 2 fields (YAML)' });
+    expect((fields as HTMLTextAreaElement).value).toContain('correct: [b3]');
+    const preview = within(step).getByRole('region', { name: 'Preview of step 2' });
+    within(preview).getByRole('radio', { name: 'First bar' }).focus();
+    await user.keyboard(' ');
+    await user.click(within(preview).getByRole('button', { name: 'Try checking' }));
+    expect(within(preview).getByRole('status')).toHaveTextContent(
+      'Not yet.The mode is the class with the most values.',
+    );
+    await user.click(within(preview).getByRole('button', { name: 'Show the expected answer' }));
+    await waitFor(() =>
+      expect(within(preview).getByRole('radio', { name: 'Third bar' })).toHaveAttribute(
+        'aria-checked',
+        'true',
+      ),
+    );
+    await user.click(within(preview).getByRole('button', { name: 'Try checking' }));
+    expect(within(preview).getByRole('status')).toHaveTextContent('Correct.');
+    // A field the schema refuses is listed with its step and path, and the preview waits for it.
+    await user.clear(fields);
+    await user.click(fields);
+    await user.paste('scene: { x: [0, 1], y: [0, 1] }\nregions: []\ncorrect: [a]\n');
+    expect(within(step).queryByRole('region', { name: 'Preview of step 2' })).toBeNull();
+    expect(screen.getByRole('status', { name: 'Exercise problems' })).toHaveTextContent(
+      /Step 2 .* regions: needs at least 2/,
+    );
+  });
+
+  it('A42 finds an icon by what it shows and puts its name in place of the selection in the fields', async () => {
+    const { user } = await editor();
+    await user.selectOptions(screen.getByLabelText(/Step type/), 'hotspot');
+    await user.click(screen.getByRole('button', { name: 'Add step' }));
+    const step = screen.getByRole('group', { name: 'Step 2' });
+    const fields = within(step).getByRole('textbox', {
+      name: 'Step 2 fields (YAML)',
+    }) as HTMLTextAreaElement;
+    await user.clear(fields);
+    await user.click(fields);
+    await user.paste(
+      'scene: { x: [0, 4], y: [0, 2] }\nregions:\n' +
+        '  - { id: a, label: A, shape: { type: icon, name: ICON, at: [1, 1] } }\n' +
+        '  - { id: b, label: B, shape: { type: icon, name: circle, at: [3, 1] } }\n' +
+        'correct: [a]\nfeedback: { correct: Yes., incorrect: Not yet. }\n',
+    );
+    const at = fields.value.indexOf('ICON');
+    fields.setSelectionRange(at, at + 'ICON'.length);
+    fireEvent.select(fields);
+    await user.click(within(step).getByRole('button', { name: 'Find an icon' }));
+    await user.type(within(step).getByRole('searchbox', { name: 'Icon' }), 'pine');
+    const found = await within(step).findByRole(
+      'list',
+      { name: 'Matching icons' },
+      { timeout: 5000 },
+    );
+    // Named by its words first: tree-pine is a pine; others only list it among their search words.
+    expect(within(found).getAllByRole('button')[0]).toHaveAccessibleName('tree-pine');
+    await user.click(within(found).getByRole('button', { name: 'tree-pine' }));
+    expect(fields.value).toContain('name: tree-pine, at: [1, 1]');
+    expect(fields).toHaveFocus();
+    expect(fields.selectionStart).toBe(at + 'tree-pine'.length);
+    // A search with no match says so; one found by a search word lists the icons it names.
+    await user.clear(within(step).getByRole('searchbox', { name: 'Icon' }));
+    await user.type(within(step).getByRole('searchbox', { name: 'Icon' }), 'xyzzy');
+    expect(within(step).getByText('No icon matches. Try another word.')).toBeInTheDocument();
+    await user.clear(within(step).getByRole('searchbox', { name: 'Icon' }));
+    await user.type(within(step).getByRole('searchbox', { name: 'Icon' }), 'fruit');
+    expect(
+      within(within(step).getByRole('list', { name: 'Matching icons' })).getByRole('button', {
+        name: 'banana',
+      }),
+    ).toBeInTheDocument();
+    const preview = within(step).getByRole('region', { name: 'Preview of step 2' });
+    expect(within(preview).getByRole('radio', { name: 'A' })).toBeInTheDocument();
   });
 
   it('sets points and a hint policy for credit, or leaves the exercise as practice', async () => {

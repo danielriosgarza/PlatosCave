@@ -1,8 +1,11 @@
-import { controlGridPoint } from '@parallax/contracts';
+import { controlGridPoint, isInteractiveKind, parseNumber } from '@parallax/contracts';
 import { type ReactNode, useId } from 'react';
 import buttons from '../components/Buttons.module.css';
 import type { AttemptStep } from './attempt';
 import styles from './Exercise.module.css';
+import { type InteractiveDraft, interactiveDraft, interactiveResponse } from './interactive/draft';
+import { InteractiveForm } from './interactive/InteractiveForm';
+import { OrderingList } from './OrderingList';
 
 type Option = { id: string; label: string };
 
@@ -14,10 +17,20 @@ export type Draft =
   | { kind: 'ordering'; order: string[] }
   | { kind: 'matching'; pairs: Record<string, string> }
   | { kind: 'text' | 'code'; text: string }
-  | { kind: 'simulation'; value: number };
+  | { kind: 'simulation'; value: number }
+  | InteractiveDraft;
+
+export const isInteractiveDraft = (draft: Draft): draft is InteractiveDraft =>
+  isInteractiveKind(draft.kind);
 
 /** Starts from what the server recorded last, so a wrong answer keeps the learner's work (§9). */
 export function initialDraft(step: AttemptStep): Draft {
+  // Once the solution is shown, an interactive step starts from the answer it revealed.
+  if (step.interactive) return interactiveDraft(step.interactive, step.reveal ?? step.response);
+  return plainDraft(step);
+}
+
+function plainDraft(step: AttemptStep): Draft {
   const r = step.response;
   switch (step.kind) {
     case 'numeric':
@@ -47,36 +60,10 @@ export function initialDraft(step: AttemptStep): Draft {
           : (step.control?.initial ?? 0);
       return { kind: 'simulation', value };
     }
+    default:
+      // An interactive kind without its view: nothing to answer with.
+      return { kind: 'text', text: '' };
   }
-}
-
-/**
- * Reads a typed number in the common forms: `1000.5`, `1,000.5`, `1.000,5`, `1000,5`, `1 000`.
- * The last of `.` and `,` is the decimal mark when both appear; a lone separator followed by
- * exactly three digits in every group is grouping (`1,000`, `1.000.000`), otherwise a lone
- * comma is a decimal comma. Returns null for anything else.
- */
-export function parseNumber(text: string): number | null {
-  let s = text.trim().replace(/(?<=\d)[\s\u00a0\u202f](?=\d{3}(?!\d))/g, '');
-  // Grouped integers: one to three digits not starting with 0, then groups of exactly three.
-  const grouped = (int: string, mark: string) =>
-    new RegExp(`^[+-]?[1-9]\\d{0,2}(\\${mark}\\d{3})+$`).test(int);
-  const dot = s.lastIndexOf('.');
-  const comma = s.lastIndexOf(',');
-  if (dot !== -1 && comma !== -1) {
-    const [decimal, group] = dot > comma ? ['.', ','] : [',', '.'];
-    const at = s.lastIndexOf(decimal);
-    const int = s.slice(0, at);
-    if (!grouped(int, group)) return null;
-    s = int.split(group).join('') + '.' + s.slice(at + 1);
-  } else if (comma !== -1) {
-    s = grouped(s, ',') ? s.replaceAll(',', '') : s.replace(',', '.');
-  } else if (grouped(s, '.') && s.split('.').length > 2) {
-    s = s.replaceAll('.', '');
-  }
-  if (!/^[+-]?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?$/i.test(s)) return null;
-  const n = Number(s);
-  return Number.isFinite(n) ? n : null;
 }
 
 /** The response to send, or what is still missing. */
@@ -84,6 +71,11 @@ export function toResponse(
   step: AttemptStep,
   draft: Draft,
 ): { ok: true; response: unknown } | { ok: false; message: string } {
+  if (isInteractiveDraft(draft)) {
+    return step.interactive
+      ? interactiveResponse(step.interactive, draft)
+      : { ok: false, message: 'This step cannot be answered here.' };
+  }
   switch (draft.kind) {
     case 'numeric': {
       const n = parseNumber(draft.text);
@@ -120,14 +112,28 @@ interface FormProps {
   step: AttemptStep;
   draft: Draft;
   disabled: boolean;
+  /** Per-part marks of the last check, shown while the draft is the response that was checked. */
+  parts?: Record<string, boolean> | null;
   onChange: (draft: Draft) => void;
 }
 
 const num = (n: number) => String(Number(n.toFixed(6)));
 
-export function StepForm({ step, draft, disabled, onChange }: FormProps) {
+export function StepForm({ step, draft, disabled, parts, onChange }: FormProps) {
   const group = useId();
   const field = useId();
+  if (isInteractiveDraft(draft)) {
+    return step.interactive ? (
+      <InteractiveForm
+        view={step.interactive}
+        draft={draft}
+        disabled={disabled}
+        parts={parts}
+        label={step.title}
+        onChange={onChange}
+      />
+    ) : null;
+  }
   switch (draft.kind) {
     case 'numeric':
       return (
@@ -178,50 +184,20 @@ export function StepForm({ step, draft, disabled, onChange }: FormProps) {
         </fieldset>
       );
     }
-    case 'ordering': {
-      const labels = new Map((step.options ?? []).map((o) => [o.id, o.label]));
-      const move = (i: number, by: -1 | 1) => {
-        const order = [...draft.order];
-        const [item] = order.splice(i, 1);
-        if (item === undefined) return;
-        order.splice(i + by, 0, item);
-        onChange({ kind: 'ordering', order });
-      };
+    case 'ordering':
       return (
         <div>
           <p className={`${styles.small} ${styles.centered}`}>
-            Put the items in order with the move buttons.
+            Put the items in order: drag them by the grip, or use the move buttons.
           </p>
-          <ol className={styles.sortable}>
-            {draft.order.map((id, i) => (
-              <li key={id}>
-                <span>{labels.get(id) ?? id}</span>
-                <span className={styles.nudge}>
-                  <button
-                    type="button"
-                    className={buttons.outline}
-                    disabled={disabled || i === 0}
-                    aria-label={`Move ${labels.get(id) ?? id} up`}
-                    onClick={() => move(i, -1)}
-                  >
-                    Up
-                  </button>
-                  <button
-                    type="button"
-                    className={buttons.outline}
-                    disabled={disabled || i === draft.order.length - 1}
-                    aria-label={`Move ${labels.get(id) ?? id} down`}
-                    onClick={() => move(i, 1)}
-                  >
-                    Down
-                  </button>
-                </span>
-              </li>
-            ))}
-          </ol>
+          <OrderingList
+            order={draft.order}
+            labels={new Map((step.options ?? []).map((o) => [o.id, o.label]))}
+            disabled={disabled}
+            onChange={(order) => onChange({ kind: 'ordering', order })}
+          />
         </div>
       );
-    }
     case 'matching':
       return (
         <div className={styles.pairs}>

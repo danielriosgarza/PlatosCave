@@ -75,7 +75,7 @@ It writes a new id for every entry that has none and changes nothing else. Keep 
 | `exercises/` | an exercise as YAML |
 | `tests/` | a test as YAML, with the files of its code questions in a folder of the same name |
 
-Every file of a tab folder must be listed in `topic.yaml`, and every listed file must exist. Open the exercise and the test of this topic in `private/` to see their formats: each holds comments that explain its fields.
+Every file of a tab folder must be listed in `topic.yaml`, and every listed file must exist. Open the exercises and the test of this topic in `private/` to see their formats: each holds comments that explain its fields. `interactive-tour.yaml` has one step of each kind a learner answers by dragging, drawing or moving a diagram.
 
 ## Check and preview
 

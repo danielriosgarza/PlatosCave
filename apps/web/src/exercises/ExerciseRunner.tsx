@@ -1,3 +1,4 @@
+import { savedByComplete } from '@parallax/contracts';
 import { useEffect, useRef, useState } from 'react';
 import { ApiError } from '../api/client';
 import buttons from '../components/Buttons.module.css';
@@ -13,7 +14,10 @@ import {
 } from './attempt';
 import { creditSummary } from './credit';
 import styles from './Exercise.module.css';
-import { type Draft, initialDraft, StepForm, toResponse } from './StepForm';
+import { interactiveDraft, mixDraft } from './interactive/draft';
+import { InteractiveForm } from './interactive/InteractiveForm';
+import { tween } from './interactive/motion';
+import { type Draft, initialDraft, isInteractiveDraft, StepForm, toResponse } from './StepForm';
 
 const HELP_LABEL = {
   independent: 'independently',
@@ -21,7 +25,13 @@ const HELP_LABEL = {
   solution_shown: 'with the solution shown',
 } as const;
 
-const SAVES_TEXT = new Set(['text', 'code']);
+/** The primary action of a step saved rather than checked. */
+const SAVE_LABEL: Record<string, string> = {
+  text: 'Done',
+  code: 'Save code',
+  drawing: 'Save drawing',
+  explore: 'Done exploring',
+};
 
 /** One practice attempt: the active step, its feedback, and the summary once complete (§9). */
 export function ExerciseRunner({
@@ -179,6 +189,17 @@ function StepContent({ step }: { step: ExerciseStepView }) {
       );
     case 'text':
       return <p className={`${styles.small} ${styles.centered}`}>A written explanation.</p>;
+    default:
+      // An interactive step is shown as it would start, with nothing to move.
+      return step.interactive ? (
+        <InteractiveForm
+          view={step.interactive}
+          draft={interactiveDraft(step.interactive, undefined)}
+          disabled
+          label={step.title}
+          onChange={() => {}}
+        />
+      ) : null;
   }
 }
 
@@ -313,8 +334,27 @@ function StepPanel({
   const [draft, setDraft] = useState<Draft>(() => initialDraft(step));
   const [problem, setProblem] = useState<string | null>(null);
   const [hintsOpen, setHintsOpen] = useState(true);
+  // Part marks belong to the response that was checked: they go when the draft changes, and
+  // a draft started from a revealed answer was not the one checked.
+  const [marked, setMarked] = useState(step.reveal === undefined);
   const completed = step.status === 'completed';
-  const writes = SAVES_TEXT.has(step.kind);
+  const writes = savedByComplete(step);
+
+  // Show solution moves the revealed answer into place: points and curves travel to it.
+  const latest = useRef(draft);
+  latest.current = draft;
+  const revealKey = step.reveal === undefined ? null : JSON.stringify(step.reveal);
+  const revealed = useRef(revealKey);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs when the revealed answer changes, by value
+  useEffect(() => {
+    if (revealKey === revealed.current) return;
+    revealed.current = revealKey;
+    const from = latest.current;
+    if (!step.interactive || step.reveal === undefined || !isInteractiveDraft(from)) return;
+    const to = interactiveDraft(step.interactive, step.reveal);
+    setMarked(false);
+    return tween(700, (t) => setDraft(mixDraft(from, to, t)));
+  }, [revealKey]);
 
   const submit = async () => {
     const built = toResponse(step, draft);
@@ -323,19 +363,18 @@ function StepPanel({
       return;
     }
     setProblem(null);
-    if (writes) await actions.complete({ stepId: step.id, response: built.response as string });
-    else await actions.check({ stepId: step.id, response: built.response });
+    if (writes) await actions.complete({ stepId: step.id, response: built.response });
+    else if (await actions.check({ stepId: step.id, response: built.response })) setMarked(true);
   };
   const change = (next: Draft) => {
     setDraft(next);
     setProblem(null);
+    setMarked(false);
     actions.clearError();
   };
 
   const primary = writes
-    ? step.kind === 'code'
-      ? 'Save code'
-      : 'Done'
+    ? (SAVE_LABEL[step.kind] ?? 'Save')
     : step.kind === 'simulation'
       ? 'Record this value'
       : 'Check answer';
@@ -350,7 +389,13 @@ function StepPanel({
         </h3>
         <p className={styles.prompt}>{step.prompt}</p>
       </div>
-      <StepForm step={step} draft={draft} disabled={completed || actions.busy} onChange={change} />
+      <StepForm
+        step={step}
+        draft={draft}
+        disabled={completed || actions.busy}
+        parts={marked ? step.parts : null}
+        onChange={change}
+      />
       <div className={styles.actions}>
         {completed ? (
           <button ref={next} type="button" className={buttons.primary} onClick={onContinue}>
@@ -455,7 +500,7 @@ function Outcome({ step }: { step: AttemptStep }) {
   if (!step.feedback) return null;
   const heading =
     step.status === 'completed'
-      ? SAVES_TEXT.has(step.kind)
+      ? savedByComplete(step)
         ? 'Saved.'
         : 'Correct.'
       : step.kind === 'simulation'
@@ -466,7 +511,11 @@ function Outcome({ step }: { step: AttemptStep }) {
       <strong>{heading}</strong>
       <p>{step.feedback}</p>
       {step.status === 'pending' && step.kind !== 'simulation' && (
-        <p className={styles.muted}>Your answer is kept. Try once more.</p>
+        <p className={styles.muted}>
+          {step.parts && Object.values(step.parts).some(Boolean)
+            ? `${Object.values(step.parts).filter(Boolean).length} of ${Object.keys(step.parts).length} parts are right. Your answer is kept. Try once more.`
+            : 'Your answer is kept. Try once more.'}
+        </p>
       )}
     </div>
   );

@@ -1,0 +1,103 @@
+{
+  "schema": "exercise.v1",
+  "steps": [
+    {
+      "id": "sort",
+      "title": "Sort",
+      "kind": "categorize",
+      "prompt": "Sort the variables.",
+      "categories": [
+        {
+          "id": "counted",
+          "label": "Counted"
+        },
+        {
+          "id": "measured",
+          "label": "Measured"
+        }
+      ],
+      "items": [
+        {
+          "id": "goals",
+          "label": "Goals",
+          "category": "counted"
+        },
+        {
+          "id": "height",
+          "label": "Height",
+          "category": "weighed"
+        }
+      ],
+      "feedback": {
+        "correct": "Yes.",
+        "incorrect": "Not yet."
+      }
+    },
+    {
+      "id": "line",
+      "title": "Line",
+      "kind": "manipulate",
+      "prompt": "Make the slope 2.",
+      "params": [
+        {
+          "name": "m",
+          "label": "Slope",
+          "min": -3,
+          "max": 3,
+          "step": 1,
+          "initial": 0
+        }
+      ],
+      "scene": {
+        "x": [-5, 5],
+        "y": [-5, 5],
+        "shapes": [
+          {
+            "type": "function",
+            "y": "k*x"
+          }
+        ]
+      },
+      "target": ["m =="],
+      "feedback": {
+        "correct": "Yes.",
+        "incorrect": "Not yet."
+      }
+    },
+    {
+      "id": "shapes",
+      "title": "Shapes",
+      "kind": "hotspot",
+      "prompt": "Choose the triangle.",
+      "scene": {
+        "x": [0, 4],
+        "y": [0, 2]
+      },
+      "regions": [
+        {
+          "id": "triangle",
+          "label": "Triangle",
+          "shape": {
+            "type": "icon",
+            "name": "triangel",
+            "at": [1, 1]
+          }
+        },
+        {
+          "id": "circle",
+          "label": "Circle",
+          "shape": {
+            "type": "icon",
+            "name": "Circle",
+            "at": [3, 1]
+          }
+        }
+      ],
+      "correct": ["triangle"],
+      "feedback": {
+        "correct": "Yes.",
+        "incorrect": "Not yet."
+      }
+    }
+  ]
+}

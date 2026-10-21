@@ -1,4 +1,6 @@
-import { exerciseV1 } from '@parallax/contracts';
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { exerciseV1, interactiveKinds } from '@parallax/contracts';
 import { describe, expect, it } from 'vitest';
 import {
   blankExercise,
@@ -212,5 +214,72 @@ describe('exercise form', () => {
 
   it('generates step ids that do not collide', () => {
     expect(blankStep('text', ['step1', 'step2']).id).toBe('step3');
+  });
+});
+
+describe('interactive steps in the exercise form', () => {
+  // The site tool's fixture of every interactive kind: the starter course's tour.
+  const tour = exerciseV1.parse(
+    JSON.parse(
+      readFileSync(
+        resolve(
+          import.meta.dirname,
+          '../../../../packages/cli/fixtures/definitions/exercises/interactive.json',
+        ),
+        'utf8',
+      ),
+    ),
+  );
+
+  it('A42 round-trips every interactive kind through its YAML fields', () => {
+    const draft = toDraft(tour);
+    expect(draft.steps.every((s) => s.spec.length > 0)).toBe(true);
+    expect(draft.steps.find((s) => s.id === 'slope')?.spec).toContain('target:');
+    expect(problemsOf(draft)).toEqual([]);
+    expect(exerciseV1.parse(toContent(draft))).toEqual(tour);
+  });
+
+  it('A42 writes short lists and entries on one line, as the exercise guide does', () => {
+    const bars = toDraft(tour).steps.find((s) => s.id === 'bars')?.spec ?? '';
+    expect(bars).toContain('  x: [ 0, 11 ]\n');
+    expect(bars).toContain('    - { type: rect, at: [ 1, 0 ], size: [ 2, 4 ], fill: soft }\n');
+    expect(bars).toContain('correct: [ b2, b3 ]\n');
+    // Feedback keeps one message to a line.
+    expect(bars).toContain(
+      'feedback:\n  correct: A quarter of 40 is 10; only 12 and 14 are more.\n',
+    );
+  });
+
+  it('A42 starts each interactive kind from a working example', () => {
+    for (const kind of interactiveKinds) {
+      const step = { ...blankStep(kind, []), title: 'Try it', prompt: 'Do it.' };
+      expect(problemsOf({ ...blankExercise(), steps: [step] }), kind).toEqual([]);
+    }
+  });
+
+  it('A42 names a step whose YAML cannot be read once, and the form’s fields win over the YAML', () => {
+    const step = { ...blankStep('grid', []), title: 'Shade', prompt: 'Shade.' };
+    expect(problemsOf({ ...blankExercise(), steps: [{ ...step, spec: 'rows: [1' }] })).toEqual([
+      expect.stringMatching(/^Step 1 “Shade”: the fields are not valid YAML \(/),
+    ]);
+    expect(problemsOf({ ...blankExercise(), steps: [{ ...step, spec: '- 1' }] })).toEqual([
+      'Step 1 “Shade”: the fields must be written as name: value lines',
+    ]);
+    const spec = `title: Other\nid: other\n${step.spec}`;
+    const saved = exerciseV1.parse(toContent({ ...blankExercise(), steps: [{ ...step, spec }] }));
+    expect(saved.steps[0]).toMatchObject({ id: step.id, title: 'Shade', kind: 'grid' });
+    expect(
+      problemsOf({
+        ...blankExercise(),
+        steps: [
+          {
+            ...step,
+            spec: 'rows: 2\ncols: 2\nanswer: { count: 9 }\nfeedback: { correct: a, incorrect: b }',
+          },
+        ],
+      }),
+    ).toEqual([
+      'Step 1 “Shade” · answer · count: must be between the fixed cells (0) and all cells (4)',
+    ]);
   });
 });

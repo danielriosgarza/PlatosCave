@@ -133,7 +133,7 @@ export function useAttemptActions(
       }),
   });
   const complete = useMutation({
-    mutationFn: (input: StepBody & { response: string }) =>
+    mutationFn: (input: StepBody & { response: unknown }) =>
       guard(async () => {
         const next = await call(completeStep, { params, body: input });
         setNotice(null);

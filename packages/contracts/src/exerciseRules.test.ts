@@ -1,6 +1,6 @@
-import { type ExerciseStep, exerciseStep, exerciseV1 } from '@parallax/contracts';
 import { describe, expect, it } from 'vitest';
-import { judge, parseResponse, seededShuffle, viewStep } from './evaluate';
+import { type ExerciseStep, exerciseStep, exerciseV1 } from './exercise';
+import { judge, parseResponse, seededShuffle, viewStep } from './exerciseRules';
 
 const step = (raw: Record<string, unknown>): ExerciseStep =>
   exerciseStep.parse({ id: 's', title: 'Step', prompt: 'Answer.', ...raw });

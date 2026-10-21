@@ -1,6 +1,8 @@
 import { Loading } from '../components/Loading';
 import page from '../components/Page.module.css';
 import { RetryNotice } from '../components/RetryNotice';
+import { interactiveDraft } from '../exercises/interactive/draft';
+import { InteractiveForm } from '../exercises/interactive/InteractiveForm';
 import { formatInstant } from '../format/format';
 import type { ClassReview } from './classReviewData';
 import styles from './Grading.module.css';
@@ -30,6 +32,33 @@ const shown = (value: unknown) =>
       : JSON.stringify(value);
 
 const count = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
+
+/** A response in a line of text; a drawing by its strokes and description, not its points. */
+function brief(step: Step, value: unknown): string {
+  if (step.view.kind === 'drawing' && value && typeof value === 'object') {
+    const { strokes, description } = value as { strokes?: unknown; description?: unknown };
+    const n = Array.isArray(strokes) ? strokes.length : 0;
+    return `${count(n, 'stroke', 'strokes')}${typeof description === 'string' && description.trim() ? `; “${description.trim()}”` : ''}`;
+  }
+  return shown(value);
+}
+
+/** An interactive step's answer drawn as the student left it, nothing movable. */
+function DrawnAnswer({ step, value }: { step: Step; value: unknown }) {
+  const view = step.view.interactive;
+  if (!view || value === undefined || value === null) return null;
+  return (
+    <div className={styles.drawnAnswer}>
+      <InteractiveForm
+        view={view}
+        draft={interactiveDraft(view, value)}
+        disabled
+        label={`${step.title}, as answered`}
+        onChange={() => {}}
+      />
+    </div>
+  );
+}
 
 /**
  * The Exercises tab of one student's work (§9, A08): every practice attempt on each exercise of
@@ -117,7 +146,7 @@ function AttemptCard({ attempt: a }: { attempt: Attempt }) {
             <strong>{s.title}</strong> ·{' '}
             {s.status === 'completed' && s.help ? `Completed ${HELP[s.help]}` : 'Not completed'}
             <ul aria-label={`Attempt ${a.number} ${s.title} evidence`}>
-              <li>Final answer: {shown(s.finalResponse)}</li>
+              <li>Final answer: {brief(s, s.finalResponse)}</li>
               <li>Checks made: {s.checks.length}</li>
               <li>Hints shown: {s.hintsShown}</li>
               <li>Solution shown: {s.solutionShown ? 'Yes' : 'No'}</li>
@@ -125,11 +154,12 @@ function AttemptCard({ attempt: a }: { attempt: Attempt }) {
                 <li>
                   {count(s.checks.length, 'check', 'checks')}:{' '}
                   {s.checks
-                    .map((c) => `${shown(c.response)} (${c.correct ? 'correct' : 'incorrect'})`)
+                    .map((c) => `${brief(s, c.response)} (${c.correct ? 'correct' : 'incorrect'})`)
                     .join(' → ')}
                 </li>
               ) : null}
             </ul>
+            <DrawnAnswer step={s} value={s.finalResponse ?? s.checks.at(-1)?.response} />
           </li>
         ))}
       </ol>

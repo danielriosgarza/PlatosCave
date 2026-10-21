@@ -38,6 +38,10 @@ export const attemptStepView = exerciseStepView.extend({
   feedback: z.string().nullable(),
   /** Simulation values compared so far. */
   compared: z.array(z.number()).optional(),
+  /** Which parts of that response are right, when the step marks parts (`marks: true`). */
+  parts: z.record(z.string(), z.boolean()).nullable().optional(),
+  /** An interactive step's answer, once the solution is shown, in the shape of a response. */
+  reveal: z.unknown().optional(),
 });
 
 export const attemptView = z.object({
@@ -108,7 +112,11 @@ export const checkStep = defineRoute({
   body: stepRef.extend({ response: z.unknown() }),
   response: z.object({
     attempt: attemptView,
-    result: z.object({ correct: z.boolean(), feedback: z.string() }),
+    result: z.object({
+      correct: z.boolean(),
+      feedback: z.string(),
+      parts: z.record(z.string(), z.boolean()).optional(),
+    }),
   }),
   errors: stale,
   examples: {
@@ -148,14 +156,18 @@ export const showSolution = defineRoute({
   },
 });
 
-/** Saves an explanation or code; empty text cannot complete the step (A23). */
+/**
+ * Saves an explanation, code, a drawing or an exploration; empty text cannot complete the step
+ * (A23). The response is parsed against the step's kind.
+ */
 export const completeStep = defineRoute({
   method: 'POST',
   path: '/api/classes/:classId/exercise-attempts/:attemptId/complete',
   scope: { kind: 'class', role: 'any' },
-  summary: 'Save the written response of the active step and complete it',
+  summary:
+    'Save the response of the active step (text, code, a drawing or an exploration) and complete it',
   params: attemptParams,
-  body: stepRef.extend({ response: z.string().max(20_000) }),
+  body: stepRef.extend({ response: z.unknown() }),
   response: attemptView,
   errors: stale,
   examples: {
@@ -187,6 +199,8 @@ export const reviewStep = z.object({
   solutionShown: z.boolean(),
   /** The response that completed the step, if any. */
   finalResponse: z.unknown(),
+  /** The step as the student saw it in this attempt, so its responses can be drawn as they were. */
+  view: exerciseStepView,
 });
 
 export const reviewAttempt = z.object({

@@ -17,6 +17,9 @@ resources:
   - id: c991b7e4-6f17-4e21-8777-d4eedfbed4c6
     file: exercises/first-exercise.yaml
     title: Predict, inspect, explain
+  - id: f1705a7c-1cbe-437c-bef6-bcf1c03eefcb
+    file: exercises/interactive-tour.yaml
+    title: Drag, draw and explore
   - id: b3d27409-dfa3-422b-b01f-8fd0e6a77abe
     file: notebooks/demo.ipynb
     title: A notebook with its outputs

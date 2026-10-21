@@ -8,7 +8,13 @@ import { type Field, type Parsed, type Problem, parseYaml, refusal } from './yam
 type Contracts = typeof import('@parallax/contracts');
 const contracts = () => loadSource<Contracts>('contracts', 'src/index.ts');
 /** A zod schema, as far as it is used here: the tool reaches the contracts when it runs. */
-type Issue = { code?: string; path: PropertyKey[]; message: string; keys?: string[] };
+type Issue = {
+  code?: string;
+  path: PropertyKey[];
+  message: string;
+  keys?: string[];
+  params?: unknown;
+};
 type Schema<T> = {
   safeParse(
     value: unknown,
@@ -26,12 +32,19 @@ export function problemAt(file: Parsed, at: Field, message: string, code = 'sche
 /** A value as its schema gives it and no problem, or the problems that refuse it and no value. */
 export type Checked<T> = { value: T; problems: [] } | { value?: undefined; problems: Problem[] };
 
-/** A parsed file's value as its schema gives it, or one problem for each field it refuses. */
-export function checked<T>(file: Parsed, schema: Schema<T>): Checked<T> {
+/**
+ * A parsed file's value as its schema gives it, or one problem for each field it refuses;
+ * `words` rewrites the refusals' messages first.
+ */
+export function checked<T>(
+  file: Parsed,
+  schema: Schema<T>,
+  words: (issues: Issue[]) => Issue[] = (issues) => issues,
+): Checked<T> {
   if (file.problems.length > 0) return { problems: file.problems };
   const result = schema.safeParse(file.value);
   if (result.success) return { value: result.data, problems: [] };
-  const problems = result.error.issues.flatMap(({ code, path, keys = [], message }) =>
+  const problems = words(result.error.issues).flatMap(({ code, path, keys = [], message }) =>
     code === 'unrecognized_keys'
       ? keys.map((key) => problemAt(file, [...path, key], 'unknown key'))
       : [problemAt(file, path, message)],
@@ -72,7 +85,9 @@ const writtenOut = (value: unknown): unknown => {
 
 /** An exercise (docs/design/course-folder.md §5): the file's value goes unchanged to `exerciseV1`. */
 export async function loadExercise(root: string, file: string): Promise<Loaded<ExerciseV1>> {
-  return loaded(checked(parse(root, file), (await contracts()).exerciseV1));
+  const { exerciseV1, iconHints } = await contracts();
+  // An unknown icon is named with the nearest icons, as in the editor and on the server.
+  return loaded(checked(parse(root, file), exerciseV1, iconHints));
 }
 
 /**
