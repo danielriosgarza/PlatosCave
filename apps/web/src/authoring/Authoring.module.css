@@ -191,3 +191,54 @@
   overflow-wrap: anywhere;
   font-size: var(--pc-size-label);
 }
+/* The icon finder of an interactive step's fields */
+.iconFinder {
+  display: grid;
+  justify-items: start;
+  gap: 8px;
+}
+.iconPanel {
+  display: grid;
+  gap: 8px;
+  width: 100%;
+  max-width: 560px;
+}
+.iconPanel input[type="search"] {
+  width: 100%;
+  border: 1px solid var(--pc-muted);
+  background: var(--pc-sheet);
+  border-radius: var(--pc-radius-control);
+  padding: 8px 10px;
+}
+.iconGrid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(96px, 1fr));
+  gap: 6px;
+  max-height: 320px;
+  overflow-y: auto;
+}
+.iconChoice {
+  width: 100%;
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+  padding: 8px 4px;
+  border: 1px solid var(--pc-rule);
+  border-radius: var(--pc-radius-control);
+  background: var(--pc-sheet);
+  color: var(--pc-ink);
+  font-size: var(--pc-size-label);
+  cursor: pointer;
+}
+.iconChoice span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.iconChoice:hover {
+  border-color: var(--pc-ink);
+}

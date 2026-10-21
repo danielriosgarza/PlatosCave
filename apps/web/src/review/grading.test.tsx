@@ -641,6 +641,18 @@ describe('grading workspace', () => {
       hintsShown: 0,
       solutionShown: false,
       finalResponse: 'narrower',
+      view: {
+        id: 'predict',
+        kind: 'single_choice',
+        title: 'Predict',
+        prompt: 'How does the spread change?',
+        hintCount: 2,
+        hasSolution: true,
+        options: [
+          { id: 'narrower', label: 'Narrower' },
+          { id: 'halves', label: 'Halves' },
+        ],
+      },
       ...over,
     });
     const attempt = (n: number, student: { id: string; name: string }, over = {}) => ({
@@ -690,6 +702,27 @@ describe('grading workspace', () => {
                         solutionShown: true,
                         finalResponse: 'n = 100',
                       }),
+                      step({
+                        id: 'plot',
+                        title: 'Plot',
+                        kind: 'plot_points',
+                        finalResponse: { a: [2, 3] },
+                        view: {
+                          id: 'plot',
+                          kind: 'plot_points',
+                          title: 'Plot',
+                          prompt: 'Plot A at (2, 3).',
+                          hintCount: 0,
+                          hasSolution: false,
+                          interactive: {
+                            kind: 'plot_points',
+                            scene: { x: [-5, 5], y: [-5, 5], shapes: [] },
+                            line: false,
+                            snap: 1,
+                            points: [{ id: 'a', label: 'A' }],
+                          },
+                        },
+                      }),
                     ],
                   }),
                   attempt(2, priya),
@@ -715,6 +748,13 @@ describe('grading workspace', () => {
     expect(peek).toHaveTextContent('Hints shown: 0');
     expect(peek).toHaveTextContent('Solution shown: Yes');
     expect(region).toHaveTextContent('Completed with the solution shown');
+    // An interactive answer is drawn as the student left it, with nothing to move.
+    const plotted = within(region).getByRole('slider', { name: 'A' });
+    expect(plotted).toHaveAttribute('aria-valuetext', 'A at (2, 3)');
+    expect(plotted).toHaveAttribute('aria-disabled', 'true');
+    expect(within(region).getByRole('list', { name: 'Attempt 1 Plot evidence' })).toHaveTextContent(
+      'Final answer: {"a":[2,3]}',
+    );
     // The second attempt is listed on its own, and another student's attempt is not shown.
     expect(within(region).getByText('Attempt 2')).toBeVisible();
     expect(region).toHaveTextContent('Not completed');

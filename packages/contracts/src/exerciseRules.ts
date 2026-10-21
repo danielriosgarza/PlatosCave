@@ -1,20 +1,32 @@
+import type { z } from 'zod';
 import {
   type ExerciseStep,
   exerciseResponse,
   type exerciseStepView,
   onControlGrid,
-} from '@parallax/contracts';
-import type { z } from 'zod';
+} from './exercise';
+import { type InteractiveStep, isInteractiveKind } from './exerciseInteractive';
+import {
+  judgeInteractive,
+  parseInteractive,
+  revealInteractive,
+  viewInteractive,
+} from './exerciseInteractiveRules';
 
 /**
- * Server-side rules of `exercise.v1` steps (§9): parsing a response against its step,
- * judging it with targeted feedback, and the seeded order a student sees. Pure functions;
- * answer keys never leave this module except as feedback text.
+ * The rules of `exercise.v1` steps (§9): parsing a response against its step, judging it with
+ * targeted feedback, and the seeded order a student sees. Pure functions, run by the server,
+ * which alone holds a class's answer keys, and by the exercise editor's preview of the author's
+ * own definition; answer keys never leave them except as feedback text, part marks and, once
+ * the solution is shown, the revealed answer.
  */
 
 export type StepView = z.input<typeof exerciseStepView>;
-export type Judgement = { correct: boolean; feedback: string };
-export type Parsed = { ok: true; value: unknown } | { ok: false; message: string };
+/** `parts` marks each part of an interactive step's response right or wrong (`marks: true`). */
+export type Judgement = { correct: boolean; feedback: string; parts?: Record<string, boolean> };
+export type ParsedResponse = { ok: true; value: unknown } | { ok: false; message: string };
+
+const isInteractive = (step: ExerciseStep): step is InteractiveStep => isInteractiveKind(step.kind);
 
 /** mulberry32: a small deterministic PRNG, so a seed always replays the same order. */
 function random(seed: number): () => number {
@@ -81,13 +93,16 @@ export function viewStep(step: ExerciseStep, seed: number): StepView {
       return { ...base, maxLength: step.maxLength };
     case 'code':
       return { ...base, language: step.language, starter: step.starter };
+    default:
+      return { ...base, interactive: viewInteractive(step, order) };
   }
 }
 
-const refuse = (message: string): Parsed => ({ ok: false, message });
+const refuse = (message: string): ParsedResponse => ({ ok: false, message });
 
 /** Validates a response's shape against its step; refused responses are never recorded. */
-export function parseResponse(step: ExerciseStep, raw: unknown): Parsed {
+export function parseResponse(step: ExerciseStep, raw: unknown): ParsedResponse {
+  if (isInteractive(step)) return parseInteractive(step, raw);
   const parsed = exerciseResponse[step.kind].safeParse(raw);
   if (!parsed.success) return refuse(`This response does not fit a ${step.kind} step`);
   const value = parsed.data;
@@ -146,6 +161,7 @@ export function parseResponse(step: ExerciseStep, raw: unknown): Parsed {
  * attempt; a simulation step is correct once every `compare` value has been checked.
  */
 export function judge(step: ExerciseStep, value: unknown, compared: number[] = []): Judgement {
+  if (isInteractive(step)) return judgeInteractive(step, value);
   const { feedback } = step;
   const verdict = (correct: boolean, specific?: string): Judgement => {
     if (correct && 'correct' in feedback) return { correct, feedback: feedback.correct };
@@ -186,5 +202,16 @@ export function judge(step: ExerciseStep, value: unknown, compared: number[] = [
   }
 }
 
-/** Steps completed by saving a written response rather than by a check. */
-export const savedByComplete = (step: ExerciseStep) => step.kind === 'text' || step.kind === 'code';
+/** Steps completed by saving a response rather than by a check: nothing judges them. */
+export const savedByComplete = (step: Pick<ExerciseStep, 'kind'>) =>
+  step.kind === 'text' ||
+  step.kind === 'code' ||
+  step.kind === 'explore' ||
+  step.kind === 'drawing';
+
+/**
+ * The answer Show solution moves into place for an interactive step, in the shape of a response;
+ * null for the other kinds, whose solution is its text, and for an interactive step without one.
+ */
+export const revealOf = (step: ExerciseStep): unknown =>
+  isInteractive(step) ? revealInteractive(step) : null;

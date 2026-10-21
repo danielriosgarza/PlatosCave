@@ -1,16 +1,19 @@
 import { randomInt } from 'node:crypto';
-import { type ExerciseStep, type ExerciseV1, exerciseV1 } from '@parallax/contracts';
+import {
+  type ExerciseStep,
+  type ExerciseV1,
+  exerciseV1,
+  type Judgement,
+  judge,
+  parseResponse,
+  revealOf,
+  savedByComplete,
+  viewStep,
+} from '@parallax/contracts';
 import type * as contracts from '@parallax/contracts/routes/exercises';
 import { and, asc, desc, eq, inArray, isNull } from 'drizzle-orm';
 import type { z } from 'zod';
 import type { ClassScope } from '../auth/scope';
-import {
-  type Judgement,
-  judge,
-  parseResponse,
-  savedByComplete,
-  viewStep,
-} from '../exercises/evaluate';
 import { classArchived, invalid, notFound, type Outcome } from '../outcome';
 import type { Db } from './client';
 import { studyableResource, type Tx } from './content/releases';
@@ -60,6 +63,8 @@ interface StepState {
   feedback: string | null;
   finalResponse: unknown;
   compared: number[];
+  /** Part marks of the last check, for a step that marks parts. */
+  parts: Record<string, boolean> | null;
 }
 
 const emptyState = (): StepState => ({
@@ -71,11 +76,15 @@ const emptyState = (): StepState => ({
   feedback: null,
   finalResponse: null,
   compared: [],
+  parts: null,
 });
 
 /** Folds an attempt's events, in order, into per-step state. */
 function replay(definition: ExerciseV1, events: EventRow[]): Map<string, StepState> {
   const state = new Map(definition.steps.map((step) => [step.id, emptyState()]));
+  const simulations = new Set(
+    definition.steps.filter((step) => step.kind === 'simulation').map((step) => step.id),
+  );
   for (const event of events) {
     const s = event.stepId ? state.get(event.stepId) : undefined;
     if (!s) continue;
@@ -88,8 +97,12 @@ function replay(definition: ExerciseV1, events: EventRow[]): Map<string, StepSta
       });
       s.response = p.response;
       s.feedback = p.feedback as string;
+      s.parts = (p.parts as Record<string, boolean> | undefined) ?? null;
       const value = (p.response as { value?: unknown } | null)?.value;
-      if (typeof value === 'number' && !s.compared.includes(value)) s.compared.push(value);
+      const compares = event.stepId !== null && simulations.has(event.stepId);
+      if (compares && typeof value === 'number' && !s.compared.includes(value)) {
+        s.compared.push(value);
+      }
     } else if (event.kind === 'hint_shown') s.hintsShown += 1;
     else if (event.kind === 'solution_revealed') s.solutionShown = true;
     else if (event.kind === 'step_completed' && s.help === null) {
@@ -118,6 +131,7 @@ function toView(row: AttemptRow, definition: ExerciseV1, events: EventRow[]): At
     credit: definition.credit ?? null,
     steps: definition.steps.map((step) => {
       const s = state.get(step.id) ?? emptyState();
+      const reveal = s.solutionShown ? revealOf(step) : null;
       return {
         ...viewStep(step, row.seed),
         status: s.help ? 'completed' : 'pending',
@@ -128,6 +142,8 @@ function toView(row: AttemptRow, definition: ExerciseV1, events: EventRow[]): At
         response: s.response,
         feedback: s.feedback,
         ...(step.kind === 'simulation' && { compared: s.compared }),
+        ...(s.parts && { parts: s.parts }),
+        ...(reveal !== null && { reveal }),
       };
     }),
   };
@@ -392,8 +408,9 @@ export async function showHint(
 }
 
 /**
- * Show solution completes a checked step with help. A written step (text, code) still needs
- * its own response: seeing a model answer does not save an explanation (A23).
+ * Show solution completes a checked step with help. A saved step (text, code, a drawing, an
+ * exploration) still needs its own response: seeing a model answer does not save an
+ * explanation (A23).
  */
 export async function showSolution(
   db: Db,
@@ -421,7 +438,7 @@ export async function completeStep(
   db: Db,
   scope: ClassScope,
   attemptId: string,
-  input: { stepId: string; response: string },
+  input: { stepId: string; response?: unknown },
   now: Date,
 ) {
   return act(db, scope, attemptId, now, async (ctx) => {
@@ -541,6 +558,7 @@ export async function reviewAttempts(
           hintsShown: s.hintsShown,
           solutionShown: s.solutionShown,
           finalResponse: s.finalResponse,
+          view: viewStep(step, attempt.seed),
         };
       }),
     });

@@ -170,15 +170,18 @@ Details: [spec section 8](../product-spec.md#8-reading-notes-highlights-drawings
 
 The **Exercises** tab lists the exercises for the topic. Each shows whether it is **Practice · ungraded** or **For credit** with its points and hint rule. Select **Start** to open one. If the topic has only one exercise, it opens at once with no list. With several, **All exercises** returns to the list. An exercise that has not opened shows **Opens** with a date and **Locked**.
 
-An exercise is a short list of steps. A step can ask for a number, a choice, an ordering or matching, a short explanation, code, or a value recorded from a simulation.
+An exercise is a short list of steps. A step can ask for a number, a choice, an ordering or matching, a short explanation, code, or a value recorded from a simulation. It can also ask you to drag items into groups or tiles into gaps, label a diagram, place points on a graph, sketch a curve, choose parts of a figure, shade cells of a grid, move sliders or points until a target is met, explore a scene, or draw.
+
+Everything you can drag can also be done with the keyboard: pick an item with Enter or Space, then choose where it goes; move a point or a slider with the arrow keys (Page Up and Page Down move further). The steps say how. An item shown only as a picture still has a name, which a screen reader says and which appears when the pointer rests on it.
 
 On each step:
 
 - **Check answer** records your answer and gives feedback. If it is wrong, the page says **Not yet.** and keeps your answer, so you can try again.
-- For a written explanation, **Done** saves it. For code, **Save code** saves it. These save your work. They do not grade it.
+- For a written explanation, **Done** saves it. For code, **Save code** saves it. For a drawing, **Save drawing** saves it with its description; you can describe your answer in words instead of drawing. **Done exploring** completes a scene you explore. These save your work. They do not grade it.
+- On some steps a wrong check marks which parts are right. The marks go once you change your answer.
 - For a simulation step, **Record this value** records the value for comparison.
 - **Show a hint** and **Show next hint** reveal hints one at a time. **Hide hints** and **Show hints** fold them. The page shows "Hints used: N of M". Hint use is recorded for review.
-- **Show solution** reveals the answer. It appears only on steps that have a solution. This is recorded. The step is only completed with help; some steps still need your own answer afterwards.
+- **Show solution** reveals the answer. It appears only on steps that have a solution. This is recorded. The step is only completed with help; some steps still need your own answer afterwards. On a drag or plot step, the pieces move to the answer.
 - **Continue** moves to the next step. After the last step, **See summary**.
 
 The summary says **Exercise complete.** It shows how each step was done: independently, with hints, or with the solution shown. Select **Start again** for a new attempt. Earlier attempts are kept.
