@@ -62,13 +62,7 @@ export const toWorld = (frame: Frame, [sx, sy]: XY): XY => [
   frame.y[1] - (sy - PAD) / frame.ky,
 ];
 
-/** A "nice" spacing (1, 2 or 5 × 10ⁿ) giving about `target` intervals across `span`. */
-export function niceStep(span: number, target = 8): number {
-  const raw = span / target;
-  const power = 10 ** Math.floor(Math.log10(raw));
-  const unit = raw / power;
-  return (unit < 1.5 ? 1 : unit < 3.5 ? 2 : unit < 7.5 ? 5 : 10) * power;
-}
+export { niceStep } from '@parallax/contracts';
 
 /** The multiples of `step` in [lo, hi], snapped so that 0.1 + 0.2 reads as 0.3. */
 export function ticks(lo: number, hi: number, step: number): number[] {

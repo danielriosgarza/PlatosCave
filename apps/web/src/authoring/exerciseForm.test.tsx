@@ -239,6 +239,17 @@ describe('interactive steps in the exercise form', () => {
     expect(exerciseV1.parse(toContent(draft))).toEqual(tour);
   });
 
+  it('A42 writes short lists and entries on one line, as the exercise guide does', () => {
+    const bars = toDraft(tour).steps.find((s) => s.id === 'bars')?.spec ?? '';
+    expect(bars).toContain('  x: [ 0, 11 ]\n');
+    expect(bars).toContain('    - { type: rect, at: [ 1, 0 ], size: [ 2, 4 ], fill: soft }\n');
+    expect(bars).toContain('correct: [ b2, b3 ]\n');
+    // Feedback keeps one message to a line.
+    expect(bars).toContain(
+      'feedback:\n  correct: A quarter of 40 is 10; only 12 and 14 are more.\n',
+    );
+  });
+
   it('A42 starts each interactive kind from a working example', () => {
     for (const kind of interactiveKinds) {
       const step = { ...blankStep(kind, []), title: 'Try it', prompt: 'Do it.' };

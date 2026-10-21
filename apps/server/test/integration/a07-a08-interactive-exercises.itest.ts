@@ -299,4 +299,30 @@ describe('interactive exercise steps', () => {
     });
     expect(sam.steps[0].checks.map((c: { correct: boolean }) => c.correct)).toEqual([false, true]);
   });
+
+  test('A23 starting again keeps the shown solution and the marks of the first attempt, and the new one reveals nothing', async () => {
+    const first = await open('sam');
+    const restarted = await act('sam', first.id, 'restart');
+    expect(restarted.status).toBe(200);
+    expect(restarted.body).toMatchObject({ number: 2, completion: null });
+    for (const s of restarted.body.steps) {
+      expect(s).toMatchObject({ status: 'pending', help: null, checks: 0, response: null });
+      expect(s.reveal).toBeUndefined();
+      expect(s.parts).toBeUndefined();
+    }
+    // The first attempt keeps its record: the solution shown on the plot, the marked checks.
+    const res = await call(
+      'priya',
+      'GET',
+      `/api/classes/${ids.classA}/resources/${exerciseId}/exercise-attempts`,
+    );
+    const [second, earlier] = res.body.attempts;
+    expect([second.number, earlier.number]).toEqual([2, 1]);
+    expect(earlier).toMatchObject({ id: first.id, restarted: true, completion: 'solution_shown' });
+    expect(earlier.steps[1]).toMatchObject({ id: 'plot', solutionShown: true });
+    expect(earlier.steps[0].checks.map((c: { correct: boolean }) => c.correct)).toEqual([
+      false,
+      true,
+    ]);
+  });
 });

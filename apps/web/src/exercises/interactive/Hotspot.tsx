@@ -116,9 +116,9 @@ export function Hotspot({
             {'Chosen: '}
             {draft.picked.map((id, i) => (
               <span key={id}>
-                {i > 0 ? ', ' : ''}
                 {names.get(id) ?? id}
                 {parts?.[id] === undefined ? null : <Mark right={parts[id] as boolean} />}
+                {i < draft.picked.length - 1 ? ', ' : ''}
               </span>
             ))}
           </>

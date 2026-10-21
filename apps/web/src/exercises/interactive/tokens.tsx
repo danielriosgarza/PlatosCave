@@ -106,6 +106,11 @@ export function useTokenDrag({
       press.current = null;
       setGhost(null);
       if (!dragged.current) return;
+      // The click that ends a drag comes in this same task, if at all: a token dropped into a
+      // slot is remounted there and gets none. Later clicks are picks again.
+      setTimeout(() => {
+        dragged.current = false;
+      }, 0);
       const to = e.type === 'pointerup' ? slotAt(e.clientX, e.clientY) : null;
       if (to) place(p.token, p.from, to);
       else setAnnouncement(`${p.label} not moved.`);
@@ -139,8 +144,8 @@ export function useTokenDrag({
     },
     onClick: (e: React.MouseEvent) => {
       e.stopPropagation();
-      // The click that ends a drag is not a pick.
-      if (dragged.current) {
+      // The click that ends a drag is not a pick; Enter or Space (no pointer, detail 0) always is.
+      if (dragged.current && e.detail !== 0) {
         dragged.current = false;
         return;
       }

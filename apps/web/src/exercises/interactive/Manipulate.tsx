@@ -24,8 +24,8 @@ const show = (p: Param, v: ParamValue) =>
 
 /**
  * A scene driven by parameters (§9): sliders below it, and handles in it for point parameters.
- * A slider with `animate` has Play, which runs it from its value to the end and round again;
- * the value is snapped to its grid when paused or sent.
+ * A slider with `animate` has Play, which runs it from its value to the end and round again,
+ * through the values the slider offers: a sample size of 6.45 is never drawn.
  */
 export function Manipulate({
   view,
@@ -58,17 +58,17 @@ export function Manipulate({
     const span = running.max - running.min;
     const travelled = from.current + (seconds / running.animate.seconds) * span;
     if (!running.animate.loop && travelled >= span) {
-      set(running.name, running.max);
+      set(running.name, snapParam(running, running.max));
       setPlaying(null);
       return;
     }
-    set(running.name, running.min + (travelled % span));
+    const v = snapParam(running, running.min + (travelled % span));
+    if (v !== latest.current[running.name]) set(running.name, v);
   });
 
   const toggle = (p: Slider) => {
     if (playing === p.name) {
       setPlaying(null);
-      set(p.name, snapParam(p, latest.current[p.name] ?? p.initial));
       return;
     }
     const v = latest.current[p.name];
@@ -151,7 +151,7 @@ function SliderControl({
     <div className={styles.slider}>
       <label htmlFor={id} className={styles.sliderHead}>
         <span>{p.label}</span>
-        <strong>{show(p, playing ? value : (snapParam(p, value) as number))}</strong>
+        <strong>{show(p, snapParam(p, value))}</strong>
       </label>
       <div className={styles.sliderRow}>
         <input

@@ -1,10 +1,11 @@
 import { z } from 'zod';
 import { strokes } from './anchors';
 import { common, feedback, label, option, prose, stepId } from './exerciseBase';
-import { expressionProblem, holds, quantityValue } from './expression';
+import { expressionProblem, formatNumber, holds, quantityValue } from './expression';
 import {
   expressionText,
   type FieldProblem,
+  niceStep,
   paramName,
   type Scene,
   scene,
@@ -142,6 +143,12 @@ export const regionShape = z.discriminatedUnion('type', [
   }),
   z.object({ type: z.literal('polygon'), points: z.array(xy).min(3).max(50) }),
 ]);
+
+/**
+ * How far an arrow key moves a point of a sketch: about a fortieth of the scene's height. The
+ * tolerance must be at least half of it, so the keyboard can reach every answer (A20).
+ */
+export const sketchKeyStep = (y: readonly [number, number]) => niceStep(y[1] - y[0], 40);
 
 /** Choose regions of a diagram. */
 export const hotspotStep = z.object({
@@ -525,6 +532,12 @@ export function interactiveProblems(step: InteractiveStep): FieldProblem[] {
       const [lo, hi] = step.scene.x;
       const steps = (hi - lo) / step.snap;
       if (steps > 2000) add(['snap'], 'gives more than 2000 positions across the scene');
+      const fits = ([a, b]: readonly [number, number]) =>
+        Math.ceil(a / step.snap - 1e-9) <= Math.floor(b / step.snap + 1e-9);
+      if (!fits(step.scene.x) || (!step.line && !fits(step.scene.y))) {
+        add(['snap'], 'leaves no position inside the scene: use a smaller snap');
+        break;
+      }
       const position = (v: number | [number, number]): [number, number] | null => {
         if (step.line) return typeof v === 'number' ? [v, 0] : null;
         return Array.isArray(v) ? v : null;
@@ -543,7 +556,11 @@ export function interactiveProblems(step: InteractiveStep): FieldProblem[] {
             add(['points', i, key], 'lies outside the scene');
             continue;
           }
-          const nearest = at.map((c) => toGrid(c, 0, step.snap));
+          // The position a point can reach nearest the value: on the snap grid, in the scene.
+          const nearest = [
+            snapInside(at[0], step.snap, step.scene.x),
+            step.line ? 0 : snapInside(at[1], step.snap, step.scene.y),
+          ];
           const onSnap = at.every((c) => onGrid(c, 0, step.snap));
           if (key === 'start' && !onSnap)
             add(['points', i, key], `must be a multiple of snap (${step.snap})`);
@@ -571,6 +588,13 @@ export function interactiveProblems(step: InteractiveStep): FieldProblem[] {
         (step.start < step.scene.y[0] || step.start > step.scene.y[1])
       ) {
         add(['start'], 'lies outside the scene');
+      }
+      const key = sketchKeyStep(step.scene.y);
+      if (step.tolerance < key / 2 - 1e-9) {
+        add(
+          ['tolerance'],
+          `must be at least ${formatNumber(key / 2)}, half the ${formatNumber(key)} an arrow key moves a point, or the keyboard cannot reach the curve`,
+        );
       }
       if (!problem && from < to) {
         const outside = sampleXs(step).find((x) => {

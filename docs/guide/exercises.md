@@ -45,7 +45,7 @@ A file that holds answers lies under `private/` when the course is public (see [
 
 Ids (`id` of a step, an item, a category, a gap, a tile, a region and so on) all follow the rule of a step `id`.
 
-**Marks.** Most interactive kinds take `marks: true`. A wrong check then tells the student which parts are right (each item, gap, label, point, sample, chosen region or shaded cell). Marks are off by default: with few parts, they let a student find the answer by trying.
+**Marks.** Most interactive kinds take `marks: true`. A wrong check then tells the student which parts are right (each item, gap, label, point, sample, chosen region or shaded cell), until the answer changes. Marks are off by default: with few parts, they let a student find the answer by trying.
 
 **Shuffle.** Items, tiles and labels are dealt in an order drawn from the attempt, unless `shuffle: false`.
 
@@ -140,7 +140,7 @@ Students drag points onto the scene, or move them with the arrow keys.
 | --- | --- |
 | `points` | Up to 8: `id`, `label`, `answer` (`[x, y]`), and `start` (where it is placed; without it the point waits beside the scene). |
 | `snap` | Points move in steps of `snap`: each coordinate is a whole multiple of it. |
-| `tolerance` | The distance from an answer still accepted (default 0). An answer must be within `tolerance` of a position a point can reach. |
+| `tolerance` | The distance from an answer still accepted (default 0). An answer must be within `tolerance` of a position a point can reach: a multiple of `snap` inside the scene. |
 | `unordered` | Any point may stand at any answer, each answer taken once. |
 | `line` | A number line: points move along the x axis, and `answer` and `start` are single numbers. |
 
@@ -159,7 +159,7 @@ tolerance: 0.75
 marks: true
 ```
 
-`count` is 2 to 41; `start` is the height the curve starts at. The answer must stay inside the scene at every sample.
+`count` is 2 to 41; `start` is the height the curve starts at. The answer must stay inside the scene at every sample. An arrow key moves a point by about a fortieth of the scene's height (0.2 for a height of 10), so `tolerance` must be at least half of that; `parallax check` names the least it can be.
 
 ### Choose regions: `hotspot`
 
@@ -226,7 +226,7 @@ feedback:
 
 ### Explore a scene: `explore`
 
-A scene with sliders and handles, as in `manipulate`, and no target: **Done exploring** completes it. A slider with `animate: { seconds: 6 }` has a **Play** button that runs it from `min` to `max` (and again, unless `loop: false`). `feedback.saved` is optional.
+A scene with sliders and handles, as in `manipulate`, and no target: **Done exploring** completes it. A slider with `animate: { seconds: 6 }` has a **Play** button that runs it from `min` to `max` (and again, unless `loop: false`), through the values the slider offers: a smaller `step` plays more smoothly. `feedback.saved` is optional.
 
 ### Freehand drawing: `drawing`
 
@@ -280,10 +280,10 @@ A parameter cannot be named after a constant, a function, `x` or `t`. An express
 - In a `{ … }` mapping on one line, a comma ends a field. Quote an expression or a sentence that holds a comma: `{ when: "near(c, 3, 0.01)", say: … }`, `label: "(2, -1)"`.
 - Quote a label that YAML would read as something else: `"4"` (a number), `"yes"`, a text starting with `{` or `[`.
 - `[x, y]` is a pair of numbers; a pair of expressions is `["P.x", "P.y"]`.
-- Anchors and aliases (`&` and `*`) are not accepted.
+- In the editor's fields, anchors and aliases (`&` and `*`) are not accepted; write each value out.
 
 ## What students and instructors see
 
-**Students** check an interactive step with **Check answer**, as any other. A wrong answer is kept, so it can be changed and checked again; with `marks: true` each right part is marked until it is moved. **Show solution** moves the pieces to the answer, with a short animation unless the student's system asks for reduced motion, and records the step as completed with the solution shown. An exploration is completed with **Done exploring**; a drawing with **Save drawing**.
+**Students** check an interactive step with **Check answer**, as any other. A wrong answer is kept, so it can be changed and checked again; with `marks: true` the right parts are marked until the answer changes. **Show solution** moves the pieces to the answer, with a short animation unless the student's system asks for reduced motion, and records the step as completed with the solution shown. An exploration is completed with **Done exploring**; a drawing with **Save drawing**.
 
 **Instructors** see each student's final answer drawn as the student saw it, with checked attempts, hints and solutions, under **Review**. A drawing is shown with its description. In the browser editor, an interactive step's fields are written as YAML under **Step n fields (YAML)**, with a live preview in which **Try checking** judges the answer as the server would and **Show the expected answer** moves the pieces into place.

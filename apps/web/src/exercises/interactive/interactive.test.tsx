@@ -7,11 +7,11 @@ import {
   parseResponse,
   viewStep,
 } from '@parallax/contracts';
-import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
 import { afterEach, describe, expect, it } from 'vitest';
-import { type InteractiveDraft, interactiveDraft, interactiveResponse } from './draft';
+import { type InteractiveDraft, interactiveDraft, interactiveResponse, snapParam } from './draft';
 import { InteractiveForm } from './InteractiveForm';
 
 afterEach(cleanup);
@@ -313,6 +313,79 @@ describe('interactive steps from the keyboard', () => {
     expect(result()).toHaveTextContent('Correct');
   });
 
+  it('A20 a handle stops at the last place its grid offers, so a check from the edge is accepted', async () => {
+    const user = userEvent.setup();
+    const P = {
+      kind: 'point' as const,
+      name: 'P',
+      label: 'P',
+      x: [0, 10] as [number, number],
+      y: [0, 10] as [number, number],
+      step: 3,
+      initial: [6, 0] as [number, number],
+    };
+    render(
+      <Harness
+        raw={{
+          kind: 'manipulate',
+          params: [P],
+          scene: { x: [0, 10], y: [0, 10] },
+          target: ['P.x == 9'],
+        }}
+      />,
+    );
+    const handle = screen.getByRole('slider', { name: 'P' });
+    handle.focus();
+    // 6 → 9, then past the edge: 10 is not on the grid of 3 from 0, so P stays at 9.
+    await user.keyboard('{ArrowRight}{ArrowRight}');
+    expect(handle).toHaveAttribute('aria-valuetext', 'P at (9, 0)');
+    await user.click(screen.getByRole('button', { name: 'Check' }));
+    expect(result()).toHaveTextContent('Correct');
+    // A drag past the corner lands on the last grid point too.
+    expect(snapParam(P, [10, 10.4])).toEqual([9, 9]);
+  });
+
+  it('A20 Play runs a parameter through the values its slider offers, and Pause keeps one', async () => {
+    const user = userEvent.setup();
+    render(
+      <Harness
+        raw={{
+          kind: 'explore',
+          params: [
+            {
+              name: 'n',
+              label: 'Sample size',
+              min: 1,
+              max: 25,
+              step: 1,
+              initial: 1,
+              animate: { seconds: 0.5 },
+            },
+          ],
+          scene: { ...plane, shapes: [{ type: 'text', at: [0, 4], text: 'n = {n}' }] },
+          feedback: { saved: 'Seen.' },
+        }}
+      />,
+    );
+    await user.click(screen.getByRole('button', { name: 'Play' }));
+    const seen = new Set<string>();
+    await waitFor(() => {
+      seen.add(screen.getByText(/^n = /).textContent ?? '');
+      expect(seen.size).toBeGreaterThan(3);
+    });
+    // Every value drawn is a whole sample size, as the slider offers it.
+    for (const text of seen) expect(text).toMatch(/^n = \d+$/);
+    await user.click(screen.getByRole('button', { name: 'Pause' }));
+    const kept = screen.getByText(/^n = /).textContent;
+    expect(kept).toMatch(/^n = \d+$/);
+    expect(screen.getByRole('slider', { name: /^Sample size/ })).toHaveAttribute(
+      'aria-valuetext',
+      `Sample size ${kept?.slice(4)}`,
+    );
+    await user.click(screen.getByRole('button', { name: 'Check' }));
+    expect(result()).toHaveTextContent('Correct: Seen.');
+  });
+
   it('A07 a reopened drawing is undone and redone, and a description alone saves it', async () => {
     const user = userEvent.setup();
     const stroke = {
@@ -392,5 +465,10 @@ describe('interactive steps with a pointer', () => {
       window.dispatchEvent(pointer('pointerup', 40));
     });
     expect(screen.getByRole('region', { name: 'Unsorted items' })).toHaveTextContent('Height');
+    // After a drag, the next press of Enter picks a token at once.
+    const user = userEvent.setup();
+    screen.getByRole('button', { name: 'Height' }).focus();
+    await user.keyboard('{Enter}');
+    expect(screen.getByRole('button', { name: 'Height' })).toHaveAttribute('aria-pressed', 'true');
   });
 });

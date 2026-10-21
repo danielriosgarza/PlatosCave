@@ -149,6 +149,14 @@ export const scene = z.object({
 });
 export type Scene = z.output<typeof scene>;
 
+/** A "nice" spacing (1, 2 or 5 × 10ⁿ) giving about `target` intervals across `span`. */
+export function niceStep(span: number, target = 8): number {
+  const raw = span / target;
+  const power = 10 ** Math.floor(Math.log10(raw));
+  const unit = raw / power;
+  return (unit < 1.5 ? 1 : unit < 3.5 ? 2 : unit < 7.5 ? 5 : 10) * power;
+}
+
 /** The shapes' repeats are capped: a scene draws at most this many copies of one shape. */
 export const MAX_REPEAT = 200;
 

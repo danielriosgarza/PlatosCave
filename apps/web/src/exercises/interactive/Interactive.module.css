@@ -167,7 +167,6 @@
   fill: var(--pc-paper);
   stroke: var(--pc-ink);
   stroke-width: 2;
-  transition: stroke-width 120ms ease-out;
 }
 .handleDot {
   fill: var(--pc-ink);
@@ -220,7 +219,6 @@
   stroke-dasharray: 5 4;
   cursor: pointer;
   outline: none;
-  transition: fill-opacity 120ms ease-out;
 }
 .region:hover {
   fill-opacity: 0.1;
@@ -321,12 +319,9 @@
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
-  transition:
-    background-color 120ms ease-out,
-    box-shadow 120ms ease-out;
 }
-.token:hover:not(:disabled) {
-  box-shadow: 0 2px 0 var(--pc-ink);
+.token:hover:not(:disabled, [aria-pressed="true"]) {
+  background: var(--pc-soft);
 }
 .token[aria-pressed="true"] {
   background: var(--pc-ink);
@@ -343,22 +338,6 @@
 .token:disabled {
   cursor: default;
   border-color: var(--pc-muted);
-}
-/* A token that lands in a slot settles in. */
-.group .token,
-.gap .token,
-.target .token {
-  animation: settle 180ms ease-out;
-}
-@keyframes settle {
-  from {
-    transform: scale(0.92);
-    opacity: 0.4;
-  }
-  to {
-    transform: none;
-    opacity: 1;
-  }
 }
 .drop,
 .gapDrop,
@@ -394,7 +373,7 @@
   font: var(--pc-text-ui);
   font-weight: 600;
   white-space: nowrap;
-  box-shadow: 0 6px 18px rgb(0 0 0 / 0.22);
+  outline: 2px solid var(--pc-paper);
 }
 
 /* Gaps in a sentence */
@@ -477,7 +456,6 @@
 .target .token {
   min-height: 34px;
   padding: 4px 10px;
-  box-shadow: 0 1px 4px rgb(0 0 0 / 0.12);
 }
 .target[data-mark="true"] .token {
   border-color: var(--pc-success);
@@ -492,9 +470,8 @@
   height: 12px;
   border-radius: 50%;
   background: currentColor;
-  box-shadow:
-    0 0 0 2px var(--pc-paper),
-    0 0 0 3px currentColor;
+  outline: 1px solid currentColor;
+  outline-offset: 2px;
 }
 
 /* A grid of cells */
@@ -521,7 +498,6 @@
   font-weight: 700;
   cursor: pointer;
   touch-action: none;
-  transition: background-color 100ms ease-out;
 }
 .cell[aria-pressed="true"] {
   background: var(--pc-ink);
@@ -541,7 +517,7 @@
   outline-offset: 2px;
 }
 .cell[data-mark="true"] {
-  box-shadow: inset 0 0 0 3px var(--pc-success);
+  border: 3px solid var(--pc-success);
 }
 
 /* Sliders under a scene */
@@ -654,18 +630,4 @@
   background: var(--pc-sheet);
   color: var(--pc-ink);
   font: var(--pc-text-field);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .token,
-  .cell,
-  .region,
-  .handleRing {
-    transition: none;
-  }
-  .group .token,
-  .gap .token,
-  .target .token {
-    animation: none;
-  }
 }

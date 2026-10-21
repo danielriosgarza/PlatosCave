@@ -6,7 +6,7 @@ import {
   type hintPolicies,
   isInteractiveKind,
 } from '@parallax/contracts';
-import { parse, stringify } from 'yaml';
+import { Document, isPair, isScalar, isSeq, parse, visit } from 'yaml';
 import { interactiveTemplates } from './interactiveTemplates';
 
 /**
@@ -172,6 +172,38 @@ export const blankExercise = (): DraftExercise => ({
   hintPolicy: 'free',
 });
 
+/** Longest collection written on one line, as `[x, y]` or `{ id: a, label: A }`. */
+const FLOW_WIDTH = 72;
+
+/**
+ * An interactive step's fields as YAML in the way the guide writes them: short lists and
+ * entries on one line (`at: [1, 2]`, `- { id: a, label: A, answer: [2, 3] }`), the rest as
+ * indented blocks. Feedback stays in blocks, one message to a line.
+ */
+export function specText(fields: object): string {
+  const doc = new Document(fields);
+  const plain = (node: unknown): boolean =>
+    isScalar(node) || (isSeq(node) && node.items.every(isScalar));
+  visit(doc, {
+    Seq(_, node) {
+      if (node.items.every(plain) && JSON.stringify(node.toJSON()).length <= FLOW_WIDTH) {
+        node.flow = true;
+      }
+    },
+    Map(_, node, path) {
+      const parent = path[path.length - 1];
+      if (isPair(parent) && isScalar(parent.key) && parent.key.value === 'feedback') return;
+      if (
+        node.items.every((pair) => plain(pair.value)) &&
+        JSON.stringify(node.toJSON()).length <= FLOW_WIDTH
+      ) {
+        node.flow = true;
+      }
+    },
+  });
+  return doc.toString({ lineWidth: 0, flowCollectionPadding: true });
+}
+
 const rowsOf = (list: { id: string; label: string }[], extra = (_: string) => ''): Row[] =>
   list.map((o) => ({ id: o.id, label: o.label, extra: extra(o.id), correct: false }));
 
@@ -209,7 +241,7 @@ export function toDraft(content: unknown): DraftExercise {
           solution: _solution,
           ...fields
         } = step;
-        return { ...draft, spec: stringify(fields, { lineWidth: 0, flowCollectionPadding: true }) };
+        return { ...draft, spec: specText(fields) };
       }
       switch (step.kind) {
         case 'numeric':

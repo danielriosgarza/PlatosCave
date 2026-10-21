@@ -120,6 +120,40 @@ describe('interactive steps in exercise.v1', () => {
     ).toEqual(['Step 1 “Step” · answer: does not meet the target near(m, 2, 0.01)']);
   });
 
+  it('A42 accepts a plotting or sketching step only when a student can reach its answer', () => {
+    // The multiples of 4 inside [1, 7] are 4 alone: an answer of 1 is 3 from any place.
+    const line = {
+      kind: 'plot_points',
+      scene: { x: [1, 7], y: [-1, 1] },
+      line: true,
+      points: [{ id: 'a', label: 'A', answer: 1 }],
+      snap: 4,
+      tolerance: 1.5,
+    };
+    expect(problems(line)).toEqual([
+      'Step 1 “Step” · points · #1 · answer: no position a point can reach is within tolerance of it: use a multiple of snap or a larger tolerance',
+    ]);
+    expect(problems({ ...line, tolerance: 3 })).toEqual([]);
+    // Whatever the editor accepts, Show solution's answer is judged right.
+    const reachable = step({ ...line, tolerance: 3 });
+    expect(check(reachable, revealOf(reachable))).toMatchObject({ correct: true });
+    expect(problems({ ...line, scene: { x: [1, 3], y: [-1, 1] } })).toEqual([
+      'Step 1 “Step” · snap: leaves no position inside the scene: use a smaller snap',
+    ]);
+    // An arrow key moves a sketch point by 0.2 on a scene 10 high: 0.05 is out of its reach.
+    const sketch = {
+      kind: 'sketch_graph',
+      scene: { x: [0, 4], y: [0, 10] },
+      answer: '0.5*x + 1',
+      samples: { from: 0, to: 4, count: 5 },
+      tolerance: 0.05,
+    };
+    expect(problems(sketch)).toEqual([
+      'Step 1 “Step” · tolerance: must be at least 0.1, half the 0.2 an arrow key moves a point, or the keyboard cannot reach the curve',
+    ]);
+    expect(problems({ ...sketch, tolerance: 0.1 })).toEqual([]);
+  });
+
   it('A08 sends a student no answer: the view of each kind holds no key, target or tolerance', () => {
     const manipulate = step({
       kind: 'manipulate',

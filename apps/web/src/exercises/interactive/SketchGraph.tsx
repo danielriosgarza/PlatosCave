@@ -1,7 +1,7 @@
-import { formatNumber, type InteractiveView } from '@parallax/contracts';
+import { formatNumber, type InteractiveView, sketchKeyStep } from '@parallax/contracts';
 import { type PointerEvent, useEffect, useRef, useState } from 'react';
 import type { InteractiveDraft } from './draft';
-import { clamp, type Frame, niceStep, polylinePath, smoothPath, type XY } from './geometry';
+import { clamp, type Frame, polylinePath, smoothPath, type XY } from './geometry';
 import { Handle, worldAt } from './Handle';
 import styles from './Interactive.module.css';
 import { Scene } from './Scene';
@@ -52,7 +52,7 @@ export function SketchGraph({
   const pen = useRef<{ id: number; last: XY } | null>(null);
   const box = useRef<HTMLDivElement>(null);
   const range = view.scene.y;
-  const step = niceStep(range[1] - range[0], 40);
+  const step = sketchKeyStep(range);
   // Pointer events can outrun renders: a stroke builds on the heights it last set.
   const latest = useRef(draft.ys);
   latest.current = draft.ys;

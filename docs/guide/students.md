@@ -178,7 +178,7 @@ On each step:
 
 - **Check answer** records your answer and gives feedback. If it is wrong, the page says **Not yet.** and keeps your answer, so you can try again.
 - For a written explanation, **Done** saves it. For code, **Save code** saves it. For a drawing, **Save drawing** saves it with its description; you can describe your answer in words instead of drawing. **Done exploring** completes a scene you explore. These save your work. They do not grade it.
-- On some steps a wrong check marks which parts are right. The marks go when you move that part.
+- On some steps a wrong check marks which parts are right. The marks go once you change your answer.
 - For a simulation step, **Record this value** records the value for comparison.
 - **Show a hint** and **Show next hint** reveal hints one at a time. **Hide hints** and **Show hints** fold them. The page shows "Hints used: N of M". Hint use is recorded for review.
 - **Show solution** reveals the answer. It appears only on steps that have a solution. This is recorded. The step is only completed with help; some steps still need your own answer afterwards. On a drag or plot step, the pieces move to the answer.

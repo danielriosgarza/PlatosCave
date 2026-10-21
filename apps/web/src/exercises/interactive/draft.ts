@@ -96,19 +96,22 @@ export function interactiveDraft(view: InteractiveView, response: unknown): Inte
   }
 }
 
+/**
+ * The value nearest `v` that a control from `lo` to `hi` in steps of `step` offers. Its top is
+ * the last grid point at or below `hi`, not `hi`: the server refuses values off the grid.
+ */
+function onControl(v: number, lo: number, hi: number, step: number): number {
+  const last = toGrid(lo + Math.floor((hi - lo) / step + 1e-9) * step, lo, step);
+  return Math.min(last, Math.max(lo, toGrid(v, lo, step)));
+}
+
 /** A parameter's value as its control sends it: on its grid and in its range. */
 export function snapParam(p: Param, v: ParamValue): ParamValue {
   if (p.kind === 'point') {
     const [x, y] = Array.isArray(v) ? v : p.initial;
-    return [
-      Math.min(p.x[1], Math.max(p.x[0], toGrid(x, p.x[0], p.step))),
-      Math.min(p.y[1], Math.max(p.y[0], toGrid(y, p.y[0], p.step))),
-    ];
+    return [onControl(x, p.x[0], p.x[1], p.step), onControl(y, p.y[0], p.y[1], p.step)];
   }
-  const n = typeof v === 'number' ? v : p.initial;
-  // The last grid point at or below max: the server refuses values off the grid.
-  const last = toGrid(p.min + Math.floor((p.max - p.min) / p.step + 1e-9) * p.step, p.min, p.step);
-  return Math.min(last, Math.max(p.min, toGrid(n, p.min, p.step)));
+  return onControl(typeof v === 'number' ? v : p.initial, p.min, p.max, p.step);
 }
 
 export type Built = { ok: true; response: unknown } | { ok: false; message: string };

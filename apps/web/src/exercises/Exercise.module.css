@@ -150,7 +150,6 @@
 .sortable li[data-dragging="true"] {
   border-color: var(--pc-ink);
   background: var(--pc-soft);
-  box-shadow: 0 4px 12px rgb(0 0 0 / 0.12);
 }
 .sortLabel {
   flex: 1;
@@ -165,6 +164,12 @@
   cursor: grab;
   touch-action: none;
   user-select: none;
+}
+@media (pointer: coarse) {
+  .grip {
+    width: 44px;
+    min-height: 44px;
+  }
 }
 .grip:active {
   cursor: grabbing;
