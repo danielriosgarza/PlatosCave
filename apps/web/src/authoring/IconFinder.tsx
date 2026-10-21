@@ -9,8 +9,9 @@ const SHOWN = 60;
 type Tags = Readonly<Record<string, string>>;
 
 /**
- * Icon names matching every word of `query`, by name or by search word: names that are or
- * start with a word first, then names that contain it, then names found by their search words.
+ * Icon names matching every word of `query`, by name or by search word: names that start with
+ * the word first, then names with it as a part, then names with a part that starts with it, then
+ * names that contain it, then names found by their search words.
  */
 export function findIcons(query: string, tags: Tags): string[] {
   const words = query
@@ -22,18 +23,20 @@ export function findIcons(query: string, tags: Tags): string[] {
   for (const [name, list] of Object.entries(tags)) {
     const parts = name.split('-');
     const search = list.split(/[,\s]+/);
-    // How each word matches: 0 a part of the name, 1 the start of one, 2 inside the name,
-    // 3 the start of a search word; -1 not at all.
+    // How each word matches: 0 the first part of the name, 1 another part, 2 the start of a
+    // part, 3 inside the name, 4 the start of a search word; -1 not at all.
     const ranks = words.map((w) =>
-      parts.includes(w)
+      parts[0] === w
         ? 0
-        : parts.some((p) => p.startsWith(w))
+        : parts.includes(w)
           ? 1
-          : name.includes(w)
+          : parts.some((p) => p.startsWith(w))
             ? 2
-            : search.some((t) => t.startsWith(w))
+            : name.includes(w)
               ? 3
-              : -1,
+              : search.some((t) => t.startsWith(w))
+                ? 4
+                : -1,
     );
     if (!ranks.includes(-1)) found.push([name, ranks.reduce((a: number, b) => a + b, 0)]);
   }

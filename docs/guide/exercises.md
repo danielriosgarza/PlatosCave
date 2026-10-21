@@ -258,7 +258,7 @@ A scene is a diagram written as data. Parallax draws it as SVG from the design t
 | `function` | `y` (an expression in `x`), `domain` |
 | `curve` | `x` and `y` (expressions in `t`), `t: [from, to]` |
 | `text` | `at`, `text`, `align` (`start`, `middle`, `end`), `size` |
-| `icon` | `name`, `at` (its centre), `size` (its width in x units, default 1), `rotate` (degrees, counter-clockwise), `fill`, `label` (written under it): see [Icons](#icons) |
+| `icon` | `name`, `at` (its centre), `size` (its width in x units, more than 0, default 1), `rotate` (degrees, counter-clockwise), `fill`, `label` (written under it): see [Icons](#icons) |
 
 Every shape also takes `tone` (`ink`, `muted`, `faint`), `weight` (`thin`, `normal`, `thick`), `dash: true`, `show` (an expression: the shape is drawn only while it holds) and `each: { name: i, count: n }`, which draws the shape `n` times (at most 200) with `i` = 0, 1, … in its expressions. `fill` is `none`, `soft`, `muted` or `ink`.
 
@@ -266,7 +266,7 @@ Any number in a shape may be an expression over the step's parameters, written a
 
 ## Icons
 
-Parallax carries the [Lucide](https://lucide.dev/icons) icon set: about 1,900 drawings of objects, animals, foods, plants, vehicles, buildings, people, shapes and signs. A file names an icon as the Lucide site lists it, `name: tree-pine`, and never carries a drawing of its own. In the browser editor, **Find an icon** under a step's fields searches the icons by name or by what they show and puts the chosen name at the cursor; `parallax check` suggests the nearest names for a name it does not know. Icons are drawn in the scene's tones, so they follow the theme.
+Parallax carries the [Lucide](https://lucide.dev/icons) icon set: about 1,900 drawings of objects, animals, foods, plants, vehicles, buildings, people, shapes and signs. A file names an icon as the Lucide site lists it, `name: tree-pine`, and never carries a drawing of its own; Lucide's older names, such as `home` for `house`, are read as the icons they name now. In the browser editor, **Find an icon** under a step's fields searches the icons by name or by what they show and puts the chosen name at the cursor; `parallax check` suggests the nearest names for a name it does not know. Icons are drawn in the scene's tones, so they follow the theme.
 
 | Where | How |
 | --- | --- |

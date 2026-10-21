@@ -1,9 +1,11 @@
 // Writes the icon catalogue of interactive exercises (§9) from a copy of the lucide-static npm
 // package: `npm pack lucide-static@<version>`, unpack it, then
 // `pnpm exec tsx scripts/icons.ts <unpacked>/package`. The three files it writes are generated:
-// rerun this script to change them, never edit them.
+// rerun this script to change them, never edit them. Stored exercises name icons, so the script
+// refuses to drop a name the current files accept: a name a newer Lucide renames stays accepted
+// as an alias of the new one, as Lucide's own older names are.
 import { execFileSync } from 'node:child_process';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 const root = join(import.meta.dirname, '..');
@@ -73,9 +75,45 @@ function asPath([tag, a]: IconNode, icon: string): string {
 }
 
 const names = Object.keys(nodes).sort();
-for (const name of names) {
+// Lucide keeps an icon's older names as copies of its file: an alias is a file with no node,
+// and names the icon whose drawing it repeats.
+const drawing = (name: string) =>
+  readFileSync(join(source, 'icons', `${name}.svg`), 'utf8')
+    .split('\n')
+    .filter((line) => !line.includes('class="lucide'))
+    .join('\n');
+const byDrawing = new Map<string, string[]>();
+for (const name of names)
+  byDrawing.set(drawing(name), [...(byDrawing.get(drawing(name)) ?? []), name]);
+const aliases = new Map<string, string>();
+for (const file of readdirSync(join(source, 'icons')).sort()) {
+  const alias = file.replace(/\.svg$/, '');
+  if (!file.endsWith('.svg') || nodes[alias]) continue;
+  const same = byDrawing.get(drawing(alias)) ?? [];
+  if (same.length !== 1) throw new Error(`alias ${alias} repeats ${same.length} icons`);
+  aliases.set(alias, same[0] as string);
+}
+for (const name of [...names, ...aliases.keys()]) {
   if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(name)) throw new Error(`unexpected icon name ${name}`);
 }
+// Every name the current files accept must stay accepted.
+const current = join(root, 'packages/contracts/src/iconNames.gen.ts');
+if (existsSync(current)) {
+  const text = readFileSync(current, 'utf8');
+  const listed = (constant: string) =>
+    new RegExp(`${constant} =\\s*'([^']*)'`).exec(text)?.[1]?.split(' ').filter(Boolean) ?? [];
+  const before = [...listed('ICON_NAMES'), ...listed('ICON_ALIASES').map((p) => p.split(':')[0])];
+  const lost = before.filter((n) => n && !nodes[n] && !aliases.has(n));
+  if (lost.length) {
+    throw new Error(
+      `these names are accepted now and would no longer be, so stored exercises using them would be refused: ${lost.join(', ')}. Add each as an alias of the icon that replaces it.`,
+    );
+  }
+}
+const known = (name: string) => [
+  name,
+  ...[...aliases].flatMap(([a, n]) => (n === name ? [a] : [])),
+];
 const quote = (s: string) => `'${s.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
 const key = (name: string) => (/^[a-z][a-z0-9]*$/.test(name) ? name : quote(name));
 const notice = (what: string) =>
@@ -94,6 +132,9 @@ const files = {
     '',
     `export const ICON_NAMES = ${quote(names.join(' '))};`,
     '',
+    "/** Lucide's older names, each `alias:name`. */",
+    `export const ICON_ALIASES = ${quote([...aliases].map(([a, n]) => `${a}:${n}`).join(' '))};`,
+    '',
   ],
   'apps/web/src/exercises/interactive/iconPaths.gen.ts': [
     notice('The icons an interactive exercise draws, on a 24-unit square, as SVG path data.'),
@@ -111,9 +152,12 @@ const files = {
   'apps/web/src/authoring/iconTags.gen.ts': [
     notice('Search words for the icons an interactive exercise can draw.'),
     '',
-    "/** Each icon's search words, separated by `,`. */",
+    "/** Each icon's search words and older names, separated by `,`. */",
     'export const ICON_TAGS: Readonly<Record<string, string>> = {',
-    ...names.map((name) => `  ${key(name)}: ${quote((tags[name] ?? []).join(','))},`),
+    ...names.map(
+      (name) =>
+        `  ${key(name)}: ${quote([...new Set([...(tags[name] ?? []), ...known(name).slice(1)])].join(','))},`,
+    ),
     '};',
     '',
   ],
@@ -125,4 +169,4 @@ execFileSync('pnpm', ['exec', 'biome', 'format', '--write', ...Object.keys(files
   cwd: root,
   stdio: 'inherit',
 });
-console.log(`${names.length} icons from lucide-static ${version}`);
+console.log(`${names.length} icons and ${aliases.size} older names from lucide-static ${version}`);

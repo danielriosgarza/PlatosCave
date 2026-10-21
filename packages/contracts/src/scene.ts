@@ -125,7 +125,7 @@ const icon = z.object({
   type: z.literal('icon'),
   name: iconName,
   at: pair,
-  size: quantity.optional(),
+  size: z.union([z.number().positive(), expressionText]).optional(),
   rotate: quantity.optional(),
   fill,
   label: sceneLabel.optional(),

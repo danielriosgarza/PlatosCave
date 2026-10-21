@@ -632,6 +632,97 @@ describe('interactive steps with icons', () => {
     expect(result()).toHaveTextContent('Correct');
   });
 
+  it('A20 fills a gap and labels a diagram with pieces shown by their icons alone', async () => {
+    const user = userEvent.setup();
+    render(
+      <Harness
+        raw={{
+          kind: 'fill_blanks',
+          iconsOnly: true,
+          text: 'An [[a]] a day keeps the doctor away.',
+          gaps: [{ id: 'a', answer: 'apple' }],
+          tiles: [
+            { id: 'apple', label: 'Apple', icon: 'apple' },
+            { id: 'pear', label: 'Pear', icon: 'citrus' },
+          ],
+        }}
+      />,
+    );
+    const apple = screen.getByRole('button', { name: 'Apple' });
+    expect(apple).toHaveAttribute('title', 'Apple');
+    await waitFor(() => expect(apple.querySelector('svg path')).not.toBeNull(), {
+      timeout: 5000,
+    });
+    apple.focus();
+    await user.keyboard('{Enter}');
+    screen.getByRole('button', { name: 'Put Apple in gap 1' }).focus();
+    await user.keyboard('{Enter}');
+    await user.click(screen.getByRole('button', { name: 'Check' }));
+    expect(result()).toHaveTextContent('Correct');
+    cleanup();
+    render(
+      <Harness
+        raw={{
+          kind: 'label_diagram',
+          iconsOnly: true,
+          scene: { x: [0, 4], y: [0, 2] },
+          targets: [
+            { id: 'sky', at: [1, 1.5], answer: 'sun' },
+            { id: 'ground', at: [3, 0.5], answer: 'tree' },
+          ],
+          labels: [
+            { id: 'sun', label: 'Sun', icon: 'sun' },
+            { id: 'tree', label: 'Tree', icon: 'tree-pine' },
+          ],
+        }}
+      />,
+    );
+    const sun = screen.getByRole('button', { name: 'Sun' });
+    await waitFor(() => expect(sun.querySelector('svg path')).not.toBeNull(), { timeout: 5000 });
+    sun.focus();
+    await user.keyboard('{Enter}');
+    screen.getByRole('button', { name: 'Put Sun in target 1' }).focus();
+    await user.keyboard('{Enter}');
+    screen.getByRole('button', { name: 'Tree' }).focus();
+    await user.keyboard('{Enter}');
+    screen.getByRole('button', { name: 'Put Tree in target 2' }).focus();
+    await user.keyboard('{Enter}');
+    await user.click(screen.getByRole('button', { name: 'Check' }));
+    expect(result()).toHaveTextContent('Correct');
+  });
+
+  it('A20 moves a handle drawn as an icon with the arrow keys', async () => {
+    const user = userEvent.setup();
+    render(
+      <Harness
+        raw={{
+          kind: 'manipulate',
+          params: [
+            {
+              kind: 'point',
+              name: 'B',
+              label: 'Boat',
+              icon: 'sailboat',
+              x: [-4, 4],
+              y: [-4, 4],
+              step: 1,
+              initial: [0, 0],
+            },
+          ],
+          scene: plane,
+          target: ['B.x == 2'],
+        }}
+      />,
+    );
+    const boat = screen.getByRole('slider', { name: 'Boat' });
+    await waitFor(() => expect(drawn(boat)).toHaveLength(1), { timeout: 5000 });
+    boat.focus();
+    await user.keyboard('{ArrowRight}{ArrowRight}');
+    expect(boat).toHaveAttribute('aria-valuetext', 'Boat at (2, 0)');
+    await user.click(screen.getByRole('button', { name: 'Check' }));
+    expect(result()).toHaveTextContent('Correct');
+  });
+
   it('A20 a scene repeats an icon with its parameter and writes its caption', async () => {
     const user = userEvent.setup();
     render(

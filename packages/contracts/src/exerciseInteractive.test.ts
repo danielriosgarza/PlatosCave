@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { type ExerciseStep, exerciseProblems, exerciseStep, exerciseStepView } from './exercise';
 import { judge, parseResponse, revealOf, savedByComplete, viewStep } from './exerciseRules';
-import { iconNames, iconSuggestions } from './icons';
+import { iconName, iconNames, iconSuggestions } from './icons';
 
 const feedback = { correct: 'Right.', incorrect: 'Not yet.' };
 const step = (raw: Record<string, unknown>): ExerciseStep =>
@@ -496,6 +496,33 @@ describe('icons in interactive steps', () => {
       target: ['n == 2'],
     });
     expect(parsed.kind === 'manipulate' && parsed.scene.shapes[0]).toMatchObject({ name: 'user' });
+  });
+
+  it('A42 reads Lucide’s older names as the icons they name, and refuses a long name at once', () => {
+    expect(iconName.parse('home')).toBe('house');
+    expect(iconName.parse('Alert-Circle')).toBe('circle-alert');
+    expect(iconSuggestions('hom')[0]).toBe('house');
+    const longest = [...iconNames].reduce((a, b) => (b.length > a.length ? b : a));
+    expect(iconName.parse(longest)).toBe(longest);
+    // However long the name, refusing it is quick: it is longer than any icon's.
+    const started = performance.now();
+    const refused = iconName.safeParse('a'.repeat(1_000_000));
+    expect(performance.now() - started).toBeLessThan(200);
+    expect(refused.error?.issues[0]?.message).toBe(
+      'is not an icon (the icons are listed at lucide.dev/icons)',
+    );
+    expect(iconSuggestions('a'.repeat(longest.length + 1))).toEqual([]);
+    const sized = (size: unknown) =>
+      problems({
+        kind: 'manipulate',
+        params: [{ name: 'n', label: 'N', min: 0, max: 3, step: 1, initial: 0 }],
+        scene: { ...plane, shapes: [{ type: 'icon', name: 'user', at: [0, 0], size }] },
+        target: ['n == 2'],
+      });
+    expect(sized(0)).toEqual([
+      'Step 1 “Step” · scene · shapes · #1 · size: must be greater than 0',
+    ]);
+    expect(sized('n + 1')).toEqual([]);
   });
 
   it('A42 needs an icon on every piece of an iconsOnly step, and tiles for one with gaps', () => {

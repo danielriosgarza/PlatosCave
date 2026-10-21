@@ -1,6 +1,6 @@
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import styles from './Interactive.module.css';
-import { Glyph } from './icon';
+import { Glyph, useIconPaths } from './icon';
 
 /**
  * Tokens moved between slots (§9): the tiles of a fill-in step, the items of a sorting step,
@@ -216,7 +216,8 @@ export function useTokenDrag({
 
 /**
  * A token's face: its icon and label, and its mark after a check that marks parts. With
- * `iconOnly` the label is shown only to a screen reader.
+ * `iconOnly` the label is shown only to a screen reader once the icon is drawn; until then, or
+ * if the icons cannot be fetched, the label shows.
  */
 export function TokenFace({
   label,
@@ -229,7 +230,8 @@ export function TokenFace({
   iconOnly?: boolean;
   mark?: boolean | undefined;
 }) {
-  const alone = iconOnly && icon !== undefined;
+  const paths = useIconPaths(icon !== undefined);
+  const alone = iconOnly && icon !== undefined && paths?.[icon] !== undefined;
   return (
     <>
       {icon ? <Glyph name={icon} size={alone ? 32 : 20} /> : null}

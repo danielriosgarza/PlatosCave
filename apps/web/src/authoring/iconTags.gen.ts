@@ -47,7 +47,7 @@
  * SOFTWARE.
  */
 
-/** Each icon's search words, separated by `,`. */
+/** Each icon's search words and older names, separated by `,`. */
 export const ICON_TAGS: Readonly<Record<string, string>> = {
   'a-arrow-down': 'letter,font size,text,formatting,smaller',
   'a-arrow-up': 'letter,font size,text,formatting,larger,bigger',
@@ -59,10 +59,10 @@ export const ICON_TAGS: Readonly<Record<string, string>> = {
   'air-vent': 'air conditioner,ac,central air,cooling,climate-control',
   airplay: 'stream,cast,mirroring,screen,monitor,macos,osx',
   'alarm-clock': 'morning',
-  'alarm-clock-check': 'done,todo,tick,complete,task',
-  'alarm-clock-minus': 'remove',
+  'alarm-clock-check': 'done,todo,tick,complete,task,alarm-check',
+  'alarm-clock-minus': 'remove,alarm-minus',
   'alarm-clock-off': 'morning,turn-off',
-  'alarm-clock-plus': 'add',
+  'alarm-clock-plus': 'add,alarm-plus',
   'alarm-smoke': 'fire,alert,warning,detector,carbon monoxide,safety,equipment,amenities',
   'align-center-horizontal': 'items,flex,justify',
   'align-center-vertical': 'items,flex,justify',
@@ -118,11 +118,11 @@ export const ICON_TAGS: Readonly<Record<string, string>> = {
     'caps lock,capitals,keyboard,button,mac,forward,direction,north,faster,speed,boost',
   'arrow-down': 'backwards,reverse,direction,south',
   'arrow-down-0-1':
-    'filter,sort,ascending,descending,increasing,decreasing,rising,falling,numerical',
+    'filter,sort,ascending,descending,increasing,decreasing,rising,falling,numerical,arrow-down-01',
   'arrow-down-1-0':
-    'filter,sort,ascending,descending,increasing,decreasing,rising,falling,numerical',
+    'filter,sort,ascending,descending,increasing,decreasing,rising,falling,numerical,arrow-down-10',
   'arrow-down-a-z':
-    'filter,sort,ascending,descending,increasing,decreasing,rising,falling,alphabetical',
+    'filter,sort,ascending,descending,increasing,decreasing,rising,falling,alphabetical,arrow-down-az',
   'arrow-down-from-line': 'backwards,reverse,direction,south,download,expand,fold,vertical',
   'arrow-down-left': 'direction,south-west,diagonal',
   'arrow-down-narrow-wide': 'filter,sort,ascending,descending,increasing,decreasing,rising,falling',
@@ -132,9 +132,10 @@ export const ICON_TAGS: Readonly<Record<string, string>> = {
     'behind,direction,south,download,save,git,version control,pull,collapse,fold,vertical',
   'arrow-down-up':
     'bidirectional,two-way,2-way,swap,switch,network,traffic,flow,mobile data,internet,sort,reorder,move',
-  'arrow-down-wide-narrow': 'filter,sort,ascending,descending,increasing,decreasing,rising,falling',
+  'arrow-down-wide-narrow':
+    'filter,sort,ascending,descending,increasing,decreasing,rising,falling,sort-desc',
   'arrow-down-z-a':
-    'filter,sort,ascending,descending,increasing,decreasing,rising,falling,alphabetical,reverse',
+    'filter,sort,ascending,descending,increasing,decreasing,rising,falling,alphabetical,reverse,arrow-down-za',
   'arrow-left': 'previous,back,direction,west,<-',
   'arrow-left-from-line': 'previous,back,direction,west,expand,fold,horizontal,<-|',
   'arrow-left-right': 'bidirectional,two-way,2-way,swap,switch,transaction,reorder,move,<-,->',
@@ -145,22 +146,25 @@ export const ICON_TAGS: Readonly<Record<string, string>> = {
   'arrow-right-to-line':
     'next,forward,direction,east,tab,keyboard,mac,indent,collapse,fold,horizontal,->|',
   'arrow-up': 'forward,direction,north',
-  'arrow-up-0-1': 'filter,sort,ascending,descending,increasing,decreasing,rising,falling,numerical',
-  'arrow-up-1-0': 'filter,sort,ascending,descending,increasing,decreasing,rising,falling,numerical',
+  'arrow-up-0-1':
+    'filter,sort,ascending,descending,increasing,decreasing,rising,falling,numerical,arrow-up-01',
+  'arrow-up-1-0':
+    'filter,sort,ascending,descending,increasing,decreasing,rising,falling,numerical,arrow-up-10',
   'arrow-up-a-z':
-    'filter,sort,ascending,descending,increasing,decreasing,rising,falling,alphabetical',
+    'filter,sort,ascending,descending,increasing,decreasing,rising,falling,alphabetical,arrow-up-az',
   'arrow-up-down':
     'bidirectional,two-way,2-way,swap,switch,network,mobile data,internet,sort,reorder,move',
   'arrow-up-from-dot': 'direction,north,step,out',
   'arrow-up-from-line':
     'forward,direction,north,upload,git,version control,push,expand,fold,vertical',
   'arrow-up-left': 'direction,north-west,diagonal',
-  'arrow-up-narrow-wide': 'filter,sort,ascending,descending,increasing,decreasing,rising,falling',
+  'arrow-up-narrow-wide':
+    'filter,sort,ascending,descending,increasing,decreasing,rising,falling,sort-asc',
   'arrow-up-right': 'direction,north-east,diagonal',
   'arrow-up-to-line': 'forward,direction,north,upload,collapse,fold,vertical',
   'arrow-up-wide-narrow': 'filter,sort,ascending,descending,increasing,decreasing,rising,falling',
   'arrow-up-z-a':
-    'filter,sort,ascending,descending,increasing,decreasing,rising,falling,alphabetical,reverse',
+    'filter,sort,ascending,descending,increasing,decreasing,rising,falling,alphabetical,reverse,arrow-up-za',
   'arrows-up-from-line':
     'direction,orientation,this way up,vertical,package,box,fragile,postage,shipping',
   asterisk:
@@ -180,7 +184,7 @@ export const ICON_TAGS: Readonly<Record<string, string>> = {
     'fruit,snack,meal,lunch,ingredient,cooking,cookery,kitchen,cuisine,eating,healthy,nutrition,diet,guacamole,mexican,green,pit,seed,half,produce,vegetarian,vegan,grocery,supermarket,toast,superfood,plant based,ripe',
   award: 'achievement,badge,rosette,prize,winner',
   axe: 'hatchet,weapon,chop,sharp,equipment,fireman,firefighter,brigade,lumberjack,woodcutter,logger,forestry',
-  'axis-3d': 'gizmo,coordinates',
+  'axis-3d': 'gizmo,coordinates,axis-3-d',
   baby: 'child,childproof,children',
   backpack: 'bag,hiking,travel,camping,school,childhood',
   bacon:
@@ -204,7 +208,7 @@ export const ICON_TAGS: Readonly<Record<string, string>> = {
   'badge-plus': 'verified,unverified,add,create,new',
   'badge-pound-sterling':
     'discount,offer,sale,voucher,tag,monetization,marketing,finance,financial,exchange,transaction,payment,british,gbp,£',
-  'badge-question-mark': 'verified,unverified,help',
+  'badge-question-mark': 'verified,unverified,help,badge-help',
   'badge-russian-ruble':
     'discount,offer,sale,voucher,tag,monetization,marketing,finance,financial,exchange,transaction,payment,rub,₽',
   'badge-swiss-franc':
@@ -265,9 +269,9 @@ export const ICON_TAGS: Readonly<Record<string, string>> = {
   'bell-plus': 'notification,silent,reminder,add,create,new',
   'bell-ring': 'alarm,notification,sound,reminder',
   'between-horizontal-end':
-    'insert,add,left,slot,squeeze,space,vertical,grid,table,rows,cells,excel,spreadsheet,accountancy,data,enter,entry,entries,blocks,rectangles,chevron',
+    'insert,add,left,slot,squeeze,space,vertical,grid,table,rows,cells,excel,spreadsheet,accountancy,data,enter,entry,entries,blocks,rectangles,chevron,between-horizonal-end',
   'between-horizontal-start':
-    'insert,add,right,slot,squeeze,space,vertical,grid,table,rows,cells,excel,spreadsheet,accountancy,data,enter,entry,entries,blocks,rectangles,chevron',
+    'insert,add,right,slot,squeeze,space,vertical,grid,table,rows,cells,excel,spreadsheet,accountancy,data,enter,entry,entries,blocks,rectangles,chevron,between-horizonal-start',
   'between-vertical-end':
     'insert,add,top,slot,squeeze,space,vertical,grid,table,columns,cells,data,enter,entry,entries,blocks,rectangles,chevron',
   'between-vertical-start':
@@ -307,13 +311,13 @@ export const ICON_TAGS: Readonly<Record<string, string>> = {
   'book-audio':
     'audiobook,reading,listening,sound,story,fiction,novel,information,knowledge,education,student,study,learning,research',
   'book-bookmark':
-    'dictionary,reading,booklet,magazine,leaflet,pamphlet,tome,library,writing,written,writer,author,story,script,fiction,novel,information,knowledge,education,high school,university,college,academy,student,study,learning,homework,research,documentation,saved,later,future,reference,index,code,coding,version control,git,repository',
+    'dictionary,reading,booklet,magazine,leaflet,pamphlet,tome,library,writing,written,writer,author,story,script,fiction,novel,information,knowledge,education,high school,university,college,academy,student,study,learning,homework,research,documentation,saved,later,future,reference,index,code,coding,version control,git,repository,book-marked',
   'book-check':
     'read,booklet,magazine,leaflet,pamphlet,library,written,authored,published,informed,knowledgeable,educated,schooled,homework,examined,tested,marked,passed,graduated,studied,learned,lesson,researched,documented,revealed,blank,plain language,true,truth,verified,corrected,task,todo,done,completed,finished,ticked',
   'book-copy':
     'code,coding,version control,git,repository,clone,fork,duplicate,multiple,books,library,copies,copied,plagiarism,plagiarised,plagiarized,reading list,information,informed,knowledge,knowledgeable,knowledgable,education,high school,university,college,academy,student,study,learning,research,smart,intelligent,intellectual',
   'book-dashed':
-    'code,coding,version control,git,repository,template,draft,script,screenplay,writing,writer,author,unwritten,unpublished,untold',
+    'code,coding,version control,git,repository,template,draft,script,screenplay,writing,writer,author,unwritten,unpublished,untold,book-template',
   'book-down': 'code,coding,version control,git,repository,pull',
   'book-headphones':
     'audiobook,reading,listening,sound,story,fiction,novel,information,knowledge,education,student,study,learning,research',
@@ -362,7 +366,7 @@ export const ICON_TAGS: Readonly<Record<string, string>> = {
   'bow-arrow': 'archer,archery,game,war,weapon',
   box: 'cube,package,container,storage,geometry,3d,isometric',
   boxes: 'cubes,packages,parts,group,units,collection,cluster,geometry',
-  braces: 'json,code,token,curly brackets,data,{,}',
+  braces: 'json,code,token,curly brackets,data,{,},curly-braces',
   brackets: 'code,token,array,list,square,[,]',
   brain:
     'medical,mind,mental,intellect,cerebral,consciousness,genius,artificial intelligence,ai,think,thought,insight,intelligent,smart',
@@ -401,7 +405,8 @@ export const ICON_TAGS: Readonly<Record<string, string>> = {
   'bug-off': 'issue,fixed,resolved,testing,debug,code,insect,kill,exterminate,pest control',
   'bug-play': 'issue,testing,debug,reproduce,code,insect',
   building: 'organisation,organization',
-  'building-complex': 'business,company,enterprise,skyscraper,organisation,organization,city',
+  'building-complex':
+    'business,company,enterprise,skyscraper,organisation,organization,city,building-2',
   'building-complex-plus':
     'business,company,enterprise,skyscraper,organisation,organization,city,new,add,create,increase,office,headquarters,startup,registration,onboarding,real estate,property',
   bus: 'bus,vehicle,transport,trip',
@@ -480,31 +485,31 @@ export const ICON_TAGS: Readonly<Record<string, string>> = {
   'cctv-off': 'camera,surveillance,recording,film,videotape,crime,watching',
   certificate:
     'award,ribbon,medal,achievement,pinned,badge,recognition,laurel,commendation,diploma,official,proof,fact,verified,license,warrant,authorization,legal,ownership,credential,ssl,tls,security,trust,cybersecurity,authority,graduation,study',
-  'chart-area': 'statistics,analytics,diagram,graph,area',
-  'chart-bar': 'statistics,analytics,diagram,graph',
-  'chart-bar-big': 'statistics,analytics,diagram,graph',
+  'chart-area': 'statistics,analytics,diagram,graph,area,area-chart',
+  'chart-bar': 'statistics,analytics,diagram,graph,bar-chart-horizontal',
+  'chart-bar-big': 'statistics,analytics,diagram,graph,bar-chart-horizontal-big',
   'chart-bar-decreasing': 'statistics,analytics,diagram,graph,trending down',
   'chart-bar-increasing': 'statistics,analytics,diagram,graph,trending up',
   'chart-bar-stacked': 'statistics,analytics,diagram,graph,multivariate,categorical,comparison',
   'chart-candlestick':
-    'trading,trader,financial,markets,portfolio,assets,prices,value,valuation,commodities,currencies,currency,stocks,exchange,hedge fund,statistics,analytics,diagram,graph',
-  'chart-column': 'statistics,analytics,diagram,graph',
-  'chart-column-big': 'statistics,analytics,diagram,graph',
+    'trading,trader,financial,markets,portfolio,assets,prices,value,valuation,commodities,currencies,currency,stocks,exchange,hedge fund,statistics,analytics,diagram,graph,candlestick-chart',
+  'chart-column': 'statistics,analytics,diagram,graph,bar-chart-3',
+  'chart-column-big': 'statistics,analytics,diagram,graph,bar-chart-big',
   'chart-column-decreasing': 'statistics,analytics,diagram,graph,trending down',
-  'chart-column-increasing': 'statistics,analytics,diagram,graph,trending up',
+  'chart-column-increasing': 'statistics,analytics,diagram,graph,trending up,bar-chart-4',
   'chart-column-stacked': 'statistics,analytics,diagram,graph,multivariate,categorical,comparison',
   'chart-gantt': 'diagram,graph,timeline,planning',
-  'chart-line': 'statistics,analytics,diagram,graph',
+  'chart-line': 'statistics,analytics,diagram,graph,line-chart',
   'chart-network':
     'statistics,analytics,diagram,graph,topology,cluster,web,nodes,connections,edges',
-  'chart-no-axes-column': 'statistics,analytics,diagram,graph',
+  'chart-no-axes-column': 'statistics,analytics,diagram,graph,bar-chart-2',
   'chart-no-axes-column-decreasing': 'statistics,analytics,diagram,graph,trending down',
-  'chart-no-axes-column-increasing': 'statistics,analytics,diagram,graph,trending up',
+  'chart-no-axes-column-increasing': 'statistics,analytics,diagram,graph,trending up,bar-chart',
   'chart-no-axes-combined': 'statistics,analytics,diagram,graph,trending up',
   'chart-no-axes-gantt':
-    'projects,manage,overview,roadmap,plan,intentions,timeline,deadline,date,event,range,period,productivity,work,agile,code,coding',
-  'chart-pie': 'statistics,analytics,diagram,presentation',
-  'chart-scatter': 'statistics,analytics,diagram,graph',
+    'projects,manage,overview,roadmap,plan,intentions,timeline,deadline,date,event,range,period,productivity,work,agile,code,coding,gantt-chart',
+  'chart-pie': 'statistics,analytics,diagram,presentation,pie-chart',
+  'chart-scatter': 'statistics,analytics,diagram,graph,scatter-chart',
   'chart-spline':
     'statistics,analytics,diagram,graph,curve,continuous,smooth,polynomial,quadratic,function,interpolation',
   check: 'done,todo,tick,complete,task',
@@ -540,21 +545,24 @@ export const ICON_TAGS: Readonly<Record<string, string>> = {
   cigarette: 'smoking',
   'cigarette-off': 'smoking,no-smoking',
   circle: 'off,zero,record,shape',
-  'circle-alert': 'warning,alert,danger,exclamation mark',
-  'circle-arrow-down': 'backwards,reverse,direction,south,sign,button',
-  'circle-arrow-left': 'previous,back,direction,west,sign,turn,button,<-',
-  'circle-arrow-out-down-left': 'outwards,direction,south-west,diagonal',
-  'circle-arrow-out-down-right': 'outwards,direction,south-east,diagonal',
-  'circle-arrow-out-up-left': 'outwards,direction,north-west,diagonal,keyboard,button,escape',
-  'circle-arrow-out-up-right': 'outwards,direction,north-east,diagonal',
-  'circle-arrow-right': 'next,forward,direction,east,sign,turn,button,->',
-  'circle-arrow-up': 'forward,direction,north,sign,button',
-  'circle-check': 'done,todo,tick,complete,task',
-  'circle-check-big': 'done,todo,tick,complete,task',
-  'circle-chevron-down': 'back,menu',
-  'circle-chevron-left': 'back,previous,less than,fewer,menu,<',
-  'circle-chevron-right': 'back,more than,greater,menu,>',
-  'circle-chevron-up': 'caret,ahead,menu,^',
+  'circle-alert': 'warning,alert,danger,exclamation mark,alert-circle',
+  'circle-arrow-down': 'backwards,reverse,direction,south,sign,button,arrow-down-circle',
+  'circle-arrow-left': 'previous,back,direction,west,sign,turn,button,<-,arrow-left-circle',
+  'circle-arrow-out-down-left':
+    'outwards,direction,south-west,diagonal,arrow-down-left-from-circle',
+  'circle-arrow-out-down-right':
+    'outwards,direction,south-east,diagonal,arrow-down-right-from-circle',
+  'circle-arrow-out-up-left':
+    'outwards,direction,north-west,diagonal,keyboard,button,escape,arrow-up-left-from-circle',
+  'circle-arrow-out-up-right': 'outwards,direction,north-east,diagonal,arrow-up-right-from-circle',
+  'circle-arrow-right': 'next,forward,direction,east,sign,turn,button,->,arrow-right-circle',
+  'circle-arrow-up': 'forward,direction,north,sign,button,arrow-up-circle',
+  'circle-check': 'done,todo,tick,complete,task,check-circle-2',
+  'circle-check-big': 'done,todo,tick,complete,task,check-circle',
+  'circle-chevron-down': 'back,menu,chevron-down-circle',
+  'circle-chevron-left': 'back,previous,less than,fewer,menu,<,chevron-left-circle',
+  'circle-chevron-right': 'back,more than,greater,menu,>,chevron-right-circle',
+  'circle-chevron-up': 'caret,ahead,menu,^,chevron-up-circle',
   'circle-chevrons-down':
     'bottom,descend,page,page down,scroll,jump,south,caret,button,skip,end,last page,latest,feed,chat,pagination,fast,media',
   'circle-chevrons-left':
@@ -566,7 +574,7 @@ export const ICON_TAGS: Readonly<Record<string, string>> = {
   'circle-dashed': 'pending,dot,progress,issue,draft,code,coding,version control',
   'circle-dashed-check':
     'approved,pending,changes,revision,reapproval,published,schedule,assignment,request,review,progress,issue,draft,code,coding,version control',
-  'circle-divide': 'calculate,math,÷,/',
+  'circle-divide': 'calculate,math,÷,/,divide-circle',
   'circle-dollar-sign': 'monetization,marketing,currency,money,payment',
   'circle-dot':
     'pending,dot,progress,issue,code,coding,version control,choices,multiple choice,choose,album,music,songs,format,cd,dvd,vinyl,sleeve,cover,platinum,compilation,ep,recording,playback,spin,rotate,rpm,dj',
@@ -580,36 +588,37 @@ export const ICON_TAGS: Readonly<Record<string, string>> = {
   'circle-fading-play':
     'short clips,shorts,reels,stories,video,highlights,social media,content,preview,teaser,clip,short form,vertical video',
   'circle-fading-plus': 'stories,social media,sharing,content',
-  'circle-gauge': 'dashboard,dial,meter,speed,pressure,measure,level',
+  'circle-gauge': 'dashboard,dial,meter,speed,pressure,measure,level,gauge-circle',
   'circle-minus':
-    'subtract,remove,decrease,reduce,calculate,line,operator,code,coding,minimum,downgrade,-',
+    'subtract,remove,decrease,reduce,calculate,line,operator,code,coding,minimum,downgrade,-,minus-circle',
   'circle-off':
     'diameter,zero,Ø,nothing,null,void,cancel,ban,no,stop,forbidden,prohibited,error,incorrect,mistake,wrong,failure',
-  'circle-parking': 'parking lot,car park',
-  'circle-parking-off': 'parking lot,car park,no parking',
-  'circle-pause': 'music,audio,stop',
-  'circle-percent': 'verified,unverified,sale,discount,offer,marketing,sticker,price tag',
+  'circle-parking': 'parking lot,car park,parking-circle',
+  'circle-parking-off': 'parking lot,car park,no parking,parking-circle-off',
+  'circle-pause': 'music,audio,stop,pause-circle',
+  'circle-percent':
+    'verified,unverified,sale,discount,offer,marketing,sticker,price tag,percent-circle',
   'circle-pile':
     'off,zero,record,shape,circle-pile,circle,pile,stack,layer,structure,form,group,collection,stock,inventory,materials,warehouse',
-  'circle-play': 'music,start,run',
+  'circle-play': 'music,start,run,play-circle',
   'circle-plus':
-    'add,new,increase,increment,positive,calculate,crosshair,aim,target,scope,sight,reticule,maximum,upgrade,extra,operator,join,concatenate,code,coding,+',
+    'add,new,increase,increment,positive,calculate,crosshair,aim,target,scope,sight,reticule,maximum,upgrade,extra,operator,join,concatenate,code,coding,+,plus-circle',
   'circle-pound-sterling': 'monetization,coin,penny,marketing,currency,money,payment,british,gbp,£',
   'circle-power':
-    'on,off,device,switch,toggle,binary,boolean,reboot,restart,button,keyboard,troubleshoot',
-  'circle-question-mark': 'question mark',
+    'on,off,device,switch,toggle,binary,boolean,reboot,restart,button,keyboard,troubleshoot,power-circle',
+  'circle-question-mark': 'question mark,circle-help,help-circle',
   'circle-slash':
     'diameter,zero,Ø,nothing,null,void,cancel,ban,no,stop,forbidden,prohibited,error,incorrect,mistake,wrong,failure,divide,division,or,/',
   'circle-slash-2':
-    'diameter,zero,ø,nothing,null,void,ban,math,divide,division,half,split,/,average,avg,mean,median,normal',
+    'diameter,zero,ø,nothing,null,void,ban,math,divide,division,half,split,/,average,avg,mean,median,normal,circle-slashed',
   'circle-small': 'shape,bullet,gender,genderless',
   'circle-star':
     'badge,medal,honour,decoration,order,pin,laurel,trophy,medallion,insignia,bronze,silver,gold',
-  'circle-stop': 'media,music',
-  'circle-user': 'person,account,contact',
-  'circle-user-round': 'person,account,contact',
+  'circle-stop': 'media,music,stop-circle',
+  'circle-user': 'person,account,contact,user-circle',
+  'circle-user-round': 'person,account,contact,user-circle-2',
   'circle-x':
-    'cancel,close,cross,delete,remove,times,clear,error,incorrect,wrong,mistake,failure,linter,multiply,multiplication',
+    'cancel,close,cross,delete,remove,times,clear,error,incorrect,wrong,mistake,failure,linter,multiply,multiplication,x-circle',
   'circuit-board': 'computing,electricity,electronics',
   citrus: 'lemon,orange,grapefruit,fruit',
   clapperboard: 'movie,film,video,camera,cinema,cut,action,television,tv,show,entertainment',
@@ -624,8 +633,8 @@ export const ICON_TAGS: Readonly<Record<string, string>> = {
   'clipboard-list': 'copy,paste,tasks',
   'clipboard-minus': 'copy,delete,remove,erase,document,medical,report,doctor',
   'clipboard-paste': 'copy,paste',
-  'clipboard-pen': 'paste,signature',
-  'clipboard-pen-line': 'paste',
+  'clipboard-pen': 'paste,signature,clipboard-edit',
+  'clipboard-pen-line': 'paste,clipboard-signature',
   'clipboard-plus': 'copy,paste,add,create,new,document,medical,report,doctor',
   'clipboard-type': 'paste,format,text',
   'clipboard-x': 'copy,paste,discard,remove',
@@ -660,7 +669,7 @@ export const ICON_TAGS: Readonly<Record<string, string>> = {
     'storage,memory,bytes,servers,backup,time machine,rotate,synchronize,synchronise,refresh,reconnect,transfer,data,security,upload,save,remote,safety',
   'cloud-check': 'sync,network,success,done,completed,saved,persisted',
   'cloud-cog': 'computing,ai,cluster,network',
-  'cloud-download': 'import',
+  'cloud-download': 'import,download-cloud',
   'cloud-drizzle': 'weather,shower',
   'cloud-fog': 'weather,mist',
   'cloud-hail': 'weather,rainfall',
@@ -675,20 +684,21 @@ export const ICON_TAGS: Readonly<Record<string, string>> = {
   'cloud-sun-rain': 'weather,partly,rainfall',
   'cloud-sync':
     'synchronize,synchronise,refresh,reconnect,transfer,backup,storage,upload,download,connection,network,data',
-  'cloud-upload': 'file',
+  'cloud-upload': 'file,upload-cloud',
   cloudy: 'weather,clouds',
   clover: 'leaf,luck,plant',
   club: 'shape,suit,playing,cards',
   code: 'source,programming,html,xml',
-  'code-xml': 'source,programming,html,xml',
+  'code-xml': 'source,programming,html,xml,code-2',
   coffee: 'drink,cup,mug,tea,cafe,hot,beverage',
   cog: 'computing,settings,cog,edit,gear,preferences,controls,configuration,fixed,build,construction,parts',
   coins: 'money,cash,finance,gamble',
   'columns-2':
-    'lines,list,queue,preview,panel,parallel,series,split,vertical,horizontal,half,center,middle,even,sidebar,drawer,gutter,fold,reflow,typography,pagination,pages',
+    'lines,list,queue,preview,panel,parallel,series,split,vertical,horizontal,half,center,middle,even,sidebar,drawer,gutter,fold,reflow,typography,pagination,pages,columns',
   'columns-3':
-    'lines,list,queue,preview,parallel,series,split,vertical,horizontal,thirds,triple,center,middle,alignment,even,sidebars,drawers,gutters,fold,reflow,typography,pagination,pages',
-  'columns-3-cog': 'columns,settings,customize,table,grid,adjust,configuration,panel,layout',
+    'lines,list,queue,preview,parallel,series,split,vertical,horizontal,thirds,triple,center,middle,alignment,even,sidebars,drawers,gutters,fold,reflow,typography,pagination,pages,panels-left-right',
+  'columns-3-cog':
+    'columns,settings,customize,table,grid,adjust,configuration,panel,layout,columns-settings,table-config',
   'columns-4':
     'lines,list,queue,preview,parallel,series,split,vertical,horizontal,thirds,triple,center,middle,alignment,even,sidebars,drawers,gutters,fold,reflow,typography,pagination,pages,prison,jail,bars,sentence,police,cops,cell,crime,criminal,justice,law,enforcement,grill',
   combine: 'cubes,packages,parts,units,collection,cluster,combine,gather,merge',
@@ -700,7 +710,7 @@ export const ICON_TAGS: Readonly<Record<string, string>> = {
   cone: 'conical,triangle,triangular,geometry,filter,funnel,hopper,spotlight,searchlight',
   construction: 'roadwork,maintenance,blockade,barricade',
   contact: 'user,person,family,friend,acquaintance,listing,networking',
-  'contact-round': 'user,person,family,friend,acquaintance,listing,networking',
+  'contact-round': 'user,person,family,friend,acquaintance,listing,networking,contact-2',
   container: 'storage,shipping,freight,supply chain,environment,devops,code,coding',
   contrast: 'display,accessibility',
   cookie: 'biscuit,snack,dessert,food,sweet,bakery,consent,privacy,legal,tracking,browser,website',
@@ -771,7 +781,8 @@ export const ICON_TAGS: Readonly<Record<string, string>> = {
   diamond: 'square,rectangle,oblique,rhombus,shape,suit,playing,cards',
   'diamond-minus':
     'keyframe,subtract,remove,decrease,reduce,calculator,button,keyboard,line,divider,separator,horizontal rule,hr,html,markup,markdown,---,toolbar,operator,code,coding,minimum,downgrade',
-  'diamond-percent': 'verified,unverified,sale,discount,offer,marketing,sticker,price tag',
+  'diamond-percent':
+    'verified,unverified,sale,discount,offer,marketing,sticker,price tag,percent-diamond',
   'diamond-plus':
     'keyframe,add,new,increase,increment,positive,calculate,toolbar,crosshair,aim,target,scope,sight,reticule,maximum,upgrade,extra,+',
   'dice-1': 'dice,random,tabletop,1,board,game',
@@ -818,7 +829,7 @@ export const ICON_TAGS: Readonly<Record<string, string>> = {
   dumbbell: 'barbell,weight,workout,gym',
   ear: 'hearing,noise,audio,accessibility',
   'ear-off': 'hearing,hard of hearing,hearing loss,deafness,noise,silence,audio,accessibility',
-  earth: 'world,browser,language,translate,globe',
+  earth: 'world,browser,language,translate,globe,globe-2',
   'earth-lock':
     'vpn,private,privacy,network,world,browser,security,encryption,protection,connection',
   eclipse:
@@ -826,14 +837,14 @@ export const ICON_TAGS: Readonly<Record<string, string>> = {
   egg: 'bird,chicken,nest,hatch,shell,incubate,soft boiled,hard,breakfast,brunch,morning,easter',
   'egg-fried': 'food,breakfast',
   'egg-off': 'egg free,vegan,hatched,bad egg',
-  'eighth-note': 'audio,music,sound,note,quaver',
+  'eighth-note': 'audio,music,sound,note,quaver,music-2',
   'eighth-notes': 'audio,music,sound,notes,quavers',
   eject:
     'disc,drive,dvd,blu-ray,cd,media,optical,optical drive,removable media,storage,tray,unmount,usb',
   ellipse: 'shape,geometry,rounded,smooth,outline,form,boundary,curve,shapes,ellipse,oval',
   ellipsis:
-    'et cetera,etc,loader,loading,progress,pending,throbber,menu,options,operator,code,coding,spread,rest,more,further,extra,overflow,dots,…,...',
-  'ellipsis-vertical': 'menu,options,spread,more,further,extra,overflow,dots,…,...',
+    'et cetera,etc,loader,loading,progress,pending,throbber,menu,options,operator,code,coding,spread,rest,more,further,extra,overflow,dots,…,...,more-horizontal',
+  'ellipsis-vertical': 'menu,options,spread,more,further,extra,overflow,dots,…,...,more-vertical',
   engine:
     'vehicle,power,energy,drive,repair,car,motor,mechanical,diagnostics,maintenance,warning,dashboard,parts',
   equal: 'calculate,math,operator,assignment,code,=',
@@ -853,15 +864,15 @@ export const ICON_TAGS: Readonly<Record<string, string>> = {
   'eye-closed': 'view,watch,see,hide,conceal,mask,hidden,visibility,vision',
   'eye-dashed': 'view,watch,see,hide,conceal,mask,hidden,invisible,visibility,vision',
   'eye-off': 'view,watch,see,hide,conceal,mask,hidden,visibility,vision',
-  'face-angry': 'anger,rage,fury,resentment,irritation,disgust,emoji,emotion',
+  'face-angry': 'anger,rage,fury,resentment,irritation,disgust,emoji,emotion,angry',
   'face-expressionless': 'nuisance,annoyed,annoyance,frustration,emoji,emotion',
   'face-grinning':
     'happy,happiness,good,laugh,broad smile,pleasure,good cheer,humour,funny,emoji,emotion',
   'face-neutral': 'emoji,neutral,emotion,meh,blank stare,social masking,irritation,concern,deadpan',
-  'face-slightly-frowning': 'emoji,bad,sadness,emotion,concern,disappointment',
+  'face-slightly-frowning': 'emoji,bad,sadness,emotion,concern,disappointment,frown',
   'face-slightly-smiling':
     'smile,happy,happiness,good,positive,friendly,patronizing,passive aggressive,ironic,emoji,emotion',
-  'face-slightly-smiling-plus': 'smile,happy,good,react,reaction,emoji,add,emotion',
+  'face-slightly-smiling-plus': 'smile,happy,good,react,reaction,emoji,add,emotion,smile-plus',
   factory: 'building,business,energy,industry,manufacture,sector',
   fan: 'air,cooler,ventilation,ventilator,blower',
   'fast-forward': 'music',
@@ -873,47 +884,48 @@ export const ICON_TAGS: Readonly<Record<string, string>> = {
     'big wheel,daisy wheel,observation,attraction,entertainment,amusement park,theme park,funfair',
   file: 'document',
   'file-archive': 'zip,package,archive',
-  'file-axis-3d': 'model,3d,axis,coordinates',
-  'file-badge': 'award,achievement,badge,rosette,prize,winner',
+  'file-axis-3d': 'model,3d,axis,coordinates,file-axis-3-d',
+  'file-badge': 'award,achievement,badge,rosette,prize,winner,file-badge-2',
   'file-box':
     'document,page,sheet,cube,box,3d,model,asset,object,geometry,mesh,ar,augmented reality,cad,design,blueprint,draft,package,scene',
-  'file-braces': 'code,json,curly braces,curly brackets',
-  'file-braces-corner': 'code,json,curly braces,curly brackets',
-  'file-chart-column': 'statistics,analytics,diagram,graph,presentation',
-  'file-chart-column-increasing': 'statistics,analytics,diagram,graph,presentation,trending up',
-  'file-chart-line': 'statistics,analytics,diagram,graph,presentation',
-  'file-chart-pie': 'statistics,analytics,diagram,graph,presentation',
+  'file-braces': 'code,json,curly braces,curly brackets,file-json',
+  'file-braces-corner': 'code,json,curly braces,curly brackets,file-json-2',
+  'file-chart-column': 'statistics,analytics,diagram,graph,presentation,file-bar-chart-2',
+  'file-chart-column-increasing':
+    'statistics,analytics,diagram,graph,presentation,trending up,file-bar-chart',
+  'file-chart-line': 'statistics,analytics,diagram,graph,presentation,file-line-chart',
+  'file-chart-pie': 'statistics,analytics,diagram,graph,presentation,file-pie-chart',
   'file-check': 'done,document,todo,tick,complete,task',
-  'file-check-corner': 'done,document,todo,tick,complete,task',
+  'file-check-corner': 'done,document,todo,tick,complete,task,file-check-2',
   'file-clock': 'history,log,clock',
   'file-code': 'script,document,gist,html,xml,property list,plist',
-  'file-code-corner': 'script,document,html,xml,property list,plist',
-  'file-cog': 'executable,settings,cog,edit,gear',
+  'file-code-corner': 'script,document,html,xml,property list,plist,file-code-2',
+  'file-cog': 'executable,settings,cog,edit,gear,file-cog-2',
   'file-diff': 'diff,patch',
   'file-digit': 'number,document',
   'file-down': 'download,import,export',
-  'file-exclamation-point': 'hidden,warning,alert,danger,protected,exclamation mark',
-  'file-headphone': 'music,audio,sound,headphones',
+  'file-exclamation-point': 'hidden,warning,alert,danger,protected,exclamation mark,file-warning',
+  'file-headphone': 'music,audio,sound,headphones,file-audio-2,file-audio',
   'file-heart': 'heart,favourite,bookmark,quick link',
   'file-image': 'image,graphics,photo,picture',
   'file-input': 'document',
-  'file-key': 'key,private,public,security',
-  'file-lock': 'lock,password,security',
+  'file-key': 'key,private,public,security,file-key-2',
+  'file-lock': 'lock,password,security,file-lock-2',
   'file-minus': 'delete,remove,erase,document',
-  'file-minus-corner': 'document',
+  'file-minus-corner': 'document,file-minus-2',
   'file-music':
     'audio,sound,noise,track,digital,recording,playback,piano,keyboard,keys,notes,chord,midi,octave',
   'file-output': 'document',
-  'file-pen': 'signature',
-  'file-pen-line': 'edit',
-  'file-play': 'movie,video,film',
+  'file-pen': 'signature,file-edit',
+  'file-pen-line': 'edit,file-signature',
+  'file-play': 'movie,video,film,file-video',
   'file-plus': 'add,create,new,document',
-  'file-plus-corner': 'add,create,new,document',
-  'file-question-mark': 'readme,help,question',
+  'file-plus-corner': 'add,create,new,document,file-plus-2',
+  'file-question-mark': 'readme,help,question,file-question',
   'file-scan': 'scan,code,qr-code',
   'file-search': 'lost,document,find,browser,lens',
-  'file-search-corner': 'lost,document,find,browser,lens',
-  'file-signal': 'audio,music,volume',
+  'file-search-corner': 'lost,document,find,browser,lens,file-search-2',
+  'file-signal': 'audio,music,volume,file-volume-2',
   'file-sliders':
     'cogged,gear,mechanical,machinery,configuration,controls,preferences,settings,system,admin,edit,executable',
   'file-spreadsheet': 'spreadsheet,sheet,table',
@@ -922,17 +934,17 @@ export const ICON_TAGS: Readonly<Record<string, string>> = {
   'file-terminal': 'terminal,bash,script,executable',
   'file-text': 'data,txt,pdf,document',
   'file-type': 'font,text,typography,type',
-  'file-type-corner': 'font,text,typography,type',
+  'file-type-corner': 'font,text,typography,type,file-type-2',
   'file-up': 'upload,import,export',
   'file-user':
     'person,personal information,people,listing,networking,document,contact,cover letter,resume,cv,curriculum vitae,application form',
-  'file-video-camera': 'movie,video,film',
+  'file-video-camera': 'movie,video,film,file-video-2',
   'file-volume': 'audio,music,volume',
   'file-x': 'lost,delete,remove,document',
-  'file-x-corner': 'lost,delete,remove,document',
+  'file-x-corner': 'lost,delete,remove,document,file-x-2',
   files: 'multiple,copy,documents',
   film: 'movie,video,reel,camera,cinema,entertainment',
-  'fingerprint-pattern': '2fa,authentication,biometric,identity,security',
+  'fingerprint-pattern': '2fa,authentication,biometric,identity,security,fingerprint',
   'fire-extinguisher':
     'flames,smoke,foam,water,spray,hose,firefighter,fireman,department,brigade,station,emergency,suppress,compressed,tank,cylinder,safety,equipment,amenities',
   fish: 'dish,restaurant,course,meal,seafood,pet,sea,marine',
@@ -968,7 +980,7 @@ export const ICON_TAGS: Readonly<Record<string, string>> = {
   'folder-clock': 'history,directory,clock',
   'folder-closed': 'directory,closed',
   'folder-code': 'directory,coding,develop,software',
-  'folder-cog': 'directory,settings,control,preferences,cog,edit,gear',
+  'folder-cog': 'directory,settings,control,preferences,cog,edit,gear,folder-cog-2',
   'folder-dot':
     'directory,root,project,pinned,active,current,cogged,gear,mechanical,machinery,configuration,controls,preferences,settings,system,admin,edit',
   'folder-down': 'directory,download,import,export',
@@ -984,7 +996,7 @@ export const ICON_TAGS: Readonly<Record<string, string>> = {
   'folder-open': 'directory',
   'folder-open-dot': 'directory,root,project,active,current,pinned',
   'folder-output': 'directory,import,export',
-  'folder-pen': 'directory,rename',
+  'folder-pen': 'directory,rename,folder-edit',
   'folder-plus': 'directory,add,create,new',
   'folder-root': 'directory,root,project,git,repo',
   'folder-search': 'directory,search,find,lost,browser,lens',
@@ -1009,7 +1021,7 @@ export const ICON_TAGS: Readonly<Record<string, string>> = {
   fullscreen: 'expand,zoom,preview,focus,camera,lens,image',
   funnel: 'filter,hopper',
   'funnel-plus': 'filter,hopper,add,create,new',
-  'funnel-x': 'filter,hopper,remove,delete',
+  'funnel-x': 'filter,hopper,remove,delete,filter-x',
   galaxy:
     'astronomy,space,stars,cosmos,universe,spiral,milky way,nebula,cosmology,interstellar,celestial,constellation,stargazing,spaceflight',
   'gallery-horizontal': 'carousel,pictures,images,scroll,swipe,album,portfolio',
@@ -1040,7 +1052,7 @@ export const ICON_TAGS: Readonly<Record<string, string>> = {
   'git-branch': 'code,version control,vcs,repository',
   'git-branch-minus': 'code,version control,vcs,repository,delete,remove,-',
   'git-branch-plus': 'code,version control,vcs,repository,add,create,+',
-  'git-commit-horizontal': 'code,version control,waypoint,stop,station',
+  'git-commit-horizontal': 'code,version control,waypoint,stop,station,git-commit',
   'git-commit-vertical': 'code,version control,waypoint,stop,station',
   'git-compare': 'code,version control,diff',
   'git-compare-arrows': 'code,version control,diff',
@@ -1077,16 +1089,16 @@ export const ICON_TAGS: Readonly<Record<string, string>> = {
   'graph-star':
     'mind map,network,hub,nodes,links,connections,relationships,dependencies,bonds,structure,topology,cluster,thoughts,ideas,concepts,molecule',
   'grid-2x2':
-    'table,rows,columns,blocks,plot,land,geometry,measure,size,width,height,distance,surface area,square meter,acre,window,skylight',
+    'table,rows,columns,blocks,plot,land,geometry,measure,size,width,height,distance,surface area,square meter,acre,window,skylight,grid-2-x-2',
   'grid-2x2-check':
-    'table,rows,columns,blocks,plot,land,geometry,measure,data,size,width,height,distance,surface area,square meter,acre',
+    'table,rows,columns,blocks,plot,land,geometry,measure,data,size,width,height,distance,surface area,square meter,acre,grid-2-x-2-check',
   'grid-2x2-plus':
-    'table,rows,columns,blocks,plot,land,geometry,measure,data,size,width,height,distance,surface area,square meter,acre',
+    'table,rows,columns,blocks,plot,land,geometry,measure,data,size,width,height,distance,surface area,square meter,acre,grid-2-x-2-plus',
   'grid-2x2-x':
-    'table,rows,columns,data,blocks,plot,land,geometry,measure,size,width,height,distance,surface area,square meter,acre',
+    'table,rows,columns,data,blocks,plot,land,geometry,measure,size,width,height,distance,surface area,square meter,acre,grid-2-x-2-x',
   'grid-3x2':
     'table,rows,columns,blocks,plot,land,geometry,measure,size,width,height,distance,surface area,square meter,acre,window',
-  'grid-3x3': 'table,rows,columns',
+  'grid-3x3': 'table,rows,columns,grid-3-x-3,grid',
   grip: 'grab,dots,handle,move,drag',
   'grip-horizontal': 'grab,dots,handle,move,drag',
   'grip-vertical': 'grab,dots,handle,move,drag',
@@ -1097,7 +1109,7 @@ export const ICON_TAGS: Readonly<Record<string, string>> = {
     'acoustic,instrument,strings,riff,rock,band,country,concert,performance,play,lead,loud,music,audio,sound,noise',
   'guitar-electric':
     'acoustic,instrument,strings,riff,rock,band,country,concert,performance,play,lead,loud,music,audio,sound,noise',
-  'half-note': 'audio,music,sound,note,crotchet,minim,quarter note',
+  'half-note': 'audio,music,sound,note,crotchet,minim,quarter note,music-3',
   ham: 'food,pork,pig,meat,bone,hock,knuckle,gammon,cured',
   hamburger:
     'burger,cheeseburger,meat,beef,patty,bun,fast food,junk food,takeaway,takeout,snack,dish,restaurant,lunch,meal,savory,savoury,cookery,cooking,grilled,barbecue,barbeque,bbq,lettuce,tomato,relish,pickles,onions,ketchup,mustard,mayonnaise',
@@ -1107,9 +1119,9 @@ export const ICON_TAGS: Readonly<Record<string, string>> = {
     'savings,banking,money,finance,offers,mortgage,payment,received,wage,payroll,allowance,pocket money,handout,pennies',
   'hand-fist':
     'clench,strength,power,unity,solidarity,rebellion,victory,triumph,support,fight,combat,brawl',
-  'hand-grab': 'hand',
+  'hand-grab': 'hand,grab',
   'hand-heart': 'love,like,emotion',
-  'hand-helping': 'agreement,help,proposal,charity,begging,terms',
+  'hand-helping': 'agreement,help,proposal,charity,begging,terms,helping-hand',
   'hand-metal': 'rock',
   'hand-platter':
     'waiter,waitress,restaurant,table service,served,dinner,dining,meal,course,luxury',
@@ -1167,8 +1179,8 @@ export const ICON_TAGS: Readonly<Record<string, string>> = {
   'house-wifi': 'home,living,building,wifi,connectivity',
   houses:
     'homes,housing,estate,living,buildings,development,residences,residential,village,neighbourhood,accommodation,community,dwellings,architecture',
-  'ice-cream-bowl': 'gelato,food,dessert,dish,restaurant,course,meal',
-  'ice-cream-cone': 'gelato,food',
+  'ice-cream-bowl': 'gelato,food,dessert,dish,restaurant,course,meal,ice-cream-2',
+  'ice-cream-cone': 'gelato,food,ice-cream',
   'id-card': 'card,badge,identity,authentication,secure',
   'id-card-lanyard': 'id-card,id-card-lanyard,identity,employee,gate-pass,badge',
   image: 'picture,photo',
@@ -1218,7 +1230,7 @@ export const ICON_TAGS: Readonly<Record<string, string>> = {
     'bank,building,capitol,finance,money,museum,art gallery,hall,institute,pediment,portico,doric,columns,pillars,classical,architecture,government,institution,monument,site,history,historic,library,temple,ancient,structure',
   languages: 'translate',
   laptop: 'computer,screen,remote',
-  'laptop-minimal': 'computer,screen,remote',
+  'laptop-minimal': 'computer,screen,remote,laptop-2',
   'laptop-minimal-check': 'computer,screen,remote,success,done,todo,tick,complete,task',
   lasso: 'select,cursor',
   'lasso-select': 'select,cursor',
@@ -1226,7 +1238,7 @@ export const ICON_TAGS: Readonly<Record<string, string>> = {
     'move back,backward,lower,demote,step back,behind,reorder,arrange,layer,layers,stack,stacking,z-index,depth,graphics,design',
   'layer-arrow-up':
     'move forward,forward,raise,lift,promote,advance,step forward,reorder,arrange,stack,stacking,z-index,depth,graphics,design',
-  layers: 'stack,pile,pages,sheets,paperwork,copies,copy',
+  layers: 'stack,pile,pages,sheets,paperwork,copies,copy,layers-3',
   'layers-2': 'stack,pile,pages,sheets,paperwork,copies,copy,duplicate,double,shortcuts',
   'layers-arrow-down':
     'send to back,send backward,back,background,bottom,bottommost,lower,demote,behind,reorder,arrange,stack,stacking,z-index,depth,graphics,design',
@@ -1295,8 +1307,8 @@ export const ICON_TAGS: Readonly<Record<string, string>> = {
   'list-end': 'queue,bottom,end,playlist',
   'list-filter': 'options',
   'list-filter-plus': 'filter,plus,options,add',
-  'list-indent-decrease': 'text,tab',
-  'list-indent-increase': 'text,tab',
+  'list-indent-decrease': 'text,tab,indent-decrease,outdent',
+  'list-indent-increase': 'text,tab,indent-increase,indent',
   'list-minus': 'playlist,remove,song,subtract,delete,unqueue',
   'list-music': 'playlist,queue,music,audio,playback',
   'list-ordered': 'number,order,queue',
@@ -1312,7 +1324,7 @@ export const ICON_TAGS: Readonly<Record<string, string>> = {
   'list-video': 'playlist,video,playback',
   'list-x': 'playlist,subtract,remove,delete,unqueue',
   loader: 'loading,wait,busy,progress,spinner,spinning,throbber',
-  'loader-circle': 'loading,wait,busy,progress,spinner,spinning,throbber,circle',
+  'loader-circle': 'loading,wait,busy,progress,spinner,spinning,throbber,circle,loader-2',
   'loader-pinwheel':
     'loading,wait,busy,progress,throbber,spinner,spinning,beach ball,frozen,freeze',
   locate: 'map,gps,location,cross',
@@ -1320,8 +1332,8 @@ export const ICON_TAGS: Readonly<Record<string, string>> = {
   'locate-off': 'map,gps,location,cross',
   lock: 'security,password,secure,admin',
   'lock-keyhole': 'security,password,secure,admin',
-  'lock-keyhole-open': 'security',
-  'lock-open': 'security',
+  'lock-keyhole-open': 'security,unlock-keyhole',
+  'lock-open': 'security,unlock',
   'log-in': 'sign in,arrow,enter,auth',
   'log-out': 'sign out,arrow,exit,auth',
   logs: 'options,list,menu,order,queue,tasks,logs',
@@ -1341,7 +1353,7 @@ export const ICON_TAGS: Readonly<Record<string, string>> = {
   'mail-open': 'email,message,letter,read',
   'mail-pen': 'email,message,letter,pen,edit,compose,draft,write,writing,create,reply',
   'mail-plus': 'email,message,letter,add,create,new,compose',
-  'mail-question-mark': 'email,message,letter,delivery,undelivered',
+  'mail-question-mark': 'email,message,letter,delivery,undelivered,mail-question',
   'mail-search': 'email,message,letter,search,lens',
   'mail-warning': 'email,message,letter,delivery error,exclamation mark',
   'mail-x': 'email,message,letter,remove,delete',
@@ -1357,7 +1369,7 @@ export const ICON_TAGS: Readonly<Record<string, string>> = {
   'map-pin-minus': 'location,waypoint,marker,drop,delete,remove,erase',
   'map-pin-minus-inside': 'location,waypoint,marker,drop,delete,remove,erase',
   'map-pin-off': 'location,waypoint,marker,remove',
-  'map-pin-pen': 'location,waypoint,marker,drop,edit',
+  'map-pin-pen': 'location,waypoint,marker,drop,edit,location-edit',
   'map-pin-plus': 'location,waypoint,marker,drop,add,create,new',
   'map-pin-plus-inside': 'location,waypoint,marker,drop,add,create,new',
   'map-pin-search': 'location,navigation,travel,waypoint,marker,drop',
@@ -1392,7 +1404,8 @@ export const ICON_TAGS: Readonly<Record<string, string>> = {
   'message-circle-off':
     'comment,chat,conversation,dialog,feedback,speech bubble,clear,close,delete,remove,cancel,silence,mute,moderate',
   'message-circle-plus': 'comment,chat,conversation,dialog,feedback,speech bubble,add',
-  'message-circle-question-mark': 'comment,chat,conversation,dialog,feedback,speech bubble,help',
+  'message-circle-question-mark':
+    'comment,chat,conversation,dialog,feedback,speech bubble,help,message-circle-question',
   'message-circle-reply': 'comment,chat,conversation,dialog,feedback,speech bubble,reply,response',
   'message-circle-text':
     'comment,chat,conversation,dialog,feedback,speech,bubble,sms,texting,messaging,dm,discussion,thread,transcript,written,writing,lines,support,chatbot',
@@ -1438,7 +1451,7 @@ export const ICON_TAGS: Readonly<Record<string, string>> = {
   'mic-off': 'record,sound,mute,microphone',
   'mic-signal':
     'podcast,audio,broadcast,signal,wireless,radio,airwaves,microphone,talk,voice,speech,stream,live,voice chat,push to talk,transmission',
-  'mic-vocal': 'lyrics,voice,listen,sound,music,radio,podcast,karaoke,singing,microphone',
+  'mic-vocal': 'lyrics,voice,listen,sound,music,radio,podcast,karaoke,singing,microphone,mic-2',
   microchip:
     'processor,cores,technology,computer,chip,integrated circuit,memory,ram,specs,gpu,gigahertz,ghz',
   microscope: 'medical,education,science,imaging,research',
@@ -1510,7 +1523,7 @@ export const ICON_TAGS: Readonly<Record<string, string>> = {
   'mouth-off':
     'speech,voice,talk,mute,silence,speechless,taste loss,flavor loss,ageusia,tasteless,gustatory,oral,dental,communication,accessibility',
   move: 'arrows',
-  'move-3d': 'arrows,axis,gizmo,coordinates,transform,translate',
+  'move-3d': 'arrows,axis,gizmo,coordinates,transform,translate,move-3-d',
   'move-diagonal': 'double,arrow',
   'move-diagonal-2': 'double,arrow',
   'move-down': 'arrow,direction,downwards,south',
@@ -1548,10 +1561,10 @@ export const ICON_TAGS: Readonly<Record<string, string>> = {
   nut: 'hazelnut,acorn,food,diet',
   'nut-off': 'hazelnut,acorn,food,allergy,intolerance,diet',
   octagon: 'stop,shape',
-  'octagon-alert': 'warning,alert,danger,exclamation mark',
+  'octagon-alert': 'warning,alert,danger,exclamation mark,alert-octagon',
   'octagon-minus': 'stop,forbidden,subtract,remove,decrease,reduce,-,traffic,halt,restricted',
-  'octagon-pause': 'music,audio,stop',
-  'octagon-x': 'delete,stop,alert,warning,times,clear,math',
+  'octagon-pause': 'music,audio,stop,pause-octagon',
+  'octagon-x': 'delete,stop,alert,warning,times,clear,math,x-octagon',
   omega:
     'greek,symbol,mathematics,education,physics,engineering,ohms,electrical resistance,angular frequency,dynamical systems,astronomy,constellations,philosophy',
   option: 'keyboard,key,mac,alt,button',
@@ -1568,32 +1581,36 @@ export const ICON_TAGS: Readonly<Record<string, string>> = {
   'paint-bucket': 'fill,paint,bucket,color,colour',
   'paint-roller': 'brush,color,colour,decoration,diy',
   paintbrush: 'brush,paintbrush,design,color,colour,decoration,diy',
-  'paintbrush-vertical': 'brush,paintbrush,design,color,colour,decoration,diy',
+  'paintbrush-vertical': 'brush,paintbrush,design,color,colour,decoration,diy,paintbrush-2',
   palette: 'colors,colours,theme,scheme,paint,watercolor,watercolour,artist',
   panda: 'animal,wildlife,bear,zoo,bamboo',
   'panel-bottom': 'drawer,dock',
   'panel-bottom-close': 'drawer,dock,hide,chevron,down',
-  'panel-bottom-dashed': 'drawer,dock,show,reveal,padding,margin,guide,layout,bleed',
+  'panel-bottom-dashed':
+    'drawer,dock,show,reveal,padding,margin,guide,layout,bleed,panel-bottom-inactive',
   'panel-bottom-open': 'drawer,dock,show,reveal,chevron,up',
-  'panel-left': 'primary,drawer',
-  'panel-left-close': 'primary,drawer,hide,chevron,<',
-  'panel-left-dashed': 'sidebar,primary,drawer,show,reveal,padding,margin,guide,layout,bleed',
-  'panel-left-open': 'primary,drawer,show,reveal,chevron,right,>',
+  'panel-left': 'primary,drawer,sidebar',
+  'panel-left-close': 'primary,drawer,hide,chevron,<,sidebar-close',
+  'panel-left-dashed':
+    'sidebar,primary,drawer,show,reveal,padding,margin,guide,layout,bleed,panel-left-inactive',
+  'panel-left-open': 'primary,drawer,show,reveal,chevron,right,>,sidebar-open',
   'panel-left-right-dashed':
     'sidebar,primary,drawer,show,reveal,padding,margin,guide,layout,vertical,bleed',
   'panel-right': 'sidebar,secondary,drawer',
   'panel-right-close': 'sidebar,secondary,drawer,hide,chevron,>',
-  'panel-right-dashed': 'sidebar,secondary,drawer,show,reveal,padding,margin,guide,layout,bleed',
+  'panel-right-dashed':
+    'sidebar,secondary,drawer,show,reveal,padding,margin,guide,layout,bleed,panel-right-inactive',
   'panel-right-open': 'sidebar,secondary,drawer,show,reveal,chevron,left,<',
   'panel-top': 'drawer,browser,webpage',
   'panel-top-bottom-dashed':
     'sidebar,primary,drawer,show,reveal,padding,margin,guide,layout,horizontal,bleed',
   'panel-top-close': 'menu bar,drawer,hide,chevron,up',
-  'panel-top-dashed': 'menu bar,drawer,show,reveal,padding,margin,guide,layout,bleed',
+  'panel-top-dashed':
+    'menu bar,drawer,show,reveal,padding,margin,guide,layout,bleed,panel-top-inactive',
   'panel-top-open': 'menu bar,drawer,show,reveal,chevron,down',
   'panels-left-bottom': 'drawers,sidebar,primary',
   'panels-right-bottom': 'drawers,sidebar,secondary',
-  'panels-top-left': 'menu bar,sidebar,primary,drawers,window,webpage,projects,overview',
+  'panels-top-left': 'menu bar,sidebar,primary,drawers,window,webpage,projects,overview,layout',
   'paper-bag': 'storage,package,lunch,takeout,eco-friendly,kraft,retail,doggy bag',
   paperclip: 'attachment,file',
   parasol:
@@ -1607,8 +1624,9 @@ export const ICON_TAGS: Readonly<Record<string, string>> = {
   pause: 'music,stop',
   'paw-print': 'pets,vets,veterinarian,domesticated,cat,dog,bear',
   'pc-case': 'computer,chassis',
-  pen: 'pencil,change,create,draw,writer,writing,biro,ink,marker,felt tip,stationery,artist',
-  'pen-line': 'pencil,change,create,draw,writer,writing,biro,ink,marker,felt tip,stationery,artist',
+  pen: 'pencil,change,create,draw,writer,writing,biro,ink,marker,felt tip,stationery,artist,edit-2',
+  'pen-line':
+    'pencil,change,create,draw,writer,writing,biro,ink,marker,felt tip,stationery,artist,edit-3',
   'pen-off':
     'disabled,inactive,non-editable,locked,read-only,unmodifiable,frozen,restricted,pencil,change,create,draw,writer,writing,biro,ink,marker,felt tip,stationery,artist',
   'pen-tool': 'vector,drawing,path',
@@ -1668,7 +1686,7 @@ export const ICON_TAGS: Readonly<Record<string, string>> = {
     'deck,fan,spread,hand,deal,dealt,draw,shuffle,tabletop,planning poker,scrum,agile,estimation,estimate,prompt,icebreaker,conversation,collectible,collection,trading,poker,casino,game,gambling,suit',
   plug: 'electricity,energy,electronics,socket,outlet,power,voltage,current,charger',
   'plug-2': 'electricity,energy,socket,outlet',
-  'plug-zap': 'electricity,energy,electronics,charge,charging,battery,connect',
+  'plug-zap': 'electricity,energy,electronics,charge,charging,battery,connect,plug-zap-2',
   plus: 'add,new,increase,increment,positive,calculate,toolbar,crosshair,aim,target,scope,sight,reticule,maximum,upgrade,extra,+',
   'pocket-knife': 'swiss army knife,penknife,multi-tool,multitask,blade,cutter,gadget,corkscrew',
   podium:
@@ -1721,7 +1739,7 @@ export const ICON_TAGS: Readonly<Record<string, string>> = {
   'receipt-turkish-lira': 'bill,voucher,slip,check,counterfoil,currency,try,₺',
   'rectangle-circle': 'compose,keyboard,key,button',
   'rectangle-ellipsis':
-    'login,password,authenticate,2fa,field,fill,ellipsis,et cetera,etc,loader,loading,progress,pending,throbber,menu,options,operator,code,spread,rest,more,further,extra,overflow,dots,…,...',
+    'login,password,authenticate,2fa,field,fill,ellipsis,et cetera,etc,loader,loading,progress,pending,throbber,menu,options,operator,code,spread,rest,more,further,extra,overflow,dots,…,...,form-input',
   'rectangle-goggles': 'vr,virtual,augmented,reality,headset,goggles',
   'rectangle-horizontal': 'rectangle,aspect ratio,16:9,horizontal,shape',
   'rectangle-vertical': 'rectangle,aspect ratio,9:16,vertical,shape',
@@ -1757,7 +1775,7 @@ export const ICON_TAGS: Readonly<Record<string, string>> = {
   'rocking-chair': 'chair,furniture,seat,comfort,relax',
   'roller-coaster': 'attraction,entertainment,amusement park,theme park,funfair',
   rose: 'roses,thorns,petals,plant,stem,leaves,spring,bloom,blossom,gardening,botanical,flora,florist,bouquet,bunch,gift,date,romance,romantic,valentines day,special occasion',
-  'rotate-3d': 'gizmo,transform,orientation,orbit,axis',
+  'rotate-3d': 'gizmo,transform,orientation,orbit,axis,rotate-3-d',
   'rotate-ccw':
     'arrow,left,counter-clockwise,restart,reload,rerun,refresh,backup,undo,replay,redo,retry,rewind,reverse',
   'rotate-ccw-clock': 'history,time,redo,undo,rewind,timeline,version,time machine,backup,ccw',
@@ -1772,9 +1790,9 @@ export const ICON_TAGS: Readonly<Record<string, string>> = {
   'route-off': 'path,journey,planner,points,stops,stations,reset,clear,cancelled,closed,blocked',
   router: 'computer,server,cloud',
   'rows-2':
-    'lines,list,queue,preview,panel,paragraphs,parallel,series,split,vertical,horizontal,half,center,middle,even,drawer',
+    'lines,list,queue,preview,panel,paragraphs,parallel,series,split,vertical,horizontal,half,center,middle,even,drawer,rows',
   'rows-3':
-    'lines,list,queue,preview,paragraphs,parallel,series,split,vertical,horizontal,half,center,middle,even,drawers',
+    'lines,list,queue,preview,paragraphs,parallel,series,split,vertical,horizontal,half,center,middle,even,drawers,panels-top-bottom',
   'rows-4':
     'lines,list,queue,preview,paragraphs,parallel,series,split,vertical,horizontal,half,center,middle,even,drawers,grill',
   rss: 'feed,subscribe,news,updates,notifications,content,blog,articles,broadcast,syndication,reader,channels,posts,publishing,digest,alert,following,inbox,newsletter,weblog,podcast',
@@ -1798,7 +1816,7 @@ export const ICON_TAGS: Readonly<Record<string, string>> = {
   'save-plus': 'floppy disk,save,plus,add,update,create',
   scale:
     'balance,legal,license,right,rule,law,justice,weight,measure,compare,judge,fair,ethics,decision',
-  'scale-3d': 'gizmo,transform,size,axis',
+  'scale-3d': 'gizmo,transform,size,axis,scale-3-d',
   scaling: 'scale,resize,design',
   scan: 'qr-code,barcode,checkout,augmented reality,ar,target,surveillance,camera,lens,focus,frame,select,box,boundary,bounds,area,square,dashed',
   'scan-barcode': 'checkout,till,cart,transaction,purchase,buy,product,packaging,retail,consumer',
@@ -1840,7 +1858,7 @@ export const ICON_TAGS: Readonly<Record<string, string>> = {
     'find,scan,magnifier,magnifying glass,stop,clear,cancel,abort,lens,locate,explore,discover,enlarge,zoom',
   section: 'mark,typography,punctuation,legal,type,text,prose,symbol',
   send: 'email,message,mail,paper airplane,paper aeroplane,submit',
-  'send-horizontal': 'email,message,mail,paper airplane,paper aeroplane,submit',
+  'send-horizontal': 'email,message,mail,paper airplane,paper aeroplane,submit,send-horizonal',
   'send-to-back': 'bring,send,move,under,back,backwards,overlap,layer,order',
   'separator-horizontal': 'move,split',
   'separator-vertical': 'move,split',
@@ -1890,10 +1908,10 @@ export const ICON_TAGS: Readonly<Record<string, string>> = {
   'shield-plus':
     'cybersecurity,secure,safety,protection,guardian,armored,armoured,defense,defence,defender,block,threat,prevention,antivirus,vigilance,vigilant,detection,scan,strength,strong,tough,invincible,invincibility,invulnerable,undamaged,extra,added,professional,enterprise,full,maximum,upgraded,ultra,activate,enable,audit,admin,verification,crest,medic,+',
   'shield-question-mark':
-    'unshielded,cybersecurity,insecure,unsecured,safety,unsafe,protection,unprotected,guardian,unguarded,unarmored,unarmoured,defenseless,defenceless,undefended,defender,threat,prevention,unprevented,antivirus,vigilance,vigilant,detection,undetected,scan,find,exploit,vulnerability,vulnerable,weakness,infection,compromised,data leak,audit,admin,verification,unverified,uncertified,uncertain,unknown,inactive,crest,question mark,?',
+    'unshielded,cybersecurity,insecure,unsecured,safety,unsafe,protection,unprotected,guardian,unguarded,unarmored,unarmoured,defenseless,defenceless,undefended,defender,threat,prevention,unprevented,antivirus,vigilance,vigilant,detection,undetected,scan,find,exploit,vulnerability,vulnerable,weakness,infection,compromised,data leak,audit,admin,verification,unverified,uncertified,uncertain,unknown,inactive,crest,question mark,?,shield-question',
   'shield-user': 'shield,user,admin,protection,protected,safety,guard',
   'shield-x':
-    'unshielded,cybersecurity,insecure,unsecured,safety,unsafe,protection,unprotected,guardian,unguarded,unarmored,unarmoured,defenseless,defenceless,undefended,defender,blocked,stopped,intercepted,interception,saved,thwarted,threat,prevention,prevented,antivirus,vigilance,vigilant,detection,detected,scanned,found,exploit,vulnerability,vulnerable,weakness,infection,infected,compromised,data leak,audited,admin,verification,unverified,inactive,cancel,error,wrong,false,crest,bravery,attacked,damaged,injured,hit,dead,deceased,expired,eliminated,exterminated',
+    'unshielded,cybersecurity,insecure,unsecured,safety,unsafe,protection,unprotected,guardian,unguarded,unarmored,unarmoured,defenseless,defenceless,undefended,defender,blocked,stopped,intercepted,interception,saved,thwarted,threat,prevention,prevented,antivirus,vigilance,vigilant,detection,detected,scanned,found,exploit,vulnerability,vulnerable,weakness,infection,infected,compromised,data leak,audited,admin,verification,unverified,inactive,cancel,error,wrong,false,crest,bravery,attacked,damaged,injured,hit,dead,deceased,expired,eliminated,exterminated,shield-close',
   ship: 'boat,knots,nautical mile,maritime,sailing,yacht,cruise,ocean liner,tanker,vessel,navy,trip,releases',
   'ship-cargo':
     'boat,knots,nautical mile,maritime,sailing,cruise,ocean liner,tanker,vessel,navy,cargo,container,freighter,freight,shipping,port,harbor,dock,logistics,import,export',
@@ -1930,14 +1948,14 @@ export const ICON_TAGS: Readonly<Record<string, string>> = {
     'navigation,direction,arrow,wayfinding,guide,location,pointer,route,indicator,marker,bidirectional,left,right,east,west',
   'signpost-big': 'bidirectional,left,right,east,west',
   siren: 'police,ambulance,emergency,security,alert,alarm,light',
-  'sixteenth-notes': 'audio,music,sound,notes,semiquavers',
+  'sixteenth-notes': 'audio,music,sound,notes,semiquavers,music-4',
   'skip-back': 'arrow,previous,music',
   'skip-forward': 'arrow,skip,next,music',
   skull: 'death,danger,bone',
   slash: 'divide,division,or,/',
   slice: 'cutter,scalpel,knife',
   'sliders-horizontal': 'settings,filters,controls',
-  'sliders-vertical': 'settings,controls',
+  'sliders-vertical': 'settings,controls,sliders',
   smartphone: 'phone,cellphone,device,mobile,screen,display,touchscreen,portable,responsive',
   'smartphone-charging': 'phone,cellphone,device,power,screen',
   'smartphone-nfc': 'contactless,payment,near-field communication,screen',
@@ -1968,47 +1986,56 @@ export const ICON_TAGS: Readonly<Record<string, string>> = {
   sprout: 'eco,green,growth,leaf,nature,plant,seed,spring,sustainability',
   square: 'stop,playback,music,audio,video,rectangle,aspect ratio,1:1,shape',
   'square-activity':
-    'pulse,action,motion,movement,exercise,fitness,healthcare,heart rate monitor,vital signs,vitals,emergency room,er,intensive care,hospital,defibrillator,earthquake,seismic,magnitude,richter scale,aftershock,tremor,shockwave,audio,waveform,synthesizer,synthesiser,music',
-  'square-arrow-down': 'backwards,reverse,direction,south,sign,keyboard,button',
-  'square-arrow-down-left': 'direction,south-west,diagonal,sign,turn,keyboard,button',
-  'square-arrow-down-right': 'direction,south-east,diagonal,sign,turn,keyboard,button',
-  'square-arrow-left': 'previous,back,direction,west,sign,keyboard,button,<-',
-  'square-arrow-out-down-left': 'outwards,direction,south-west,diagonal',
-  'square-arrow-out-down-right': 'outwards,direction,south-east,diagonal',
-  'square-arrow-out-up-left': 'outwards,direction,north-west,diagonal',
-  'square-arrow-out-up-right': 'outwards,direction,north-east,diagonal,share,open,external,link',
-  'square-arrow-right': 'next,forward,direction,west,sign,keyboard,button,->',
+    'pulse,action,motion,movement,exercise,fitness,healthcare,heart rate monitor,vital signs,vitals,emergency room,er,intensive care,hospital,defibrillator,earthquake,seismic,magnitude,richter scale,aftershock,tremor,shockwave,audio,waveform,synthesizer,synthesiser,music,activity-square',
+  'square-arrow-down': 'backwards,reverse,direction,south,sign,keyboard,button,arrow-down-square',
+  'square-arrow-down-left':
+    'direction,south-west,diagonal,sign,turn,keyboard,button,arrow-down-left-square',
+  'square-arrow-down-right':
+    'direction,south-east,diagonal,sign,turn,keyboard,button,arrow-down-right-square',
+  'square-arrow-left': 'previous,back,direction,west,sign,keyboard,button,<-,arrow-left-square',
+  'square-arrow-out-down-left':
+    'outwards,direction,south-west,diagonal,arrow-down-left-from-square',
+  'square-arrow-out-down-right':
+    'outwards,direction,south-east,diagonal,arrow-down-right-from-square',
+  'square-arrow-out-up-left': 'outwards,direction,north-west,diagonal,arrow-up-left-from-square',
+  'square-arrow-out-up-right':
+    'outwards,direction,north-east,diagonal,share,open,external,link,arrow-up-right-from-square',
+  'square-arrow-right': 'next,forward,direction,west,sign,keyboard,button,->,arrow-right-square',
   'square-arrow-right-enter': 'left,in,inside,input,insert,source,import,place,->',
   'square-arrow-right-exit': 'out,outside,output,export,->',
-  'square-arrow-up': 'forward,direction,north,sign,keyboard,button',
-  'square-arrow-up-left': 'direction,north-west,diagonal,sign,keyboard,button',
-  'square-arrow-up-right': 'direction,north-east,diagonal,sign,keyboard,button,share',
-  'square-asterisk': 'password,secret,access,key,multiply,multiplication,glob pattern,wildcard,*',
-  'square-bookmark': 'photo,book',
-  'square-bottom-dashed-scissors': 'cut,snippet,chop,stationery,crafts',
-  'square-centerline-dashed-horizontal': 'reflect,mirror,alignment,dashed',
-  'square-centerline-dashed-vertical': 'reflect,mirror,alignment,dashed',
+  'square-arrow-up': 'forward,direction,north,sign,keyboard,button,arrow-up-square',
+  'square-arrow-up-left': 'direction,north-west,diagonal,sign,keyboard,button,arrow-up-left-square',
+  'square-arrow-up-right':
+    'direction,north-east,diagonal,sign,keyboard,button,share,arrow-up-right-square',
+  'square-asterisk':
+    'password,secret,access,key,multiply,multiplication,glob pattern,wildcard,*,asterisk-square',
+  'square-bookmark': 'photo,book,album',
+  'square-bottom-dashed-scissors':
+    'cut,snippet,chop,stationery,crafts,scissors-square-dashed-bottom',
+  'square-centerline-dashed-horizontal': 'reflect,mirror,alignment,dashed,flip-horizontal',
+  'square-centerline-dashed-vertical': 'reflect,mirror,alignment,dashed,flip-vertical',
   'square-chart-gantt':
-    'projects,manage,overview,roadmap,plan,intentions,timeline,deadline,date,event,range,period,productivity,work,agile,code,coding,toolbar,button',
-  'square-check': 'done,todo,tick,complete,task',
-  'square-check-big': 'done,todo,tick,complete,task',
-  'square-chevron-down': 'back,menu,panel',
-  'square-chevron-left': 'back,previous,less than,fewer,menu,panel,button,keyboard,<',
+    'projects,manage,overview,roadmap,plan,intentions,timeline,deadline,date,event,range,period,productivity,work,agile,code,coding,toolbar,button,gantt-chart-square,square-gantt-chart',
+  'square-check': 'done,todo,tick,complete,task,check-square-2',
+  'square-check-big': 'done,todo,tick,complete,task,check-square',
+  'square-chevron-down': 'back,menu,panel,chevron-down-square',
+  'square-chevron-left':
+    'back,previous,less than,fewer,menu,panel,button,keyboard,<,chevron-left-square',
   'square-chevron-right':
-    'forward,next,more than,greater,menu,panel,code,coding,command line,terminal,prompt,shell,console,>',
+    'forward,next,more than,greater,menu,panel,code,coding,command line,terminal,prompt,shell,console,>,chevron-right-square',
   'square-chevron-up':
-    'caret,keyboard,button,mac,control,ctrl,superscript,exponential,power,ahead,menu,panel,^',
-  'square-code': 'gist,source,programming,html,xml,coding',
-  'square-dashed': 'selection,square,rectangular,marquee,tool,dashed,box',
+    'caret,keyboard,button,mac,control,ctrl,superscript,exponential,power,ahead,menu,panel,^,chevron-up-square',
+  'square-code': 'gist,source,programming,html,xml,coding,code-square',
+  'square-dashed': 'selection,square,rectangular,marquee,tool,dashed,box,box-select',
   'square-dashed-bottom': 'rectangle,aspect ratio,1:1,shape,snippet,code,coding',
   'square-dashed-bottom-code': 'rectangle,aspect ratio,1:1,shape,snippet,code,coding',
   'square-dashed-kanban':
-    'projects,manage,overview,board,tickets,issues,roadmap,plan,intentions,productivity,work,agile,draft,template,boilerplate,code,coding',
+    'projects,manage,overview,board,tickets,issues,roadmap,plan,intentions,productivity,work,agile,draft,template,boilerplate,code,coding,kanban-square-dashed',
   'square-dashed-mouse-pointer':
-    'inspector,element,mouse,click,pointer,box,browser,selector,target,dom,node',
+    'inspector,element,mouse,click,pointer,box,browser,selector,target,dom,node,mouse-pointer-square-dashed',
   'square-dashed-plus':
     'selection,select,add,new,placeholder,marquee,box,dashed,plus,insert,frame,empty',
-  'square-dashed-text': 'find,search,selection,dashed',
+  'square-dashed-text': 'find,search,selection,dashed,text-select,text-selection',
   'square-dashed-top-solid':
     'square,border,width,layout,style,design,rectangular,marquee,dashed,box,rectangle,aspect ratio,1:1',
   'square-dashed-x':
@@ -2017,56 +2044,57 @@ export const ICON_TAGS: Readonly<Record<string, string>> = {
     'deselect,unselect,delete,select,selection,border,width,layout,style,design,rectangular,marquee,box,rectangle,aspect ratio,1:1',
   'square-dimensions':
     'ratio,size,width,height,resize,scale,frame,proportions,aspect,bounds,measurements,canvas',
-  'square-divide': 'calculate,math,÷,/',
-  'square-dot': 'git,diff,modified,.',
-  'square-equal': 'calculate,=',
+  'square-divide': 'calculate,math,÷,/,divide-square',
+  'square-dot': 'git,diff,modified,.,dot-square',
+  'square-equal': 'calculate,=,equal-square',
   'square-exclamation-point':
     'warning,alert,danger,exclamation mark,rectangle,square,notification,attention,important,caution',
-  'square-function': 'programming,code,automation,math',
+  'square-function': 'programming,code,automation,math,function-square',
   'square-kanban':
-    'projects,manage,overview,board,tickets,issues,roadmap,plan,intentions,productivity,work,agile,code,coding,toolbar,button',
+    'projects,manage,overview,board,tickets,issues,roadmap,plan,intentions,productivity,work,agile,code,coding,toolbar,button,kanban-square',
   'square-library':
-    'books,reading,written,authors,stories,fiction,novels,information,knowledge,education,high school,university,college,academy,learning,study,research,collection,vinyl,records,albums,music,package',
-  'square-m': 'metro,subway,underground,track,line',
-  'square-menu': 'bars,navigation,hamburger,options,menu bar,panel',
+    'books,reading,written,authors,stories,fiction,novels,information,knowledge,education,high school,university,college,academy,learning,study,research,collection,vinyl,records,albums,music,package,library-square',
+  'square-m': 'metro,subway,underground,track,line,m-square',
+  'square-menu': 'bars,navigation,hamburger,options,menu bar,panel,menu-square',
   'square-minus':
-    'subtract,remove,decrease,reduce,calculator,button,keyboard,line,divider,separator,horizontal rule,hr,html,markup,markdown,---,toolbar,operator,code,coding,minimum,downgrade',
+    'subtract,remove,decrease,reduce,calculator,button,keyboard,line,divider,separator,horizontal rule,hr,html,markup,markdown,---,toolbar,operator,code,coding,minimum,downgrade,minus-square',
   'square-mouse-pointer':
-    'inspector,element,mouse,click,pointer,box,browser,selector,target,dom,node',
+    'inspector,element,mouse,click,pointer,box,browser,selector,target,dom,node,inspect',
   'square-off':
     '/,not,slash,off,disabled,inactive,cancel,none,block,forbidden,unavailable,stopped,checkbox,unchecked,toggle,negation,form,ui',
-  'square-parking': 'parking lot,car park',
-  'square-parking-off': 'parking lot,car park,no parking',
+  'square-parking': 'parking lot,car park,parking-square',
+  'square-parking-off': 'parking lot,car park,no parking,parking-square-off',
   'square-pause': 'music,audio,stop',
   'square-pen':
-    'pencil,edit,change,create,draw,sketch,draft,writer,writing,biro,ink,marker,felt tip,stationery,artist',
-  'square-percent': 'verified,unverified,sale,discount,offer,marketing,sticker,price tag',
-  'square-pi': 'constant,code,coding,programming,symbol,trigonometry,geometry,formula',
-  'square-pilcrow': 'paragraph,mark,paraph,blind,typography,type,text,prose,symbol',
-  'square-play': 'music,audio,video,start,run',
+    'pencil,edit,change,create,draw,sketch,draft,writer,writing,biro,ink,marker,felt tip,stationery,artist,pen-box,pen-square',
+  'square-percent':
+    'verified,unverified,sale,discount,offer,marketing,sticker,price tag,percent-square',
+  'square-pi': 'constant,code,coding,programming,symbol,trigonometry,geometry,formula,pi-square',
+  'square-pilcrow': 'paragraph,mark,paraph,blind,typography,type,text,prose,symbol,pilcrow-square',
+  'square-play': 'music,audio,video,start,run,play-square',
   'square-plus':
-    'add,new,increase,increment,positive,calculate,calculator,button,keyboard,toolbar,maximum,upgrade,extra,operator,join,concatenate,code,coding,+',
+    'add,new,increase,increment,positive,calculate,calculator,button,keyboard,toolbar,maximum,upgrade,extra,operator,join,concatenate,code,coding,+,plus-square',
   'square-power':
-    'on,off,device,switch,toggle,binary,boolean,reboot,restart,button,keyboard,troubleshoot',
+    'on,off,device,switch,toggle,binary,boolean,reboot,restart,button,keyboard,troubleshoot,power-square',
   'square-radical': 'calculate,formula,math,operator,root,square,symbol',
   'square-round-corner': 'border,radius,style,design,corner,layout,round,rounded',
-  'square-scissors': 'cut,snippet,chop,stationery,crafts,toolbar,button',
-  'square-sigma': 'sum,calculate,formula,math,enumeration,enumerate',
-  'square-slash': 'git,diff,ignored,divide,division,shortcut,or,/',
+  'square-scissors': 'cut,snippet,chop,stationery,crafts,toolbar,button,scissors-square',
+  'square-sigma': 'sum,calculate,formula,math,enumeration,enumerate,sigma-square',
+  'square-slash': 'git,diff,ignored,divide,division,shortcut,or,/,slash-square',
   'square-sparkles': 'picture,photo,sparkles',
-  'square-split-horizontal': 'split,divide',
-  'square-split-vertical': 'split,divide',
+  'square-split-horizontal': 'split,divide,split-square-horizontal',
+  'square-split-vertical': 'split,divide,split-square-vertical',
   'square-square': 'float,center,rectangle',
   'square-stack': 'versions,clone,copy,duplicate,multiple,revisions,version control,backup,history',
   'square-star':
     'badge,medal,honour,decoration,order,pin,laurel,trophy,medallion,insignia,bronze,silver,gold',
   'square-stop': 'media,music',
-  'square-terminal': 'code,command line,prompt,shell',
+  'square-terminal': 'code,command line,prompt,shell,terminal-square',
   'square-text':
     'text,paragraph,content,note,document,body,copy,article,square,container,block,card,placeholder,log,page,paper,sheet,list,script,code,editor',
-  'square-user': 'person,account,contact',
-  'square-user-round': 'person,account,contact',
-  'square-x': 'cancel,close,delete,remove,times,clear,math,multiply,multiplication',
+  'square-user': 'person,account,contact,user-square',
+  'square-user-round': 'person,account,contact,user-square-2',
+  'square-x': 'cancel,close,delete,remove,times,clear,math,multiply,multiplication,x-square',
   'squares-exclude': 'square,pathfinder,path,exclude,invert,xor,shape,vector',
   'squares-intersect': 'square,pathfinder,path,intersect,shape,include,vector',
   'squares-subtract': 'square,pathfinder,path,minus,subtract,subtraction,shape,front,vector',
@@ -2156,22 +2184,23 @@ export const ICON_TAGS: Readonly<Record<string, string>> = {
   'tent-tree': 'camping,campsite,holiday,retreat,nomadic,wilderness,outdoors',
   terminal: 'code,command line,prompt,shell',
   'test-tube': 'tube,vial,phial,flask,ampoule,ampule,lab,chemistry,experiment,test',
-  'test-tube-diagonal': 'tube,vial,phial,flask,ampoule,ampule,lab,chemistry,experiment,test',
+  'test-tube-diagonal':
+    'tube,vial,phial,flask,ampoule,ampule,lab,chemistry,experiment,test,test-tube-2',
   'test-tubes': 'tubes,vials,phials,flasks,ampoules,ampules,lab,chemistry,experiment,test',
-  'text-align-center': 'text,alignment,center',
-  'text-align-end': 'text,alignment,right',
-  'text-align-justify': 'text,alignment,justified,menu,list',
+  'text-align-center': 'text,alignment,center,align-center',
+  'text-align-end': 'text,alignment,right,align-right',
+  'text-align-justify': 'text,alignment,justified,menu,list,align-justify',
   'text-align-justify-center':
     'paragraph,alignment,justified,center,middle,typography,editor,document',
   'text-align-justify-end': 'paragraph,alignment,justified,right,end,typography,editor,document',
   'text-align-justify-start': 'paragraph,alignment,justified,left,start,typography,editor,document',
-  'text-align-start': 'text,alignment,left,list',
+  'text-align-start': 'text,alignment,left,list,align-left',
   'text-cursor': 'select,caret,type,typing,write,writing,edit,insert,input,textarea',
   'text-cursor-input': 'select',
-  'text-initial': 'drop cap,text,format,typography,letter,font size',
+  'text-initial': 'drop cap,text,format,typography,letter,font size,letter-text',
   'text-quote': 'blockquote,quotation,indent,reply,response',
   'text-search': 'find,data,copy,txt,pdf,document,scan,magnifier,magnifying glass,lens',
-  'text-wrap': 'words,lines,break,paragraph',
+  'text-wrap': 'words,lines,break,paragraph,wrap-text',
   theater: 'theater,theatre,entertainment,podium,stage,musical',
   thermometer: 'temperature,celsius,fahrenheit,weather',
   'thermometer-snowflake': 'temperature,celsius,fahrenheit,weather,cold,freeze,freezing',
@@ -2222,14 +2251,14 @@ export const ICON_TAGS: Readonly<Record<string, string>> = {
   'train-front': 'railway,metro,subway,underground,high-speed,bullet,fast,track,line',
   'train-front-tunnel': 'railway,metro,subway,underground,speed,bullet,fast,track,line',
   'train-track': 'railway,line',
-  'tram-front': 'railway,metro,subway,underground,track,line,tourism',
+  'tram-front': 'railway,metro,subway,underground,track,line,tourism,train',
   transgender: 'gender,inclusive',
   trash:
-    'empty,deletion,cleanup,junk,clear,garbage,delete,remove,bin,waste,recycle,discard,binoculars,rubbish',
+    'empty,deletion,cleanup,junk,clear,garbage,delete,remove,bin,waste,recycle,discard,binoculars,rubbish,trash-2',
   'trash-off':
     'empty,deletion,cleanup,junk,clear,garbage,delete,remove,bin,trash,waste,recycle,discard,rubbish,disabled,off,prevent,locked,unavailable,protected',
   'tree-deciduous': 'tree,forest,park,nature',
-  'tree-palm': 'vacation,leisure,island',
+  'tree-palm': 'vacation,leisure,island,palmtree',
   'tree-pine': 'tree,pine,forest,park,nature',
   trees: 'tree,forest,park,nature',
   'trending-down': 'statistics',
@@ -2237,12 +2266,12 @@ export const ICON_TAGS: Readonly<Record<string, string>> = {
   'trending-up-down':
     'arrows,estimated,indeterminate,data fluctuation,uncertain,forecast,variable,prediction,dynamic,volatile',
   triangle: 'equilateral,delta,shape,pyramid,hierarchy',
-  'triangle-alert': 'warning,alert,danger,exclamation mark,linter',
+  'triangle-alert': 'warning,alert,danger,exclamation mark,linter,alert-triangle',
   'triangle-dashed': 'equilateral,delta,shape,pyramid,hierarchy,dashed',
   'triangle-right':
     'volume,controls,controller,tv remote,geometry,delta,ramp,slope,incline,increase',
-  'triangles-centerline-dashed-horizontal': 'reflect,mirror,alignment,dashed',
-  'triangles-centerline-dashed-vertical': 'reflect,mirror,alignment,dashed',
+  'triangles-centerline-dashed-horizontal': 'reflect,mirror,alignment,dashed,flip-horizontal-2',
+  'triangles-centerline-dashed-vertical': 'reflect,mirror,alignment,dashed,flip-vertical-2',
   trophy:
     'prize,sports,winner,achievement,award,champion,celebration,victory,competition,tournament,leaderboard,ranking,success,reward,cup,first,gold',
   truck: 'delivery,van,shipping,haulage,lorry',
@@ -2255,7 +2284,7 @@ export const ICON_TAGS: Readonly<Record<string, string>> = {
   turtle: 'animal,pet,tortoise,slow,speed',
   tv: 'television,stream,display,widescreen,high-definition,hd,1080p,4k,8k,smart,digital,video,entertainment,showtime,channels,terrestrial,satellite,cable,broadcast,live,frequency,tune,scan,aerial,receiver,transmission,signal,connection,connectivity',
   'tv-minimal':
-    'flat screen,television,stream,display,widescreen,high-definition,hd,1080p,4k,8k,smart,digital,video,home cinema,entertainment,showtime,channels,catchup',
+    'flat screen,television,stream,display,widescreen,high-definition,hd,1080p,4k,8k,smart,digital,video,home cinema,entertainment,showtime,channels,catchup,tv-2',
   'tv-minimal-play':
     'flat screen,television,stream,display,widescreen,high-definition,hd,1080p,4k,8k,smart,digital,video,movie,live,ott,running,start,film,home cinema,entertainment,showtime,channels,catchup',
   type: 'text,font,typography',
@@ -2269,7 +2298,7 @@ export const ICON_TAGS: Readonly<Record<string, string>> = {
   'unfold-horizontal': 'arrow,collapse,fold,vertical,dashed',
   'unfold-vertical': 'arrow,expand,vertical,dashed',
   ungroup: 'cubes,packages,parts,units,collection,cluster,separate',
-  university: 'building,education,childhood,school,college,academy,institute',
+  university: 'building,education,childhood,school,college,academy,institute,school-2',
   unlink: 'url,unchain',
   'unlink-2': 'url,unchain',
   unplug: 'electricity,energy,electronics,socket,outlet,disconnect',
@@ -2288,22 +2317,22 @@ export const ICON_TAGS: Readonly<Record<string, string>> = {
   'user-minus': 'delete,remove,unfollow,unsubscribe',
   'user-pen': 'person,account,contact,profile,edit,change',
   'user-plus': 'new,add,create,follow,subscribe',
-  'user-round': 'person,account,contact',
+  'user-round': 'person,account,contact,user-2',
   'user-round-arrow-left':
     'person,assign,move,give,setup,self,me,myself,profile,avatar,incoming,recipient,assignee,inbound',
-  'user-round-check': 'followed,subscribed,done,todo,tick,complete,task',
-  'user-round-cog': 'settings,edit,cog,gear',
+  'user-round-check': 'followed,subscribed,done,todo,tick,complete,task,user-check-2',
+  'user-round-cog': 'settings,edit,cog,gear,user-cog-2',
   'user-round-group':
     'group,people,team,members,community,membership,collaboration,organization,contacts,directory,staff,family,ancestry,ancestors,lineage,parents',
   'user-round-key':
     'passkey,password,login,authentication,authorization,roles,permissions,private,public,security,person,account,contact',
-  'user-round-minus': 'delete,remove,unfollow,unsubscribe',
+  'user-round-minus': 'delete,remove,unfollow,unsubscribe,user-minus-2',
   'user-round-pen': 'person,account,contact,profile,edit,change',
-  'user-round-plus': 'new,add,create,follow,subscribe',
+  'user-round-plus': 'new,add,create,follow,subscribe,user-plus-2',
   'user-round-search': 'person,account,contact,find,scan,magnifier,magnifying glass,lens',
   'user-round-star':
     'person,account,favorite,contact,like,review,rating,admin,avatar,profile,featured,moderator,verified,badge,award,champion,starred',
-  'user-round-x': 'delete,remove,unfollow,unsubscribe,unavailable',
+  'user-round-x': 'delete,remove,unfollow,unsubscribe,unavailable,user-x-2',
   'user-search': 'person,account,contact,find,scan,magnifier,magnifying glass,lens',
   'user-shield': 'user,shield,admin,protected,guard,profile,security,privacy,permissions,role',
   'user-star': 'person,account,favorite,contact,like,review,rating,admin',
@@ -2311,13 +2340,13 @@ export const ICON_TAGS: Readonly<Record<string, string>> = {
   users: 'group,people',
   'users-collaboration':
     'group,people,collaboration,users,team,communication,cooperative,workspace,peer-to-peer,p2p,shared,delegation,handoff,coauthor,profiles',
-  'users-round': 'group,people',
+  'users-round': 'group,people,users-2',
   'users-round-collaboration':
     'group,people,collaboration,users,team,communication,cooperative,workspace,peer-to-peer,p2p,shared,delegation,handoff,coauthor,profiles',
   utensils:
-    'fork,knife,cutlery,flatware,tableware,silverware,food,restaurant,meal,breakfast,dinner,supper',
+    'fork,knife,cutlery,flatware,tableware,silverware,food,restaurant,meal,breakfast,dinner,supper,fork-knife',
   'utensils-crossed':
-    'fork,knife,cutlery,flatware,tableware,silverware,food,restaurant,meal,breakfast,dinner,supper',
+    'fork,knife,cutlery,flatware,tableware,silverware,food,restaurant,meal,breakfast,dinner,supper,fork-knife-crossed',
   'utility-pole': 'electricity,energy,transmission line,telegraph pole,power lines,phone',
   van: 'minivan,cart,wagon,truck,lorry,trailer,camper,vehicle,drive,trip,journey,van,transport,carriage,delivery,travel',
   variable:
@@ -2352,17 +2381,17 @@ export const ICON_TAGS: Readonly<Record<string, string>> = {
   wallet: 'money,finance,pocket',
   'wallet-cards':
     'wallet,cards,banking,cash,debit,transport,money,finance,pocket,credit,purchase,payment,shopping,retail,consumer,cc',
-  'wallet-minimal': 'finance,pocket',
+  'wallet-minimal': 'finance,pocket,wallet-2',
   wallpaper: 'background,texture,image,art,design,visual,decor,pattern,screen,cover,lock screen',
   wand: 'magic,selection',
-  'wand-sparkles': 'magic,wizard,magician',
+  'wand-sparkles': 'magic,wizard,magician,wand-2',
   warehouse: 'storage,storehouse,depot,depository,repository,stockroom,logistics,building',
   'washing-machine': 'tumble dryer,amenities,electronics,cycle,clothes,rinse,spin,drum',
   watch: 'clock,time',
   'waves-arrow-down':
     'water,sea,level,sound,hertz,wavelength,vibrate,low,tide,ocean,rising,down,falling',
   'waves-arrow-up': 'water,sea,level,sound,hertz,wavelength,vibrate,high,tide,ocean,rising',
-  'waves-horizontal': 'water,sea,sound,hertz,wavelength,vibrate,ocean,swimming,frequency',
+  'waves-horizontal': 'water,sea,sound,hertz,wavelength,vibrate,ocean,swimming,frequency,waves',
   'waves-ladder': 'swimming,water,pool,lifeguard,ocean,🌊,🏊‍♂️,🏊‍♀️,🏊,🥽',
   'waves-vertical': 'steam,warmth,temperature,burn,hot,boiling,heat,smoke,vapor,smell,aroma,sauna',
   waypoints:
