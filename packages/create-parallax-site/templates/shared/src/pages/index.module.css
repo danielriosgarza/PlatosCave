@@ -1,18 +1,26 @@
 .front {
-  box-sizing: border-box;
-  max-width: calc(1200px + 2 * var(--pc-stage-inset));
-  margin: 0 auto;
-  padding: var(--pc-space-48) var(--pc-stage-inset) var(--pc-space-56);
   color: var(--pc-ink);
   font: var(--pc-text-body);
 }
+/* The width of the course index (DESIGN.md, Layout), with the stage's side insets. */
+.inner {
+  box-sizing: border-box;
+  max-width: calc(1200px + 2 * var(--pc-stage-inset));
+  margin: 0 auto;
+  padding-inline: var(--pc-stage-inset);
+}
 
-/* The title and the scene side by side, stacked on narrow screens. */
+/* The hero: a band in the soft tone across the page, the title beside the scene. */
 .hero {
+  background: var(--pc-soft);
+  border-bottom: 1px solid var(--pc-rule);
+}
+.heroInner {
   display: grid;
   grid-template-columns: minmax(0, 5fr) minmax(0, 7fr);
-  gap: var(--pc-space-48);
+  gap: var(--pc-space-56);
   align-items: center;
+  padding-block: var(--pc-space-56);
 }
 .intro {
   min-width: 0;
@@ -23,17 +31,23 @@
   max-height: var(--pc-space-56);
   margin-bottom: var(--pc-space-24);
 }
+/* The site's name at a display size of its own, above the title role, that shrinks on phones. */
 .title {
   margin: 0;
-  font: var(--pc-text-title);
-  letter-spacing: var(--pc-tracking-title);
+  font: 600 clamp(2rem, 1.25rem + 2.25vw, 2.75rem) / 1.12 var(--pc-font-sans);
+  letter-spacing: -0.025em;
+  text-wrap: balance;
 }
 .tagline {
-  margin: var(--pc-space-12) 0 0;
+  max-width: 30ch;
+  margin: var(--pc-space-16) 0 0;
   color: var(--pc-muted);
 }
+/* The primary action of DESIGN.md, as a link. */
 .open {
   display: inline-block;
+  box-sizing: border-box;
+  min-height: 36px;
   margin-top: var(--pc-space-28);
   padding: 9px 22px;
   border-radius: var(--pc-radius-primary);
@@ -42,8 +56,6 @@
   font: var(--pc-text-ui);
   font-weight: 600;
   text-decoration: none;
-  min-height: 36px;
-  box-sizing: border-box;
 }
 .open:hover {
   filter: brightness(0.9);
@@ -52,34 +64,65 @@
   outline: 2px solid var(--pc-ink);
   outline-offset: 2px;
 }
-
-/* The two sections below: a heading, then a grid of bordered cards. */
-.section {
-  margin-top: var(--pc-space-56);
-  padding-top: var(--pc-space-24);
+/* The five kinds of material in the order of the tabs: the stations of the scene, as a legend. */
+.kinds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--pc-space-8) var(--pc-space-12);
+  margin: var(--pc-space-40) 0 0;
+  padding: var(--pc-space-16) 0 0;
   border-top: 1px solid var(--pc-rule);
+  list-style: none;
+}
+.kind,
+.eyebrow {
+  color: var(--pc-muted);
+  font: 600 var(--pc-size-label) / 1.5 var(--pc-font-sans);
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+/* The two sections below: a heading, then the steps in soft cards or the courses in bordered ones. */
+.section {
+  padding-block: var(--pc-space-56) 0;
+}
+.section:last-child {
+  padding-bottom: var(--pc-space-56);
 }
 .heading {
-  margin: 0 0 var(--pc-space-20);
-  font: var(--pc-text-subsection);
-  letter-spacing: var(--pc-tracking-subsection);
-}
-.grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: var(--pc-space-20);
   margin: 0;
+  font: var(--pc-text-section);
+  letter-spacing: var(--pc-tracking-title);
+}
+.lead {
+  max-width: 60ch;
+  margin: var(--pc-space-8) 0 0;
+  color: var(--pc-muted);
+  font: var(--pc-text-ui);
+}
+.steps,
+.courses {
+  display: grid;
+  gap: var(--pc-space-20);
+  margin: var(--pc-space-24) 0 0;
   padding: 0;
   list-style: none;
 }
-.card {
+.steps {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+/* A step for the author: a soft fill and no border, unlike the course cards below. */
+.step {
   min-width: 0;
-  padding: 22px 22px 18px;
-  border: 1px solid var(--pc-rule);
+  padding: 20px 22px;
   border-radius: var(--pc-radius-card);
+  background: var(--pc-soft);
+}
+.eyebrow {
+  display: block;
 }
 .cardTitle {
-  margin: 0 0 var(--pc-space-8);
+  margin: var(--pc-space-8) 0;
   font: 600 var(--pc-size-body) / 1.3 var(--pc-font-sans);
   letter-spacing: var(--pc-tracking-subsection);
 }
@@ -87,43 +130,115 @@
   margin: 0;
   font: var(--pc-text-ui);
 }
+.code {
+  font-family: var(--pc-font-mono);
+  overflow-wrap: anywhere;
+}
+/* The course card of the wireframe (.pc-course-card), lying on its side: the mark, then the text. */
+.courses {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr));
+}
+.course {
+  display: flex;
+  align-items: center;
+  gap: var(--pc-space-20);
+  min-width: 0;
+  padding: 20px 22px;
+  border: 1px solid var(--pc-rule);
+  border-radius: var(--pc-radius-card);
+}
+.mark {
+  display: block;
+  flex: none;
+  width: 76px;
+  height: 54px;
+  color: var(--pc-muted);
+}
+.mark svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.courseText {
+  min-width: 0;
+}
+.courseText .cardTitle {
+  margin: 0 0 var(--pc-space-4);
+}
 .meta {
   margin: 0;
   color: var(--pc-muted);
   font: var(--pc-text-label);
 }
-.code {
-  padding: 0 var(--pc-space-4);
-  border-radius: var(--pc-radius-control);
-  background: var(--pc-secondary);
-  font: var(--pc-text-code);
-  overflow-wrap: anywhere;
-}
 
 @media (max-width: 1199px) {
-  .front {
+  .inner {
     padding-inline: var(--pc-space-32);
   }
 }
-@media (max-width: 800px) {
-  .front {
-    padding-inline: var(--pc-space-24);
-  }
-  .hero {
+/* Below 960px the hero stacks: the title and the legend in one row, then the scene at full width. */
+@media (max-width: 960px) {
+  .heroInner {
     grid-template-columns: minmax(0, 1fr);
-    gap: var(--pc-space-32);
+    gap: var(--pc-space-40);
+    padding-block: var(--pc-space-48);
   }
-  .grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+/* Between the phone and the desktop the steps are rows: the eyebrow and the title, then the text. */
+@media (max-width: 900px) {
+  .steps {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .step {
+    display: grid;
+    grid-template-columns: minmax(0, 220px) minmax(0, 1fr);
+    grid-template-rows: auto 1fr;
+    column-gap: var(--pc-space-24);
+  }
+  .step .cardTitle {
+    margin-bottom: 0;
+  }
+  .step .cardText {
+    grid-row: 1 / span 2;
+    grid-column: 2;
+  }
+}
+@media (max-width: 800px) {
+  .inner {
+    padding-inline: var(--pc-space-24);
   }
 }
 @media (max-width: 540px) {
-  .front {
-    padding: var(--pc-space-32) var(--pc-space-16);
+  .inner {
+    padding-inline: var(--pc-space-16);
   }
-  .grid {
-    grid-template-columns: minmax(0, 1fr);
+  .heroInner {
+    gap: var(--pc-space-32);
+    padding-block: var(--pc-space-40);
+  }
+  .section {
+    padding-top: var(--pc-space-48);
+  }
+  .steps,
+  .courses {
     gap: 14px;
+  }
+  .step,
+  .course {
+    padding: 20px;
+  }
+  .step {
+    display: block;
+  }
+  .step .cardTitle {
+    margin-bottom: var(--pc-space-8);
+  }
+  .kinds {
+    column-gap: var(--pc-space-8);
+  }
+  .kind {
+    letter-spacing: 0.03em;
   }
 }
 /* The touch target of Buttons.module.css, which the global rule gives no link; last, to win. */
@@ -131,7 +246,7 @@
   .open {
     display: inline-flex;
     align-items: center;
-    min-height: var(--pc-touch-target, 44px);
-    min-width: var(--pc-touch-target, 44px);
+    min-height: 44px;
+    min-width: 44px;
   }
 }

@@ -1,19 +1,24 @@
+/* The scene and, under it, the button that stops and starts it. */
 .scene {
-  position: relative;
+  display: grid;
+  justify-items: start;
   min-width: 0;
 }
-/* The canvas draws with its own colour and background: the page's ink and paper, in either theme. */
+/* The canvas draws with its own colour and background: the page's ink and paper, in either theme.
+   The component sets its width to a whole number of CSS pixels per scene pixel, so that every
+   pixel is crisp. */
 .canvas {
   display: block;
-  width: 100%;
+  max-width: 100%;
   height: auto;
-  border: 1px solid var(--pc-ink);
-  border-radius: var(--pc-radius-square);
+  border: 1px solid var(--pc-rule);
+  border-radius: var(--pc-radius-card);
   background: var(--pc-paper);
   color: var(--pc-ink);
   image-rendering: pixelated;
 }
 .toggle {
+  justify-self: end;
   margin-top: var(--pc-space-8);
   padding: 2px 0;
   border: 0;
@@ -22,14 +27,19 @@
   color: var(--pc-muted);
   font: var(--pc-text-label);
   text-decoration: underline;
+  text-underline-offset: 3px;
   cursor: pointer;
 }
 .toggle:hover {
   color: var(--pc-ink);
 }
+.toggle:focus-visible {
+  outline: 2px solid var(--pc-ink);
+  outline-offset: 2px;
+}
 @media (pointer: coarse) {
   .toggle {
-    min-height: var(--pc-touch-target, 44px);
-    min-width: var(--pc-touch-target, 44px);
+    min-height: 44px;
+    min-width: 44px;
   }
 }
