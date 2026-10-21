@@ -1,45 +1,59 @@
-/* The scene and, under it, the button that stops and starts it. */
+/* The scene in a screen's frame, with the button that stops and starts it in its corner. */
 .scene {
-  display: grid;
-  justify-items: start;
+  position: relative;
   min-width: 0;
+  padding: 4px;
 }
-/* The canvas draws with its own colour and background: the page's ink and paper, in either theme.
-   The component sets its width to a whole number of CSS pixels per scene pixel, so that every
-   pixel is crisp. */
+/* The frame: a border four pixels wide whose corners are left out, in the lighter colour. */
+.scene::before {
+  position: absolute;
+  inset: 4px;
+  box-shadow:
+    0 -4px 0 0 light-dark(var(--pc-paper), var(--pc-ink)),
+    0 4px 0 0 light-dark(var(--pc-paper), var(--pc-ink)),
+    -4px 0 0 0 light-dark(var(--pc-paper), var(--pc-ink)),
+    4px 0 0 0 light-dark(var(--pc-paper), var(--pc-ink));
+  content: "";
+  pointer-events: none;
+}
+/* The canvas draws in two colours: the page's ink (its colour) and paper (its background). The
+   component sets its width to a whole number of CSS pixels per scene pixel, so that every pixel
+   is crisp. */
 .canvas {
   display: block;
   max-width: 100%;
   height: auto;
-  border: 1px solid var(--pc-rule);
-  border-radius: var(--pc-radius-card);
+  margin: 0 auto;
   background: var(--pc-paper);
   color: var(--pc-ink);
   image-rendering: pixelated;
 }
 .toggle {
-  justify-self: end;
-  margin-top: var(--pc-space-8);
-  padding: 2px 0;
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
   border: 0;
-  border-radius: var(--pc-radius-control);
-  background: none;
-  color: var(--pc-muted);
-  font: var(--pc-text-label);
-  text-decoration: underline;
-  text-underline-offset: 3px;
+  background: light-dark(var(--pc-ink), var(--pc-paper));
+  color: light-dark(var(--pc-paper), var(--pc-ink));
   cursor: pointer;
 }
-.toggle:hover {
-  color: var(--pc-ink);
+.toggle svg {
+  width: 21px;
+  height: 21px;
+  fill: currentColor;
+  shape-rendering: crispEdges;
+}
+.toggle:hover,
+.toggle:focus-visible {
+  background: light-dark(var(--pc-paper), var(--pc-ink));
+  color: light-dark(var(--pc-ink), var(--pc-paper));
 }
 .toggle:focus-visible {
-  outline: 2px solid var(--pc-ink);
+  outline: 2px dashed light-dark(var(--pc-paper), var(--pc-ink));
   outline-offset: 2px;
-}
-@media (pointer: coarse) {
-  .toggle {
-    min-height: 44px;
-    min-width: 44px;
-  }
 }

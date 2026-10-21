@@ -26,6 +26,7 @@ The first command asks nothing, runs no install and refuses a folder that is not
 | `instructor.yaml` | the instructor's `name` and `email` |
 | `courses/<course>/` | the course folders ([instructor guide](guide/instructors.md#courses-from-a-folder)) |
 | `src/pages/` | the site's own pages, JSX only: `index.tsx` is the front page at `/`, `about.tsx` is `/about`; a file whose name starts with `_` is a helper, such as `_visualization.tsx`, the scene the front page shows; styles are `*.module.css` files beside them |
+| `src/fonts/` | the three pixel fonts of the front page and their licences (SIL Open Font License); delete them with the page's styles if you do not use them |
 | `private/` | the exercises and tests of courses declared `public: true`, at the same path as the course folder |
 | `compose.yml`, `Caddyfile`, `compose.level2.yml`, `compose.runner.yml` | the installation at levels 1 and 2 ([operations](operations.md#a-site-on-one-host)) |
 
