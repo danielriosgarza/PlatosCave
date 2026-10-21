@@ -298,7 +298,7 @@ Parallax shows a receipt with the time, version, file name, size and checksum. N
 
 ### Run cells on a computer
 
-The toolbar button that says **Saved outputs** opens **Connect a computer**. This lets you run the cells on a computer you may use. The computer runs Python or R. Parallax is the interface.
+Beside the **Saved outputs** label in the toolbar, **Connect computer** opens **Connect a computer**. Once a notebook is connected, the toolbar label names the computer and its state, and selecting it opens the same panel. This lets you run the cells on a computer you may use. The computer runs Python or R. Parallax is the interface.
 
 **Computers.** A connector program runs on the computer that will run your notebooks. In the list, select **Pair a computer**. Follow the instructions shown with the pairing code, then approve the computer in the list. Download the connector from the releases link in the panel. A computer shows as **Waiting for approval**, **Online** or **Offline**. You can approve, reject, rename or revoke a computer. Revoking does not revoke any SSH account.
 

@@ -186,7 +186,9 @@ Students see the app only when the host has approved its origin. Otherwise the p
 
 **Colab.** There is nothing to configure for Colab. The student's notebook view has a **Work in Colab** section. Students open the notebook in Colab on Google's computers, and hand it back by uploading an `.ipynb` file. As an instructor you see **Student submissions** in that section, with a **Student** column and a **Download** button for each file. A person with a paid Colab plan can also run the cells in a Colab runtime from the Connect panel ([student guide](students.md#run-cells-on-a-computer)).
 
-Connecting to a personal computer or SSH account is a student and instructor workflow of its own. It is not part of authoring.
+**Running notebooks on a computer.** From level 1, anyone signed in to a class can run a notebook's cells on a computer they may use: their own computer, a lab workstation, or an SSH host. They choose **Connect computer** in the notebook toolbar. The code runs on that computer in Jupyter, and Parallax stays the interface; it never runs on the site's server. The computer needs the `parallax-connector` program, from the repository's releases (tags `connector-v…`), and Jupyter Server 2 (`pip install jupyter-server ipykernel`) or a Python interpreter chosen in the connection. The connector can start its own Jupyter server or attach to one already running on that computer. The [student guide](students.md#run-cells-on-a-computer) walks through pairing, testing and connecting. A level 0 open site has no server and no sign-in, so it shows saved outputs only.
+
+There is nothing to author for this: a notebook added with its outputs can be run as it is. When a notebook declares files, students are offered a copy of them in the working directory on the computer. Connecting is a student and instructor workflow of its own.
 
 ### Tests
 

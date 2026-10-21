@@ -35,8 +35,8 @@ interface Props {
 
 /**
  * The Notebooks tab (§10.1, §10.7): the picked notebook rendered with its saved outputs. No
- * computer is connected in this mode, so the toolbar says so ("Saved outputs") and every output
- * group is labelled as stored, with the kernel that produced it.
+ * computer is connected in this mode, so the toolbar says so ("Saved outputs"), offers Connect
+ * computer (§10.3), and every output group is labelled as stored, with the kernel that produced it.
  */
 export function NotebooksTab({
   classId,
@@ -264,7 +264,8 @@ function NotebookPanel({
     <ResourceTools>
       {picker}
       {/* The mode: no computer is connected, so these are the outputs the file was saved with. */}
-      {targetButton('Saved outputs')}
+      <span className={styles.mode}>Saved outputs</span>
+      {targetButton('Connect computer')}
       {outlineButton}
       {viewButtons}
       {sourceDownload}

@@ -910,7 +910,7 @@ describe('the notebook toolbar opens the panel', () => {
       return { status: 404, body: {} };
     });
     renderApp(`/classes/${CLASS_A}/topics/${T_SAMPLING}/notebooks`);
-    const opener = await screen.findByRole('button', { name: 'Saved outputs' });
+    const opener = await screen.findByRole('button', { name: 'Connect computer' });
     expect(opener).toHaveAttribute('aria-expanded', 'false');
     await userEvent.click(opener);
     const heading = await screen.findByRole('heading', { name: 'Connect a computer' });
