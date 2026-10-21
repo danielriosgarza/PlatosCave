@@ -10,11 +10,14 @@ import {
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useState } from 'react';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { type InteractiveDraft, interactiveDraft, interactiveResponse, snapParam } from './draft';
 import { InteractiveForm } from './InteractiveForm';
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+});
 
 const feedback = { correct: 'Right.', incorrect: 'Not yet.' };
 const plane = { x: [-5, 5], y: [-5, 5], axes: true, grid: 1 };
@@ -408,20 +411,36 @@ describe('interactive steps from the keyboard', () => {
         }}
       />,
     );
+    // The animation's frames come when the test says, at the times it gives.
+    const frames = new Map<number, FrameRequestCallback>();
+    let id = 0;
+    vi.stubGlobal('requestAnimationFrame', (tick: FrameRequestCallback) => {
+      frames.set(++id, tick);
+      return id;
+    });
+    vi.stubGlobal('cancelAnimationFrame', (cancelled: number) => frames.delete(cancelled));
+    const frameAt = (ms: number) =>
+      act(() => {
+        const due = [...frames.values()];
+        frames.clear();
+        for (const tick of due) tick(ms);
+      });
+    const shown = () => screen.getByText(/^k = /).textContent;
     // 9 is the last value the slider offers: Play runs from the start again.
+    expect(shown()).toBe('k = 9');
     await user.click(screen.getByRole('button', { name: 'Play' }));
-    const seen: string[] = [];
-    await waitFor(
-      () => {
-        const now = screen.getByText(/^k = /).textContent ?? '';
-        if (seen.at(-1) !== now) seen.push(now);
-        expect(seen.slice(1)).toEqual(['k = 0', 'k = 3', 'k = 6', 'k = 9']);
-        // It stops at the end rather than going round again.
-        expect(screen.getByText('Play', { selector: 'button' })).toBeVisible();
-      },
-      { timeout: 3000 },
-    );
-    expect(screen.getByText(/^k = /)).toHaveTextContent('k = 9');
+    const seen: (string | null)[] = [];
+    for (const ms of [0, 150, 300, 450]) {
+      frameAt(ms);
+      seen.push(shown());
+    }
+    expect(seen).toEqual(['k = 0', 'k = 3', 'k = 6', 'k = 9']);
+    // At the end of the range it stops rather than going round again.
+    frameAt(500);
+    expect(shown()).toBe('k = 9');
+    expect(screen.getByRole('button', { name: 'Play' })).toBeVisible();
+    // And it asks for no more frames.
+    expect(frames.size).toBe(0);
   });
 
   it('A07 a reopened drawing is undone and redone, and a description alone saves it', async () => {

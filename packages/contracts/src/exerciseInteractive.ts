@@ -1,7 +1,7 @@
 import { z } from 'zod';
 import { strokes } from './anchors';
 import { common, feedback, label, option, prose, stepId } from './exerciseBase';
-import { expressionProblem, formatNumber, holds, quantityValue } from './expression';
+import { expressionProblem, holds, quantityValue } from './expression';
 import {
   expressionText,
   type FieldProblem,
@@ -590,16 +590,17 @@ export function interactiveProblems(step: InteractiveStep): FieldProblem[] {
         add(['start'], 'lies outside the scene');
       }
       const key = sketchKeyStep(step.scene.y);
-      if (key < 1e-4) {
-        // Heights are sent to six decimals: a smaller key step would be lost to rounding.
+      // Heights are read out to three decimals: a smaller key step would move a point unheard.
+      if (key < 0.001 - 1e-12) {
         add(
           ['scene', 'y'],
-          'spans too little to sketch on: use larger units, so that it is at least 0.004 high',
+          'spans too little to sketch on: use larger units, so that it is at least 0.04 high',
         );
       } else if (step.tolerance < key / 2 - 1e-9) {
+        const exact = (v: number) => String(Number(v.toPrecision(6)));
         add(
           ['tolerance'],
-          `must be at least ${formatNumber(key / 2)}, half the ${formatNumber(key)} an arrow key moves a point, or the keyboard cannot reach the curve`,
+          `must be at least ${exact(key / 2)}, half the ${exact(key)} an arrow key moves a point, or the keyboard cannot reach the curve`,
         );
       }
       if (!problem && from < to) {

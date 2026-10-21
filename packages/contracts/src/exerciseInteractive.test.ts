@@ -164,10 +164,29 @@ describe('interactive steps in exercise.v1', () => {
       const ys = [0, 1, 2, 3, 4].map((x) => keyed(0.5 * x + 1, above));
       expect(check(least, ys), String(ys)).toMatchObject({ correct: true });
     }
+    // On a scene 0.04 high a press moves a point by 0.001, the least a height is read out by.
+    const short = { ...sketch, scene: { x: [0, 4], y: [0, 0.04] }, answer: '0.01*x' };
+    expect(problems({ ...short, tolerance: 0.0005 })).toEqual([]);
+    expect(problems({ ...short, tolerance: 0.0001 })).toEqual([
+      'Step 1 “Step” · tolerance: must be at least 0.0005, half the 0.001 an arrow key moves a point, or the keyboard cannot reach the curve',
+    ]);
     expect(
-      problems({ ...sketch, scene: { x: [0, 4], y: [0, 0.001] }, answer: '0.0001*x' }),
+      problems({
+        ...short,
+        scene: { x: [0, 4], y: [0, 0.03] },
+        answer: '0.005*x',
+        tolerance: 0.01,
+      }),
+    ).toEqual([]);
+    expect(
+      problems({
+        ...short,
+        scene: { x: [0, 4], y: [0, 0.01] },
+        answer: '0.002*x',
+        tolerance: 0.01,
+      }),
     ).toEqual([
-      'Step 1 “Step” · scene · y: spans too little to sketch on: use larger units, so that it is at least 0.004 high',
+      'Step 1 “Step” · scene · y: spans too little to sketch on: use larger units, so that it is at least 0.04 high',
     ]);
   });
 
