@@ -5,6 +5,7 @@ export * from './courseFolder';
 export * from './define';
 export * from './examples';
 export * from './exercise';
+export * from './kernelMessages';
 export * from './notebook';
 export * from './notebookChannel';
 export * from './openSite';

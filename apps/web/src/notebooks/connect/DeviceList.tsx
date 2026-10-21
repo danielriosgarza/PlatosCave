@@ -5,6 +5,7 @@ import { RetryNotice } from '../../components/RetryNotice';
 import { type Connector, errorCode, useConnectorActions, useConnectors } from './api';
 import styles from './Connect.module.css';
 import { useCancelOnEscape } from './escape';
+import { CONNECTOR_RELEASES } from './releases';
 
 const time = (iso: string) =>
   new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
@@ -18,9 +19,7 @@ const REFUSALS: Record<string, string> = {
   rate_limited: 'Too many pairing codes this hour. Try again later.',
 };
 
-// Connector binaries are GitHub release assets of this repository (tag connector-v<version>), each
-// release carrying its own SHA256SUMS file (docs/operations.md, "Connector downloads").
-export const CONNECTOR_RELEASES = 'https://github.com/danielriosgarza/PlatosCave/releases';
+export { CONNECTOR_RELEASES } from './releases';
 
 /** The message for a refused request: its own reason when the API gave one, else a plain failure. */
 const refusal = (error: unknown, fallback: string) => REFUSALS[errorCode(error) ?? ''] ?? fallback;

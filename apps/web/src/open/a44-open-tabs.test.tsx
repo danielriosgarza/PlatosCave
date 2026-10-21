@@ -126,10 +126,15 @@ describe('A44 level 0 tabs', () => {
     const local = screen.getByRole('region', { name: 'Work on your computer' });
     expect(href('the notebook with its data files', local)).toBe(ZIP);
     expect(local).toHaveTextContent('with a python kernel');
+    // Running it is the visitor's choice, on their own computer (A57): the page asks nothing of
+    // the connector until then, and offers nothing to hand in.
+    const run = screen.getByRole('button', { name: 'Run on this computer' });
+    expect(run).toHaveAttribute('aria-expanded', 'false');
     for (const role of ['button', 'link'] as const) {
-      expect(
-        screen.queryAllByRole(role, { name: /connect|run|submit|original|saved outputs/i }),
-      ).toEqual([]);
+      const offered = screen.queryAllByRole(role, {
+        name: /connect|run|submit|original|saved outputs/i,
+      });
+      expect(offered).toEqual(role === 'button' ? [run] : []);
     }
     onlyDataFiles();
     await axeWithFrames();

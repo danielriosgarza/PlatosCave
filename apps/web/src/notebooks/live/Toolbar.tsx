@@ -14,6 +14,8 @@ interface Props {
   owned: boolean | null;
   /** The session is in a state the session menu can act on. */
   sessionActive: boolean;
+  /** Disconnect is offered (level 1); at level 0 the page holds the only connection. */
+  canDisconnect?: boolean;
   onRunAll: () => void;
   onInterrupt: () => void;
   onAsk: (action: SessionAction) => void;
@@ -30,6 +32,7 @@ export function LiveToolbar({
   runningAll,
   owned,
   sessionActive,
+  canDisconnect = true,
   onRunAll,
   onInterrupt,
   onAsk,
@@ -68,9 +71,11 @@ export function LiveToolbar({
           <button type="button" className={buttons.tool} onClick={() => choose('restart')}>
             Restart kernel
           </button>
-          <button type="button" className={buttons.tool} onClick={() => choose('disconnect')}>
-            Disconnect
-          </button>
+          {canDisconnect ? (
+            <button type="button" className={buttons.tool} onClick={() => choose('disconnect')}>
+              Disconnect
+            </button>
+          ) : null}
           {owned === false ? null : (
             <button type="button" className={buttons.tool} onClick={() => choose('stop')}>
               Stop session

@@ -1,5 +1,5 @@
-// Package cli is the parallax-connector command line: pair, run, status, unpair, doctor and
-// version (docs/design/connector.md §3, §4, §13).
+// Package cli is the parallax-connector command line: pair, run, open, status, unpair, doctor
+// and version (docs/design/connector.md §3, §4, §13; docs/design/open-site.md §13 for open).
 package cli
 
 import (
@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"net"
 	"net/http"
 	"os"
 	"runtime"
@@ -52,6 +53,8 @@ type Env struct {
 	Getenv   func(string) string
 	ReadFile func(string) ([]byte, error)
 	Stat     func(string) (fs.FileInfo, error)
+	// Listen opens `open`'s loopback port; nil is opensite.Listen.
+	Listen func(port int) (net.Listener, error)
 }
 
 // DefaultEnv is the real process.
@@ -87,6 +90,9 @@ Commands:
   run [--allow-net CIDR]... [--state-dir DIR] [--confirm-sessions]
                     connect this computer to Parallax and keep it connected
   run --managed     run as a managed connector, configured only from the environment
+  open [--workspace DIR] [--python PATH] [--allow ORIGIN]...
+                    let notebooks on course sites in this computer's browser run here,
+                    asking in this terminal before each site may (no pairing needed)
   status [--json]   show whether this computer is paired, and with which server
   unpair [--yes]    revoke this computer in Parallax and delete its identity
   doctor [--json]   check what the connector needs on this computer
@@ -111,6 +117,8 @@ func Main(ctx context.Context, args []string, env Env) int {
 		err = pair(ctx, args[1:], env)
 	case "run":
 		err = run(ctx, args[1:], env)
+	case "open":
+		err = openMode(ctx, args[1:], env)
 	case "status":
 		err = status(args[1:], env)
 	case "unpair":
