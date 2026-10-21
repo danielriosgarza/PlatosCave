@@ -1,3 +1,4 @@
+import { iconAliases } from '@parallax/contracts';
 import { useEffect, useId, useState } from 'react';
 import buttons from '../components/Buttons.module.css';
 import { Glyph } from '../exercises/interactive/icon';
@@ -8,10 +9,23 @@ const SHOWN = 60;
 
 type Tags = Readonly<Record<string, string>>;
 
+/** Each icon's older names (`home` for `house`), made once. */
+let older: Map<string, string[]> | null = null;
+
+/** How `word` matches `name`: 0 its first part, 1 another part, 2 the start of a part, 3 inside. */
+function nameRank(word: string, name: string): number {
+  const parts = name.split('-');
+  if (parts[0] === word) return 0;
+  if (parts.includes(word)) return 1;
+  if (parts.some((p) => p.startsWith(word))) return 2;
+  return name.includes(word) ? 4 : -1;
+}
+
 /**
- * Icon names matching every word of `query`, by name or by search word: names that start with
- * the word first, then names with it as a part, then names with a part that starts with it, then
- * names that contain it, then names found by their search words.
+ * Icon names matching every word of `query`, by name, by older name or by search word: names
+ * that start with the word first, then names with it as a part, then names with a part that
+ * starts with it, then names with it as a search word, then names that contain it, then names
+ * with a search word that starts with it. An older name counts as the icon's name.
  */
 export function findIcons(query: string, tags: Tags): string[] {
   const words = query
@@ -19,25 +33,22 @@ export function findIcons(query: string, tags: Tags): string[] {
     .split(/[\s,]+/)
     .filter(Boolean);
   if (!words.length) return [];
+  if (!older) {
+    older = new Map();
+    for (const [alias, name] of iconAliases) older.set(name, [...(older.get(name) ?? []), alias]);
+  }
   const found: [string, number][] = [];
   for (const [name, list] of Object.entries(tags)) {
-    const parts = name.split('-');
+    const spellings = [name, ...(older.get(name) ?? [])];
     const search = list.split(/[,\s]+/);
-    // How each word matches: 0 the first part of the name, 1 another part, 2 the start of a
-    // part, 3 inside the name, 4 the start of a search word; -1 not at all.
-    const ranks = words.map((w) =>
-      parts[0] === w
-        ? 0
-        : parts.includes(w)
-          ? 1
-          : parts.some((p) => p.startsWith(w))
-            ? 2
-            : name.includes(w)
-              ? 3
-              : search.some((t) => t.startsWith(w))
-                ? 4
-                : -1,
-    );
+    // How each word matches, as above; -1 not at all.
+    const ranks = words.map((w) => {
+      const named = spellings.map((n) => nameRank(w, n)).filter((r) => r >= 0);
+      if (named.some((r) => r < 3)) return Math.min(...named);
+      if (search.includes(w)) return 3;
+      if (named.length) return 4;
+      return search.some((t) => t.startsWith(w)) ? 5 : -1;
+    });
     if (!ranks.includes(-1)) found.push([name, ranks.reduce((a: number, b) => a + b, 0)]);
   }
   return found

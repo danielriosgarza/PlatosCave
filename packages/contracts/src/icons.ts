@@ -13,8 +13,10 @@ export const iconAliases: ReadonlyMap<string, string> = new Map(
   ICON_ALIASES.split(' ').map((pair) => pair.split(':') as [string, string]),
 );
 
-/** The longest name accepted: a longer one is no icon, and is never compared with them. */
+/** The longest name accepted: a longer one is no icon. */
 const LONGEST = Math.max(...[...iconNames, ...iconAliases.keys()].map((n) => n.length));
+/** The most edits between a name and a suggestion: no suggestion is longer than LONGEST + MOST. */
+const MOST = 3;
 
 /** Every accepted name with its words, made once, when a name is first not found. */
 let spellings: { name: string; words: string[] }[] | null = null;
@@ -50,7 +52,7 @@ const prefix = (a: string, b: string) => {
 /** Up to three icon names close to `name`: those it is a word of, then the nearest spellings. */
 export function iconSuggestions(name: string): string[] {
   const word = name.trim().toLowerCase();
-  if (!word || word.length > LONGEST) return [];
+  if (!word || word.length > LONGEST + MOST) return [];
   spellings ??= [...iconNames, ...iconAliases.keys()].map((n) => ({
     name: n,
     words: n.split('-'),
@@ -64,7 +66,7 @@ export function iconSuggestions(name: string): string[] {
     .map(([n]) => n);
   // Older names count as spellings of the icons they name. An edit distance is at least the
   // difference in length, so most names are never compared.
-  const most = word.length < 6 ? 2 : 3;
+  const most = word.length < 6 ? 2 : MOST;
   const near = spellings
     .flatMap(({ name: n }) =>
       Math.abs(n.length - word.length) <= most ? [[n, distance(word, n, most)] as const] : [],
@@ -77,9 +79,14 @@ export function iconSuggestions(name: string): string[] {
   return [...new Set([...words, ...near])].slice(0, 3);
 }
 
+const unknown = (like: string[]) =>
+  `is not an icon${like.length ? `: try ${like.join(', ')}` : ''} (the icons are listed at lucide.dev/icons)`;
+
 /**
  * An icon's name, as https://lucide.dev/icons lists it. Capitals are read as small letters, and
- * an older Lucide name as the icon it names now.
+ * an older Lucide name as the icon it names now. An unknown name is refused with the name in the
+ * issue's `params.icon`, and without the nearest names: `iconHints` adds them to a few issues,
+ * since one exercise can hold thousands of names and each search costs about a millisecond.
  */
 export const iconName = z
   .string()
@@ -87,10 +94,22 @@ export const iconName = z
   .toLowerCase()
   .superRefine((name, ctx) => {
     if (iconNames.has(name) || iconAliases.has(name)) return;
-    const like = iconSuggestions(name);
-    ctx.addIssue({
-      code: 'custom',
-      message: `is not an icon${like.length ? `: try ${like.join(', ')}` : ''} (the icons are listed at lucide.dev/icons)`,
-    });
+    ctx.addIssue({ code: 'custom', message: unknown([]), params: { icon: name } });
   })
   .overwrite((name) => iconAliases.get(name) ?? name);
+
+/** The unknown names given the nearest names in their messages; later ones keep the plain one. */
+export const HINTED = 10;
+
+/** `issues` with the nearest icon names added to the first `HINTED` unknown icon names. */
+export function iconHints<T extends { code?: string; message: string; params?: unknown }>(
+  issues: readonly T[],
+): T[] {
+  let left = HINTED;
+  return issues.map((issue) => {
+    const icon = (issue.params as { icon?: unknown } | undefined)?.icon;
+    if (issue.code !== 'custom' || typeof icon !== 'string' || left === 0) return issue;
+    left -= 1;
+    return { ...issue, message: unknown(iconSuggestions(icon)) };
+  });
+}

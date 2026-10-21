@@ -74,3 +74,14 @@ test('A42 a YAML exercise or test is accepted exactly when the schema accepts th
     ]);
   }
 });
+
+test('A42 an unknown icon in a YAML exercise is named with the nearest icons', async () => {
+  const { manifest, problems } = await read('exercises', 'exercises/interactive-problems.yaml');
+  expect(manifest).toBeNull();
+  expect(problems.filter((problem) => problem.message.includes('is not an icon'))).toEqual([
+    expect.objectContaining({
+      message: 'is not an icon: try triangle (the icons are listed at lucide.dev/icons)',
+      line: expect.any(Number),
+    }),
+  ]);
+});

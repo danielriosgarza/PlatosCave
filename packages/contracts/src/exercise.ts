@@ -9,6 +9,7 @@ import {
   interactiveView,
   isInteractiveKind,
 } from './exerciseInteractive';
+import { iconHints } from './icons';
 
 /**
  * `exercise.v1` (§9): the content of an `exercise` resource revision. An exercise is a short
@@ -262,7 +263,7 @@ export function exerciseProblems(content: unknown): string[] {
   if (parsed.success) return [];
   const steps = (content as { steps?: { title?: unknown }[] } | null)?.steps;
   // An unticked option fails the id pattern and the step's own check; say it once.
-  const issues = parsed.error.issues.filter(
+  const issues = iconHints(parsed.error.issues).filter(
     (issue, _i, all) =>
       !(
         issue.code === 'invalid_format' &&

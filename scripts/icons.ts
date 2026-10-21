@@ -93,6 +93,14 @@ for (const file of readdirSync(join(source, 'icons')).sort()) {
   if (same.length !== 1) throw new Error(`alias ${alias} repeats ${same.length} icons`);
   aliases.set(alias, same[0] as string);
 }
+// Names Parallax accepts that the package no longer has, each with the icon that replaces it:
+// what the check below asks for when a newer Lucide drops a name.
+const KEPT: Record<string, string> = {};
+for (const [alias, name] of Object.entries(KEPT)) {
+  if (!nodes[name]) throw new Error(`KEPT names ${alias} as ${name}, which is not an icon`);
+  if (nodes[alias] || aliases.has(alias)) throw new Error(`KEPT need not list ${alias}`);
+  aliases.set(alias, name);
+}
 for (const name of [...names, ...aliases.keys()]) {
   if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(name)) throw new Error(`unexpected icon name ${name}`);
 }
@@ -106,7 +114,7 @@ if (existsSync(current)) {
   const lost = before.filter((n) => n && !nodes[n] && !aliases.has(n));
   if (lost.length) {
     throw new Error(
-      `these names are accepted now and would no longer be, so stored exercises using them would be refused: ${lost.join(', ')}. Add each as an alias of the icon that replaces it.`,
+      `these names are accepted now and would no longer be, so stored exercises using them would be refused: ${lost.join(', ')}. Add each to KEPT in this script, with the icon that replaces it.`,
     );
   }
 }

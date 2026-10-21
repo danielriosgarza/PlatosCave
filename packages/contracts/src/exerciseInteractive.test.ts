@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { type ExerciseStep, exerciseProblems, exerciseStep, exerciseStepView } from './exercise';
 import { judge, parseResponse, revealOf, savedByComplete, viewStep } from './exerciseRules';
-import { iconName, iconNames, iconSuggestions } from './icons';
+import { HINTED, iconName, iconNames, iconSuggestions } from './icons';
 
 const feedback = { correct: 'Right.', incorrect: 'Not yet.' };
 const step = (raw: Record<string, unknown>): ExerciseStep =>
@@ -511,7 +511,9 @@ describe('icons in interactive steps', () => {
     expect(refused.error?.issues[0]?.message).toBe(
       'is not an icon (the icons are listed at lucide.dev/icons)',
     );
-    expect(iconSuggestions('a'.repeat(longest.length + 1))).toEqual([]);
+    expect(iconSuggestions('a'.repeat(longest.length + 4))).toEqual([]);
+    // A name a few letters longer than the longest is still a misspelling of it.
+    expect(iconSuggestions(`${longest}s`)[0]).toBe(longest);
     const sized = (size: unknown) =>
       problems({
         kind: 'manipulate',
@@ -523,6 +525,28 @@ describe('icons in interactive steps', () => {
       'Step 1 “Step” · scene · shapes · #1 · size: must be greater than 0',
     ]);
     expect(sized('n + 1')).toEqual([]);
+  });
+
+  it('A42 names the nearest icons for the first unknown names only, so thousands are checked at once', () => {
+    // Each unknown name differs, as a body sent to stall the check would make them.
+    const items = Array.from({ length: 3000 }, (_, i) => ({
+      id: `item-${i}`,
+      label: `Item ${i}`,
+      icon: `tree-pin${String.fromCharCode(97 + (i % 26))}${Math.floor(i / 26)}`,
+      category: 'fruit',
+    }));
+    const started = performance.now();
+    const found = problems({ ...lunch, iconsOnly: false, items });
+    expect(performance.now() - started).toBeLessThan(1000);
+    const unknown = found.filter((p) => p.includes('is not an icon'));
+    expect(unknown).toHaveLength(3000);
+    expect(unknown[0]).toBe(
+      'Step 1 “Step” · items · #1 · icon: is not an icon: try tree-pine (the icons are listed at lucide.dev/icons)',
+    );
+    expect(unknown.filter((p) => p.includes(': try '))).toHaveLength(HINTED);
+    expect(unknown[HINTED]).toBe(
+      `Step 1 “Step” · items · #${HINTED + 1} · icon: is not an icon (the icons are listed at lucide.dev/icons)`,
+    );
   });
 
   it('A42 needs an icon on every piece of an iconsOnly step, and tiles for one with gaps', () => {
