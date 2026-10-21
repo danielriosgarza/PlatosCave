@@ -620,8 +620,7 @@ export default function Visualization() {
     };
     // The scene is as wide as its box allows at a whole number of CSS pixels per scene pixel.
     const fit = () => {
-      // The frame takes four pixels on either side.
-      const room = box.clientWidth - 8;
+      const room = box.clientWidth;
       const scale = pixelFor(room);
       const next = Math.max(1, Math.floor(room / scale));
       element.style.width = `${next * scale}px`;

@@ -109,7 +109,11 @@ test('A37 a site created from the instructor template shows its front page at / 
   expect(await logo.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBeGreaterThan(0);
   const src = await logo.getAttribute('src');
   expect(src).toMatch(/^\/assets\/logo-[\w-]+\.png$/);
-  await expect(main.getByRole('heading', { level: 2 })).toHaveText(['Courses', 'Make it yours']);
+  await expect(main.getByRole('heading', { level: 2 })).toHaveText([
+    'In every topic',
+    'Courses',
+    'Make it yours',
+  ]);
   // The course catalogue: one card per course, with its instructor.
   const courses = main.getByRole('region', { name: 'Courses' }).getByRole('listitem');
   await expect(courses).toHaveCount(1);

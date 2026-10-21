@@ -1,20 +1,10 @@
-/* The scene in a screen's frame, with the button that stops and starts it in its corner. */
+/* The scene, with the button that stops and starts it in its lower corner. */
 .scene {
   position: relative;
+  overflow: hidden;
   min-width: 0;
-  padding: 4px;
-}
-/* The frame: a border four pixels wide whose corners are left out, in the lighter colour. */
-.scene::before {
-  position: absolute;
-  inset: 4px;
-  box-shadow:
-    0 -4px 0 0 light-dark(var(--pc-paper), var(--pc-ink)),
-    0 4px 0 0 light-dark(var(--pc-paper), var(--pc-ink)),
-    -4px 0 0 0 light-dark(var(--pc-paper), var(--pc-ink)),
-    4px 0 0 0 light-dark(var(--pc-paper), var(--pc-ink));
-  content: "";
-  pointer-events: none;
+  border-radius: var(--pc-radius-card);
+  background: light-dark(var(--pc-ink), var(--pc-paper));
 }
 /* The canvas draws in two colours: the page's ink (its colour) and paper (its background). The
    component sets its width to a whole number of CSS pixels per scene pixel, so that every pixel
@@ -30,30 +20,35 @@
 }
 .toggle {
   position: absolute;
-  right: 8px;
-  bottom: 8px;
+  right: 10px;
+  bottom: 10px;
   display: grid;
   place-items: center;
-  width: 44px;
-  height: 44px;
+  width: 36px;
+  height: 36px;
   padding: 0;
-  border: 0;
+  border: 1px solid light-dark(rgb(255 255 255 / 0.35), rgb(255 255 255 / 0.25));
+  border-radius: var(--pc-radius-control);
   background: light-dark(var(--pc-ink), var(--pc-paper));
   color: light-dark(var(--pc-paper), var(--pc-ink));
   cursor: pointer;
 }
 .toggle svg {
-  width: 21px;
-  height: 21px;
+  width: 12px;
+  height: 12px;
   fill: currentColor;
   shape-rendering: crispEdges;
 }
-.toggle:hover,
-.toggle:focus-visible {
-  background: light-dark(var(--pc-paper), var(--pc-ink));
-  color: light-dark(var(--pc-ink), var(--pc-paper));
+.toggle:hover {
+  border-color: currentColor;
 }
 .toggle:focus-visible {
-  outline: 2px dashed light-dark(var(--pc-paper), var(--pc-ink));
+  outline: 2px solid light-dark(var(--pc-paper), var(--pc-ink));
   outline-offset: 2px;
+}
+@media (pointer: coarse) {
+  .toggle {
+    width: 44px;
+    height: 44px;
+  }
 }

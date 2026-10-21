@@ -1,311 +1,228 @@
-/* Three pixel fonts, in src/fonts under the SIL Open Font License: Jersey 10 for names and
-   headings, Silkscreen for buttons and labels, VT323 for text and file names. */
-@font-face {
-  font-family: "Jersey 10";
-  font-display: swap;
-  src: url("../fonts/jersey-10-latin-400-normal.woff2") format("woff2");
-  unicode-range:
-    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+20AC,
-    U+2122, U+2212;
-}
-@font-face {
-  font-family: "Jersey 10";
-  font-display: swap;
-  src: url("../fonts/jersey-10-latin-ext-400-normal.woff2") format("woff2");
-  unicode-range:
-    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+1E00-1E9F, U+2C60-2C7F,
-    U+A720-A7FF;
-}
-@font-face {
-  font-family: Silkscreen;
-  font-display: swap;
-  src: url("../fonts/silkscreen-latin-400-normal.woff2") format("woff2");
-  unicode-range:
-    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+20AC,
-    U+2122, U+2212;
-}
-@font-face {
-  font-family: Silkscreen;
-  font-display: swap;
-  src: url("../fonts/silkscreen-latin-ext-400-normal.woff2") format("woff2");
-  unicode-range:
-    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+1E00-1E9F, U+2C60-2C7F,
-    U+A720-A7FF;
-}
-@font-face {
-  font-family: VT323;
-  font-display: swap;
-  src: url("../fonts/vt323-latin-400-normal.woff2") format("woff2");
-  unicode-range:
-    U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+2000-206F, U+20AC,
-    U+2122, U+2212;
-}
-@font-face {
-  font-family: VT323;
-  font-display: swap;
-  src: url("../fonts/vt323-latin-ext-400-normal.woff2") format("woff2");
-  unicode-range:
-    U+0100-02BA, U+02BD-02C5, U+02C7-02CC, U+02CE-02D7, U+02DD-02FF, U+1E00-1E9F, U+2C60-2C7F,
-    U+A720-A7FF;
-}
-
-/* Two colours, as on a 1-bit screen: the darker and the lighter of the page's ink and paper,
-   whichever theme is on. Everything sits on a grid of 4 px. */
+/* The front page in the type, colours and cards of the Parallax screens. The one picture in 1-bit
+   pixels is the cave in the banner; the small drawings repeat its pixels at the size of an icon. */
 .front {
-  --dark: light-dark(var(--pc-ink), var(--pc-paper));
-  --lite: light-dark(var(--pc-paper), var(--pc-ink));
   color: var(--pc-ink);
-  font:
-    400 24px / 1.25 VT323,
-    var(--pc-font-mono);
+  font: var(--pc-text-body);
 }
 .inner {
   box-sizing: border-box;
-  max-width: calc(1200px + 2 * var(--pc-stage-inset));
+  max-width: calc(1120px + 2 * var(--pc-stage-inset));
   margin: 0 auto;
   padding-inline: var(--pc-stage-inset);
 }
 
-/* The title screen: a dark band across the page, the name over the picture, and a dithered edge
-   where it meets the page. */
-.hero {
-  position: relative;
-  padding-bottom: 24px;
-  background: var(--dark);
-  color: var(--lite);
+/* The banner: the name, one line and the way in, centred over the picture. */
+.banner {
+  border-bottom: 1px solid var(--pc-rule);
+  background: var(--pc-soft);
 }
-.hero::after {
-  position: absolute;
-  inset: 100% 0 auto;
-  height: 24px;
-  background:
-    conic-gradient(transparent 0 25%, var(--dark) 0) 0 0 / 8px 8px repeat-x,
-    repeating-conic-gradient(var(--dark) 0 25%, transparent 0 50%) 0 8px / 8px 8px repeat-x,
-    conic-gradient(var(--dark) 0 25%, transparent 0) 0 16px / 8px 8px repeat-x;
-  content: "";
-}
-.screen {
-  padding-top: 48px;
-}
-/* A title screen is centred: the name, the tagline and the button over the picture. */
-.title {
-  margin-bottom: 32px;
+.bannerInner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-block: var(--pc-space-56) var(--pc-space-48);
   text-align: center;
 }
 .logo {
   display: block;
   max-width: 100%;
-  margin-inline: auto;
-  max-height: 56px;
-  margin-bottom: 16px;
+  max-height: var(--pc-space-56);
+  margin-bottom: var(--pc-space-24);
 }
 .name {
   margin: 0;
-  font:
-    400 80px / 0.9 "Jersey 10",
-    var(--pc-font-sans);
+  font: 600 clamp(2rem, 1.4rem + 2vw, 3rem) / 1.15 var(--pc-font-sans);
+  letter-spacing: -0.02em;
   text-wrap: balance;
 }
 .tagline {
-  margin: 12px 0 0;
-  font-size: 32px;
-  line-height: 1;
+  max-width: 34ch;
+  margin: var(--pc-space-12) 0 0;
+  color: var(--pc-muted);
+  font-size: var(--pc-size-subsection);
+  line-height: 1.4;
 }
-/* A pixel button: square corners notched by one pixel of the grid. */
+/* The primary action of DESIGN.md, as a link. */
 .start {
   display: inline-flex;
   align-items: center;
-  gap: 12px;
   box-sizing: border-box;
-  min-height: 48px;
-  margin-top: 24px;
-  padding: 12px 24px 12px 20px;
-  background: var(--lite);
-  color: var(--dark);
-  font:
-    400 16px / 1 Silkscreen,
-    var(--pc-font-mono);
+  min-height: 40px;
+  margin-top: var(--pc-space-28);
+  padding: 9px 26px;
+  border-radius: var(--pc-radius-primary);
+  background: var(--pc-ink);
+  color: var(--pc-accent-ink);
+  font: var(--pc-text-ui);
+  font-weight: 600;
   text-decoration: none;
-  text-transform: uppercase;
-  clip-path: polygon(
-    0 4px,
-    4px 4px,
-    4px 0,
-    calc(100% - 4px) 0,
-    calc(100% - 4px) 4px,
-    100% 4px,
-    100% calc(100% - 4px),
-    calc(100% - 4px) calc(100% - 4px),
-    calc(100% - 4px) 100%,
-    4px 100%,
-    4px calc(100% - 4px),
-    0 calc(100% - 4px)
-  );
 }
-.arrow {
-  width: 8px;
-  height: 14px;
+.start:hover {
+  filter: brightness(0.9);
+}
+.start:focus-visible {
+  outline: 2px solid var(--pc-ink);
+  outline-offset: 2px;
+}
+.picture {
+  width: 100%;
+  max-width: 960px;
+  margin-top: var(--pc-space-40);
+}
+
+/* The sections: a heading, then a grid. */
+.section {
+  padding-top: var(--pc-space-56);
+}
+.section:last-child {
+  padding-bottom: 72px;
+}
+.heading {
+  margin: 0 0 var(--pc-space-24);
+  font: var(--pc-text-section);
+  letter-spacing: var(--pc-tracking-title);
+}
+
+/* The five tabs, side by side in the order of the tabs. */
+.kinds {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--pc-space-32);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.kind {
+  min-width: 0;
+}
+.kindPicture,
+.mark {
+  display: block;
   fill: currentColor;
   shape-rendering: crispEdges;
 }
-.start:hover .arrow {
-  animation: blink 0.8s steps(1) infinite;
+.kindPicture {
+  width: 36px;
+  height: 36px;
 }
-/* The clip path would cut an outline outside the button, so the focus ring is drawn inside. */
-.start:focus-visible {
-  outline: 2px dashed var(--dark);
-  outline-offset: -8px;
+.kindName {
+  margin: var(--pc-space-16) 0 var(--pc-space-4);
+  font: 600 var(--pc-size-field) / 1.3 var(--pc-font-sans);
 }
-@keyframes blink {
-  50% {
-    visibility: hidden;
-  }
+.kindText {
+  margin: 0;
+  color: var(--pc-muted);
+  font: var(--pc-text-ui);
 }
 
-/* The sections on the page's own paper: a heading, then a pixel box. */
-.section {
-  padding-top: 72px;
-}
-.section:last-child {
-  padding-bottom: 80px;
-}
-.heading {
-  margin: 0 0 24px;
-  font:
-    400 50px / 1 "Jersey 10",
-    var(--pc-font-sans);
-}
-/* The box of a 1-bit interface: a border four pixels wide whose corners are left out. */
-.box {
-  margin: 4px;
-  box-shadow:
-    0 -4px 0 0 var(--pc-ink),
-    0 4px 0 0 var(--pc-ink),
-    -4px 0 0 0 var(--pc-ink),
-    4px 0 0 0 var(--pc-ink);
-}
+/* The course card of the wireframe (.pc-course-card). */
 .courses {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(100%, 360px), 1fr));
-  gap: 32px;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));
+  gap: var(--pc-space-20);
   margin: 0;
   padding: 0;
   list-style: none;
 }
 .course {
-  display: flex;
-  align-items: center;
-  gap: 20px;
   min-width: 0;
-  padding: 20px;
+  padding: 22px 22px 18px;
+  border: 1px solid var(--pc-rule);
+  border-radius: var(--pc-radius-card);
 }
-.item {
-  flex: none;
-  width: 60px;
-  height: 60px;
-  fill: currentColor;
-  shape-rendering: crispEdges;
-}
-.courseText {
-  min-width: 0;
+.mark {
+  width: 36px;
+  height: 36px;
+  color: var(--pc-muted);
 }
 .courseTitle {
-  margin: 0;
-  font:
-    400 30px / 1 "Jersey 10",
-    var(--pc-font-sans);
-  overflow-wrap: anywhere;
+  margin: var(--pc-space-12) 0 var(--pc-space-8);
+  font: 600 1.125rem / 1.3 var(--pc-font-sans);
+  letter-spacing: -0.01em;
 }
-.instructor {
-  margin: 8px 0 0;
-  font:
-    400 16px / 1.25 Silkscreen,
-    var(--pc-font-mono);
-  text-transform: uppercase;
+.meta {
+  margin: 0;
+  color: var(--pc-muted);
+  font: var(--pc-text-label);
 }
 
+/* The author's note: the note surface of DESIGN.md, with the files to change. */
+.note {
+  padding: var(--pc-space-24) var(--pc-space-28);
+  border: 1px solid var(--pc-rule);
+  border-radius: var(--pc-radius-note);
+  background: var(--pc-soft);
+}
+.noteTitle {
+  margin: 0 0 var(--pc-space-16);
+  font: var(--pc-text-subsection);
+}
 .files {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);
+  gap: var(--pc-space-12) var(--pc-space-32);
   margin: 0;
-  padding: 12px 24px 0;
+  font: var(--pc-text-ui);
 }
-.file {
-  display: grid;
-  grid-column: 1 / -1;
-  grid-template-columns: subgrid;
-  column-gap: 40px;
-  padding-block: 12px;
-}
-/* Between two files, a dotted rule: one pixel of the grid, then two of space. */
-.file + .file {
-  background:
-    repeating-linear-gradient(90deg, var(--pc-ink) 0 4px, transparent 4px 12px) 0 0 / 100% 4px
-    no-repeat;
-  padding-top: 16px;
-}
-.path {
+.files dt {
+  font: var(--pc-text-code);
+  line-height: 1.5;
   overflow-wrap: anywhere;
 }
-.path::before {
-  content: "> " / "";
-}
-.what {
+.files dd {
   margin: 0;
 }
-.note {
-  margin: 0;
-  padding: 16px 24px;
-  background: var(--pc-ink);
-  color: var(--pc-paper);
-  font:
-    400 16px / 1.25 Silkscreen,
-    var(--pc-font-mono);
-  text-transform: uppercase;
+.noteEnd {
+  margin: var(--pc-space-20) 0 0;
+  color: var(--pc-muted);
+  font: var(--pc-text-ui);
 }
 
 @media (max-width: 1199px) {
   .inner {
-    padding-inline: 32px;
+    padding-inline: var(--pc-space-32);
+  }
+}
+@media (max-width: 960px) {
+  .kinds {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 @media (max-width: 800px) {
   .inner {
-    padding-inline: 24px;
-  }
-  .name {
-    font-size: 60px;
+    padding-inline: var(--pc-space-24);
   }
 }
 @media (max-width: 640px) {
-  .inner {
-    padding-inline: 16px;
-  }
-  .screen {
-    padding-top: 32px;
-  }
-  .name {
-    font-size: 50px;
-  }
-  .tagline {
-    font-size: 24px;
-  }
-  .heading {
-    font-size: 40px;
-  }
-  .section {
-    padding-top: 56px;
+  .kinds {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--pc-space-24);
   }
   .files {
     grid-template-columns: minmax(0, 1fr);
-    padding: 8px 16px 0;
+    row-gap: var(--pc-space-4);
   }
-  .note {
-    padding: 16px;
+  .files dd + dt {
+    margin-top: var(--pc-space-12);
   }
 }
-@media (prefers-reduced-motion: reduce) {
-  .start:hover .arrow {
-    animation: none;
+@media (max-width: 540px) {
+  .inner {
+    padding-inline: var(--pc-space-16);
+  }
+  .bannerInner {
+    padding-block: var(--pc-space-40) var(--pc-space-32);
+  }
+  .section {
+    padding-top: var(--pc-space-48);
+  }
+  .note {
+    padding: var(--pc-space-20);
+  }
+}
+/* The touch target of Buttons.module.css, which the global rule gives no link; last, to win. */
+@media (pointer: coarse) {
+  .start {
+    min-height: 44px;
   }
 }
