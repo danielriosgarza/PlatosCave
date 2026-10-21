@@ -5,4 +5,8 @@ dist/
 .env.*
 *.env
 backups/
-private/
+# Answer keys stay out of git. Only the starter course's sample exercise and test are tracked.
+private/**
+!private/**/
+!private/**/courses/welcome/start-here/exercises/first-exercise.yaml
+!private/**/courses/welcome/start-here/tests/sample-test.yaml

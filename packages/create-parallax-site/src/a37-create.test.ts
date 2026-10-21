@@ -1,3 +1,4 @@
+import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative, resolve } from 'node:path';
@@ -22,7 +23,7 @@ const files = (dir: string): string[] =>
     .map((entry) => relative(dir, join(entry.parentPath, entry.name)).replaceAll('\\', '/'))
     .sort();
 const read = (dir: string, file: string) => fs.readFileSync(join(dir, file), 'utf8');
-const ignored = ['node_modules/', '.env', '.parallax/', 'dist/', 'backups/', 'private/'];
+const ignored = ['node_modules/', '.env', '.parallax/', 'dist/', 'backups/', 'private/**'];
 /** Each instructor's name with the titles of their courses, as the front page lists them. */
 const listed = {
   instructor: [['Alex Example', ['Welcome to Parallax']]],
@@ -71,6 +72,27 @@ test('A37 one command creates a site of either mode, and only package.json names
     expect(manifest).toEqual({ private: true, type: 'module', dependencies });
     expect(made.filter((file) => read(site, file).includes(version))).toEqual(['package.json']);
 
+    // git tracks the starter course's two samples in private/ and nothing else there, so a clone
+    // of the site has every definition its check needs.
+    fs.mkdirSync(join(site, `private/${welcome}/exercises/answers`));
+    fs.writeFileSync(join(site, `private/${welcome}/exercises/answers/key.yaml`), '');
+    const git = (cwd: string, ...args: string[]) =>
+      execFileSync('git', ['-c', 'user.name=A37', '-c', 'user.email=a37@example.org', ...args], {
+        cwd,
+        encoding: 'utf8',
+      });
+    git(site, 'init', '-q');
+    git(site, 'add', '-A');
+    git(site, 'commit', '-qm', 'site');
+    expect(git(site, 'ls-files', 'private').trim().split('\n')).toEqual([
+      `private/${welcome}/exercises/first-exercise.yaml`,
+      `private/${welcome}/tests/sample-test.yaml`,
+    ]);
+    const clone = join(temp, `${template}-clone`);
+    git(temp, 'clone', '-q', site, clone);
+    expect(await main(['check'], { cwd: clone, print }), said()).toBe(0);
+    fs.rmSync(join(site, `private/${welcome}/exercises/answers`), { recursive: true });
+
     expect((await loadSite(site)).config.mode).toBe(template);
     // The awaited code comes first, so the message holds what the commands printed.
     expect(await main(['check'], { cwd: site, print }), said()).toBe(0);
@@ -107,7 +129,8 @@ test('A37 one command creates a site of either mode, and only package.json names
   expect(lines.at(-1)).toMatch(/file[\\/]site could not be written \(E[A-Z]+\)\.$/);
 
   // The templates hold no secret, only references to one, and every exercise and test definition
-  // lies in the starter course's overlay, which the site's .gitignore lists (private/ above).
+  // lies in the starter course's overlay, which the site's .gitignore lists but for the two
+  // samples (private/** above).
   const templates = join(pkg, 'templates');
   const all = files(templates);
   // Each line that grep -rniE "(password|secret|token)\s*[:=]" prints names a ${VAR} reference.
