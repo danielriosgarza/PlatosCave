@@ -28,8 +28,8 @@ type Order = <T>(list: T[], shuffle: boolean) => T[];
 type FillBlanks = Extract<InteractiveStep, { kind: 'fill_blanks' }>;
 type XY = [number, number];
 
-const labelled = (list: { id: string; label: string }[]) =>
-  list.map(({ id, label }) => ({ id, label }));
+const labelled = (list: { id: string; label: string; icon?: string | undefined }[]) =>
+  list.map(({ id, label, icon }) => ({ id, label, ...(icon && { icon }) }));
 const anyOf = (a: string | string[]) => (Array.isArray(a) ? a : [a]);
 
 /** A point's position as [x, y]: on a number line a single number x stands at [x, 0]. */
@@ -49,6 +49,7 @@ export function viewInteractive(step: InteractiveStep, order: Order): Interactiv
         kind: step.kind,
         categories: labelled(step.categories),
         items: labelled(order(step.items, step.shuffle)),
+        ...(step.iconsOnly && { iconsOnly: true }),
       };
     case 'fill_blanks':
       return {
@@ -57,6 +58,7 @@ export function viewInteractive(step: InteractiveStep, order: Order): Interactiv
         gaps: gapsIn(step.text),
         ...(step.tiles && { tiles: labelled(order(step.tiles, step.shuffle)) }),
         reuse: step.reuse,
+        ...(step.iconsOnly && { iconsOnly: true }),
       };
     case 'label_diagram':
       return {
@@ -65,6 +67,7 @@ export function viewInteractive(step: InteractiveStep, order: Order): Interactiv
         targets: step.targets.map(({ id, at }) => ({ id, at })),
         labels: labelled(order(step.labels, step.shuffle)),
         reuse: step.reuse,
+        ...(step.iconsOnly && { iconsOnly: true }),
       };
     case 'plot_points':
       return {
@@ -75,6 +78,7 @@ export function viewInteractive(step: InteractiveStep, order: Order): Interactiv
         points: step.points.map((p) => ({
           id: p.id,
           label: p.label,
+          ...(p.icon && { icon: p.icon }),
           ...(p.start !== undefined && { start: pointAt(p.start) }),
         })),
       };

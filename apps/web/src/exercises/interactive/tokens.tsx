@@ -1,12 +1,14 @@
 import { type ReactNode, useCallback, useEffect, useRef, useState } from 'react';
 import styles from './Interactive.module.css';
+import { Glyph } from './icon';
 
 /**
  * Tokens moved between slots (§9): the tiles of a fill-in step, the items of a sorting step,
  * the labels of a diagram. A token moves three ways, each enough on its own: drag it with a
  * pointer onto a slot; click it, then click a slot; or press it with the keyboard (Enter or
  * Space), then press a slot's "Put … here" button. Escape puts a picked token down. A polite
- * live region says what was picked and where it went.
+ * live region says what was picked and where it went. A token may show an icon with its label,
+ * or the icon alone (`iconsOnly`), when its label is still its name.
  */
 
 /** The slot of tokens not placed yet. */
@@ -40,14 +42,19 @@ export function useTokenDrag({
   onMove,
   tokenLabel,
   slotLabel,
+  tokenIcon,
+  iconsOnly = false,
 }: {
   disabled: boolean;
   onMove: (move: Move) => void;
   tokenLabel: (token: string) => string;
   slotLabel: (slot: string) => string;
+  tokenIcon?: (token: string) => string | undefined;
+  iconsOnly?: boolean;
 }) {
   const [picked, setPicked] = useState<{ token: string; from: string } | null>(null);
   const [ghost, setGhost] = useState<{
+    token: string;
     label: string;
     x: number;
     y: number;
@@ -98,7 +105,13 @@ export function useTokenDrag({
       if (!dragged.current && Math.hypot(e.clientX - p.x, e.clientY - p.y) < DRAG_DISTANCE) return;
       dragged.current = true;
       e.preventDefault();
-      setGhost({ label: p.label, x: e.clientX, y: e.clientY, over: slotAt(e.clientX, e.clientY) });
+      setGhost({
+        token: p.token,
+        label: p.label,
+        x: e.clientX,
+        y: e.clientY,
+        over: slotAt(e.clientX, e.clientY),
+      });
     };
     const released = (e: PointerEvent) => {
       const p = press.current;
@@ -128,6 +141,8 @@ export function useTokenDrag({
   /** Props of a token's button: `from` is the slot it is in. */
   const tokenProps = (token: string, from: string) => ({
     'data-token': token,
+    // A token showing its icon alone names itself to a pointer too.
+    title: iconsOnly && tokenIcon?.(token) ? tokenLabel(token) : undefined,
     'aria-pressed': picked?.token === token && picked.from === from,
     disabled,
     onPointerDown: (e: React.PointerEvent<HTMLButtonElement>) => {
@@ -187,7 +202,7 @@ export function useTokenDrag({
     <>
       {ghost ? (
         <div className={styles.ghost} style={{ left: ghost.x, top: ghost.y }} aria-hidden="true">
-          {ghost.label}
+          <TokenFace label={ghost.label} icon={tokenIcon?.(ghost.token)} iconOnly={iconsOnly} />
         </div>
       ) : null}
       <p className={styles.visuallyHidden} aria-live="polite">
@@ -199,11 +214,26 @@ export function useTokenDrag({
   return { picked, tokenProps, slotProps, dropButton, layer };
 }
 
-/** A token's face: its label, and its mark after a check that marks parts. */
-export function TokenFace({ label, mark }: { label: string; mark?: boolean }) {
+/**
+ * A token's face: its icon and label, and its mark after a check that marks parts. With
+ * `iconOnly` the label is shown only to a screen reader.
+ */
+export function TokenFace({
+  label,
+  icon,
+  iconOnly = false,
+  mark,
+}: {
+  label: string;
+  icon?: string | undefined;
+  iconOnly?: boolean;
+  mark?: boolean | undefined;
+}) {
+  const alone = iconOnly && icon !== undefined;
   return (
     <>
-      <span>{label}</span>
+      {icon ? <Glyph name={icon} size={alone ? 32 : 20} /> : null}
+      <span className={alone ? styles.visuallyHidden : undefined}>{label}</span>
       {mark === undefined ? null : <Mark right={mark} />}
     </>
   );

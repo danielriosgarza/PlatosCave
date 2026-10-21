@@ -1,6 +1,7 @@
 import type { InteractiveView } from '@parallax/contracts';
 import type { InteractiveDraft } from './draft';
 import styles from './Interactive.module.css';
+import { Glyph } from './icon';
 import { BANK, TokenFace, useTokenDrag } from './tokens';
 
 type View = Extract<InteractiveView, { kind: 'categorize' }>;
@@ -21,9 +22,13 @@ export function Categorize({
   onChange: (draft: Draft) => void;
 }) {
   const items = new Map(view.items.map((i) => [i.id, i.label]));
+  const icons = new Map(view.items.map((i) => [i.id, i.icon]));
   const groups = new Map(view.categories.map((c) => [c.id, c.label]));
+  const iconsOnly = view.iconsOnly ?? false;
   const drag = useTokenDrag({
     disabled,
+    iconsOnly,
+    tokenIcon: (id) => icons.get(id),
     tokenLabel: (id) => items.get(id) ?? id,
     slotLabel: (id) => (id === BANK ? 'the unsorted items' : `the group ${groups.get(id) ?? id}`),
     onMove: ({ token, to }) => {
@@ -37,11 +42,18 @@ export function Categorize({
     <li key={id}>
       <button
         type="button"
-        className={styles.token}
+        className={
+          iconsOnly && icons.get(id) ? `${styles.token} ${styles.iconToken}` : styles.token
+        }
         data-mark={from === BANK ? undefined : parts?.[id]}
         {...drag.tokenProps(id, from)}
       >
-        <TokenFace label={items.get(id) ?? id} mark={from === BANK ? undefined : parts?.[id]} />
+        <TokenFace
+          label={items.get(id) ?? id}
+          icon={icons.get(id)}
+          iconOnly={iconsOnly}
+          mark={from === BANK ? undefined : parts?.[id]}
+        />
       </button>
     </li>
   );
@@ -67,7 +79,10 @@ export function Categorize({
               aria-label={`Group ${c.label}`}
               {...drag.slotProps(c.id)}
             >
-              <h4 className={styles.slotName}>{c.label}</h4>
+              <h4 className={styles.slotName}>
+                {c.icon ? <Glyph name={c.icon} size={20} /> : null}
+                {c.label}
+              </h4>
               {inside.length ? (
                 <ul className={styles.tokens}>{inside.map((i) => token(i.id, c.id))}</ul>
               ) : (

@@ -5,6 +5,7 @@ import type { InteractiveDraft } from './draft';
 import { type Frame, niceStep, PAD, round, ticks, type XY } from './geometry';
 import { Handle, worldAt } from './Handle';
 import styles from './Interactive.module.css';
+import { Glyph } from './icon';
 import { Scene } from './Scene';
 import { Mark } from './tokens';
 
@@ -96,6 +97,7 @@ export function PlotPoints({
                   orientation={view.line ? 'horizontal' : undefined}
                   disabled={disabled}
                   mark={parts?.[p.id]}
+                  icon={p.icon}
                   onDrag={(world) => put(p.id, world)}
                   onKey={([dx, dy]) => {
                     if (view.line && dy !== 0) return false;
@@ -128,7 +130,11 @@ export function PlotPoints({
                     setPicked(picked === p.id ? null : p.id);
                   }}
                 >
-                  <span className={styles.pointDot} aria-hidden="true" />
+                  {p.icon ? (
+                    <Glyph name={p.icon} size={20} />
+                  ) : (
+                    <span className={styles.pointDot} aria-hidden="true" />
+                  )}
                   {p.label}
                 </button>
               </li>

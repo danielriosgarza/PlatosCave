@@ -28,6 +28,7 @@ import {
   type XY,
 } from './geometry';
 import styles from './Interactive.module.css';
+import { IconPaths, useIconPaths } from './icon';
 
 /** Samples per function graph or curve: smooth at the widest scene, cheap to redraw per frame. */
 const SAMPLES = 240;
@@ -102,6 +103,7 @@ export function Scene({
   const frame = frameFor(scene, available);
   const clip = `scene-${useId().replace(/[^a-zA-Z0-9]/g, '')}`;
   const description = scene.description ?? label;
+  const icons = useIconPaths(scene.shapes.some((s) => s.type === 'icon'));
   return (
     <figure className={styles.figure}>
       <div ref={box} className={styles.sceneBox}>
@@ -137,12 +139,13 @@ export function Scene({
                 {scene.shapes.map((shape, i) => (
                   // Shapes are positional data with no identity of their own.
                   // biome-ignore lint/suspicious/noArrayIndexKey: see above
-                  <Repeated key={i} shape={shape} scope={scope} frame={frame} />
+                  <Repeated key={i} shape={shape} scope={scope} frame={frame} icons={icons} />
                 ))}
               </g>
               {scene.shapes.map((shape, i) =>
                 shape.type === 'text' ||
-                ((shape.type === 'point' || shape.type === 'segment') && shape.label) ? (
+                ((shape.type === 'point' || shape.type === 'segment' || shape.type === 'icon') &&
+                  shape.label) ? (
                   // biome-ignore lint/suspicious/noArrayIndexKey: labels follow their shapes
                   <Labels key={i} shape={shape} scope={scope} frame={frame} />
                 ) : null,
@@ -294,23 +297,40 @@ function look(shape: SceneShape, filled: boolean, open = false) {
   };
 }
 
+/** The icons' path data, by name; null until fetched. */
+type Icons = Readonly<Record<string, string>> | null;
+
 function Repeated({
   shape,
   scope,
   frame,
+  icons,
 }: {
   shape: SceneShape;
   scope: ExpressionScope;
   frame: Frame;
+  icons: Icons;
 }) {
   return (
     <>
       {copies(shape, scope).map((s, i) => (
         // biome-ignore lint/suspicious/noArrayIndexKey: copies are numbered by their counter
-        <ShapeView key={i} shape={shape} scope={s} frame={frame} />
+        <ShapeView key={i} shape={shape} scope={s} frame={frame} icons={icons} />
       ))}
     </>
   );
+}
+
+/** An icon's centre, its width in pixels and its turn in degrees counter-clockwise. */
+function iconPlace(
+  shape: Extract<SceneShape, { type: 'icon' }>,
+  scope: ExpressionScope,
+  frame: Frame,
+): { x: number; y: number; px: number; turn: number } | null {
+  const [x, y] = frame.toScreen(at(shape.at, scope));
+  const px = (shape.size === undefined ? 1 : value(shape.size, scope)) * frame.kx;
+  const turn = shape.rotate === undefined ? 0 : value(shape.rotate, scope);
+  return finite(x, y, px, turn) && px > 0 ? { x, y, px, turn } : null;
 }
 
 const POINT_RADIUS = { small: 3, normal: 4.5, large: 6.5 } as const;
@@ -319,10 +339,12 @@ function ShapeView({
   shape,
   scope,
   frame,
+  icons,
 }: {
   shape: SceneShape;
   scope: ExpressionScope;
   frame: Frame;
+  icons: Icons;
 }): ReactNode {
   const screen = (p: readonly [Quantity, Quantity]) => frame.toScreen(at(p, scope));
   switch (shape.type) {
@@ -449,6 +471,24 @@ function ShapeView({
       });
       return <path d={polylinePath(points, frame.height * 2)} {...look(shape, false, true)} />;
     }
+    case 'icon': {
+      const data = icons?.[shape.name];
+      const place = iconPlace(shape, scope, frame);
+      if (!data || !place) return null;
+      // The icon is drawn on its own 24-unit square, scaled; its strokes keep the scene's widths.
+      const k = place.px / 24;
+      const style = look(shape, false);
+      return (
+        <g
+          transform={`translate(${round(place.x)} ${round(place.y)}) rotate(${round(-place.turn)}) scale(${k}) translate(-12 -12)`}
+          className={style.className}
+          strokeWidth={style.strokeWidth / k}
+          strokeDasharray={shape.dash ? `${6 / k} ${5 / k}` : undefined}
+        >
+          <IconPaths data={data} />
+        </g>
+      );
+    }
     case 'text':
       return null;
   }
@@ -517,6 +557,14 @@ function labelPlace(
     const [x, y] = frame.toScreen(at(shape.at, scope));
     if (!finite(x, y)) return null;
     return [x + 8, y - 8, interpolate(shape.label, scope), 'start', undefined];
+  }
+  if (shape.type === 'icon' && shape.label) {
+    const place = iconPlace(shape, scope, frame);
+    if (!place) return null;
+    // Under the icon's box, however it is turned.
+    const a = (place.turn * Math.PI) / 180;
+    const half = (place.px / 2) * (Math.abs(Math.cos(a)) + Math.abs(Math.sin(a)));
+    return [place.x, place.y + half + 16, interpolate(shape.label, scope), 'middle', undefined];
   }
   if (shape.type === 'segment' && shape.label) {
     const a = frame.toScreen(at(shape.from, scope));

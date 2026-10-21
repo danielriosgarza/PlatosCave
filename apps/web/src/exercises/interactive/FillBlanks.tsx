@@ -50,9 +50,15 @@ export function FillBlanks({
   onChange: (draft: Draft) => void;
 }) {
   const tiles = new Map((view.tiles ?? []).map((t) => [t.id, t.label]));
+  const icons = new Map((view.tiles ?? []).map((t) => [t.id, t.icon]));
+  const iconsOnly = view.iconsOnly ?? false;
+  const tokenClass = (id: string) =>
+    iconsOnly && icons.get(id) ? `${styles.token} ${styles.iconToken}` : styles.token;
   const number = (gap: string) => view.gaps.indexOf(gap) + 1;
   const drag = useTokenDrag({
     disabled,
+    iconsOnly,
+    tokenIcon: (id) => icons.get(id),
     tokenLabel: (id) => tiles.get(id) ?? id,
     slotLabel: (id) => (id === BANK ? 'the tiles' : `gap ${number(id)}`),
     onMove: (move) =>
@@ -98,8 +104,13 @@ export function FillBlanks({
           return (
             <span key={gap} className={styles.gap} data-mark={mark} {...drag.slotProps(gap)}>
               {tile ? (
-                <button type="button" className={styles.token} {...drag.tokenProps(tile, gap)}>
-                  <TokenFace label={tiles.get(tile) ?? tile} mark={mark} />
+                <button type="button" className={tokenClass(tile)} {...drag.tokenProps(tile, gap)}>
+                  <TokenFace
+                    label={tiles.get(tile) ?? tile}
+                    icon={icons.get(tile)}
+                    iconOnly={iconsOnly}
+                    mark={mark}
+                  />
                 </button>
               ) : (
                 (drag.dropButton(gap, styles.gapDrop) ?? (
@@ -119,8 +130,12 @@ export function FillBlanks({
             <ul className={styles.tokens}>
               {bank.map((t) => (
                 <li key={t.id}>
-                  <button type="button" className={styles.token} {...drag.tokenProps(t.id, BANK)}>
-                    <TokenFace label={t.label} />
+                  <button
+                    type="button"
+                    className={tokenClass(t.id)}
+                    {...drag.tokenProps(t.id, BANK)}
+                  >
+                    <TokenFace label={t.label} icon={t.icon} iconOnly={iconsOnly} />
                   </button>
                 </li>
               ))}

@@ -618,6 +618,318 @@
       "feedback": {
         "saved": "Your drawing is saved for your instructor."
       }
+    },
+    {
+      "id": "lunch",
+      "title": "Sort the answers",
+      "kind": "categorize",
+      "prompt": "A survey asked eleven people what they brought for lunch. Drag each answer into its category.",
+      "categories": [
+        {
+          "id": "fruit",
+          "label": "Fruit",
+          "icon": "apple"
+        },
+        {
+          "id": "baked",
+          "label": "Baked",
+          "icon": "wheat"
+        },
+        {
+          "id": "drink",
+          "label": "Drink",
+          "icon": "glass-water"
+        }
+      ],
+      "items": [
+        {
+          "id": "banana",
+          "label": "Banana",
+          "icon": "banana",
+          "category": "fruit"
+        },
+        {
+          "id": "cherries",
+          "label": "Cherries",
+          "icon": "cherry",
+          "category": "fruit"
+        },
+        {
+          "id": "grapes",
+          "label": "Grapes",
+          "icon": "grape",
+          "category": "fruit"
+        },
+        {
+          "id": "orange",
+          "label": "Orange",
+          "icon": "citrus",
+          "category": "fruit"
+        },
+        {
+          "id": "croissant",
+          "label": "Croissant",
+          "icon": "croissant",
+          "category": "baked"
+        },
+        {
+          "id": "pizza",
+          "label": "Pizza",
+          "icon": "pizza",
+          "category": "baked"
+        },
+        {
+          "id": "sandwich",
+          "label": "Sandwich",
+          "icon": "sandwich",
+          "category": "baked"
+        },
+        {
+          "id": "cookie",
+          "label": "Cookie",
+          "icon": "cookie",
+          "category": "baked"
+        },
+        {
+          "id": "coffee",
+          "label": "Coffee",
+          "icon": "coffee",
+          "category": "drink"
+        },
+        {
+          "id": "milk",
+          "label": "Milk",
+          "icon": "milk",
+          "category": "drink"
+        },
+        {
+          "id": "soda",
+          "label": "Soda",
+          "icon": "cup-soda",
+          "category": "drink"
+        }
+      ],
+      "iconsOnly": true,
+      "marks": true,
+      "feedback": {
+        "correct": "Four fruit, four baked foods and three drinks.",
+        "incorrect": "Some answers are not in their category yet. The marked ones are right."
+      }
+    },
+    {
+      "id": "shapes",
+      "title": "Choose the shapes",
+      "kind": "hotspot",
+      "prompt": "Choose every shape with exactly four sides.",
+      "scene": {
+        "x": [0, 8],
+        "y": [0, 4],
+        "description": "Eight shapes in two rows."
+      },
+      "regions": [
+        {
+          "id": "square",
+          "label": "Square",
+          "shape": {
+            "type": "icon",
+            "name": "square",
+            "at": [1, 3],
+            "size": 1.5
+          }
+        },
+        {
+          "id": "triangle",
+          "label": "Triangle",
+          "shape": {
+            "type": "icon",
+            "name": "triangle",
+            "at": [3, 3],
+            "size": 1.5
+          }
+        },
+        {
+          "id": "diamond",
+          "label": "Diamond",
+          "shape": {
+            "type": "icon",
+            "name": "diamond",
+            "at": [5, 3],
+            "size": 1.5
+          }
+        },
+        {
+          "id": "pentagon",
+          "label": "Pentagon",
+          "shape": {
+            "type": "icon",
+            "name": "pentagon",
+            "at": [7, 3],
+            "size": 1.5
+          }
+        },
+        {
+          "id": "hexagon",
+          "label": "Hexagon",
+          "shape": {
+            "type": "icon",
+            "name": "hexagon",
+            "at": [1, 1],
+            "size": 1.5
+          }
+        },
+        {
+          "id": "rectangle",
+          "label": "Rectangle",
+          "shape": {
+            "type": "icon",
+            "name": "rectangle-horizontal",
+            "at": [3, 1],
+            "size": 1.5
+          }
+        },
+        {
+          "id": "circle",
+          "label": "Circle",
+          "shape": {
+            "type": "icon",
+            "name": "circle",
+            "at": [5, 1],
+            "size": 1.5
+          },
+          "feedback": "A circle has one curved edge and no straight sides."
+        },
+        {
+          "id": "octagon",
+          "label": "Octagon",
+          "shape": {
+            "type": "icon",
+            "name": "octagon",
+            "at": [7, 1],
+            "size": 1.5
+          }
+        }
+      ],
+      "correct": ["square", "diamond", "rectangle"],
+      "multiple": true,
+      "marks": true,
+      "feedback": {
+        "correct": "The square, the diamond and the rectangle each have four sides.",
+        "incorrect": "Count the straight sides of each shape."
+      }
+    },
+    {
+      "id": "pictogram",
+      "title": "Build the pictogram",
+      "kind": "manipulate",
+      "prompt": "Each icon stands for 10 visitors. Set Saturday's row to show 70 visitors.",
+      "params": [
+        {
+          "name": "n",
+          "label": "Icons on Saturday",
+          "min": 0,
+          "max": 10,
+          "step": 1,
+          "initial": 2
+        }
+      ],
+      "scene": {
+        "x": [0, 12],
+        "y": [0, 3],
+        "aspect": 4,
+        "description": "A pictogram of visitors. Friday has 4 icons; Saturday has as many as you set.",
+        "shapes": [
+          {
+            "type": "text",
+            "at": [0.2, 2.2],
+            "text": "Friday",
+            "align": "start"
+          },
+          {
+            "type": "icon",
+            "name": "user-round",
+            "at": ["2.6 + 0.9 * i", 2.2],
+            "size": 0.8,
+            "each": {
+              "name": "i",
+              "count": 4
+            }
+          },
+          {
+            "type": "text",
+            "at": [0.2, 1.1],
+            "text": "Saturday",
+            "align": "start"
+          },
+          {
+            "type": "icon",
+            "name": "user-round",
+            "at": ["2.6 + 0.9 * i", 1.1],
+            "size": 0.8,
+            "each": {
+              "name": "i",
+              "count": "n"
+            }
+          },
+          {
+            "type": "icon",
+            "name": "user-round",
+            "at": [9.6, 0.3],
+            "size": 0.4,
+            "tone": "muted"
+          },
+          {
+            "type": "text",
+            "at": [9.9, 0.3],
+            "text": "= 10 visitors",
+            "align": "start",
+            "size": "small",
+            "tone": "muted"
+          }
+        ]
+      },
+      "target": ["n == 7"],
+      "answer": {
+        "n": 7
+      },
+      "feedback": {
+        "correct": "Seven icons of 10 visitors each make 70.",
+        "incorrect": "Count in tens, one icon at a time."
+      }
+    },
+    {
+      "id": "campsite",
+      "title": "Place the objects",
+      "kind": "plot_points",
+      "prompt": "Put the tent at (2, 3) and the tree at (−3, 1).",
+      "scene": {
+        "x": [-5, 5],
+        "y": [-4, 4],
+        "axes": {
+          "x": "x",
+          "y": "y"
+        },
+        "grid": 1
+      },
+      "points": [
+        {
+          "id": "tent",
+          "label": "Tent",
+          "icon": "tent",
+          "answer": [2, 3]
+        },
+        {
+          "id": "tree",
+          "label": "Tree",
+          "icon": "tree-pine",
+          "answer": [-3, 1]
+        }
+      ],
+      "snap": 1,
+      "marks": true,
+      "feedback": {
+        "correct": "The tent is at (2, 3) and the tree at (−3, 1).",
+        "incorrect": "Go along the x axis first, then up or down."
+      }
     }
   ]
 }

@@ -172,7 +172,7 @@ The **Exercises** tab lists the exercises for the topic. Each shows whether it i
 
 An exercise is a short list of steps. A step can ask for a number, a choice, an ordering or matching, a short explanation, code, or a value recorded from a simulation. It can also ask you to drag items into groups or tiles into gaps, label a diagram, place points on a graph, sketch a curve, choose parts of a figure, shade cells of a grid, move sliders or points until a target is met, explore a scene, or draw.
 
-Everything you can drag can also be done with the keyboard: pick an item with Enter or Space, then choose where it goes; move a point or a slider with the arrow keys (Page Up and Page Down move further). The steps say how.
+Everything you can drag can also be done with the keyboard: pick an item with Enter or Space, then choose where it goes; move a point or a slider with the arrow keys (Page Up and Page Down move further). The steps say how. An item shown only as a picture still has a name, which a screen reader says and which appears when the pointer rests on it.
 
 On each step:
 

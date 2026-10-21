@@ -1,6 +1,6 @@
 import { type draftResource, getResource, updateResource } from '@parallax/contracts/routes/drafts';
 import { useQuery } from '@tanstack/react-query';
-import { type ReactNode, useId, useState } from 'react';
+import { type ReactNode, useId, useLayoutEffect, useRef, useState } from 'react';
 import type { z } from 'zod';
 import { call } from '../api/client';
 import buttons from '../components/Buttons.module.css';
@@ -23,6 +23,7 @@ import {
   toContent,
   toDraft,
 } from './exerciseForm';
+import { IconFinder } from './IconFinder';
 import { InteractivePreview, previewStep } from './InteractivePreview';
 import { authoringKey } from './queries';
 import { SaveStatus } from './SaveStatus';
@@ -754,12 +755,31 @@ function SpecFields({
 }) {
   const id = useId();
   const preview = previewStep(stepContent(step));
+  const area = useRef<HTMLTextAreaElement>(null);
+  // The author's last selection in the fields; an icon's name replaces it. None yet: the end.
+  const cursor = useRef<[number, number] | null>(null);
+  const caret = useRef<number | null>(null);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: places the caret once the fields show an inserted name
+  useLayoutEffect(() => {
+    const el = area.current;
+    if (caret.current === null || !el) return;
+    el.focus();
+    el.setSelectionRange(caret.current, caret.current);
+    caret.current = null;
+  }, [step.spec]);
+  const insert = (name: string) => {
+    const [start, end] = cursor.current ?? [step.spec.length, step.spec.length];
+    caret.current = start + name.length;
+    cursor.current = [caret.current, caret.current];
+    set({ spec: step.spec.slice(0, start) + name + step.spec.slice(end) });
+  };
   return (
     <>
       <div className={local.field}>
         <label htmlFor={id}>{`Step ${n} fields (YAML)`}</label>
         <textarea
           id={id}
+          ref={area}
           className={local.mono}
           rows={Math.min(30, Math.max(8, step.spec.split('\n').length + 1))}
           spellCheck={false}
@@ -767,11 +787,15 @@ function SpecFields({
           autoCorrect="off"
           value={step.spec}
           onChange={(e) => set({ spec: e.target.value })}
+          onSelect={(e) => {
+            cursor.current = [e.currentTarget.selectionStart, e.currentTarget.selectionEnd];
+          }}
         />
         <span className={local.hint}>
           The scene, items, answer and feedback, written as in a course file. The exercise guide
           lists every field.
         </span>
+        <IconFinder onPick={insert} />
       </div>
       {preview ? (
         <InteractivePreview key={step.spec} n={n} step={preview} />

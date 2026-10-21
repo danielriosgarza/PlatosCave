@@ -2,6 +2,7 @@ import { z } from 'zod';
 import { strokes } from './anchors';
 import { common, feedback, label, option, prose, stepId } from './exerciseBase';
 import { expressionProblem, holds, quantityValue } from './expression';
+import { iconName } from './icons';
 import {
   expressionText,
   type FieldProblem,
@@ -28,16 +29,25 @@ export const xy = z.tuple([z.number(), z.number()]);
 /** One answer, or any of several. */
 const oneOf = z.union([stepId, z.array(stepId).min(1).max(20)]);
 
+/** A piece to drag, or a group: its label, and an icon (`icons.ts`) drawn on it. */
+const piece = option.extend({ icon: iconName.optional() });
+/**
+ * The pieces show their icons alone, so the picture is the challenge; each label is still what
+ * a screen reader says and what a pointer's tooltip shows.
+ */
+const iconsOnly = z.boolean().default(false);
+
 /** Drag items into groups. */
 export const categorizeStep = z.object({
   ...common,
   kind: z.literal('categorize'),
-  categories: z.array(option).min(2).max(6),
+  categories: z.array(piece).min(2).max(6),
   /** Each item names the category it belongs in; `feedback` is shown when it is misplaced. */
   items: z
-    .array(option.extend({ category: stepId, feedback: prose.optional() }))
+    .array(piece.extend({ category: stepId, feedback: prose.optional() }))
     .min(2)
     .max(20),
+  iconsOnly,
   shuffle,
   marks,
   feedback,
@@ -64,7 +74,8 @@ export const fillBlanksStep = z.object({
     .min(1)
     .max(20),
   /** The tiles to drag, distractors included. Without tiles every gap is typed. */
-  tiles: z.array(option).min(1).max(24).optional(),
+  tiles: z.array(piece).min(1).max(24).optional(),
+  iconsOnly,
   /** A tile may fill more than one gap. */
   reuse: z.boolean().default(false),
   caseSensitive: z.boolean().default(false),
@@ -83,7 +94,8 @@ export const labelDiagramStep = z.object({
     .min(1)
     .max(12),
   /** The labels to drag, distractors included. */
-  labels: z.array(option).min(2).max(20),
+  labels: z.array(piece).min(2).max(20),
+  iconsOnly,
   reuse: z.boolean().default(false),
   shuffle,
   marks,
@@ -102,6 +114,8 @@ export const plotPointsStep = z.object({
       z.object({
         id: stepId,
         label: z.string().trim().min(1).max(40),
+        /** Drawn as this icon (`icons.ts`) instead of a dot. */
+        icon: iconName.optional(),
         /** Placed at the start; without it the point waits beside the scene. */
         start: z.union([z.number(), xy]).optional(),
         answer: z.union([z.number(), xy]),
@@ -142,6 +156,14 @@ export const regionShape = z.discriminatedUnion('type', [
     size: z.tuple([z.number().positive(), z.number().positive()]),
   }),
   z.object({ type: z.literal('polygon'), points: z.array(xy).min(3).max(50) }),
+  /** The icon itself is the region: chosen by its square, `size` x units across (1 by default). */
+  z.object({
+    type: z.literal('icon'),
+    name: iconName,
+    at: xy,
+    size: z.number().positive().optional(),
+    rotate: z.number().optional(),
+  }),
 ]);
 
 /**
@@ -218,6 +240,8 @@ export const pointParam = z.object({
   y: span,
   step: z.number().positive(),
   initial: xy,
+  /** Drawn as this icon (`icons.ts`) instead of a dot. */
+  icon: iconName.optional(),
 });
 export const param = z.union([pointParam, sliderParam]);
 export type Param = z.output<typeof param>;
@@ -444,10 +468,17 @@ export function interactiveProblems(step: InteractiveStep): FieldProblem[] {
     const twice = duplicates(ids(list));
     if (twice.length) add([path], `ids must be unique (${[...new Set(twice)].join(', ')} repeats)`);
   };
+  const pictured = (path: string, list: readonly { icon?: string | undefined }[]) => {
+    list.forEach((p, i) => {
+      if (!p.icon)
+        add([path, i, 'icon'], 'is missing: with iconsOnly, each piece is shown by its icon');
+    });
+  };
   switch (step.kind) {
     case 'categorize': {
       unique('categories', step.categories);
       unique('items', step.items);
+      if (step.iconsOnly) pictured('items', step.items);
       step.items.forEach((item, i) => {
         if (!ids(step.categories).includes(item.category)) {
           add(['items', i, 'category'], `names no category (${item.category})`);
@@ -467,8 +498,11 @@ export function interactiveProblems(step: InteractiveStep): FieldProblem[] {
         if (!inText.includes(gap.id))
           add(['gaps', i], `gap ${gap.id} is not in the text as [[${gap.id}]]`);
       });
+      if (step.iconsOnly && !step.tiles)
+        add(['iconsOnly'], 'shows tiles by their icons, and this step has no tiles');
       if (step.tiles) {
         unique('tiles', step.tiles);
+        if (step.iconsOnly) pictured('tiles', step.tiles);
         step.gaps.forEach((gap, i) => {
           if (gap.answer === undefined)
             add(['gaps', i, 'answer'], 'with tiles, every gap needs the tile that answers it');
@@ -508,6 +542,7 @@ export function interactiveProblems(step: InteractiveStep): FieldProblem[] {
       out.push(...sceneProblems(step.scene, []));
       unique('targets', step.targets);
       unique('labels', step.labels);
+      if (step.iconsOnly) pictured('labels', step.labels);
       step.targets.forEach((target, i) => {
         if (!answers(target.answer).every((a) => ids(step.labels).includes(a))) {
           add(['targets', i, 'answer'], 'names no label');
@@ -722,14 +757,19 @@ export function sampleXs(step: { samples: { from: number; to: number; count: num
   return Array.from({ length: count }, (_, i) => snapped(from + ((to - from) * i) / (count - 1)));
 }
 
-const shown = z.array(z.object({ id: z.string(), label: z.string() }));
+const shown = z.array(z.object({ id: z.string(), label: z.string(), icon: z.string().optional() }));
 
 /**
  * What a student sees of an interactive step's own fields: the scene and the pieces to move,
  * in the order the attempt's seed drew, and no answer, feedback, tolerance or target.
  */
 export const interactiveView = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('categorize'), categories: shown, items: shown }),
+  z.object({
+    kind: z.literal('categorize'),
+    categories: shown,
+    items: shown,
+    iconsOnly: z.boolean().optional(),
+  }),
   z.object({
     kind: z.literal('fill_blanks'),
     text: z.string(),
@@ -737,6 +777,7 @@ export const interactiveView = z.discriminatedUnion('kind', [
     /** Absent when the gaps are typed. */
     tiles: shown.optional(),
     reuse: z.boolean(),
+    iconsOnly: z.boolean().optional(),
   }),
   z.object({
     kind: z.literal('label_diagram'),
@@ -744,13 +785,21 @@ export const interactiveView = z.discriminatedUnion('kind', [
     targets: z.array(z.object({ id: z.string(), at: xy })),
     labels: shown,
     reuse: z.boolean(),
+    iconsOnly: z.boolean().optional(),
   }),
   z.object({
     kind: z.literal('plot_points'),
     scene,
     line: z.boolean(),
     snap: z.number(),
-    points: z.array(z.object({ id: z.string(), label: z.string(), start: xy.optional() })),
+    points: z.array(
+      z.object({
+        id: z.string(),
+        label: z.string(),
+        icon: z.string().optional(),
+        start: xy.optional(),
+      }),
+    ),
   }),
   z.object({
     kind: z.literal('sketch_graph'),

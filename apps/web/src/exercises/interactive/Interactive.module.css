@@ -171,6 +171,13 @@
 .handleDot {
   fill: var(--pc-ink);
 }
+.handleIcon {
+  fill: none;
+  stroke: var(--pc-ink);
+  color: var(--pc-ink);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
 .handleLive:hover .handleRing {
   stroke-width: 3;
 }
@@ -185,6 +192,10 @@
 }
 .handle[data-mark="true"] .handleDot {
   fill: var(--pc-success);
+}
+.handle[data-mark="true"] .handleIcon {
+  stroke: var(--pc-success);
+  color: var(--pc-success);
 }
 .handleRight,
 .handleWrong {
@@ -240,6 +251,15 @@
 .region[aria-disabled="true"] {
   cursor: default;
 }
+/* An icon region's icon: drawn over its square, which takes the pointer. */
+.regionIcon {
+  fill: none;
+  stroke: var(--pc-ink);
+  color: var(--pc-ink);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
 
 /* A sketched graph */
 .sketchCurve {
@@ -287,6 +307,9 @@
   background: var(--pc-sheet);
 }
 .slotName {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   margin: 0;
   font-size: var(--pc-size-label);
   font-weight: 600;
@@ -319,6 +342,23 @@
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
+}
+/* A token showing its icon alone. */
+.iconToken {
+  justify-content: center;
+  min-width: 52px;
+  min-height: 52px;
+  padding: 6px;
+}
+/* An icon in a line of text or on a token, in the text's colour. */
+.glyph {
+  flex: none;
+  display: block;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 .token:hover:not(:disabled, [aria-pressed="true"]) {
   background: var(--pc-soft);
@@ -362,6 +402,9 @@
   padding: 2px 8px;
 }
 .ghost {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   position: fixed;
   z-index: 1000;
   pointer-events: none;

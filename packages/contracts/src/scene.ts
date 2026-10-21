@@ -5,13 +5,15 @@ import {
   placeholders,
   RESERVED_NAMES,
 } from './expression';
+import { iconName } from './icons';
 
 /**
  * A scene: the diagram of an interactive exercise step (§9), written as data. Parallax draws it
  * as SVG in the step's own markup, so no author markup, script, style or address reaches the
  * page: a shape is one of the types below, its numbers may be expressions over the step's
  * parameters (`expression.ts`), and its look is chosen from the design tokens (ink, muted and
- * faint strokes; soft, muted and ink fills). World coordinates have y pointing up.
+ * faint strokes; soft, muted and ink fills). Objects and figures come from the icon set
+ * (`icons.ts`), named, never drawn from author markup. World coordinates have y pointing up.
  */
 
 /** An expression's source text; which names it may read depends on where it stands. */
@@ -115,6 +117,20 @@ const text = z.object({
   size: z.enum(['small', 'normal', 'large']).optional(),
   ...look,
 });
+/**
+ * An icon (`icons.ts`) centred on `at`, `size` x units across (1 by default) and turned `rotate`
+ * degrees counter-clockwise; `label` is written under it.
+ */
+const icon = z.object({
+  type: z.literal('icon'),
+  name: iconName,
+  at: pair,
+  size: quantity.optional(),
+  rotate: quantity.optional(),
+  fill,
+  label: sceneLabel.optional(),
+  ...look,
+});
 
 export const sceneShape = z.discriminatedUnion('type', [
   point,
@@ -127,6 +143,7 @@ export const sceneShape = z.discriminatedUnion('type', [
   graph,
   curve,
   text,
+  icon,
 ]);
 export type SceneShape = z.output<typeof sceneShape>;
 
@@ -196,9 +213,15 @@ export function sceneProblems(scene: Scene, names: readonly string[]): FieldProb
         for (const [j, v] of value.entries()) visit(v, [...path, j], extra);
     };
     for (const [key, value] of Object.entries(shape)) {
+      // An icon's size is a number or an expression; a point's or a text's is a word.
+      if (key === 'size' && shape.type === 'icon') {
+        visit(value, at(key), counter);
+        continue;
+      }
       if (
         [
           'type',
+          'name',
           'tone',
           'dash',
           'weight',

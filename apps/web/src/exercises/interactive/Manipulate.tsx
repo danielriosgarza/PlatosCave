@@ -96,6 +96,7 @@ export function Manipulate({
                 valueNow={at[0]}
                 range={p.x}
                 disabled={disabled}
+                icon={p.icon}
                 onDrag={(world) => set(p.name, snapParam(p, world))}
                 onKey={([dx, dy]) => {
                   set(p.name, snapParam(p, [at[0] + dx * p.step, at[1] + dy * p.step]));

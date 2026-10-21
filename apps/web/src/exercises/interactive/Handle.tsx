@@ -1,6 +1,7 @@
 import type { KeyboardEvent, PointerEvent } from 'react';
 import { type Frame, round, toWorld, type XY } from './geometry';
 import styles from './Interactive.module.css';
+import { IconPaths, useIconPaths } from './icon';
 
 /** A pointer position over an SVG element, in the scene frame's pixels. */
 export function framePoint(svg: SVGSVGElement, frame: Frame, clientX: number, clientY: number): XY {
@@ -38,10 +39,14 @@ export function keySteps(e: KeyboardEvent): [number, number] | null {
   }
 }
 
+/** The width of an icon drawn on a handle, in pixels. */
+const HANDLE_ICON = 22;
+
 /**
  * A point the learner moves: dragged with a pointer, or focused and moved with the arrow keys.
  * It is a slider to assistive technology, with its position as the value text; the hit area is
- * larger than the dot so a finger can take it.
+ * larger than the dot so a finger can take it. With an icon, the icon is drawn in its ring
+ * instead of the dot.
  */
 export function Handle({
   frame,
@@ -59,6 +64,7 @@ export function Handle({
   onFocus,
   showName = true,
   handleId,
+  icon,
 }: {
   frame: Frame;
   at: XY;
@@ -78,9 +84,15 @@ export function Handle({
   showName?: boolean;
   /** Set as `data-handle`, so a form can move focus to the handle. */
   handleId?: string;
+  icon?: string | undefined;
 }) {
+  const icons = useIconPaths(icon !== undefined);
   const [x, y] = frame.toScreen(at);
   if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+  const data = icon ? icons?.[icon] : undefined;
+  // The ring is wider round an icon; the name and the mark stand off it.
+  const ring = icon ? 17 : 11;
+  const k = HANDLE_ICON / 24;
   return (
     // A slider's children are presentational: its name and value text say what they draw.
     <g
@@ -119,19 +131,29 @@ export function Handle({
       }}
     >
       <circle className={styles.handleHit} cx={round(x)} cy={round(y)} r={22} />
-      <circle className={styles.handleRing} cx={round(x)} cy={round(y)} r={11} />
-      <circle className={styles.handleDot} cx={round(x)} cy={round(y)} r={6.5} />
+      <circle className={styles.handleRing} cx={round(x)} cy={round(y)} r={ring} />
+      {icon === undefined ? (
+        <circle className={styles.handleDot} cx={round(x)} cy={round(y)} r={6.5} />
+      ) : data ? (
+        <g
+          className={styles.handleIcon}
+          transform={`translate(${round(x)} ${round(y)}) scale(${k}) translate(-12 -12)`}
+          strokeWidth={2 / k}
+        >
+          <IconPaths data={data} />
+        </g>
+      ) : null}
       {mark === undefined ? null : (
         <text
           className={mark ? styles.handleRight : styles.handleWrong}
-          x={round(x + 12)}
-          y={round(y + 16)}
+          x={round(x + ring + 1)}
+          y={round(y + ring + 5)}
         >
           {mark ? '✓' : '✗'}
         </text>
       )}
       {showName ? (
-        <text className={styles.handleName} x={round(x + 12)} y={round(y - 12)}>
+        <text className={styles.handleName} x={round(x + ring + 1)} y={round(y - ring - 1)}>
           {name}
         </text>
       ) : null}

@@ -529,3 +529,140 @@ describe('interactive steps with a pointer', () => {
     expect(screen.getByRole('button', { name: 'Height' })).toHaveAttribute('aria-pressed', 'true');
   });
 });
+
+describe('interactive steps with icons', () => {
+  /** The icons drawn in the scene: each is a group on its own 24-unit square. */
+  const drawn = (root: ParentNode = document) =>
+    root.querySelectorAll('g[transform$="translate(-12 -12)"]');
+
+  it('A20 sorts pieces shown by their icons alone, each still named by its label', async () => {
+    const user = userEvent.setup();
+    render(
+      <Harness
+        raw={{
+          kind: 'categorize',
+          iconsOnly: true,
+          categories: [
+            { id: 'fruit', label: 'Fruit', icon: 'apple' },
+            { id: 'drink', label: 'Drink' },
+          ],
+          items: [
+            { id: 'banana', label: 'Banana', icon: 'banana', category: 'fruit' },
+            { id: 'milk', label: 'Milk', icon: 'milk', category: 'drink' },
+          ],
+        }}
+      />,
+    );
+    const banana = screen.getByRole('button', { name: 'Banana' });
+    expect(banana).toHaveAttribute('title', 'Banana');
+    // The label is there for a screen reader; what shows is the icon.
+    await waitFor(() => expect(banana.querySelector('svg path')).not.toBeNull(), {
+      timeout: 5000,
+    });
+    expect(screen.getByRole('heading', { name: 'Fruit' }).querySelector('svg path')).not.toBeNull();
+    banana.focus();
+    await user.keyboard('{Enter}');
+    await user.click(screen.getByRole('button', { name: 'Put Banana in the group Fruit' }));
+    screen.getByRole('button', { name: 'Milk' }).focus();
+    await user.keyboard('{Enter}');
+    await user.click(screen.getByRole('button', { name: 'Put Milk in the group Drink' }));
+    await user.click(screen.getByRole('button', { name: 'Check' }));
+    expect(result()).toHaveTextContent('Correct');
+  });
+
+  it('A20 chooses an icon of a figure with the arrow keys and Space', async () => {
+    const user = userEvent.setup();
+    render(
+      <Harness
+        raw={{
+          kind: 'hotspot',
+          scene: { x: [0, 4], y: [0, 2] },
+          regions: [
+            { id: 'sq', label: 'Square', shape: { type: 'icon', name: 'square', at: [1, 1] } },
+            {
+              id: 'tri',
+              label: 'Triangle',
+              shape: { type: 'icon', name: 'triangle', at: [3, 1], size: 1.5, rotate: 90 },
+            },
+          ],
+          correct: ['tri'],
+        }}
+      />,
+    );
+    // An icon region is the icon's square, turned with it.
+    expect(screen.getByRole('radio', { name: 'Square' }).getAttribute('d')).toMatch(
+      /^M[\d. -]+L[\d. -]+L[\d. -]+L[\d. -]+Z$/,
+    );
+    await waitFor(() => expect(drawn()).toHaveLength(2), { timeout: 5000 });
+    expect(drawn()[1]?.getAttribute('transform')).toContain('rotate(-90)');
+    screen.getByRole('radio', { name: 'Square' }).focus();
+    await user.keyboard(' ');
+    await user.keyboard('{ArrowRight}');
+    expect(screen.getByRole('radio', { name: 'Triangle' })).toHaveFocus();
+    expect(screen.getByRole('radio', { name: 'Triangle' })).toHaveAttribute('aria-checked', 'true');
+    await user.click(screen.getByRole('button', { name: 'Check' }));
+    expect(result()).toHaveTextContent('Correct');
+  });
+
+  it('A20 places a point drawn as an icon and moves it with the arrow keys', async () => {
+    const user = userEvent.setup();
+    render(
+      <Harness
+        raw={{
+          kind: 'plot_points',
+          scene: plane,
+          points: [{ id: 'tent', label: 'Tent', icon: 'tent', answer: [1, 0] }],
+          snap: 1,
+        }}
+      />,
+    );
+    const waiting = screen.getByRole('button', { name: 'Tent' });
+    await waitFor(() => expect(waiting.querySelector('svg path')).not.toBeNull(), {
+      timeout: 5000,
+    });
+    waiting.focus();
+    await user.keyboard('{Enter}');
+    const tent = screen.getByRole('slider', { name: 'Tent' });
+    expect(tent).toHaveFocus();
+    // The handle draws the icon in its ring, instead of the dot.
+    await waitFor(() => expect(drawn(tent)).toHaveLength(1), { timeout: 5000 });
+    await user.keyboard('{ArrowRight}');
+    expect(tent).toHaveAttribute('aria-valuetext', 'Tent at (1, 0)');
+    await user.click(screen.getByRole('button', { name: 'Check' }));
+    expect(result()).toHaveTextContent('Correct');
+  });
+
+  it('A20 a scene repeats an icon with its parameter and writes its caption', async () => {
+    const user = userEvent.setup();
+    render(
+      <Harness
+        raw={{
+          kind: 'manipulate',
+          params: [{ name: 'n', label: 'Icons', min: 0, max: 5, step: 1, initial: 2 }],
+          scene: {
+            x: [0, 6],
+            y: [0, 2],
+            shapes: [
+              {
+                type: 'icon',
+                name: 'user-round',
+                at: ['0.5 + i', 1],
+                size: 0.8,
+                each: { name: 'i', count: 'n' },
+              },
+              { type: 'icon', name: 'tent', at: [5.5, 1], label: '{n * 10} visitors' },
+            ],
+          },
+          target: ['n == 3'],
+        }}
+      />,
+    );
+    await waitFor(() => expect(drawn()).toHaveLength(3), { timeout: 5000 });
+    expect(screen.getByText('20 visitors')).toBeInTheDocument();
+    fireEvent.change(screen.getByRole('slider', { name: /^Icons/ }), { target: { value: '3' } });
+    expect(drawn()).toHaveLength(4);
+    expect(screen.getByText('30 visitors')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Check' }));
+    expect(result()).toHaveTextContent('Correct');
+  });
+});

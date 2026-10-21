@@ -63,6 +63,41 @@
         "correct": "Yes.",
         "incorrect": "Not yet."
       }
+    },
+    {
+      "id": "shapes",
+      "title": "Shapes",
+      "kind": "hotspot",
+      "prompt": "Choose the triangle.",
+      "scene": {
+        "x": [0, 4],
+        "y": [0, 2]
+      },
+      "regions": [
+        {
+          "id": "triangle",
+          "label": "Triangle",
+          "shape": {
+            "type": "icon",
+            "name": "triangel",
+            "at": [1, 1]
+          }
+        },
+        {
+          "id": "circle",
+          "label": "Circle",
+          "shape": {
+            "type": "icon",
+            "name": "Circle",
+            "at": [3, 1]
+          }
+        }
+      ],
+      "correct": ["triangle"],
+      "feedback": {
+        "correct": "Yes.",
+        "incorrect": "Not yet."
+      }
     }
   ]
 }

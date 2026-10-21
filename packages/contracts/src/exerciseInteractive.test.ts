@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { type ExerciseStep, exerciseProblems, exerciseStep, exerciseStepView } from './exercise';
 import { judge, parseResponse, revealOf, savedByComplete, viewStep } from './exerciseRules';
+import { iconNames, iconSuggestions } from './icons';
 
 const feedback = { correct: 'Right.', incorrect: 'Not yet.' };
 const step = (raw: Record<string, unknown>): ExerciseStep =>
@@ -446,5 +447,147 @@ describe('judging interactive steps', () => {
     };
     expect(check(drawing, { strokes: [stroke], description: '' })).toMatchObject({ correct: true });
     expect(revealOf(drawing)).toBeNull();
+  });
+});
+
+describe('icons in interactive steps', () => {
+  const lunch = {
+    kind: 'categorize',
+    iconsOnly: true,
+    categories: [
+      { id: 'fruit', label: 'Fruit', icon: 'apple' },
+      { id: 'drink', label: 'Drink' },
+    ],
+    items: [
+      { id: 'banana', label: 'Banana', icon: 'banana', category: 'fruit' },
+      { id: 'milk', label: 'Milk', icon: 'milk', category: 'drink', feedback: 'Milk is drunk.' },
+    ],
+  };
+
+  it('A42 names an unknown icon with the nearest names, and reads capitals as small letters', () => {
+    expect(iconNames.size).toBeGreaterThan(1500);
+    expect(iconSuggestions('tree')).toEqual(['tree-palm', 'tree-pine', 'tree-deciduous']);
+    expect(iconSuggestions('sqare')[0]).toBe('square');
+    expect(
+      problems({
+        kind: 'hotspot',
+        scene: { ...plane, shapes: [{ type: 'icon', name: 'Tree-Pine', at: [0, 0] }] },
+        regions: [
+          { id: 'a', label: 'A', shape: { type: 'icon', name: 'triangel', at: [1, 1] } },
+          { id: 'b', label: 'B', shape: { type: 'icon', name: 'Circle', at: [3, 1] } },
+        ],
+        correct: ['a'],
+      }),
+    ).toEqual([
+      'Step 1 “Step” · regions · #1 · shape · name: is not an icon: try triangle (the icons are listed at lucide.dev/icons)',
+    ]);
+    expect(
+      problems({
+        ...lunch,
+        categories: [{ id: 'fruit', label: 'Fruit', icon: 'xyzzy' }, lunch.categories[1]],
+      }),
+    ).toEqual([
+      'Step 1 “Step” · categories · #1 · icon: is not an icon (the icons are listed at lucide.dev/icons)',
+    ]);
+    const parsed = step({
+      kind: 'manipulate',
+      params: [{ name: 'n', label: 'N', min: 0, max: 3, step: 1, initial: 0 }],
+      scene: { ...plane, shapes: [{ type: 'icon', name: ' User ', at: [0, 0] }] },
+      target: ['n == 2'],
+    });
+    expect(parsed.kind === 'manipulate' && parsed.scene.shapes[0]).toMatchObject({ name: 'user' });
+  });
+
+  it('A42 needs an icon on every piece of an iconsOnly step, and tiles for one with gaps', () => {
+    expect(problems(lunch)).toEqual([]);
+    expect(
+      problems({
+        ...lunch,
+        items: [lunch.items[0], { id: 'milk', label: 'Milk', category: 'drink' }],
+      }),
+    ).toEqual([
+      'Step 1 “Step” · items · #2 · icon: is missing: with iconsOnly, each piece is shown by its icon',
+    ]);
+    expect(
+      problems({
+        kind: 'fill_blanks',
+        iconsOnly: true,
+        text: 'An [[a]] a day.',
+        gaps: [{ id: 'a', accept: ['apple'] }],
+      }),
+    ).toEqual([
+      'Step 1 “Step” · iconsOnly: shows tiles by their icons, and this step has no tiles',
+    ]);
+    expect(
+      problems({
+        kind: 'label_diagram',
+        iconsOnly: true,
+        scene: plane,
+        targets: [{ id: 't', at: [0, 0], answer: 'sun' }],
+        labels: [
+          { id: 'sun', label: 'Sun', icon: 'sun' },
+          { id: 'moon', label: 'Moon' },
+        ],
+      }),
+    ).toEqual([
+      'Step 1 “Step” · labels · #2 · icon: is missing: with iconsOnly, each piece is shown by its icon',
+    ]);
+  });
+
+  it('A42 reads an icon’s place, size and turn as expressions over the parameters', () => {
+    const scene = (shape: Record<string, unknown>) => ({
+      kind: 'manipulate',
+      params: [{ name: 'n', label: 'N', min: 0, max: 3, step: 1, initial: 0 }],
+      scene: { ...plane, shapes: [{ type: 'icon', name: 'user', at: ['i', 0], ...shape }] },
+      target: ['n == 2'],
+    });
+    expect(
+      problems(scene({ size: '0.5 + n / 4', rotate: '30 * i', each: { name: 'i', count: 'n' } })),
+    ).toEqual([]);
+    expect(problems(scene({ size: 'k', rotate: 'q', each: { name: 'i', count: 'n' } }))).toEqual([
+      'Step 1 “Step” · scene · shapes · #1 · size: “k” uses k, which is not defined here (defined: i, n)',
+      'Step 1 “Step” · scene · shapes · #1 · rotate: “q” uses q, which is not defined here (defined: i, n)',
+    ]);
+  });
+
+  it('A08 sends the pieces’ icons, and still no answer', () => {
+    const sorting = exerciseStepView.parse(viewStep(step(lunch), 7)).interactive;
+    expect(sorting).toMatchObject({
+      kind: 'categorize',
+      iconsOnly: true,
+      categories: [
+        { id: 'fruit', label: 'Fruit', icon: 'apple' },
+        { id: 'drink', label: 'Drink' },
+      ],
+    });
+    expect(sorting?.kind === 'categorize' && sorting.items).toEqual(
+      expect.arrayContaining([
+        { id: 'banana', label: 'Banana', icon: 'banana' },
+        { id: 'milk', label: 'Milk', icon: 'milk' },
+      ]),
+    );
+    const plotting = step({
+      kind: 'plot_points',
+      scene: plane,
+      points: [{ id: 'tent', label: 'Tent', icon: 'tent', answer: [2, 3] }],
+      snap: 1,
+    });
+    const plotted = exerciseStepView.parse(viewStep(plotting, 7)).interactive;
+    expect(plotted?.kind === 'plot_points' && plotted.points).toEqual([
+      { id: 'tent', label: 'Tent', icon: 'tent' },
+    ]);
+    for (const [s, words] of [
+      [step(lunch), ['category', 'Milk is drunk']],
+      [plotting, ['answer', '[2,3]']],
+    ] as const) {
+      const view = JSON.stringify(exerciseStepView.parse(viewStep(s, 7)));
+      for (const word of words) expect(view, `${s.kind}: ${word}`).not.toContain(word);
+    }
+    // Without icons, a view is as it was: no icon keys and no iconsOnly.
+    expect(JSON.stringify(exerciseStepView.parse(viewStep(sort, 7)))).not.toMatch(/icon/i);
+    // A correct sorting of icon pieces is judged as any other.
+    expect(check(step(lunch), { banana: 'fruit', milk: 'drink' })).toMatchObject({
+      correct: true,
+    });
   });
 });

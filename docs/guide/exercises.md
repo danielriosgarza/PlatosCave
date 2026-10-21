@@ -84,7 +84,7 @@ items:
 marks: true
 ```
 
-2 to 6 `categories` and 2 to 20 `items`. An item's `feedback` is shown when it is in the wrong group, before `incorrect`.
+2 to 6 `categories` and 2 to 20 `items`. An item's `feedback` is shown when it is in the wrong group, before `incorrect`. Items and categories may carry an [icon](#icons).
 
 ### Fill the gaps: `fill_blanks`
 
@@ -107,12 +107,12 @@ tiles:
 | `gaps[].answer` | With tiles: the tile id, or a list of tile ids any of which fills the gap. |
 | `gaps[].accept` | Typed: the answers taken, compared without regard to case and spacing (`caseSensitive: true` to change that). |
 | `gaps[].number`, `tolerance` | Typed: a number taken within `tolerance`. A comma is read as a decimal point, and `−` as `-`. |
-| `tiles` | Up to 24, distractors included. |
+| `tiles` | Up to 24, distractors included. A tile may carry an [icon](#icons). |
 | `reuse` | A tile may fill more than one gap. Without it, the gaps must be fillable with different tiles. |
 
 ### Label a diagram: `label_diagram`
 
-A [scene](#scenes) with `targets` (a place `at: [x, y]` and the label `answer`, or a list of labels) and `labels` to drag, distractors included. `reuse` works as for tiles.
+A [scene](#scenes) with `targets` (a place `at: [x, y]` and the label `answer`, or a list of labels) and `labels` to drag, distractors included. `reuse` works as for tiles, and a label may carry an [icon](#icons).
 
 ```yaml
 kind: label_diagram
@@ -138,7 +138,7 @@ Students drag points onto the scene, or move them with the arrow keys.
 
 | Field | Meaning |
 | --- | --- |
-| `points` | Up to 8: `id`, `label`, `answer` (`[x, y]`), and `start` (where it is placed; without it the point waits beside the scene). |
+| `points` | Up to 8: `id`, `label`, `answer` (`[x, y]`), `start` (where it is placed; without it the point waits beside the scene) and `icon` (drawn instead of a dot, see [Icons](#icons)). |
 | `snap` | Points move in steps of `snap`: each coordinate is a whole multiple of it. |
 | `tolerance` | The distance from an answer still accepted (default 0). An answer must be within `tolerance` of a position a point can reach: a multiple of `snap` inside the scene. |
 | `unordered` | Any point may stand at any answer, each answer taken once. |
@@ -163,7 +163,7 @@ marks: true
 
 ### Choose regions: `hotspot`
 
-A scene with `regions` the student chooses, by pointer or with the arrow keys and Space. A region's `shape` is a `circle` (`center`, `r`), a `rect` (`at`, `size`) or a `polygon` (`points`), in the scene's coordinates; its `label` names it for a screen reader, and its `feedback` is shown when it is chosen wrongly.
+A scene with `regions` the student chooses, by pointer or with the arrow keys and Space. A region's `shape` is a `circle` (`center`, `r`), a `rect` (`at`, `size`), a `polygon` (`points`) or an `icon` (`name`, `at`, `size`, `rotate`: see [Icons](#icons)), in the scene's coordinates; its `label` names it for a screen reader, and its `feedback` is shown when it is chosen wrongly.
 
 ```yaml
 kind: hotspot
@@ -196,7 +196,7 @@ answer: { count: 15 }
 
 ### Reach a target: `manipulate`
 
-The student moves sliders and handles until every condition of `target` holds. A slider is `name`, `label`, `min`, `max`, `step`, `initial` (and `unit`). A handle is `kind: point`, `name`, `label`, ranges `x` and `y`, `step` and `initial: [x, y]`; expressions read it as `P.x` and `P.y`. The scene redraws as the values change.
+The student moves sliders and handles until every condition of `target` holds. A slider is `name`, `label`, `min`, `max`, `step`, `initial` (and `unit`). A handle is `kind: point`, `name`, `label`, ranges `x` and `y`, `step` and `initial: [x, y]`, and may be drawn as an `icon`; expressions read it as `P.x` and `P.y`. The scene redraws as the values change.
 
 ```yaml
 kind: manipulate
@@ -258,10 +258,40 @@ A scene is a diagram written as data. Parallax draws it as SVG from the design t
 | `function` | `y` (an expression in `x`), `domain` |
 | `curve` | `x` and `y` (expressions in `t`), `t: [from, to]` |
 | `text` | `at`, `text`, `align` (`start`, `middle`, `end`), `size` |
+| `icon` | `name`, `at` (its centre), `size` (its width in x units, default 1), `rotate` (degrees, counter-clockwise), `fill`, `label` (written under it): see [Icons](#icons) |
 
 Every shape also takes `tone` (`ink`, `muted`, `faint`), `weight` (`thin`, `normal`, `thick`), `dash: true`, `show` (an expression: the shape is drawn only while it holds) and `each: { name: i, count: n }`, which draws the shape `n` times (at most 200) with `i` = 0, 1, … in its expressions. `fill` is `none`, `soft`, `muted` or `ink`.
 
 Any number in a shape may be an expression over the step's parameters, written as a string: `at: [P.x, "P.y + 1"]`. A `label` or `text` shows a value with `{expression}`, or with `{expression:2}` for two decimals: `"n = {n}"`.
+
+## Icons
+
+Parallax carries the [Lucide](https://lucide.dev/icons) icon set: about 1,900 drawings of objects, animals, foods, plants, vehicles, buildings, people, shapes and signs. A file names an icon as the Lucide site lists it, `name: tree-pine`, and never carries a drawing of its own. In the browser editor, **Find an icon** under a step's fields searches the icons by name or by what they show and puts the chosen name at the cursor; `parallax check` suggests the nearest names for a name it does not know. Icons are drawn in the scene's tones, so they follow the theme.
+
+| Where | How |
+| --- | --- |
+| In a scene | The shape `type: icon`. Its numbers may be expressions, so an icon moves, turns and grows with the parameters, and `each` repeats it: a pictogram is one shape. |
+| On a piece to drag | `icon` on a `categorize` item or category, a `fill_blanks` tile or a `label_diagram` label shows the icon beside the label. With `iconsOnly: true` the pieces show their icons alone, so the picture is the question; each piece then needs an icon, and its label is still what a screen reader says and what a pointer's tooltip shows. |
+| As a region | A `hotspot` region with `shape: { type: icon, name, at, size, rotate }`: the student chooses the icon itself. |
+| As a point to move | `icon` on a `plot_points` point or a `manipulate` handle draws the icon instead of the dot. |
+
+```yaml
+kind: categorize
+iconsOnly: true
+categories:
+  - { id: fruit, label: Fruit, icon: apple }
+  - { id: drink, label: Drink, icon: glass-water }
+items:
+  - { id: banana, label: Banana, icon: banana, category: fruit }
+  - { id: coffee, label: Coffee, icon: coffee, category: drink }
+```
+
+```yaml
+# One shape draws n people in a row.
+- { type: icon, name: user, at: ["0.6 + i", 1], size: 0.8, each: { name: i, count: n } }
+```
+
+The icons are © Lucide Icons and Contributors under the ISC licence, and those derived from Feather © Cole Bemis under the MIT licence; both licences are kept with Parallax's copy of the icons.
 
 ## Expressions
 

@@ -25,9 +25,15 @@ export function LabelDiagram({
   onChange: (draft: Draft) => void;
 }) {
   const labels = new Map(view.labels.map((l) => [l.id, l.label]));
+  const icons = new Map(view.labels.map((l) => [l.id, l.icon]));
+  const iconsOnly = view.iconsOnly ?? false;
+  const tokenClass = (id: string) =>
+    iconsOnly && icons.get(id) ? `${styles.token} ${styles.iconToken}` : styles.token;
   const number = (target: string) => view.targets.findIndex((t) => t.id === target) + 1;
   const drag = useTokenDrag({
     disabled,
+    iconsOnly,
+    tokenIcon: (id) => icons.get(id),
     tokenLabel: (id) => labels.get(id) ?? id,
     slotLabel: (id) => (id === BANK ? 'the labels' : `target ${number(id)}`),
     onMove: (move) =>
@@ -57,8 +63,17 @@ export function LabelDiagram({
                 {...drag.slotProps(t.id)}
               >
                 {tile ? (
-                  <button type="button" className={styles.token} {...drag.tokenProps(tile, t.id)}>
-                    <TokenFace label={labels.get(tile) ?? tile} mark={mark} />
+                  <button
+                    type="button"
+                    className={tokenClass(tile)}
+                    {...drag.tokenProps(tile, t.id)}
+                  >
+                    <TokenFace
+                      label={labels.get(tile) ?? tile}
+                      icon={icons.get(tile)}
+                      iconOnly={iconsOnly}
+                      mark={mark}
+                    />
                   </button>
                 ) : (
                   <span className={styles.targetEmpty} aria-hidden={drag.picked ? true : undefined}>
@@ -76,8 +91,8 @@ export function LabelDiagram({
           <ul className={styles.tokens}>
             {bank.map((l) => (
               <li key={l.id}>
-                <button type="button" className={styles.token} {...drag.tokenProps(l.id, BANK)}>
-                  <TokenFace label={l.label} />
+                <button type="button" className={tokenClass(l.id)} {...drag.tokenProps(l.id, BANK)}>
+                  <TokenFace label={l.label} icon={l.icon} iconOnly={iconsOnly} />
                 </button>
               </li>
             ))}

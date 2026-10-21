@@ -3,6 +3,7 @@ import type { KeyboardEvent } from 'react';
 import type { InteractiveDraft } from './draft';
 import { type Frame, round, type XY } from './geometry';
 import styles from './Interactive.module.css';
+import { IconPaths, useIconPaths } from './icon';
 import { Scene } from './Scene';
 import { Mark } from './tokens';
 
@@ -28,7 +29,47 @@ function regionPath(region: Region, frame: Frame): string {
     }
     case 'polygon':
       return `M${shape.points.map(at).join('L')}Z`;
+    case 'icon': {
+      // The icon's square, turned with it.
+      const [cx, cy] = frame.toScreen(shape.at);
+      const half = ((shape.size ?? 1) * frame.kx) / 2;
+      const a = (-(shape.rotate ?? 0) * Math.PI) / 180;
+      const corner = ([dx, dy]: XY) =>
+        `${round(cx + dx * Math.cos(a) - dy * Math.sin(a))} ${round(cy + dx * Math.sin(a) + dy * Math.cos(a))}`;
+      const corners: XY[] = [
+        [-half, -half],
+        [half, -half],
+        [half, half],
+        [-half, half],
+      ];
+      return `M${corners.map(corner).join('L')}Z`;
+    }
   }
+}
+
+/** The icon of an icon region. The pointer passes through it to the region's square. */
+function RegionIcon({
+  shape,
+  frame,
+  data,
+}: {
+  shape: Extract<Region['shape'], { type: 'icon' }>;
+  frame: Frame;
+  data: string;
+}) {
+  const [cx, cy] = frame.toScreen(shape.at);
+  const k = ((shape.size ?? 1) * frame.kx) / 24;
+  return (
+    // biome-ignore lint/a11y/noAriaHiddenOnFocusable: an SVG group is not focusable; the region names the icon
+    <g
+      className={styles.regionIcon}
+      transform={`translate(${round(cx)} ${round(cy)}) rotate(${round(-(shape.rotate ?? 0))}) scale(${k}) translate(-12 -12)`}
+      strokeWidth={2 / k}
+      aria-hidden="true"
+    >
+      <IconPaths data={data} />
+    </g>
+  );
 }
 
 /**
@@ -61,6 +102,7 @@ export function Hotspot({
     onChange({ kind: 'hotspot', picked });
   };
   const names = new Map(view.regions.map((r) => [r.id, r.label]));
+  const icons = useIconPaths(view.regions.some((r) => r.shape.type === 'icon'));
   return (
     <div className={styles.board}>
       <Scene scene={view.scene} label={label} interactive={!disabled}>
@@ -97,12 +139,20 @@ export function Hotspot({
                   if (!view.multiple && !disabled) onChange({ kind: 'hotspot', picked: [next.id] });
                 },
               };
-              return view.multiple ? (
-                // biome-ignore lint/a11y/useSemanticElements: a region of a figure has no native checkbox
-                <path key={r.id} role="checkbox" aria-checked={on} {...props} />
-              ) : (
-                // biome-ignore lint/a11y/useSemanticElements: a region of a figure has no native radio button
-                <path key={r.id} role="radio" aria-checked={on} {...props} />
+              const data = r.shape.type === 'icon' ? icons?.[r.shape.name] : undefined;
+              return (
+                <g key={r.id}>
+                  {view.multiple ? (
+                    // biome-ignore lint/a11y/useSemanticElements: a region of a figure has no native checkbox
+                    <path role="checkbox" aria-checked={on} {...props} />
+                  ) : (
+                    // biome-ignore lint/a11y/useSemanticElements: a region of a figure has no native radio button
+                    <path role="radio" aria-checked={on} {...props} />
+                  )}
+                  {r.shape.type === 'icon' && data ? (
+                    <RegionIcon shape={r.shape} frame={frame} data={data} />
+                  ) : null}
+                </g>
               );
             })}
           </g>
