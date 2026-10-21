@@ -152,6 +152,23 @@ describe('interactive steps in exercise.v1', () => {
       'Step 1 “Step” · tolerance: must be at least 0.1, half the 0.2 an arrow key moves a point, or the keyboard cannot reach the curve',
     ]);
     expect(problems({ ...sketch, tolerance: 0.1 })).toEqual([]);
+    // At that least tolerance, the curves the arrow keys reach on either side of the answer are
+    // right, though each lies 0.1 from it only up to rounding.
+    const keyed = (target: number, above: boolean) => {
+      let y = 0;
+      while (y + 0.2 <= target + 1e-9) y = Number((y + 0.2).toFixed(6));
+      return above && y < target ? Number((y + 0.2).toFixed(6)) : y;
+    };
+    const least = step({ ...sketch, tolerance: 0.1 });
+    for (const above of [false, true]) {
+      const ys = [0, 1, 2, 3, 4].map((x) => keyed(0.5 * x + 1, above));
+      expect(check(least, ys), String(ys)).toMatchObject({ correct: true });
+    }
+    expect(
+      problems({ ...sketch, scene: { x: [0, 4], y: [0, 0.001] }, answer: '0.0001*x' }),
+    ).toEqual([
+      'Step 1 “Step” · scene · y: spans too little to sketch on: use larger units, so that it is at least 0.004 high',
+    ]);
   });
 
   it('A08 sends a student no answer: the view of each kind holds no key, target or tolerance', () => {

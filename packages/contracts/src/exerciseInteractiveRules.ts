@@ -285,7 +285,8 @@ export function judgeInteractive(step: InteractiveStep, value: unknown): Judgeme
       const parts = Object.fromEntries(
         sampleXs(step).map((x, i) => [
           String(i),
-          Math.abs((ys[i] ?? Number.NaN) - quantityValue(step.answer, { x })) <= step.tolerance,
+          Math.abs((ys[i] ?? Number.NaN) - quantityValue(step.answer, { x })) <=
+            step.tolerance + 1e-9,
         ]),
       );
       return verdict(parts);

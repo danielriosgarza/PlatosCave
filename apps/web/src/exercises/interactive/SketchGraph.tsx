@@ -1,4 +1,4 @@
-import { formatNumber, type InteractiveView, sketchKeyStep } from '@parallax/contracts';
+import { formatNumber, type InteractiveView, sketchKeyStep, snapped } from '@parallax/contracts';
 import { type PointerEvent, useEffect, useRef, useState } from 'react';
 import type { InteractiveDraft } from './draft';
 import { clamp, type Frame, polylinePath, smoothPath, type XY } from './geometry';
@@ -23,9 +23,6 @@ export function drawOver(ys: number[], xs: number[], p: XY, q: XY, [lo, hi]: [nu
   });
   return next;
 }
-
-/** Heights as sent: four decimals are finer than any tolerance a sketch is read with. */
-const fine = (y: number) => Number(y.toFixed(4));
 
 /**
  * Draw a graph (§9): sweep across the scene with a pointer and the handles at the sample points
@@ -57,7 +54,7 @@ export function SketchGraph({
   const latest = useRef(draft.ys);
   latest.current = draft.ys;
   const set = (ys: number[]) => {
-    latest.current = ys.map(fine);
+    latest.current = ys.map(snapped);
     onChange({ kind: 'sketch_graph', ys: latest.current });
   };
 

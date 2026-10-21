@@ -159,7 +159,7 @@ tolerance: 0.75
 marks: true
 ```
 
-`count` is 2 to 41; `start` is the height the curve starts at. The answer must stay inside the scene at every sample. An arrow key moves a point by about a fortieth of the scene's height (0.2 for a height of 10), so `tolerance` must be at least half of that; `parallax check` names the least it can be.
+`count` is 2 to 41; `start` is the height the curve starts at. The answer must stay inside the scene at every sample. An arrow key moves a point by about a fortieth of the scene's height (0.2 for a height of 10), so `tolerance` must be at least half of that; `parallax check` names the least it can be. The scene must be at least 0.004 high: for smaller quantities, use larger units.
 
 ### Choose regions: `hotspot`
 

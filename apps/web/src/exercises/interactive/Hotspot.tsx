@@ -112,7 +112,8 @@ export function Hotspot({
         {draft.picked.length === 0 ? (
           'Nothing chosen yet.'
         ) : (
-          <>
+          // One run of text: the readout lays out its children apart.
+          <span>
             {'Chosen: '}
             {draft.picked.map((id, i) => (
               <span key={id}>
@@ -121,7 +122,7 @@ export function Hotspot({
                 {i < draft.picked.length - 1 ? ', ' : ''}
               </span>
             ))}
-          </>
+          </span>
         )}
       </p>
     </div>

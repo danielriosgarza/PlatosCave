@@ -74,7 +74,7 @@ export function Manipulate({
     const v = latest.current[p.name];
     const at = typeof v === 'number' ? v : p.initial;
     // Played to the end without a loop, Play starts over.
-    from.current = !p.animate?.loop && at >= p.max ? 0 : at - p.min;
+    from.current = !p.animate?.loop && at >= snapParam(p, p.max) ? 0 : at - p.min;
     setPlaying(p.name);
   };
 

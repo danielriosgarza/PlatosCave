@@ -106,6 +106,8 @@ function onControl(v: number, lo: number, hi: number, step: number): number {
 }
 
 /** A parameter's value as its control sends it: on its grid and in its range. */
+export function snapParam(p: Exclude<Param, { kind: 'point' }>, v: ParamValue): number;
+export function snapParam(p: Param, v: ParamValue): ParamValue;
 export function snapParam(p: Param, v: ParamValue): ParamValue {
   if (p.kind === 'point') {
     const [x, y] = Array.isArray(v) ? v : p.initial;

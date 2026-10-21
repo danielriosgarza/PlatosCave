@@ -590,7 +590,13 @@ export function interactiveProblems(step: InteractiveStep): FieldProblem[] {
         add(['start'], 'lies outside the scene');
       }
       const key = sketchKeyStep(step.scene.y);
-      if (step.tolerance < key / 2 - 1e-9) {
+      if (key < 1e-4) {
+        // Heights are sent to six decimals: a smaller key step would be lost to rounding.
+        add(
+          ['scene', 'y'],
+          'spans too little to sketch on: use larger units, so that it is at least 0.004 high',
+        );
+      } else if (step.tolerance < key / 2 - 1e-9) {
         add(
           ['tolerance'],
           `must be at least ${formatNumber(key / 2)}, half the ${formatNumber(key)} an arrow key moves a point, or the keyboard cannot reach the curve`,

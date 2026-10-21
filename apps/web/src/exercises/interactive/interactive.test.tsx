@@ -386,6 +386,44 @@ describe('interactive steps from the keyboard', () => {
     expect(result()).toHaveTextContent('Correct: Seen.');
   });
 
+  it('A20 Play at the end of a range its grid does not reach starts over and stops at the end', async () => {
+    const user = userEvent.setup();
+    render(
+      <Harness
+        raw={{
+          kind: 'explore',
+          params: [
+            {
+              name: 'k',
+              label: 'Count',
+              min: 0,
+              max: 10,
+              step: 3,
+              initial: 9,
+              animate: { seconds: 0.5, loop: false },
+            },
+          ],
+          scene: { ...plane, shapes: [{ type: 'text', at: [0, 4], text: 'k = {k}' }] },
+          feedback: { saved: 'Seen.' },
+        }}
+      />,
+    );
+    // 9 is the last value the slider offers: Play runs from the start again.
+    await user.click(screen.getByRole('button', { name: 'Play' }));
+    const seen: string[] = [];
+    await waitFor(
+      () => {
+        const now = screen.getByText(/^k = /).textContent ?? '';
+        if (seen.at(-1) !== now) seen.push(now);
+        expect(seen.slice(1)).toEqual(['k = 0', 'k = 3', 'k = 6', 'k = 9']);
+        // It stops at the end rather than going round again.
+        expect(screen.getByText('Play', { selector: 'button' })).toBeVisible();
+      },
+      { timeout: 3000 },
+    );
+    expect(screen.getByText(/^k = /)).toHaveTextContent('k = 9');
+  });
+
   it('A07 a reopened drawing is undone and redone, and a description alone saves it', async () => {
     const user = userEvent.setup();
     const stroke = {
