@@ -1,4 +1,14 @@
 import { z } from 'zod';
+import { common, feedback, label, option, prose, stepId } from './exerciseBase';
+import {
+  type InteractiveStep,
+  interactiveKinds,
+  interactiveProblems,
+  interactiveResponse,
+  interactiveSteps,
+  interactiveView,
+  isInteractiveKind,
+} from './exerciseInteractive';
 
 /**
  * `exercise.v1` (§9): the content of an `exercise` resource revision. An exercise is a short
@@ -6,25 +16,6 @@ import { z } from 'zod';
  * rule, feedback, optional hints in sequence, a solution, and a completion rule. Answer keys,
  * feedback and solutions stay on the server: students receive `exerciseStepView`.
  */
-
-const stepId = z.string().regex(/^[a-z0-9][a-z0-9_-]{0,39}$/);
-const label = z.string().trim().min(1).max(200);
-const prose = z.string().trim().min(1).max(4000);
-const option = z.object({ id: stepId, label });
-
-const common = {
-  id: stepId,
-  /** Short name on the step track, e.g. "Predict". */
-  title: label,
-  prompt: prose,
-  /** Revealed one at a time; each reveal is recorded (§9). */
-  hints: z.array(prose).max(10).default([]),
-  /** Shown by Show solution, which completes the step with help. */
-  solution: prose.optional(),
-};
-
-/** Shown after a correct check, and after a wrong one unless a more specific message applies. */
-const feedback = z.object({ correct: prose, incorrect: prose });
 
 export const numericStep = z.object({
   ...common,
@@ -127,8 +118,10 @@ export const exerciseStep = z.discriminatedUnion('kind', [
   textStep,
   simulationStep,
   codeStep,
+  ...interactiveSteps,
 ]);
 export type ExerciseStep = z.output<typeof exerciseStep>;
+const isInteractive = (step: ExerciseStep): step is InteractiveStep => isInteractiveKind(step.kind);
 
 const ids = (list: { id: string }[]) => list.map((o) => o.id);
 const sameSet = (a: string[], b: string[]) =>
@@ -211,6 +204,12 @@ export const exerciseV1 = z
       ctx.addIssue({ code: 'custom', message: 'step ids must be unique', path: ['steps'] });
     }
     exercise.steps.forEach((step, i) => {
+      if (isInteractive(step)) {
+        for (const p of interactiveProblems(step)) {
+          ctx.addIssue({ code: 'custom', message: p.message, path: ['steps', i, ...p.path] });
+        }
+        return;
+      }
       const problem = stepProblem(step);
       if (problem) ctx.addIssue({ code: 'custom', message: problem, path: ['steps', i] });
     });
@@ -303,6 +302,7 @@ export const exerciseResponse = {
     observations: z.record(stepId, z.number()).default({}),
   }),
   code: z.string().max(20_000),
+  ...interactiveResponse,
 } as const satisfies Record<ExerciseStep['kind'], z.ZodType>;
 
 /** What a student sees of a step: no answer key, feedback, hints or solution text. */
@@ -317,6 +317,7 @@ export const exerciseStepView = z.object({
     'text',
     'simulation',
     'code',
+    ...interactiveKinds,
   ]),
   title: z.string(),
   prompt: z.string(),
@@ -335,4 +336,6 @@ export const exerciseStepView = z.object({
   language: z.enum(['python', 'r']).optional(),
   starter: z.string().optional(),
   maxLength: z.int().optional(),
+  /** The scene and pieces of an interactive step (`exerciseInteractive.ts`). */
+  interactive: interactiveView.optional(),
 });

@@ -1,0 +1,68 @@
+{
+  "schema": "exercise.v1",
+  "steps": [
+    {
+      "id": "sort",
+      "title": "Sort",
+      "kind": "categorize",
+      "prompt": "Sort the variables.",
+      "categories": [
+        {
+          "id": "counted",
+          "label": "Counted"
+        },
+        {
+          "id": "measured",
+          "label": "Measured"
+        }
+      ],
+      "items": [
+        {
+          "id": "goals",
+          "label": "Goals",
+          "category": "counted"
+        },
+        {
+          "id": "height",
+          "label": "Height",
+          "category": "weighed"
+        }
+      ],
+      "feedback": {
+        "correct": "Yes.",
+        "incorrect": "Not yet."
+      }
+    },
+    {
+      "id": "line",
+      "title": "Line",
+      "kind": "manipulate",
+      "prompt": "Make the slope 2.",
+      "params": [
+        {
+          "name": "m",
+          "label": "Slope",
+          "min": -3,
+          "max": 3,
+          "step": 1,
+          "initial": 0
+        }
+      ],
+      "scene": {
+        "x": [-5, 5],
+        "y": [-5, 5],
+        "shapes": [
+          {
+            "type": "function",
+            "y": "k*x"
+          }
+        ]
+      },
+      "target": ["m =="],
+      "feedback": {
+        "correct": "Yes.",
+        "incorrect": "Not yet."
+      }
+    }
+  ]
+}

@@ -19,9 +19,11 @@ import {
   problemsOf,
   type Row,
   type StepKind,
+  stepContent,
   toContent,
   toDraft,
 } from './exerciseForm';
+import { InteractivePreview, previewStep } from './InteractivePreview';
 import { authoringKey } from './queries';
 import { SaveStatus } from './SaveStatus';
 
@@ -732,5 +734,52 @@ function KindFields({
           {feedback([['saved', 'feedback when saved']])}
         </>
       );
+    default:
+      return <SpecFields n={n} step={step} set={set} />;
   }
+}
+
+/**
+ * An interactive step's own fields, written as YAML as in a course file, with the step
+ * previewed beside them once they are valid.
+ */
+function SpecFields({
+  n,
+  step,
+  set,
+}: {
+  n: number;
+  step: DraftStep;
+  set: (patch: Partial<DraftStep>) => void;
+}) {
+  const id = useId();
+  const preview = previewStep(stepContent(step));
+  return (
+    <>
+      <div className={local.field}>
+        <label htmlFor={id}>{`Step ${n} fields (YAML)`}</label>
+        <textarea
+          id={id}
+          className={local.mono}
+          rows={Math.min(30, Math.max(8, step.spec.split('\n').length + 1))}
+          spellCheck={false}
+          autoCapitalize="off"
+          autoCorrect="off"
+          value={step.spec}
+          onChange={(e) => set({ spec: e.target.value })}
+        />
+        <span className={local.hint}>
+          The scene, items, answer and feedback, written as in a course file. The exercise guide
+          lists every field.
+        </span>
+      </div>
+      {preview ? (
+        <InteractivePreview key={step.spec} n={n} step={preview} />
+      ) : (
+        <p className={local.hint}>
+          The preview appears once these fields are valid; the problems above say what to fix.
+        </p>
+      )}
+    </>
+  );
 }

@@ -1,0 +1,619 @@
+{
+  "schema": "exercise.v1",
+  "steps": [
+    {
+      "id": "sort",
+      "title": "Sort the variables",
+      "kind": "categorize",
+      "prompt": "Drag each variable into the group of its type. You can also pick one and choose its group.",
+      "categories": [
+        {
+          "id": "categorical",
+          "label": "Categorical"
+        },
+        {
+          "id": "discrete",
+          "label": "Discrete"
+        },
+        {
+          "id": "continuous",
+          "label": "Continuous"
+        }
+      ],
+      "items": [
+        {
+          "id": "colour",
+          "label": "Eye colour",
+          "category": "categorical"
+        },
+        {
+          "id": "species",
+          "label": "Species of fish",
+          "category": "categorical"
+        },
+        {
+          "id": "siblings",
+          "label": "Number of siblings",
+          "category": "discrete"
+        },
+        {
+          "id": "goals",
+          "label": "Goals in a match",
+          "category": "discrete"
+        },
+        {
+          "id": "height",
+          "label": "Height",
+          "category": "continuous"
+        },
+        {
+          "id": "time",
+          "label": "Time to finish a race",
+          "category": "continuous",
+          "feedback": "A time can take any value in a range, so it is continuous."
+        }
+      ],
+      "marks": true,
+      "hints": ["Ask of each one whether you count it, measure it, or name it."],
+      "solution": "Colour and species name a category; siblings and goals are counted; height and time are measured.",
+      "feedback": {
+        "correct": "Each variable is in its group.",
+        "incorrect": "Some variables are not in their group yet. The marked ones are right."
+      }
+    },
+    {
+      "id": "standard-error",
+      "title": "Complete the sentence",
+      "kind": "fill_blanks",
+      "prompt": "Drag a tile into each gap.",
+      "text": "The standard error of a mean is σ divided by [[root]]. To halve it, the sample must be [[times]] times as large.",
+      "gaps": [
+        {
+          "id": "root",
+          "answer": "sqrt"
+        },
+        {
+          "id": "times",
+          "answer": "four"
+        }
+      ],
+      "tiles": [
+        {
+          "id": "sqrt",
+          "label": "√n"
+        },
+        {
+          "id": "n",
+          "label": "n"
+        },
+        {
+          "id": "two",
+          "label": "2"
+        },
+        {
+          "id": "four",
+          "label": "4"
+        }
+      ],
+      "marks": true,
+      "solution": "σ/√n; halving it takes a sample four times as large, because √4 = 2.",
+      "feedback": {
+        "correct": "Right. Precision grows with the square root of the sample size.",
+        "incorrect": "Not yet. A sample twice as large shrinks √n by less than half."
+      }
+    },
+    {
+      "id": "mean",
+      "title": "Work it out",
+      "kind": "fill_blanks",
+      "prompt": "Type the values.",
+      "text": "The mean of 3, 5, 7 and 9 is [[mean]], and the middle value of an ordered list is called its [[name]].",
+      "gaps": [
+        {
+          "id": "mean",
+          "number": 6,
+          "tolerance": 0
+        },
+        {
+          "id": "name",
+          "accept": ["median", "the median"]
+        }
+      ],
+      "marks": true,
+      "feedback": {
+        "correct": "Both are right.",
+        "incorrect": "Add the four values and divide by four; the middle value has its own name."
+      }
+    },
+    {
+      "id": "normal-parts",
+      "title": "Label the curve",
+      "kind": "label_diagram",
+      "prompt": "Drag each label to its numbered place on the normal curve.",
+      "scene": {
+        "x": [-3.5, 3.5],
+        "y": [0, 0.5],
+        "aspect": 2,
+        "axes": true,
+        "ticks": 1,
+        "description": "A normal curve centred on 0, with a dashed line at its centre and an arrow from 0 to 1 below its peak.",
+        "shapes": [
+          {
+            "type": "function",
+            "y": "exp(-x^2/2)/sqrt(2*pi)",
+            "weight": "thick"
+          },
+          {
+            "type": "segment",
+            "from": [0, 0],
+            "to": [0, 0.399],
+            "dash": true,
+            "tone": "muted"
+          },
+          {
+            "type": "segment",
+            "from": [0, 0.24],
+            "to": [1, 0.24],
+            "arrow": "both"
+          }
+        ]
+      },
+      "targets": [
+        {
+          "id": "centre",
+          "at": [0, 0.45],
+          "answer": "mean"
+        },
+        {
+          "id": "spread",
+          "at": [0.5, 0.29],
+          "answer": "sd"
+        },
+        {
+          "id": "tail",
+          "at": [2.6, 0.06],
+          "answer": "tail"
+        }
+      ],
+      "labels": [
+        {
+          "id": "mean",
+          "label": "Mean"
+        },
+        {
+          "id": "sd",
+          "label": "One standard deviation"
+        },
+        {
+          "id": "tail",
+          "label": "Tail"
+        },
+        {
+          "id": "range",
+          "label": "Range"
+        }
+      ],
+      "marks": true,
+      "feedback": {
+        "correct": "Every label is in place.",
+        "incorrect": "Some labels are not in place yet."
+      }
+    },
+    {
+      "id": "number-line",
+      "title": "Mean and median",
+      "kind": "plot_points",
+      "prompt": "Place the median and the mean of 1, 2, 2, 3 and 12 on the number line.",
+      "scene": {
+        "x": [0, 13],
+        "y": [-1, 1],
+        "ticks": 1
+      },
+      "line": true,
+      "points": [
+        {
+          "id": "median",
+          "label": "Median",
+          "answer": 2
+        },
+        {
+          "id": "mean",
+          "label": "Mean",
+          "answer": 4
+        }
+      ],
+      "snap": 0.5,
+      "marks": true,
+      "hints": ["The median is the middle value once the values are in order."],
+      "feedback": {
+        "correct": "The value 12 pulls the mean to 4; the median stays at 2.",
+        "incorrect": "Not yet. The mean is the total, 20, divided by 5."
+      }
+    },
+    {
+      "id": "centroid",
+      "title": "Find the centre",
+      "kind": "plot_points",
+      "prompt": "Plot the point whose coordinates are the mean x and the mean y of the four points.",
+      "scene": {
+        "x": [0, 8],
+        "y": [0, 8],
+        "axes": {
+          "x": "x",
+          "y": "y"
+        },
+        "grid": 1,
+        "description": "Four points at (1, 2), (3, 4), (5, 3) and (3, 7).",
+        "shapes": [
+          {
+            "type": "point",
+            "at": [1, 2],
+            "tone": "muted"
+          },
+          {
+            "type": "point",
+            "at": [3, 4],
+            "tone": "muted"
+          },
+          {
+            "type": "point",
+            "at": [5, 3],
+            "tone": "muted"
+          },
+          {
+            "type": "point",
+            "at": [3, 7],
+            "tone": "muted"
+          }
+        ]
+      },
+      "points": [
+        {
+          "id": "centre",
+          "label": "Centre",
+          "answer": [3, 4]
+        }
+      ],
+      "snap": 0.5,
+      "feedback": {
+        "correct": "(3, 4) is the centre of mass of the points.",
+        "incorrect": "Average the four x values, then the four y values."
+      }
+    },
+    {
+      "id": "parabola",
+      "title": "Sketch the graph",
+      "kind": "sketch_graph",
+      "prompt": "Sketch y = (x − 1)² − 2. Draw across the grid, or move the points.",
+      "scene": {
+        "x": [-2, 4],
+        "y": [-3, 7],
+        "axes": {
+          "x": "x",
+          "y": "y"
+        },
+        "grid": 1
+      },
+      "answer": "(x - 1)^2 - 2",
+      "samples": {
+        "from": -2,
+        "to": 4,
+        "count": 13
+      },
+      "tolerance": 0.6,
+      "marks": true,
+      "hints": ["The lowest point is at x = 1, y = −2."],
+      "feedback": {
+        "correct": "That is the parabola, lowest at (1, −2).",
+        "incorrect": "Not yet. The marked points are still off the curve."
+      }
+    },
+    {
+      "id": "bars",
+      "title": "Choose the bars",
+      "kind": "hotspot",
+      "prompt": "Choose every bar that holds more than a quarter of the 40 values.",
+      "scene": {
+        "x": [0, 11],
+        "y": [0, 16],
+        "aspect": 1.6,
+        "axes": {
+          "y": "count"
+        },
+        "description": "A histogram with five bars of counts 4, 12, 14, 7 and 3.",
+        "shapes": [
+          {
+            "type": "rect",
+            "at": [1, 0],
+            "size": [2, 4],
+            "fill": "soft"
+          },
+          {
+            "type": "rect",
+            "at": [3, 0],
+            "size": [2, 12],
+            "fill": "soft"
+          },
+          {
+            "type": "rect",
+            "at": [5, 0],
+            "size": [2, 14],
+            "fill": "soft"
+          },
+          {
+            "type": "rect",
+            "at": [7, 0],
+            "size": [2, 7],
+            "fill": "soft"
+          },
+          {
+            "type": "rect",
+            "at": [9, 0],
+            "size": [2, 3],
+            "fill": "soft"
+          },
+          {
+            "type": "line",
+            "through": [[0, 10], [11, 10]],
+            "dash": true,
+            "tone": "muted"
+          }
+        ]
+      },
+      "regions": [
+        {
+          "id": "b1",
+          "label": "Bar of 4",
+          "shape": {
+            "type": "rect",
+            "at": [1, 0],
+            "size": [2, 4]
+          }
+        },
+        {
+          "id": "b2",
+          "label": "Bar of 12",
+          "shape": {
+            "type": "rect",
+            "at": [3, 0],
+            "size": [2, 12]
+          }
+        },
+        {
+          "id": "b3",
+          "label": "Bar of 14",
+          "shape": {
+            "type": "rect",
+            "at": [5, 0],
+            "size": [2, 14]
+          }
+        },
+        {
+          "id": "b4",
+          "label": "Bar of 7",
+          "shape": {
+            "type": "rect",
+            "at": [7, 0],
+            "size": [2, 7]
+          }
+        },
+        {
+          "id": "b5",
+          "label": "Bar of 3",
+          "shape": {
+            "type": "rect",
+            "at": [9, 0],
+            "size": [2, 3]
+          },
+          "feedback": "The last bar holds 3 of 40 values, well under a quarter."
+        }
+      ],
+      "correct": ["b2", "b3"],
+      "multiple": true,
+      "marks": true,
+      "feedback": {
+        "correct": "A quarter of 40 is 10; only 12 and 14 are more.",
+        "incorrect": "A quarter of 40 is 10, the dashed line."
+      }
+    },
+    {
+      "id": "shade",
+      "title": "Shade a share",
+      "kind": "grid",
+      "prompt": "The probability of drawing red is 0.35. Shade that share of the grid.",
+      "rows": 4,
+      "cols": 5,
+      "answer": {
+        "count": 7
+      },
+      "feedback": {
+        "correct": "7 of 20 cells is 0.35.",
+        "incorrect": "0.35 of 20 cells is 7 cells."
+      }
+    },
+    {
+      "id": "match-curve",
+      "title": "Match the curve",
+      "kind": "manipulate",
+      "prompt": "Move the sliders until your curve lies on the dashed one.",
+      "params": [
+        {
+          "name": "mu",
+          "label": "Mean",
+          "min": -2,
+          "max": 2,
+          "step": 0.5,
+          "initial": 0
+        },
+        {
+          "name": "s",
+          "label": "Standard deviation",
+          "min": 0.5,
+          "max": 2,
+          "step": 0.25,
+          "initial": 1
+        }
+      ],
+      "scene": {
+        "x": [-4, 4],
+        "y": [0, 0.9],
+        "aspect": 1.8,
+        "axes": true,
+        "description": "Your normal curve, and a dashed target curve with mean 1 and standard deviation 0.5.",
+        "shapes": [
+          {
+            "type": "function",
+            "y": "exp(-((x - 1)/0.5)^2/2)/(0.5*sqrt(2*pi))",
+            "dash": true,
+            "tone": "muted"
+          },
+          {
+            "type": "function",
+            "y": "exp(-((x - mu)/s)^2/2)/(s*sqrt(2*pi))",
+            "weight": "thick"
+          },
+          {
+            "type": "text",
+            "at": [-3.8, 0.82],
+            "text": "mean {mu}, sd {s}",
+            "align": "start"
+          }
+        ]
+      },
+      "target": ["near(mu, 1, 0.01)", "near(s, 0.5, 0.01)"],
+      "answer": {
+        "mu": 1,
+        "s": 0.5
+      },
+      "feedback": {
+        "correct": "Mean 1 and standard deviation 0.5.",
+        "incorrect": "The curves do not match yet.",
+        "rules": [
+          {
+            "when": "near(mu, 1, 0.01)",
+            "say": "The centre is right. Now change how wide the curve is."
+          },
+          {
+            "when": "near(s, 0.5, 0.01)",
+            "say": "The width is right. Now move the centre."
+          }
+        ]
+      }
+    },
+    {
+      "id": "slope",
+      "title": "Drag the point",
+      "kind": "manipulate",
+      "prompt": "Drag P until the line through the origin and P has slope 2.",
+      "params": [
+        {
+          "kind": "point",
+          "name": "P",
+          "label": "P",
+          "x": [-4, 4],
+          "y": [-4, 4],
+          "step": 0.5,
+          "initial": [2, 1]
+        }
+      ],
+      "scene": {
+        "x": [-4, 4],
+        "y": [-4, 4],
+        "axes": true,
+        "grid": 1,
+        "shapes": [
+          {
+            "type": "line",
+            "through": [[0, 0], ["P.x", "P.y"]],
+            "show": "P.x != 0 || P.y != 0"
+          },
+          {
+            "type": "text",
+            "at": [-3.8, 3.5],
+            "text": "slope {P.y / P.x:2}",
+            "align": "start",
+            "show": "P.x != 0"
+          }
+        ]
+      },
+      "target": ["P.x != 0", "near(P.y, 2 * P.x, 0.01)"],
+      "answer": {
+        "P": [1, 2]
+      },
+      "feedback": {
+        "correct": "Slope 2. Any point with y = 2x would do.",
+        "incorrect": "The slope is the rise over the run, y over x."
+      }
+    },
+    {
+      "id": "sampling",
+      "title": "Watch the spread shrink",
+      "kind": "explore",
+      "prompt": "Press Play, or move the slider. How does the spread of sample means change as n grows?",
+      "params": [
+        {
+          "name": "n",
+          "label": "Sample size",
+          "min": 1,
+          "max": 25,
+          "step": 1,
+          "initial": 1,
+          "animate": {
+            "seconds": 8
+          }
+        }
+      ],
+      "scene": {
+        "x": [-3, 3],
+        "y": [0, 2.2],
+        "aspect": 1.8,
+        "axes": true,
+        "description": "The distribution of the mean of n values, which narrows as n grows; one dot for each value in the sample.",
+        "shapes": [
+          {
+            "type": "function",
+            "y": "exp(-(x^2) * n / 2) * sqrt(n) / sqrt(2*pi)",
+            "weight": "thick"
+          },
+          {
+            "type": "point",
+            "at": ["-2.8 + i * 0.23", 2.05],
+            "size": "small",
+            "tone": "muted",
+            "each": {
+              "name": "i",
+              "count": "n"
+            }
+          },
+          {
+            "type": "text",
+            "at": [2.9, 1.8],
+            "text": "n = {n}",
+            "align": "end"
+          }
+        ]
+      },
+      "feedback": {
+        "saved": "The spread falls as 1/√n, which the next steps use."
+      }
+    },
+    {
+      "id": "sketch-scatter",
+      "title": "Draw a scatter plot",
+      "kind": "drawing",
+      "prompt": "Draw a scatter plot of two variables with a strong negative correlation, then describe it.",
+      "scene": {
+        "x": [0, 10],
+        "y": [0, 10],
+        "axes": {
+          "x": "x",
+          "y": "y"
+        },
+        "description": "Empty axes from 0 to 10."
+      },
+      "feedback": {
+        "saved": "Your drawing is saved for your instructor."
+      }
+    }
+  ]
+}

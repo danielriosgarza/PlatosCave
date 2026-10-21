@@ -147,6 +147,28 @@
   border-radius: var(--pc-radius-control);
   padding: 8px 12px;
 }
+.sortable li[data-dragging="true"] {
+  border-color: var(--pc-ink);
+  background: var(--pc-soft);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 0.12);
+}
+.sortLabel {
+  flex: 1;
+  min-width: 0;
+}
+.grip {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  min-height: 36px;
+  color: var(--pc-muted);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+}
+.grip:active {
+  cursor: grabbing;
+}
 .pairs {
   display: grid;
   gap: 12px;

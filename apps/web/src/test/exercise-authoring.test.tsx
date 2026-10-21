@@ -251,6 +251,39 @@ describe('exercise editor', () => {
     expect(await screen.findByText(/Step 2 · prompt/)).toBeInTheDocument();
   });
 
+  it('A42 adds an interactive step as YAML fields, previews it, and tries it as a student would', async () => {
+    const { user } = await editor();
+    await user.selectOptions(screen.getByLabelText(/Step type/), 'hotspot');
+    await user.click(screen.getByRole('button', { name: 'Add step' }));
+    const step = screen.getByRole('group', { name: 'Step 2' });
+    const fields = within(step).getByRole('textbox', { name: 'Step 2 fields (YAML)' });
+    expect((fields as HTMLTextAreaElement).value).toContain('correct: [b3]');
+    const preview = within(step).getByRole('region', { name: 'Preview of step 2' });
+    within(preview).getByRole('radio', { name: 'First bar' }).focus();
+    await user.keyboard(' ');
+    await user.click(within(preview).getByRole('button', { name: 'Try checking' }));
+    expect(within(preview).getByRole('status')).toHaveTextContent(
+      'Not yet.The mode is the class with the most values.',
+    );
+    await user.click(within(preview).getByRole('button', { name: 'Show the expected answer' }));
+    await waitFor(() =>
+      expect(within(preview).getByRole('radio', { name: 'Third bar' })).toHaveAttribute(
+        'aria-checked',
+        'true',
+      ),
+    );
+    await user.click(within(preview).getByRole('button', { name: 'Try checking' }));
+    expect(within(preview).getByRole('status')).toHaveTextContent('Correct.');
+    // A field the schema refuses is listed with its step and path, and the preview waits for it.
+    await user.clear(fields);
+    await user.click(fields);
+    await user.paste('scene: { x: [0, 1], y: [0, 1] }\nregions: []\ncorrect: [a]\n');
+    expect(within(step).queryByRole('region', { name: 'Preview of step 2' })).toBeNull();
+    expect(screen.getByRole('status', { name: 'Exercise problems' })).toHaveTextContent(
+      /Step 2 .* regions: needs at least 2/,
+    );
+  });
+
   it('sets points and a hint policy for credit, or leaves the exercise as practice', async () => {
     const { user, patched } = await editor();
     expect(

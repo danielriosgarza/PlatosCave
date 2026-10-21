@@ -4,7 +4,10 @@ import {
   exerciseProblems,
   exerciseV1,
   type hintPolicies,
+  isInteractiveKind,
 } from '@parallax/contracts';
+import { parse, stringify } from 'yaml';
+import { interactiveTemplates } from './interactiveTemplates';
 
 /**
  * The exercise editor's working copy. Every field is text or a boolean so a half-typed form is
@@ -24,6 +27,16 @@ export const kindNames: Record<StepKind, string> = {
   text: 'Explanation',
   simulation: 'Simulation control',
   code: 'Code task',
+  categorize: 'Sort into groups',
+  fill_blanks: 'Fill the gaps',
+  label_diagram: 'Label a diagram',
+  plot_points: 'Plot points',
+  sketch_graph: 'Sketch a graph',
+  hotspot: 'Choose regions of a figure',
+  grid: 'Shade grid cells',
+  manipulate: 'Reach a target with sliders',
+  explore: 'Explore a scene',
+  drawing: 'Freehand drawing',
 };
 
 export interface Row {
@@ -76,6 +89,8 @@ export interface DraftStep {
   maxLength: string;
   language: 'python' | 'r';
   starter: string;
+  /** Interactive kinds: the kind's own fields as YAML (scene, items, answer, feedback, …). */
+  spec: string;
 }
 
 export type HintPolicy = (typeof hintPolicies)[number];
@@ -136,6 +151,7 @@ export function blankStep(kind: StepKind, taken: string[]): DraftStep {
     maxLength: '4000',
     language: 'python',
     starter: '',
+    spec: isInteractiveKind(kind) ? interactiveTemplates[kind] : '',
   };
   switch (kind) {
     case 'single_choice':
@@ -183,6 +199,18 @@ export function toDraft(content: unknown): DraftExercise {
         hints: step.hints,
         solution: step.solution ?? '',
       };
+      if (isInteractiveKind(step.kind)) {
+        const {
+          id: _id,
+          kind: _kind,
+          title: _title,
+          prompt: _prompt,
+          hints: _hints,
+          solution: _solution,
+          ...fields
+        } = step;
+        return { ...draft, spec: stringify(fields, { lineWidth: 0, flowCollectionPadding: true }) };
+      }
       switch (step.kind) {
         case 'numeric':
           return {
@@ -264,13 +292,15 @@ export function toDraft(content: unknown): DraftExercise {
               correct: false,
             })),
           };
-        default:
+        case 'code':
           return {
             ...draft,
             language: step.language,
             starter: step.starter,
             saved: step.feedback.saved,
           };
+        default:
+          return draft;
       }
     }),
   };
@@ -288,7 +318,25 @@ function presentedItems(s: DraftStep) {
 const num = (v: string) => (v.trim() === '' ? Number.NaN : Number(v));
 const labelled = (rows: Row[]) => rows.map((r) => ({ id: r.id, label: text(r.label) }));
 
-function stepContent(s: DraftStep): unknown {
+/** An interactive step's YAML fields as an object, or why they cannot be read. */
+export function specOf(
+  s: Pick<DraftStep, 'spec'>,
+): { ok: true; fields: Record<string, unknown> } | { ok: false; message: string } {
+  try {
+    const fields: unknown = parse(s.spec, { maxAliasCount: 0 });
+    if (fields === null || fields === undefined) return { ok: true, fields: {} };
+    if (typeof fields !== 'object' || Array.isArray(fields)) {
+      return { ok: false, message: 'the fields must be written as name: value lines' };
+    }
+    return { ok: true, fields: fields as Record<string, unknown> };
+  } catch (error) {
+    const message = error instanceof Error ? error.message.split('\n')[0] : 'not valid YAML';
+    return { ok: false, message: `the fields are not valid YAML (${message})` };
+  }
+}
+
+/** One step of the form as `exercise.v1` step content (not yet validated). */
+export function stepContent(s: DraftStep): unknown {
   const common = {
     id: s.id,
     kind: s.kind,
@@ -298,6 +346,11 @@ function stepContent(s: DraftStep): unknown {
     ...optional('solution', s.solution),
   };
   const right = { correct: text(s.correct), incorrect: text(s.incorrect) };
+  if (isInteractiveKind(s.kind)) {
+    // The form's own fields win over the same names written in the YAML.
+    const spec = specOf(s);
+    return { ...(spec.ok ? spec.fields : {}), ...common };
+  }
   switch (s.kind) {
     case 'numeric':
       return {
@@ -429,7 +482,29 @@ export function toContent(draft: DraftExercise): unknown {
 export const presentedAsAnswer = (s: DraftStep): boolean =>
   presentedItems(s).every((item, i) => item.id === s.rows[i]?.id);
 
-/** What still stops the form from being a valid exercise; empty when it can be saved. */
-export const problemsOf = (draft: DraftExercise): string[] => exerciseProblems(toContent(draft));
+/**
+ * What still stops the form from being a valid exercise; empty when it can be saved. A step
+ * whose YAML cannot be read says so, and only so: the schema's complaints about the fields it
+ * could not read would only repeat it.
+ */
+export function problemsOf(draft: DraftExercise): string[] {
+  const unreadable = new Map<number, string>();
+  draft.steps.forEach((s, i) => {
+    if (!isInteractiveKind(s.kind)) return;
+    const spec = specOf(s);
+    if (!spec.ok) unreadable.set(i, spec.message);
+  });
+  const named = (i: number) => {
+    const title = draft.steps[i]?.title.trim();
+    return `Step ${i + 1}${title ? ` “${title}”` : ''}`;
+  };
+  const problems = exerciseProblems(toContent(draft)).filter(
+    (p) =>
+      ![...unreadable.keys()].some(
+        (i) => p.startsWith(`${named(i)} `) || p.startsWith(`${named(i)}:`),
+      ),
+  );
+  return [...[...unreadable].map(([i, message]) => `${named(i)}: ${message}`), ...problems];
+}
 
 export type { ExerciseV1 };

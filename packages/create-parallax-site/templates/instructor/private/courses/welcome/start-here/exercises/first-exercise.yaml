@@ -3,7 +3,9 @@
 # these fields hold the answers. Students see the prompts and the options only.
 #
 # Kinds of step: numeric, single_choice, multiple_choice, ordering, matching, text, simulation and
-# code. Add `credit: { points: 5, hintPolicy: reduces_credit }` to make it count; without it the
+# code, and the interactive kinds of interactive-tour.yaml beside this file: categorize,
+# fill_blanks, label_diagram, plot_points, sketch_graph, hotspot, grid, manipulate, explore and
+# drawing. Add `credit: { points: 5, hintPolicy: reduces_credit }` to make it count; without it the
 # exercise is practice.
 schema: exercise.v1
 steps:
@@ -36,14 +38,14 @@ steps:
     prompt: >-
       Open courses/welcome/start-here/topic.yaml in your site. How many resources does its list
       `resources` hold?
-    answer: 5
+    answer: 6
     tolerance: 0
     hints:
       - Each resource is one entry that starts with "- id:".
-      - There is one resource for each tab of this topic.
-    solution: Five, one for each tab, from slides/welcome.md to tests/sample-test.yaml.
+      - There is one resource for each tab of this topic, and the Exercises tab has two.
+    solution: Six, from slides/welcome.md to tests/sample-test.yaml; the Exercises tab has two.
     feedback:
-      correct: Five. The order of that list is the order of the resources in each tab.
+      correct: Six. The order of that list is the order of the resources in each tab.
       incorrect: Count the entries that start with "- id:".
       low: Too few. The exercise you are doing now is one of them.
       high: Too many. Count only the entries under resources, not the topic's own id.

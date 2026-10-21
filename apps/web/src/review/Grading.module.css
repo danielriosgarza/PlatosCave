@@ -104,6 +104,11 @@
 .checks li {
   padding: var(--pc-space-4) 0;
 }
+/* An interactive answer drawn as the student left it. */
+.drawnAnswer {
+  max-width: 680px;
+  font-size: var(--pc-size-ui);
+}
 .error {
   color: var(--pc-ink);
   font-weight: 600;

@@ -60,6 +60,7 @@ test('A37 one command creates a site of either mode, and only package.json names
         `${welcome}/topic.yaml`,
         `${welcome}/notebooks/demo/data/heights.csv`,
         `private/${welcome}/exercises/first-exercise.yaml`,
+        `private/${welcome}/exercises/interactive-tour.yaml`,
         `private/${welcome}/tests/sample-test.yaml`,
       ]),
     );
@@ -72,7 +73,7 @@ test('A37 one command creates a site of either mode, and only package.json names
     expect(manifest).toEqual({ private: true, type: 'module', dependencies });
     expect(made.filter((file) => read(site, file).includes(version))).toEqual(['package.json']);
 
-    // git tracks the starter course's two samples in private/ and nothing else there, so a clone
+    // git tracks the starter course's samples in private/ and nothing else there, so a clone
     // of the site has every definition its check needs.
     fs.mkdirSync(join(site, `private/${welcome}/exercises/answers`));
     fs.writeFileSync(join(site, `private/${welcome}/exercises/answers/key.yaml`), '');
@@ -86,6 +87,7 @@ test('A37 one command creates a site of either mode, and only package.json names
     git(site, 'commit', '-qm', 'site');
     expect(git(site, 'ls-files', 'private').trim().split('\n')).toEqual([
       `private/${welcome}/exercises/first-exercise.yaml`,
+      `private/${welcome}/exercises/interactive-tour.yaml`,
       `private/${welcome}/tests/sample-test.yaml`,
     ]);
     const clone = join(temp, `${template}-clone`);

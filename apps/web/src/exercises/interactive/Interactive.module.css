@@ -1,0 +1,671 @@
+/* Interactive exercise steps (§9): scenes, tokens and slots, handles, grids and sliders. One
+   palette, from the tokens: ink, muted and rule strokes; soft and rule fills; success marks. */
+.board {
+  display: grid;
+  gap: var(--pc-space-16);
+  margin: 18px 0;
+  min-width: 0;
+}
+.empty {
+  margin: 0;
+  color: var(--pc-muted);
+  font-size: var(--pc-size-label);
+}
+.readout {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 4px 16px;
+  font-size: var(--pc-size-ui);
+  color: var(--pc-muted);
+  font-variant-numeric: tabular-nums;
+}
+.markRight,
+.markWrong {
+  margin-left: 4px;
+  font-weight: 700;
+}
+.markRight {
+  color: var(--pc-success);
+}
+.markWrong {
+  color: var(--pc-ink);
+}
+.visuallyHidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* Scenes */
+.figure {
+  margin: 0;
+  min-width: 0;
+}
+.sceneBox {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  min-width: 0;
+}
+.sceneHolder {
+  position: relative;
+  max-width: 100%;
+}
+.scene {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  overflow: visible;
+  user-select: none;
+  -webkit-user-select: none;
+  font-family: var(--pc-font-sans);
+}
+.sceneLive {
+  /* The drawing takes the pointer: a finger on it draws or drags instead of scrolling. */
+  touch-action: none;
+}
+.overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.grid {
+  stroke: var(--pc-rule);
+  stroke-width: 1;
+}
+.axis {
+  stroke: var(--pc-muted);
+  stroke-width: 1.25;
+}
+.tick {
+  fill: var(--pc-muted);
+  font-size: var(--pc-size-label);
+  font-variant-numeric: tabular-nums;
+}
+.axisName {
+  fill: var(--pc-ink);
+  font-size: var(--pc-size-ui);
+  font-family: var(--pc-font-math);
+  font-style: italic;
+}
+.label {
+  fill: var(--pc-ink);
+  font-size: var(--pc-size-ui);
+  /* A halo of paper keeps a label legible over lines and grid. */
+  paint-order: stroke;
+  stroke: var(--pc-paper);
+  stroke-width: 4px;
+  stroke-linejoin: round;
+}
+.labelLarge {
+  font-size: var(--pc-size-subsection);
+  font-weight: 600;
+}
+.labelSmall {
+  font-size: var(--pc-size-label);
+}
+.inkStroke {
+  stroke: var(--pc-ink);
+  color: var(--pc-ink);
+}
+.mutedStroke {
+  stroke: var(--pc-muted);
+  color: var(--pc-muted);
+}
+.faintStroke {
+  stroke: var(--pc-rule);
+  color: var(--pc-rule);
+}
+.inkStroke,
+.mutedStroke,
+.faintStroke {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.noFill {
+  fill: none;
+}
+.softFill {
+  fill: var(--pc-soft);
+}
+.mutedFill {
+  fill: var(--pc-rule);
+}
+.inkFill {
+  fill: var(--pc-ink);
+}
+.toneFill,
+.headFill {
+  fill: currentColor;
+}
+
+/* Handles: points the learner drags or moves with the arrow keys */
+.handle {
+  outline: none;
+}
+.handleLive {
+  cursor: grab;
+}
+.handleLive:active {
+  cursor: grabbing;
+}
+.handleHit {
+  fill: transparent;
+  stroke: none;
+}
+.handleRing {
+  fill: var(--pc-paper);
+  stroke: var(--pc-ink);
+  stroke-width: 2;
+  transition: stroke-width 120ms ease-out;
+}
+.handleDot {
+  fill: var(--pc-ink);
+}
+.handleLive:hover .handleRing {
+  stroke-width: 3;
+}
+.handle:focus-visible .handleHit {
+  stroke: var(--pc-ink);
+  stroke-width: 2;
+  stroke-dasharray: 4 3;
+}
+.handle[data-mark="true"] .handleRing {
+  stroke: var(--pc-success);
+  stroke-width: 3;
+}
+.handle[data-mark="true"] .handleDot {
+  fill: var(--pc-success);
+}
+.handleRight,
+.handleWrong {
+  font-size: var(--pc-size-ui);
+  font-weight: 700;
+  paint-order: stroke;
+  stroke: var(--pc-paper);
+  stroke-width: 4px;
+}
+.handleRight {
+  fill: var(--pc-success);
+}
+.handleWrong {
+  fill: var(--pc-ink);
+}
+.handleName {
+  fill: var(--pc-ink);
+  font-size: var(--pc-size-label);
+  font-weight: 600;
+  paint-order: stroke;
+  stroke: var(--pc-paper);
+  stroke-width: 4px;
+  stroke-linejoin: round;
+}
+
+/* Regions to choose */
+.region {
+  fill: var(--pc-ink);
+  fill-opacity: 0.03;
+  stroke: var(--pc-muted);
+  stroke-width: 1.5;
+  stroke-dasharray: 5 4;
+  cursor: pointer;
+  outline: none;
+  transition: fill-opacity 120ms ease-out;
+}
+.region:hover {
+  fill-opacity: 0.1;
+}
+.regionOn {
+  fill-opacity: 0.22;
+  stroke: var(--pc-ink);
+  stroke-width: 2;
+  stroke-dasharray: none;
+}
+.region:focus-visible {
+  stroke: var(--pc-ink);
+  stroke-width: 3;
+}
+.region[data-mark="true"] {
+  stroke: var(--pc-success);
+  fill: var(--pc-success);
+}
+.region[aria-disabled="true"] {
+  cursor: default;
+}
+
+/* A sketched graph */
+.sketchCurve {
+  fill: none;
+  stroke: var(--pc-ink);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+}
+.sketchStroke {
+  fill: none;
+  stroke: var(--pc-muted);
+  stroke-width: 2;
+  stroke-dasharray: 2 5;
+  stroke-linecap: round;
+}
+
+/* Tokens and slots: tiles, items and labels moved by drag, by click, or by keyboard */
+.bank {
+  display: grid;
+  gap: var(--pc-space-8);
+  padding: var(--pc-space-12);
+  border: 1px dashed var(--pc-muted);
+  border-radius: var(--pc-radius-card);
+  background: var(--pc-secondary);
+}
+.bank[data-over="true"],
+.group[data-over="true"] {
+  border-style: solid;
+  border-color: var(--pc-ink);
+  background: var(--pc-soft);
+}
+.groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--pc-space-12);
+}
+.group {
+  display: grid;
+  align-content: start;
+  gap: var(--pc-space-8);
+  min-height: 132px;
+  padding: var(--pc-space-12);
+  border: 1px solid var(--pc-rule);
+  border-radius: var(--pc-radius-card);
+  background: var(--pc-sheet);
+}
+.slotName {
+  margin: 0;
+  font-size: var(--pc-size-label);
+  font-weight: 600;
+  color: var(--pc-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.tokens {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--pc-space-8);
+}
+.token {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 6px 14px;
+  border: 1px solid var(--pc-ink);
+  border-radius: var(--pc-radius-control);
+  background: var(--pc-sheet);
+  color: var(--pc-ink);
+  font: var(--pc-text-ui);
+  white-space: nowrap;
+  cursor: grab;
+  /* A finger on a token drags it; the page still scrolls from anywhere else. */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  transition:
+    background-color 120ms ease-out,
+    box-shadow 120ms ease-out;
+}
+.token:hover:not(:disabled) {
+  box-shadow: 0 2px 0 var(--pc-ink);
+}
+.token[aria-pressed="true"] {
+  background: var(--pc-ink);
+  color: var(--pc-accent-ink);
+}
+.token[aria-pressed="true"] .markRight,
+.token[aria-pressed="true"] .markWrong {
+  color: inherit;
+}
+.token[data-mark="true"] {
+  border-color: var(--pc-success);
+  border-width: 2px;
+}
+.token:disabled {
+  cursor: default;
+  border-color: var(--pc-muted);
+}
+/* A token that lands in a slot settles in. */
+.group .token,
+.gap .token,
+.target .token {
+  animation: settle 180ms ease-out;
+}
+@keyframes settle {
+  from {
+    transform: scale(0.92);
+    opacity: 0.4;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+.drop,
+.gapDrop,
+.targetDrop {
+  font: var(--pc-text-label);
+  font-weight: 600;
+  color: var(--pc-ink);
+  background: var(--pc-paper);
+  border: 1px dashed var(--pc-ink);
+  border-radius: var(--pc-radius-control);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.drop {
+  justify-self: start;
+  min-height: 36px;
+  padding: 4px 12px;
+}
+.gapDrop,
+.targetDrop {
+  min-height: 32px;
+  padding: 2px 8px;
+}
+.ghost {
+  position: fixed;
+  z-index: 1000;
+  pointer-events: none;
+  transform: translate(-50%, -130%) rotate(-2deg);
+  padding: 6px 14px;
+  border-radius: var(--pc-radius-control);
+  background: var(--pc-ink);
+  color: var(--pc-accent-ink);
+  font: var(--pc-text-ui);
+  font-weight: 600;
+  white-space: nowrap;
+  box-shadow: 0 6px 18px rgb(0 0 0 / 0.22);
+}
+
+/* Gaps in a sentence */
+.blanks {
+  margin: 0;
+  text-align: center;
+  font-size: var(--pc-size-body);
+  line-height: 2.6;
+}
+.gap {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  vertical-align: middle;
+  min-width: 88px;
+  min-height: 42px;
+  margin: 0 4px;
+  padding: 0 4px;
+  border-bottom: 2px solid var(--pc-ink);
+  line-height: 1.5;
+}
+.gap[data-over="true"] {
+  background: var(--pc-soft);
+}
+.gap[data-mark="true"] {
+  border-bottom-color: var(--pc-success);
+}
+.gapEmpty {
+  display: inline-block;
+  width: 72px;
+  height: 1em;
+}
+.typedGap {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 4px;
+  vertical-align: middle;
+  line-height: 1.5;
+}
+.typedGap input {
+  min-width: 4ch;
+  max-width: 100%;
+  padding: 4px 6px;
+  border: 0;
+  border-bottom: 2px solid var(--pc-ink);
+  border-radius: 0;
+  background: var(--pc-secondary);
+  color: var(--pc-ink);
+  font: var(--pc-text-field);
+  text-align: center;
+}
+
+/* Targets on a diagram */
+.target {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  pointer-events: auto;
+}
+.targetEmpty {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border: 2px dashed var(--pc-ink);
+  border-radius: 50%;
+  background: var(--pc-paper);
+  font: var(--pc-text-label);
+  font-weight: 700;
+}
+.target[data-over="true"] .targetEmpty {
+  background: var(--pc-ink);
+  color: var(--pc-accent-ink);
+}
+.target .token {
+  min-height: 34px;
+  padding: 4px 10px;
+  box-shadow: 0 1px 4px rgb(0 0 0 / 0.12);
+}
+.target[data-mark="true"] .token {
+  border-color: var(--pc-success);
+}
+
+/* Points waiting to be placed */
+.pointToken {
+  gap: 8px;
+}
+.pointDot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow:
+    0 0 0 2px var(--pc-paper),
+    0 0 0 3px currentColor;
+}
+
+/* A grid of cells */
+.cells {
+  width: 100%;
+  margin: 0 auto;
+  table-layout: fixed;
+  border-collapse: separate;
+  border-spacing: 4px;
+}
+.cells td {
+  padding: 0;
+}
+.cell {
+  display: grid;
+  place-items: center;
+  width: 100%;
+  aspect-ratio: 1;
+  padding: 0;
+  border: 1px solid var(--pc-muted);
+  border-radius: var(--pc-radius-mark);
+  background: var(--pc-sheet);
+  color: var(--pc-ink);
+  font-weight: 700;
+  cursor: pointer;
+  touch-action: none;
+  transition: background-color 100ms ease-out;
+}
+.cell[aria-pressed="true"] {
+  background: var(--pc-ink);
+  color: var(--pc-accent-ink);
+}
+.cellGiven,
+.cellGiven[aria-pressed="true"] {
+  background: var(--pc-muted);
+  border-style: dashed;
+  cursor: default;
+}
+.cell[aria-disabled="true"] {
+  cursor: default;
+}
+.cell:focus-visible {
+  outline: 3px solid var(--pc-ink);
+  outline-offset: 2px;
+}
+.cell[data-mark="true"] {
+  box-shadow: inset 0 0 0 3px var(--pc-success);
+}
+
+/* Sliders under a scene */
+.sliders {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: var(--pc-space-16) var(--pc-space-24);
+  width: 100%;
+  max-width: 680px;
+  margin: 0 auto;
+}
+.slider {
+  display: grid;
+  gap: 6px;
+}
+.sliderHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  font-size: var(--pc-size-ui);
+}
+.sliderHead strong {
+  font-variant-numeric: tabular-nums;
+}
+.sliderRow {
+  display: flex;
+  align-items: center;
+  gap: var(--pc-space-8);
+}
+.sliderRow input[type="range"] {
+  flex: 1;
+  min-width: 0;
+  min-height: 32px;
+  padding: 0;
+  accent-color: var(--pc-ink);
+}
+.sliderRow button {
+  min-width: 72px;
+  text-align: center;
+}
+
+/* A freehand drawing */
+.drawTools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--pc-space-8);
+}
+.drawTools button[aria-pressed="true"]:not(.swatch) {
+  background: var(--pc-accent);
+  color: var(--pc-accent-ink);
+}
+.swatch {
+  width: 28px;
+  height: 28px;
+  min-height: 28px;
+  padding: 0;
+  border: 2px solid var(--pc-paper);
+  outline: 1px solid var(--pc-muted);
+  border-radius: 50%;
+  cursor: pointer;
+}
+.swatch[aria-pressed="true"] {
+  outline: 2px solid var(--pc-ink);
+  outline-offset: 1px;
+}
+.inlineField {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--pc-size-label);
+}
+.inlineField select {
+  min-height: 32px;
+  border: 1px solid var(--pc-muted);
+  border-radius: var(--pc-radius-control);
+  background: var(--pc-sheet);
+  color: var(--pc-ink);
+  font: var(--pc-text-label);
+}
+.sheetBox {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  min-width: 0;
+}
+.sheet {
+  position: relative;
+  max-width: 100%;
+  background: var(--pc-sheet);
+  /* An outline, not a border: the scene under the ink must fill the sheet exactly. */
+  outline: 1px solid var(--pc-rule);
+  border-radius: var(--pc-radius-control);
+}
+.describe {
+  display: grid;
+  gap: var(--pc-space-8);
+  width: 100%;
+  max-width: 640px;
+  margin: 0 auto;
+}
+.describe textarea {
+  width: 100%;
+  resize: vertical;
+  padding: 8px 10px;
+  border: 1px solid var(--pc-muted);
+  border-radius: var(--pc-radius-control);
+  background: var(--pc-sheet);
+  color: var(--pc-ink);
+  font: var(--pc-text-field);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .token,
+  .cell,
+  .region,
+  .handleRing {
+    transition: none;
+  }
+  .group .token,
+  .gap .token,
+  .target .token {
+    animation: none;
+  }
+}
