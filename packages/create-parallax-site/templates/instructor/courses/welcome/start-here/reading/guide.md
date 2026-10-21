@@ -23,7 +23,7 @@ To show a logo, put a PNG, JPEG or WebP file in `src/` and uncomment the `logo` 
 
 ## Change the front page
 
-`src/pages/index.tsx` is the page at `/`. It receives the site's name, its logo and the courses found when the site is built. The moving cave beside the title is `src/pages/_visualization.tsx`. You can:
+`src/pages/index.tsx` is the page at `/`. It receives the site's name, its logo and the courses found when the site is built. The turning solids under the title is `src/pages/_visualization.tsx`. You can:
 
 - change the constants at the top of that file: the speed, the stations, their labels and the pixel drawings, or `SEED` for other mountains and rocks;
 - write your own component in that file, such as a plot or a small simulation, and export it as its default;

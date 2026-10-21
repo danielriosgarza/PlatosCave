@@ -110,9 +110,9 @@ test('A37 a site created from the instructor template shows its front page at / 
   const src = await logo.getAttribute('src');
   expect(src).toMatch(/^\/assets\/logo-[\w-]+\.png$/);
   await expect(main.getByRole('heading', { level: 2 })).toHaveText([
-    'In every topic',
+    'For each topic you can create:',
     'Courses',
-    'Make it yours',
+    'Edit this site',
   ]);
   // The course catalogue: one card per course, with its instructor.
   const courses = main.getByRole('region', { name: 'Courses' }).getByRole('listitem');
@@ -120,7 +120,7 @@ test('A37 a site created from the instructor template shows its front page at / 
   await expect(courses.getByRole('heading', { level: 3 })).toHaveText('Welcome to Parallax');
   await expect(courses).toContainText('Alex Example');
   // The scene under the title draws on a canvas, and a button stops and starts it.
-  await expect(main.getByRole('img', { name: /^Plato's cave/ })).toBeVisible();
+  await expect(main.getByRole('img', { name: /^The five Platonic solids/ })).toBeVisible();
   await main.getByRole('button', { name: 'Pause animation' }).click();
   await expect(main.getByRole('button', { name: 'Play animation' })).toBeVisible();
   const { violations } = await new AxeBuilder({ page }).analyze();
@@ -128,12 +128,12 @@ test('A37 a site created from the instructor template shows its front page at / 
   // On a touch screen every control of the page is a target of at least 44 px (DESIGN.md, A20).
   const touch = await browser.newPage({ baseURL: base, hasTouch: true, isMobile: true });
   await touch.goto('/');
-  await expect(touch.getByRole('link', { name: 'Open the courses' })).toBeVisible();
+  await expect(touch.getByRole('link', { name: 'Browse courses' })).toBeVisible();
   expect(await small(touch, 'main a, main button')).toEqual([]);
   await touch.close();
 
   const link = main.getByRole('link');
-  await expect(link).toHaveText(['Open the courses']);
+  await expect(link).toHaveText(['Browse courses']);
   expect(await link.getAttribute('href')).toBe('/courses');
   await link.click();
   await expect(page.getByRole('heading', { name: 'Sign in' })).toBeVisible();

@@ -80,7 +80,7 @@ test('A37 one command creates a site of either mode, and only package.json names
     const text = scripts.map((file) => read(dist, file)).join('\n');
     expect(files(dist)).toContain('index.html');
     expect(text).toMatch(/\{\s*path:\s*["'`]\/["'`],\s*load:/);
-    expect(text).toContain('Open the courses');
+    expect(text).toContain('Browse courses');
     const gen = read(site, '.parallax/app/web/src/site-pages.gen.ts');
     const { instructors } = JSON.parse(/^const catalogue = (.*);$/m.exec(gen)?.[1] ?? '{}');
     const shown = instructors.map((one: { name: string; courses: { title: string }[] }) => [

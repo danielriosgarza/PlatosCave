@@ -1,5 +1,5 @@
 /* The front page in the type, colours and cards of the Parallax screens. The one picture in 1-bit
-   pixels is the cave in the banner; the small drawings repeat its pixels at the size of an icon. */
+   pixels is the solids in the banner; the small drawings repeat its pixels at the size of an icon. */
 .front {
   color: var(--pc-ink);
   font: var(--pc-text-body);
@@ -87,13 +87,20 @@
 .kinds {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: var(--pc-space-32);
+  gap: var(--pc-space-16);
   margin: 0;
   padding: 0;
   list-style: none;
 }
+/* Each kind in a small box of the card's border. */
 .kind {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
   min-width: 0;
+  padding: var(--pc-space-16) var(--pc-space-20);
+  border: 1px solid var(--pc-rule);
+  border-radius: var(--pc-radius-card);
 }
 .kindPicture,
 .mark {
@@ -106,13 +113,8 @@
   height: 36px;
 }
 .kindName {
-  margin: var(--pc-space-16) 0 var(--pc-space-4);
+  margin: var(--pc-space-12) 0 0;
   font: 600 var(--pc-size-field) / 1.3 var(--pc-font-sans);
-}
-.kindText {
-  margin: 0;
-  color: var(--pc-muted);
-  font: var(--pc-text-ui);
 }
 
 /* The course card of the wireframe (.pc-course-card). */
@@ -172,11 +174,6 @@
 .files dd {
   margin: 0;
 }
-.noteEnd {
-  margin: var(--pc-space-20) 0 0;
-  color: var(--pc-muted);
-  font: var(--pc-text-ui);
-}
 
 @media (max-width: 1199px) {
   .inner {
@@ -196,7 +193,7 @@
 @media (max-width: 640px) {
   .kinds {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: var(--pc-space-24);
+    gap: var(--pc-space-12);
   }
   .files {
     grid-template-columns: minmax(0, 1fr);

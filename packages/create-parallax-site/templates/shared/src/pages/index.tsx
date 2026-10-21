@@ -6,15 +6,15 @@ import styles from './index.module.css';
 // built: each instructor, then their courses. The picture in the banner is `_visualization.tsx`:
 // replace that file to show something of your own, or delete the import above and the element
 // below. Change the tagline to suit your site, and delete the section
-// "Make it yours" when the site is ready for students.
+// "Edit this site" when the site is ready for students.
 
-/** The five tabs of every topic, in their order, with what a student finds in each. */
+/** The five tabs of every topic, in their order. */
 const KINDS = [
-  { name: 'Slides', text: 'The topic in brief, as a deck.', picture: 5 },
-  { name: 'Reading', text: 'The full text, with your notes beside it.', picture: 0 },
-  { name: 'Exercises', text: 'Steps you answer and check as you go.', picture: 6 },
-  { name: 'Notebooks', text: 'Code with its output and data, ready to run.', picture: 1 },
-  { name: 'Tests', text: 'Questions your instructor reviews and returns.', picture: 7 },
+  { name: 'Slides', picture: 5 },
+  { name: 'Reading', picture: 0 },
+  { name: 'Exercises', picture: 6 },
+  { name: 'Notebooks', picture: 1 },
+  { name: 'Tests', picture: 7 },
 ];
 
 export default function Front({ site, catalogue }: PageProps) {
@@ -27,9 +27,9 @@ export default function Front({ site, catalogue }: PageProps) {
         <div className={`${styles.inner} ${styles.bannerInner}`}>
           {site.logo && <img className={styles.logo} src={site.logo.src} alt={site.logo.alt} />}
           <h1 className={styles.name}>{site.name}</h1>
-          <p className={styles.tagline}>Every topic, seen from five sides.</p>
+          <p className={styles.tagline}>Build your online courses</p>
           <Link className={styles.start} to={site.entry}>
-            Open the courses
+            Browse courses
           </Link>
           <div className={styles.picture}>
             <Visualization />
@@ -39,14 +39,13 @@ export default function Front({ site, catalogue }: PageProps) {
 
       <section className={`${styles.inner} ${styles.section}`} aria-labelledby="kinds">
         <h2 id="kinds" className={styles.heading}>
-          In every topic
+          For each topic you can create:
         </h2>
         <ul className={styles.kinds}>
-          {KINDS.map(({ name, text, picture }) => (
+          {KINDS.map(({ name, picture }) => (
             <li key={name} className={styles.kind}>
               <Pixels drawing={picture} className={styles.kindPicture} />
               <h3 className={styles.kindName}>{name}</h3>
-              <p className={styles.kindText}>{text}</p>
             </li>
           ))}
         </ul>
@@ -70,7 +69,7 @@ export default function Front({ site, catalogue }: PageProps) {
       <section className={`${styles.inner} ${styles.section}`} aria-labelledby="yours">
         <div className={styles.note}>
           <h2 id="yours" className={styles.noteTitle}>
-            Make it yours
+            Edit this site
           </h2>
           <dl className={styles.files}>
             <dt>
@@ -84,13 +83,12 @@ export default function Front({ site, catalogue }: PageProps) {
             <dt>
               <code>src/pages/_visualization.tsx</code>
             </dt>
-            <dd>The cave in the banner. Change it, replace it or delete it.</dd>
+            <dd>The banner.</dd>
             <dt>
               <code>courses/welcome/</code>
             </dt>
-            <dd>A finished course with something in every tab. Copy it to start your own.</dd>
+            <dd>An example course with all five tabs.</dd>
           </dl>
-          <p className={styles.noteEnd}>Delete this section before students arrive.</p>
         </div>
       </section>
     </main>

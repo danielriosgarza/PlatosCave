@@ -1,12 +1,9 @@
-/* The scene, with the button that stops and starts it in its lower corner. */
+/* The picture, with the button that stops and starts it in its lower corner. */
 .scene {
   position: relative;
-  overflow: hidden;
   min-width: 0;
-  border-radius: var(--pc-radius-card);
-  background: light-dark(var(--pc-ink), var(--pc-paper));
 }
-/* The canvas draws in two colours: the page's ink (its colour) and paper (its background). The
+/* The canvas draws in the page's ink (its colour) on nothing, so the banner shows through. The
    component sets its width to a whole number of CSS pixels per scene pixel, so that every pixel
    is crisp. */
 .canvas {
@@ -14,36 +11,35 @@
   max-width: 100%;
   height: auto;
   margin: 0 auto;
-  background: var(--pc-paper);
   color: var(--pc-ink);
   image-rendering: pixelated;
 }
 .toggle {
   position: absolute;
-  right: 10px;
-  bottom: 10px;
+  top: 0;
+  right: 0;
   display: grid;
   place-items: center;
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   padding: 0;
-  border: 1px solid light-dark(rgb(255 255 255 / 0.35), rgb(255 255 255 / 0.25));
+  border: 1px solid var(--pc-rule);
   border-radius: var(--pc-radius-control);
-  background: light-dark(var(--pc-ink), var(--pc-paper));
-  color: light-dark(var(--pc-paper), var(--pc-ink));
+  background: var(--pc-paper);
+  color: var(--pc-ink);
   cursor: pointer;
 }
 .toggle svg {
-  width: 12px;
-  height: 12px;
+  width: 10px;
+  height: 10px;
   fill: currentColor;
   shape-rendering: crispEdges;
 }
 .toggle:hover {
-  border-color: currentColor;
+  border-color: var(--pc-muted);
 }
 .toggle:focus-visible {
-  outline: 2px solid light-dark(var(--pc-paper), var(--pc-ink));
+  outline: 2px solid var(--pc-ink);
   outline-offset: 2px;
 }
 @media (pointer: coarse) {
