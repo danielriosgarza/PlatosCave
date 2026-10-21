@@ -24,6 +24,6 @@
   "devDependencies": {
     "@types/react": "19.3.0",
     "parallax-site": "workspace:*",
-    "vite": "8.3.1"
+    "vite": "8.3.4"
   }
 }
