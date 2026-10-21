@@ -1,10 +1,27 @@
+/* The front page in the type, colours and cards of the Parallax screens. The one picture in 1-bit
+   pixels is the solids in the banner; the small drawings repeat its pixels at the size of an icon. */
 .front {
-  box-sizing: border-box;
-  max-width: calc(var(--pc-reading-width) + 2 * var(--pc-stage-inset));
-  margin: 0 auto;
-  padding: var(--pc-space-48) var(--pc-stage-inset);
   color: var(--pc-ink);
   font: var(--pc-text-body);
+}
+.inner {
+  box-sizing: border-box;
+  max-width: calc(1120px + 2 * var(--pc-stage-inset));
+  margin: 0 auto;
+  padding-inline: var(--pc-stage-inset);
+}
+
+/* The banner: the name, one line and the way in, centred over the picture. */
+.banner {
+  border-bottom: 1px solid var(--pc-rule);
+  background: var(--pc-soft);
+}
+.bannerInner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding-block: var(--pc-space-56) var(--pc-space-48);
+  text-align: center;
 }
 .logo {
   display: block;
@@ -12,59 +29,197 @@
   max-height: var(--pc-space-56);
   margin-bottom: var(--pc-space-24);
 }
-.title {
-  margin: 0;
-  font: var(--pc-text-title);
-  letter-spacing: var(--pc-tracking-title);
-}
-.audience {
-  margin: var(--pc-space-12) 0 0;
-  color: var(--pc-muted);
-}
-.instructor {
-  margin-top: var(--pc-space-32);
-  padding-top: var(--pc-space-20);
-  border-top: 1px solid var(--pc-rule);
-}
 .name {
   margin: 0;
-  font: var(--pc-text-subsection);
-  letter-spacing: var(--pc-tracking-subsection);
+  font: 600 clamp(2rem, 1.4rem + 2vw, 3rem) / 1.15 var(--pc-font-sans);
+  letter-spacing: -0.02em;
+  text-wrap: balance;
 }
-.courses {
-  margin: var(--pc-space-8) 0 0;
-  padding-left: var(--pc-space-20);
+.tagline {
+  max-width: 34ch;
+  margin: var(--pc-space-12) 0 0;
+  color: var(--pc-muted);
+  font-size: var(--pc-size-subsection);
+  line-height: 1.4;
 }
-.open {
-  display: inline-block;
-  margin-top: var(--pc-space-40);
-  padding: 9px 22px;
+/* The primary action of DESIGN.md, as a link. */
+.start {
+  display: inline-flex;
+  align-items: center;
+  box-sizing: border-box;
+  min-height: 40px;
+  margin-top: var(--pc-space-28);
+  padding: 9px 26px;
   border-radius: var(--pc-radius-primary);
   background: var(--pc-ink);
   color: var(--pc-accent-ink);
   font: var(--pc-text-ui);
   font-weight: 600;
   text-decoration: none;
-  min-height: 36px;
 }
-.open:hover {
+.start:hover {
   filter: brightness(0.9);
 }
-.open:focus-visible {
+.start:focus-visible {
   outline: 2px solid var(--pc-ink);
   outline-offset: 2px;
 }
+.picture {
+  width: 100%;
+  max-width: 960px;
+  margin-top: var(--pc-space-40);
+}
+
+/* The sections: a heading, then a grid. */
+.section {
+  padding-top: var(--pc-space-56);
+}
+.section:last-child {
+  padding-bottom: 72px;
+}
+.heading {
+  margin: 0 0 var(--pc-space-24);
+  font: var(--pc-text-section);
+  letter-spacing: var(--pc-tracking-title);
+}
+
+/* The five tabs, side by side in the order of the tabs. */
+.kinds {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--pc-space-16);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+/* Each kind in a small box of the card's border. */
+.kind {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+  padding: var(--pc-space-16) var(--pc-space-20);
+  border: 1px solid var(--pc-rule);
+  border-radius: var(--pc-radius-card);
+}
+.kindPicture,
+.mark {
+  display: block;
+  fill: currentColor;
+  shape-rendering: crispEdges;
+}
+.kindPicture {
+  width: 36px;
+  height: 36px;
+}
+.kindName {
+  margin: var(--pc-space-12) 0 0;
+  font: 600 var(--pc-size-field) / 1.3 var(--pc-font-sans);
+}
+
+/* The course card of the wireframe (.pc-course-card). */
+.courses {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));
+  gap: var(--pc-space-20);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.course {
+  min-width: 0;
+  padding: 22px 22px 18px;
+  border: 1px solid var(--pc-rule);
+  border-radius: var(--pc-radius-card);
+}
+.mark {
+  width: 36px;
+  height: 36px;
+  color: var(--pc-muted);
+}
+.courseTitle {
+  margin: var(--pc-space-12) 0 var(--pc-space-8);
+  font: 600 1.125rem / 1.3 var(--pc-font-sans);
+  letter-spacing: -0.01em;
+}
+.meta {
+  margin: 0;
+  color: var(--pc-muted);
+  font: var(--pc-text-label);
+}
+
+/* The author's note: the note surface of DESIGN.md, with the files to change. */
+.note {
+  padding: var(--pc-space-24) var(--pc-space-28);
+  border: 1px solid var(--pc-rule);
+  border-radius: var(--pc-radius-note);
+  background: var(--pc-soft);
+}
+.noteTitle {
+  margin: 0 0 var(--pc-space-16);
+  font: var(--pc-text-subsection);
+}
+.files {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: var(--pc-space-12) var(--pc-space-32);
+  margin: 0;
+  font: var(--pc-text-ui);
+}
+.files dt {
+  font: var(--pc-text-code);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.files dd {
+  margin: 0;
+}
+
+@media (max-width: 1199px) {
+  .inner {
+    padding-inline: var(--pc-space-32);
+  }
+}
+@media (max-width: 960px) {
+  .kinds {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@media (max-width: 800px) {
+  .inner {
+    padding-inline: var(--pc-space-24);
+  }
+}
+@media (max-width: 640px) {
+  .kinds {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--pc-space-12);
+  }
+  .files {
+    grid-template-columns: minmax(0, 1fr);
+    row-gap: var(--pc-space-4);
+  }
+  .files dd + dt {
+    margin-top: var(--pc-space-12);
+  }
+}
 @media (max-width: 540px) {
-  .front {
-    padding: var(--pc-space-32) var(--pc-space-16);
+  .inner {
+    padding-inline: var(--pc-space-16);
+  }
+  .bannerInner {
+    padding-block: var(--pc-space-40) var(--pc-space-32);
+  }
+  .section {
+    padding-top: var(--pc-space-48);
+  }
+  .note {
+    padding: var(--pc-space-20);
   }
 }
 /* The touch target of Buttons.module.css, which the global rule gives no link; last, to win. */
 @media (pointer: coarse) {
-  .open {
-    display: inline-flex;
-    align-items: center;
-    min-height: var(--pc-touch-target, 44px);
-    min-width: var(--pc-touch-target, 44px);
+  .start {
+    min-height: 44px;
   }
 }

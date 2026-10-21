@@ -1,0 +1,58 @@
+# An exercise: a short sequence of steps, each with a prompt, a kind of answer, feedback, hints
+# shown one at a time, and a solution. It lies in private/ because the course is public: true, and
+# these fields hold the answers. Students see the prompts and the options only.
+#
+# Kinds of step: numeric, single_choice, multiple_choice, ordering, matching, text, simulation and
+# code. Add `credit: { points: 5, hintPolicy: reduces_credit }` to make it count; without it the
+# exercise is practice.
+schema: exercise.v1
+steps:
+  - id: predict
+    title: Predict
+    kind: single_choice
+    prompt: >-
+      The course Welcome to Parallax says public: true in its course.yaml. Where does Parallax read
+      the definition of this exercise from?
+    options:
+      - id: topic
+        label: The topic's own exercises/ folder, beside slides/ and reading/
+      - id: private
+        label: The private/ folder, at the same path as the course
+        feedback: Yes. A public course keeps its answers out of the folder that can be published.
+      - id: editor
+        label: Nowhere until it is typed into the editor
+    correct: private
+    hints:
+      - Think of who may read a public course folder, and that this file holds the answers.
+    solution: >-
+      From private/, at the same path as the course folder: private/courses/welcome/start-here/exercises/first-exercise.yaml
+      in an instructor site.
+    feedback:
+      correct: Right. Git ignores private/, so a public repository of the site holds no answer.
+      incorrect: Not quite. Look at the comment at the top of course.yaml.
+  - id: inspect
+    title: Inspect
+    kind: numeric
+    prompt: >-
+      Open courses/welcome/start-here/topic.yaml in your site. How many resources does its list
+      `resources` hold?
+    answer: 5
+    tolerance: 0
+    hints:
+      - Each resource is one entry that starts with "- id:".
+      - There is one resource for each tab of this topic.
+    solution: Five, one for each tab, from slides/welcome.md to tests/sample-test.yaml.
+    feedback:
+      correct: Five. The order of that list is the order of the resources in each tab.
+      incorrect: Count the entries that start with "- id:".
+      low: Too few. The exercise you are doing now is one of them.
+      high: Too many. Count only the entries under resources, not the topic's own id.
+  - id: explain
+    title: Explain
+    kind: text
+    prompt: >-
+      In two or three sentences: which course would you build first with Parallax, and which of the
+      five tabs would it use?
+    maxLength: 2000
+    feedback:
+      saved: Saved. A text step is complete once it is saved; nothing grades its reasoning.

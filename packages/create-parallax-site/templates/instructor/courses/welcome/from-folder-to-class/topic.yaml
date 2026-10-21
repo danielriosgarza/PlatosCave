@@ -1,0 +1,13 @@
+# The second topic. `prerequisites` names the first topic by its id. An entry with
+# `visibility: hidden` is kept from students, for material that is not ready.
+id: ef46aaaf-185e-475e-9b11-9e67f776318f
+position: 1
+title: From a folder to a class
+objective: Choose a level for the site and put a course in front of a class.
+estimatedMinutes: 20
+prerequisites:
+  - 86c5d566-494a-46d0-afed-0d0ee178a917
+resources:
+  - id: d084772e-6131-4cd5-94a8-5e3e916b095c
+    file: reading/levels.md
+    title: Levels, sync and classes
