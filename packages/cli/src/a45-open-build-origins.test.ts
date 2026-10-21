@@ -6,7 +6,7 @@ import { afterAll, beforeAll, expect, test } from 'vitest';
 import { main } from './main';
 import { buildOpenSite } from './open/build';
 import { compileOpenShell } from './open/shell';
-import { buildUnderGuard, printing, STAND_IN } from './open/testing';
+import { buildUnderGuard, printing, STAND_IN, unzip } from './open/testing';
 import { loadSite } from './site/load';
 
 delete process.env.DATABASE_URL;
@@ -89,7 +89,8 @@ test('A45 a level 0 build without a distinct content origin stops', async () => 
 test('A45 untrusted objects are written only under content/, and a build stops when one would land under site/', () => {
   const { root, files, status } = good;
   const [content, site] = [tree(files, 'content'), tree(files, 'site')];
-  // Both PDFs, the notebook files composed for download, the images, the SVG and the HTML outputs.
+  // Both PDFs, the notebook files composed for download, the images, the SVG, the HTML outputs and
+  // the zips of a notebook with its data files.
   const objects = new Set(content.map(([, bytes]) => sha(bytes)));
   const pdfs = ['slides/zones.pdf', 'reading/paper.pdf'].map((pdf) =>
     fs.readFileSync(join(root, reef, pdf)),
@@ -97,7 +98,7 @@ test('A45 untrusted objects are written only under content/, and a build stops w
   const types = [...new Set(content.map(([path]) => path.split('.').at(-1)))].sort();
   expect([status, types, pdfs.filter((pdf) => !objects.has(sha(pdf)))]).toEqual([
     0,
-    ['html', 'ipynb', 'pdf', 'png', 'svg'],
+    ['html', 'ipynb', 'pdf', 'png', 'svg', 'zip'],
     [],
   ]);
   // Under site/ none of them, and only the stand-in's two files, copies of its index.html (at /,
@@ -146,9 +147,15 @@ test('A45 no JavaScript output is in a level 0 build', () => {
   const sources = ['"application/javascript"', marker, "<script>alert('html')", 'onload='];
   const content = tree(files, 'content');
   // Every object is named by its digest, with an extension of the table, which has no script.
-  const named = /\/o\/[0-9a-f]{64}\.(pdf|ipynb|png|jpg|gif|webp|svg|html)$/;
+  const named = /\/o\/[0-9a-f]{64}\.(pdf|ipynb|zip|png|jpg|gif|webp|svg|html)$/;
   const markup = content.filter(([path]) => /\.(html|svg)$/.test(path));
-  const downloads = content.filter(([path]) => path.endsWith('.ipynb'));
+  // A zip is read open: its notebook file is a download like the others, and no file in it is marked.
+  const zipped = content
+    .filter(([path]) => path.endsWith('.zip'))
+    .flatMap(([path, bytes]) =>
+      [...unzip(bytes)].map(([name, file]) => [`${path}!${name}`, Buffer.from(file)] as const),
+    );
+  const downloads = [...content, ...zipped].filter(([path]) => path.endsWith('.ipynb'));
   // The notebook files offered for download have code cells without outputs.
   const outputs = downloads.flatMap(([, bytes]) =>
     JSON.parse(String(bytes)).cells.flatMap((cell: { outputs?: unknown[] }) => cell.outputs ?? []),
@@ -156,10 +163,12 @@ test('A45 no JavaScript output is in a level 0 build', () => {
   expect({
     absent: sources.filter((text) => !notebook.includes(text)),
     unnamed: content.filter(([path]) => !named.test(path)).map(([path]) => path),
-    marked: [...files].filter(([, bytes]) => bytes.includes(marker)).map(([path]) => path),
+    marked: [...files, ...zipped]
+      .filter(([, bytes]) => bytes.includes(marker))
+      .map(([path]) => path),
     active: markup
       .filter(([, bytes]) => /<script|\son[a-z]+\s*=/i.test(String(bytes)))
       .map(([path]) => path),
     counts: [markup.length, downloads.length, outputs.length],
-  }).toEqual({ absent: [], unnamed: [], marked: [], active: [], counts: [4, 4, 0] });
+  }).toEqual({ absent: [], unnamed: [], marked: [], active: [], counts: [4, 8, 0] });
 });

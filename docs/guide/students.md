@@ -357,7 +357,7 @@ A Shiny app opens in a frame in the Notebooks tab. The frame shows **Loading app
 
 ## An open site
 
-Some sites have no sign-in. There you read slides, readings and notebooks with their saved outputs, and nothing you do is saved. **Exercises** and **Tests** list titles only, with **Exercises are done in a class.** and **Tests are taken in a class.** **Download notebook without outputs** gives the notebook file; your browser may show it as text, from where you save it as `.ipynb`. **Work in Colab** offers **Open in Colab**: notebooks are handed in in a class.
+Some sites have no sign-in. There you read slides, readings and notebooks with their saved outputs, and nothing you do is saved. **Exercises** and **Tests** list titles only, with **Exercises are done in a class.** and **Tests are taken in a class.** **Download notebook without outputs** gives the notebook file; your browser may show it as text, from where you save it as `.ipynb`. **Work on your computer** offers the notebook to run in your own Jupyter: when it uses data files, as one zip, a folder with the notebook and its files at the paths it opens them by. **Work in Colab** offers **Open in Colab**: notebooks are handed in in a class.
 
 ## Download your own data
 

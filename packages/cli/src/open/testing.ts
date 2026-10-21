@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { crc32, inflateRawSync } from 'node:zlib';
 import { packageRoot } from '../paths';
 
 // Support for the tests of a level 0 build; not packed (package.json `files`).
@@ -107,4 +108,28 @@ export function buildUnderGuard(root: string, { shell = STAND_IN, command = fals
   // None if the child stopped before it printed them.
   const database: string[] | null = names.startsWith('[') ? JSON.parse(names) : null;
   return { ...run, stdout: lines.join('\n'), database, files };
+}
+
+/** The files of a zip archive that `zip` wrote, by path: its central directory, read back. */
+export function unzip(archive: Uint8Array): Map<string, Uint8Array> {
+  const bytes = Buffer.from(archive);
+  const end = bytes.length - 22;
+  if (bytes.readUInt32LE(end) !== 0x06054b50) throw new Error('no end of central directory');
+  const files = new Map<string, Uint8Array>();
+  let at = bytes.readUInt32LE(end + 16);
+  for (let n = bytes.readUInt16LE(end + 10); n > 0; n -= 1) {
+    if (bytes.readUInt32LE(at) !== 0x02014b50) throw new Error('no central directory entry');
+    const [method, crc, size, length] = [10, 16, 20, 28].map((i) =>
+      i === 16 || i === 20 ? bytes.readUInt32LE(at + i) : bytes.readUInt16LE(at + i),
+    ) as [number, number, number, number];
+    const name = bytes.subarray(at + 46, at + 46 + length).toString('utf8');
+    const local = bytes.readUInt32LE(at + 42);
+    const start = local + 30 + bytes.readUInt16LE(local + 26) + bytes.readUInt16LE(local + 28);
+    const data = bytes.subarray(start, start + size);
+    const whole = method === 8 ? inflateRawSync(data) : data;
+    if (crc32(whole) !== crc) throw new Error(`${name}: checksum differs`);
+    files.set(name, new Uint8Array(whole));
+    at += 46 + length + bytes.readUInt16LE(at + 30) + bytes.readUInt16LE(at + 32);
+  }
+  return files;
 }
