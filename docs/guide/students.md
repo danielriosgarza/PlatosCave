@@ -362,6 +362,15 @@ A Shiny app opens in a frame in the Notebooks tab. The frame shows **Loading app
 
 Some sites have no sign-in. There you read slides, readings and notebooks with their saved outputs, and nothing you do is saved. **Exercises** and **Tests** list titles only, with **Exercises are done in a class.** and **Tests are taken in a class.** **Download notebook without outputs** gives the notebook file; your browser may show it as text, from where you save it as `.ipynb`. **Work on your computer** offers the notebook to run in your own Jupyter: when it uses data files, as one zip, a folder with the notebook and its files at the paths it opens them by. **Work in Colab** offers **Open in Colab**: notebooks are handed in in a class.
 
+**Run on this computer.** On an open site you can also run a notebook's cells on your own computer, its processor, memory and Python, while the notebook stays on the course page:
+
+1. Install `parallax-connector` from the repository's releases (tags `connector-v…`), and Jupyter Server with a kernel: `pip install jupyter-server ipykernel`.
+2. In a terminal, run `parallax-connector open` and leave it running. It prints where it keeps the notebooks' folders (`~/Parallax` unless you give `--workspace`).
+3. On the notebook's page, select **Run on this computer**, then **Connect**. Your browser may ask whether the site may reach apps on this device: allow it. The terminal then asks whether the site may run notebooks on this computer and shows a code: answer `y` only if it is the code the page shows. It asks again when you reload the page; if you answer `n`, it refuses the site until you restart the connector.
+4. The page shows **This computer · Python · Ready**, and the cells run on your computer when you run them. The notebook's data files are copied into its folder first; a file of yours that is already there is kept, and the page says so.
+
+Your edits stay on the page while it is open and are not saved on the site or handed in; to keep your work, open the notebook's folder in your own Jupyter. **Session**, then **Stop session**, stops the notebook's Jupyter and shows the saved outputs again; closing the page or stopping the connector (Ctrl+C) also stops it. If the connection to the connector is lost, nothing runs again by itself: **Connect again** reaches the same kernel while the connector runs.
+
 ## Download your own data
 
 On the topic list for a class, select **Download my annotations**. This downloads a JSON file with your own notes, highlights, sketches and posts in that class. It names the resources and where each mark sits. Sketches are readable as SVG. It does not contain anyone else's notes. The page confirms how many annotations and posts the file holds. If you are in two classes, download each separately. It works in archived classes too.

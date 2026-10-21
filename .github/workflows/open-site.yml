@@ -3,7 +3,9 @@ name: open-site
 # The browser suite of a level 0 site (docs/design/open-site.md §10): e2e/playwright.open.config.ts
 # builds the school fixture with `parallax build` and serves dist/site and dist/content on two
 # static hosts. It needs no database and no API server. It runs on every pull request, beside the
-# e2e job of ci.yml, which it does not lengthen; it installs Chromium as that job does.
+# e2e job of ci.yml, which it does not lengthen; it installs Chromium as that job does. With Go and
+# Jupyter Server installed and CONNECTOR_E2E set, A57 also runs a notebook of the site through
+# `parallax-connector open` on the runner, as a visitor's computer would (open-site.md §14).
 
 on:
   pull_request:
@@ -20,6 +22,8 @@ jobs:
   browser:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
+    env:
+      CONNECTOR_E2E: '1'
     steps:
       - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v4
@@ -27,7 +31,24 @@ jobs:
         with:
           node-version-file: .node-version
           cache: pnpm
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: connector/go.mod
+          cache-dependency-path: connector/go.sum
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
       - run: pnpm install --frozen-lockfile
+      - name: Jupyter for the visitor's computer
+        run: |
+          python -m pip install jupyter-server==2.21.1 ipykernel==7.4.0
+          echo "CONNECTOR_E2E_PYTHON=$(command -v python)" >> "$GITHUB_ENV"
+      - name: Build the connector
+        run: |
+          mkdir -p .local/connector-e2e
+          go build -o "$PWD/.local/connector-e2e/parallax-connector" ./cmd/parallax-connector
+          echo "CONNECTOR_BIN=$PWD/.local/connector-e2e/parallax-connector" >> "$GITHUB_ENV"
+        working-directory: connector
       - uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright

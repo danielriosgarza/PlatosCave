@@ -7,7 +7,7 @@ import type { ExecutionState, KernelState, LiveOutput } from './notebookChannel'
  * of the kernel. Every kernel message is matched by `parent_header.msg_id` to an execution the
  * relay itself bound to the session's current kernel and generation; anything else is dropped
  * and counted, never shown. The level 0 page binds its executions by the same rules when it
- * runs a notebook through the connector's open mode (docs/design/open-site.md §13), so they
+ * runs a notebook through the connector's open mode (docs/design/open-site.md §14), so they
  * live here rather than in the server.
  */
 

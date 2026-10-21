@@ -18,7 +18,7 @@ import { type ConnectPhase, connect, forget, type LocalRun, stop } from './sessi
 import { useLocalKernel } from './useLocalKernel';
 
 /**
- * Running a level 0 notebook on this computer (docs/design/open-site.md §13): the panel that
+ * Running a level 0 notebook on this computer (docs/design/open-site.md §14): the panel that
  * connects the page to `parallax-connector open`, and the live notebook once it has. The cells
  * run in Jupyter on this computer, in a folder of the connector's workspace; nothing is saved on
  * the site or handed in.
@@ -114,9 +114,8 @@ export function ConnectThisComputer({
         </button>
       </div>
       <p>
-        The cells run in {language ? `${language} ` : ''}Jupyter on this computer, through the
-        Parallax connector, with the notebook's files in a folder of its own. Nothing you run or
-        change is saved on this site.
+        The cells run in Jupyter on this computer, through the Parallax connector, with the
+        notebook's files in a folder of its own. Nothing you run or change is saved on this site.
       </p>
       <ol className={styles.colabSteps}>
         <li>

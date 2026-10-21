@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 /**
- * The client of the connector's open mode (docs/design/open-site.md §13), the one module of the
+ * The client of the connector's open mode (docs/design/open-site.md §14), the one module of the
  * open site besides `data.ts` that makes requests. It reaches only the connector on this
  * computer's loopback address, and only after the visitor chooses Run on this computer: `GET
  * /v1/hello`, then a pairing the visitor allows in the connector's terminal, then the session and

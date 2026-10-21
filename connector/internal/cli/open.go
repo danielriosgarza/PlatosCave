@@ -35,7 +35,7 @@ func (a *allowOrigins) Set(v string) error {
 	return nil
 }
 
-// openMode is `open` (docs/design/open-site.md §13): serve level 0 pages in this computer's
+// openMode is `open` (docs/design/open-site.md §14): serve level 0 pages in this computer's
 // browser on 127.0.0.1 until Ctrl+C, asking here before a site may run notebooks, and stop
 // every Jupyter server it started on the way out. It needs no pairing and no state directory.
 func openMode(ctx context.Context, args []string, env Env) error {
@@ -43,7 +43,7 @@ func openMode(ctx context.Context, args []string, env Env) error {
 	workspace := flags.String("workspace", "~/Parallax", "folder below which each notebook gets a folder of its own")
 	python := flags.String("python", "", "Python interpreter with Jupyter Server (default: jupyter from PATH)")
 	var allow allowOrigins
-	flags.Var(&allow, "allow", "allow this site without asking, such as https://course.example.org (repeatable)")
+	flags.Var(&allow, "allow", "allow pages of this site without asking, such as https://course.example.org (repeatable); any program on this computer can then act for it")
 	if err := parse(flags, args); err != nil {
 		return err
 	}
@@ -100,7 +100,7 @@ func openMode(ctx context.Context, args []string, env Env) error {
 		cfg.Ask = func(ctx context.Context, origin, code string) opensite.Answer {
 			a.drain()
 			fmt.Fprintf(out, "\n%s asks to run notebooks on this computer, with your files and your Python.\n", origin)
-			yes, answered := a.reply(ctx, fmt.Sprintf("The page shows the code %s. Allow this site until the connector stops?", code))
+			yes, answered := a.reply(ctx, fmt.Sprintf("Answer y only if the page shows the code %s. Allow this page?", code))
 			switch {
 			case yes:
 				return opensite.Yes

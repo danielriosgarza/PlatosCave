@@ -92,7 +92,7 @@ Commands:
   run --managed     run as a managed connector, configured only from the environment
   open [--workspace DIR] [--python PATH] [--allow ORIGIN]...
                     let notebooks on course sites in this computer's browser run here,
-                    asking in this terminal before each site may (no pairing needed)
+                    asking in this terminal before each page may (no pairing needed)
   status [--json]   show whether this computer is paired, and with which server
   unpair [--yes]    revoke this computer in Parallax and delete its identity
   doctor [--json]   check what the connector needs on this computer

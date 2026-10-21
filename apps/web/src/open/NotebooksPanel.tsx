@@ -13,7 +13,7 @@ import { OpenLocal } from './OpenLocal';
  * A notebook on the Notebooks tab at level 0 (docs/design/open-site.md §6): `NotebookView` with the
  * outputs it was stored with, a plain link to its file without outputs, the way to work on one's
  * own computer, and the Colab route. **Run on this computer** connects the page to the connector's
- * open mode on the visitor's computer (§13): the cells then run there and their outputs return to
+ * open mode on the visitor's computer (§14): the cells then run there and their outputs return to
  * this page. Nothing is saved on the site or handed in, and no `OutputSourceLink` is provided, so
  * no output offers the original notebook.
  */

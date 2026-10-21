@@ -3,7 +3,7 @@ import { useMemo } from 'react';
 import styles from '../../notebooks/Notebook.module.css';
 
 /**
- * One rich live output at level 0 (docs/design/open-site.md §13). There is no server to store it
+ * One rich live output at level 0 (docs/design/open-site.md §14). There is no server to store it
  * on the content origin, so the page shows it itself with the stored-output order of choice
  * (docs/design/connector.md §10.7) and nothing of it on the site's origin: a raster or SVG image
  * from a `data:` address in an `<img>` (an image runs no script), HTML in a frame with every

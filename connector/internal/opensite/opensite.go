@@ -1,4 +1,4 @@
-// Package opensite is the connector's open mode (docs/design/open-site.md §13): a loopback HTTP
+// Package opensite is the connector's open mode (docs/design/open-site.md §14): a loopback HTTP
 // and WebSocket service through which a page of a level 0 site, on an origin the person allowed
 // in this terminal, runs a notebook on this computer. Each session is a Jupyter server the
 // connector starts in a folder of its own below the workspace, reached only through the
@@ -105,7 +105,7 @@ type Service struct {
 
 	mu       sync.Mutex
 	closed   bool
-	approved map[string]bool
+	allowed  map[string]bool // origins of --allow: a page of one gets a key without a question
 	refused  map[string]bool
 	asking   bool
 	keys     map[string]string // key → origin
@@ -149,11 +149,11 @@ func New(ctx context.Context, cfg Config) *Service {
 	sctx, stop := context.WithCancel(ctx)
 	s := &Service{
 		cfg: cfg, ctx: sctx, stop: stop,
-		approved: map[string]bool{}, refused: map[string]bool{},
+		allowed: map[string]bool{}, refused: map[string]bool{},
 		keys: map[string]string{}, sessions: map[string]*session{},
 	}
 	for _, o := range cfg.Allow {
-		s.approved[o] = true
+		s.allowed[o] = true
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /v1/hello", s.hello)
@@ -342,9 +342,10 @@ func (s *Service) hello(w http.ResponseWriter, r *http.Request) {
 
 var rePairCode = regexp.MustCompile(`^[0-9]{4}-[0-9]{4}$`)
 
-// pair asks the person whether the page's origin may run notebooks here, and answers with a key
-// for that page. An origin the person allowed in this run is allowed again without asking; one
-// they refused is refused without asking until the connector restarts.
+// pair asks the person whether the page may run notebooks here, and answers with a key for that
+// page. Each page is asked about, since any program on this computer can send a site's Origin:
+// only an origin of --allow gets a key without a question. An origin the person refused is
+// refused without asking until the connector restarts, so a site cannot keep asking.
 func (s *Service) pair(w http.ResponseWriter, r *http.Request) {
 	origin := originOf(r)
 	var body struct {
@@ -368,10 +369,10 @@ func (s *Service) pair(w http.ResponseWriter, r *http.Request) {
 		s.mu.Unlock()
 		writeError(w, http.StatusTooManyRequests, "too_many_pairings", "restart the connector to connect more pages")
 		return
-	case s.approved[origin]:
+	case s.allowed[origin]:
 		key := s.issue(origin)
 		s.mu.Unlock()
-		s.logf("%s connected (code %s).", origin, body.Code)
+		s.logf("%s connected (code %s), allowed by --allow.", origin, body.Code)
 		writeJSON(w, http.StatusOK, map[string]string{"key": key})
 		return
 	case s.cfg.Ask == nil:
@@ -394,10 +395,9 @@ func (s *Service) pair(w http.ResponseWriter, r *http.Request) {
 	s.asking = false
 	switch answer {
 	case Yes:
-		s.approved[origin] = true
 		key := s.issue(origin)
 		s.mu.Unlock()
-		s.logf("Allowed %s until the connector stops.", origin)
+		s.logf("Allowed a page of %s (code %s).", origin, body.Code)
 		writeJSON(w, http.StatusOK, map[string]string{"key": key})
 	case No:
 		s.refused[origin] = true

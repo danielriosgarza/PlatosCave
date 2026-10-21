@@ -1,8 +1,6 @@
 # Design: running a level 0 notebook on one's own computer
 
-**Status:** proposed, 2026-10-21, for the owner to accept or refuse. Nothing in it is built. It answers the owner's request of 2026-10-21 (project thread "Notebook local runtime"): a design run for option C, a local mode of the compute connector that lets a page of a level 0 open site run a notebook's cells on the visitor's own computer, which amends PRODUCT.md N6 and [ADR-0005](../adr/0005-notebook-compute-connector.md) before any code. Option A of the same request, a zip of the notebook with its data files under **Work on your computer**, is built ([open site design](../design/open-site.md) §4) and is what a level 0 site offers until this design is accepted and built.
-
-If the owner refuses it, nothing changes: a level 0 site keeps saved outputs, the zip and Colab, and running cells in the page stays a level 1 feature.
+**Status:** accepted and built, 2026-10-21 (plan item P6-05). The owner answered the request of 2026-10-21 (project thread "Notebook local runtime") with: "This is for level 0. I don't want to run on the Jupyter in my computer. I want to compute from my computer and run from the course website." PRODUCT.md N6, spec §13 and §16 (A57), [ADR-0005](../adr/0005-notebook-compute-connector.md), ADR-0002 and ADR-0006 are amended, and the lasting description is the [open site design](../design/open-site.md) §14. This file keeps the proposal as it was put to the owner; §8 lists where the build differs from it, and where the two differ the open site design is current. Option A of the same request, a zip of the notebook with its data files under **Work on your computer**, is built as well ([open site design](../design/open-site.md) §4).
 
 ## 1. What changes for a visitor
 
@@ -70,3 +68,16 @@ At level 1, a live rich output is stored by the server and served from the conte
 3. Attach to a running Jupyter server, as level 1 offers? It saves a start but the connector would not own the server.
 4. Should the connector also accept a `file://` copy of a site? This design says no: only `https` origins and loopback `http` origins.
 5. Should level 1 move to the same in-browser connect for a computer that is the visitor's own, without pairing through the server? Out of scope here.
+
+## 8. As built (P6-05)
+
+- **Names.** The button is **Run on this computer**; it opens a panel with the steps and **Connect**. The mode label reads "This computer · Python · Ready".
+- **Approval.** For each page, not for a site and not on disk: any program on the computer can send a site's `Origin`, so a yes is for the page that shows the code, and a page load asks once. A refused origin is refused until the connector stops, without asking again, and `--allow ORIGIN` allows pages of one without asking. There is no `--list` or `--revoke`; stopping the connector revokes every key. The page makes the code (`1234-5678`) and the terminal shows it beside the origin.
+- **Outputs.** No second loopback origin. The page shows rich outputs itself, with nothing of them on the site's origin: images as `data:` addresses in `<img>`, HTML in a `srcdoc` frame with `sandbox=""` (an opaque origin) after DOMPurify and under a policy that loads nothing, Markdown and LaTeX as their source text. ADR-0002 and CLAUDE.md name this as the one further exception to "served from the content origin".
+- **No Save to computer.** Edits stay in the page while it is open; the notebook file in the folder is the site's copy, which the visitor can open in their own Jupyter.
+- **Files.** The connector downloads the notebook's zip from the content host itself (no redirects, checked against the SHA-256 in its name) and extracts regular files only into the notebook's folder, keeping a file the visitor already has instead of asking.
+- **Folder.** `~/Parallax/<site host>/<course folders>/<notebook title>`, each name reduced to safe characters; a site on `http` loopback gets `local-<host>`.
+- **Limits.** Three notebooks at once, two kernels each; a notebook no page has used for 30 minutes stops; closing the page or the connector stops its notebooks.
+- **Open questions answered.** 2: a fixed port, 47821. 3: start mode only. 4: no `file://` origin. 1 (Safari) is still open; the browser test runs in Chromium. 5 is out of scope, as proposed.
+- **Size.** The connector part is about 2,100 lines with tests, the page part about 2,100 with the parts of the level 1 live notebook it shares, and the browser test with its CI steps about 130.
+

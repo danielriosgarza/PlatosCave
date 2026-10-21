@@ -73,7 +73,7 @@ func TestA57_OpenAsksInTheTerminal(t *testing.T) {
 		return resp.StatusCode, m
 	}
 	ask := func(origin, code string) string {
-		return fmt.Sprintf("%s asks to run notebooks on this computer, with your files and your Python.\nThe page shows the code %s. Allow this site until the connector stops? [y/N] ", origin, code)
+		return fmt.Sprintf("%s asks to run notebooks on this computer, with your files and your Python.\nAnswer y only if the page shows the code %s. Allow this page? [y/N] ", origin, code)
 	}
 
 	// A "y" typed before anyone asked does not answer the next question.
@@ -102,7 +102,7 @@ func TestA57_OpenAsksInTheTerminal(t *testing.T) {
 	if a := <-got; a.status != 200 || len(a.body["key"]) != 64 {
 		t.Errorf("allowed: %+v", a)
 	}
-	if !strings.Contains(out.String(), "Allowed https://course.example.org until the connector stops.") {
+	if !strings.Contains(out.String(), "Allowed a page of https://course.example.org (code 4821-7730).") {
 		t.Errorf("no line for the allowed site:\n%s", out)
 	}
 	cancel()

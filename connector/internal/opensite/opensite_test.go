@@ -234,18 +234,19 @@ func TestA57_Preflight(t *testing.T) {
 	}
 }
 
-func TestA57_PairingAsksOnceAndBindsTheKeyToTheOrigin(t *testing.T) {
+func TestA57_EachPageIsAskedAndItsKeyIsBoundToTheOrigin(t *testing.T) {
 	r := newRig(t, nil)
 	key := r.pair(site)
 	if len(key) != 64 || len(r.asked) != 1 || r.asked[0] != site+" 4821-7730" {
 		t.Fatalf("key %q, asked %v", key, r.asked)
 	}
-	// The site was allowed: a second page of it connects without asking, with its own key.
+	// Another page of the same site is asked about too: any program on this computer can send
+	// the site's Origin, so an earlier yes is not a yes to it. It gets a key of its own.
 	key2 := r.pair(site)
-	if key2 == key || len(r.asked) != 1 {
+	if key2 == key || len(r.asked) != 2 {
 		t.Errorf("second pairing: key reused %v, asked %v", key2 == key, r.asked)
 	}
-	if !strings.Contains(r.log.String(), "Allowed "+site) {
+	if !strings.Contains(r.log.String(), "Allowed a page of "+site+" (code 4821-7730).") {
 		t.Errorf("log %q", r.log.String())
 	}
 	// A key works only for the origin it was given to.
@@ -314,6 +315,15 @@ func TestA57_OneQuestionAtATime(t *testing.T) {
 	close(release)
 	if status := <-done; status != 200 {
 		t.Errorf("first pairing: %d", status)
+	}
+}
+
+func TestA57_AnAllowedSiteIsNotAsked(t *testing.T) {
+	r := newRig(t, func(c *Config) { c.Allow = []string{site} })
+	r.pair(site)
+	r.pair(site)
+	if len(r.asked) != 0 || !strings.Contains(r.log.String(), "allowed by --allow") {
+		t.Errorf("asked %v, log %q", r.asked, r.log.String())
 	}
 }
 

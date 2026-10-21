@@ -16,7 +16,7 @@ import type { Channel, ChannelStatus } from '../../notebooks/live/useChannel';
 import type { ConnectorClient } from './connector';
 
 /**
- * A level 0 page's live kernel (docs/design/open-site.md §13): the kernel channel the connector's
+ * A level 0 page's live kernel (docs/design/open-site.md §14): the kernel channel the connector's
  * open mode bridges to Jupyter on this computer, read into the same `LiveState` as level 1's
  * channel, so the same reducer and views show it. The page binds its own executions by the
  * relay's rules (`@parallax/contracts` kernelMessages): each `execute_request` it sends is one

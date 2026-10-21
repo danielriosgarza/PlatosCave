@@ -10,7 +10,7 @@ import {
 } from './connector';
 
 /**
- * The notebooks this page runs on this computer (docs/design/open-site.md §13), kept in memory
+ * The notebooks this page runs on this computer (docs/design/open-site.md §14), kept in memory
  * for the page load only: the key the connector gave this page and, by notebook, its session and
  * kernel, so leaving a notebook and coming back finds its kernel as it was. Closing or leaving the
  * page stops them; the connector also stops a session no page has used for 30 minutes.

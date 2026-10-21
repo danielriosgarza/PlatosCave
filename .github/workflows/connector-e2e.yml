@@ -49,6 +49,7 @@ on:
       - packages/contracts/src/routes/transfers.ts
       - packages/contracts/src/routes/workingCopies.ts
       - packages/contracts/src/connector*
+      - packages/contracts/src/kernelMessages.ts
       - packages/contracts/src/notebook.ts
       - packages/contracts/src/notebookChannel.ts
       - infra/compose.yml
