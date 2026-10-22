@@ -1,11 +1,11 @@
 // `npm create parallax-site <folder> [-- --template instructor|school]` (docs/design/site.md §5).
 // Plain JavaScript with no dependency, so that npm create installs nothing else to run it.
+import { createHash } from 'node:crypto';
 import fs from 'node:fs';
-import { join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { join, relative, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
 
-const own = fileURLToPath(new URL('..', import.meta.url));
+const own = resolve(import.meta.dirname, '..');
 const TEMPLATES = ['instructor', 'school'];
 /** The files the templates hold under another name, each written as `.<name>` (§3). */
 const RENAMED = ['_gitignore', '_npmrc', '_gitattributes'];
@@ -14,15 +14,84 @@ const FLAGS = /** @type {const} */ ({
   template: { type: 'string', default: 'instructor' },
   help: { type: 'boolean', short: 'h' },
 });
+/**
+ * The file in which a site keeps the fingerprint of each file its template gave it, as the
+ * scaffolder or the last `parallax update` wrote them, so that an update tells a file the author
+ * changed from one they did not (§10.1).
+ */
+export const RECORD = '.parallax-template.json';
 
 /**
- * Creates a site folder from a template: the shared files, then the mode's (in school mode also
- * the instructor template's starter course and its overlay in `private/`), with `_gitignore`,
- * `_npmrc` and `_gitattributes` under their real names (npm delivers no file of the first two names
- * in a package), and a `package.json` whose one dependency is `parallax-site` at `version`, by
- * default the scaffolder's own. It asks nothing, uses no network, runs no install and refuses a
- * folder that is not empty. Returns the exit code: 0 (`--help` too, which prints the usage on the
- * standard output), 1 for a folder refused or not written, 2 for usage.
+ * Writes the files of a new site of `template` into the folder `target`: the shared files, then
+ * the mode's (in school mode also the instructor template's starter course and its overlay in
+ * `private/`), with `_gitignore`, `_npmrc` and `_gitattributes` under their real names (npm
+ * delivers no file of the first two names in a package). It writes no `package.json` and no
+ * record. `parallax update` lays out the template of its own version with it.
+ * @param {string} target
+ * @param {string} template
+ */
+export function lay(target, template) {
+  for (const from of ['shared', template]) {
+    fs.cpSync(join(own, 'templates', from), target, { recursive: true });
+  }
+  // The instructor template's starter course, Welcome to Parallax, is the first instructor's in
+  // a school site too, with its overlay at the matching path of private/.
+  if (template === 'school') {
+    const welcome = join(own, 'templates', 'instructor');
+    const ana = join('instructors', 'ana', 'courses');
+    fs.cpSync(join(welcome, 'courses'), join(target, ana), { recursive: true });
+    fs.cpSync(join(welcome, 'private', 'courses'), join(target, 'private', ana), {
+      recursive: true,
+    });
+  }
+  for (const name of RENAMED)
+    fs.renameSync(join(target, name), join(target, name.replace('_', '.')));
+}
+
+/**
+ * A file's fingerprint: the SHA-256 of its bytes with each CRLF read as LF, so that a checkout
+ * with Windows line ends has the fingerprint of the template's file.
+ * @param {Uint8Array} bytes
+ * @returns {string}
+ */
+export function fingerprint(bytes) {
+  const text = Buffer.from(bytes).toString('latin1').replaceAll('\r\n', '\n');
+  return createHash('sha256').update(text, 'latin1').digest('hex');
+}
+
+/**
+ * The fingerprint of each file under `dir` but `package.json` and the record, by its path from
+ * `dir` written with `/`, in sorted order.
+ * @param {string} dir
+ * @returns {Record<string, string>}
+ */
+export function fingerprints(dir) {
+  const paths = fs
+    .readdirSync(dir, { recursive: true, withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .map((entry) => relative(dir, join(entry.parentPath, entry.name)).replaceAll('\\', '/'))
+    .filter((path) => path !== 'package.json' && path !== RECORD)
+    .sort();
+  return Object.fromEntries(
+    paths.map((path) => [path, fingerprint(fs.readFileSync(join(dir, path)))]),
+  );
+}
+
+/**
+ * Writes the record of `files`, fingerprints by path, into the site folder `target`.
+ * @param {string} target
+ * @param {Record<string, string>} files
+ */
+export function writeRecord(target, files) {
+  fs.writeFileSync(join(target, RECORD), `${JSON.stringify({ files }, null, 2)}\n`);
+}
+
+/**
+ * Creates a site folder from a template (`lay`), with the record of the files it wrote and a
+ * `package.json` whose one dependency is `parallax-site` at `version`, by default the
+ * scaffolder's own. It asks nothing, uses no network, runs no install and refuses a folder that
+ * is not empty. Returns the exit code: 0 (`--help` too, which prints the usage on the standard
+ * output), 1 for a folder refused or not written, 2 for usage.
  * @param {string[]} argv
  * @param {{ cwd?: string, version?: string, print?: (line: string) => void }} [options]
  * @returns {number}
@@ -50,21 +119,8 @@ export function create(argv, options = {}) {
     return 1;
   }
   try {
-    for (const from of ['shared', template]) {
-      fs.cpSync(join(own, 'templates', from), target, { recursive: true });
-    }
-    // The instructor template's starter course, Welcome to Parallax, is the first instructor's in
-    // a school site too, with its overlay at the matching path of private/.
-    if (template === 'school') {
-      const welcome = join(own, 'templates', 'instructor');
-      const ana = join('instructors', 'ana', 'courses');
-      fs.cpSync(join(welcome, 'courses'), join(target, ana), { recursive: true });
-      fs.cpSync(join(welcome, 'private', 'courses'), join(target, 'private', ana), {
-        recursive: true,
-      });
-    }
-    for (const name of RENAMED)
-      fs.renameSync(join(target, name), join(target, name.replace('_', '.')));
+    lay(target, template);
+    writeRecord(target, fingerprints(target));
     const manifest = JSON.parse(fs.readFileSync(join(own, 'package.json'), 'utf8'));
     const dependencies = { 'parallax-site': options.version ?? manifest.version };
     const site = { private: true, type: 'module', dependencies };

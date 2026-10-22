@@ -12,6 +12,7 @@ export const SOURCES = {
   contracts: 'packages/contracts',
   server: 'apps/server',
   deploy: 'scripts',
+  scaffold: 'packages/create-parallax-site',
 } as const;
 type Name = keyof typeof SOURCES;
 
@@ -19,6 +20,9 @@ type Name = keyof typeof SOURCES;
 const SERVER = ['src/content/convert.ts', 'src/content/validation.ts'];
 /** Of `scripts/`, the backup and its restore (§10). */
 const DEPLOY = ['backup.sh', 'restore.sh'];
+/** Of the scaffolder, its create module; `templates/` goes beside it as it is (§10.1). */
+const SCAFFOLD = ['src/create.mjs'];
+const TEMPLATES = 'templates';
 /** What is no source: tests and their helpers and fixtures, dot files, installed or built output. */
 const NOT_SOURCE =
   /(^|\/)(\.[^/]*|node_modules|dist|coverage|test|fixtures|fixtures\.ts)(\/|$)|\.(test|itest|e2e|spec)\.[cm]?[jt]sx?$/;
@@ -54,6 +58,14 @@ function sources(root: string, at = ''): string[] {
     const path = at ? `${at}/${entry.name}` : entry.name;
     if (NOT_SOURCE.test(path)) return [];
     return entry.isDirectory() ? sources(root, path) : entry.isFile() ? [path] : [];
+  });
+}
+
+/** Every file of a folder, from it, with `/`: the templates, which hold a site's files, go as they are. */
+function every(root: string, at = ''): string[] {
+  return fs.readdirSync(join(root, at), { withFileTypes: true }).flatMap((entry) => {
+    const path = at ? `${at}/${entry.name}` : entry.name;
+    return entry.isDirectory() ? every(root, path) : entry.isFile() ? [path] : [];
   });
 }
 
@@ -97,9 +109,10 @@ function workspaceFile(repository: string, spec: string): string {
 }
 
 /**
- * Lays out the sources in `target/vendor/{web,ui,contracts,server,deploy}`, puts
+ * Lays out the sources in `target/vendor/{web,ui,contracts,server,deploy,scaffold}`, puts
  * `tsconfig.base.json` at `target`, which their `tsconfig.json` extend, and turns each
- * `@parallax/…` specifier of the copies and of the tool's own `src/` and `bin/` into a relative path.
+ * `@parallax/…` specifier of the copies and of the tool's own `src/` and `bin/` into a relative
+ * path. The scaffolder's templates are copied unchanged: they are a site's files, not the tool's.
  */
 export function vendor(target: string, repository: string): void {
   const inRepository = relative(repository, target);
@@ -117,6 +130,7 @@ export function vendor(target: string, repository: string): void {
     contracts: sources(from('contracts')),
     server: closure(from('server')),
     deploy: DEPLOY,
+    scaffold: [...SCAFFOLD, ...every(from('scaffold'), TEMPLATES)],
   };
   const written: string[] = [];
   for (const [name, list] of Object.entries(lists) as [Name, string[]][]) {
@@ -129,7 +143,11 @@ export function vendor(target: string, repository: string): void {
   fs.copyFileSync(join(repository, 'tsconfig.base.json'), join(target, 'tsconfig.base.json'));
   const own = ['src', 'bin'].filter((dir) => fs.existsSync(join(target, dir)));
   const tool = own.flatMap((dir) => sources(join(target, dir)).map((path) => `${dir}/${path}`));
-  for (const path of [...written, ...tool].filter((file) => CODE.test(file))) {
+  const copied = `vendor/scaffold/${TEMPLATES}/`;
+  const modules = [...written, ...tool].filter(
+    (file) => CODE.test(file) && !file.startsWith(copied),
+  );
+  for (const path of modules) {
     const code = fs.readFileSync(join(target, path), 'utf8');
     const rewritten = code.replace(SPECIFIER, (match, _type, _kind, quote, spec: string) => {
       if (!spec.startsWith('@parallax/')) return match;
