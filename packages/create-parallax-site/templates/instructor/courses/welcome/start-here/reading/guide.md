@@ -85,4 +85,12 @@ npx parallax dev       # serves the site's pages and reloads them when you save
 npx parallax build     # writes the site into dist/
 ```
 
+## Update Parallax
+
+```text
+npx parallax update    # installs the newest Parallax and updates the template's files
+```
+
+It replaces each file the template gave the site that you have not changed, this course included as long as you have not changed it, and adds the template's new files. Your own changes stay: it names each file it kept that the new template changed, and the new version of that file is in `.parallax/template`.
+
 The next topic, **From a folder to a class**, explains the three levels and how a course reaches a class.

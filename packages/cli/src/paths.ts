@@ -5,13 +5,17 @@ import { pathToFileURL } from 'node:url';
 /** The folder of the package `parallax-site`. */
 export const packageRoot = resolve(import.meta.dirname, '..');
 
-/** Where each source the tool works with lies in the repository; `deploy` holds `backup.sh`. */
+/**
+ * Where each source the tool works with lies in the repository; `deploy` holds `backup.sh`, and
+ * `scaffold` the scaffolder's create module and templates, which `update` lays out.
+ */
 const inRepository = {
   web: 'apps/web',
   ui: 'packages/ui',
   contracts: 'packages/contracts',
   server: 'apps/server',
   deploy: 'scripts',
+  scaffold: 'packages/create-parallax-site',
 } as const;
 export type Source = keyof typeof inRepository;
 

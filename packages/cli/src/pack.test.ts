@@ -71,7 +71,12 @@ beforeAll(() => {
 }, 300_000);
 afterAll(() => fs.rmSync(temp, { recursive: true, force: true }));
 
-const code = () => [...files.keys()].filter((path) => /\.([cm]?[jt]sx?|css)$/.test(path));
+/** The scaffolder's templates, which hold a new site's files: `update` copies them, nothing imports them. */
+const TEMPLATES = 'vendor/scaffold/templates/';
+const code = () =>
+  [...files.keys()].filter(
+    (path) => /\.([cm]?[jt]sx?|css)$/.test(path) && !path.startsWith(TEMPLATES),
+  );
 
 test('the packed tool names no @parallax/ package, and every relative import resolves inside it', () => {
   const unresolved: string[] = [];
@@ -170,6 +175,43 @@ test('no test, fixture or .env file is packed; tsconfig.base.json and the backup
   }
   expect(paths).toEqual(expect.arrayContaining(['bin/parallax.mjs', 'pages.d.ts', 'src/main.ts']));
   expect(paths).toContain('vendor/web/src/routeTree.gen.ts');
+});
+
+type Scaffold = { lay(target: string, template: string): void; fingerprints(dir: string): object };
+
+test('the packed tool carries the scaffolder and its templates as they are, and lays out the site the scaffolder does', async () => {
+  // `update` (docs/design/site.md §10.1) compares a site with the template of the tool's version.
+  const scaffolder = join(repo, 'packages/create-parallax-site');
+  const templates = [...files.keys()].filter((path) => path.startsWith(TEMPLATES));
+  const source = fs.readdirSync(join(scaffolder, 'templates'), {
+    recursive: true,
+    withFileTypes: true,
+  });
+  const expected = source
+    .filter((entry) => entry.isFile())
+    .map((entry) =>
+      join(entry.parentPath, entry.name)
+        .slice(scaffolder.length + 1)
+        .replaceAll('\\', '/'),
+    );
+  expect(templates.sort()).toEqual(expected.map((path) => `vendor/scaffold/${path}`).sort());
+  for (const path of [...expected, 'src/create.mjs']) {
+    expect(
+      files.get(`vendor/scaffold/${path}`)?.equals(fs.readFileSync(join(scaffolder, path))),
+      path,
+    ).toBe(true);
+  }
+  const paths: typeof import('./paths') = await import(
+    pathToFileURL(join(tool, 'src/paths.ts')).href
+  );
+  const packed = await paths.loadSource<Scaffold>('scaffold', 'src/create.mjs');
+  const own = (await import(pathToFileURL(join(scaffolder, 'src/create.mjs')).href)) as Scaffold;
+  for (const mode of ['instructor', 'school']) {
+    const [a, b] = [join(temp, `packed-${mode}`), join(temp, `own-${mode}`)];
+    packed.lay(a, mode);
+    own.lay(b, mode);
+    expect(packed.fingerprints(a), mode).toEqual(own.fingerprints(b));
+  }
 });
 
 test('both published packages carry the MIT licence: the license field and the LICENSE file', () => {
