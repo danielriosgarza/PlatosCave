@@ -14,7 +14,7 @@ import { dirname, join, relative } from 'node:path';
 import { afterAll, afterEach, expect, test, vi } from 'vitest';
 import { main } from '../main';
 import { loadSource } from '../paths';
-import { type Prints, published, type Scaffold } from '../site/template';
+import { type Prints, published, type Scaffold, writing } from '../site/template';
 import { after, HANDOFF, updating } from './update';
 
 type Create = Scaffold & {
@@ -22,11 +22,12 @@ type Create = Scaffold & {
 };
 const scaffold = await loadSource<Create>('scaffold', 'src/create.mjs');
 const temp = mkdtempSync(join(tmpdir(), 'parallax-update-'));
-const real = { updating: { ...updating }, versions: published.versions };
+const real = { updating: { ...updating }, versions: published.versions, writing: { ...writing } };
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllEnvs();
   Object.assign(updating, real.updating);
+  Object.assign(writing, real.writing);
   published.versions = real.versions;
 });
 afterAll(() => rmSync(temp, { recursive: true, force: true }));
@@ -48,9 +49,16 @@ const files = (root: string) =>
       .filter((file) => !/^(node_modules|\.parallax)\//.test(file))
       .map((file) => [file, read(root, file)]),
   );
-/** Writes the manifest of an installed `parallax-site` at `version` into the site. */
-const install = (root: string, version: string) =>
+/**
+ * Writes the manifest of an installed `parallax-site` at `version` into the site, and with
+ * `command` the file of its update command, which versions up to 0.1.1 do not have.
+ */
+function install(root: string, version: string, command = true) {
   write(root, 'node_modules/parallax-site/package.json', JSON.stringify({ version }));
+  const file = 'node_modules/parallax-site/src/commands/update.ts';
+  if (command) write(root, file, '');
+  else rmSync(join(root, file), { force: true });
+}
 
 let made = 0;
 /** A new site of `mode` from this repository's scaffolder, naming and with installed `version`. */
@@ -66,7 +74,11 @@ function site(mode: 'instructor' | 'school' = 'instructor', version = '0.0.0') {
  * `latest`, `npm install` ends with `npm` and on success installs what package.json names, and
  * the installed tool ends with 0. Resolves to the exit code, the lines printed and the calls.
  */
-async function update(root: string, args: string[] = [], { latest = '0.0.0', npm = 0 } = {}) {
+async function update(
+  root: string,
+  args: string[] = [],
+  { latest = '0.0.0', npm = 0, command = true } = {},
+) {
   const calls: string[] = [];
   updating.view = async (spec) => {
     calls.push(`view ${spec}`);
@@ -75,7 +87,7 @@ async function update(root: string, args: string[] = [], { latest = '0.0.0', npm
   updating.npm = async (args, cwd) => {
     calls.push(`npm ${args.join(' ')}`);
     if (npm === 0)
-      install(cwd, JSON.parse(read(cwd, 'package.json')).dependencies['parallax-site']);
+      install(cwd, JSON.parse(read(cwd, 'package.json')).dependencies['parallax-site'], command);
     return npm;
   };
   updating.installed = async (_, args) => {
@@ -171,11 +183,12 @@ test('update replaces the template files the author did not change, adds new one
     `updated ${WELCOME}/topic.yaml`,
     `added ${TOUR}`,
     `removed ${WELCOME}/notes/dropped.md`,
+    'updated .parallax-template.json',
     'compose.runner.yml is not in the site and is not added; the template changed it: .parallax/template/compose.runner.yml',
     'compose.yml has changes of yours and is kept; the template changed it: .parallax/template/compose.yml',
     "parallax.config.ts is yours and is kept; the template's sample changed: .parallax/template/parallax.config.ts",
     'src/pages has changes of yours and is kept; the template changed _visualization.tsx: .parallax/template/src/pages',
-    'parallax-site 0.0.0: 5 files changed, 4 kept as you have them. Its template is in .parallax/template.',
+    'parallax-site 0.0.0: 6 files changed, 4 kept as you have them. Its template is in .parallax/template.',
     'Next: npx parallax check, then npx parallax upgrade where the site is served.',
   ]);
   const template = join(root, '.parallax/template');
@@ -235,8 +248,9 @@ test('a site with no record is compared with the templates of the published vers
     'updated .gitignore',
     `updated ${WELCOME}/topic.yaml`,
     `added ${TOUR}`,
+    'added .parallax-template.json',
     'compose.yml has changes of yours and is kept; compare with .parallax/template/compose.yml',
-    'parallax-site 0.0.0: 3 files changed, 1 kept as you have them. Its template is in .parallax/template.',
+    'parallax-site 0.0.0: 4 files changed, 1 kept as you have them. Its template is in .parallax/template.',
     'Next: npx parallax check, then npx parallax upgrade where the site is served.',
   ]);
   expect(record(root)).toEqual(fresh);
@@ -299,10 +313,125 @@ test('a course folder that is a link is kept, and nothing is written through it'
   recorded[`${WELCOME}/topic.yaml`] = print(older);
   setRecord(root, recorded);
   const done = await update(root, ['--to', '0.0.0']);
-  expect(done.lines[0]).toBe(
+  expect(done.lines.slice(0, 2)).toEqual([
+    'updated .parallax-template.json',
     'courses/welcome has changes of yours and is kept; the template changed 1 of its files: .parallax/template/courses/welcome and .parallax/template/private/courses/welcome',
-  );
+  ]);
   expect(read(elsewhere, 'start-here/topic.yaml')).toBe(older);
+});
+
+/** Moves `path` of the site outside it and links it back; resolves to where it now is. */
+function linkOut(root: string, path: string) {
+  const outside = join(temp, `outside-${++made}`);
+  cpSync(join(root, path), outside, { recursive: true });
+  rmSync(join(root, path), { recursive: true });
+  symlinkSync(outside, join(root, path), 'junction');
+  return outside;
+}
+
+test('a part reached through a linked folder, or holding a linked file, is kept and nothing is written through the link', async () => {
+  const kept =
+    'courses/welcome has changes of yours and is kept; the template changed 2 of its files: .parallax/template/courses/welcome and .parallax/template/private/courses/welcome';
+  for (const linked of ['private', 'courses', `${WELCOME}/reading/guide.md`]) {
+    const root = site();
+    const recorded = record(root);
+    // The starter course as 0.1.1 had it, which the update replaces where nothing is linked.
+    const older = olderTopic(read(root, `${WELCOME}/topic.yaml`));
+    write(root, `${WELCOME}/topic.yaml`, older);
+    recorded[`${WELCOME}/topic.yaml`] = print(older);
+    rmSync(join(root, TOUR));
+    delete recorded[TOUR];
+    setRecord(root, recorded);
+    const outside = linkOut(root, linked);
+    const before = linked.endsWith('.md') ? read(outside, '') : files(outside);
+    const done = await update(root, ['--to', '0.0.0']);
+    expect(done.code, linked).toBe(0);
+    expect(done.lines, linked).toContain(kept);
+    expect(linked.endsWith('.md') ? read(outside, '') : files(outside), linked).toEqual(before);
+    expect(read(root, `${WELCOME}/topic.yaml`), linked).toBe(older);
+    expect(existsSync(join(root, TOUR)), linked).toBe(false);
+  }
+  // The front page, with src/ linked.
+  const root = site();
+  const older = 'export default () => null;\n';
+  write(root, 'src/pages/index.tsx', older);
+  setRecord(root, { ...record(root), 'src/pages/index.tsx': print(older) });
+  const outside = linkOut(root, 'src');
+  const done = await update(root, ['--to', '0.0.0']);
+  expect(done.lines).toContain(
+    'src/pages has changes of yours and is kept; the template changed index.tsx: .parallax/template/src/pages',
+  );
+  expect(read(outside, 'pages/index.tsx')).toBe(older);
+});
+
+test('a write that fails part way puts every file back, and the next run finishes', async () => {
+  const root = site();
+  const recorded = record(root);
+  const exercises = `private/${WELCOME}/exercises`;
+  // An earlier starter course: an older topic, no exercise folder, and a note since dropped.
+  const older = olderTopic(read(root, `${WELCOME}/topic.yaml`));
+  write(root, `${WELCOME}/topic.yaml`, older);
+  recorded[`${WELCOME}/topic.yaml`] = print(older);
+  rmSync(join(root, exercises), { recursive: true });
+  for (const file of Object.keys(recorded)) if (file.startsWith(exercises)) delete recorded[file];
+  write(root, `${WELCOME}/notes/dropped.md`, '# Dropped\n');
+  recorded[`${WELCOME}/notes/dropped.md`] = print('# Dropped\n');
+  write(root, '.gitignore', 'node_modules/\n');
+  recorded['.gitignore'] = print('node_modules/\n');
+  setRecord(root, recorded);
+  const before = files(root);
+  const busy = () => Object.assign(new Error('resource busy'), { code: 'EBUSY' });
+  let copies = 0;
+  // The fourth copy is the second file of the new exercise folder.
+  writing.copy = (from, to) => {
+    if (++copies === 4) throw busy();
+    real.writing.copy(from, to);
+  };
+  const failed = await update(root, ['--to', '0.0.0']);
+  expect(failed).toMatchObject({ code: 1, calls: [] });
+  expect(failed.lines).toEqual([
+    `the update stopped at ${TOUR} (EBUSY) and put back every file it had written. Run it again to finish.`,
+  ]);
+  expect(files(root)).toEqual(before);
+  expect(existsSync(join(root, exercises))).toBe(false);
+  // A removal that fails puts back the files already copied.
+  Object.assign(writing, real.writing, {
+    remove: () => {
+      throw busy();
+    },
+  });
+  expect((await update(root, ['--to', '0.0.0'])).lines).toEqual([
+    `the update stopped at ${WELCOME}/notes/dropped.md (EBUSY) and put back every file it had written. Run it again to finish.`,
+  ]);
+  expect(files(root)).toEqual(before);
+  Object.assign(writing, real.writing);
+  const done = await update(root, ['--to', '0.0.0']);
+  expect(done.code, done.lines.join('\n')).toBe(0);
+  expect(done.lines.slice(0, 6)).toEqual([
+    'updated .gitignore',
+    `updated ${WELCOME}/topic.yaml`,
+    `added ${exercises}/first-exercise.yaml`,
+    `added ${TOUR}`,
+    `removed ${WELCOME}/notes/dropped.md`,
+    'updated .parallax-template.json',
+  ]);
+  vi.spyOn(console, 'log').mockImplementation(() => {});
+  expect(await main(['check'], { cwd: root, print: () => {} })).toBe(0);
+});
+
+test('a record of the other mode keeps every part it does not name', async () => {
+  const root = site();
+  const older = olderTopic(read(root, `${WELCOME}/topic.yaml`));
+  write(root, `${WELCOME}/topic.yaml`, older);
+  setRecord(root, record(site('school')));
+  const done = await update(root, ['--to', '0.0.0']);
+  expect(done.lines).toEqual([
+    'updated .parallax-template.json',
+    'courses/welcome has changes of yours and is kept; the template changed 1 of its files: .parallax/template/courses/welcome and .parallax/template/private/courses/welcome',
+    'parallax-site 0.0.0: 1 file changed, 1 kept as you have them. Its template is in .parallax/template.',
+    'Next: npx parallax check, then npx parallax upgrade where the site is served.',
+  ]);
+  expect(read(root, `${WELCOME}/topic.yaml`)).toBe(older);
 });
 
 test('--dry-run writes nothing but .parallax/template', async () => {
@@ -314,7 +443,8 @@ test('--dry-run writes nothing but .parallax/template', async () => {
   const done = await update(root, ['--to', '0.0.0', '--dry-run']);
   expect(done.lines).toEqual([
     'would update .gitignore',
-    'parallax-site 0.0.0: 1 file would change. Nothing was written but .parallax/template.',
+    'would update .parallax-template.json',
+    'parallax-site 0.0.0: 2 files would change. Nothing was written but .parallax/template.',
   ]);
   expect(files(root)).toEqual(before);
   expect(existsSync(join(root, '.parallax/template/.gitignore'))).toBe(true);
@@ -330,23 +460,34 @@ test('--dry-run writes nothing but .parallax/template', async () => {
 
 test('the installed version compares the files, and a failed npm install puts package.json back', async () => {
   const root = site('instructor', '0.0.0-a.1');
-  const manifest = read(root, 'package.json');
+  // Tabs, Windows line ends and an object on one line, which the update keeps.
+  const manifest = (version: string) =>
+    `{\r\n\t"private": true,\r\n\t"type": "module",\r\n\t"scripts": { "x": "echo" },\r\n\t"dependencies": {\r\n\t\t"parallax-site": "${version}"\r\n\t}\r\n}\r\n`;
+  writeFileSync(join(root, 'package.json'), manifest('0.0.0-a.1'));
   const failed = await update(root, ['--to', '0.0.2'], { npm: 1 });
   expect(failed.code).toBe(1);
   expect(failed.calls).toEqual(['npm install --no-audit --no-fund']);
   expect(failed.lines.at(-1)).toBe(
     "npm install ended with 1; package.json names 0.0.0-a.1 again. The site's other files are as they were.",
   );
-  expect(read(root, 'package.json')).toBe(manifest);
+  expect(read(root, 'package.json')).toBe(manifest('0.0.0-a.1'));
   // This repository's tool is 0.0.0, so the installed 0.0.2 is started to compare the files.
   const done = await update(root, ['--to', '0.0.2']);
   expect(done.calls).toEqual(['npm install --no-audit --no-fund', 'installed update --to 0.0.2']);
-  expect(JSON.parse(read(root, 'package.json')).dependencies).toEqual({ 'parallax-site': '0.0.2' });
+  expect(read(root, 'package.json')).toBe(manifest('0.0.2'));
   // The tool an update started starts no other.
   vi.stubEnv(HANDOFF, '1');
   const loop = await update(root, ['--to', '0.0.2']);
   expect(loop).toMatchObject({ code: 1, calls: [] });
   expect(loop.lines).toEqual(['the installed parallax-site is 0.0.0, not 0.0.2.']);
+  vi.unstubAllEnvs();
+  // A version up to 0.1.1 is installed, but has no update command to start.
+  const older = await update(root, ['--to', '0.1.1'], { command: false });
+  expect(older).toMatchObject({ code: 1, calls: ['npm install --no-audit --no-fund'] });
+  expect(older.lines.at(-1)).toBe(
+    "parallax-site 0.1.1 is installed and has no update command, so the site's other files were not compared with its template.",
+  );
+  expect(read(root, 'package.json')).toBe(manifest('0.1.1'));
 });
 
 test("update takes npm's latest, keeps a newer prerelease, and stops before writing without a version", async () => {
@@ -363,6 +504,15 @@ test("update takes npm's latest, keeps a newer prerelease, and stops before writ
     'npm view gave no single version of parallax-site@next (npm error code E404). Name one with --to <version>.',
   ]);
   expect(read(root, 'package.json')).toBe(manifest);
+  // A path, a link or a URL is replaced only by a version that --to names.
+  const local = manifest.replace('"0.0.1-rc.1"', '"file:../parallax-site.tgz"');
+  writeFileSync(join(root, 'package.json'), local);
+  const path = await update(root);
+  expect(path).toMatchObject({ code: 1, calls: [] });
+  expect(path.lines).toEqual([
+    'package.json names parallax-site file:../parallax-site.tgz, not a version from npm. Name one with --to <version>.',
+  ]);
+  expect(read(root, 'package.json')).toBe(local);
   for (const args of [['--bogus'], ['--to', '1.0'], ['--to', '1.0.0+build'], ['extra']]) {
     expect((await update(root, args)).code, args.join(' ')).toBe(2);
   }

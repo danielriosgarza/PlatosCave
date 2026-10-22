@@ -1,10 +1,10 @@
 import { execFile, spawn } from 'node:child_process';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseArgs } from 'node:util';
 import type { Command } from '../main';
 import { packageRoot } from '../paths';
-import { listed, published, refresh, TEMPLATE } from '../site/template';
+import { listed, published, type Refreshed, refresh, TEMPLATE, Unapplied } from '../site/template';
 import { many, shown } from './check';
 
 const USAGE = 'usage: parallax update [--to <version or npm tag>] [--dry-run]';
@@ -12,6 +12,8 @@ const USAGE = 'usage: parallax update [--to <version or npm tag>] [--dry-run]';
 const VERSION =
   /^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?$/;
 const TAG = /^[A-Za-z][\w.-]*$/;
+/** The dependency's entry in the text of `package.json`, so that only its value is replaced. */
+const ENTRY = /("parallax-site"\s*:\s*)"(?:[^"\\]|\\.)*"/g;
 /** Set for the installed tool that an update starts, which therefore starts no other. */
 export const HANDOFF = 'PARALLAX_UPDATE_HANDOFF';
 const windows = process.platform === 'win32';
@@ -87,6 +89,30 @@ function versionAt(dir: string): string | undefined {
   }
 }
 
+const NAME = 'Name one with --to <version>.';
+const RECORD = '.parallax-template.json';
+type Manifest = { dependencies?: Record<string, string> };
+
+/**
+ * The text of `package.json` naming parallax-site `version`: where the text has the dependency's
+ * entry once, only its value changes; otherwise the manifest is written again with the text's
+ * indentation and line ends.
+ */
+function renamed(text: string, manifest: Manifest, version: string): string {
+  const entries = text.match(ENTRY) ?? [];
+  if (entries.length === 1 && manifest.dependencies?.['parallax-site'] !== undefined) {
+    const edited = text.replace(ENTRY, (_, key: string) => `${key}${JSON.stringify(version)}`);
+    try {
+      if (JSON.parse(edited).dependencies['parallax-site'] === version) return edited;
+    } catch {}
+  }
+  const indent = /^[ \t]+(?=")/m.exec(text)?.[0] ?? '  ';
+  const eol = text.includes('\r\n') ? '\r\n' : '\n';
+  const dependencies = { ...manifest.dependencies, 'parallax-site': version };
+  const json = JSON.stringify({ ...manifest, dependencies }, null, indent);
+  return `${json.replaceAll('\n', eol)}${eol}`;
+}
+
 const say = (line: string) => console.log(`parallax update: ${line}`);
 const stop = (line: string, code = 1) => {
   console.error(`parallax update: ${line}`);
@@ -115,7 +141,7 @@ export const run: Command['run'] = async ({ site, args }) => {
   }
   const file = join(site.root, 'package.json');
   let text: string;
-  let manifest: { dependencies?: Record<string, string> };
+  let manifest: Manifest;
   try {
     text = readFileSync(file, 'utf8');
     manifest = JSON.parse(text);
@@ -125,6 +151,10 @@ export const run: Command['run'] = async ({ site, args }) => {
   }
   const named = manifest.dependencies?.['parallax-site'];
   const was = named === undefined ? 'no version' : shown(named);
+  // A path, a link or a URL is no version of npm's, so only `--to` replaces it.
+  if (to === undefined && named !== undefined && /[:/\\]/.test(named)) {
+    return stop(`package.json names parallax-site ${was}, not a version from npm. ${NAME}`);
+  }
   const running = versionAt(packageRoot) ?? '';
   const installed = versionAt(join(site.root, 'node_modules/parallax-site'));
   let target = to ?? 'latest';
@@ -132,7 +162,7 @@ export const run: Command['run'] = async ({ site, args }) => {
     const found = await updating.view(target, site.root);
     if ('why' in found) {
       const why = `npm view gave no single version of parallax-site@${target} (${shown(found.why)})`;
-      return stop(`${why}. Name one with --to <version>.`);
+      return stop(`${why}. ${NAME}`);
     }
     const current = installed ?? running;
     if (to === undefined && after(current, found.version)) {
@@ -149,16 +179,17 @@ export const run: Command['run'] = async ({ site, args }) => {
     return 0;
   }
   if (write) {
-    const indent = /^[ \t]+(?=")/m.exec(text)?.[0] ?? '  ';
-    const eol = text.includes('\r\n') ? '\r\n' : '\n';
-    const dependencies = { ...manifest.dependencies, 'parallax-site': target };
-    const json = JSON.stringify({ ...manifest, dependencies }, null, indent);
-    writeFileSync(file, `${json.replaceAll('\n', eol)}${eol}`);
+    writeFileSync(file, renamed(text, manifest, target));
     say(`package.json names parallax-site ${target} (was ${was}).`);
   }
   if (install) {
     say('npm install');
-    const code = await updating.npm(['install', '--no-audit', '--no-fund'], site.root);
+    // Ctrl-C stops npm, and this process stays to give package.json its text back.
+    const hold = () => {};
+    process.on('SIGINT', hold);
+    const code = await updating
+      .npm(['install', '--no-audit', '--no-fund'], site.root)
+      .finally(() => process.off('SIGINT', hold));
     if (code !== 0) {
       if (write) writeFileSync(file, text);
       const back = write ? `; package.json names ${was} again` : '';
@@ -171,21 +202,34 @@ export const run: Command['run'] = async ({ site, args }) => {
     // This process is another version: the one installed compares the files with its template.
     if (process.env[HANDOFF])
       return stop(`the installed parallax-site is ${running}, not ${target}.`);
+    if (!existsSync(join(site.root, 'node_modules/parallax-site/src/commands/update.ts'))) {
+      const not = "so the site's other files were not compared with its template";
+      return stop(`parallax-site ${target} is installed and has no update command, ${not}.`);
+    }
     const again = ['update', '--to', target, ...(dryRun ? ['--dry-run'] : [])];
     return updating.installed(site.root, again);
   }
-  const done = await refresh(site.root, site.config.mode, dryRun);
+  let done: Refreshed;
+  try {
+    done = await refresh(site.root, site.config.mode, dryRun);
+  } catch (error) {
+    if (!(error instanceof Unapplied)) throw error;
+    const where = `the update stopped at ${error.path} (${shown(error.why)})`;
+    return stop(`${where} and put back every file it had written. Run it again to finish.`);
+  }
   const verb = (word: 'add' | 'update' | 'remove') =>
     dryRun ? `would ${word}` : { add: 'added', update: 'updated', remove: 'removed' }[word];
   if (done.record !== 'read') {
     const all = listed(Object.keys(published.versions));
     const why = done.record === 'none' ? 'is not there' : 'cannot be read';
-    say(`.parallax-template.json ${why}, so the files are compared with the templates of ${all}.`);
+    say(`${RECORD} ${why}, so the files are compared with the templates of ${all}.`);
   }
   for (const { path, added } of done.write) say(`${verb(added ? 'add' : 'update')} ${path}`);
   for (const path of done.remove) say(`${verb('remove')} ${path}`);
+  if (done.rewritten) say(`${verb(done.record === 'none' ? 'add' : 'update')} ${RECORD}`);
   for (const line of done.kept) say(line);
-  const changed = many(done.write.length + done.remove.length, 'file');
+  const count = done.write.length + done.remove.length + (done.rewritten ? 1 : 0);
+  const changed = many(count, 'file');
   const kept = done.kept.length > 0 ? `, ${done.kept.length} kept as you have them` : '';
   if (dryRun) {
     say(

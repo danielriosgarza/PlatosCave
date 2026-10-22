@@ -6,6 +6,7 @@ import {
   readFileSync,
   rmdirSync,
   rmSync,
+  writeFileSync,
 } from 'node:fs';
 import { dirname, join, posix } from 'node:path';
 import { loadSource } from '../paths';
@@ -68,10 +69,28 @@ export type Plan = {
 /** What a link or anything but a file counts as: a fingerprint no template file has. */
 const OTHER = 'not a file';
 
-/** The fingerprint of each of `paths` that is in the site, read with `print`. */
+/** Whether a folder on the way from `root` to `path` is a link, or anything but a folder. */
+function throughLink(root: string, path: string): boolean {
+  const folders = path.split('/').slice(0, -1);
+  for (let i = 1; i <= folders.length; i++) {
+    const stat = lstatSync(join(root, ...folders.slice(0, i)), { throwIfNoEntry: false });
+    if (!stat) return false;
+    if (!stat.isDirectory()) return true;
+  }
+  return false;
+}
+
+/**
+ * The fingerprint of each of `paths` that is in the site, read with `print`. A path through a
+ * link counts as there and as no file of the template's, whether or not the link leads to one.
+ */
 function present(root: string, paths: Iterable<string>, print: Scaffold['fingerprint']) {
   const found: Prints = {};
   for (const path of paths) {
+    if (throughLink(root, path)) {
+      found[path] = OTHER;
+      continue;
+    }
     const stat = lstatSync(join(root, path), { throwIfNoEntry: false });
     if (stat) found[path] = stat.isFile() ? print(readFileSync(join(root, path))) : OTHER;
   }
@@ -80,7 +99,8 @@ function present(root: string, paths: Iterable<string>, print: Scaffold['fingerp
 
 /**
  * The fingerprint of every file in `folders`, as the course reader sees them: names that start
- * with a dot are skipped, and a link counts as no file of the template's.
+ * with a dot are skipped, and a link, or a folder reached through one, counts as no file of the
+ * template's.
  */
 function inFolders(root: string, folders: string[], print: Scaffold['fingerprint']) {
   const found: Prints = {};
@@ -94,7 +114,10 @@ function inFolders(root: string, folders: string[], print: Scaffold['fingerprint
         if (!name.startsWith('.')) walk(posix.join(at, name));
       }
   };
-  for (const folder of folders) walk(folder);
+  for (const folder of folders) {
+    if (throughLink(root, folder)) found[folder] = OTHER;
+    else walk(folder);
+  }
   return found;
 }
 
@@ -183,24 +206,77 @@ export function planUpdate(
   return plan;
 }
 
-/** Copies the planned files from the laid-out template and removes the planned ones. */
-function apply(root: string, plan: Plan): void {
-  for (const { path } of plan.write) {
-    mkdirSync(dirname(join(root, path)), { recursive: true });
-    copyFileSync(join(root, TEMPLATE, path), join(root, path));
+/** The two writes `apply` makes, which a test replaces. */
+export const writing = {
+  copy: (from: string, to: string) => copyFileSync(from, to),
+  remove: (path: string) => rmSync(path),
+};
+
+/** Why `apply` stopped: the file it could not write or remove, once every file was put back. */
+export class Unapplied extends Error {
+  constructor(
+    readonly path: string,
+    readonly why: string,
+  ) {
+    super(`${path}: ${why}`);
   }
+}
+
+/**
+ * Copies the planned files from the laid-out template and removes the planned ones. Every file it
+ * replaces or removes is read first, so that a write that fails part way puts each one back and
+ * removes what it added: a part is replaced whole or not at all.
+ */
+function apply(root: string, plan: Plan): void {
+  const saved = new Map<string, Buffer>();
+  for (const path of [...plan.write.map((file) => file.path), ...plan.remove]) {
+    if (throughLink(root, path)) throw new Unapplied(path, 'reached through a link');
+    const stat = lstatSync(join(root, path), { throwIfNoEntry: false });
+    if (stat && !stat.isFile()) throw new Unapplied(path, 'not a file');
+    if (stat) saved.set(path, readFileSync(join(root, path)));
+  }
+  const added: string[] = [];
+  const made: string[] = [];
+  let at = '';
+  try {
+    for (const { path, added: isNew } of plan.write) {
+      at = path;
+      const folder = mkdirSync(dirname(join(root, path)), { recursive: true });
+      if (folder) made.push(folder);
+      if (isNew) added.push(path);
+      writing.copy(join(root, TEMPLATE, path), join(root, path));
+    }
+    for (const path of plan.remove) {
+      at = path;
+      writing.remove(join(root, path));
+    }
+  } catch (error) {
+    for (const path of added) rmSync(join(root, path), { force: true });
+    for (const folder of made.reverse()) rmSync(folder, { recursive: true, force: true });
+    for (const [path, bytes] of saved) writeFileSync(join(root, path), bytes);
+    const { code, message } = error as NodeJS.ErrnoException;
+    throw new Unapplied(at, code ?? message);
+  }
+  // Folders the removal left empty go too, up to the part's own folder.
   for (const path of plan.remove) {
-    rmSync(join(root, path));
-    // Folders the removal left empty go too, up to the site folder.
-    for (let dir = posix.dirname(path); dir !== '.'; dir = posix.dirname(dir)) {
-      if (readdirSync(join(root, dir)).length > 0) break;
+    const part = partOf(path);
+    const tops = [...part.folders, part.name];
+    for (let dir = posix.dirname(path); !tops.includes(dir); dir = posix.dirname(dir)) {
+      if (dir === '.' || readdirSync(join(root, dir)).length > 0) break;
       rmdirSync(join(root, dir));
     }
   }
 }
 
-/** What `refresh` did, or with `dryRun` would do. */
-export type Refreshed = Plan & { record: 'read' | 'none' | 'unreadable' };
+/**
+ * What `refresh` did, or with `dryRun` would do: the plan, whether the site's record could be
+ * read, and whether the record is written with other fingerprints than it held.
+ */
+export type Refreshed = Plan & { record: 'read' | 'none' | 'unreadable'; rewritten: boolean };
+
+/** A path as the record names one: relative, with `/` and no `.` or `..` segment. */
+const clean = (path: string) =>
+  path === posix.normalize(path) && !/^\.{1,2}(\/|$)|^\/|\\/.test(path);
 
 /**
  * The site's files on the tool's version (docs/design/site.md §10.1): lays out the template of the
@@ -218,9 +294,9 @@ export async function refresh(root: string, mode: Mode, dryRun: boolean): Promis
   let recorded: Prints | undefined;
   try {
     const { files } = JSON.parse(readFileSync(join(root, scaffold.RECORD), 'utf8'));
-    const valid = (value: unknown) => typeof value === 'string';
+    const valid = ([path, print]: [string, unknown]) => clean(path) && typeof print === 'string';
     const object = typeof files === 'object' && files !== null && !Array.isArray(files);
-    if (!object || !Object.values(files).every(valid)) throw new Error('no files');
+    if (!object || !Object.entries(files).every(valid)) throw new Error('no files');
     [recorded, record] = [files, 'read'];
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'ENOENT') record = 'unreadable';
@@ -229,9 +305,11 @@ export async function refresh(root: string, mode: Mode, dryRun: boolean): Promis
     ? [recorded]
     : Object.values(published.versions).map((version) => version[mode]);
   const plan = planUpdate(root, fresh, bases, Boolean(recorded), scaffold.fingerprint);
+  const rewrite = !recorded || !same(recorded, fresh);
   if (!dryRun) {
     apply(root, plan);
-    scaffold.writeRecord(root, fresh);
+    // The record names the new template only once every file is written.
+    if (rewrite) scaffold.writeRecord(root, fresh);
   }
-  return { ...plan, record };
+  return { ...plan, record, rewritten: rewrite };
 }
