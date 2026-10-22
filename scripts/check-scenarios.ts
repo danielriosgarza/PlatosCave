@@ -5,8 +5,8 @@ import ts from 'typescript';
 
 const root = join(import.meta.dirname, '..');
 const SKIP_DIRS = new Set(['node_modules', 'dist', '.git', '.local', 'coverage']);
-// Scenario IDs A01 to A52 (spec §16): one range for TypeScript titles and Go test names.
-const RANGE = '0[1-9]|[1-4][0-9]|5[0-2]';
+// Scenario IDs A01 to A57 (spec §16): one range for TypeScript titles and Go test names.
+const RANGE = '0[1-9]|[1-4][0-9]|5[0-7]';
 const ID = new RegExp(`\\bA(${RANGE})\\b`, 'g');
 const GO_TEST = new RegExp(`^func Test(A(?:${RANGE}))(?![0-9A-Za-z])`, 'gm');
 const TEST_FNS = new Set(['test', 'it', 'describe']);

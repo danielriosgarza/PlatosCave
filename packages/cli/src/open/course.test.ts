@@ -12,7 +12,7 @@ import { loadSource } from '../paths';
 import { buildCourse, conversionIo } from './course';
 import { notebookDownload } from './download';
 import { createOutput } from './output';
-import { moduleUrl, underGuard } from './testing';
+import { moduleUrl, underGuard, unzip } from './testing';
 
 delete process.env.DATABASE_URL;
 const fixtures = resolve(import.meta.dirname, '../../fixtures/open-site');
@@ -150,20 +150,30 @@ test('buildCourse writes the material that conversion gives, every object on the
   expect(counts.notebook).toEqual(view);
   const kinds = ['image/png', 'image/png', 'image/svg+xml', 'text/html; charset=utf-8'];
   expect(Object.values(types).sort()).toEqual(kinds);
-  // Two images, an SVG, an HTML output and the file for download: each a file under content/.
+  // Two images, an SVG, an HTML output, the file for download and the zip: each under content/.
   const named = [...JSON.stringify(counts).matchAll(/https:[^"\\]+/g)].map(([address]) => address);
   expect(named.filter((address) => main.files.has(at(address)))).toEqual(named);
   const file = JSON.parse(String(main.files.get(at(counts.file))));
-  expect([named.length, file]).toEqual([5, openNotebookFile.parse(notebookDownload(view))]);
+  expect([named.length, file]).toEqual([6, openNotebookFile.parse(notebookDownload(view))]);
   const code = file.cells.filter((cell: { cell_type: string }) => cell.cell_type === 'code');
   expect(code.map((cell: { outputs: [] }) => cell.outputs)).toEqual([[], [], []]);
-  // Its one image, in the Markdown cell, is the one the data file names: a file under content/.
+  // Its one image, in the Markdown cell, is the one the data file names (after the file and the
+  // zip): a file under content/.
   const sources = [...JSON.stringify(file).matchAll(/src=\\"([^"\\]+)/g)].map(([, src]) => src);
-  expect(sources).toEqual([named[1]]);
+  expect(sources).toEqual([named[2]]);
   const stored = counts.notebook.cells.find((cell: { id: string }) => cell.id === 'stored');
   expect([stored.source, stored.outputs[0].text]).toEqual(["print('RUN')", 'STORED\n']);
   const own = sha(fs.readFileSync(join(sampling, 'notebooks/counts.ipynb')));
   expect([...main.files.values()].map(sha)).not.toContain(own);
+  // The zip for working on one's own computer: the file for download and the data files, in one
+  // folder named as the notebook, each at its path; under content/, as an object.
+  expect(counts.data).toMatch(new RegExp(`^${CONTENT}/o/[0-9a-f]{64}\\.zip$`));
+  const bundle = unzip(main.files.get(at(counts.data)) as Uint8Array);
+  const csv = fs.readFileSync(join(sampling, 'notebooks/counts/data/quadrats.csv'));
+  expect([...bundle.keys()]).toEqual(['counts/counts.ipynb', 'counts/data/quadrats.csv']);
+  const ipynb = Buffer.from(bundle.get('counts/counts.ipynb') as Uint8Array).toString('utf8');
+  expect(JSON.parse(ipynb)).toEqual(file);
+  expect(Buffer.from(bundle.get('counts/data/quadrats.csv') as Uint8Array)).toEqual(csv);
 
   const app = { type: 'shiny', title: 'Tide explorer', url: 'https://shiny.example.org/tide/' };
   expect(resource('notebooks/tide.shiny.yaml')).toEqual({ ...app, origin: SHINY[0] });
@@ -188,7 +198,8 @@ test('a resource marked hidden in topic.yaml has no entry, no data file and no o
   expect(topic.exercises).toEqual([{ resourceId: idOf(estimate), title: 'Estimate a density' }]);
   expect(topic.tests).toEqual([{ resourceId: idOf(quiz), title: 'Sampling quiz' }]);
   expect([written(estimate), written(quiz)]).toEqual([false, false]);
-  // In a comment the reading pipeline drops, in a data file, and the instructor's address.
+  // In a comment the reading pipeline drops, in a data file (offered only inside the notebook's
+  // zip, compressed: tested above), and the instructor's address.
   for (const [file, marker] of [
     ['reading/methods.md', 'only-in-a-comment'],
     ['notebooks/counts/data/quadrats.csv', 'only-in-a-data-file'],

@@ -75,7 +75,7 @@ const tide = 'https://shiny.example.org/tide/';
 const resources = {
   slides: { type: 'slides', title, pdf, web: { slides: ['<h1>Transects</h1>'] } },
   reading: { type: 'reading', title, kind: 'pdf', html: null, pdf },
-  notebook: { type: 'notebook', title, file: object('dd.ipynb'), notebook },
+  notebook: { type: 'notebook', title, file: object('dd.ipynb'), data: object('ee.zip'), notebook },
   shiny: { type: 'shiny', title, url: tide, origin: 'https://shiny.example.org' },
 };
 const unrun = { execution_count: null, outputs: [] };
@@ -166,7 +166,10 @@ test('the address of an object is an http or https address', () => {
     const deck = { ...resources.slides, pdf: { ...pdf, url } };
     expect(refused(open.openResource, deck)).toEqual(['pdf.url']);
     expect(refused(open.openResource, { ...resources.notebook, file: url })).toEqual(['file']);
+    expect(refused(open.openResource, { ...resources.notebook, data: url })).toEqual(['data']);
   }
+  // A notebook that declares no data file has no zip.
+  expect(refused(open.openResource, { ...resources.notebook, data: null })).toEqual([]);
   const local = { ...resources.notebook, file: 'http://localhost:4176/o/dd.ipynb' };
   expect(refused(open.openResource, local)).toEqual([]);
 });

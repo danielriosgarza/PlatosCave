@@ -75,7 +75,7 @@ const lab = (file: string, html: string, outputs: object[] = []) => {
   const intro = { id: 'intro', type: 'markdown', html };
   const draw = { id: 'draw', type: 'code', source: 'img(src = "plot.png")', ...hidden, outputs };
   const notebook = { kernel: null, language: 'r', cells: [intro, draw], outline: [] };
-  return { type: 'notebook', title: 'Counts', file, notebook };
+  return { type: 'notebook', title: 'Counts', file, data: null, notebook };
 };
 const H1 = '<h1>Counts</h1>';
 /** Prose that only looks like an image, a formula as conversion writes it, and an odd image. */
@@ -104,7 +104,8 @@ test('an object is written only under content/o, named by its digest, with an ad
   const { work, out } = await site();
   expect(out.object(bytes(PNG), 'image/png')).toBe(GOOD);
   expect(out.object(bytes(PNG), 'image/png')).toBe(GOOD);
-  const refused = ['application/javascript', 'text/javascript', 'text/html', 'application/zip'];
+  // A zip is an object now (a notebook with its data files); a type with no extension is not.
+  const refused = ['application/javascript', 'text/javascript', 'text/html', 'application/x-tar'];
   for (const type of refused)
     expect(stopOf(() => out.object(bytes('alert(1)'), type))).toContain(type);
   expect(files(work)).toEqual({ [`content/${at.png}`]: PNG });

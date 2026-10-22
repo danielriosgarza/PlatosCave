@@ -252,19 +252,21 @@ func TestA34_AfterComment(t *testing.T) {}
       it('A37 first of package development', () => {});
       it('A40 a middle one', () => {});
       it('A52 last of package development', () => {});
-      it('A53 past the range', () => {});
+      it('A57 last of a level 0 notebook run on this computer', () => {});
+      it('A58 past the range', () => {});
       it('A60 past the range', () => {});
       it('A520 not an ID', () => {});`;
-    expect(idsInTsTitles(src)).toEqual(['A36', 'A37', 'A40', 'A52']);
+    expect(idsInTsTitles(src)).toEqual(['A36', 'A37', 'A40', 'A52', 'A57']);
     const go = `
 func TestA36_LastOfTheFirstRelease(t *testing.T) {}
 func TestA37_FirstOfPackageDevelopment(t *testing.T) {}
 func TestA48_ColabProxyCommand(t *testing.T) {}
 func TestA52_LastOfPackageDevelopment(t *testing.T) {}
-func TestA53_PastTheRange(t *testing.T) {}
+func TestA57_LastScenario(t *testing.T) {}
+func TestA58_PastTheRange(t *testing.T) {}
 func TestA520_NotAnID(t *testing.T) {}
 `;
-    expect(idsInGoTests(go)).toEqual(['A36', 'A37', 'A48', 'A52']);
+    expect(idsInGoTests(go)).toEqual(['A36', 'A37', 'A48', 'A52', 'A57']);
   });
 
   it('P5-02 paths with backslashes, as Windows gives them, are scanned like POSIX paths', () => {

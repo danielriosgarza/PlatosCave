@@ -8,6 +8,7 @@ import { type Problem, refusal } from '../folder/yaml';
 import { loadSource } from '../paths';
 import { notebookDownload } from './download';
 import type { Output } from './output';
+import { zip } from './zip';
 
 type Contracts = typeof import('@parallax/contracts');
 type UrlFor = (key: string) => string | null;
@@ -24,6 +25,8 @@ type Server = {
 const contracts = await loadSource<Contracts>('contracts', 'src/index.ts');
 const server = await loadSource<Server>('server', 'src/content/convert.ts');
 const { resolveReadingImages } = await loadSource<Server>('server', 'src/content/reading.ts');
+type Authoring = typeof import('@parallax/contracts/routes/authoring');
+const { MAX_UPLOAD_BYTES } = await loadSource<Authoring>('contracts', 'src/routes/authoring.ts');
 const { openCourse, openNotebookFile, openPaths, openResource, openTopic, tabs } = contracts;
 type Sourced = Extract<SiteManifest['topics'][number]['resources'][number], { source: unknown }>;
 /** What conversion derives, as far as the data files take it. */
@@ -72,10 +75,24 @@ export async function buildCourse(course: CourseBuild, out: Output) {
   // Each resource with a source is converted but a Shiny app, which has nothing to convert.
   const derived: Record<string, Conversion> = {};
   const converted = new Map<string, Converted>();
+  // A notebook's data files, read for the zip offered beside it (§4, owner's answer to §12 Q1).
+  const dataFiles = new Map<string, { path: string; bytes: Uint8Array }[]>();
   const entries = manifest.topics.flatMap((topic) => topic.resources);
   const keyOf = (file: string) => ({ key: keys.get(file) ?? '' });
   for (const entry of entries) {
     if (!('source' in entry) || entry.type === 'shiny') continue;
+    if (entry.type === 'notebook' && entry.source.data.length > 0) {
+      try {
+        const read = entry.source.data.map(async ({ path, file }) => {
+          const bytes = await io.read(keys.get(file) ?? '', MAX_UPLOAD_BYTES);
+          return { path, bytes };
+        });
+        dataFiles.set(entry.id, await Promise.all(read));
+      } catch (error) {
+        problems.push(refusal('data', entry.path, said(error)));
+        continue;
+      }
+    }
     // A notebook without its data files (§4): they have no object id and are not converted.
     const data = entry.type === 'notebook' && { source: { ...entry.source, data: [] } };
     const payload = contracts.revisionPayload({ ...entry, ...data } as Sourced, keyOf);
@@ -130,8 +147,16 @@ export async function buildCourse(course: CourseBuild, out: Output) {
     const download = openNotebookFile.safeParse(notebookDownload(notebook));
     const why = 'The notebook file for download cannot be composed';
     if (download.error) throw new Unwritable('notebook', `${why}: ${issueOf(download.error)}`);
-    const file = put(utf8(JSON.stringify(download.data)), 'application/x-ipynb+json');
-    return { type: 'notebook', title, file, notebook };
+    const ipynb = utf8(JSON.stringify(download.data));
+    const file = put(ipynb, 'application/x-ipynb+json');
+    // One folder named as the notebook: the notebook file and its data files at their paths.
+    const files = dataFiles.get(id);
+    const name = source.file.split('/').pop() ?? 'notebook.ipynb';
+    const folder = name.replace(/\.ipynb$/, '');
+    const entries = [{ path: name, bytes: ipynb }, ...(files ?? [])];
+    const bundle = entries.map((entry) => ({ ...entry, path: `${folder}/${entry.path}` }));
+    const data = files ? put(zip(bundle), 'application/zip') : null;
+    return { type: 'notebook', title, file, data, notebook };
   };
 
   // Every data file of a resource is built and checked before anything is written, with objects

@@ -16,6 +16,7 @@ const [FRAMED, ELSEWHERE, COUNT, QUIZ] = ids(6, 7, 8, 9);
 const CONTENT = 'https://content.reef.example.org/o/';
 const object = (digit: string, ext: string) => `${CONTENT}${digit.repeat(64)}.${ext}`;
 const FILE = object('b', 'ipynb');
+const ZIP = object('e', 'zip');
 const SHINY = 'https://shiny.example.org';
 const [TIDE_APP, WAVE_APP] = [`${SHINY}/tides/`, 'https://example.net/waves/'] as const;
 const ALL = { slides: true, reading: true, exercises: true, notebooks: true, tests: true };
@@ -62,7 +63,7 @@ function files({ slide = '<p>Slide</p>', html = '<p>Text</p>', cell = '', output
     file(openPaths.topicData(COURSE, SAMPLING), openTopic, sampling),
     data(WEB, { type: 'slides', title: 'Transects', pdf: null, web: { slides: [slide] } }),
     data(READING, { type: 'reading', title: 'Survey', kind: 'native', html, pdf: null }),
-    data(NOTEBOOK, { type: 'notebook', title: 'Quadrat counts', file: FILE, notebook }),
+    data(NOTEBOOK, { type: 'notebook', title: 'Quadrat counts', file: FILE, data: ZIP, notebook }),
     data(FRAMED, { type: 'shiny', title: 'Tide app', url: TIDE_APP, origin: SHINY }),
     data(ELSEWHERE, { type: 'shiny', title: 'Wave app', url: WAVE_APP, origin: null }),
   ]);
@@ -121,10 +122,19 @@ describe('A44 level 0 tabs', () => {
     expect(screen.getByText(/^Interactive output not shown/)).toBeInTheDocument();
     const downloads = screen.getAllByRole('link', { name: 'Download notebook without outputs' });
     for (const link of downloads) expect(link).toHaveAttribute('href', FILE);
+    // Working on one's own computer is a download: the notebook with its data files, as a zip.
+    const local = screen.getByRole('region', { name: 'Work on your computer' });
+    expect(href('the notebook with its data files', local)).toBe(ZIP);
+    expect(local).toHaveTextContent('with a python kernel');
+    // Running it is the visitor's choice, on their own computer (A57): the page asks nothing of
+    // the connector until then, and offers nothing to hand in.
+    const run = screen.getByRole('button', { name: 'Run on this computer' });
+    expect(run).toHaveAttribute('aria-expanded', 'false');
     for (const role of ['button', 'link'] as const) {
-      expect(
-        screen.queryAllByRole(role, { name: /connect|run|submit|original|saved outputs/i }),
-      ).toEqual([]);
+      const offered = screen.queryAllByRole(role, {
+        name: /connect|run|submit|original|saved outputs/i,
+      });
+      expect(offered).toEqual(role === 'button' ? [run] : []);
     }
     onlyDataFiles();
     await axeWithFrames();

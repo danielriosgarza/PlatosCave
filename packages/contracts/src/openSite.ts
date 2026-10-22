@@ -84,13 +84,21 @@ const NO_ORIGIN = 'expected the origin of url, or null';
  * `<resource id>.json`: one deck, reading, notebook or Shiny app; no branch is an exercise or a
  * test. `notebook` is the rendered view as it is, which is not strict: a key it does not name is
  * dropped from the parse result, not refused. `file` is the notebook file composed for download
- * (`openNotebookFile`), not the stored `.ipynb`. A Shiny app's link is shown whatever its origin,
- * so its `url` is held to the address rule of the contracts; `origin` is what lets it be framed.
+ * (`openNotebookFile`), not the stored `.ipynb`. `data` is a zip of that file with the notebook's
+ * data files, for running it on one's own computer, or null when the notebook declares none. A
+ * Shiny app's link is shown whatever its origin, so its `url` is held to the address rule of the
+ * contracts; `origin` is what lets it be framed.
  */
 export const openResource = z.discriminatedUnion('type', [
   z.strictObject({ type: z.literal('slides'), title, pdf, web }),
   z.strictObject({ type: z.literal('reading'), title, kind, html: text.nullable(), pdf }),
-  z.strictObject({ type: z.literal('notebook'), title, file: objectUrl, notebook: notebookView }),
+  z.strictObject({
+    type: z.literal('notebook'),
+    title,
+    file: objectUrl,
+    data: objectUrl.nullable(),
+    notebook: notebookView,
+  }),
   z.strictObject(shiny).superRefine(({ url, origin }, ctx) => {
     const problem = shinyAddressProblem(url);
     if (problem) ctx.addIssue({ code: 'custom', path: ['url'], message: problem });
@@ -158,6 +166,7 @@ export const OPEN_ADDRESSES = [
 const EXTENSIONS = new Map([
   ['application/pdf', 'pdf'],
   ['application/x-ipynb+json', 'ipynb'],
+  ['application/zip', 'zip'],
   ['image/png', 'png'],
   ['image/jpeg', 'jpg'],
   ['image/gif', 'gif'],

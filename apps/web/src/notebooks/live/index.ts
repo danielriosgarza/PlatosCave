@@ -1,1 +1,2 @@
-export { LiveNotebook, modeLabel } from './LiveNotebook';
+export { LiveNotebook } from './LiveNotebook';
+export { modeLabel } from './modeLabel';

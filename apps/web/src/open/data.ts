@@ -2,9 +2,10 @@ import { openCatalogue, openCourse, openPaths, openResource, openTopic } from '@
 import { useQuery } from '@tanstack/react-query';
 
 /**
- * The one module of the open site that fetches (docs/design/open-site.md §6): a `GET` of a data
- * file the build wrote, by its address in `openPaths`, without credentials, parsed by its schema.
- * Nothing else is requested, so the shell makes no request to `/api`.
+ * The module of the open site that fetches the site's own files (docs/design/open-site.md §6): a
+ * `GET` of a data file the build wrote, by its address in `openPaths`, without credentials, parsed
+ * by its schema. Besides these, the shell makes requests only to the connector on the visitor's
+ * computer once they choose Run on this computer (`local/connector.ts`), and none to `/api`.
  */
 
 /** The site has no such file (404): the address names nothing on this site. */
