@@ -153,6 +153,7 @@ test('update replaces the template files the author did not change, adds new one
   rmSync(join(root, TOUR));
   delete recorded[TOUR];
   earlier(`${WELCOME}/notes/dropped.md`, '# Dropped\n');
+  earlier(`${WELCOME}/notes/also-dropped.md`, '# Also dropped\n');
   write(root, 'courses/welcome/.DS_Store', '');
   // A file new in the template.
   rmSync(join(root, 'Caddyfile'));
@@ -182,20 +183,23 @@ test('update replaces the template files the author did not change, adds new one
     'added Caddyfile',
     `updated ${WELCOME}/topic.yaml`,
     `added ${TOUR}`,
+    `removed ${WELCOME}/notes/also-dropped.md`,
     `removed ${WELCOME}/notes/dropped.md`,
     'updated .parallax-template.json',
     'compose.runner.yml is not in the site and is not added; the template changed it: .parallax/template/compose.runner.yml',
     'compose.yml has changes of yours and is kept; the template changed it: .parallax/template/compose.yml',
     "parallax.config.ts is yours and is kept; the template's sample changed: .parallax/template/parallax.config.ts",
     'src/pages has changes of yours and is kept; the template changed _visualization.tsx: .parallax/template/src/pages',
-    'parallax-site 0.0.0: 6 files changed, 4 kept as you have them. Its template is in .parallax/template.',
+    'parallax-site 0.0.0: 7 files changed, 4 kept as you have them. Its template is in .parallax/template.',
     'Next: npx parallax check, then npx parallax upgrade where the site is served.',
   ]);
   const template = join(root, '.parallax/template');
   for (const file of ['.gitignore', 'Caddyfile', `${WELCOME}/topic.yaml`, TOUR]) {
     expect(read(root, file), file).toBe(read(template, file));
   }
+  // The folder both removed files were in goes, and the course folder stays.
   expect(existsSync(join(root, `${WELCOME}/notes`))).toBe(false);
+  expect(existsSync(join(root, WELCOME))).toBe(true);
   expect(existsSync(join(root, 'courses/welcome/.DS_Store'))).toBe(true);
   expect(read(root, 'compose.yml')).toMatch(/# mine\n$/);
   expect(read(root, 'src/pages/_visualization.tsx')).toBe(visualization);
@@ -404,11 +408,28 @@ test('a write that fails part way puts every file back, and the next run finishe
     `the update stopped at ${WELCOME}/notes/dropped.md (EBUSY) and put back every file it had written. Run it again to finish.`,
   ]);
   expect(files(root)).toEqual(before);
+  // A file that cannot be put back is named; every other one is put back.
+  copies = 0;
+  Object.assign(writing, real.writing, {
+    copy: (from: string, to: string) => {
+      if (++copies === 2) throw busy();
+      real.writing.copy(from, to);
+    },
+    restore: (path: string, bytes: Uint8Array) => {
+      if (path.endsWith('.gitignore')) throw busy();
+      real.writing.restore(path, bytes);
+    },
+  });
+  expect((await update(root, ['--to', '0.0.0'])).lines).toEqual([
+    `the update stopped at ${WELCOME}/topic.yaml (EBUSY) and could not put back .gitignore: git has the earlier text.`,
+  ]);
+  const { '.gitignore': gitignore, ...rest } = files(root);
+  expect(gitignore).toBe(read(root, '.parallax/template/.gitignore'));
+  expect({ ...rest, '.gitignore': before['.gitignore'] }).toEqual(before);
   Object.assign(writing, real.writing);
   const done = await update(root, ['--to', '0.0.0']);
   expect(done.code, done.lines.join('\n')).toBe(0);
-  expect(done.lines.slice(0, 6)).toEqual([
-    'updated .gitignore',
+  expect(done.lines.slice(0, 5)).toEqual([
     `updated ${WELCOME}/topic.yaml`,
     `added ${exercises}/first-exercise.yaml`,
     `added ${TOUR}`,

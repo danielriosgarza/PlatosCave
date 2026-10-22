@@ -8,7 +8,7 @@ import {
   rmSync,
   writeFileSync,
 } from 'node:fs';
-import { dirname, join, posix } from 'node:path';
+import { dirname, join, posix, relative } from 'node:path';
 import { loadSource } from '../paths';
 
 /** Fingerprints of files by their path from the site folder, written with `/`. */
@@ -206,17 +206,23 @@ export function planUpdate(
   return plan;
 }
 
-/** The two writes `apply` makes, which a test replaces. */
+/** The writes `apply` makes, which a test replaces. */
 export const writing = {
   copy: (from: string, to: string) => copyFileSync(from, to),
   remove: (path: string) => rmSync(path),
+  /** Puts a file's earlier bytes back. */
+  restore: (path: string, bytes: Uint8Array) => writeFileSync(path, bytes),
 };
 
-/** Why `apply` stopped: the file it could not write or remove, once every file was put back. */
+/**
+ * Why `apply` stopped: the file it could not write or remove, after it put back every file it
+ * had written but those of `lost`.
+ */
 export class Unapplied extends Error {
   constructor(
     readonly path: string,
     readonly why: string,
+    readonly lost: string[] = [],
   ) {
     super(`${path}: ${why}`);
   }
@@ -230,7 +236,7 @@ export class Unapplied extends Error {
 function apply(root: string, plan: Plan): void {
   const saved = new Map<string, Buffer>();
   for (const path of [...plan.write.map((file) => file.path), ...plan.remove]) {
-    if (throughLink(root, path)) throw new Unapplied(path, 'reached through a link');
+    if (throughLink(root, path)) throw new Unapplied(path, 'reached through a link or a file');
     const stat = lstatSync(join(root, path), { throwIfNoEntry: false });
     if (stat && !stat.isFile()) throw new Unapplied(path, 'not a file');
     if (stat) saved.set(path, readFileSync(join(root, path)));
@@ -251,20 +257,38 @@ function apply(root: string, plan: Plan): void {
       writing.remove(join(root, path));
     }
   } catch (error) {
-    for (const path of added) rmSync(join(root, path), { force: true });
-    for (const folder of made.reverse()) rmSync(folder, { recursive: true, force: true });
-    for (const [path, bytes] of saved) writeFileSync(join(root, path), bytes);
+    // Each step of the undo is tried on its own, and the paths it could not put back are named.
+    const lost: string[] = [];
+    const undo = (path: string, step: () => void) => {
+      try {
+        step();
+      } catch {
+        lost.push(path);
+      }
+    };
+    for (const path of added) undo(path, () => rmSync(join(root, path), { force: true }));
+    for (const folder of made.reverse()) {
+      const path = relative(root, folder).replaceAll('\\', '/');
+      undo(path, () => rmSync(folder, { recursive: true, force: true }));
+    }
+    for (const [path, bytes] of saved) undo(path, () => writing.restore(join(root, path), bytes));
     const { code, message } = error as NodeJS.ErrnoException;
-    throw new Unapplied(at, code ?? message);
+    throw new Unapplied(at, code ?? message, lost);
   }
-  // Folders the removal left empty go too, up to the part's own folder.
+  // Folders the removal left empty go too, deepest first, up to the part's own folder.
+  const emptied = new Set<string>();
   for (const path of plan.remove) {
     const part = partOf(path);
     const tops = [...part.folders, part.name];
-    for (let dir = posix.dirname(path); !tops.includes(dir); dir = posix.dirname(dir)) {
-      if (dir === '.' || readdirSync(join(root, dir)).length > 0) break;
-      rmdirSync(join(root, dir));
-    }
+    for (
+      let dir = posix.dirname(path);
+      dir !== '.' && !tops.includes(dir);
+      dir = posix.dirname(dir)
+    )
+      emptied.add(dir);
+  }
+  for (const dir of [...emptied].sort((a, b) => b.length - a.length)) {
+    if (readdirSync(join(root, dir)).length === 0) rmdirSync(join(root, dir));
   }
 }
 

@@ -113,6 +113,17 @@ function renamed(text: string, manifest: Manifest, version: string): string {
   return `${json.replaceAll('\n', eol)}${eol}`;
 }
 
+/** Runs `work` with Ctrl-C held, so that this process stays to finish or undo it. */
+async function holding<T>(work: () => Promise<T>): Promise<T> {
+  const hold = () => {};
+  process.on('SIGINT', hold);
+  try {
+    return await work();
+  } finally {
+    process.off('SIGINT', hold);
+  }
+}
+
 const say = (line: string) => console.log(`parallax update: ${line}`);
 const stop = (line: string, code = 1) => {
   console.error(`parallax update: ${line}`);
@@ -185,11 +196,9 @@ export const run: Command['run'] = async ({ site, args }) => {
   if (install) {
     say('npm install');
     // Ctrl-C stops npm, and this process stays to give package.json its text back.
-    const hold = () => {};
-    process.on('SIGINT', hold);
-    const code = await updating
-      .npm(['install', '--no-audit', '--no-fund'], site.root)
-      .finally(() => process.off('SIGINT', hold));
+    const code = await holding(() =>
+      updating.npm(['install', '--no-audit', '--no-fund'], site.root),
+    );
     if (code !== 0) {
       if (write) writeFileSync(file, text);
       const back = write ? `; package.json names ${was} again` : '';
@@ -211,11 +220,15 @@ export const run: Command['run'] = async ({ site, args }) => {
   }
   let done: Refreshed;
   try {
-    done = await refresh(site.root, site.config.mode, dryRun);
+    // Ctrl-C does not stop the files half-way.
+    done = await holding(() => refresh(site.root, site.config.mode, dryRun));
   } catch (error) {
     if (!(error instanceof Unapplied)) throw error;
     const where = `the update stopped at ${error.path} (${shown(error.why)})`;
-    return stop(`${where} and put back every file it had written. Run it again to finish.`);
+    if (error.lost.length === 0)
+      return stop(`${where} and put back every file it had written. Run it again to finish.`);
+    const lost = listed(error.lost.map(shown));
+    return stop(`${where} and could not put back ${lost}: git has the earlier text.`);
   }
   const verb = (word: 'add' | 'update' | 'remove') =>
     dryRun ? `would ${word}` : { add: 'added', update: 'updated', remove: 'removed' }[word];
