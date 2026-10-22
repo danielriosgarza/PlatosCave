@@ -216,7 +216,8 @@ export const run: Command['run'] = async ({ site, args }) => {
       return stop(`parallax-site ${target} is installed and has no update command, ${not}.`);
     }
     const again = ['update', '--to', target, ...(dryRun ? ['--dry-run'] : [])];
-    return updating.installed(site.root, again);
+    // Ctrl-C reaches both tools; this one stays until the installed one has finished.
+    return holding(() => updating.installed(site.root, again));
   }
   let done: Refreshed;
   try {
@@ -225,10 +226,15 @@ export const run: Command['run'] = async ({ site, args }) => {
   } catch (error) {
     if (!(error instanceof Unapplied)) throw error;
     const where = `the update stopped at ${error.path} (${shown(error.why)})`;
-    if (error.lost.length === 0)
-      return stop(`${where} and put back every file it had written. Run it again to finish.`);
-    const lost = listed(error.lost.map(shown));
-    return stop(`${where} and could not put back ${lost}: git has the earlier text.`);
+    const names = (paths: string[]) => listed(paths.map(shown));
+    const undone = [
+      error.unrestored.length > 0 &&
+        `could not put back ${names(error.unrestored)}, whose earlier text git has`,
+      error.unremoved.length > 0 && `could not remove ${names(error.unremoved)}, which it added`,
+    ].filter(Boolean);
+    if (undone.length === 0)
+      return stop(`${where} and put back every file it had changed. Run it again to finish.`);
+    return stop(`${where} and ${undone.join(' and ')}.`);
   }
   const verb = (word: 'add' | 'update' | 'remove') =>
     dryRun ? `would ${word}` : { add: 'added', update: 'updated', remove: 'removed' }[word];

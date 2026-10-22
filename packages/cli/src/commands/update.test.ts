@@ -394,7 +394,7 @@ test('a write that fails part way puts every file back, and the next run finishe
   const failed = await update(root, ['--to', '0.0.0']);
   expect(failed).toMatchObject({ code: 1, calls: [] });
   expect(failed.lines).toEqual([
-    `the update stopped at ${TOUR} (EBUSY) and put back every file it had written. Run it again to finish.`,
+    `the update stopped at ${TOUR} (EBUSY) and put back every file it had changed. Run it again to finish.`,
   ]);
   expect(files(root)).toEqual(before);
   expect(existsSync(join(root, exercises))).toBe(false);
@@ -405,7 +405,22 @@ test('a write that fails part way puts every file back, and the next run finishe
     },
   });
   expect((await update(root, ['--to', '0.0.0'])).lines).toEqual([
-    `the update stopped at ${WELCOME}/notes/dropped.md (EBUSY) and put back every file it had written. Run it again to finish.`,
+    `the update stopped at ${WELCOME}/notes/dropped.md (EBUSY) and put back every file it had changed. Run it again to finish.`,
+  ]);
+  expect(files(root)).toEqual(before);
+  // A file the failed copy left as it was is not written again, so a file that refuses every
+  // write is not named as lost.
+  const refuse = () => {
+    throw busy();
+  };
+  Object.assign(writing, real.writing, {
+    copy: (from: string, to: string) =>
+      to.endsWith('.gitignore') ? refuse() : real.writing.copy(from, to),
+    restore: (path: string, bytes: Uint8Array) =>
+      path.endsWith('.gitignore') ? refuse() : real.writing.restore(path, bytes),
+  });
+  expect((await update(root, ['--to', '0.0.0'])).lines).toEqual([
+    'the update stopped at .gitignore (EBUSY) and put back every file it had changed. Run it again to finish.',
   ]);
   expect(files(root)).toEqual(before);
   // A file that cannot be put back is named; every other one is put back.
@@ -421,7 +436,7 @@ test('a write that fails part way puts every file back, and the next run finishe
     },
   });
   expect((await update(root, ['--to', '0.0.0'])).lines).toEqual([
-    `the update stopped at ${WELCOME}/topic.yaml (EBUSY) and could not put back .gitignore: git has the earlier text.`,
+    `the update stopped at ${WELCOME}/topic.yaml (EBUSY) and could not put back .gitignore, whose earlier text git has.`,
   ]);
   const { '.gitignore': gitignore, ...rest } = files(root);
   expect(gitignore).toBe(read(root, '.parallax/template/.gitignore'));

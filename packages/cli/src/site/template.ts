@@ -6,6 +6,7 @@ import {
   readFileSync,
   rmdirSync,
   rmSync,
+  unlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { dirname, join, posix, relative } from 'node:path';
@@ -209,20 +210,22 @@ export function planUpdate(
 /** The writes `apply` makes, which a test replaces. */
 export const writing = {
   copy: (from: string, to: string) => copyFileSync(from, to),
-  remove: (path: string) => rmSync(path),
+  remove: (path: string) => unlinkSync(path),
   /** Puts a file's earlier bytes back. */
   restore: (path: string, bytes: Uint8Array) => writeFileSync(path, bytes),
 };
 
 /**
  * Why `apply` stopped: the file it could not write or remove, after it put back every file it
- * had written but those of `lost`.
+ * had changed but those of `unrestored`, and removed every file and folder it had added but
+ * those of `unremoved`.
  */
 export class Unapplied extends Error {
   constructor(
     readonly path: string,
     readonly why: string,
-    readonly lost: string[] = [],
+    readonly unrestored: string[] = [],
+    readonly unremoved: string[] = [],
   ) {
     super(`${path}: ${why}`);
   }
@@ -257,23 +260,36 @@ function apply(root: string, plan: Plan): void {
       writing.remove(join(root, path));
     }
   } catch (error) {
-    // Each step of the undo is tried on its own, and the paths it could not put back are named.
-    const lost: string[] = [];
-    const undo = (path: string, step: () => void) => {
+    // Each step of the undo is tried on its own, and the paths it could not undo are named. A
+    // file that still has its earlier bytes is left as it is.
+    const unrestored: string[] = [];
+    const unremoved: string[] = [];
+    const undo = (path: string, failed: string[], step: () => void) => {
       try {
         step();
       } catch {
-        lost.push(path);
+        failed.push(path);
       }
     };
-    for (const path of added) undo(path, () => rmSync(join(root, path), { force: true }));
+    for (const path of added)
+      undo(path, unremoved, () => rmSync(join(root, path), { force: true }));
     for (const folder of made.reverse()) {
       const path = relative(root, folder).replaceAll('\\', '/');
-      undo(path, () => rmSync(folder, { recursive: true, force: true }));
+      undo(path, unremoved, () => rmSync(folder, { recursive: true, force: true }));
     }
-    for (const [path, bytes] of saved) undo(path, () => writing.restore(join(root, path), bytes));
+    const kept = (path: string, bytes: Buffer) => {
+      try {
+        return readFileSync(join(root, path)).equals(bytes);
+      } catch {
+        return false;
+      }
+    };
+    for (const [path, bytes] of saved) {
+      if (!kept(path, bytes))
+        undo(path, unrestored, () => writing.restore(join(root, path), bytes));
+    }
     const { code, message } = error as NodeJS.ErrnoException;
-    throw new Unapplied(at, code ?? message, lost);
+    throw new Unapplied(at, code ?? message, unrestored, unremoved);
   }
   // Folders the removal left empty go too, deepest first, up to the part's own folder.
   const emptied = new Set<string>();
@@ -288,7 +304,11 @@ function apply(root: string, plan: Plan): void {
       emptied.add(dir);
   }
   for (const dir of [...emptied].sort((a, b) => b.length - a.length)) {
-    if (readdirSync(join(root, dir)).length === 0) rmdirSync(join(root, dir));
+    try {
+      if (readdirSync(join(root, dir)).length === 0) rmdirSync(join(root, dir));
+    } catch {
+      // An empty folder that cannot be removed now changes nothing the site serves.
+    }
   }
 }
 
