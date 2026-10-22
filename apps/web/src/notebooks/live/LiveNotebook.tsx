@@ -1,6 +1,5 @@
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import buttons from '../../components/Buttons.module.css';
-import readingStyles from '../../reading/Reading.module.css';
 import { ResourceTools } from '../../workspace/ResourceTools';
 import {
   errorCode,
@@ -10,17 +9,17 @@ import {
   useSessionActions,
 } from '../connect/api';
 import { LossNotice } from '../connect/LossNotice';
-import { causeText, codeText, kernelLabel } from '../connect/messages';
-import styles from '../Notebook.module.css';
-import { Markdown, Outline, Output } from '../NotebookView';
+import { causeText, codeText } from '../connect/messages';
 import type { Notebook, NotebookCell } from '../notebooks';
-import { CellEditor } from './CellEditor';
-import { kernelIsBusy, type LiveExecution, latestByCell } from './executionState';
+import { kernelIsBusy, latestByCell } from './executionState';
 import live from './Live.module.css';
-import { LiveOutputs } from './Outputs';
+import { LiveCells } from './LiveCells';
+import { modeLabel } from './modeLabel';
+import { RichOutput } from './RichOutput';
 import { SessionPanels, useCopyInGate } from './SessionPanels';
 import { LiveToolbar, type SessionAction } from './Toolbar';
 import { useChannel } from './useChannel';
+import { useRunAll } from './useRunAll';
 
 interface Props {
   classId: string;
@@ -54,33 +53,6 @@ const languageOf = (kernelName: string | null | undefined, fallback: string | nu
   return name || 'Kernel';
 };
 
-/** §5.6: a mode label that names only a state the server read. */
-export function modeLabel(args: {
-  connectionName: string | undefined;
-  language: string;
-  sessionState: string;
-  kernelState: string | undefined;
-  confirmed: boolean;
-}): string {
-  const { sessionState, kernelState, confirmed } = args;
-  let state: string;
-  if (sessionState === 'disconnected') state = 'Disconnected';
-  else if (sessionState === 'stopping') state = 'Stopping';
-  else if (sessionState === 'stopped') state = 'Stopped';
-  else if (sessionState === 'failed') state = 'Failed';
-  else if (sessionState === 'unconfirmed' || !confirmed) state = 'Unconfirmed';
-  else state = kernelLabel(kernelState);
-  return `${args.connectionName ?? 'Computer'} · ${args.language} · ${state}`;
-}
-
-interface RunAll {
-  queue: string[];
-  cellId: string;
-  /** The cell as the page names it, for messages. */
-  name: string;
-  ref: string | null;
-}
-
 /**
  * A notebook running on the person's own computer (spec §10.4, design §2, §10.5, §10.6). Cells
  * are editable; running one sends it over the channel and the outputs stream back into the same
@@ -89,6 +61,8 @@ interface RunAll {
  * no confirmed reply says `Unconfirmed` or `Incomplete`. When the connection is lost, execution
  * is disabled and editing is kept.
  */
+export { modeLabel };
+
 export function LiveNotebook({
   classId,
   session,
@@ -114,23 +88,8 @@ export function LiveNotebook({
   const [actionError, setActionError] = useState<string | null>(null);
   const [busyAction, setBusyAction] = useState(false);
   const [startingKernel, setStartingKernel] = useState(false);
-  const [runAll, setRunAll] = useState<RunAll | null>(null);
-  const [runAllNote, setRunAllNote] = useState<string | null>(null);
   const [interruptedAt, setInterruptedAt] = useState<number | null>(null);
   const [stalled, setStalled] = useState(false);
-  // Cells opened one by one; a change of the toolbar's Show/Hide resets them.
-  const [opened, setOpened] = useState<{
-    code: boolean;
-    outputs: boolean;
-    cells: Record<string, { code?: boolean; output?: boolean }>;
-  }>({ code: showCode, outputs: showOutputs, cells: {} });
-  const revealed = opened.code === showCode && opened.outputs === showOutputs ? opened.cells : {};
-  const reveal = (id: string, part: 'code' | 'output') =>
-    setOpened({
-      code: showCode,
-      outputs: showOutputs,
-      cells: { ...revealed, [id]: { ...revealed[id], [part]: true } },
-    });
   const confirmRef = useRef<HTMLDivElement>(null);
 
   const channelOpen = !detached && channel.status === 'open' && !channel.offline;
@@ -174,73 +133,17 @@ export function LiveNotebook({
     return channel.execute(cellId, codeOf(cell));
   };
 
-  // Run all: one cell at a time in notebook order, stopping at the first that does not finish
-  // cleanly. Each is a new execute with its own ref; none is ever resent by this logic. While the
-  // channel is being reattached nothing is sent, and the cell it waits on keeps running on the
-  // kernel: the resume tells how it ended (§10.6), and Run all goes on from there.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: advances on each message and on connection changes only
-  useEffect(() => {
-    if (!runAll) return;
-    const stop = (note: string) => {
-      setRunAll(null);
-      setRunAllNote(note);
-    };
-    if (!connected) {
-      if (reattaching) return;
-      stop('Run all stopped because the connection was lost.');
-      return;
-    }
-    if (!canRun) {
-      stop(
-        kernelState === 'dead'
-          ? 'Run all stopped: the kernel stopped.'
-          : kernelState === 'restarting'
-            ? 'Run all stopped: the kernel was restarted.'
-            : 'Run all stopped: the kernel is not ready.',
-      );
-      return;
-    }
-    if (runAll.ref === null) return;
-    const execution = Object.values(state.executions).find((e) => e.ref === runAll.ref);
-    if (!execution) {
-      if (!state.pending.some((p) => p.ref === runAll.ref)) {
-        stop('Run all stopped: a cell could not be run.');
-      }
-      return;
-    }
-    if (execution.state === 'ok' && execution.outputsIncomplete) {
-      // Its output carried over a relay restart and is labelled Incomplete: not a clean finish.
-      stop(`Run all stopped at cell ${nameOf(runAll.cellId)}: its output is incomplete.`);
-    } else if (execution.state === 'ok') {
-      const [next, ...rest] = runAll.queue;
-      if (next === undefined) {
-        setRunAll(null);
-        return;
-      }
-      const ref = runCell(next);
-      if (ref === null) stop('Run all stopped because the connection was lost.');
-      else setRunAll({ queue: rest, cellId: next, name: nameOf(next), ref });
-    } else if (execution.state === 'sent' || execution.state === 'running') {
-      // Still going.
-    } else {
-      stop(
-        `Run all stopped at cell ${runAll.name}: it ${
-          execution.state === 'error' ? 'ended with an error' : 'did not finish'
-        }.`,
-      );
-    }
-  }, [state, canRun, connected, reattaching, kernelState, runAll]);
-
-  const startRunAll = () => {
-    const ids = notebook.cells
-      .filter((c) => c.type === 'code' && codeOf(c).trim() !== '')
-      .map((c) => c.id);
-    const [first, ...rest] = ids;
-    setRunAllNote(null);
-    if (first === undefined) return;
-    const ref = runCell(first);
-    if (ref) setRunAll({ queue: rest, cellId: first, name: nameOf(first), ref });
-  };
+  const { runAll, runAllNote, startRunAll, cancelRunAll } = useRunAll({
+    notebook,
+    state,
+    connected,
+    reattaching,
+    canRun,
+    kernelState,
+    codeOf,
+    nameOf,
+    runCell,
+  });
 
   // An Interrupt that has not returned the kernel to idle after 5 s offers a restart (spec §10.4).
   useEffect(() => {
@@ -272,7 +175,7 @@ export function LiveNotebook({
       await restartKernel(classId, session.id);
       setStalled(false);
       setInterruptedAt(null);
-      setRunAll(null);
+      cancelRunAll();
       setAsk(null);
     } catch (e) {
       fail(e, 'The kernel could not be restarted.');
@@ -578,125 +481,23 @@ export function LiveNotebook({
           }}
         />
       </ResourceTools>
-      <article ref={root} className={styles.notebook} aria-label="Live notebook">
-        {banner}
-        {outlineOpen ? <Outline notebook={notebook} root={root} /> : null}
-        {notebook.cells.map((cell, index) => {
-          if (cell.type === 'markdown') {
-            return (
-              <section key={cell.id} data-cell-id={cell.id} tabIndex={-1}>
-                <Markdown html={cell.html} className={`${styles.prose} ${readingStyles.native}`} />
-              </section>
-            );
-          }
-          if (cell.type === 'raw') {
-            return (
-              <section key={cell.id} data-cell-id={cell.id} tabIndex={-1} className={styles.cell}>
-                <span className={styles.num} />
-                <pre className={styles.raw}>{cell.text}</pre>
-              </section>
-            );
-          }
-          const execution: LiveExecution | undefined = latest[cell.id];
-          const count = execution?.executionCount ?? cell.executionCount;
-          const marker = `[${count ?? ' '}]`;
-          // Cells that have not run share a marker, so their names carry their position.
-          const name = `${index + 1} ${marker}`;
-          const codeHidden = (!showCode || cell.sourceHidden) && !revealed[cell.id]?.code;
-          const outputHidden = (!showOutputs || cell.outputsHidden) && !revealed[cell.id]?.output;
-          return (
-            <section
-              key={cell.id}
-              data-cell-id={cell.id}
-              tabIndex={-1}
-              aria-label={`Code cell ${name}`}
-            >
-              <div className={styles.cell}>
-                <span className={styles.num}>{marker}</span>
-                <div className={live.cellEditor}>
-                  {codeHidden ? (
-                    <button
-                      type="button"
-                      className={buttons.textButton}
-                      aria-label={`Show code of cell ${name}`}
-                      onClick={() => reveal(cell.id, 'code')}
-                    >
-                      Show code
-                    </button>
-                  ) : (
-                    <CellEditor
-                      label={`Code of cell ${name}`}
-                      value={sources[cell.id] ?? cell.source}
-                      onChange={(value) => onEdit(cell.id, value)}
-                      onRun={() => canRun && runAll === null && runCell(cell.id)}
-                    />
-                  )}
-                  <div className={live.cellTools}>
-                    <button
-                      type="button"
-                      className={buttons.tool}
-                      aria-label={`Run cell ${name}`}
-                      disabled={!canRun || runAll !== null}
-                      onClick={() => runCell(cell.id)}
-                    >
-                      Run
-                    </button>
-                    {state.refusals[cell.id] ? (
-                      <span className={live.refusal} role="alert">
-                        {codeText(state.refusals[cell.id]?.code)}
-                      </span>
-                    ) : null}
-                  </div>
-                </div>
-              </div>
-              {outputHidden && (execution || cell.outputs.length > 0) ? (
-                <div className={styles.cell}>
-                  <span className={styles.num}>Out</span>
-                  <div>
-                    <button
-                      type="button"
-                      className={buttons.textButton}
-                      aria-label={`Show output of cell ${name}`}
-                      onClick={() => reveal(cell.id, 'output')}
-                    >
-                      Show output
-                    </button>
-                  </div>
-                </div>
-              ) : execution ? (
-                <div className={styles.cell}>
-                  <span className={styles.num}>Out</span>
-                  <LiveOutputs
-                    classId={classId}
-                    sessionId={session.id}
-                    execution={execution}
-                    kernelGeneration={kernel?.generation}
-                    canRun={canRun && runAll === null}
-                    onRunAgain={() => {
-                      if (runAll === null) runCell(cell.id);
-                    }}
-                    onInputReply={(value) => channel.inputReply(execution.executionId, value)}
-                  />
-                </div>
-              ) : cell.outputs.length > 0 ? (
-                <div className={styles.cell}>
-                  <span className={styles.num}>Out</span>
-                  <div className={styles.outputs}>
-                    {cell.outputs.map((output, i) => (
-                      // Stored outputs never move: their order is their identity.
-                      // biome-ignore lint/suspicious/noArrayIndexKey: see above
-                      <Output key={i} output={output} cellCount={cell.executionCount} />
-                    ))}
-                    <div className={styles.provenance}>
-                      Stored output · {notebook.kernel ?? 'kernel not recorded'}
-                    </div>
-                  </div>
-                </div>
-              ) : null}
-            </section>
-          );
-        })}
-      </article>
+      <LiveCells
+        notebook={notebook}
+        root={root}
+        banner={banner}
+        outlineOpen={outlineOpen}
+        showCode={showCode}
+        showOutputs={showOutputs}
+        sources={sources}
+        onEdit={onEdit}
+        latest={latest}
+        refusals={state.refusals}
+        kernelGeneration={kernel?.generation}
+        canRun={canRun && runAll === null}
+        runCell={runCell}
+        onInputReply={channel.inputReply}
+        renderRich={(item) => <RichOutput classId={classId} sessionId={session.id} {...item} />}
+      />
       {sessionReady && !detached ? (
         <SessionPanels
           classId={classId}

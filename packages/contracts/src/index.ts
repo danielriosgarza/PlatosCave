@@ -9,6 +9,7 @@ export * from './exerciseInteractive';
 export * from './exerciseRules';
 export * from './expression';
 export * from './icons';
+export * from './kernelMessages';
 export * from './notebook';
 export * from './notebookChannel';
 export * from './numberText';

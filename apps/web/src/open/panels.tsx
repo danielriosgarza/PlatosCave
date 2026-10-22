@@ -1,4 +1,4 @@
-import type { OpenTopic } from '@parallax/contracts';
+import { type OpenTopic, openPaths } from '@parallax/contracts';
 import type { ReactNode } from 'react';
 import buttons from '../components/Buttons.module.css';
 import { Loading } from '../components/Loading';
@@ -86,7 +86,12 @@ function Shown({ at, resourceId, what }: { at: PanelProps; resourceId: string; w
   const file = useResource(at.course, at.topicId, resourceId);
   const data = file.data;
   const deck = at.tab === 'slides';
-  if (data?.type === 'notebook') return <NotebooksPanel {...data} />;
+  if (data?.type === 'notebook') {
+    // On this computer, below the site's folder: the course's own folders, then the notebook.
+    const folder = [...at.course.split('/'), data.title];
+    const address = openPaths.resourceData(at.course, at.topicId, resourceId);
+    return <NotebooksPanel {...data} address={address} folder={folder} />;
+  }
   if (data?.type === 'shiny') return <OpenShiny {...data} />;
   if (data?.type !== 'slides' && data?.type !== 'reading') {
     const state =

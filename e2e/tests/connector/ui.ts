@@ -44,7 +44,7 @@ export async function openConnect(
   });
   expect(signedIn.ok()).toBe(true);
   await page.goto(notebooks);
-  await page.getByRole('button', { name: 'Saved outputs' }).click();
+  await page.getByRole('button', { name: 'Connect computer' }).click();
   await expect(page.getByRole('heading', { name: 'Connect a computer' })).toBeVisible();
 }
 

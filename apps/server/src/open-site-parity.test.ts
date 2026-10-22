@@ -65,7 +65,13 @@ test.each<[name: string, stored: () => StoredNotebook]>([
     const view = viewNotebook(stored(), urlFor, resolveReadingImages);
     expect(view).toEqual(notebookView(stored(), urlFor));
     // It holds nothing that the schema of the data file drops: no storage key, no content type.
-    const file = { type: 'notebook', title: 'Counts', file: address('dd.ipynb'), notebook: view };
+    const file = {
+      type: 'notebook',
+      title: 'Counts',
+      file: address('dd.ipynb'),
+      data: null,
+      notebook: view,
+    };
     expect(openResource.parse(file)).toEqual(file);
   }
 });

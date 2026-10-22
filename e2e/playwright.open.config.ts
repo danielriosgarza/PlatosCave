@@ -5,11 +5,14 @@ const CI = Boolean(process.env.CI);
 /**
  * The browser suite of a level 0 site (docs/design/open-site.md §10): the tests of `open/` against
  * the two static hosts of `static-server.ts`, which builds the school fixture first. No global
- * setup, no database and no API server; the suite of `playwright.config.ts` is not collected.
+ * setup, no database and no API server; the suite of `playwright.config.ts` is not collected. With
+ * CONNECTOR_E2E set, A57 also runs `parallax-connector open` with Jupyter on this computer.
  */
 export default defineConfig({
   testDir: 'open',
   testMatch: /\.e2e\.ts$/,
+  // A57 runs a real connector and Jupyter: the open-site workflow installs them and sets this.
+  testIgnore: process.env.CONNECTOR_E2E ? [] : ['**/a57-*'],
   timeout: 180_000,
   expect: { timeout: 15_000 },
   retries: CI ? 1 : 0,

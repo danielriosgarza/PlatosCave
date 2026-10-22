@@ -1,15 +1,23 @@
-import { useId, useMemo, useState } from 'react';
+import { type ReactNode, useId, useMemo, useState } from 'react';
 import buttons from '../../components/Buttons.module.css';
 import styles from '../Notebook.module.css';
 import type { LiveExecution } from './executionState';
 import live from './Live.module.css';
 import { groupOutputs } from './liveOutput';
-import { RichOutput } from './RichOutput';
+
+/** One rich output of an execution, as the page that shows the notebook renders it. */
+export interface RichItem {
+  executionId: string;
+  eventSeq: number;
+  data: Record<string, unknown>;
+  executionCount: number | null;
+  text: string | null;
+}
 
 interface Props {
-  classId: string;
-  sessionId: string;
   execution: LiveExecution;
+  /** Renders a rich output: from the server at level 1 (`RichOutput`), in the page at level 0. */
+  renderRich: (item: RichItem) => ReactNode;
   /** The kernel's current generation: output of an older one belongs to the previous kernel. */
   kernelGeneration: number | undefined;
   /** Whether a cell can be run now (Run again is offered only then). */
@@ -30,15 +38,15 @@ const STATUS: Record<LiveExecution['state'], string> = {
 
 /**
  * The outputs of one execution, streamed as they arrive (docs/design/connector.md §10.6). Text
- * grows in place; rich output (HTML, SVG, images, tables, Markdown) is rendered by the server
- * and shown as stored output is, from the content origin (`RichOutput`). A disconnect is never
+ * grows in place; rich output (HTML, SVG, images, tables, Markdown) is shown by `renderRich`: at
+ * level 1 the server renders it and it is shown as stored output is, from the content origin
+ * (`RichOutput`); at level 0 the page frames it (`LocalRichOutput`). A disconnect is never
  * described as completion: an execution with no confirmed reply is `Unconfirmed` or
  * `Incomplete`, and the person chooses whether to run the cell again; nothing runs it for them.
  */
 export function LiveOutputs({
-  classId,
-  sessionId,
   execution,
+  renderRich,
   kernelGeneration,
   canRun,
   onRunAgain,
@@ -84,15 +92,13 @@ export function LiveOutputs({
           }`}
         >
           {item.kind === 'rich' ? (
-            <RichOutput
-              classId={classId}
-              sessionId={sessionId}
-              executionId={execution.executionId}
-              eventSeq={item.eventSeq}
-              data={item.data}
-              executionCount={item.executionCount}
-              text={item.text}
-            />
+            renderRich({
+              executionId: execution.executionId,
+              eventSeq: item.eventSeq,
+              data: item.data,
+              executionCount: item.executionCount,
+              text: item.text,
+            })
           ) : (
             <Shown item={item} />
           )}

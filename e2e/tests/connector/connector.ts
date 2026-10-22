@@ -120,6 +120,11 @@ export class Connector {
     return this.start(['run', '--allow-net', '127.0.0.0/8', ...extra]);
   }
 
+  /** `open`, for course pages of a level 0 site in this computer's browser. */
+  open(workspace: string, ...extra: string[]): Run {
+    return this.start(['open', '--workspace', workspace, '--python', localPython, ...extra]);
+  }
+
   /** Stops every process (the connector stops the sessions it owns on SIGTERM) and removes the state directory. */
   async dispose(): Promise<void> {
     for (const r of this.runs) r.stop();

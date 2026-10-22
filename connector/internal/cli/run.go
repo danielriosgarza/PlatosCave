@@ -359,6 +359,13 @@ func newAsker(in io.Reader, out io.Writer) *asker {
 
 // ask prints the question and returns true only for an answer of y or yes before ctx ends.
 func (a *asker) ask(ctx context.Context, question string) bool {
+	yes, _ := a.reply(ctx, question)
+	return yes
+}
+
+// reply is ask that also tells an answer from none: answered is false when ctx ended or the
+// terminal closed first.
+func (a *asker) reply(ctx context.Context, question string) (yes, answered bool) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	fmt.Fprintf(a.out, "%s [y/N] ", question)
@@ -366,16 +373,32 @@ func (a *asker) ask(ctx context.Context, question string) bool {
 	case line, ok := <-a.lines:
 		if !ok {
 			fmt.Fprintln(a.out)
-			return false
+			return false, false
 		}
 		switch strings.ToLower(strings.TrimSpace(line)) {
 		case "y", "yes":
-			return true
+			return true, true
 		}
-		return false
+		return false, true
 	case <-ctx.Done():
 		fmt.Fprintln(a.out, "\nNo answer; declined.")
-		return false
+		return false, false
+	}
+}
+
+// drain drops a line typed before a question was asked, so it cannot answer the next one.
+func (a *asker) drain() {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	for {
+		select {
+		case _, ok := <-a.lines:
+			if !ok {
+				return
+			}
+		default:
+			return
+		}
 	}
 }
 
